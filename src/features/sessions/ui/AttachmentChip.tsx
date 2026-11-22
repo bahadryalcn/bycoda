@@ -77,10 +77,10 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
       <span className={styles.fileIcon}>
         <AttachmentIdentity attachment={attachment} />
       </span>
-      <Text as="span" tone="inherit" weight="medium" truncate className={styles.name}>
+      <Text as="span" tone="inherit" weight="medium" className={styles.name}>
         {loading ? t("Loading…") : attachment.name}
       </Text>
-      <Text size="caption" tone="secondary" truncate className={styles.metadata}>
+      <Text size="caption" tone="secondary" className={styles.metadata}>
         {attachment.missing ? (
           <Text size="inherit" tone="warning">
             {t("missing")}

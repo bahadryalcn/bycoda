@@ -39,11 +39,8 @@ export function startHostDiagnostics(options: {
 
   const loop = monitorEventLoopDelay({ resolution: 20 });
   loop.enable();
-  // BYCODA_HOST_STALL_PROFILE=0 keeps the stall warnings but saves no CPU profiles.
-  const stalls = watchLoopStalls({
-    log: createLogger("host.loop"),
-    profileDir: process.env.BYCODA_HOST_STALL_PROFILE === "0" ? undefined : logDir,
-  });
+  // Profiles are saved only while the owner's Host setting turns them on.
+  const stalls = watchLoopStalls({ log: createLogger("host.loop"), profileDir: logDir });
   const health = createLogger("host.health");
   const timer = setInterval(() => {
     const memory = process.memoryUsage();

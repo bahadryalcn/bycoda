@@ -31,7 +31,8 @@ import {
 } from "../../../shared/lib/drag";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { t, useLocale } from "../../../shared/i18n";
+import { formatDate, t, useLocale } from "../../../shared/i18n";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import {
   columnTransitions,
   jiraBoardConfiguration,
@@ -310,6 +311,7 @@ export function JiraBoardView({
             pages: old?.pages ?? 0,
             cursors: old?.cursors,
             stale: !!old?.loaded,
+            verifiedAt: old?.verifiedAt,
           });
           continue;
         }
@@ -341,6 +343,7 @@ export function JiraBoardView({
               pages: old?.pages ?? 0,
               cursors: old?.cursors,
               stale: !!old?.loaded,
+              verifiedAt: old?.verifiedAt,
               error: jiraErrorMessage(reason),
             });
           }
@@ -400,6 +403,7 @@ export function JiraBoardView({
       issues,
       token,
       loaded: true,
+      verifiedAt: Date.now(),
       pages: count,
       cursors: [...cursors],
       autoPaused,
@@ -915,11 +919,24 @@ export function JiraBoardView({
   }
 
   function groupRecovery(group: Group) {
+    // A Kanban view has one unnamed group: the notice names the board instead.
+    const source = group.name || board?.name || t("Board");
     return (
       <div className="flex flex-wrap items-center gap-2 py-2">
         {group.stale && group.issues.length ? (
           <Text as="p" size="caption" tone="secondary" className="w-full">
-            {t("Showing last loaded data. Updates have not been verified.")}
+            {t("Showing last loaded {p0}. Updates have not been verified.", { p0: source })}
+            {group.verifiedAt ? (
+              <>
+                {" "}
+                <ErrorDetails
+                  title={source}
+                  detail={t("Last verified {p0}", {
+                    p0: formatDate(group.verifiedAt, { dateStyle: "medium", timeStyle: "short" }),
+                  })}
+                />
+              </>
+            ) : null}
           </Text>
         ) : null}
         {group.error ? (

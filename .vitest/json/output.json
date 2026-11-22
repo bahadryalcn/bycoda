@@ -1,10 +1,10 @@
 {
-  "numTotalTestSuites": 2,
-  "numPassedTestSuites": 2,
+  "numTotalTestSuites": 0,
+  "numPassedTestSuites": 0,
   "numFailedTestSuites": 0,
   "numPendingTestSuites": 0,
-  "numTotalTests": 6,
-  "numPassedTests": 6,
+  "numTotalTests": 0,
+  "numPassedTests": 0,
   "numFailedTests": 0,
   "numPendingTests": 0,
   "numTodoTests": 0,
@@ -24,83 +24,7 @@
     "updated": 0,
     "didUpdate": false
   },
-  "startTime": 1795133637873,
-  "success": true,
-  "testResults": [
-    {
-      "assertionResults": [
-        {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API requires explicit opt-in, a default account, and exact supported API model",
-          "status": "passed",
-          "title": "requires explicit opt-in, a default account, and exact supported API model",
-          "duration": 1.856899999999996,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API sends bounded prior context and no tools to the fixed xAI endpoint",
-          "status": "passed",
-          "title": "sends bounded prior context and no tools to the fixed xAI endpoint",
-          "duration": 23.06639999999993,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API refuses attachments and incomplete or tool-call responses",
-          "status": "passed",
-          "title": "refuses attachments and incomplete or tool-call responses",
-          "duration": 5.904799999999909,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API rejects an unsupported effort before sending instead of ignoring the ceiling",
-          "status": "passed",
-          "title": "rejects an unsupported effort before sending instead of ignoring the ceiling",
-          "duration": 0.7001000000000204,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API bounds response bytes and never echoes provider errors",
-          "status": "passed",
-          "title": "bounds response bytes and never echoes provider errors",
-          "duration": 3.6782000000000608,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        },
-        {
-          "ancestorTitles": ["Grok tool-free API"],
-          "fullName": "Grok tool-free API cancels only the captured operation and never leaks transport errors",
-          "status": "passed",
-          "title": "cancels only the captured operation and never leaks transport errors",
-          "duration": 0.9095999999999549,
-          "failureMessages": [],
-          "meta": {},
-          "tags": [],
-          "benchmarks": []
-        }
-      ],
-      "startTime": 1795133638941,
-      "endTime": 1795133638977.9097,
-      "status": "passed",
-      "message": "",
-      "name": "G:/Projects/my_projects/monocode/host/providers/grok-chat-only.test.ts"
-    }
-  ]
+  "startTime": 1795300126700,
+  "success": false,
+  "testResults": []
 }

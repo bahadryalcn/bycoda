@@ -2,7 +2,11 @@
 import { act, createElement, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { REPOSITORY_RESCAN_MS, resetGitSubmoduleCache, useGitSubmodules } from "./useGitSubmodules";
+import {
+  FAILED_DISCOVERY_BACKOFF_MS,
+  resetGitSubmoduleCache,
+  useGitSubmodules,
+} from "./useGitSubmodules";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn(), subscribe: vi.fn(() => () => {}) }));
 vi.mock("../../../platform/tauri/fs", () => ({
@@ -146,29 +150,133 @@ it("keeps repositories found before a size limit and names the limited checkout 
   expect(current!.limits).toEqual({});
 });
 
-it("rescans repositories at most once per REPOSITORY_RESCAN_MS on Git changes, then delivers the latest", async () => {
+const repositoryScans = () =>
+  bridge.invoke.mock.calls.filter(([, args]) => args?.includeRepositories === true);
+
+it("scans repositories once per checkout, then follows Git changes and focus with gitlinks only", async () => {
   vi.useFakeTimers();
   try {
-    bridge.invoke.mockResolvedValue(found(["nested"]));
+    bridge.invoke.mockImplementation(async (_command: string, args: Record<string, unknown>) =>
+      args.includeRepositories ? found(["nested", "standalone"]) : ["nested", "added"],
+    );
     let changed: () => void = () => {};
     bridge.subscribe.mockImplementation(((listener: () => void) => {
       changed = listener;
       return () => {};
     }) as never);
     await render("/repo", true, true);
+    expect(repositoryScans()).toHaveLength(1);
+    // Agents commit continuously: Git changes and focus re-read the index, never the working tree.
+    for (let n = 0; n < 3; n++) {
+      await act(async () => {
+        changed();
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+    }
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(repositoryScans()).toHaveLength(1);
+    expect(bridge.invoke).toHaveBeenCalledWith("git_submodules", { cwd: "/repo" });
+    // The new gitlink joins the inventory; the standalone repository stays as scanned.
+    expect(current!.modules["/repo"]).toEqual(["/repo/nested", "/repo/standalone", "/repo/added"]);
+    // A new mount of the same checkout reuses the session inventory.
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await render("/repo", true, true);
+    expect(repositoryScans()).toHaveLength(1);
+    // Only an explicit refresh walks the tree again, and asks a remote Host for a fresh scan.
+    await act(async () => current!.refresh());
+    expect(repositoryScans()).toHaveLength(2);
+    expect(repositoryScans()[1][1]).toEqual({
+      cwd: "/repo",
+      includeRepositories: true,
+      fresh: true,
+    });
+    expect(current!.modules["/repo"]).toEqual(["/repo/nested", "/repo/standalone"]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("drops a removed gitlink on a Git change and keeps the inventory when the gitlink refresh fails", async () => {
+  vi.useFakeTimers();
+  try {
+    let links = ["core", "gone"];
+    bridge.invoke.mockImplementation(async (_command: string, args: Record<string, unknown>) =>
+      args.includeRepositories ? found(["core", "gone", "standalone"]) : links,
+    );
+    let changed: () => void = () => {};
+    bridge.subscribe.mockImplementation(((listener: () => void) => {
+      changed = listener;
+      return () => {};
+    }) as never);
+    await render("/repo", true, true);
+    // The first gitlink read after the scan records what Git then knew.
+    await act(async () => {
+      changed();
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    links = ["core"];
+    await act(async () => {
+      changed();
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(current!.modules["/repo"]).toEqual(["/repo/core", "/repo/standalone"]);
+    bridge.invoke.mockRejectedValue(new Error("RPC_TIMEOUT"));
+    await act(async () => {
+      changed();
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(current!.error).toContain("RPC_TIMEOUT");
+    expect(current!.modules["/repo"]).toEqual(["/repo/core", "/repo/standalone"]);
+    expect(repositoryScans()).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("waits out a doubling backoff after a failed discovery unless the owner refreshes", async () => {
+  vi.useFakeTimers();
+  try {
+    bridge.invoke.mockRejectedValue(new Error("RPC_TIMEOUT"));
+    let changed: () => void = () => {};
+    bridge.subscribe.mockImplementation(((listener: () => void) => {
+      changed = listener;
+      return () => {};
+    }) as never);
+    await render("/repo");
     expect(bridge.invoke).toHaveBeenCalledTimes(1);
-    // Agents commit continuously: every change within the window joins one trailing rescan.
+    // Agents keep committing; none of these restarts the scan that just timed out.
     for (let n = 0; n < 5; n++) {
       await act(async () => {
         changed();
         await vi.advanceTimersByTimeAsync(1_000);
       });
     }
+    await act(async () => window.dispatchEvent(new Event("focus")));
     expect(bridge.invoke).toHaveBeenCalledTimes(1);
+    expect(current!.error).toContain("RPC_TIMEOUT");
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(REPOSITORY_RESCAN_MS);
+      await vi.advanceTimersByTimeAsync(FAILED_DISCOVERY_BACKOFF_MS);
+      changed();
+      await vi.advanceTimersByTimeAsync(1_000);
     });
     expect(bridge.invoke).toHaveBeenCalledTimes(2);
+    // The second failure doubles the wait.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FAILED_DISCOVERY_BACKOFF_MS);
+      changed();
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(bridge.invoke).toHaveBeenCalledTimes(2);
+    bridge.invoke.mockResolvedValueOnce(["core-pack"]);
+    await act(async () => current!.refresh());
+    expect(bridge.invoke).toHaveBeenCalledTimes(3);
+    // An explicit refresh also asks a remote Host to skip its shared recent scan.
+    expect(bridge.invoke).toHaveBeenLastCalledWith(
+      "git_submodules",
+      expect.objectContaining({ fresh: true }),
+    );
+    expect(current!.modules["/repo"]).toEqual(["/repo/core-pack"]);
   } finally {
     vi.useRealTimers();
   }

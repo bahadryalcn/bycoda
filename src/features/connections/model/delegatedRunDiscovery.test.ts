@@ -141,7 +141,7 @@ it("reads a subagent's own subagents while it runs, and once more after it finis
     read: async (_machine, id) => sessions[id],
   };
   const known = new Map<string, HostSession>();
-  const listed = new Set<string>();
+  const listed = new Map<string, number>();
   const found = await discoverDelegatedRuns(parent, port, known, () => true, listed);
   expect(found.map((session) => remoteSessionFor(session.id))).toEqual(["sub", "adv", "grand"]);
   // An advisor never owns subagents, so it is never listed as a parent.
@@ -159,5 +159,12 @@ it("reads a subagent's own subagents while it runs, and once more after it finis
   // One read sees the finish, one more confirms it settled; then it stops.
   expect(await poll()).toEqual(["parent", "sub"]);
   expect(await poll()).toEqual(["parent", "sub"]);
+  expect(await poll()).toEqual(["parent"]);
+  // The same worker can delegate in a later round and finish before the next poll.
+  // A settled read of round one cannot certify round two's descendant list.
+  sessions.sub = { ...sessions.sub, revision: 2 };
+  sessions.late = hosted("late", "sub", "subagent", "idle");
+  const resumed = await discoverDelegatedRuns(parent, port, known, () => true, listed);
+  expect(resumed.map((session) => session.id)).toContain("late");
   expect(await poll()).toEqual(["parent"]);
 });

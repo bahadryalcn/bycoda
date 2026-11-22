@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import type { SessionSummary } from "../data/sessionStore";
 import type { SessionListEntry } from "../model/sessionFolders";
-import { isSettledSession } from "../model/sessionLifecycle";
+import { isSettledSession, type SessionLifecycleView } from "../model/sessionLifecycle";
 import {
   loadSettledSessionsCollapsed,
   saveSettledSessionsCollapsed,
@@ -10,25 +10,28 @@ import {
 import { useSessionLifecycleList } from "./useSessionLifecycle";
 
 /**
- * The sidebar's Settled shelf for sessions of this computer's Host. `enabled` is false for lists
- * of another machine, whose sessions this Host's records do not describe.
+ * The sidebar's Settled shelf uses records scoped to the project owner's Host.
  */
-export function useSettledShelf(enabled: boolean) {
-  const { views } = useSessionLifecycleList(enabled);
+export function useSettledShelf(
+  enabled: boolean,
+  remoteViews?: ReadonlyMap<string, SessionLifecycleView>,
+) {
+  const lifecycle = useSessionLifecycleList(enabled);
+  const { views } = lifecycle;
   const [collapsed, setCollapsedState] = useState(loadSettledSessionsCollapsed);
   const isSettled = useCallback(
     (session: SessionSummary) =>
-      enabled && isSettledSession(views.get(session.id), session.lastActivityAt),
-    [enabled, views],
+      isSettledSession((enabled ? views : remoteViews)?.get(session.id), session.lastActivityAt),
+    [enabled, views, remoteViews],
   );
   const shelve = useCallback(
     (entries: SessionListEntry[]) =>
-      enabled ? shelveSettledSessions(entries, isSettled, collapsed) : entries,
-    [enabled, isSettled, collapsed],
+      enabled || remoteViews ? shelveSettledSessions(entries, isSettled, collapsed) : entries,
+    [enabled, remoteViews, isSettled, collapsed],
   );
   const setCollapsed = useCallback((next: boolean) => {
     setCollapsedState(next);
     saveSettledSessionsCollapsed(next);
   }, []);
-  return { shelve, isSettled, setCollapsed };
+  return { shelve, isSettled, setCollapsed, lifecycle };
 }

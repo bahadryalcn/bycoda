@@ -36,6 +36,7 @@ import {
   readWaitingDelivery,
   subscribeDeliveryProgress,
   updateDeliveryProgress,
+  type DeliveryProgress,
   type DeliveryStage,
 } from "../model/deliveryProgress";
 import { useLocalSharedQueueClient } from "../../connections/public/useSharedLocalQueues";
@@ -45,6 +46,17 @@ const noClientState = { queue: { claim: undefined as { id: string } | undefined 
 
 export function useDeliveryProgress(sessionId = "") {
   return useSyncExternalStore(subscribeDeliveryProgress, () => readDeliveryProgress(sessionId));
+}
+
+export function useQueueDeliveryMessage(sessionId = "", progress?: DeliveryProgress) {
+  const waiting = useSyncExternalStore(subscribeDeliveryProgress, () =>
+    readWaitingDelivery(sessionId),
+  );
+  return progress?.queueOnly
+    ? progress
+    : waiting?.queueOnly && waiting.messageId === progress?.messageId
+      ? waiting
+      : undefined;
 }
 const labels: Record<DeliveryStage, string> = {
   syncing: "Synchronizing the message queue…",
@@ -79,12 +91,14 @@ function useDeliveryNoticeState(sessionId: string, messages: QueuedMessage[]) {
   const pending = deliveryIsPending(progress?.stage);
   // An automatic retry of the same message is a new, pending operation: keep its waiting notice.
   const retrying = pending && !unknownRow && !!waiting && progress?.messageId === waiting.messageId;
+  const queueOnly = progress?.queueOnly || (retrying && waiting?.queueOnly);
   const present =
-    retrying ||
-    (!pending &&
-      ((progress && (progress.stage !== "accepted" || progress.noticeOnly)) ||
-        unknownRow ||
-        (!progress && holdDetail)));
+    (!queueOnly || !!unknownRow) &&
+    (retrying ||
+      (!pending &&
+        ((progress && (progress.stage !== "accepted" || progress.noticeOnly)) ||
+          unknownRow ||
+          (!progress && holdDetail))));
   const stage: NoticeStage = unknownRow
     ? "unknown"
     : retrying
@@ -174,9 +188,13 @@ export function DeliveryProgressIndicator({ sessionId = "" }: { sessionId?: stri
 export function DeliveryProgressNotice({
   sessionId = "",
   messages,
+  inlineRowId,
+  retryDisabled = false,
 }: {
   sessionId?: string;
   messages: QueuedMessage[];
+  inlineRowId?: string;
+  retryDisabled?: boolean;
 }) {
   const t = useT();
   const {
@@ -228,7 +246,7 @@ export function DeliveryProgressNotice({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [sessionId, progress, messages, client, clientState]);
-  if (!present || !key || dismissed) return null;
+  if (!present || !key || (dismissed && !inlineRowId)) return null;
   const noticeOnly = !!progress?.noticeOnly;
   // A recorded outcome is already a plain sentence; a failure keeps its raw text behind details.
   const raw =
@@ -299,6 +317,34 @@ export function DeliveryProgressNotice({
     );
     finish();
   };
+  if (inlineRowId) {
+    if (unknownRow?.id !== inlineRowId || clientState.queue.claim) return null;
+    return (
+      <div data-delivery-progress="unknown">
+        <Button
+          size="sm"
+          variant="secondary"
+          tone="warning"
+          disabled={retryDisabled || working || lateSettlement}
+          disabledReason={
+            lateSettlement
+              ? t(
+                  "The provider has not answered yet and may still deliver this message. Wait for the answer, or stop the turn.",
+                )
+              : undefined
+          }
+          tooltip={t(
+            "Check the conversation first. Sending again duplicates a message that was delivered. Keeping it queued pauses the queue and does not resend it.",
+          )}
+          onClick={() => choose("retry")}
+        >
+          <TriangleAlert className="icon-sm" aria-hidden="true" />
+          {t("Send again")}
+        </Button>
+        {resolveError ? <InlineError>{resolveError}</InlineError> : null}
+      </div>
+    );
+  }
   const hasChildren = !!body || (unknownRow && !clientState.queue.claim) || !!resolveError;
   return (
     // In-flow banner at the top of the pane body: the transcript (and its Find bar) sits below it,

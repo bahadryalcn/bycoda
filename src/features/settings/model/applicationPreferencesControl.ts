@@ -23,9 +23,12 @@ const voiceFields = [
 ] as const;
 export function applicationPreferencesSnapshot() {
   const voice = loadVoiceSettings();
+  const { controlDensity, userMessageOpacity, assistantMessageOpacity, messageColor } =
+    loadAppearancePreferences();
   return {
     theme: loadThemePreference(),
-    density: loadAppearancePreferences().controlDensity,
+    density: controlDensity,
+    chatMessages: { userMessageOpacity, assistantMessageOpacity, messageColor },
     language: getLanguagePreference(),
     voice: Object.fromEntries(voiceFields.map((key) => [key, voice[key] ?? null])),
   };
@@ -48,6 +51,25 @@ export async function applyApplicationPreference(
       throw new Error("Invalid density.");
     const before = loadAppearancePreferences();
     saveAppearancePreferences({ ...before, controlDensity: change.value }, before);
+  } else if (change.kind === "chatMessages") {
+    if (!change.value || typeof change.value !== "object" || Array.isArray(change.value))
+      throw new Error("Invalid chat message appearance.");
+    const edits = Object.entries(change.value);
+    if (!edits.length) throw new Error("Supply at least one chat message appearance field.");
+    for (const [key, value] of edits) {
+      if (key === "messageColor" && (value === "theme" || value === "neutral")) continue;
+      if (
+        (key === "userMessageOpacity" || key === "assistantMessageOpacity") &&
+        typeof value === "number" &&
+        Number.isInteger(value) &&
+        value >= 0 &&
+        value <= 100
+      )
+        continue;
+      throw new Error("Invalid chat message appearance field or value.");
+    }
+    const before = loadAppearancePreferences();
+    saveAppearancePreferences({ ...before, ...Object.fromEntries(edits) }, before);
   } else if (change.kind === "language") {
     if (!isLanguagePreference(change.value)) throw new Error("Invalid language.");
     await setLanguagePreference(change.value, valid);

@@ -1,7 +1,7 @@
 import { t } from "../../../shared/i18n";
 import { formatRelativeTime } from "../../../shared/i18n/format";
 import { sanitizeConnectionError } from "./remoteConnection";
-import { classifyRemoteError } from "./remoteFailure";
+import { classifyFailureLifetime } from "./transientFailure";
 
 /** The parts of the sync status this summary reads (structurally the sync feature's status). */
 export type SyncSummaryInput = {
@@ -39,8 +39,7 @@ function core(status: SyncSummaryInput, now: number): SyncSummary {
             "Sync is paused until room privacy protection is confirmed. It retries automatically.",
           ),
         };
-      const kind = status.lastError ? classifyRemoteError(status.lastError).kind : "other";
-      if (kind === "unreachable" || kind === "temporary") {
+      if (classifyFailureLifetime(status.lastError) === "transient") {
         return {
           tone: "warning",
           text: t("Sync is paused because this machine did not answer. It retries automatically."),
@@ -58,8 +57,8 @@ function core(status: SyncSummaryInput, now: number): SyncSummary {
 }
 
 /** One calm line for a machine's sync state; only a real failure is danger. */
-export function summarizeSync(status: SyncSummaryInput, now: number): SyncSummary {
-  const summary = core(status, now);
+export function summarizeSync(status: SyncSummaryInput, now: number, waiting = false): SyncSummary {
+  const summary = waiting ? core({ ...status, state: "syncing" }, now) : core(status, now);
   if (status.pendingOps <= 0) return summary;
   return {
     ...summary,

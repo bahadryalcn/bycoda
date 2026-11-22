@@ -41,7 +41,10 @@ it("offers retry only after a load failure and preserves its pending state", asy
     await act(async () => render());
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.textContent).not.toContain("Try again");
-    Object.assign(state, { error: new Error("Host unreachable") });
+    Object.assign(state, { error: new Error("Machine is unreachable"), pendingFailure: true });
+    await act(async () => render());
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    Object.assign(state, { pendingFailure: false, visibleError: "Machine is unreachable" });
     await act(async () => render());
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
     const retry = [...container.querySelectorAll("button")].find((node) =>

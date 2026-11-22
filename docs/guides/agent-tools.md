@@ -147,6 +147,13 @@ and rotation. Browser controls and setup remain in their separate menu. Width mu
 240–2560 pixels and height 240–2160 pixels. Resizing requires browser control and
 invalidates the previous element selection and frame geometry.
 
+Private HTTP and HTTPS links in a remote conversation open in the project's
+Host Browser. For example, a link to `http://localhost:3000/patients` reaches
+port 3000 on the remote Host. You can open a running app this way even if it
+is missing from Development servers. To open a discovered, supported endpoint
+in your system browser, use **Open in this computer's browser** in Development
+servers.
+
 Before a page is open, the Browser panel lists recently opened addresses on this
 computer; choose one to open it, or remove it from the list. Addresses with a user
 name or password are never stored. A thin bar under the address field shows host work.
@@ -243,6 +250,12 @@ management and project organization need a focused desktop session. Git mutation
 recheck reviewed status inside the checkout lock. Publishing, credentials, pairing,
 destructive recovery and operations absent from the catalog retain their owner
 workflows. See [Voice companion](voice.md#global-voice-management) for controls.
+
+For chat message appearance, `preferences.read` returns `application.chatMessages`.
+Use `preferences.patch` with `kind: "chatMessages"`, the read revision, and at
+least one field in `value`. `userMessageOpacity` and `assistantMessageOpacity`
+are integer percentages from 0 to 100. `messageColor` accepts `theme` or `neutral`.
+The change goes through the existing desktop owner review.
 
 Saved Servers can be edited through `servers.*`. To run a command, ask the
 assistant to use `servers.ssh.execute` with the saved server's ID. The connected
@@ -501,6 +514,16 @@ Subagents can discover their parent and siblings with `agents.list` and contact
 them directly with `agents.send`. Messages keep the same child conversation and
 context. `auto` steers a running Host turn when the provider supports it; otherwise
 it waits for an idle turn. `queue` waits; `steer` requires an active Host turn.
+Open the subagent from its conversation card or Background work to see messages,
+delivery status and replies across rounds. Queued messages stay visible while they
+wait for the active turn. Provider acceptance confirms delivery to the provider;
+the conversation shows any answer the subagent produces.
+Drag the panel edge to resize it, or use Expand and Restore in its header. Open a
+nested subagent from the list at the top and use Back to return to its parent.
+The conversation composer sends to the open subagent. While an active turn supports
+Steer, choose Steer to reach that turn or Queue to wait. Use the attachment and
+skill controls supported by the conversation's owner. Provider-native agents that
+use the main agent as a relay show that path in the composer.
 Parent messages can use the existing shared queue, including for desktop Native
 conversations. Existing owner pauses, approvals, drafts and queue leases remain in
 force. Queued or steered means accepted, not that the model has read the message.

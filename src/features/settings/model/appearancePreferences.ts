@@ -49,6 +49,9 @@ export const APPEARANCE_DEFAULTS = {
   canvasBackground: CANVAS_BACKGROUND_DEFAULT,
   controlDensity: "compact",
   chatWidth: "comfortable",
+  userMessageOpacity: 42,
+  assistantMessageOpacity: 26,
+  messageColor: "theme",
   wordWrap: false,
   wheelZoom: true,
   chatBackgroundLayer: true,
@@ -76,6 +79,9 @@ export type AppearancePreferences = {
   canvasBackground: CanvasBackground;
   controlDensity: "compact" | "comfortable" | "touch";
   chatWidth: "comfortable" | "wide" | "full";
+  userMessageOpacity: number;
+  assistantMessageOpacity: number;
+  messageColor: "theme" | "neutral";
   wordWrap: boolean;
   /** Ctrl+wheel outside self-zooming viewers changes the interface scale. */
   wheelZoom: boolean;
@@ -158,6 +164,19 @@ export function normalizeAppearancePreferences(
         : "compact",
     chatWidth:
       value.chatWidth === "wide" || value.chatWidth === "full" ? value.chatWidth : "comfortable",
+    userMessageOpacity: bounded(
+      value.userMessageOpacity,
+      APPEARANCE_DEFAULTS.userMessageOpacity,
+      0,
+      100,
+    ),
+    assistantMessageOpacity: bounded(
+      value.assistantMessageOpacity,
+      APPEARANCE_DEFAULTS.assistantMessageOpacity,
+      0,
+      100,
+    ),
+    messageColor: value.messageColor === "neutral" ? "neutral" : "theme",
     wordWrap: value.wordWrap === true,
     wheelZoom: value.wheelZoom !== false,
     chatBackgroundLayer: value.chatBackgroundLayer !== false,
@@ -216,6 +235,14 @@ export function applyAppearancePreferences(value: AppearancePreferences) {
   root.dataset.controlDensity = value.controlDensity;
   root.dataset.codeTheme = value.codeTheme;
   root.dataset.accentReadability = value.accentReadability;
+  root.dataset.chatMessageColor = value.messageColor;
+  root.toggleAttribute("data-chat-user-surface-off", value.userMessageOpacity === 0);
+  root.toggleAttribute("data-chat-assistant-surface-off", value.assistantMessageOpacity === 0);
+  root.style.setProperty("--appearance-user-message-opacity", `${value.userMessageOpacity}%`);
+  root.style.setProperty(
+    "--appearance-assistant-message-opacity",
+    `${value.assistantMessageOpacity}%`,
+  );
   // The chosen tone; appearance.ts resolves the effective `data-canvas-background` from it.
   root.dataset.canvasBackgroundPreference = value.canvasBackground;
   const terminalFont = terminalFontFamily(value);

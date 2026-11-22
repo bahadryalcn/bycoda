@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
@@ -473,6 +473,30 @@ test("appearance sticky mask computed probe", async ({ page }) => {
   }
 });
 
+test("provider account dialogs detect legacy Team and default other plans to Personal", async ({
+  page,
+}) => {
+  await page.goto(
+    "/tests/browser/settings/settings.html?section=providers&providersFixture=1&legacyPlanKind=1&theme=dark&lang=en",
+  );
+  await openProvidersTab(page);
+  const selectProvider = (name: RegExp) =>
+    page.locator(".provider-cli-selector").getByRole("button", { name }).click();
+  const edit = page.getByRole("dialog", { name: "Edit account", exact: true });
+  for (const [provider, account, kind] of [
+    [/^Claude Code,/, "Engineering workspace", "Work"],
+    [/^Codex,/, "Studio", "Personal"],
+  ] as const) {
+    await selectProvider(provider);
+    const row = page.locator(".provider-account-row:visible").filter({ hasText: account });
+    await expect(row.getByText(kind, { exact: true })).toBeVisible();
+    await row.getByRole("button", { name: `Actions for ${account}` }).click();
+    await page.getByRole("menuitem", { name: "Edit account" }).click();
+    await expect(edit.getByRole("radio", { name: kind })).toBeChecked();
+    await edit.getByRole("button", { name: "Cancel", exact: true }).click();
+  }
+});
+
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280]) {
     test(`appearance selected controls ${theme} ${width}`, async ({ page }, info) => {
@@ -892,30 +916,65 @@ test("advanced settings toggle surface baseline", async ({ page }) => {
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
     for (const empty of [false, true]) {
-      test(`provider account divider ${empty ? "empty" : "populated"} ${theme} ${width}`, async ({
+      test(`provider account dialogs ${empty ? "empty" : "populated"} ${theme} ${width}`, async ({
         page,
-      }, info) => {
+      }) => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(
           `/tests/browser/settings/settings.html?section=providers&providersFixture=1${empty ? "&emptyProvider" : ""}&theme=${theme}&lang=en`,
         );
         await openProvidersTab(page);
+        await page.evaluate(() => {
+          document.documentElement.dataset.canvasBackground = "pure";
+        });
         const group = page.locator("#setting-provider-accounts");
         const body = group.locator(".provider-accounts-body:visible");
         if (empty) await expect(body.locator(".provider-account-empty")).toBeVisible();
         else await expect(body.locator(".provider-account-row")).toHaveCount(1);
-        await group.getByRole("button", { name: "Add account" }).click();
-        const editor = body.locator(".provider-account-editor");
+        const add = group.getByRole("button", { name: "Add account" });
+        await add.click();
+        const editor = page.getByRole("dialog", { name: "Add account", exact: true });
         await expect(editor).toBeVisible();
-        await expect(editor).toHaveCSS("border-top-width", empty ? "0px" : "1px");
+        const background = async (dialog: Locator) =>
+          dialog.evaluate((element) => getComputedStyle(element).backgroundColor);
+        const addBackground = await background(editor);
+        expect(addBackground).not.toBe("rgba(0, 0, 0, 0)");
+        await expect(editor).toHaveAttribute("data-surface-variant", "floating");
         const draft = editor.getByRole("textbox", { name: /New .* account/ });
+        await expect(draft).toBeFocused();
+        await expect(draft).not.toHaveAttribute("aria-invalid", "true");
+        await expect(editor.getByRole("radio")).toHaveCount(2);
+        await expect(editor.getByRole("radio", { name: "Personal" })).not.toBeChecked();
+        await expect(editor.getByRole("radio", { name: "Work" })).not.toBeChecked();
+        await expect(editor.getByRole("button", { name: "Sign in and add" })).toBeDisabled();
         await draft.fill("Unsaved test account");
-        await expect(draft).toHaveValue("Unsaved test account");
-        await group.screenshot({
-          path: info.outputPath(`provider-${empty ? "empty" : "populated"}-${theme}-${width}.png`),
-        });
+        await expect(editor.getByRole("button", { name: "Sign in and add" })).toBeDisabled();
+        await editor.getByText("Work", { exact: true }).click({ timeout: 5000 });
+        await expect(editor.getByRole("radio", { name: "Work" })).toBeChecked();
+        await expect(editor.getByRole("button", { name: "Sign in and add" })).toBeEnabled();
+        await editor.getByRole("button", { name: /^Color for Unsaved test account:/ }).click();
+        await page.getByRole("button", { name: "Blue", exact: true }).click();
+        await expect(
+          editor.getByRole("button", { name: "Color for Unsaved test account: Blue" }),
+        ).toBeVisible();
+        if (!empty) {
+          await page.screenshot({
+            path: `temp/verification/provider-account-dialog/add-pure-${theme}-${width}.png`,
+          });
+        }
         await editor.getByRole("button", { name: "Cancel" }).click();
         await expect(editor).toHaveCount(0);
+        await expect(add).toBeFocused();
+        if (!empty) {
+          await body.getByRole("button", { name: /^Actions for / }).click();
+          await page.getByRole("menuitem", { name: "Edit account" }).click();
+          const edit = page.getByRole("dialog", { name: "Edit account", exact: true });
+          await expect(edit).toHaveAttribute("data-surface-variant", "floating");
+          expect(await background(edit)).toBe(addBackground);
+          await page.screenshot({
+            path: `temp/verification/provider-account-dialog/edit-pure-${theme}-${width}.png`,
+          });
+        }
       });
     }
 

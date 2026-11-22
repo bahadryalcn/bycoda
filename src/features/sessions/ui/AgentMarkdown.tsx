@@ -12,6 +12,7 @@ import { useLocale, useT } from "../../../shared/i18n";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { resolveNoteImagePath } from "../../notes/notes";
 import { openWorkspaceUrl } from "../../connections/public/workspaceUrls";
+import { TranscriptSessionId } from "./TranscriptSessionId";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import {
   createContext,
@@ -242,6 +243,7 @@ function MarkdownLink({
   const { enabled: allowRemoteMedia, base: remoteBase } = useContext(RemoteMediaContext);
   const localMedia = useContext(LocalMediaContext);
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const sessionId = useContext(TranscriptSessionId);
   const resolveFile = useWorkspaceFileResolver();
   const [linkError, setLinkError] = useState<string>();
   const file = href ? resolveFile(href, cwd) : undefined;
@@ -287,7 +289,7 @@ function MarkdownLink({
           const open = !href
             ? undefined
             : /^https?:\/\//i.test(href)
-              ? () => openWorkspaceUrl(cwd, href)
+              ? () => openWorkspaceUrl(cwd, href, sessionId)
               : /^mailto:/i.test(href)
                 ? () => openExternal(href)
                 : undefined;
@@ -459,7 +461,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
         <code
           {...props}
           dir="ltr"
-          className={`inline-flex items-center gap-1 rounded-md bg-(--ui-surface-raised) px-1.5 min-h-6 max-w-full [overflow-wrap:anywhere] align-baseline font-mono text-[0.8em] text-(--ui-tone-neutral-fg) ${
+          className={`inline-flex items-center gap-1 rounded-md bg-(--ui-inline-code-surface) px-1.5 min-h-6 max-w-full [overflow-wrap:anywhere] align-baseline font-mono text-[0.8em] text-(--ui-tone-neutral-fg) ${
             open ? "cursor-pointer hover:text-(--ui-tone-info-fg) hover:underline" : ""
           } ${className ?? ""}`}
           role={open ? "link" : undefined}

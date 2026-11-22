@@ -255,17 +255,23 @@ it("dims a retained session list, says the machine is unreachable and stops read
   expect(reads).toEqual([]);
 });
 
-it("shows the shared notice for an offline machine when no list was loaded yet", async () => {
-  // Every request to the machine fails, so nothing marks it connected while the list opens.
-  vi.mocked(invoke).mockImplementation(async (command) => {
-    if (command === "remote_machines") return [machine];
-    throw new Error("Machine is unreachable");
-  });
-  recordRemoteConnection("env-mac", new Error("Machine is unreachable"));
-  await renderRemoteProject();
-
-  expect(container.querySelector('[data-machine-unavailable="offline"]')).not.toBeNull();
-  expect(document.body.textContent).not.toContain("Loading sessions");
+it("waits before showing the shared notice for an offline machine with no cached list", async () => {
+  vi.useFakeTimers();
+  try {
+    // Every request to the machine fails, so nothing marks it connected while the list opens.
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "remote_machines") return [machine];
+      throw new Error("Machine is unreachable");
+    });
+    recordRemoteConnection("env-mac", new Error("Machine is unreachable"));
+    await renderRemoteProject();
+    expect(container.querySelector('[data-machine-unavailable="offline"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(container.querySelector('[data-machine-unavailable="offline"]')).not.toBeNull();
+    expect(document.body.textContent).not.toContain("Loading sessions");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("replaces a cached session list when the machine refuses this computer", async () => {

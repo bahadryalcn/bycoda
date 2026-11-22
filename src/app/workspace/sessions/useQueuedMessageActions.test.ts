@@ -5,7 +5,10 @@ import { expect, it, vi } from "vitest";
 import {
   QueueDeferredError,
   QueueNotReadyError,
+  QueueRunLeaseBlockedError,
+  QueueRunLeasePendingError,
 } from "../../../features/connections/model/sharedQueue";
+import { readDeliveryProgress } from "../../../features/sessions/model/deliveryProgress";
 import { trackLateSettlement } from "../../../features/sessions/model/deliveryReview";
 import { CONTINUE_PROMPT } from "../../../features/sessions/model/inFlight";
 import type { DeliverySettlement } from "../../../shared/lib/deliveryUnknown";
@@ -73,6 +76,7 @@ async function queueHarness(
     ...patch,
   };
   resetSessionsStore([initial]);
+  const enqueue = vi.fn();
   let actions!: ReturnType<typeof useQueuedMessageActions>;
   function Harness() {
     const sessions = useLiveSessions();
@@ -89,7 +93,7 @@ async function queueHarness(
       windowTransferPending: false,
       windowTransferPendingRef: pending,
       onSubmit: submit,
-      enqueueHarnessEvent: vi.fn(),
+      enqueueHarnessEvent: enqueue,
       flushHarnessEvents: vi.fn(),
       onStopRef: { current: onStop },
     });
@@ -99,6 +103,7 @@ async function queueHarness(
   await act(async () => root.render(createElement(Harness)));
   return {
     id: initial.id,
+    enqueue,
     actions,
     cleanup: async () => {
       await act(async () => root.unmount());
@@ -530,6 +535,65 @@ it("keeps retrying repeated safe deferrals with capped backoff without removing 
   } finally {
     await harness.cleanup();
     vi.useRealTimers();
+  }
+});
+
+it("waits for the Host writer inline and retries the same head once the Host grants ownership", async () => {
+  vi.useFakeTimers();
+  const wait = new QueueRunLeasePendingError("Waiting for the previous run to finish.");
+  const submit = vi.fn<Submit>().mockRejectedValueOnce(wait).mockResolvedValueOnce(true);
+  const harness = await queueHarness("active", false, submit);
+  try {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(readDeliveryProgress(harness.id, "head")).toMatchObject({
+      stage: "waiting",
+      queueOnly: true,
+      detail: wait.message,
+    });
+    expect(getSessions()[0].queueStatus).toBe("active");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_100);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(submit.mock.calls.map(([, , , options]) => options?.queuedMessageId)).toEqual([
+      "head",
+      "head",
+    ]);
+    expect(readDeliveryProgress(harness.id, "head")).toBeUndefined();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  } finally {
+    await harness.cleanup();
+    vi.useRealTimers();
+  }
+});
+
+it("holds a Steer blocked by the Host writer with one inline reason", async () => {
+  const blocked = new QueueRunLeaseBlockedError(
+    "Check the conversation on its Host before resuming.",
+  );
+  const submit = vi.fn<Submit>().mockRejectedValueOnce(blocked);
+  const harness = await queueHarness("paused", false, submit);
+  try {
+    await act(async () => {
+      expect(await harness.actions.onSteerQueuedMessage(harness.id, "head")).toEqual({
+        kind: "waiting",
+      });
+    });
+    expect(getSessions()[0].queueStatus).toBe("paused");
+    expect(getSessions()[0].queuedMessages?.map((row) => row.id)).toEqual(["head"]);
+    expect(readDeliveryProgress(harness.id, "head")).toMatchObject({
+      stage: "rejected",
+      queueOnly: true,
+      detail: blocked.message,
+    });
+    expect(submit).toHaveBeenCalledOnce();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  } finally {
+    await harness.cleanup();
   }
 });
 

@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { getGroupLockView, subscribeGroupLock } from "../../../features/group-lock/model/groupLock";
-import { delegationParentOf } from "../../../features/sessions/model/delegatedAgents";
+import {
+  delegationParentOf,
+  isDelegatedChildOf,
+} from "../../../features/sessions/model/delegatedAgents";
 import { getSessions, setSessions } from "../../../features/sessions/model/sessionsStore";
 import { getSession } from "../../../features/sessions/data/sessionStore";
 import {
@@ -20,25 +23,49 @@ import {
   sessionAccessForMachine,
 } from "../../../features/connections/model/connections";
 import { sessionExecutionClient } from "../../../features/connections/model/sessionExecutionClient";
+import { isLocalSyncMachine } from "../../../features/connections/model/localSync";
 import { newDefaultSession, type Session } from "../../../features/sessions/model/session";
 import { requestTranscriptJump } from "../../../features/sessions/model/transcriptJump";
+import { requestViewDelegated } from "../../../features/sessions/ui/delegatedFocus";
+import type { LocalSessionReference } from "../../../features/sessions/model/localSessionReference";
 import type { LocalSessionReferenceNavigation } from "../../../features/sessions/ui/LocalSessionReferenceContext";
 import { t } from "../../../shared/i18n";
+import { withTimeout } from "../../../shared/lib/withTimeout";
 import { DELEGATION_PARENT_KEY } from "../../../shared/model/host-contracts/delegation";
 import { useSessionLinkActivation } from "./useSessionLinkActivation";
 
 type Deps = {
   ensureOpenSession: (id: string) => Promise<Session | null>;
-  onSelectHistorySession: (id: string, options?: { isCurrent?: () => boolean }) => Promise<unknown>;
+  onSelectHistorySession: (id: string, options?: { isCurrent?: () => boolean }) => Promise<boolean>;
   onOpenSessionsSideBySide: (
     ids: string[],
-    options?: { isCurrent?: () => boolean },
-  ) => Promise<unknown>;
+    options?: { isCurrent?: () => boolean; requireAll?: boolean },
+  ) => Promise<boolean>;
   onOpenWorkerDetails?: (session: Session, isCurrent: () => boolean) => Promise<boolean>;
   activeSessionId: () => string | undefined;
   showSessions: () => void;
   workspaceNavigation: { cancel: () => void; captureRequest?: () => () => boolean };
 };
+
+function withOpenDeadline(
+  open: (
+    reference: LocalSessionReference,
+    options: { beside?: boolean } | undefined,
+    isValid: () => boolean,
+  ) => Promise<void>,
+): LocalSessionReferenceNavigation["open"] {
+  return (reference, options) => {
+    let valid = true;
+    return withTimeout(
+      open(reference, options, () => valid),
+      30_000,
+      t("Open session"),
+    ).catch((error: unknown) => {
+      valid = false;
+      throw error;
+    });
+  };
+}
 
 /** Ambient adapter shared by transcript, Notes and every document Markdown consumer. */
 export function useLocalSessionReferences(deps: Deps) {
@@ -57,10 +84,24 @@ export function useLocalSessionReferences(deps: Deps) {
       ({
         resolve: async (reference) => {
           const target = await resolveLocalSessionReference(reference);
+          const session =
+            target.host?.snapshot.session ??
+            getSessions().find(
+              (entry) => entry.id === target.locator.sessionId && !hostSessionBinding(entry),
+            );
+          const role = session && delegationParentOf(session)?.kind;
           return {
             title: target.title,
             project: target.cwd,
             archived: target.archived,
+            agentRole:
+              role === "subagent"
+                ? t("Subagent")
+                : role === "advisor"
+                  ? t("Advisor")
+                  : session?.orchestrationLeadId
+                    ? t("Agent")
+                    : undefined,
             origin: target.locator.kind === "host" ? t("Local Host") : t("Local Native"),
             status: target.status
               ? t(
@@ -74,18 +115,20 @@ export function useLocalSessionReferences(deps: Deps) {
               : t("Status unavailable"),
           };
         },
-        open: async (reference, options) => {
+        open: withOpenDeadline(async (reference, options, isValid) => {
           const serial = ++request.current;
           const owner = current.current;
           owner.workspaceNavigation.cancel();
           const navigationCurrent = owner.workspaceNavigation.captureRequest?.() ?? (() => true);
           const referenceCurrent = () =>
-            serial === request.current && getGroupLockView() === privacy;
+            isValid() && serial === request.current && getGroupLockView() === privacy;
           const stillCurrent = () => referenceCurrent() && navigationCurrent();
           const target = await resolveLocalSessionReference(reference);
           if (!stillCurrent()) return;
           assertReferenceProjectVisible(target.cwd);
           let id = target.locator.sessionId;
+          let hostSession: Session | undefined;
+          let delegatedRootId: string | undefined;
           // The legacy UI namespace uses bare IDs. A persisted Host display shell at
           // this ID cannot stand in for a different Native conversation.
           if (!target.host && hostSessionBinding({ id }))
@@ -149,8 +192,10 @@ export function useLocalSessionReferences(deps: Deps) {
                       modelSettings: { ...shell.modelSettings, [DELEGATION_PARENT_KEY]: lineage },
                     }
                   : shell;
+              const direct = restoreHostSessionShell(canonicalId);
               const shells = [
                 ...getSessions(),
+                ...(direct ? [direct] : []),
                 ...hostSessionShellSummaries().flatMap((summary) => {
                   const shell = restoreHostSessionShell(summary.id);
                   return shell ? [shell] : [];
@@ -160,6 +205,8 @@ export function useLocalSessionReferences(deps: Deps) {
                 const binding = hostSessionBinding(shell);
                 return (
                   binding?.environmentId === host.machine.environmentId &&
+                  binding.machineId === host.machine.id &&
+                  binding.projectId === host.project.id &&
                   binding.sessionId === canonicalId
                 );
               });
@@ -210,6 +257,68 @@ export function useLocalSessionReferences(deps: Deps) {
             const shellId = await displayShell(target);
             if (!shellId || !stillCurrent()) return;
             id = shellId;
+            let child = await owner.ensureOpenSession(id);
+            if (!stillCurrent()) return;
+            if (!child || child.inboxAsk)
+              throw new Error(t("This local conversation is unavailable or inaccessible."));
+            hostSession = child;
+            // Delegation records contain Host IDs. Resolve missing ancestors on the same
+            // authorized Host before handing their display ID to workspace navigation.
+            for (let depth = 0; depth < 2; depth++) {
+              const lineage = delegationParentOf(child);
+              if (!lineage) break;
+              const childBinding = hostSessionBinding(child);
+              const isHostParent = (entry: Pick<Session, "id" | "hostBinding">) => {
+                const binding = hostSessionBinding(entry);
+                return (
+                  binding?.environmentId === machine.environmentId &&
+                  binding.machineId === machine.id &&
+                  binding.sessionId === lineage.parentSessionId &&
+                  binding.projectId === snapshot.projectId
+                );
+              };
+              let parentId =
+                getSessions().find(isHostParent)?.id ??
+                hostSessionShellSummaries().find(isHostParent)?.id;
+              if (
+                !parentId &&
+                isLocalSyncMachine(machine) &&
+                !hostSessionBinding({ id: lineage.parentSessionId })
+              ) {
+                const native = await owner.ensureOpenSession(lineage.parentSessionId);
+                if (!stillCurrent()) return;
+                if (native && !hostSessionBinding(native) && isDelegatedChildOf(child, native))
+                  parentId = native.id;
+              }
+              if (!parentId) {
+                const resolved = await resolveLocalSessionReference({
+                  locator: {
+                    kind: "host",
+                    environmentId: machine.environmentId,
+                    sessionId: lineage.parentSessionId,
+                  },
+                });
+                if (!stillCurrent()) return;
+                if (
+                  resolved.locator.sessionId !== lineage.parentSessionId ||
+                  resolved.host?.machine.environmentId !== machine.environmentId ||
+                  resolved.host.machine.id !== machine.id ||
+                  resolved.host?.project.id !== childBinding?.projectId
+                )
+                  throw new Error(t("This local conversation is unavailable or inaccessible."));
+                parentId = (await displayShell(resolved)) ?? undefined;
+              }
+              if (!parentId || !stillCurrent()) return;
+              const parent = await owner.ensureOpenSession(parentId);
+              if (!stillCurrent()) return;
+              if (!parent || parent.inboxAsk || !isDelegatedChildOf(child, parent))
+                throw new Error(t("This local conversation is unavailable or inaccessible."));
+              assertReferenceProjectVisible(parent.cwd);
+              delegatedRootId = parent.id;
+              child = parent;
+            }
+            if (delegationParentOf(child))
+              throw new Error(t("This local conversation is unavailable or inaccessible."));
           } else if (reference.turnId) {
             const session = await getSession(id);
             if (!stillCurrent()) return;
@@ -228,42 +337,47 @@ export function useLocalSessionReferences(deps: Deps) {
                 ),
               );
           }
-          const session = await owner.ensureOpenSession(id);
+          const session = hostSession ?? (await owner.ensureOpenSession(id));
           if (!stillCurrent()) return;
           if (!session || session.inboxAsk)
             throw new Error(t("This local conversation is unavailable or inaccessible."));
           if (!target.host && hostSessionBinding(session))
             throw new Error(t("This local conversation is unavailable or inaccessible."));
           assertReferenceProjectVisible(target.cwd);
-          if (delegationParentOf(session)) {
-            owner.showSessions();
-            await owner.onSelectHistorySession(id, { isCurrent: referenceCurrent });
-            return;
-          }
-          const worker = !!session.orchestrationLeadId && session.orchestrationLeadId !== id;
+          const delegated = !!delegationParentOf(session);
+          const worker =
+            !delegated && !!session.orchestrationLeadId && session.orchestrationLeadId !== id;
           if (worker && !owner.onOpenWorkerDetails)
             throw new Error(t("This local conversation is unavailable or inaccessible."));
           const source = owner.activeSessionId();
           owner.showSessions();
           const opening =
-            options?.beside && !worker && source && source !== id
-              ? owner.onOpenSessionsSideBySide([source, id], { isCurrent: referenceCurrent })
-              : owner.onSelectHistorySession(id, { isCurrent: referenceCurrent });
+            options?.beside && !delegated && !worker && source && source !== id
+              ? owner.onOpenSessionsSideBySide([source, id], {
+                  isCurrent: referenceCurrent,
+                  requireAll: true,
+                })
+              : owner.onSelectHistorySession(delegatedRootId ?? id, {
+                  isCurrent: referenceCurrent,
+                });
           const delegatedCurrent = owner.workspaceNavigation.captureRequest?.() ?? (() => true);
-          await opening;
-          const openingCurrent = () =>
-            serial === request.current && getGroupLockView() === privacy && delegatedCurrent();
+          const opened = await opening;
+          const openingCurrent = () => referenceCurrent() && delegatedCurrent();
           if (!openingCurrent()) return;
+          if (!opened)
+            throw new Error(t("This local conversation is unavailable or inaccessible."));
+          if (delegatedRootId) requestViewDelegated(delegatedRootId, id);
+          if (delegated) return;
           if (worker && owner.onOpenWorkerDetails) {
             // History navigation focuses the lead. The existing worker owner opens
             // the read-only transcript tab and reuses it when already present.
-            const opened = await owner.onOpenWorkerDetails(session, openingCurrent);
+            const workerOpened = await owner.onOpenWorkerDetails(session, openingCurrent);
             if (!openingCurrent()) return;
-            if (!opened)
+            if (!workerOpened)
               throw new Error(t("This local conversation is unavailable or inaccessible."));
           }
           if (reference.turnId && openingCurrent()) requestTranscriptJump(id, reference.turnId);
-        },
+        }),
       }) satisfies LocalSessionReferenceNavigation,
     [privacy],
   );

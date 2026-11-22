@@ -9,6 +9,9 @@ machine, using its working copy. On this computer it opens as a new terminal in 
 project's terminal dock. A remote conversation, or one outside the open project,
 uses the terminal dialog instead, which shows output, **Stop** and the exit code.
 If completion cannot be confirmed, the status remains unknown.
+The output feed keeps its last lines during a brief connection interruption and
+checks again in the background. If the interruption lasts, the dialog reports
+that the command status is unknown.
 
 When the command finishes, its bounded output is added to the original
 conversation's composer. Turn this off in **Settings → Terminal → Code blocks**

@@ -125,7 +125,7 @@ import { useLegacyConflictStatus } from "../hooks/useLegacyConflictStatus";
 import { confirmNative, confirmDiscardFile } from "../model/gitConfirmation";
 import { invalidateGitIndex } from "../model/gitIndexStore";
 
-import { GitFeedback } from "./GitFeedback";
+import { GitCommitGenerationNotice, GitFeedback } from "./GitFeedback";
 import { usePrStatus } from "../hooks/usePrStatus";
 import { ACTIVE_PROJECT_REFRESH_MS } from "../model/gitRefreshPolicy";
 import { Button } from "../../../shared/ui/Button";
@@ -838,6 +838,9 @@ function ChangedFiles({
     message,
     setMessage,
     generating,
+    generationResult,
+    dismissGenerationResult,
+    useGeneratedMessage,
     amend,
     generationChoice,
     commitGenerationChoice,
@@ -1438,6 +1441,14 @@ function ChangedFiles({
               }}
             />
           </div>
+          {generationResult && (
+            <GitCommitGenerationNotice
+              result={generationResult}
+              onUse={useGeneratedMessage}
+              onDismiss={dismissGenerationResult}
+              disabled={!canEditMessage}
+            />
+          )}
         </div>
         {notices}
       </div>

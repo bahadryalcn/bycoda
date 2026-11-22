@@ -1,5 +1,8 @@
 import { errorText } from "../../../../shared/lib/errors";
 import { acpUsageEvents } from "../../core/acpUsage";
+import { ignoreMissingControlMethod } from "../../core/acpControlRejection";
+import { JsonRpcResponseError } from "../../core/jsonRpc";
+import type { AcpWriterView } from "../turnWriter";
 import { t } from "../../../../shared/i18n/core";
 import { humanizeModelId } from "../../../../shared/model/modelNameFromId";
 import { trimAndCapText as cap } from "../../../../shared/lib/cappedText";
@@ -182,6 +185,105 @@ export function grokSessionNewParams(
 export function grokEffort(settings?: Record<string, string>): string | undefined {
   const value = settings?.effort?.trim() || settings?.reasoning?.trim();
   return value || undefined;
+}
+
+export function grokEffortControl(
+  init: unknown,
+  setup: unknown,
+  modelId: string,
+  previousSetup?: unknown,
+) {
+  const session = asRecord(setup);
+  const previous = asRecord(previousSetup);
+  const thought = (value: unknown) =>
+    records(value).find(
+      (option) => option.type === "select" && option.category === "thought_level",
+    );
+  // A model switch that answers without config options keeps the advertised effort choices;
+  // only their current value is unknown for the new model, so the effort is applied again.
+  const own = thought(session?.configOptions);
+  const config = own ?? thought(previous?.configOptions);
+  const configId = stringField(config ?? {}, "id");
+  if (config && configId) {
+    const options = records(config.options);
+    return {
+      current:
+        own || !currentModelId(previousSetup) ? stringField(config, "currentValue") : undefined,
+      request: (effort: string) =>
+        options.some(
+          (option) =>
+            option.value === effort ||
+            records(option.options).some((choice) => choice.value === effort),
+        )
+          ? { method: "session/set_config_option", params: { configId, value: effort } }
+          : undefined,
+    };
+  }
+  const modes = asRecord(session?.modes ?? previous?.modes);
+  const availableModes = records(modes?.availableModes);
+  const legacy = (asRecord(init)?.protocolVersion ?? 1) === 1;
+  const models = asRecord(session?.models ?? previous?.models);
+  const model = records(models?.availableModels).find((entry) => entry.modelId === modelId);
+  const meta = asRecord(model?._meta) ?? {};
+  const offered = legacy ? reasoningEfforts(meta) : [];
+  if (offered.length) {
+    return {
+      current:
+        models?.currentModelId === modelId ? stringField(meta, "reasoningEffort") : undefined,
+      request: (effort: string) =>
+        offered.some((option) => option.value === effort)
+          ? {
+              method: "session/set_model",
+              params: { modelId, _meta: { reasoningEffort: effort } },
+            }
+          : undefined,
+    };
+  }
+  return {
+    current: availableModes.some((mode) => mode.id === modes?.currentModeId)
+      ? stringField(modes ?? {}, "currentModeId")
+      : undefined,
+    request: (effort: string) =>
+      legacy && availableModes.some((mode) => mode.id === effort)
+        ? { method: "session/set_mode", params: { modeId: effort } }
+        : undefined,
+  };
+}
+
+function records(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.map(asRecord).filter((item) => item !== undefined && item !== null)
+    : [];
+}
+
+export async function applyGrokEffort(
+  writer: AcpWriterView,
+  sessionId: string,
+  control: ReturnType<typeof grokEffortControl>,
+  current: string | undefined,
+  effort: string | undefined,
+  timeoutMs: number,
+): Promise<string | undefined> {
+  if (!effort || effort === current) return current;
+  const request = control.request(effort);
+  if (!request) {
+    console.warn("[bycoda] Grok session did not advertise the requested reasoning effort");
+    return current;
+  }
+  try {
+    await writer.request(request.method, { sessionId, ...request.params }, timeoutMs);
+    return effort;
+  } catch (error) {
+    if (
+      !(error instanceof JsonRpcResponseError) ||
+      (error.code !== -32601 && error.code !== -32602)
+    ) {
+      ignoreMissingControlMethod("grok", request.method.slice("session/".length), error);
+      throw error;
+    }
+    console.warn("[bycoda] Grok rejected the requested reasoning effort", error.code);
+    return current;
+  }
 }
 
 /**

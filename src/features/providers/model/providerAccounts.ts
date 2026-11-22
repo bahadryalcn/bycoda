@@ -86,7 +86,7 @@ export type ProviderAccount = {
   provider: ProviderAccountProvider;
   label: string;
   isDefault?: boolean;
-  /** Owner label; absent keeps the verified identity-derived category. */
+  /** Explicit type. Legacy data without a type resolves to Personal. */
   kind?: "personal" | "work";
   /** Palette token; unset accounts get a stable colour derived from the id. */
   color?: ProviderAccountColor;
@@ -100,7 +100,7 @@ export function sharedCliAccount(provider: SharedCliAccountProvider): SharedCliA
     id: DEFAULT_PROVIDER_ACCOUNT_ID,
     provider,
     label: cleanLabel(entry.label),
-    ...(entry.kind === "personal" || entry.kind === "work" ? { kind: entry.kind } : {}),
+    kind: entry.kind === "work" ? "work" : "personal",
     ...(validAccountColor(entry.color) ? { color: entry.color } : {}),
   };
 }
@@ -112,11 +112,11 @@ export function saveSharedCliAccount(
   const stored = readRecord<Record<string, unknown>>(SHARED_CLI_ACCOUNTS_KEY);
   const previous = sharedCliAccount(account.provider);
   const label = "label" in account ? cleanLabel(account.label) : previous.label;
-  const kind = "kind" in account ? account.kind : previous.kind;
+  const kind = account.kind ?? previous.kind;
   const color = "color" in account ? account.color : previous.color;
   stored[account.provider] = {
     ...(label ? { label } : {}),
-    ...(kind ? { kind } : {}),
+    kind: kind ?? "personal",
     ...(color ? { color } : {}),
   };
   writeJson(SHARED_CLI_ACCOUNTS_KEY, stored);
@@ -180,6 +180,7 @@ export function providerAccounts(provider: ProviderAccountProvider): ProviderAcc
   if (authoritative) stored[provider] = managed[provider];
   const accounts = Array.isArray(stored[provider]) ? stored[provider] : [];
   let defaultLabel = DEFAULT_PROVIDER_ACCOUNT_LABEL;
+  let defaultKind: ProviderAccount["kind"];
   let foundDefault = false;
   const profiles = accounts.flatMap((account) => {
     const id = validAccountId(account?.id) ? account.id : "";
@@ -187,6 +188,7 @@ export function providerAccounts(provider: ProviderAccountProvider): ProviderAcc
     if (!authoritative && id === DEFAULT_PROVIDER_ACCOUNT_ID) {
       if (label && !foundDefault) {
         defaultLabel = label;
+        if (account.kind === "personal" || account.kind === "work") defaultKind = account.kind;
         foundDefault = true;
       }
       return [];
@@ -217,6 +219,7 @@ export function providerAccounts(provider: ProviderAccountProvider): ProviderAcc
       id: DEFAULT_PROVIDER_ACCOUNT_ID,
       provider,
       label: defaultLabel,
+      ...(defaultKind ? { kind: defaultKind } : {}),
       isDefault: true,
     },
     ...profiles,
@@ -319,7 +322,7 @@ export function editProviderAccount(
   stored[provider] = serializeProviderAccounts(
     accounts.map((account) =>
       account.id === accountId
-        ? { ...account, label, color: metadata.color, kind: metadata.kind }
+        ? { ...account, label, color: metadata.color, kind: metadata.kind ?? account.kind }
         : account,
     ),
   );

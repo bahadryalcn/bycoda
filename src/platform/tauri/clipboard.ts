@@ -1,20 +1,26 @@
 import { errorText } from "../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  attachmentDraftTokens,
   attachmentsFromFiles,
   attachmentsFromPaths,
+  findTokens,
   isAttachmentFolder,
   MAX_ATTACHMENTS,
   MAX_EMBED_BYTES,
-} from "../../features/sessions/model/attachments";
-import type { Attachment } from "../../features/sessions/model/session";
+  rewriteTokenMatches,
+  stripAttachmentTokens,
+  type Attachment,
+} from "../../features/sessions/public/attachments";
 import { decodeBase64 } from "../../shared/lib/base64";
+import { REMOTE_PATH_PREFIX } from "../../shared/lib/remotePaths";
 import { withTimeout } from "../../shared/lib/withTimeout";
 
 type CopiedFile = { name: string; mimeType: string; data: string };
 
 /** Marks one embedded file; its value is the escaped file name. */
 const FILE_ATTRIBUTE = 'data-bycoda-file="';
+const REFERENCE_ATTRIBUTE = 'data-bycoda-reference-text="';
 const LEGACY_FILES_ATTRIBUTE = 'data-bycoda-files="';
 const DATA_URI_PREFIX = "data:";
 const BASE64_MARKER = ";base64,";
@@ -74,30 +80,78 @@ function textWithFolderPaths(text: string, paths: string[]): string {
 
 /** HTML keeps arbitrary files together with text across Bycoda windows. */
 export async function copyMessage(text: string, attachments: Attachment[] = []): Promise<void> {
+  const matches = findTokens(text, attachments);
+  const referenced = new Set(matches.map(({ index }) => index));
+  const fileAttachments: Attachment[] = [];
+  // Folders travel as path text. Only append paths with no inline reference.
+  const folderPaths = attachments.map((attachment) =>
+    isAttachmentFolder(attachment) ? (attachment.path?.trim() ?? "") : undefined,
+  );
+  const loosePaths = folderPaths.filter(
+    (path, index): path is string => Boolean(path) && !referenced.has(index),
+  );
+  const fileSlots = attachments.map((attachment, index) =>
+    folderPaths[index] === undefined ? fileAttachments.push(attachment) - 1 : -1,
+  );
+  const payload = textWithFolderPaths(
+    rewriteTokenMatches(text, matches, ({ index }) => folderPaths[index] ?? ""),
+    loosePaths,
+  );
+  if (!fileAttachments.length) {
+    if (!payload) throw new Error("No copyable content is available.");
+    return copyText(payload);
+  }
+  const referenceText = rewriteTokenMatches(text, matches, ({ index }) => {
+    const slot = fileSlots[index];
+    return slot < 0
+      ? (folderPaths[index] ?? "")
+      : `[${attachments[index].kind === "image" ? "Image" : "File"}: Attachment; ref=clipboard-${slot}]`;
+  });
+
+  // Start the clipboard write during the click. WebKit can lose the gesture
+  // while a remote attachment is loading. Every format waits for validation.
+  const content = Promise.resolve().then(async () => {
+    const files = await loadCopiedFiles(fileAttachments);
+    return {
+      files,
+      html: messageClipboardHtml(
+        payload,
+        files,
+        matches.length ? textWithFolderPaths(referenceText, loosePaths) : undefined,
+      ),
+    };
+  });
+  const formats: Record<string, Promise<Blob>> = {
+    "text/plain": content.then(() => new Blob([payload], { type: "text/plain" })),
+    "text/html": content.then(({ html }) => html),
+  };
+  // A native bitmap can make other editors treat a mixed clipboard as an image paste.
+  // Keep the bitmap representation for image-only copies.
+  const pngIndex = fileAttachments.findIndex((file) => file.mimeType === "image/png");
+  if (!payload.trim() && pngIndex >= 0) {
+    formats["image/png"] = content.then(
+      ({ files }) => new Blob([decodeBase64(files[pngIndex].data)], { type: "image/png" }),
+    );
+  }
+  const write = async () => navigator.clipboard.write([new ClipboardItem(formats)]);
+  // Observe the data promises even when the browser refuses the write before reading them.
+  await Promise.all([...Object.values(formats), write()]);
+}
+
+async function loadCopiedFiles(attachments: Attachment[]): Promise<CopiedFile[]> {
   const files: CopiedFile[] = [];
   let decodedBytes = 0;
-  const folderPaths: string[] = [];
   for (const attachment of attachments) {
-    // A folder has no bytes to copy, and asking for them fails the whole copy.
-    // The path is the reference, so it goes in the copied text instead.
-    if (isAttachmentFolder(attachment)) {
-      const path = attachment.path?.trim();
-      if (path) folderPaths.push(path);
-      continue;
-    }
-    if (
-      attachment.kind === "image" &&
-      !attachment.data &&
-      !attachment.previewUrl &&
-      !attachment.loadPreview &&
-      !attachment.copyFromPath
-    )
-      continue;
     try {
       let data = attachment.data;
       if (data === undefined && attachment.loadPreview) {
         data = await attachment.loadPreview();
-      } else if (data === undefined && attachment.path) {
+      } else if (
+        data === undefined &&
+        attachment.path &&
+        !attachment.hostEnvironmentId &&
+        !attachment.path.startsWith(REMOTE_PATH_PREFIX)
+      ) {
         data = await invoke<string>("read_file_base64", {
           path: attachment.path,
         });
@@ -122,15 +176,15 @@ export async function copyMessage(text: string, attachments: Attachment[] = []):
       throw new Error(`Could not copy ${attachment.name}: ${reason}`);
     }
   }
-  const payload = textWithFolderPaths(text, folderPaths);
-  if (!files.length) {
-    if (!payload) throw new Error("No copyable content is available.");
-    return copyText(payload);
-  }
+  return files;
+}
+
+function messageClipboardHtml(payload: string, files: CopiedFile[], referenceText?: string): Blob {
   // Each file's bytes are embedded once, as the data URI of its <img>/<a>; the paste side reads
   // them back from there. The base64 is already validated, so it needs no escaping, and the
   // parts go to the Blob as they are instead of being joined into one more copy.
-  const parts: string[] = [`<div><pre>${escapeHtml(payload)}</pre>`];
+  const pre = referenceText ? `<pre ${REFERENCE_ATTRIBUTE}${escapeHtml(referenceText)}">` : "<pre>";
+  const parts: string[] = [`<div>${pre}${escapeHtml(payload)}</pre>`];
   let htmlLength = parts[0].length;
   for (const file of files) {
     const name = escapeHtml(file.name);
@@ -146,13 +200,56 @@ export async function copyMessage(text: string, attachments: Attachment[] = []):
   htmlLength += "</div>".length;
   if (htmlLength > MAX_CLIPBOARD_HTML_CHARS)
     throw new Error("The copied message is too large. Copy less text or fewer files.");
-  const formats: Record<string, Blob> = {
-    "text/plain": new Blob([payload], { type: "text/plain" }),
-    "text/html": new Blob(parts, { type: "text/html" }),
+  return new Blob(parts, { type: "text/html" });
+}
+
+type ClipboardMessage = { text: string; files: File[]; referenceText?: string };
+
+export function messageFromClipboard(
+  clipboard: Pick<DataTransfer, "getData">,
+): ClipboardMessage | null {
+  const files = messageFilesFromClipboard(clipboard);
+  if (!files?.length) return null;
+  // Older copies included the source message's tokens in the plain text.
+  const text = stripAttachmentTokens(
+    clipboard.getData("text/plain"),
+    files.map(({ type, size }) => ({ kind: type.startsWith("image/") ? "image" : "file", size })),
+  );
+  const html = clipboard.getData("text/html");
+  const marker = html.indexOf(REFERENCE_ATTRIBUTE);
+  if (marker < 0) return { text, files };
+  const start = marker + REFERENCE_ATTRIBUTE.length;
+  const end = html.indexOf('"', start);
+  return {
+    text,
+    files,
+    referenceText: end > start ? unescapeHtml(html.slice(start, end)) : undefined,
   };
-  const png = files.find((file) => file.mimeType === "image/png");
-  if (png) formats["image/png"] = new Blob([decodeBase64(png.data)], { type: "image/png" });
-  await navigator.clipboard.write([new ClipboardItem(formats)]);
+}
+
+/** Replace clipboard-local references with the receiving draft's actual attachment numbers. */
+export function clipboardTextWithAttachments(
+  message: ClipboardMessage,
+  incoming: Attachment[],
+  attachments: Attachment[],
+): string | undefined {
+  if (!message.referenceText || incoming.length !== message.files.length) return;
+  const slots = incoming.map((file) => attachments.findIndex(({ id }) => id === file.id));
+  if (slots.includes(-1)) return;
+  const files = incoming.map((file, index) => ({ ...file, id: `clipboard-${index}` }));
+  const matches = findTokens(message.referenceText, files).filter(({ token }) =>
+    token.includes("; ref=clipboard-"),
+  );
+  if (!matches.length) return;
+  const tokens = attachmentDraftTokens(attachments);
+  const referenced = new Set(matches.map(({ index }) => index));
+  const text = rewriteTokenMatches(
+    message.referenceText,
+    matches,
+    ({ index }) => tokens[slots[index]],
+  );
+  const extra = slots.flatMap((slot, index) => (referenced.has(index) ? [] : [tokens[slot]]));
+  return [text, ...extra].join(" ");
 }
 
 /** Only embedded bytes are accepted; clipboard HTML cannot request local paths. */

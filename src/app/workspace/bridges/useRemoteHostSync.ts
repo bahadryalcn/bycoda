@@ -34,6 +34,7 @@ import type { LinkedSessionUpdate } from "../../../features/inbox/model/linkedSe
 import { t } from "../../../shared/i18n";
 
 export interface RemoteHostSync {
+  hydrateAdoptedHistoryRef: MutableRefObject<((id: string) => Promise<boolean>) | undefined>;
   localHostReachable: MutableRefObject<boolean>;
   loadRunningOnHostRef: MutableRefObject<((ids: string[]) => void) | undefined>;
   onRefreshAdoptedSession: RefreshAdoptedSession;
@@ -55,6 +56,7 @@ export function pruneClosedSnapshots(
 /** Adopted-host and remote-snapshot wiring. The handler table for the desktop
  * live channel is assigned by the caller, since it closes over workspace state. */
 export function useRemoteHostSync(): RemoteHostSync {
+  const hydrateAdoptedHistoryRef = useRef<(id: string) => Promise<boolean>>(undefined);
   const loadRunningOnHostRef = useRef<(ids: string[]) => void>(undefined);
   const refreshAdoptedSessionRef = useRef<RefreshAdoptedSession>(undefined);
   useEffect(() => startProviderAccountHostSync(), []);
@@ -70,6 +72,8 @@ export function useRemoteHostSync(): RemoteHostSync {
     setSessions,
     loadRunningOnHostRef,
     refreshAdoptedSessionRef,
+    subscribeShell,
+    hydrateAdoptedHistoryRef,
   );
   const onRefreshAdoptedSession = useCallback<RefreshAdoptedSession>(
     (sessionId, target, resolution) => {
@@ -168,6 +172,7 @@ export function useRemoteHostSync(): RemoteHostSync {
   }, []);
 
   return {
+    hydrateAdoptedHistoryRef,
     localHostReachable,
     loadRunningOnHostRef,
     onRefreshAdoptedSession,

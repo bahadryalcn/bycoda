@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
 it.each([
-  ["./UsageProviderChip.tsx", "compact", 2],
+  ["./UsageProviderChip.tsx", "compact", 1],
   ["../../features/sessions/ui/MessageQueue.tsx", "compact", 3],
   ["../../features/source-control/ui/BranchManagerDialog.tsx", "standard", 2],
 ])("lets the control rows in %s grow with their controls", (path, height, rowCount) => {

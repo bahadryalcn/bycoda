@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent } from "react";
+import { useContext, type CSSProperties, type MouseEvent } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Text, type TextTone } from "../../../shared/ui/Text";
@@ -26,6 +26,7 @@ import { FileActionError } from "../../files/public/FileActionError";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { isHostDevelopmentUrl, openWorkspaceUrl } from "../../connections/public/workspaceUrls";
 import { UserLinkIcon } from "./UserLinkIcon";
+import { TranscriptSessionId } from "./TranscriptSessionId";
 import {
   formatRelativeTime,
   githubWorkItem,
@@ -72,6 +73,7 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
   const [metadata, setMetadata] = useState<LinkPreviewMetadata | null>(null);
   const [faviconFailed, setFaviconFailed] = useState(false);
   const [openError, setOpenError] = useState<string>();
+  const sessionId = useContext(TranscriptSessionId);
   const development = isHostDevelopmentUrl(link.url);
 
   const mounted = useRef(true);
@@ -111,7 +113,7 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
     if (!development || !cwd || event.defaultPrevented) return;
     event.preventDefault();
     setOpenError(undefined);
-    void openWorkspaceUrl(cwd, link.url).catch((error: unknown) => {
+    void openWorkspaceUrl(cwd, link.url, sessionId).catch((error: unknown) => {
       setOpenError(presentRemoteError(error, { explicit: true }));
     });
   };

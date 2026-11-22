@@ -1,6 +1,7 @@
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import type { SyntaxNode } from "@lezer/common";
 import { Fragment, useEffect, useState, type ReactNode, type RefObject } from "react";
+import { cachedUserLinkRanges } from "../model/linkPreview";
 import styles from "./ComposerHighlight.module.css";
 
 export function mayHaveComposerMarkdown(text: string): boolean {
@@ -108,6 +109,11 @@ export function ComposerMarkdown({
     }
     const heading = /^(?:ATX|Setext)Heading[1-6]$/.test(node.name);
     const format = heading ? "heading" : formats[node.name];
+    const destination = format === "link" ? node.getChild("URL") : null;
+    const rawUrl = destination ? text.slice(destination.from, destination.to) : "";
+    const url = cachedUserLinkRanges(rawUrl).find(
+      (range) => range.start === 0 && range.end === rawUrl.length,
+    )?.link.url;
     const insideCode = literal || format === "code" || format === "fence";
     const plain = insideCode ? (value: string) => value : renderText;
     const children: ReactNode[] = [];
@@ -124,7 +130,12 @@ export function ComposerMarkdown({
     if (from < node.to)
       children.push(<Fragment key={from}>{plain(text.slice(from, node.to))}</Fragment>);
     return format ? (
-      <span className={styles.markdownText} data-draft-markdown={format}>
+      <span
+        className={styles.markdownText}
+        data-draft-markdown={format}
+        data-composer-reference={url ? "url" : undefined}
+        data-reference-value={url}
+      >
         {children}
       </span>
     ) : (

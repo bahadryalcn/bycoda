@@ -11,7 +11,7 @@
 }
 .settings-page-bar,
 .bycoda-settings-form {
-  --settings-page-bar-padding-start: 16px;
+  --settings-page-bar-padding-start: var(--settings-page-bar-top-inset, 16px);
   --settings-page-bar-padding-end: 4px;
   --settings-page-bar-height: calc(
     var(--ui-control-height-compact) + var(--settings-page-bar-padding-start) +
@@ -20,6 +20,8 @@
 }
 /* Dialogs, including the peek panel, share the sticky page bar's opaque ground. */
 .bycoda-settings-workbench[data-settings-embedded] {
+  /* Match the compact Modal header's 12px inset and reserve its close target. */
+  --settings-page-bar-top-inset: 12px;
   --ui-workspace-canvas: var(--color-background-base);
   --ui-workspace-panel: var(--color-background-base);
 }
@@ -42,14 +44,18 @@
   flex-shrink: 0;
   /* Sticky text must occlude the form while it scrolls underneath. */
 }
+.bycoda-settings-breadcrumb {
+  flex: none;
+}
 .settings-page-bar-inner {
+  --settings-page-bar-side-padding: 32px;
   display: flex;
   align-items: center;
   gap: 8px;
   max-inline-size: var(--settings-column);
   margin-inline: auto;
   padding-block: var(--settings-page-bar-padding-start) var(--settings-page-bar-padding-end);
-  padding-inline: 32px;
+  padding-inline: var(--settings-page-bar-side-padding);
   min-inline-size: 0;
 }
 .settings-page-bar .settings-page-title[data-size] {
@@ -114,6 +120,9 @@
 }
 
 @container settings-workbench (max-width: 760px) {
+  .bycoda-settings-breadcrumb {
+    display: none;
+  }
   .bycoda-settings-category-picker {
     display: block;
     flex: 1 1 8rem;
@@ -131,7 +140,7 @@
     flex: none;
   }
   .settings-page-bar-inner {
-    padding-inline: 16px;
+    --settings-page-bar-side-padding: 16px;
   }
 }
 
@@ -161,7 +170,12 @@
 
 /* Inside an overlay the shared close action sits at the top-right corner; keep the page actions clear of it. */
 [data-settings-embedded] .settings-page-bar-inner {
-  padding-inline-end: 3rem;
+  max-inline-size: none;
+  padding-inline-start: max(
+    var(--settings-page-bar-side-padding),
+    (100% - var(--settings-column)) / 2 + var(--settings-page-bar-side-padding)
+  );
+  padding-inline-end: calc(12px + var(--ui-control-height-compact) + 2px);
 }
 /* The page bar is sticky at z-index 2, the same layer as the overlay's close action, and comes
    later in the DOM, so it would paint over and intercept clicks on that action. */

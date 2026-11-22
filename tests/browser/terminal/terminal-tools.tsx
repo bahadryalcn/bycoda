@@ -8,6 +8,11 @@ import "../../../src/styles/index.css";
 import "../../../src/features/terminal/ui/terminal.css";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import { RemoteSuggestionsFixture } from "./terminal-remote-suggestions";
+import { CodeTerminalDialog } from "../../../src/features/terminal/ui/CodeTerminalDialog";
+import type {
+  CodeTerminalController,
+  CodeTerminalState,
+} from "../../../src/features/terminal/runtime/codeTerminalController";
 
 const params = new URLSearchParams(location.search);
 applyThemePreference(params.get("theme") === "light" ? "light" : "dark");
@@ -71,8 +76,46 @@ function SplitDockFixture() {
     </div>
   );
 }
+// `?code-terminal=running|exited|failed|unknown` renders the real dialog over a memory-only controller.
+function CodeTerminalFixture({ phase }: { phase: string }) {
+  const [controller] = useState(() => {
+    const state: CodeTerminalState = {
+      id: "fixture-code",
+      phase: phase === "running" ? "running" : phase === "unknown" ? "unknown" : "exited",
+      shell: "PowerShell",
+      output:
+        "> pnpm test\r\n RUN  v3.2.0\r\n ✓ src/a.test.ts (4)\r\n ✗ src/b.test.ts (1)\r\n   Expected 2, received 3\r\n",
+      truncated: false,
+      exitCode: phase === "exited" ? 0 : phase === "failed" ? 1 : null,
+      ...(phase === "unknown" ? { error: "Stop requested. Command completion is unknown." } : {}),
+    };
+    return {
+      subscribe: () => () => {},
+      snapshot: () => state,
+      refresh: async () => "idle" as const,
+      stop: async () => {},
+    } as unknown as CodeTerminalController;
+  });
+  return (
+    <CodeTerminalDialog
+      controller={controller}
+      options={{
+        cwd: "G:/demo/example",
+        projectCwd: "G:/demo/example",
+        native: false,
+        command: "pnpm test",
+        shellKind: "powershell",
+        isCurrent: () => true,
+      }}
+      onClose={() => {}}
+      onReport={params.has("no-report") ? undefined : () => true}
+    />
+  );
+}
 createRoot(document.getElementById("root")!).render(
-  params.has("dock") ? (
+  params.has("code-terminal") ? (
+    <CodeTerminalFixture phase={params.get("code-terminal") || "exited"} />
+  ) : params.has("dock") ? (
     <SplitDockFixture />
   ) : params.has("remote") ? (
     <RemoteSuggestionsFixture />

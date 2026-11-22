@@ -12,6 +12,8 @@ export type MachineResult<T> = {
   /** `data` is a last-known answer, not a current one. */
   stale: boolean;
   error?: string;
+  /** Original transport reason, retained so readers can classify before displaying it. */
+  failure?: unknown;
 };
 
 /** The last successful list of each machine, by machine ID. */
@@ -68,7 +70,7 @@ export async function collectMachineResults<T>(
     if (previous !== undefined && previous !== identity) lastGood.delete(machine.id);
     identities.set(machine.id, identity);
   }
-  const failed = (machine: RemoteMachine, error: string): MachineResult<T> => {
+  const failed = (machine: RemoteMachine, error: string, failure?: unknown): MachineResult<T> => {
     const previous =
       identities.get(machine.id) === machineIdentity(machine)
         ? lastGood.get(machine.id)
@@ -80,6 +82,7 @@ export async function collectMachineResults<T>(
       data: previous ? previous.map(markStale) : [],
       stale: previous !== undefined && previous.length > 0,
       error,
+      failure,
     };
   };
   const asked = await Promise.all(
@@ -111,7 +114,11 @@ export async function collectMachineResults<T>(
         };
       } catch (reason: unknown) {
         // A passing outage keeps the last known entries (see `failed`) and shows no raw error.
-        return failed(machine, presentRemoteError(reason) ?? "The machine is not reachable.");
+        return failed(
+          machine,
+          presentRemoteError(reason) ?? "The machine is not reachable.",
+          reason,
+        );
       }
     }),
   );

@@ -2,7 +2,7 @@ import { Surface } from "../../../shared/ui/Surface";
 import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { useT } from "../../../shared/i18n";
 import { Text } from "../../../shared/ui/Text";
-import { StickyNote } from "../../../shared/ui/icons";
+import { Server, StickyNote } from "../../../shared/ui/icons";
 import type { RankedFile } from "../../files";
 import { isNoteMentionPath } from "../../notes";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
@@ -11,7 +11,10 @@ import { crewMentionOf } from "../model/crewMentions";
 import { CrewMentionIcon, CrewMentionText } from "./ComposerCrewMentionRow";
 import { workItemMentionOf, WORK_ITEM_PROVIDER_NAMES } from "../model/workItemMentionRows";
 import { WorkItemMentionText, workItemMentionMeta } from "./ComposerWorkItemMentionRow";
-import { InboxProviderMark } from "../../inbox/public/workItemMentions";
+import { InboxProviderMark, type WorkItemSearchError } from "../../inbox/public/workItemMentions";
+import { workItemSearchNotice } from "../model/workItemSearchNotice";
+import { usePresentationNow } from "./AgentClock";
+import { serverMentionOf } from "../model/serverMentions";
 type Props = {
   files: RankedFile[];
   query: string;
@@ -25,6 +28,10 @@ type Props = {
   includeNotes?: boolean;
   includeWorkItems?: boolean;
   workItemsScoped?: boolean;
+  /** Why the tracker search found nothing; replaces "No matches" with a short reason. */
+  workItemsFailure?: { error: WorkItemSearchError; machine?: string };
+  serversScoped?: boolean;
+  includeServers?: boolean;
   onActive: (index: number) => void;
   onPick: (file: RankedFile) => void;
 };
@@ -41,19 +48,28 @@ export function FileMentionPicker({
   includeNotes = false,
   includeWorkItems = false,
   workItemsScoped = false,
+  workItemsFailure,
+  serversScoped = false,
+  includeServers = false,
   onActive,
   onPick,
 }: Props) {
   const t = useT();
+  const now = usePresentationNow(
+    workItemsFailure?.error.failure === "rate-limited" && !!workItemsFailure.error.retryAt,
+  );
+  const includesMentions = includeWorkItems || workItemsScoped || includeServers || serversScoped;
   const list = usePickerList({
     options: files.map((file) => {
       const crew = crewMentionOf(file);
       const workItem = workItemMentionOf(file);
+      const server = serverMentionOf(file);
+      const name = server?.hint ? t("Servers") : file.name;
       const note = isNoteMentionPath(file.path);
       const slash = file.relative.lastIndexOf("/");
       return {
         value: file.path,
-        textValue: file.name,
+        textValue: name,
         title: workItem ? (
           <WorkItemMentionText target={workItem} name={file.name} positions={file.positions} />
         ) : crew ? (
@@ -61,7 +77,7 @@ export function FileMentionPicker({
         ) : (
           <>
             <MatchText
-              text={file.name}
+              text={name}
               positions={
                 note
                   ? file.positions
@@ -76,6 +92,8 @@ export function FileMentionPicker({
           <InboxProviderMark provider={workItem.provider} className="icon-sm" />
         ) : crew ? (
           <CrewMentionIcon target={crew} />
+        ) : server ? (
+          <Server className="icon-sm" />
         ) : note ? (
           <StickyNote className="icon-sm" />
         ) : (
@@ -89,9 +107,15 @@ export function FileMentionPicker({
             ? crew.kind === "member"
               ? t("Members")
               : t("Crews")
-            : undefined,
+            : server && !server.hint
+              ? t("Servers")
+              : undefined,
         meta: workItem ? (
           workItemMentionMeta(workItem, t("Unassigned"))
+        ) : server ? (
+          <Text size="caption" tone="secondary">
+            @{server.token}
+          </Text>
         ) : note ? (
           t("Note")
         ) : slash < 0 ? undefined : (
@@ -123,7 +147,7 @@ export function FileMentionPicker({
     >
       <PickerList
         label={
-          includeWorkItems || workItemsScoped
+          includesMentions
             ? t("Mentions")
             : includeNotes
               ? t("Files and notes")
@@ -133,12 +157,20 @@ export function FileMentionPicker({
         checkPlacement="none"
         pointerHighlight="movement"
         loading={loading && !failed}
-        loadingLabel={includeWorkItems || workItemsScoped ? t("Loading…") : t("Indexing files…")}
-        error={files.length === 0 && failed ? t("Could not index files.") : undefined}
+        loadingLabel={includesMentions ? t("Loading…") : t("Indexing files…")}
+        error={
+          files.length === 0 && failed
+            ? serversScoped
+              ? t("Could not load.")
+              : t("Could not index files.")
+            : undefined
+        }
         onRetry={onRetry}
         emptyLabel={
-          includeWorkItems || workItemsScoped
-            ? t("No matches")
+          includesMentions
+            ? workItemsFailure
+              ? workItemSearchNotice(workItemsFailure.error, workItemsFailure.machine, t, now)
+              : t("No matches")
             : query.trim()
               ? includeNotes
                 ? t("No matching files or notes")

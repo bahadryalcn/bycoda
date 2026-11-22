@@ -17,10 +17,11 @@ type Props = {
   /** Runs a parent-owned mutation only while the composer's parent input is still current. */
   guard: (run: () => void) => void;
   onUsageLimitResume?: () => void;
+  usageLimitResumeDisabled?: boolean;
   onUsageLimitResumeAtReset?: (enabled: boolean) => void;
   onUsageLimitDismiss?: () => void;
   onSelectProviderAccount?: (provider: ProviderAccountProvider, accountId: string) => void;
-  onSwitchModel: () => void;
+  onSwitchModel?: () => void;
   pasteError?: string | null;
   /** Recovery action for the paste error (microphone settings). */
   pasteErrorAction?: ReactNode;
@@ -39,6 +40,7 @@ export function ComposerNotices({
   providerAccountId,
   guard,
   onUsageLimitResume,
+  usageLimitResumeDisabled,
   onUsageLimitResumeAtReset,
   onUsageLimitDismiss,
   onSelectProviderAccount,
@@ -61,6 +63,7 @@ export function ComposerNotices({
           provider={accountProvider}
           accountId={providerAccountId}
           onResume={onUsageLimitResume ? () => guard(onUsageLimitResume) : undefined}
+          resumeDisabled={usageLimitResumeDisabled}
           onResumeAtReset={
             onUsageLimitResumeAtReset
               ? (...args) => guard(() => onUsageLimitResumeAtReset(...args))

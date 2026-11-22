@@ -29,7 +29,7 @@ mod room_inbox;
 #[path = "conversation_servers.rs"]
 mod servers;
 #[path = "conversation_ssh_execution.rs"]
-mod ssh_execution;
+pub(crate) mod ssh_execution;
 #[path = "voice_generation_retirement.rs"]
 pub(crate) mod voice_generation_retirement;
 #[path = "workspace_operation_owner.rs"]

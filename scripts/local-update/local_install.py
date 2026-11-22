@@ -98,15 +98,31 @@ def restore_windows_app(app, saved, hashes, rollback, process_filter):
         # Both the known-good snapshot and failed replacement remain available.
         raise RuntimeError('Windows rollback failed; recovery artifacts retained at ' + str(rollback))
 
-def wait_idle(db, sql, report):
+def active_session_ids(database, query):
+    with contextlib.closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True, timeout=3)) as conn:
+        return {row[0] for row in conn.execute(query)}
+
+def host_active_ids(base):
+    return active_session_ids(base / 'host.db', "SELECT id FROM sessions WHERE status='running' OR shell_running=1")
+
+def host_installation_exists(base):
+    return any((base / name).exists() for name in ('runtime-path', 'running.json', 'service.ps1', 'service-launcher.json'))
+
+def app_active_count(base, desktop):
+    active = active_session_ids(desktop, 'SELECT session_id FROM in_flight_sessions') if desktop is not None else set()
+    if (base / 'host.db').exists() or host_installation_exists(base):
+        active.update(host_active_ids(base))
+    return len(active)
+
+def wait_idle(read_count, report, phase='waiting'):
     last = object()
     while True:
         try:
-            active = count(db, sql)
+            active = read_count()
         except Exception:
             active = None  # A read error is never proof that the app/host is idle.
         if active != last:
-            report('waiting', activeSessions=active)
+            report(phase, activeSessions=active)
             last = active
         if active == 0:
             return
@@ -211,7 +227,7 @@ def host_install(release, manifest, report):
     if not (BASE / 'host.db').exists():
         # A fresh, independent product has no previous database to read. Never
         # reinterpret a missing DB for an existing installation as idle.
-        if any((BASE / name).exists() for name in ('runtime-path', 'running.json', 'service.ps1', 'service-launcher.json')):
+        if host_installation_exists(BASE):
             raise RuntimeError('Existing bycoda host database is missing; installation requires recovery')
         launcher = PRODUCT_IDENTITY['hostLauncher'] + ('.cmd' if os.name == 'nt' else '')
         (BASE / 'bin').mkdir(parents=True, exist_ok=True)
@@ -231,7 +247,7 @@ def host_install(release, manifest, report):
         report('installed', runtime=str(runtime), firstInstall=True,
                **installed_identity(manifest, runtime / 'bycoda-host.mjs', host=True))
         return
-    wait_idle(BASE / 'host.db', "select count(*) from sessions where status='running' or shell_running=1", report)
+    wait_idle(lambda: len(host_active_ids(BASE)), report)
     rollback = release / 'rollback-host'
     rollback.mkdir(exist_ok=True)
     backup(BASE / 'host.db', rollback / 'host.db')
@@ -248,6 +264,7 @@ def host_install(release, manifest, report):
             shutil.copy2(path, rollback / path.name)
             saved_configs.append(path)
     previous = (BASE / 'runtime-path').read_text(encoding='utf-8-sig').strip()
+    wait_idle(lambda: len(host_active_ids(BASE)), report)
     report('installing', runtime=str(runtime))
     if os.name == 'nt':
         # Use the new CLI's graceful shutdown + owned launcher-tree cleanup.
@@ -375,8 +392,11 @@ def app_install(release, manifest, report):
     verify_tree(release if windows else release / (PRODUCT_IDENTITY['productName']+'.app'), manifest['appHashes'])
     # Give the turn scheduling this update time to persist its final reply.
     time.sleep(30)
-    if has_database:
-        wait_idle(desktop_db(), 'select count(*) from in_flight_sessions', report)
+    def active():
+        desktop = desktop_db()
+        return app_active_count(BASE, desktop if has_database or desktop.exists() else None)
+
+    wait_idle(active, report)
     rollback = release / 'rollback-app'
     rollback.mkdir(exist_ok=True)
     if has_database:
@@ -384,7 +404,6 @@ def app_install(release, manifest, report):
             verify_desktop_backup(rollback / 'desktop.db')
         else:
             backup(desktop_db(), rollback / 'desktop.db')
-    report('installing')
     if windows:
         app = pathlib.Path(os.environ['LOCALAPPDATA']) / PRODUCT_IDENTITY['productName']/(PRODUCT_IDENTITY['binaryName']+'.exe')
         saved = rollback / 'installation'
@@ -395,9 +414,11 @@ def app_install(release, manifest, report):
         app_q = ps_quote(app)
         process_filter = windows_app_process_filter(app)
         was_running = ps('@(' + process_filter + ').Count') != '0'
+        wait_idle(active, report)
+        report('installing')
         ps(process_filter + ' | ForEach-Object { [void]$_.CloseMainWindow() }')
         time.sleep(5)
-        if has_database and count(desktop_db(), 'select count(*) from in_flight_sessions') != 0:
+        if active() != 0:
             raise RuntimeError('A new turn started; app installation canceled')
         # Close-to-tray retains an idle process; only terminate the known app path.
         ps(process_filter + ' | Stop-Process -Force -PassThru | Wait-Process -Timeout 30')
@@ -420,8 +441,11 @@ def app_install(release, manifest, report):
         saved, staged = mac_app_update_paths(app, manifest['id'])
         if saved.exists() or staged.exists():
             raise RuntimeError('Rollback/staging app already exists; refusing overwrite')
+        report('installing')
         run(['codesign', '--verify', '--deep', '--strict', str(release / (PRODUCT_IDENTITY['productName']+'.app'))])
         run(['ditto', str(release / (PRODUCT_IDENTITY['productName']+'.app')), str(staged)])
+        # A staged bundle already exists; an interrupted job requires the installation recovery check.
+        wait_idle(active, report, phase='installing')
         if not first_install:
             run(['osascript', '-e', f'tell application "{PRODUCT_IDENTITY["productName"]}" to quit'])
         deadline = time.monotonic() + 30
@@ -433,7 +457,7 @@ def app_install(release, manifest, report):
             time.sleep(1)
         else:
             raise RuntimeError('App did not quit; installation canceled')
-        if has_database and count(desktop_db(), 'select count(*) from in_flight_sessions') != 0:
+        if active() != 0:
             raise RuntimeError('A new turn started; app installation canceled')
         if not first_install:
             app.rename(saved)

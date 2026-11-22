@@ -11,7 +11,122 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { nestedRepositoryCandidates } from "./git-repository-discovery";
+import { hostGitExec } from "./git-exec-pool";
+import {
+  execFilesOffThread,
+  nestedRepositoryCandidates,
+  readWindowsRepositoryScan,
+} from "./git-repository-discovery";
+
+it.skipIf(process.platform !== "win32")(
+  "keeps actionable PowerShell stderr within the client log budget",
+  async () => {
+    const script = [
+      "[Console]::Error.WriteLine('At line:1 char:1')",
+      "[Console]::Error.WriteLine('+ PRIVATE_SCRIPT_TEXT')",
+      "[Console]::Error.WriteLine('Command failed: powershell -Command PRIVATE_ARGV')",
+      "[Console]::Error.WriteLine('Access to directory denied')",
+      "[Console]::Error.WriteLine(('x' * 700))",
+      "exit 1",
+    ].join("\n");
+    const [scan] = await execFilesOffThread(
+      [{ file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", script] }],
+      10_000,
+    );
+
+    expect(scan).toMatchObject({
+      failure: { phase: "exit", exitCode: 1, spawnCode: null, signal: null },
+    });
+    if (!("failure" in scan)) throw new Error("Expected a PowerShell failure");
+    expect(scan.failure.stderr).toHaveLength(500);
+    expect(scan.failure.stderr).not.toMatch(/PRIVATE_|At line:/);
+    expect(() => readWindowsRepositoryScan(scan)).toThrow(
+      expect.objectContaining({
+        message: "Repository discovery failed (powershell exit 1): Access to directory denied",
+        cause: scan.failure,
+      }),
+    );
+    try {
+      readWindowsRepositoryScan(scan);
+    } catch (error) {
+      expect((error as Error).message.slice(0, 298)).toContain("Access to directory denied");
+    }
+  },
+);
+
+it("distinguishes command spawn and output-limit failures", async () => {
+  const { root } = fixture();
+  const results = await execFilesOffThread(
+    [
+      { file: join(root, "missing-command"), args: [] },
+      { file: process.execPath, args: ["-e", "process.stdout.write('x'.repeat(1024))"] },
+    ],
+    10_000,
+    128,
+  );
+  expect(results).toMatchObject([
+    { failure: { phase: "spawn", spawnCode: "ENOENT", exitCode: null } },
+    { failure: { phase: "output-limit", spawnCode: null, exitCode: null } },
+  ]);
+});
+
+it("reports a command that expires in the pool queue as a discovery timeout", async () => {
+  const exec = vi.spyOn(hostGitExec, "exec").mockRejectedValueOnce(
+    Object.assign(new Error("Command timed out before launch"), {
+      code: "ETIMEDOUT",
+      killed: false,
+      signal: null,
+      stderr: "",
+    }),
+  );
+  try {
+    const [scan] = await execFilesOffThread([{ file: "powershell.exe", args: [] }], 10_000);
+    expect(() => readWindowsRepositoryScan(scan)).toThrow(
+      expect.objectContaining({
+        message: "Repository discovery timed out (powershell timeout)",
+        cause: { phase: "timeout", exitCode: null, spawnCode: null, signal: null, stderr: "" },
+      }),
+    );
+  } finally {
+    exec.mockRestore();
+  }
+});
+
+it("keeps a timeout distinct from an incomplete scan", () => {
+  const failure = {
+    phase: "timeout",
+    exitCode: null,
+    spawnCode: null,
+    signal: "SIGTERM",
+    stderr: "",
+  } as const;
+  expect(() => readWindowsRepositoryScan({ failure })).toThrow(
+    expect.objectContaining({
+      message: "Repository discovery timed out (powershell timeout SIGTERM)",
+      cause: failure,
+    }),
+  );
+});
+
+it.each([
+  [" \r\n\t", "Repository discovery returned no output"],
+  ['{"repositories":', "Repository discovery returned malformed JSON"],
+  ['{"repositories":[false]}', "Repository discovery returned invalid paths"],
+])("reports invalid PowerShell output %j as a protocol error", (stdout, message) => {
+  expect(() => readWindowsRepositoryScan({ stdout })).toThrow(
+    expect.objectContaining({
+      message,
+      cause: expect.objectContaining({ phase: "parse", exitCode: 0 }),
+    }),
+  );
+});
+
+it("accepts a complete scan that found no repositories", () => {
+  expect(readWindowsRepositoryScan({ stdout: '{"repositories":[],"limit":null}\r\n' })).toEqual({
+    repositories: [],
+    limit: null,
+  });
+});
 
 const roots: string[] = [];
 afterEach(() => {

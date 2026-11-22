@@ -672,6 +672,7 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         | "workspaces.cleanup.plan"
         | "workspaces.cleanup.status"
         | "workspaces.cleanup.apply" => GIT_MUTATION,
+        "git.worktreeRemovalReview" | "git.worktreeRemove" => GIT_MUTATION,
         "workspace.run"
             if params
                 .get("command")
@@ -884,6 +885,13 @@ fn rpc_exchange(
         if denied {
             return Err(rejection(Some(error)));
         }
+        if let Some(
+            code
+            @ ("HOST_STOPPING" | "HOST_RPC_DEADLINE" | "HOST_DB_CLOSING" | "REQUEST_CANCELLED"),
+        ) = value.get("code").and_then(Value::as_str)
+        {
+            return Err(format!("Host rejected request: [{code}] {error}"));
+        }
         return Err(format!("Host rejected request: {error}"));
     }
     if status == 401 || status == 403 {
@@ -1059,6 +1067,10 @@ fn rpc_operation(method: &str, params: &Value) -> String {
                     | "skill_policy_get"
                     | "skill_policy_set"
                     | "stat_files"
+                    | "write_file_abort"
+                    | "write_file_begin"
+                    | "write_file_chunk"
+                    | "write_file_commit"
                     | "write_text_file"
             ) {
                 return format!("{method}:{action}");
@@ -1303,6 +1315,12 @@ fn native_ws_failure(error: WsFailure) -> String {
         );
     }
     if error.code == "RPC_WS_REMOTE" {
+        if error.retryable {
+            return format!(
+                "Host rejected request: [RPC_WS_RETRYABLE] {}",
+                error.message
+            );
+        }
         return format!("Host rejected request: {}", error.message);
     }
     error.to_string()
@@ -2665,6 +2683,7 @@ fn shareable_remote_read(method: &str, params: &Value) -> bool {
         "sessions.sync"
             | "sessions.page"
             | "sessions.block"
+            | "sessions.inlineVisual"
             | "sessions.syncChunk"
             | "sessions.list"
             | "environment.describe"

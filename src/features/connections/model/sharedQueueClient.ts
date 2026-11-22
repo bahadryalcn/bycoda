@@ -458,10 +458,19 @@ export class SharedQueueClient {
           this.persist();
         } else if (previous && legacy && this.clientId.startsWith("desktop:")) {
           this.emit(true);
+          // The saved transcript is not a delivery decision. A stale or missing
+          // desktop row must not clear a hold recorded by the Host.
+          const messages = [...legacy.messages];
+          for (const [index, held] of value.messages.entries()) {
+            if (!held.deliveryUnknown) continue;
+            const local = messages.findIndex((row) => row.id === held.id);
+            if (local < 0) messages.splice(index, 0, held);
+            else messages[local] = held;
+          }
           this.mergeLocal(
             { ...previous, status: value.status, editingId: value.editingId },
             {
-              messages: legacy.messages,
+              messages,
               status: value.status ?? legacy.status,
               editingId: value.editingId,
             },
@@ -763,11 +772,15 @@ export class SharedQueueClient {
     const at = drain.expiresAt - this.skew;
     return at > Date.now() ? at : undefined;
   }
+  /** A local mirror waiting for Host history should leave a free lease to the Host. */
+  allowAutomaticLease = () => true;
+
   private wantsLease(queue: SharedQueue): boolean {
     return (
       queue.status === "active" &&
       queue.messages.length > 0 &&
-      !leaseLive(queue.drain, Date.now(), this.skew)
+      !leaseLive(queue.drain, Date.now(), this.skew) &&
+      this.allowAutomaticLease()
     );
   }
   private learn(result: unknown) {

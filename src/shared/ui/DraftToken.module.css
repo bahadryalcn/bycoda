@@ -121,3 +121,72 @@
   max-inline-size: 100%;
   max-block-size: 100%;
 }
+
+/* CodeMirror owns these inline token nodes and measures their intrinsic width. */
+.compact {
+  --chip-ink: var(--ui-attachment-ink, var(--ui-tone-neutral-fg));
+  display: inline-flex;
+  vertical-align: middle;
+  align-items: center;
+  gap: var(--space-1);
+  max-inline-size: 100%;
+  min-block-size: 22px;
+  margin: 0;
+  padding: 2px 5px;
+  border: 1px solid color-mix(in srgb, var(--chip-ink) 19%, transparent);
+  border-radius: var(--ui-radius-inset);
+  color: var(--chip-ink);
+  background: color-mix(in srgb, var(--chip-ink) 8%, transparent);
+  font: 500 var(--ui-font-caption) / 1.25 var(--font-sans);
+  text-decoration: none;
+  text-align: start;
+  white-space: normal;
+}
+
+.compact > span {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.compact > small {
+  flex: none;
+  color: var(--ui-text-secondary);
+  font: inherit;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.compact > svg {
+  inline-size: var(--ui-icon-xs);
+  block-size: var(--ui-icon-xs);
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.compact:is(button, a) {
+  cursor: pointer;
+}
+.compact:is(button, a):hover {
+  background: color-mix(in srgb, var(--chip-ink) 16%, transparent);
+}
+.compact:focus-visible {
+  outline: 2px solid var(--ui-focus-ring-color);
+  outline-offset: 1px;
+}
+.compact:is([data-inline-reference="url"], [data-inline-reference="file"]) {
+  --chip-ink: var(--ui-tone-info-fg);
+}
+.compact[data-inline-icon="json"] {
+  --chip-ink: var(--ui-tone-warning-fg);
+}
+.compact[data-inline-icon="spreadsheet"] {
+  --chip-ink: var(--ui-tone-success-fg);
+}
+.compact:is([data-inline-reference="skill"], [data-inline-reference="group"]) {
+  --chip-ink: var(--ui-tone-warning-fg);
+  font-family: var(--font-mono);
+}

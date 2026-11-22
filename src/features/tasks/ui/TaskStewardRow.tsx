@@ -66,7 +66,8 @@ export function StewardRow({
         <Text as="p" size="caption" tone="secondary" leading="inherit" className="task-ops-caption">
           {t("on ")}
           {steward.machineName}
-          {steward.stale ? t(" (offline, last known)") : ""} · {automationScheduleLabel(steward)}
+          {steward.stale && !steward.pendingRefresh ? t(" (offline, last known)") : ""} ·{" "}
+          {automationScheduleLabel(steward)}
         </Text>
         <Text
           as="p"

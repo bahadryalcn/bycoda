@@ -132,13 +132,18 @@ it("never reclaims unknown files or uploads used by legacy clients", async () =>
   expect(await ownership.collect()).toEqual([]);
   for (const id of ids) expect(existsSync(attachmentPath(store, id))).toBe(true);
 });
-it("runs startup and hourly collection, then removes its timer on close", async () => {
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+it("waits out start-up, runs hourly collection, then removes its timers on close", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
   const { ownership, clock, upload, store } = setup();
   await upload(ids[0], "partial", false);
   clock.now += ATTACHMENT_GRACE_MS + 10000;
   await ownership.start();
-  expect(await ownership.collect()).toEqual([ids[0]]);
+  expect(vi.getTimerCount()).toBe(2);
+  await vi.advanceTimersByTimeAsync(4 * 60 * 1000);
+  expect(existsSync(attachmentPath(store, ids[0]))).toBe(true);
+  await vi.advanceTimersByTimeAsync(60 * 1000);
+  await ownership.collect();
+  expect(existsSync(attachmentPath(store, ids[0]))).toBe(false);
   await upload(ids[1], "partial", false);
   clock.now += ATTACHMENT_GRACE_MS + 10000;
   await vi.advanceTimersByTimeAsync(60 * 60 * 1000);

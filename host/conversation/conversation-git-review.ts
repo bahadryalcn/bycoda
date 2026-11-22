@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, open, readlink } from "node:fs/promises";
 import type { Stats } from "node:fs";
 import { relative, sep } from "node:path";
-import { execFileAsync } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "../git/git-exec-pool";
 import { existingPath, workspacePath } from "../workspaces/workspace";
 import { hostGitStarts } from "../git/git-start-gate";
 
@@ -55,7 +55,7 @@ export async function conversationGitReviewHash(cwd: string): Promise<string> {
   const git = async (args: string[]) => {
     await hostGitStarts.enter();
     return (
-      await execFileAsync("git", args, {
+      await hostGitExec.exec("git", args, {
         cwd,
         timeout: 30_000,
         maxBuffer: MAX_BYTES,

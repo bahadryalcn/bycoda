@@ -278,7 +278,7 @@ export function LimitsPanel({
                 leading="inherit"
                 className="task-ops-caption task-ops-num"
               >
-                {entry.stale ? `${t("Out of date")} ·` : t("Used today: ")}
+                {entry.stale && !entry.pendingRefresh ? `${t("Out of date")} ·` : t("Used today: ")}
                 {formatAgentMinutes(entry.usedMinutes)}
                 {limited ? t(" of {p0}", { p0: formatAgentMinutes(entry.dailyAgentMinutes) }) : ""}
               </Text>

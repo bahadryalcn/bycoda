@@ -85,9 +85,11 @@ export class WorkStorage {
 
   private async listQueue(predicate: string): Promise<WorkRecord[]> {
     await this.ready;
-    const rows = await this.store.db
-      .prepare(`SELECT value FROM work_queue WHERE ${predicate} ORDER BY sequence`)
-      .all();
+    const rows = await this.store.readScope(() =>
+      this.store.db
+        .prepare(`SELECT value FROM work_queue WHERE ${predicate} ORDER BY sequence`)
+        .all(),
+    );
     return rows.map((row) => WorkRecordSchema.parse(JSON.parse(String(row.value))));
   }
 

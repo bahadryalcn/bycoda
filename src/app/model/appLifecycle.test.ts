@@ -742,21 +742,28 @@ it("paints transferred tabs without waiting for sidebar history", async () => {
   expect(listSessionsByProject).not.toHaveBeenCalled();
 });
 
-it("boots with sidebar history that resolves after the restore finishes", async () => {
-  vi.resetModules();
-  const recents = await import("../../features/projects/model/recents");
-  const store = await import("../../features/sessions/data/sessionStore");
-  const { loadBootWorkspace } = await import("./appLifecycle");
-  const rows = [{ id: "history-1", cwd: "/hinted/project" }] as never;
-  // The mocked store is shared with the earlier restore tests: start from no saved workspace so
-  // the hinted project is the one the boot lists history for.
-  vi.mocked(store.loadWorkspaceSnapshot).mockResolvedValue(null);
-  vi.mocked(recents.lastProjectPath).mockReturnValueOnce("/hinted/project");
-  vi.mocked(store.listSessionsByProject).mockImplementationOnce(
-    () => new Promise((resolve) => setTimeout(() => resolve(rows), 20)),
-  );
-  expect((await loadBootWorkspace()).history).toEqual(rows);
-});
+it.each([true, false])(
+  "uses prefetched sidebar history only for the restored project (restored: %s)",
+  async (restored) => {
+    vi.resetModules();
+    const recents = await import("../../features/projects/model/recents");
+    const store = await import("../../features/sessions/data/sessionStore");
+    const { loadBootWorkspace } = await import("./appLifecycle");
+    const session = newSession("cursor", "/hinted/project");
+    const tab = newTab(session.id);
+    const snapshot = collectWorkspaceSnapshot([tab], [session], tab.id, session.cwd, new Map());
+    const rows = [{ id: "history-1", cwd: session.cwd }] as never;
+    vi.mocked(store.loadWorkspaceSnapshot).mockResolvedValue(restored ? snapshot : null);
+    vi.mocked(recents.lastProjectPath).mockReturnValueOnce(session.cwd);
+    vi.mocked(store.listSessionsByProject).mockImplementationOnce(
+      () => new Promise((resolve) => setTimeout(() => resolve(rows), 20)),
+    );
+    expect(await loadBootWorkspace()).toMatchObject({
+      history: restored ? rows : [],
+      historyCwd: restored ? session.cwd : null,
+    });
+  },
+);
 
 it("boots secondary windows blank without reading the shared recovery snapshot", async () => {
   vi.resetModules();

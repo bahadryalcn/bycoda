@@ -840,6 +840,28 @@ it("shows session and local-change consequences before removing a worktree", asy
   expect(onDeleted).toHaveBeenCalledOnce();
 });
 
+it("shows ignored local data before confirming removal of a clean worktree", async () => {
+  const onRemove = vi.fn().mockResolvedValue(undefined);
+  await act(async () =>
+    root.render(
+      createElement(DeleteWorktreeDialog, {
+        cwd: "/repo",
+        tree: { ...tree, dirty: false },
+        ignoredEntryCount: 12,
+        ignoredEntryPaths: [".env"],
+        onRemove,
+        onDeleted: vi.fn(),
+        onClose: vi.fn(),
+      }),
+    ),
+  );
+  expect(document.body.textContent).toContain("Ignored entries that will be deleted: 12");
+  expect(document.body.textContent).toContain(".env");
+  expect(onRemove).not.toHaveBeenCalled();
+  await act(async () => button("Delete worktree").click());
+  expect(onRemove).toHaveBeenCalledWith("/repo", tree.path, true, false);
+});
+
 it("offers cascade deletion for a session-linked worktree but not the main copy", async () => {
   vi.mocked(listWorktrees).mockResolvedValue({
     worktrees: [
@@ -1205,12 +1227,13 @@ it("shows unknown publication separately from a clean working tree", async () =>
   expect(row.textContent).toContain("Publication unknown");
 });
 
-it("keeps create and delete off for a project on a connected machine", async () => {
+it("creates on the owning Host but keeps delete off for a project on a connected machine", async () => {
   await act(async () =>
     root.render(createElement(WorktreesPage, { cwd: "remote://machine/repo", onRemove: vi.fn() })),
   );
   expect(container.textContent).toContain("unavailable for a project on a connected machine");
-  expect(button("Create worktree").disabled).toBe(true);
+  expect(container.textContent).not.toContain("Creating and deleting");
+  expect(button("Create worktree").disabled).toBe(false);
   expect(unavailable(worktreeDelete(container, '[aria-label="Delete feature"]'))).toBe(true);
   // Listing and Reveal still follow the machine that owns the path.
   expect(

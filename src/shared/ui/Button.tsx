@@ -122,6 +122,8 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   tooltipWhen?: "always" | "overflow";
   /** Muted lines under the tooltip title (path, counts, state). */
   tooltipDetails?: readonly ReactNode[];
+  /** Use the row-detail frame for structured object metadata. */
+  tooltipVariant?: "detail";
   /** Tooltip placement. Default `bottom`. */
   tooltipSide?: PopoverSide;
   tooltipAlign?: PopoverAlign;
@@ -272,6 +274,7 @@ export function Button({
   tooltip,
   tooltipWhen = "always",
   tooltipDetails,
+  tooltipVariant,
   tooltipSide = "bottom",
   tooltipAlign,
   tooltipWide,
@@ -458,6 +461,7 @@ export function Button({
     shortcut: hintShortcut,
     side: tooltipSide,
     align: tooltipAlign,
+    variant: tooltipVariant,
     wide: tooltipWide,
     describe: false,
   });

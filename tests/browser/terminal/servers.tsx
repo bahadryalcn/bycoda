@@ -1,8 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { PhonePairingFixture } from "./phone-pairing-fixture";
 import { refreshSshRunbookQueue } from "../../../src/features/connections/model/sshRunbookQueue";
 import { createRoot } from "react-dom/client";
 import { TerminalView } from "../../../src/features/terminal/ui/TerminalView";
+import { Terminal } from "@xterm/xterm";
+import {
+  ServerAgentContext,
+  type ServerAgentSession,
+} from "../../../src/features/connections/public/serverAgent";
+import { requestSessionQuote } from "../../../src/features/sessions/public/targetedChatQuote";
+import { flushHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
+import { ServerAgentFixture } from "./server-agent-fixture";
+import { ToastRegion } from "../../../src/shared/ui/ToastRegion";
 import { ProjectRail } from "../../../src/app/shell/ProjectRail";
 import {
   ToolNavigation,
@@ -31,6 +41,42 @@ import "../../../src/styles/index.css";
 
 // Memory-only native bridge. No real endpoint, DB or credential access.
 const params = new URLSearchParams(location.search);
+let selectAgentExcerpt: (() => void) | undefined;
+let activityOutput = "";
+const fixtureTurnStartedAt = Date.now();
+const sharedSelections: Array<{ sessionId: string; text: string }> = [];
+const hostSelections: Array<{ sessionId: string; cwd: string; text: string }> = [];
+const agentFixture = params.has("agentFixture")
+  ? {
+      projects: [{ path: "/fixture", openedAt: 1 }],
+      open: async (
+        { serverId, terminalId }: { serverId?: string; terminalId: string },
+        cwd: string,
+      ) => ({
+        sessionId: `agent-${serverId ?? terminalId}`,
+        cwd,
+        serverId,
+      }),
+      addSelection: (sessionId: string, text: string) => {
+        sharedSelections.push({ sessionId, text });
+        requestSessionQuote(sessionId, text);
+      },
+      sendSelection: async ({ sessionId, cwd }: ServerAgentSession, text: string) => {
+        hostSelections.push({ sessionId, cwd, text });
+      },
+    }
+  : null;
+if (agentFixture) {
+  const openTerminal = Terminal.prototype.open;
+  Terminal.prototype.open = function (container) {
+    openTerminal.call(this, container);
+    selectAgentExcerpt = () => {
+      // xterm retains the last programmatic range in its change detector after clearSelection.
+      this.select(0, 0, 10);
+      this.select(0, 0, 11);
+    };
+  };
+}
 document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
 const calls: string[] = [];
 const requests: { command: string; input: Record<string, unknown> }[] = [];
@@ -89,6 +135,11 @@ const sshRecords: ServerRecord[] =
             host: "duplicate.example.invalid",
             user: "fixture",
             port: 22,
+            ...(params.has("detailLongKey")
+              ? {
+                  identityFile: `C:/Users/fixture/.ssh/${"long-identity-filename-".repeat(6)}ed25519`,
+                }
+              : {}),
             ...(params.has("httpProxyFixture")
               ? { httpProxy: { host: "proxy.example.invalid", port: 8080 } }
               : {}),
@@ -201,6 +252,12 @@ const machines = Array.from({ length: params.has("emptyServers") ? 0 : 35 }, (_,
       : { target: `fixture@server-${index}.example.invalid`, port: 2222, remotePort: 3774 },
 }));
 Object.assign(window, {
+  serversFixtureSelectAgentText: () => selectAgentExcerpt?.(),
+  serversFixtureSharedSelections: sharedSelections,
+  serversFixtureHostSelections: hostSelections,
+  serversFixtureAgentOutput: (text: string) => {
+    activityOutput = text;
+  },
   serversFixtureRecovery: (mode: "offline" | "pending" | "ready") => {
     recoveryMode = mode;
   },
@@ -263,6 +320,22 @@ Object.assign(window, {
             ? { ...input, username: "[redacted]", password: "[redacted]" }
             : input,
       });
+      if (agentFixture && command === "canonical_store_session_guard_ready") return false;
+      if (command === "server_ssh_session_activity" && agentFixture) {
+        if (input.sessionId !== `agent-${input.serverId}` || !activityOutput) return [];
+        return [
+          {
+            requestId: "live-fixture",
+            command: "printf 'ready'",
+            startedAt: fixtureTurnStartedAt + 1,
+            state: activityOutput === "ready" ? "exited" : "running",
+            output: activityOutput,
+            exitCode: activityOutput === "ready" ? 0 : null,
+            remoteOutcomeUnknown: false,
+            truncated: false,
+          },
+        ];
+      }
       if (params.has("proxyAuthFixture") && command === "ssh_http_proxy_credentials_approve") {
         const endpoint = input.connectionId
           ? sshRecords.find((item) => item.id === input.connectionId)?.sshEndpoint
@@ -665,6 +738,7 @@ Object.assign(window, {
   },
 });
 await setLanguagePreference("en");
+if (agentFixture) await flushHostSessionBindings();
 if (params.has("serverRestoreFixture"))
   await (await import("../../../src/app/model/appLifecycle")).loadResumedWorkspace();
 function ForwardFixture() {
@@ -677,6 +751,22 @@ function ForwardFixture() {
   ) : null;
 }
 function Fixture() {
+  const [agentPortal, setAgentPortal] = useState<{
+    session: ServerAgentSession;
+    host: HTMLElement;
+  }>();
+  const bridge = useMemo(
+    () =>
+      agentFixture && {
+        ...agentFixture,
+        mount: (session: ServerAgentSession, host: HTMLElement) => {
+          const portal = { session, host };
+          setAgentPortal(portal);
+          return () => setAgentPortal((current) => (current === portal ? undefined : current));
+        },
+      },
+    [],
+  );
   useEffect(() => {
     if (params.has("queueFixture")) void refreshSshRunbookQueue();
     if (params.has("recoveryFixture")) return startRemoteAutoRecovery();
@@ -703,6 +793,7 @@ function Fixture() {
     ) : null;
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column" }}>
+      <ToastRegion />
       <div style={{ display: "flex", gap: 8, padding: "4px 16px" }}>
         <Button onClick={() => setVisible(!visible)}>Toggle servers</Button>
       </div>
@@ -736,9 +827,21 @@ function Fixture() {
             >
               {params.has("terminalWorkspace") ? (
                 <div data-app-servers className="flex min-h-0 min-w-0 flex-1 flex-col">
-                  <ServersTerminalWorkspace visible={visible && active === "servers"}>
-                    <ServersView besideRail />
-                  </ServersTerminalWorkspace>
+                  <ServerAgentContext.Provider value={bridge}>
+                    <ServersTerminalWorkspace visible={visible && active === "servers"}>
+                      <ServersView besideRail />
+                    </ServersTerminalWorkspace>
+                    {agentPortal
+                      ? createPortal(
+                          <ServerAgentFixture
+                            binding={agentPortal.session}
+                            startedAt={fixtureTurnStartedAt}
+                          />,
+                          agentPortal.host,
+                          agentPortal.session.sessionId,
+                        )
+                      : null}
+                  </ServerAgentContext.Provider>
                 </div>
               ) : (
                 <ServersView besideRail />

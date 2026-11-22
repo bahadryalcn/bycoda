@@ -2,6 +2,8 @@
 //! producer freshness or permission to replay an original.
 use crate::session_store::{native_delivery as journal, SessionStore};
 use serde_json::{json, Value};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 pub(super) const OPEN: &str = "native.delivery.epochs.open";
 pub(super) const STATUS: &str = "native.delivery.epochs.status";
@@ -9,6 +11,40 @@ pub(super) const COMPACT: &str = "native.delivery.epochs.compact";
 pub(super) const CLOSE: &str = "native.delivery.epochs.close";
 pub(super) const GAP_RESOLVE: &str = "native.delivery.epochs.gap.resolve";
 const GAP_CAPABILITY: &str = "native.delivery.epochs.gaps.v1";
+
+/// A gap lookup settles its slot for good, so it gets its own window instead of the
+/// 250 ms cleanup budget: on a busy Host that budget expired on every attempt and one
+/// unresolved slot held the whole epoch prefix (tens of thousands of retained rows).
+#[cfg(not(test))]
+pub(super) const GAP_BUDGET: Duration = Duration::from_secs(3);
+#[cfg(test)]
+pub(super) const GAP_BUDGET: Duration = Duration::from_secs(10);
+/// After a failed lookup, maintenance skips the gap this long instead of holding every
+/// caller for a full `GAP_BUDGET` while the Host stays unreachable.
+#[cfg(not(test))]
+const GAP_RETRY: Duration = Duration::from_secs(30);
+#[cfg(test)]
+const GAP_RETRY: Duration = Duration::ZERO;
+
+struct GapBackoff(Mutex<Option<Instant>>);
+
+impl GapBackoff {
+    const fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+    fn allowed(&self, now: Instant) -> bool {
+        self.0
+            .lock()
+            .map_or(true, |next| next.map_or(true, |next| now >= next))
+    }
+    fn settle(&self, now: Instant, failed: bool, retry: Duration) {
+        if let Ok(mut next) = self.0.lock() {
+            *next = failed.then(|| now + retry);
+        }
+    }
+}
+
+static GAP_BACKOFF: GapBackoff = GapBackoff::new();
 
 /// Separately negotiated; a Host without it keeps gaps held (never guessed).
 pub(super) fn supports_gaps(descriptor: &Value) -> bool {
@@ -43,9 +79,12 @@ pub(super) fn gap_params(original: &journal::Original) -> Result<Value, String> 
         "byteLength":original.payload_bytes()}))
 }
 
-/// Host's answer for that exact identity. `true`: durable no-effect fence
-/// (never admitted, never admittable; not success). `false`: Host holds a
-/// receipt; resolve through ordinary delivery. Any mismatch is an error.
+/// Host's answer for that exact identity. `true`: the slot is fenced, either by a
+/// durable no-effect fence (never admitted, never admittable; not success) or
+/// because Host abandoned an admitted original nothing runs any more (no result
+/// can publish and it is never replayed; a buffer's next full report supersedes
+/// it). `false`: Host holds a live receipt; resolve through ordinary delivery.
+/// Any mismatch is an error.
 pub(super) fn gap_outcome(params: &Value, response: &Value) -> Result<bool, String> {
     let invalid = || "NATIVE_DELIVERY_EPOCH_INVALID: Host gap resolution is invalid".to_string();
     let fields = response.as_object().ok_or_else(invalid)?;
@@ -65,7 +104,7 @@ pub(super) fn gap_outcome(params: &Value, response: &Value) -> Result<bool, Stri
         }
     }
     match response["outcome"].as_str() {
-        Some("not_admitted") => Ok(true),
+        Some("not_admitted" | "abandoned") => Ok(true),
         Some("admitted") => Ok(false),
         _ => Err(invalid()),
     }
@@ -131,10 +170,16 @@ pub(super) fn maintenance_params(
     recover: impl FnOnce(&journal::Original) -> Result<bool, String>,
 ) -> Result<Option<Value>, String> {
     let plan = journal::epochs::maintenance_plan(store, epoch, gap_supported)?;
-    if let Some(original) = plan.gap.as_ref() {
+    if let Some(original) = plan
+        .gap
+        .as_ref()
+        .filter(|_| GAP_BACKOFF.allowed(Instant::now()))
+    {
         // Log only the sequence and a bounded diagnostic, never request or reply data.
         let sequence = plan.eligible_through + 1;
-        match recover(original) {
+        let outcome = recover(original);
+        GAP_BACKOFF.settle(Instant::now(), outcome.is_err(), GAP_RETRY);
+        match outcome {
             Ok(true) => {
                 log::info!("Native delivery gap {sequence}: Host fence saved");
                 return compact_params(store, epoch);
@@ -146,6 +191,7 @@ pub(super) fn maintenance_params(
     Ok(compact_request(epoch, &plan))
 }
 
+/// A bounded class only: Host codes and transport errors may carry request data.
 pub(super) fn gap_error(stage: &str, error: &str) -> String {
     let code = error.split([':', ' ']).next().unwrap_or_default();
     if code.starts_with("NATIVE_DELIVERY_")
@@ -156,12 +202,85 @@ pub(super) fn gap_error(stage: &str, error: &str) -> String {
     {
         return format!("{stage} ({code})");
     }
-    stage.into()
+    let lower = error.to_ascii_lowercase();
+    let class =
+        if lower.contains("deadline") || lower.contains("timed out") || lower.contains("timeout") {
+            "timeout"
+        } else if [
+            "closed",
+            "disconnect",
+            "refused",
+            "reset",
+            "not connected",
+            "unavailable",
+        ]
+        .iter()
+        .any(|word| lower.contains(word))
+        {
+            "connection"
+        } else {
+            "other"
+        };
+    format!("{stage} ({class})")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_abandoned_host_original_fences_its_slot_for_every_kind() {
+        let params = |kind: &str| json!({"ownerId":"o","generation":2,"sequence":7,"kind":kind,"sha256":"a","byteLength":1});
+        let reply = |params: &Value, outcome: &str| {
+            let mut reply = params.clone();
+            reply["outcome"] = json!(outcome);
+            reply
+        };
+        let format = params("native.services.workspace.format");
+        assert_eq!(gap_outcome(&format, &reply(&format, "abandoned")), Ok(true));
+        assert_eq!(gap_outcome(&format, &reply(&format, "admitted")), Ok(false));
+        for kind in ["native.services.conversation.desktop.finish", "buffer"] {
+            let other = params(kind);
+            assert_eq!(gap_outcome(&other, &reply(&other, "abandoned")), Ok(true));
+        }
+        assert!(gap_outcome(&format, &reply(&format, "retired")).is_err());
+    }
+
+    #[test]
+    fn a_gap_failure_names_a_bounded_class_and_no_request_data() {
+        assert_eq!(
+            gap_error("Host lookup failed", "NATIVE_DELIVERY_EPOCH_FENCED: x"),
+            "Host lookup failed (NATIVE_DELIVERY_EPOCH_FENCED)"
+        );
+        assert_eq!(
+            gap_error(
+                "Host lookup failed",
+                "request timed out after 3s for /secret"
+            ),
+            "Host lookup failed (timeout)"
+        );
+        assert_eq!(
+            gap_error("Host lookup failed", "socket closed"),
+            "Host lookup failed (connection)"
+        );
+        assert_eq!(
+            gap_error("Host lookup failed", "boom"),
+            "Host lookup failed (other)"
+        );
+    }
+
+    #[test]
+    fn gap_lookup_waits_out_its_retry_after_a_failure_only() {
+        let backoff = GapBackoff::new();
+        let now = Instant::now();
+        let retry = Duration::from_secs(30);
+        assert!(backoff.allowed(now));
+        backoff.settle(now, true, retry);
+        assert!(!backoff.allowed(now + Duration::from_secs(29)));
+        assert!(backoff.allowed(now + retry));
+        backoff.settle(now + retry, false, retry);
+        assert!(backoff.allowed(now + retry));
+    }
 
     #[test]
     fn epoch_catalog_requires_the_complete_finite_capability() {

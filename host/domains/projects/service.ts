@@ -7,7 +7,6 @@ import {
   cloneRepository,
   runGitClone,
   type CloneFolderPorts,
-  type SpawnProcess,
 } from "./clone";
 
 export type ProjectsReadOptions = { signal?: AbortSignal };
@@ -32,8 +31,7 @@ export function createProjectsService<Project>(dependencies: {
   directoryPorts?: ProjectDirectoryPorts;
   /** Process launch and existence check for `git clone`; domains never import platform modules. */
   clonePorts?: {
-    spawn: SpawnProcess;
-    killTree: (pid: number) => void;
+    exec: Parameters<typeof runGitClone>[2]["exec"];
     folders: CloneFolderPorts;
   };
 }) {
@@ -104,8 +102,7 @@ export function createProjectsService<Project>(dependencies: {
         (url, dest, options) =>
           runGitClone(url, dest, {
             ...options,
-            spawn: runtime().spawn,
-            killTree: runtime().killTree,
+            exec: runtime().exec,
           }),
         // Resolved per call so a missing port cannot fail before the URL is validated.
         {

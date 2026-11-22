@@ -65,7 +65,9 @@ export async function capEventsGlobally(
   // Sessions can gain events between slices; the pass is advisory and repeats hourly.
   const rows: Array<Record<string, unknown>> = [];
   for (let after = ""; ;) {
-    const slice = await db.storeScope(() =>
+    // A pure read of committed sizes: it runs beside the writer so the scan (seconds on a
+    // large events table) never holds the queue that requests wait in.
+    const slice = await db.readScope(() =>
       db
         .prepare(
           `SELECT session_id, SUM(octet_length(payload)) AS bytes FROM events

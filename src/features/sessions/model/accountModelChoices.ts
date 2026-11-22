@@ -4,6 +4,7 @@ import type { AgentModel } from "./models";
 import { providerAccountSignedOut } from "../../providers/public/accountUsage";
 import type { ProviderRateLimits } from "../../providers/public/accountUsage";
 import {
+  DEFAULT_PROVIDER_ACCOUNT_ID,
   defaultProviderAccountId,
   PROVIDER_ACCOUNT_COLORS,
   PROVIDER_ACCOUNT_PROVIDERS,
@@ -107,7 +108,9 @@ export function modelAccountLabel(
 ): string {
   if (catalog !== undefined && supportsProviderAccounts(model.harness)) {
     const accounts = catalog[model.harness] ?? [];
-    const found = accounts.find((account) => account.id === (accountId ?? "default"));
+    const id = accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID;
+    const found = accounts.find((account) => account.id === id);
+    if (!found && id === DEFAULT_PROVIDER_ACCOUNT_ID) return model.name;
     return `${model.name} ${found ? accountDisplayLabel(accounts, found) : t("Unavailable Host account")}`;
   }
   if (!supportsProviderAccounts(model.harness)) return model.name;

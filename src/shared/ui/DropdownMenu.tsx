@@ -104,6 +104,7 @@ export function DropdownMenu({
   gap,
   maxHeight,
   density,
+  frosted,
   closeOnSelect,
   search,
   initialActiveId,
@@ -155,6 +156,7 @@ export function DropdownMenu({
       width={width}
       gap={gap}
       maxHeight={maxHeight}
+      frosted={frosted}
       search={search}
       initialActiveId={initialActiveId}
       ignore={ignore}
@@ -175,6 +177,7 @@ type SurfaceProps = {
   width: number | "content";
   gap?: number;
   maxHeight?: number;
+  frosted?: boolean;
   search?: DropdownMenuSearch;
   initialActiveId?: string;
   ignore?: string;
@@ -200,6 +203,7 @@ function MenuSurface({
   width,
   gap,
   maxHeight,
+  frosted,
   search,
   initialActiveId,
   ignore,
@@ -567,6 +571,7 @@ function MenuSurface({
       minWidth={width === "content" ? contentWidth : width}
       gap={gap}
       maxHeight={maxHeight}
+      frosted={frosted}
       layer={depth ? LAYER.submenu + depth - 1 : undefined}
       ignore={ignore}
       onContextMenu={(event) => event.preventDefault()}

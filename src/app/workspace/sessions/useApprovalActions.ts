@@ -50,7 +50,7 @@ export interface ApprovalActionDeps {
   liveAgents?: Parameters<typeof focusWindowLiveAgent>[0][];
   unopenedRemoteRef?: MutableRefObject<{ project: string; session: { id: string } }[]>;
   dismissRemoteFinished?: (sessionId: string) => void;
-  onSelectRemoteSession?: (project: string, remoteSessionId: string) => void;
+  onSelectRemoteSession?: (project: string, remoteSessionId: string) => Promise<boolean>;
   /** Closes the full-screen surfaces (search, inbox, ...) that would cover the conversation. */
   closeSurfaces?: () => void;
 }
@@ -164,12 +164,12 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
           sessionsRef.current.some((session) => session.id === ownerId) || !onSelectRemoteSession
             ? undefined
             : unopenedRemoteRef?.current.find(({ session }) => session.id === ownerId);
-        if (remote) {
+        if (remote && onSelectRemoteSession) {
           if (locked(remote.project)) return false;
           closeSurfaces?.();
-          dismissRemoteFinished?.(ownerId);
-          onSelectRemoteSession?.(remote.project, ownerId);
-          return true;
+          const opened = await onSelectRemoteSession(remote.project, ownerId);
+          if (opened) dismissRemoteFinished?.(ownerId);
+          return opened;
         }
         const known = sessionsRef.current.find((session) => session.id === ownerId);
         const session = known ?? (await ensureOpenSession?.(ownerId));

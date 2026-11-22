@@ -31,6 +31,7 @@ import {
 import { acquireHostOwner, probeHostOwner } from "./owner";
 import { startHostDiagnostics, type HostDiagnostics } from "./diagnostics/host-lifecycle";
 import { createBootTimer } from "./server/boot-phases";
+import { hostGitExec } from "./git/git-exec-pool";
 
 process.umask(0o077);
 // npm-based providers can launch Node subprocesses without a separate Node
@@ -451,6 +452,13 @@ Connect another computer using an SSH forward to the loopback port.`);
   const { HostEngine } = await import("./engine");
   const { hostProviders } = await import("./providers/providers");
   const { createHostServer } = await import("./server");
+  if (command === "serve") {
+    const { applyStoredStallProfiles } = await import("./diagnostics/stall-profile-setting");
+    // A failed read keeps profiles off, the default.
+    await applyStoredStallProfiles(store).catch((error: unknown) =>
+      console.warn("Could not read the stall profile setting:", error),
+    );
+  }
   boot?.phase("app-skills");
   try {
     const { installAppSkills } = await import("./app-skills/app-skills");
@@ -618,6 +626,7 @@ Connect another computer using an SSH forward to the loopback port.`);
         await drain("tunnels", () => server.tunnels.close());
         await drain("engine", () => engine.close());
         await drain("provider backend", () => backend.close());
+        await drain("git workers", () => hostGitExec.close());
         release();
         await drain("database", cleanup);
         // Native/provider handles can outlive close(). All work has now drained;

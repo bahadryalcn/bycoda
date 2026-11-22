@@ -116,6 +116,15 @@ vi.mock("@xterm/xterm", () => ({
     onRender() {
       return { dispose() {} };
     }
+    onSelectionChange() {
+      return { dispose() {} };
+    }
+    onScroll() {
+      return { dispose() {} };
+    }
+    getSelection() {
+      return "";
+    }
     attachCustomKeyEventHandler() {}
     attachCustomWheelEventHandler() {}
   },
@@ -953,6 +962,38 @@ it("shows failed SSH startup as a closed terminal and discards pending input", a
   } finally {
     await act(async () => root.unmount());
     host.remove();
+  }
+});
+
+it("holds a transient PTY bridge failure before showing it and does not spawn again", async () => {
+  const { host, root } = setup();
+  pty.readyPtyBridge.mockRejectedValueOnce(
+    Object.assign(new Error("Bridge request timed out"), { code: "RPC_TIMEOUT" }),
+  );
+  const lifecycle = vi.fn();
+  vi.useFakeTimers();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "bridge-grace",
+          cwd: "",
+          active: true,
+          onLifecycle: lifecycle,
+        }),
+      ),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(2_999));
+    expect(host.textContent).not.toContain("Terminal closed");
+    expect(lifecycle).not.toHaveBeenCalledWith("failed");
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(host.textContent).toContain("Terminal closed");
+    expect(lifecycle).toHaveBeenCalledWith("failed");
+    expect(pty.spawnPty).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.useRealTimers();
   }
 });
 

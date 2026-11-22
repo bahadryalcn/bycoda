@@ -78,7 +78,7 @@ if ($errors.Count) { throw ($errors | Out-String) }
   assert.equal(plan.automaticRestart, false);
   assert.equal(plan.toolManifest.length, 8);
   assert.equal(plan.toolManifest.find((tool) => tool.id === "node").version, "24.22.1");
-  assert.equal(plan.toolManifest.find((tool) => tool.id === "pnpm").version, "12.15.0");
+  assert.equal(plan.toolManifest.find((tool) => tool.id === "pnpm").version, "12.21.0");
   assert(plan.toolManifest.every((tool) => /^[a-f0-9]{64}$/.test(tool.sha256)));
 });
 

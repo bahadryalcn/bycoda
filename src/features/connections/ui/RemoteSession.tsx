@@ -25,7 +25,7 @@ import {
   saveHostSessionBinding,
   flushHostSessionBindings,
 } from "../model/sessionExecutionBinding";
-import { applyStreamSync } from "../model/protocol";
+import { applyStreamSync, providerSteerCapability } from "../model/protocol";
 import { mergePreviewBlocks } from "../model/mergePreviewBlocks";
 import { resolveQuestionDraft } from "../../sessions/public/questionDrafts";
 import {
@@ -95,7 +95,6 @@ import {
   registerWorkspaceRewindUndoHandler,
   type WorkspaceRewindUndoIdentity,
 } from "../../workspaces/ui/WorkspaceRewindPreview";
-import { isModelEnabled } from "../../sessions/public/models";
 import { RemoteBindingGeneration } from "../model/remoteBindingGeneration";
 import { useRemoteModelCatalog } from "../model/useRemoteModelCatalog";
 import { remoteSessionPollDelay } from "../model/remotePollingPolicy";
@@ -120,7 +119,12 @@ import {
   registerRemoteSessionActions,
   publishRemoteSessionActionSource,
 } from "../model/remoteSessionActions";
-import { HOST_UPDATE_NOTICE, SESSION_REWIND, SESSION_SHELL } from "../model/remoteCapabilities";
+import {
+  HOST_UPDATE_NOTICE,
+  SESSION_PROVIDER_ACCOUNT,
+  SESSION_REWIND,
+  SESSION_SHELL,
+} from "../model/remoteCapabilities";
 import { canRewindConversation } from "../../sessions/public/conversationRewind";
 import { parseShellCommand, SHELL_FOLLOW_UP_PROMPT } from "../../sessions/public/shellRun";
 import { loadResumeAtReset } from "../../settings/public/settings";
@@ -143,7 +147,11 @@ import {
 } from "../model/connections";
 import { beginRemoteCreate, endRemoteCreate } from "../model/remoteCreateIntent";
 import { blocksSending, needsSignIn, sendAfterReconnect } from "../model/remoteConnection";
-import { CONTINUE_PROMPT } from "../../sessions/public/inFlight";
+import {
+  CONTINUE_PROMPT,
+  RESUME_PROMPT,
+  usageLimitAfterTargetChange,
+} from "../../sessions/public/inFlight";
 import { consumeOperatorCommand } from "../../sessions/public/operatorCommand";
 import { sameQueuedModelTarget } from "../../sessions/public/messageQueue";
 import {
@@ -154,7 +162,7 @@ import {
   leaseRetryDelay,
   type RemoteQueueDraft,
 } from "../model/remoteQueue";
-import { followUpRefusalEvent, type QueueEvent } from "../model/queueState";
+import { followUpRefusalEvent, steerWaitReason, type QueueEvent } from "../model/queueState";
 import { isLeaseHeld } from "../../sync/model/runLease";
 import { remoteTurnInterrupted } from "../model/remoteRecovery";
 import { forgetRemoteQueue } from "../model/useRemoteQueue";
@@ -178,10 +186,11 @@ import {
   classifyRemoteError,
   describeRemoteError,
   isConnectionFailure,
+  isTransientTransportError,
   remoteErrorText,
 } from "../model/remoteFailure";
 import { errorText } from "../../../shared/lib/errors";
-import { useQuietRetry } from "../model/useQuietRetry";
+import { useGracedFailure } from "../model/transientFailure";
 import {
   classifyCommandFailure,
   COMMAND_RETRY_AUTOMATIC_LIMIT,
@@ -224,7 +233,6 @@ export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
   remoteSessionLoading: boolean;
   remoteSessionStarted: boolean;
   managedWorkspaceCreationReady: boolean;
-  workingMachine?: string;
   headerStatus?: ReactNode;
   /** The host recorded that this chat's last turn was lost; Continue is offered. */
   interruptedTurn: boolean;
@@ -418,6 +426,8 @@ function ConnectedRemoteSession({
   const [descriptor, setDescriptor] = useState<HostDescriptor | undefined>(() =>
     cachedDescriptors.get(machine.id),
   );
+  const canSelectProviderAccount =
+    descriptor?.capabilities.includes(SESSION_PROVIDER_ACCOUNT) === true;
   const [attachmentOwner] = useState(() => attachmentOwnerId("desktop-composer", shell.id));
   const ownsAttachments = !!descriptor?.capabilities.includes(ATTACHMENT_OWNERSHIP_CAPABILITY);
   const ownership = useMemo(
@@ -547,6 +557,7 @@ function ConnectedRemoteSession({
     const current = remoteDataStateRef.current;
     publishRemoteDataState({
       phase: snapshotRef.current || current.updatedAt ? "refreshing" : "loading",
+      error: isTransientTransportError(current.error) ? current.error : undefined,
       updatedAt: current.updatedAt,
     });
   };
@@ -575,6 +586,7 @@ function ConnectedRemoteSession({
     error: catalogError,
     loading: catalogLoading,
     refresh: refreshCatalog,
+    retry: retryCatalog,
   } = useRemoteModelCatalog({
     scope: {
       machineId: machine.id,
@@ -635,7 +647,13 @@ function ConnectedRemoteSession({
   const [pending, setPending] = useState(initialDurablePending);
   // Why the last Send was not taken; shown until the next one is.
   const [refusal, setRefusal] = useState("");
-  const lastFailureClass = useRef<CommandFailureClass | undefined>(undefined);
+  const lastCommandFailure = useRef<{ commandId: string; kind: CommandFailureClass } | undefined>(
+    undefined,
+  );
+  const commandFailureKind = (commandId: string) => {
+    const failure = lastCommandFailure.current;
+    return failure?.commandId === commandId ? failure.kind : undefined;
+  };
   // Ticks that re-run the pending check: machine back, window focused, or backoff fired.
   const [recoveryTick, setRecoveryTick] = useState(0);
   const [focusTick, setFocusTick] = useState(0);
@@ -787,9 +805,8 @@ function ConnectedRemoteSession({
       (!snapshot.executionOwner && snapshot.runId === "desktop"));
   const remoteCanSteer =
     !desktopRun &&
-    !!descriptor?.capabilities.includes("sessions.steer") &&
     !!hostSession &&
-    ["codex", "claude", "cursor", "opencode", "pi", "omp", "hermes"].includes(hostSession.harness);
+    !!descriptor?.capabilities.includes(providerSteerCapability(hostSession.harness));
   // A removed draft leaves the transcript at once and returns if the host refuses.
   const [removingDraft, setRemovingDraft] = useState<string>();
   // An accepted turn stays on screen until a sync shows the host's copy, so
@@ -912,13 +929,6 @@ function ConnectedRemoteSession({
                 historyPageRequest.current = null;
                 setRemoteHistoryLoading(false);
                 setRemoteDeleted(true);
-                const currentData = remoteDataStateRef.current;
-                publishRemoteDataState({
-                  phase: currentData.updatedAt ? "stale" : "error",
-                  updatedAt: currentData.updatedAt,
-                  error: t("This conversation was deleted on the host."),
-                });
-                setError(t("This conversation was deleted on the host."));
                 return;
               }
               if (changes.reset || sourceChanged) {
@@ -1359,7 +1369,7 @@ function ConnectedRemoteSession({
   useEffect(() => {
     if (!online || sessionId || !catalog || !providers.length) return;
     const harness = providers.includes(draft.harness) ? draft.harness : providers[0];
-    const models = (catalog.models[harness] ?? []).filter((model) => isModelEnabled(model.id));
+    const models = catalog.models[harness] ?? [];
     const model =
       findRemoteModel(models, draft.model) ??
       (harness === draft.harness ? undefined : models[0]) ??
@@ -1371,7 +1381,13 @@ function ConnectedRemoteSession({
         current.model === model.id &&
         sameModelSettings(settings, current.settings)
         ? current
-        : { ...current, harness, model: model.id, settings };
+        : {
+            ...current,
+            harness,
+            model: model.id,
+            settings,
+            providerAccountId: current.harness === harness ? current.providerAccountId : undefined,
+          };
     });
   }, [online, catalog, providers, sessionId, draft.harness, draft.model]);
 
@@ -1380,9 +1396,16 @@ function ConnectedRemoteSession({
     model: hostSession.model,
     settings: hostSession.modelSettings ?? {},
     mode: hostSession.runtimeMode,
-    ...(owner ? { providerAccountId: hostSession.providerAccountId ?? null } : {}),
+    providerAccountId: hostSession.providerAccountId ?? null,
   };
   const configuration = saved ? (changes ?? saved) : draft;
+  const selectedProviderAccountId =
+    configuration.providerAccountId === null
+      ? DEFAULT_PROVIDER_ACCOUNT_ID
+      : (configuration.providerAccountId ??
+        (configuration.harness === saved?.harness
+          ? (saved.providerAccountId ?? undefined)
+          : undefined));
   useEffect(() => {
     const binding = hostSessionBinding(shell);
     if (!binding || binding.created) return;
@@ -1426,14 +1449,7 @@ function ConnectedRemoteSession({
   };
 
   const accountAvailable = (provider: "codex" | "claude" | "grok", accountId: string): boolean => {
-    if (!owner || preparingRef.current) return false;
-    if (
-      hostSession &&
-      !descriptor?.capabilities.includes("sessions.configure.providerAccount.v1")
-    ) {
-      setError(t(HOST_UPDATE_NOTICE));
-      return false;
-    }
+    if (!canSelectProviderAccount || preparingRef.current) return false;
     const accounts = catalog?.accounts?.[provider];
     if (accounts && !accounts.some((account) => account.id === accountId)) {
       setError(t("This account is not available on the owning Host."));
@@ -1809,7 +1825,7 @@ function ConnectedRemoteSession({
       const message = String(reason);
       lastRunFailure.current = message;
       const failureClass = classifyCommandFailure(reason);
-      lastFailureClass.current = failureClass;
+      lastCommandFailure.current = { commandId: command.commandId, kind: failureClass };
       // Saved to the outbox: a failure to reach the Host is retried by the pending
       // check, which says so in the notice instead of showing the raw error.
       if (persisted && optimistic) optimistic.saved = true;
@@ -1820,7 +1836,11 @@ function ConnectedRemoteSession({
         reason !== null &&
         "code" in reason &&
         reason.code === "RPC_WS_UNSUPPORTED";
-      if (message.includes("Host rejected request:") && !blockedRetry) {
+      if (
+        failureClass === "definitive" &&
+        message.includes("Host rejected request:") &&
+        !blockedRetry
+      ) {
         if (command.type === "send" || command.type === "compact")
           setUnseenSend((current) =>
             current?.commandId === command.commandId ? undefined : current,
@@ -1928,11 +1948,7 @@ function ConnectedRemoteSession({
       setChanges(undefined);
       return;
     }
-    if (
-      owner &&
-      failedAccountConfiguration.current &&
-      same(changes, failedAccountConfiguration.current)
-    )
+    if (failedAccountConfiguration.current && same(changes, failedAccountConfiguration.current))
       return;
     if (
       applied.current &&
@@ -1951,6 +1967,9 @@ function ConnectedRemoteSession({
     }
     applying.current = true;
     const sent = changes;
+    const changesAccount =
+      sent.providerAccountId !== undefined &&
+      (sent.harness !== saved.harness || sent.providerAccountId !== saved.providerAccountId);
     void run({
       type: "configure",
       ...remoteIntentAuthority(changes),
@@ -1962,14 +1981,11 @@ function ConnectedRemoteSession({
       model: changes.model,
       modelSettings: changes.settings,
       runtimeMode: changes.mode,
-      ...(owner && changes.providerAccountId !== undefined
-        ? { providerAccountId: changes.providerAccountId }
-        : {}),
+      ...(changesAccount ? { providerAccountId: sent.providerAccountId } : {}),
     })
       .then((receipt) => {
         if (receipt) applied.current = sent;
-        else if (owner && sent.providerAccountId !== undefined)
-          failedAccountConfiguration.current = sent;
+        else if (changesAccount) failedAccountConfiguration.current = sent;
       })
       .finally(() => {
         applying.current = false;
@@ -2254,7 +2270,9 @@ function ConnectedRemoteSession({
           harness: configuration.harness,
           model: configuration.model,
           modelSettings: { ...configuration.settings },
-          ...(owner ? { providerAccountId: configuration.providerAccountId ?? "default" } : {}),
+          ...(canSelectProviderAccount && supportsProviderAccounts(configuration.harness)
+            ? { providerAccountId: selectedProviderAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID }
+            : {}),
         },
       }) !== false
     );
@@ -2604,7 +2622,9 @@ function ConnectedRemoteSession({
           harness: hostSession.harness,
           model: hostSession.model,
           modelSettings: { ...hostSession.modelSettings },
-          ...(owner ? { providerAccountId: hostSession.providerAccountId ?? "default" } : {}),
+          ...(canSelectProviderAccount && supportsProviderAccounts(hostSession.harness)
+            ? { providerAccountId: hostSession.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID }
+            : {}),
         },
       };
       if (
@@ -2740,7 +2760,9 @@ function ConnectedRemoteSession({
           harness: configuration.harness,
           model: configuration.model,
           modelSettings: { ...configuration.settings },
-          ...(owner ? { providerAccountId: configuration.providerAccountId ?? "default" } : {}),
+          ...(canSelectProviderAccount && supportsProviderAccounts(configuration.harness)
+            ? { providerAccountId: selectedProviderAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID }
+            : {}),
         },
       };
       const currentQueue = queue.current();
@@ -2805,7 +2827,6 @@ function ConnectedRemoteSession({
     remoteDeleted,
     authorityGeneration: snapshot?.authorityGeneration,
     saved,
-    ownerBound: !!owner,
     providers,
     capabilities: descriptor?.capabilities,
     queue,
@@ -2915,11 +2936,13 @@ function ConnectedRemoteSession({
     id: shell.id,
     adoptedAuthorityGeneration: hostSession ? snapshot?.authorityGeneration : undefined,
     hostBinding: hostSessionBinding(shell),
-    providerAccountId:
-      configuration.providerAccountId === null
-        ? DEFAULT_PROVIDER_ACCOUNT_ID
-        : (configuration.providerAccountId ??
-          (hostSession ? hostSession.providerAccountId : shell.providerAccountId)),
+    providerAccountId: selectedProviderAccountId,
+    usageLimit: hostSession
+      ? usageLimitAfterTargetChange(hostSession, {
+          ...configuration,
+          providerAccountId: selectedProviderAccountId,
+        })
+      : undefined,
     cwd: displayPath(project.cwd),
     worktreeCwd: executionCwd === project.cwd ? undefined : displayPath(executionCwd),
     workspaceMode: hostSession ? undefined : draftWorkspaceMode,
@@ -2954,13 +2977,13 @@ function ConnectedRemoteSession({
   };
 
   const catalogFailure = catalog?.errors[configuration.harness] ?? catalogError;
-  const catalogProblem = useQuietRetry(catalogFailure, refreshCatalog, catalogLoading)
-    ? undefined
-    : catalogFailure;
-  /** Settles or sends again the pending command. The Host's receipt settles it; with
-   * no receipt the same command is sent again, except shell, cancel, approve and
-   * answer, which only a receipt can settle. `automatic` checks run from the pending
-   * effect below: a failed check is retried later and raises no error of its own. */
+  const { visibleError: catalogProblem } = useGracedFailure({
+    error: catalogFailure,
+    retry: refreshCatalog,
+    loading: catalogLoading,
+    scope: questionDraftScope,
+  });
+  /** Reconciles a pending command. Automatic dispatch requires proof it never left the client. */
   const retryPending = async (automatic = false): Promise<"settled" | "retry" | "stop"> => {
     if (!pending || sendingRef.current) return "retry";
     const risky =
@@ -2976,10 +2999,28 @@ function ConnectedRemoteSession({
     const needsVerification = !stored.entry?.savedAt;
     const stopped = !!stored.entry?.stopRequested;
     let recovered: CommandReceipt | null | undefined;
+    const version = bindingGen.version;
     if (descriptor?.capabilities.includes("commands.status")) {
       try {
         recovered = await executionClient.commandStatus(pending.commandId);
       } catch (reason) {
+        if (
+          pending.type === "steer" &&
+          classifyCommandFailure(reason) === "definitive" &&
+          steerWaitReason(String(reason))
+        ) {
+          // The Host retained the undelivered draft or queue row. Retire this
+          // command ID so an owner can retry once the turn is ready.
+          await settleDurableRemoteCommand(project.key, machine.environmentId, pending);
+          const remaining = await readDurableRemoteCommand(
+            project.key,
+            machine.environmentId,
+            sessionId ?? null,
+            shell.id,
+          );
+          if (alive.current && version === bindingGen.version) setPending(remaining.command);
+          return "settled";
+        }
         if (!automatic)
           setError(
             t("Couldn’t check whether the host accepted this request: {p0}", {
@@ -3012,13 +3053,17 @@ function ConnectedRemoteSession({
       );
       return "stop";
     }
-    const version = bindingGen.version;
+    const knownNotSent = commandFailureKind(pending.commandId) === "not-sent";
+    if (!recovered && !knownNotSent) {
+      setError(t("Remote outcome is unknown. Check the target before another run."));
+      return automatic && descriptor?.capabilities.includes("commands.status") ? "retry" : "stop";
+    }
     if (!stopped) setStarting((current) => (current ? { ...current, failed: false } : current));
-    lastFailureClass.current = undefined;
+    lastCommandFailure.current = undefined;
     const receipt = recovered
       ? await run(pending, undefined, undefined, recovered)
       : await run(pending);
-    if (!receipt) return lastFailureClass.current === "definitive" ? "stop" : "retry";
+    if (!receipt) return commandFailureKind(pending.commandId) === "definitive" ? "stop" : "retry";
     if (receipt && pending.type === "shell")
       shellFollowUps.current.set(pending.commandId, remoteIntentAuthority(pending));
     if (receipt && pending.type === "create" && !stopped && version === bindingGen.version) {
@@ -3035,8 +3080,8 @@ function ConnectedRemoteSession({
     return "settled";
   };
 
-  // A pending command is settled by the Host's receipt, or sent again with the same
-  // command ID. The check runs while the machine answers, on going online or
+  // Check the Host receipt, or send a proven undelivered command with its original
+  // ID. The check runs while the machine answers, on going online or
   // recovering, on window focus, and on a backoff timer that starts at 2 s and stops
   // at 30 s. It never runs while a send is in flight, and stops for good once the
   // Host refuses the request or its ID is past the replay horizon.
@@ -3106,119 +3151,126 @@ function ConnectedRemoteSession({
     commandRetry.current?.commandId === pending.commandId &&
     commandRetry.current.stopped;
   const pendingNeedsConfirmation =
-    pending && ["shell", "cancel", "approve", "answer"].includes(pending.type);
+    pending &&
+    (["shell", "cancel", "approve", "answer"].includes(pending.type) ||
+      commandFailureKind(pending.commandId) !== "not-sent");
   // While the central notice says the machine is reconnecting, a saved request waiting for it adds no
   // second alert; the request stays saved and goes out by itself.
   const outageShownCentrally = useConnectionErrorShownCentrally(error);
   const waitingForReconnect =
     !!pending && !sending && !retryStopped && !online && !pendingNeedsConfirmation;
   // A busy host (deadline, overload) is read again quietly first; sending stays held meanwhile.
-  const queueRetrying = useQuietRetry(queue.error, queue.retryRead);
-  const notice = queue.error
-    ? queueRetrying
-      ? undefined
-      : remoteQueueReadNotice(queue.error, queue.retry)
-    : pending && !sending && !(waitingForReconnect && outageShownCentrally)
-      ? remotePendingRequestNotice(
-          retryStopped,
-          online,
-          pendingNeedsConfirmation,
-          error,
-          () =>
-            void retryPending().catch((reason) => setError(describeRemoteError(reason).message)),
-        )
-      : starting?.failed
-        ? {
-            text: starting.draft
-              ? t("Couldn’t save the draft on {p0}.", { p0: hostLabel })
-              : t("Couldn’t send the message on {p0}.", { p0: hostLabel }),
-            detail: error,
-            action: {
-              kind: "retry",
-              get label() {
-                return t("Try again");
-              },
-              run: () => {
-                const turn = { ...starting, failed: false };
-                const version = bindingGen.version;
-                const generation = ++submissionGeneration.current;
-                setStarting(turn);
-                preparingRef.current = true;
-                preparingTurn.current = turn;
-                if (!sessionId) void startSession(turn, generation);
-                else
-                  void dispatchTurn(sessionId, turn, undefined, generation)
-                    .then((sent) => {
-                      if (
-                        alive.current &&
-                        version === bindingGen.version &&
-                        generation === submissionGeneration.current
-                      )
-                        if (!sent) setStarting({ ...turn, failed: true });
-                    })
-                    .catch((reason) => {
-                      if (
-                        alive.current &&
-                        version === bindingGen.version &&
-                        generation === submissionGeneration.current
-                      ) {
-                        setError(describeRemoteError(reason).message);
-                        setStarting({ ...turn, failed: true });
-                      }
-                    })
-                    .finally(() => {
-                      if (generation === submissionGeneration.current) {
-                        preparingRef.current = false;
-                        preparingTurn.current = undefined;
-                      }
-                    });
-              },
-            },
-          }
-        : refusal
+  const { pending: queueRetrying, visibleError: queueProblem } = useGracedFailure({
+    error: queue.error,
+    retry: queue.retryRead,
+    scope: questionDraftScope,
+  });
+  const notice =
+    queueProblem && !pendingNeedsConfirmation
+      ? remoteQueueReadNotice(queueProblem, queue.retry, queue.failure, machine.name)
+      : pending && !sending && !(waitingForReconnect && outageShownCentrally)
+        ? remotePendingRequestNotice(
+            retryStopped,
+            online,
+            pendingNeedsConfirmation,
+            error,
+            () =>
+              void retryPending().catch((reason) => setError(describeRemoteError(reason).message)),
+          )
+        : starting?.failed
           ? {
-              text: refusal,
+              text: starting.draft
+                ? t("Couldn’t save the draft on {p0}.", { p0: hostLabel })
+                : t("Couldn’t send the message on {p0}.", { p0: hostLabel }),
+              detail: error,
               action: {
-                kind: "dismiss",
+                kind: "retry",
                 get label() {
-                  return t("Dismiss");
+                  return t("Try again");
                 },
-                run: () => setRefusal(""),
+                run: () => {
+                  const turn = { ...starting, failed: false };
+                  const version = bindingGen.version;
+                  const generation = ++submissionGeneration.current;
+                  setStarting(turn);
+                  preparingRef.current = true;
+                  preparingTurn.current = turn;
+                  if (!sessionId) void startSession(turn, generation);
+                  else
+                    void dispatchTurn(sessionId, turn, undefined, generation)
+                      .then((sent) => {
+                        if (
+                          alive.current &&
+                          version === bindingGen.version &&
+                          generation === submissionGeneration.current
+                        )
+                          if (!sent) setStarting({ ...turn, failed: true });
+                      })
+                      .catch((reason) => {
+                        if (
+                          alive.current &&
+                          version === bindingGen.version &&
+                          generation === submissionGeneration.current
+                        ) {
+                          setError(describeRemoteError(reason).message);
+                          setStarting({ ...turn, failed: true });
+                        }
+                      })
+                      .finally(() => {
+                        if (generation === submissionGeneration.current) {
+                          preparingRef.current = false;
+                          preparingTurn.current = undefined;
+                        }
+                      });
+                },
               },
             }
-          : error
+          : refusal
             ? {
-                text: error,
+                text: refusal,
                 action: {
                   kind: "dismiss",
                   get label() {
                     return t("Dismiss");
                   },
-                  run: () => setError(""),
+                  run: () => setRefusal(""),
                 },
               }
-            : catalogProblem
+            : error
               ? {
-                  text: t("Couldn’t load models from {p0}.", { p0: hostLabel }),
-                  detail: catalogProblem,
+                  text: error,
                   action: {
-                    kind: "retry",
+                    kind: "dismiss",
                     get label() {
-                      return t("Retry");
+                      return t("Dismiss");
                     },
-                    run: () => refreshCatalog(),
+                    run: () => setError(""),
                   },
                 }
-              : undefined;
+              : catalogProblem
+                ? {
+                    text: t("Couldn’t load models from {p0}.", { p0: hostLabel }),
+                    detail: catalogProblem,
+                    action: {
+                      kind: "retry",
+                      get label() {
+                        return t("Retry");
+                      },
+                      run: retryCatalog,
+                    },
+                  }
+                : undefined;
 
   // The notice the owner closed; different text or detail shows again.
   const [closedNotice, setClosedNotice] = useState("");
   const noticeKey = notice ? JSON.stringify([notice.text, notice.detail ?? ""]) : "";
+  const deletedNotice = remoteDeleted ? t("This conversation was deleted on the host.") : "";
 
   // A transport failure has one recovery owner above the conversation. Keep
   // independent queue/storage and command failures actionable in their own notice.
   const noticeHandledByConnection =
     connectionIssueHandled &&
+    !pendingNeedsConfirmation &&
     !!notice &&
     isConnectionFailure(classifyRemoteError(notice.detail || notice.text));
 
@@ -3912,18 +3964,17 @@ function ConnectedRemoteSession({
   };
   const overrides: RemoteSessionOverrides = {
     questionDraftScope,
-    headerStatus: (
+    headerStatus: remoteDeleted ? undefined : (
       <RemoteDataStatus
         cwd={owner?.environmentId ?? project.key}
         presentation="indicator"
+        autoRetry={false}
         state={remoteDataState}
         onRefresh={refreshOwnerContent}
         label={t("conversation")}
-        disabled={remoteDeleted}
         connectionIssueHandled={connectionIssueHandled}
       />
     ),
-    workingMachine: online && hostSession && snapshot?.status === "running" ? hostLabel : undefined,
     session,
     remoteSession: true,
     remoteFeatures: {
@@ -3935,6 +3986,15 @@ function ConnectedRemoteSession({
     },
     remoteSessionLoading: !!sessionId && !hostSession && !session.blocks.length,
     remoteSessionStarted: !!sessionId,
+    remoteLifecycleTarget:
+      hostSession && !remoteDeleted && !pageCacheOnly && !blocksSending(connection.status)
+        ? {
+            machineId: machine.id,
+            sessionId: hostSession.id,
+            projectKey: project.key,
+            lastActivityAt: snapshot?.lastActivityAt,
+          }
+        : undefined,
     managedWorkspaceCreationReady: !!descriptor?.capabilities.includes(
       "sessions.managedCreation.v1",
     ),
@@ -3943,8 +4003,16 @@ function ConnectedRemoteSession({
     remoteHistoryError: remoteHistoryError || undefined,
     onLoadRemoteHistory: loadEarlierRemote,
     onLoadRemoteBlock: loadLargeRemoteBlock,
-    sendBlockedReason: remoteDeleted
-      ? t("This conversation was deleted on the host.")
+    inlineVisualHost:
+      !activeSessionId || isLocalSyncMachine(machine)
+        ? undefined
+        : {
+            machineId: machine.id,
+            environmentId: machine.environmentId,
+            sessionId: activeSessionId,
+          },
+    sendBlockedReason: deletedNotice
+      ? deletedNotice
       : pageCacheOnly
         ? // Opening from the saved preview while the host answers is loading, not a problem.
           blocksSending(connection.status)
@@ -3987,7 +4055,7 @@ function ConnectedRemoteSession({
     },
     onQuestionReply: (_, requestId, reply) => answer(requestId, reply),
     onCompactContext: compact,
-    onSelectProviderAccount: owner
+    onSelectProviderAccount: canSelectProviderAccount
       ? (_, provider, accountId) => {
           selectAccount(provider, accountId);
         }
@@ -3995,7 +4063,7 @@ function ConnectedRemoteSession({
     onModelChange: (_, harness, model, accountId) => {
       if (!isRemoteProvider(harness)) return;
       if (
-        owner &&
+        canSelectProviderAccount &&
         accountId &&
         (!supportsProviderAccounts(harness) || !accountAvailable(harness, accountId))
       )
@@ -4004,15 +4072,14 @@ function ConnectedRemoteSession({
         ...current,
         harness,
         model,
-        ...(owner
-          ? {
-              providerAccountId:
-                accountId === DEFAULT_PROVIDER_ACCOUNT_ID
-                  ? null
-                  : (accountId ??
-                    (current.harness === harness ? current.providerAccountId : undefined)),
-            }
-          : {}),
+        providerAccountId:
+          canSelectProviderAccount && accountId
+            ? accountId === DEFAULT_PROVIDER_ACCOUNT_ID
+              ? null
+              : accountId
+            : current.harness === harness
+              ? current.providerAccountId
+              : undefined,
         settings: carryModelSettings(
           modelSource.resolve(harness, model).settings ?? [],
           current.settings,
@@ -4130,7 +4197,7 @@ function ConnectedRemoteSession({
       };
     },
     interruptedTurn,
-    onUsageLimitResume: undefined,
+    onUsageLimitResume: hostSession?.usageLimit ? () => submit(RESUME_PROMPT) : undefined,
     onUsageLimitResumeAtReset: (_, enabled) => usageLimit(enabled ? "arm" : "disarm"),
     onUsageLimitDismiss: () => usageLimit("dismiss"),
     onOpenPlan: (_, blockId) => onOpenPlan(shell.id, blockId),
@@ -4175,17 +4242,28 @@ function ConnectedRemoteSession({
           cwdOrEnvironmentId={owner?.environmentId ?? project.key}
           stale={!!hostSession}
         />
-        <RemoteDataStatus
-          cwd={owner?.environmentId ?? project.key}
-          presentation="notice"
-          state={remoteDataState}
-          onRefresh={refreshOwnerContent}
-          label={t("conversation")}
-          disabled={remoteDeleted}
-          connectionIssueHandled={connectionIssueHandled}
-        />
+        {!remoteDeleted && (
+          <RemoteDataStatus
+            cwd={owner?.environmentId ?? project.key}
+            presentation="notice"
+            state={remoteDataState}
+            machineLabel={machine.name}
+            onRefresh={refreshOwnerContent}
+            label={t("conversation")}
+            connectionIssueHandled={connectionIssueHandled}
+          />
+        )}
         <RemoteOutboxNotice project={project.key} environment={machine.environmentId} />
-        {notice && !noticeHandledByConnection && closedNotice !== noticeKey ? (
+        {deletedNotice && closedNotice !== deletedNotice ? (
+          <Toast
+            tone="info"
+            placement="top-center"
+            durationMs={null}
+            message={deletedNotice}
+            onDismiss={() => setClosedNotice(deletedNotice)}
+          />
+        ) : null}
+        {!remoteDeleted && notice && !noticeHandledByConnection && closedNotice !== noticeKey ? (
           // The shared alert stack (top center for warnings and errors). Closing it only hides
           // it: sending stays held, and the same problem shows again once it changes.
           <Toast
@@ -4202,7 +4280,12 @@ function ConnectedRemoteSession({
                 ) : null}
               </span>
             }
-            historyMessage={notice.text}
+            historyMessage={"history" in notice ? notice.history : notice.text}
+            extra={
+              "details" in notice && notice.details ? (
+                <ErrorDetails title={notice.text} detail={notice.details} />
+              ) : undefined
+            }
             action={
               notice.action && notice.action.kind !== "dismiss"
                 ? {

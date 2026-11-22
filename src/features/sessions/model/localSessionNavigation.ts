@@ -3,6 +3,7 @@ import { remoteMachineFor, remoteRequest } from "../../connections/public/connec
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { HostProject, HostSession, RemoteMachine } from "../../connections";
 import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
+import { classifyFailureLifetime } from "../../connections/public/transientFailure";
 import { getGroupLockView } from "../../group-lock/model/groupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { nativeSessionReference, resolveNativeSessionReference } from "./nativeSessionReference";
@@ -17,7 +18,7 @@ export function assertReferenceProjectVisible(cwd: string): void {
 
 /** Local fallback is proven by Native; paired Hosts retain their own exact identity. */
 async function localHost(environmentId: string): Promise<RemoteMachine> {
-  const machine = await invoke<RemoteMachine | null>("local_host_connect").catch(() => null);
+  const machine = await invoke<RemoteMachine | null>("local_host_connect");
   if (!machine || !isLocalSyncMachine(machine) || machine.environmentId !== environmentId)
     throw new Error(t("This link belongs to another local Host or profile."));
   return machine;
@@ -97,8 +98,18 @@ export type ResolvedLocalSession = {
 /** Read-only resolution. Nothing here adopts, resumes, unarchives or migrates a session. */
 export async function resolveLocalSessionReference(
   reference: LocalSessionReference,
+  { preserveTransientFailure = false }: { preserveTransientFailure?: boolean } = {},
 ): Promise<ResolvedLocalSession> {
   const privacy = getGroupLockView();
+  const readFailure = (error: unknown): never => {
+    if (
+      preserveTransientFailure &&
+      getGroupLockView() === privacy &&
+      classifyFailureLifetime(error) === "transient"
+    )
+      throw error;
+    throw unavailable();
+  };
   let locator = reference.locator;
   if (locator.kind === "native") {
     const metadata = await resolveNativeSessionReference(locator).catch(() => null);
@@ -109,16 +120,17 @@ export async function resolveLocalSessionReference(
     locator = metadata.locator;
   }
   const hostLocator = locator;
-  const machine = await localHost(hostLocator.environmentId).catch(() => null);
-  if (machine)
-    return resolveOnHost(machine, { ...reference, locator }, privacy, false).catch(() => {
-      throw unavailable();
-    });
-  const paired = await remoteMachineFor(hostLocator.environmentId).catch(() => undefined);
-  if (!paired || paired.environmentId !== hostLocator.environmentId) throw unavailable();
-  return resolveOnHost(paired, { ...reference, locator }, privacy, true).catch(() => {
-    throw unavailable();
+  let localFailure: unknown;
+  const machine = await localHost(hostLocator.environmentId).catch((error: unknown) => {
+    localFailure = error;
+    return null;
   });
+  if (machine)
+    return resolveOnHost(machine, { ...reference, locator }, privacy, false).catch(readFailure);
+  const paired = await remoteMachineFor(hostLocator.environmentId).catch(() => undefined);
+  if (!paired || paired.environmentId !== hostLocator.environmentId)
+    return readFailure(localFailure);
+  return resolveOnHost(paired, { ...reference, locator }, privacy, true).catch(readFailure);
 }
 
 /** Copy only a proven persistent owner. Fresh unsent tabs have no reference yet. */

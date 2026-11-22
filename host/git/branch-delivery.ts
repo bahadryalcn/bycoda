@@ -1,11 +1,10 @@
-import { spawn } from "node:child_process";
 import { createHash, randomUUID, type Hash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readlink, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { StringDecoder } from "node:string_decoder";
 import { join, relative, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
-import { execFileAsync } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "./git-exec-pool";
 import { hostGitRepositoryKey, withHostGitMutation } from "./git-mutations";
 import type { GhRuntime } from "./gh-runtime";
 import type {
@@ -95,7 +94,13 @@ const options = (cwd: string) => ({
   },
 });
 async function git(cwd: string, args: string[]): Promise<string> {
-  return (await execFileAsync("git", args, { ...options(cwd), encoding: "utf8" })).stdout;
+  return (
+    await hostGitExec.exec("git", args, {
+      ...options(cwd),
+      encoding: "utf8",
+      lane: ["push", "fetch", "ls-remote"].includes(args[0]) ? "network" : "default",
+    })
+  ).stdout;
 }
 const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 const lines = (value: string) => value.trim().split("\n").filter(Boolean);
@@ -117,47 +122,35 @@ const STDERR_DETAIL_BYTES = 2048;
 /** Feeds a git command's stdout into `digest` as it streams, so a large diff never has to fit
  * in a buffer. Text is decoded like the former buffered read, so fingerprints are unchanged.
  * Any failure (exit code, deadline, spawn) rejects; the caller discards the half-fed digest. */
-function streamGitInto(cwd: string, args: string[], digest: Hash): Promise<void> {
+async function streamGitInto(cwd: string, args: string[], digest: Hash): Promise<void> {
   const { timeout, env } = options(cwd);
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", args, {
+  const decoder = new StringDecoder("utf8");
+  const errorDecoder = new StringDecoder("utf8");
+  let stderr = "";
+  await hostGitExec
+    .exec("git", args, {
       cwd,
-      windowsHide: true,
+      timeout,
       env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const decoder = new StringDecoder("utf8");
-    let stderr = "";
-    let timedOut = false;
-    const fail = (reason: string) =>
-      reject(
-        new Error(
-          `Delivery could not fingerprint the checkout: \`git ${args[0]}\` ${reason}. Nothing was changed.${stderr.trim() ? ` ${stderr.trim()}` : ""}`,
-        ),
+      onOutput: (stream, chunk) => {
+        if (stream === "stdout") digest.update(decoder.write(chunk));
+        else if (stderr.length < STDERR_DETAIL_BYTES)
+          stderr += errorDecoder.write(chunk).slice(0, STDERR_DETAIL_BYTES - stderr.length);
+      },
+    })
+    .catch((error: Error & { code?: number | string | null; killed?: boolean }) => {
+      stderr += errorDecoder.end().slice(0, STDERR_DETAIL_BYTES - stderr.length);
+      const reason =
+        error.killed || error.code === "ETIMEDOUT"
+          ? `timed out after ${timeout / 1000} seconds`
+          : typeof error.code === "number" || error.code === null
+            ? `exited with code ${error.code}`
+            : `failed to start (${error.message})`;
+      throw new Error(
+        `Delivery could not fingerprint the checkout: \`git ${args[0]}\` ${reason}. Nothing was changed.${stderr.trim() ? ` ${stderr.trim()}` : ""}`,
       );
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, timeout);
-    child.stdout.on("data", (chunk: Buffer) => digest.update(decoder.write(chunk)));
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (text: string) => {
-      if (stderr.length < STDERR_DETAIL_BYTES)
-        stderr += text.slice(0, STDERR_DETAIL_BYTES - stderr.length);
     });
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      fail(`failed to start (${error.message})`);
-    });
-    child.once("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0 && !timedOut) {
-        digest.update(decoder.end());
-        resolve();
-      } else
-        fail(timedOut ? `timed out after ${timeout / 1000} seconds` : `exited with code ${code}`);
-    });
-  });
+  digest.update(decoder.end());
 }
 /** Hashes a file's bytes in bounded chunks; a large untracked file is never held in memory. */
 async function streamFileInto(path: string, digest: Hash): Promise<void> {

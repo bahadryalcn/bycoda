@@ -21,7 +21,7 @@ it("decodes remote binary replies through the shared fast decoder", async () => 
 
 it("uses the shared fast decoder both for the copied PNG and for pasted attachment bytes", async () => {
   const write = vi.spyOn(navigator.clipboard, "write").mockResolvedValue();
-  await copyMessage("Image", [
+  await copyMessage("[Image 1 · 2 B]", [
     { id: "image", name: "image.png", mimeType: "image/png", kind: "image", size: 2, data: "+/8=" },
   ]);
   const [item] = write.mock.calls[0][0];

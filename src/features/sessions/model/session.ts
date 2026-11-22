@@ -198,6 +198,14 @@ export type ToolPreview = {
 /** One thing a subagent did, mirrored into the parent transcript. */
 export type AgentStepKind = "tool" | "message" | "reasoning";
 
+export type AgentInput = {
+  sender?: string;
+  mode?: "auto" | "queue" | "steer";
+  effectiveMode?: "queue" | "steer";
+  delivery?: "queued" | "sending" | "submitted" | "accepted" | "failed" | "cancelled" | "unknown";
+  detail?: string;
+};
+
 export type AgentStep = {
   /** A provider-native subagent run inside this step, retained for nested inspection. */
   agentRun?: AgentRunMeta;
@@ -206,6 +214,9 @@ export type AgentStep = {
   kind: AgentStepKind;
   /** Tool label, or the prose the subagent wrote. */
   text: string;
+  /** Input and execution round on the fuller Host child timeline. */
+  input?: AgentInput;
+  round?: number;
   toolKind?: string;
   status?: string;
   /** Failure text only; a failed step is shown open and in red. */
@@ -312,6 +323,8 @@ export type UsageLimit = {
   resetsAt?: number;
   /** Send a continue turn once the window resets. */
   resumeAtReset?: boolean;
+  /** The limited target, retained while the user can continue on a different target. */
+  recoveryFrom?: Pick<Session, "harness" | "model" | "providerAccountId">;
 };
 
 /** Provider/model provenance captured when a user turn is submitted. */

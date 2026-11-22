@@ -180,3 +180,86 @@ it("matches the request center on which sessions wait for input", () => {
   expect(ids).toEqual(expect.arrayContaining(["plain", "worker"]));
   expect(ids).not.toContain("removed");
 });
+
+it("keeps the turn end time for a failure written after a reconnect, and the announcement time apart", async () => {
+  const endedAt = Date.now() - 3_600_000;
+  const session = {
+    ...finishedSession(),
+    blocks: [
+      {
+        id: "u",
+        role: "user" as const,
+        text: "go",
+        startedAt: endedAt - 60_000,
+        durationMs: 60_000,
+      },
+      { id: "e", role: "system" as const, text: "Crashed", notice: "error" as const },
+    ],
+  };
+  await announceSessionIssue(session, "failed", false);
+  const [entry] = await logged(1);
+  expect(entry.occurredAt).toBe(endedAt);
+  expect(entry.announcedAt).toBeGreaterThan(endedAt);
+});
+
+it("records two different errors of one turn as two entries", async () => {
+  const turn = (id: string, text: string): Session => ({
+    ...finishedSession(),
+    id: "same",
+    blocks: [
+      { id: "u", role: "user", text: "go" },
+      { id, role: "system", text, notice: "error" },
+    ],
+  });
+  await announceSessionIssue(turn("e1", "Rate limited"), "failed", false);
+  await announceSessionIssue(turn("e2", "Disk full"), "failed", false);
+  // The same error block again, even with reworded text, is not a new event.
+  await announceSessionIssue(turn("e2", "Disk is full"), "failed", false);
+  const entries = await logged(2);
+  expect(entries.map((entry) => entry.label).sort()).toEqual(["Disk full", "Rate limited"]);
+});
+
+it("treats a Host summary failure and the opened session's error block as one event", async () => {
+  const blocks = (error: Session["blocks"][number]) => [
+    { id: "turn-1", role: "user" as const, text: "go" },
+    error,
+  ];
+  await announceSessionIssue(
+    {
+      ...finishedSession(),
+      id: "remote",
+      blocks: blocks({ id: "issue", role: "system", text: "Failed", notice: "error" }),
+    },
+    "failed",
+    false,
+    "summary",
+  );
+  await announceSessionIssue(
+    {
+      ...finishedSession(),
+      id: "remote",
+      blocks: blocks({ id: "real", role: "system", text: "Rate limited", notice: "error" }),
+    },
+    "failed",
+    false,
+  );
+  expect(await logged(1)).toHaveLength(1);
+});
+
+it("never shows the same sentence as title and description", async () => {
+  const { logToastAnnouncement, logNotification } = await import("./notificationLog");
+  logToastAnnouncement({
+    id: "t1",
+    title: "",
+    message: "Saved offline",
+    tone: "info",
+    occurredAt: 5,
+  });
+  logNotification({ kind: "background", key: "b", title: "Same", label: "Same", occurredAt: 6 });
+  const entries = await logged(2);
+  for (const entry of entries) expect(entry.label).not.toBe(entry.title);
+  expect(entries.find((entry) => entry.key === "t1")).toMatchObject({
+    title: "Saved offline",
+    label: "",
+  });
+});

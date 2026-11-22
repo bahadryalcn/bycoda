@@ -25,7 +25,6 @@ import {
   coerceModelPickerTab,
   getModelSnapshot,
   getPickerVisibilitySnapshot,
-  isModelEnabled,
   loadFavoriteModels,
   loadRecentModelChoices,
   saveFavoriteModels,
@@ -116,6 +115,8 @@ type Props = {
   hotkeys?: boolean;
   /** Bump to open the picker from outside, e.g. a usage-limit notice. */
   openRequest?: number;
+  /** Close the panel after a model pick so the caller's next action is visible. */
+  closeOnPick?: boolean;
   /** An existing button owns opening and anchors the model panel. */
   externalTrigger?: {
     anchor: React.RefObject<HTMLButtonElement | null>;
@@ -126,6 +127,8 @@ type Props = {
    * full-width, left-aligned form field, for forms where the picker answers a labelled question.
    */
   presentation?: "inline" | "field";
+  /** In the composer, shorten the model label and hide the account name when space is tight. */
+  compactIdentity?: boolean;
   /**
    * Optional labelled "no explicit model" choice, e.g. "Use the global agent". It leads the menu;
    * `selected` mirrors the owner's empty value and `onSelect` stores it. While it is selected the
@@ -188,8 +191,10 @@ export function ModelPicker({
   allowedHarnesses,
   hotkeys = false,
   openRequest = 0,
+  closeOnPick = false,
   externalTrigger,
   presentation = "inline",
+  compactIdentity = false,
   inheritChoice,
   accountId,
   accountChoices = false,
@@ -300,7 +305,9 @@ export function ModelPicker({
       const accounts = source.accounts[harness] ?? [];
       const saved = accounts.find((account) => account.id === currentAccountId);
       if (!saved) return currentAccountId === "default" ? undefined : t("Unavailable Host account");
-      return accounts.length > 1 ? accountDisplayLabel(accounts, saved) : undefined;
+      return accounts.length > 1 || saved.id !== "default"
+        ? accountDisplayLabel(accounts, saved)
+        : undefined;
     }
     const accounts = providerAccountsAtSnapshot(harness, accountsSnapshot);
     const known = accounts.some((account) => account.id === currentAccountId);
@@ -465,6 +472,10 @@ export function ModelPicker({
   const triggerTitle = inheritSelected
     ? inherit.label
     : [HARNESS_TITLE[current.harness], current.provider?.name].filter(Boolean).join(" · ");
+  const triggerAccountName = fieldAccount?.label ?? triggerAccountLabel;
+  const triggerModelName = compactIdentity
+    ? current.name.replace(/^(?:Claude(?: Code)?|Codex|Grok)(?:\s*[·:]\s*|\s+)(?=\S)/i, "")
+    : current.name;
   const providerKey = pickerHarnesses.join(",");
   const visibleTab = coerceModelPickerTab(tab, (id) => pickerHarnesses.includes(id));
   const accountCatalog = JSON.parse(accountsSnapshot) as ModelAccountCatalog;
@@ -487,9 +498,10 @@ export function ModelPicker({
   const recentModels = useMemo(() => {
     return (recentMenu?.models ?? []).filter(
       (item) =>
-        pickerHarnesses.includes(item.harness) && modelEnabledAtRevision(item.id, catalogVersion),
+        pickerHarnesses.includes(item.harness) &&
+        modelEnabledAtRevision(source, item.id, catalogVersion),
     );
-  }, [recentMenu, pickerHarnesses, catalogVersion]);
+  }, [recentMenu, pickerHarnesses, source, catalogVersion]);
   const recentOpen = recentMenu != null && recentModels.length > 0;
   // The keyboard highlight rests on rows the harness can serve; unavailable rows stay visible but disabled.
   const recentClamped = clampActiveIndex(recentActive, recentModels.length);
@@ -549,7 +561,13 @@ export function ModelPicker({
     activeModelKey == null
       ? -1
       : visibleModels.findIndex((item) => modelChoiceKey(item) === activeModelKey);
-  const activeModel = chosenModelIndex >= 0 ? chosenModelIndex : Math.max(0, currentModelIndex);
+  // The selected model stays marked without scrolling the account rows out of view on open.
+  const activeModel =
+    chosenModelIndex >= 0
+      ? chosenModelIndex
+      : accountListOpen
+        ? -1
+        : Math.max(0, currentModelIndex);
   const setActiveModel = (next: number | ((index: number) => number)) => {
     const item = visibleModels[typeof next === "function" ? next(activeModel) : next];
     if (item) setActiveModelKey(modelChoiceKey(item));
@@ -592,7 +610,9 @@ export function ModelPicker({
     if (!selected) return;
     const models = accountModelChoices(
       recentMenuModels(selected, source, loadRecentModelChoices()).filter(
-        (item) => pickerHarnesses.includes(item.harness) && isModelEnabled(item.id),
+        (item) =>
+          pickerHarnesses.includes(item.harness) &&
+          modelEnabledAtRevision(source, item.id, catalogVersion),
       ),
       accountChoices,
       source.accounts,
@@ -708,7 +728,7 @@ export function ModelPicker({
   const pickModel = (item: AccountModelChoice) => {
     if (
       !pickerHarnesses.includes(item.harness) ||
-      !isModelEnabled(item.id) ||
+      !modelEnabledAtRevision(source, item.id, catalogVersion) ||
       !source.available(item.harness)
     )
       return;
@@ -720,7 +740,7 @@ export function ModelPicker({
           : undefined;
     if (accountId) onChange(item.harness, item.id, accountId);
     else onChange(item.harness, item.id);
-    if (hideSettings || recentOpen) {
+    if (hideSettings || recentOpen || closeOnPick) {
       dismiss(true);
     } else {
       setQuery("");
@@ -827,7 +847,10 @@ export function ModelPicker({
           shortcut={hotkeys ? switchShortcut : null}
 
           label={triggerTitle}
-          details={[t("Recent models: right-click or {p0}", { p0: recentShortcut.text })]}
+          details={[
+            ...(triggerAccountName ? [t("Account: {p0}", { p0: triggerAccountName })] : []),
+            t("Recent models: right-click or {p0}", { p0: recentShortcut.text }),
+          ]}
         >
           <Trigger
             {...(field
@@ -843,7 +866,7 @@ export function ModelPicker({
                 ? inherit.label
                 : `${HARNESS_TITLE[current.harness]}${
                     current.provider ? `, ${current.provider.name},` : ""
-                  } ${currentLabel}${triggerEffortLabel ? `, ${t("effort {p0}", { p0: triggerEffortLabel })}` : ""}${triggerFastOn ? `, ${t("Fast")}` : triggerFastState === "off" && field ? `, ${t("Fast off")}` : ""}${fieldAccount ? `, ${t("Account: {p0}", { p0: fieldAccount.label })}` : ""}${triggerExtras.map((extra) => `, ${extra.name}: ${extra.label}`).join("")}`
+                  } ${triggerAccountName ? current.name : currentLabel}${triggerEffortLabel ? `, ${t("effort {p0}", { p0: triggerEffortLabel })}` : ""}${triggerFastOn ? `, ${t("Fast")}` : triggerFastState === "off" && field ? `, ${t("Fast off")}` : ""}${triggerAccountName ? `, ${t("Account: {p0}", { p0: triggerAccountName })}` : ""}${triggerExtras.map((extra) => `, ${extra.name}: ${extra.label}`).join("")}`
             }
             expanded={open || recentOpen}
             aria-haspopup="dialog"
@@ -877,10 +900,27 @@ export function ModelPicker({
                 </Text>
               ) : (
                 <>
-                  <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
+                  <span
+                    data-model-provider-icon
+                    className={`relative inline-flex shrink-0${!field && activeAccount?.accountNumber !== undefined ? " me-1.5" : ""}`}
+                  >
+                    <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
+                    {!field ? (
+                      <ModelAccountNumber
+                        account={activeAccount}
+                        className="absolute -end-2.5 [inset-block-start:-0.375rem]"
+                      />
+                    ) : null}
+                  </span>
 
-                  <Text size="inherit" tone="inherit" truncate className="min-w-0">
-                    {current.name}
+                  <Text
+                    data-model-trigger-name
+                    size="inherit"
+                    tone="inherit"
+                    truncate
+                    className="min-w-0"
+                  >
+                    {triggerModelName}
                   </Text>
                 </>
               )}
@@ -895,22 +935,33 @@ export function ModelPicker({
               ) : (
                 <>
                   {triggerAccountLabel && !inheritSelected ? (
-                    <>
-                      <ModelAccountNumber account={activeAccount} />
+                    <span
+                      className={`flex min-w-0 max-w-24 shrink-[2] items-center gap-1${compactIdentity ? " @max-[31rem]/chat-composer:hidden" : ""}`}
+                    >
+                      {compactIdentity ? <span aria-hidden="true">·</span> : null}
                       <Text
                         data-model-account
                         size="inherit"
                         tone="secondary"
                         truncate
-                        className="min-w-0 max-w-24"
+                        className="min-w-0"
                       >
                         {triggerAccountLabel}
                       </Text>
-                    </>
+                    </span>
                   ) : null}
 
                   {triggerEffortLabel ? (
-                    <Text data-model-effort size="inherit" tone="secondary" className="shrink-0">
+                    <Text
+                      data-model-effort
+                      size="inherit"
+                      tone="secondary"
+                      className={
+                        compactIdentity
+                          ? "shrink-0 before:me-1 before:content-['·'] @max-[31rem]/chat-composer:before:hidden"
+                          : "shrink-0"
+                      }
+                    >
                       {triggerEffortLabel}
                     </Text>
                   ) : null}

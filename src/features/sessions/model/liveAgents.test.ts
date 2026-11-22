@@ -3,7 +3,8 @@ import {
   formatLiveElapsed,
   formatLiveMinutes,
   liveAgentsFromSessions,
-  shouldShowLiveAgents,
+  isLiveActivityAgent,
+  type LiveAgent,
   workingProjectPaths,
 } from "./liveAgents";
 import { newSession, type Block, type Session } from "./session";
@@ -227,43 +228,23 @@ describe("liveAgentsFromSessions", () => {
   });
 });
 
-describe("shouldShowLiveAgents", () => {
-  const working = {
-    id: "working",
-    cwd: "/tmp/a",
-    title: "Working",
-    harness: "claude" as const,
-    activity: "Editing",
-    needsApproval: false,
+it("keeps Activity for ongoing work and input", () => {
+  const agent: LiveAgent = {
+    id: "worker",
+    cwd: "/project",
+    title: "Build",
+    harness: "codex",
+    activity: "Working",
     done: false,
-  };
-  const finished = {
-    id: "finished",
-    cwd: "/tmp/b",
-    title: "Done",
-    harness: "claude" as const,
-    activity: "Done",
     needsApproval: false,
-    done: true,
   };
-
-  it("hides the card when the only live agent is the open session", () => {
-    expect(shouldShowLiveAgents([working], "working")).toBe(false);
-  });
-
-  it("keeps an unfocused working session after the other turn finishes", () => {
-    expect(shouldShowLiveAgents([working], "finished")).toBe(true);
-    expect(shouldShowLiveAgents([working], undefined)).toBe(true);
-  });
-
-  it("keeps an unfocused finished session until it is opened", () => {
-    expect(shouldShowLiveAgents([finished], "working")).toBe(true);
-    expect(shouldShowLiveAgents([finished], "finished")).toBe(false);
-  });
-
-  it("keeps the card when two sessions are live even if one is open", () => {
-    expect(shouldShowLiveAgents([working, finished], "working")).toBe(true);
-  });
+  expect(isLiveActivityAgent(agent)).toBe(true);
+  expect(isLiveActivityAgent({ ...agent, done: true })).toBe(false);
+  expect(isLiveActivityAgent({ ...agent, issue: "failed" })).toBe(false);
+  expect(isLiveActivityAgent({ ...agent, done: true, issue: "failed" })).toBe(false);
+  expect(isLiveActivityAgent({ ...agent, issue: "retrying" })).toBe(true);
+  expect(isLiveActivityAgent({ ...agent, needsApproval: true })).toBe(true);
+  expect(isLiveActivityAgent({ ...agent, waiting: { kind: "commands", count: 1 } })).toBe(true);
 });
 
 describe("formatLiveMinutes", () => {

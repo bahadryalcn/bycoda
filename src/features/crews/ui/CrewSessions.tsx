@@ -10,11 +10,7 @@ import { crewRunMatchesQuery } from "../model/crewPresentation";
 import { crewRunTitle } from "../model/crewRoster";
 import { CrewWorkManager } from "./CrewWorkManager";
 import { CrewWorkStatusText } from "./CrewWorkState";
-import {
-  classifyRemoteError,
-  isConnectionFailure,
-  presentRemoteError,
-} from "../../connections/model/remoteFailure";
+import { classifyRemoteError, isConnectionFailure } from "../../connections/model/remoteFailure";
 import { reportRemoteConnection } from "../../connections/model/remoteHealth";
 import { useRemoteConnectionFeedback } from "../../connections/ui/RemoteConnectionFeedback";
 
@@ -95,12 +91,16 @@ export function CrewSessions({
     )
     .filter((run) => crewRunMatchesQuery(run, q))
     .sort((a, b) => b.updatedAt - a.updatedAt);
-  if (!data && !state.error) return null;
-  if (data && !data.runs.length && !data.definitions.length && !state.error) return null;
+  if (!data && !state.visibleError) return null;
+  if (data && !data.runs.length && !data.definitions.length && !state.visibleError) return null;
   return (
     // A quiet section label on the list's gutter. With nothing running it is only this one
     // line (and Manage), so an idle project spends no rows on an empty state.
-    <section aria-label={t("Crew work")} className="px-1.5 pt-1">
+    <section
+      aria-label={t("Crew work")}
+      aria-busy={state.pendingFailure || undefined}
+      className="px-1.5 pt-1"
+    >
       <div className="flex min-h-7 items-center gap-1 ps-2.5 pe-0.5">
         <Text tone="muted" weight="medium" className="min-w-0 flex-1">
           {t("Crew work")}
@@ -114,14 +114,13 @@ export function CrewSessions({
           {t("Manage")}
         </Button>
       </div>
-      {state.error && !sharedConnectionIssue ? (
-        // The presented reason is the visible text; the raw Host message sits behind Details.
+      {state.visibleError && !sharedConnectionIssue ? (
         <InlineError
           className="px-2.5 py-1"
-          details={state.error.message}
+          details={state.errorDetails}
           retry={{ onRetry: () => void state.refetch(), pending: state.isFetching }}
         >
-          {presentRemoteError(state.error, { explicit: true })}
+          {state.visibleError}
         </InlineError>
       ) : null}
       {sharedConnectionIssue && !data ? (

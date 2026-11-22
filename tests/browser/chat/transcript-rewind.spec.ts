@@ -3,6 +3,51 @@ import { mkdir } from "node:fs/promises";
 
 for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
+    test(`Codex catalog recovery at ${width}px ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const setTheme = () =>
+        page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+      const captures = "temp/verification/codex-catalog";
+      await page.goto(
+        "/tests/browser/workspace/workspace-rewind.html?remoteRewind&codexCatalog=retained",
+      );
+      await setTheme();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (
+                window as unknown as { rewindFixtureCalls: { method: string }[] }
+              ).rewindFixtureCalls.filter((call) => call.method === "models.list").length,
+          ),
+        )
+        .toBeGreaterThan(1);
+      const picker = page.locator("[data-model-picker-presentation]").first();
+      await picker.click();
+      await expect(page.getByText("Codex fixture", { exact: true }).last()).toBeVisible();
+      await expect(page.getByText("Couldn’t load models from Fixture PC.")).toHaveCount(0);
+      await page.screenshot({ path: `${captures}/retained-${width}-${theme}.png` });
+
+      await page.evaluate(() => localStorage.removeItem("bycoda.remote-models.v1"));
+      await page.goto(
+        "/tests/browser/workspace/workspace-rewind.html?remoteRewind&codexCatalog=first-failure",
+      );
+      await setTheme();
+      await expect(page.getByText("Couldn’t load models from Fixture PC.")).toBeVisible();
+      const retry = page.getByRole("button", { name: "Retry", exact: true }).first();
+      await expect(retry).toBeVisible();
+      await page.screenshot({ path: `${captures}/first-failure-${width}-${theme}.png` });
+      await retry.click();
+      await expect(page.getByText("Couldn’t load models from Fixture PC.")).toHaveCount(0);
+    });
+  }
+
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
     test(`jump to latest accepts pointer and keyboard at ${width}px ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });

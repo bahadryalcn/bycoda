@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createSkillGroup } from "../../../src/features/skills/model/skillGroups";
 import { SessionPane, type SessionPaneProps } from "../../../src/features/sessions/ui/SessionPane";
 import { setNotesPanelOpen } from "../../../src/features/notes/notesPanel";
 import { ContextMeter } from "../../../src/features/sessions/ui/ContextMeter";
@@ -22,7 +23,7 @@ import { registerHarness } from "../../../src/integrations/harness/core/registry
 import { languageReady } from "../../../src/shared/i18n";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import {
-  APPEARANCE_DEFAULTS,
+  loadAppearancePreferences,
   applyAppearancePreferences,
   normalizeAppearancePreferences,
 } from "../../../src/features/settings/model/appearancePreferences";
@@ -59,9 +60,19 @@ const modelSource = {
 };
 
 const params = new URLSearchParams(location.search);
+const exampleSkills = ["frontend-design", "ui-ux-pro-max", "unslop"];
+if (params.has("inlineExamples")) {
+  createSkillGroup({
+    name: "Design and polish interfaces",
+    invocation: "group-interface-design",
+    skillNames: exampleSkills,
+  });
+}
 const sessionId = "composer-reading-fixture";
 const DRAFTS: Record<string, string> = {
   none: "",
+  legacyFile:
+    "I wrote this first. Review [File\u00a01\u00a0·\u00a07\u00a0B] and https://example.com/design",
   short: "Summarise the failing tests",
   multi:
     "Please check the three files below,\nthen explain the failure\nand propose the smallest safe fix.",
@@ -91,9 +102,22 @@ const baseBlocks: Block[] = Array.from({ length: turns }, (_, index): Block[] =>
   },
 ]).flat();
 const initial: Session = {
-  ...newSession("claude", "/fixture", modelId),
+  ...newSession(params.has("goal") ? "codex" : "claude", "/fixture", modelId),
   id: sessionId,
   title: "Composer reading mode",
+  ...(params.has("goal")
+    ? {
+        busy: true,
+        providerSessionId: sessionId,
+        providerGoal: {
+          provider: "codex",
+          providerSessionId: sessionId,
+          status: "active",
+          objective: "Run the Expo app on the connected device, fix the UI flows and verify them.",
+          tokensUsed: 665,
+        },
+      }
+    : {}),
   ...(params.has("docked-question")
     ? {
         pendingQuestion: {
@@ -125,13 +149,83 @@ const initial: Session = {
   context: { used: 64000, window: 128000 },
 };
 function seedComposer() {
+  if (params.has("clipboardRoundTrip")) {
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jVZsAAAAASUVORK5CYII=";
+    setComposerAttachments(sessionId, [
+      {
+        id: "clipboard-image",
+        kind: "image",
+        mimeType: "image/png",
+        name: "image.png",
+        size: atob(png).length,
+        data: png,
+      },
+    ]);
+    setComposerDraft(sessionId, "Look at [image1] before replying.");
+    return;
+  }
+  if (params.get("inlineExamples") === "repeated-pdf") {
+    setComposerAttachments(sessionId, [
+      {
+        id: "report",
+        kind: "file",
+        mimeType: "application/pdf",
+        name: "Detailed-project-report-tr (1).pdf",
+        size: 71 * 1024,
+      },
+    ]);
+    setComposerDraft(sessionId, "/ui-ux-pro-max [file1] [file1]");
+    return;
+  }
+  if (params.has("inlineExamples")) {
+    setComposerAttachments(sessionId, [
+      {
+        id: "image",
+        kind: "image",
+        mimeType: "image/png",
+        name: "image.png",
+        size: 158 * 1024,
+        previewUrl:
+          "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='60'%3E%3Crect width='100' height='60' fill='teal'/%3E%3C/svg%3E",
+      },
+      {
+        id: "pdf",
+        kind: "file",
+        mimeType: "application/pdf",
+        name: "Bahadir-Halay.pdf",
+        size: 98 * 1024,
+      },
+      {
+        id: "csv",
+        kind: "file",
+        mimeType: "text/csv",
+        name: "bycoda-usage.csv",
+        size: 32 * 1024,
+        data: btoa("feature,events\ncomposer,128"),
+      },
+      {
+        id: "json",
+        kind: "file",
+        mimeType: "application/json",
+        name: "bycoda-export.json",
+        size: 5 * 1024,
+        data: btoa('{"attachments":42}'),
+      },
+    ]);
+    setComposerDraft(
+      sessionId,
+      "Önce [image1] ve [file1] dosyasına bak.\n[file2] ile [file3] verilerini karşılaştır.\n@PreviewTunnel.ts ve https://github.com/pingdotgg/t3code örneğini incele.\n/ui-ux-pro-max /group-interface-design ile arayüzü değerlendir.",
+    );
+    return;
+  }
   setComposerDraft(sessionId, DRAFTS[params.get("draft") ?? "none"] ?? "");
   if (params.has("attach")) {
     setComposerAttachments(sessionId, [
       {
         id: "draft-file",
         kind: "file",
-        name: "draft-context.txt",
+        name: params.get("attach") || "draft-context.txt",
         mimeType: "text/plain",
         size: 7,
         data: btoa("context"),
@@ -222,7 +316,9 @@ function Fixture() {
     onUsageLimitDismiss: noop,
     onApproval: noop,
     onQuestionReply: noop,
-    onOpenFile: noop,
+    onOpenFile: (path) => {
+      document.documentElement.dataset.composerOpenedFile = path;
+    },
     onOpenDiff: noop,
     onOpenPlan: noop,
     onBuildPlan: noop,
@@ -243,7 +339,7 @@ applyThemePreference(params.has("light") ? "light" : "dark");
 // ?density=compact|comfortable|touch applies the real control-density preference.
 applyAppearancePreferences(
   normalizeAppearancePreferences({
-    ...APPEARANCE_DEFAULTS,
+    ...loadAppearancePreferences(),
     controlDensity: params.get("density") as "compact" | "comfortable" | "touch",
   }),
 );
@@ -251,7 +347,40 @@ Object.assign(window, {
   __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   __TAURI_INTERNALS__: {
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
-    invoke: async (command: string) => {
+    invoke: async (command: string, args?: { url?: string; name?: string; data?: string }) => {
+      if (params.has("clipboardRoundTrip") && command === "write_attachment") {
+        document.documentElement.dataset.clipboardImageBytes = String(
+          atob(args?.data ?? "").length,
+        );
+        return `/fixture/attachments/${args?.name}`;
+      }
+      if (params.has("inlineExamples")) {
+        if (command === "plugin:opener|open_url") {
+          document.documentElement.dataset.composerOpenedUrl = args?.url;
+          return null;
+        }
+        if (command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };
+        if (command === "list_skills")
+          return exampleSkills.map((name) => ({
+            name,
+            description:
+              params.get("inlineExamples") === "skill-panels" && name === "ui-ux-pro-max"
+                ? "UI/UX guidance for web and mobile. Reviews layouts, typography, color palettes, spacing, accessibility and interaction states. Covers dashboards, landing pages, forms, navigation and mobile flows. Suggests component patterns for React, Vue, Svelte, SwiftUI and React Native, with examples for common controls and data visualizations."
+                : "Design review",
+            path: `/fixture/.claude/skills/${name}/SKILL.md`,
+            scope: "project",
+            source: "claude",
+          }));
+        if (command === "list_project_files")
+          return [
+            {
+              name: "PreviewTunnel.ts",
+              path: "/fixture/src/PreviewTunnel.ts",
+              relative: "src/PreviewTunnel.ts",
+            },
+          ];
+        if (command === "list_claude_commands") return [];
+      }
       if (command === "canonical_store_session_guard_ready") return false;
       if (command === "canonical_store_list") return { entries: [], revision: 0 };
       if (command === "session_list_drafts") return [];

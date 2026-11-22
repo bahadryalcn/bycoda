@@ -10,7 +10,6 @@ import {
 import { ExternalLink } from "../../../shared/ui/icons";
 import { UserLinkIcon } from "./UserLinkIcon";
 import { cachedUserLinkRanges, type UserLinkRange } from "../model/linkPreview";
-import { openExternal } from "../../../platform/tauri/openExternal";
 import { observeResize } from "../../../shared/lib/observeResize";
 import { createLinkWrapRegistry, type LinkWrapRegistry } from "./composerLinkWrap";
 import styles from "./ComposerHighlight.module.css";
@@ -71,11 +70,8 @@ export function useLinkWrap(draft: string, field?: RefObject<HTMLTextAreaElement
 }
 
 /**
- * Boxes each web link with an open badge at its end. The textarea underneath keeps the
- * raw text, so the box only rearranges its own characters: the hidden `https://` gives
- * the box its padding and the badge its room. A link being edited, or one that wraps
- * across lines, shows in source order: a rearranged link would break at a different
- * character than the textarea and push the caret off every character after it.
+ * Paint a compact link over the original source advances. A link being edited or
+ * wrapping across lines shows its source, with the same open target in either state.
  */
 export function LinkRuns({
   text,
@@ -127,43 +123,27 @@ function LinkToken({
     return el ? wrap.add(el, setWrapped) : undefined;
   }, [wrap]);
   const source = editing || wrapped;
-  const scheme = link.indexOf("://") + 3;
-  // The same span in both orders, so the measured element survives a switch.
+  const label = url.displayUrl.split(/[?#]/, 1)[0];
   return (
-    <>
-      <span ref={ref} className={styles.link} data-composer-link-token="">
-        {source ? (
-          link
-        ) : (
-          <>
-            <span className={styles.linkPrefix}>
-              <span className={styles.hidden}>{link[0]}</span>
-              <span className={styles.linkMark} data-composer-link-icon="" aria-hidden="true">
-                <UserLinkIcon link={url} />
-              </span>
-            </span>
-            {link.slice(scheme)}
-            <span className={styles.badge}>
-              {link.slice(1, scheme - 1)}
-              {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- Pointer shortcut in the aria-hidden overlay; the link stays editable text in the textarea. */}
-              <span
-                className={styles.open}
-                data-composer-link-open=""
-                // Keeps focus, and so the caret, in the message box.
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() =>
-                  openExternal(url.url).catch((error: unknown) =>
-                    console.error("Failed to open composer link:", error),
-                  )
-                }
-              >
-                <ExternalLink className={styles.openIcon} strokeWidth={2} />
-              </span>
-            </span>
-          </>
-        )}
-      </span>
-      {source ? null : <span className={styles.hidden}>{link[scheme - 1]}</span>}
-    </>
+    <span
+      ref={ref}
+      className={source ? styles.link : styles.linkLabelled}
+      data-composer-link-token=""
+      data-composer-reference="url"
+      data-reference-value={url.url}
+    >
+      {source ? link : <span className={styles.hidden}>{link}</span>}
+      {source ? null : (
+        <span className={styles.linkFace} data-reference-face="" aria-hidden="true">
+          <span data-composer-link-icon="">
+            <UserLinkIcon link={url} />
+          </span>
+          <span className={styles.linkName} data-link-label={label} />
+          <span data-composer-link-open="">
+            <ExternalLink strokeWidth={2} />
+          </span>
+        </span>
+      )}
+    </span>
   );
 }

@@ -5,6 +5,7 @@ import { useEditorDraftRecovery } from "../../../src/app/workspace/files/useEdit
 import { useOpenRecoveredEditorDraft } from "../../../src/app/workspace/files/useOpenRecoveredEditorDraft";
 import { useRecoveryControl } from "../../../src/app/workspace/layout/useRecoveryControl";
 import { FileEditor } from "../../../src/features/files/ui/FileEditor";
+import { FilePicker } from "../../../src/features/files/ui/FilePicker";
 import { SurfaceTabs } from "../../../src/features/workspace/ui/SurfaceTabs";
 import {
   newEditorWorkspaceTab,
@@ -538,6 +539,7 @@ function Fixture() {
   const [active, setActive] = useState(initialWorkspace.id);
   const [dirty, setDirty] = useState<Set<string>>(new Set());
   const [dialog, setDialog] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [inspectAllowed, setInspectAllowed] = useState(true);
   const [, setTerminalFocused] = useState(false);
   const [, setComposerFocused] = useState(false);
@@ -590,6 +592,9 @@ function Fixture() {
     <main className="flex h-dvh min-w-0 flex-col bg-(--ui-surface) text-content">
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke p-2">
         {recoveryControl}
+        {query.has("legacy-only") ? (
+          <Button onClick={() => setPaletteOpen(true)}>Command Palette</Button>
+        ) : null}
         <span className="text-ui-caption text-(--ui-text-secondary)">
           Fixture: Native storage and disk are fake; no conversation journal.
         </span>
@@ -651,6 +656,19 @@ function Fixture() {
           </section>
         );
       })}
+      {paletteOpen ? (
+        <FilePicker
+          open
+          cwd={cwd}
+          initialQuery=">"
+          recoveryAvailable={recovery.available}
+          onOpenFile={() => {}}
+          onRunAction={(id) => {
+            if (id === "open-recovery") setDialog(true);
+          }}
+          onClose={() => setPaletteOpen(false)}
+        />
+      ) : null}
       {dialog ? (
         <WorkspaceRecoveryDialog
           recovery={null}

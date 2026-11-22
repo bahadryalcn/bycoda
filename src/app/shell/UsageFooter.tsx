@@ -35,6 +35,7 @@ import {
   type HarnessId,
 } from "../../features/sessions/model/session";
 import { loginHarness, supportsHarnessLogin } from "../../integrations/harness/core/auth";
+import { registerProviderAccount } from "../../features/providers/model/providerAccountRegistration";
 import {
   runningTerminalChipLabel,
   type RunningTerminal,
@@ -56,9 +57,7 @@ import {
   type ProviderSignInState,
 } from "../../features/sessions/ui/ProviderSignInPanel";
 import {
-  newProviderAccount,
   providerAccountExistsIn,
-  saveProviderAccount,
   defaultProviderAccountIdIn,
   sessionProviderAccountIdIn,
   type ProviderAccountProvider,
@@ -280,17 +279,6 @@ export function UsageFooter({
     [onSelectAccount],
   );
 
-  const addAccount = useCallback(
-    async (provider: ProviderAccountProvider, label: string) => {
-      const account = newProviderAccount(provider, label);
-      await loginHarness(provider, account.id);
-      saveProviderAccount(account);
-      selectAccount(provider, account.id);
-      return account;
-    },
-    [selectAccount],
-  );
-
   const showOpencodeChip = wantOpencode && opencode.status !== "unavailable";
   const showGrokChip = wantGrok && grok.status !== "unavailable";
   const showUsage = wantClaude || wantCodex || showOpencodeChip || showGrokChip;
@@ -341,7 +329,7 @@ export function UsageFooter({
                 accountId={claudeAccountId}
                 onSelectUsageAccount={(accountId) => saveUsageDisplayAccount("claude", accountId)}
                 onSelectAccount={(accountId) => selectAccount("claude", accountId)}
-                onAddAccount={(label) => addAccount("claude", label)}
+                onAddAccount={registerProviderAccount}
                 onManageAccounts={onManageAccounts ? () => onManageAccounts("claude") : undefined}
                 onConsumeReset={(creditId) => consumeReset("claude", claudeAccountId, creditId)}
                 onReconnect={reconnectClaude}
@@ -361,7 +349,7 @@ export function UsageFooter({
                 accountId={codexAccountId}
                 onSelectUsageAccount={(accountId) => saveUsageDisplayAccount("codex", accountId)}
                 onSelectAccount={(accountId) => selectAccount("codex", accountId)}
-                onAddAccount={(label) => addAccount("codex", label)}
+                onAddAccount={registerProviderAccount}
                 onManageAccounts={onManageAccounts ? () => onManageAccounts("codex") : undefined}
                 onConsumeReset={(creditId) => consumeReset("codex", codexAccountId, creditId)}
                 onReconnect={reconnectCodex}

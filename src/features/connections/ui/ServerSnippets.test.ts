@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ServerSnippets } from "./ServerSnippets";
-import { saveSshSnippet } from "../model/sshSnippets";
+import { loadSshSnippets, saveSshSnippet } from "../model/sshSnippets";
 import { copyText } from "../../../platform/tauri/clipboard";
 vi.mock("../../../platform/tauri/clipboard", () => ({
   copyText: vi.fn().mockResolvedValue(undefined),
@@ -105,4 +105,17 @@ it("offers working copy without terminal insertion when no prompt capability is 
       (status) => status.textContent === "Copied",
     ),
   ).toBe(true);
+});
+
+it.each([
+  ["git status", "git status"],
+  ["pwd\nls", ""],
+  ["pwd\u001b[0m", ""],
+  ["x".repeat(8193), ""],
+])("uses selected text only as a valid, unsaved draft", async (initialCommand, expected) => {
+  await act(async () =>
+    root.render(createElement(ServerSnippets, { serverId: "a", initialCommand })),
+  );
+  expect(container.querySelector("textarea")?.value).toBe(expected);
+  expect(loadSshSnippets("a")).toEqual([]);
 });

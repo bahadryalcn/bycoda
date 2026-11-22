@@ -46,10 +46,10 @@ it("serves a second pass over many projects from cache without rereading the reg
   const summaries = vi.spyOn(store, "summaries");
   const project = vi.spyOn(store, "project");
   for (const id of ids) await runtime.projectSessionList(id);
-  // Warm pass: reuse the registered folders and rows, while checking project identity.
+  // Warm pass: the registered rows serve the project, one read checks its identity.
   expect(summaries).not.toHaveBeenCalled();
   expect(projects).not.toHaveBeenCalled();
-  expect(project).toHaveBeenCalledTimes(ids.length * 2);
+  expect(project).toHaveBeenCalledTimes(ids.length);
 }, 60_000);
 
 /** A phone polling many sessions must not take the SQLite write lock per unchanged session. */

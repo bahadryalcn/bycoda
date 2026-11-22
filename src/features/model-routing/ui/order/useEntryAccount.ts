@@ -6,7 +6,6 @@ import {
   type ProviderAccount,
 } from "../../../providers/public/providerAccounts";
 import { useProviderAccounts } from "../../../providers/public/useProviderAccounts";
-import { inferAccountKind } from "../../model/modelProfile";
 
 export type EntryAccount = {
   /** Only Claude and Codex entries carry accounts. */
@@ -15,7 +14,7 @@ export type EntryAccount = {
   accounts: ProviderAccount[];
   /** The selected account, when it still exists. */
   account?: ProviderAccount;
-  /** The account's own kind, else the kind its label implies. */
+  /** The account's type, with Personal for legacy profiles. */
   kind?: "personal" | "work";
 };
 
@@ -36,7 +35,7 @@ export function entryAccountKind(
   entry: Pick<ModelRoutingEntry, "harness" | "providerAccountId">,
 ): "personal" | "work" | undefined {
   const account = entryProviderAccount(entry);
-  return account ? (account.kind ?? inferAccountKind(account.label)) : undefined;
+  return account ? (account.kind ?? "personal") : undefined;
 }
 
 /** The account an order entry runs on, with its Personal/Work kind. */
@@ -53,6 +52,6 @@ export function useEntryAccount(
     id,
     accounts,
     account,
-    kind: account ? (account.kind ?? inferAccountKind(account.label)) : undefined,
+    kind: account ? (account.kind ?? "personal") : undefined,
   };
 }

@@ -233,10 +233,11 @@ it("validates new account names against the selected provider before sign-in", a
     (node) => node.textContent?.trim() === "Add account",
   )!;
   await act(async () => add.click());
-  const editor = container.querySelector<HTMLFormElement>('[data-settings-part="account-editor"]')!;
+  const dialog = document.querySelector('[role="dialog"][data-modal-placement]')!;
+  const editor = dialog.querySelector("form")!;
   const input = editor.querySelector("input")!;
   expect(editor.textContent).toContain("Account name");
-  expect(editor.textContent).toContain("Enter an account name");
+  expect(input.getAttribute("aria-invalid")).not.toBe("true");
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       input,
@@ -245,11 +246,11 @@ it("validates new account names against the selected provider before sign-in", a
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(editor.textContent).toContain("An account with this name already exists");
-  const submit = container.querySelector<HTMLButtonElement>(
+  const submit = dialog.querySelector<HTMLButtonElement>(
     `button[form="${editor.id}"][type="submit"]`,
   )!;
   expect(submit.getAttribute("aria-disabled")).toBe("true");
-  const cancel = [...editor.querySelectorAll<HTMLButtonElement>("button")].find(
+  const cancel = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent === "Cancel",
   )!;
   await act(async () => cancel.click());

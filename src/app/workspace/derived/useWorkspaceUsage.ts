@@ -132,7 +132,7 @@ export function useUsageLimitResume({
     for (const session of usageSessions) {
       const limit = session.usageLimit;
       if (windowTransferPending || movingSessionIds.current.has(session.id)) continue;
-      if (!limit?.resumeAtReset || limit.resetsAt == null) continue;
+      if (!limit?.resumeAtReset || limit.recoveryFrom || limit.resetsAt == null) continue;
       if (!usageLimitResumeDue(session, now)) {
         nextCheck = Math.min(nextCheck, limit.resetsAt + USAGE_LIMIT_RESUME_GRACE_MS - now);
         continue;
@@ -174,7 +174,7 @@ export function useUsageLimitResume({
   useEffect(() => {
     for (const session of usageSessions) {
       const limit = session.usageLimit;
-      if (!limit || limit.resetsAt != null) continue;
+      if (!limit || limit.recoveryFrom || limit.resetsAt != null) continue;
       if (usageResetLookups.current.has(limit)) continue;
       const provider = session.harness;
       if (provider !== "claude" && provider !== "codex") continue;

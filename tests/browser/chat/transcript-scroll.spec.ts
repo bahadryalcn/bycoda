@@ -1,5 +1,36 @@
 import { expect, test } from "@playwright/test";
 
+test("finishing an anchored reply brings the latest turn back to the composer edge", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/chat/transcript.html?streaming&anchor");
+  const scroller = page.locator(".agent-transcript");
+  const latest = scroller.locator("[data-transcript-turn='stream-user']");
+  const bottomGap = () =>
+    latest.evaluate((turn) =>
+      Math.abs(
+        turn.closest(".agent-transcript")!.getBoundingClientRect().bottom -
+          turn.lastElementChild!.getBoundingClientRect().bottom,
+      ),
+    );
+
+  await expect(latest).toHaveClass(/transcript-turn-anchor/);
+  await expect.poll(bottomGap).toBeGreaterThan(100);
+  await page.evaluate(() =>
+    (window as unknown as { finishFixtureStream: () => void }).finishFixtureStream(),
+  );
+  await expect.poll(bottomGap).toBeLessThan(48);
+
+  const jump = page.getByRole("button", { name: "Jump to latest", exact: true });
+  await expect(jump).toBeHidden();
+  await scroller.hover();
+  await page.mouse.wheel(0, -240);
+  await expect(jump).toBeVisible();
+  await jump.click();
+  await expect(jump).toBeHidden();
+  await expect.poll(bottomGap).toBeLessThan(48);
+});
+
 test("scrolling settled history keeps the scroll range fixed", async ({ page }) => {
   await page.goto("/tests/browser/chat/transcript.html");
   const scroller = page.locator(".agent-transcript");

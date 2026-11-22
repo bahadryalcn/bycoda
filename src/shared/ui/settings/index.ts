@@ -5,7 +5,6 @@ export {
   Row,
   SettingResetButton,
   SettingsFeedback,
-  SettingsPageHelp,
   type SettingsPersistence,
   type SettingsSaveState,
 } from "./SettingsRows";

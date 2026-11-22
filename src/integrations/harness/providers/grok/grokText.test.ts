@@ -168,11 +168,55 @@ it("sends the absolute home folder, never a literal ~, as the ACP session cwd", 
   reply("session/new", { sessionId: "550e8400-e29b-41d4-a716-446655440000" });
   await waitFor(() => !!outbound("session/set_model"), "session/set_model");
   reply("session/set_model", {});
-  await waitFor(() => !!outbound("session/set_mode"), "session/set_mode");
-  reply("session/set_mode", {});
   await waitFor(() => !!outbound("session/prompt"), "session/prompt");
+  expect(outbound("session/set_mode")).toBeUndefined();
   reply("session/prompt", {});
   await expect(result).resolves.toBe("");
+});
+
+it.each([true, false])("uses advertised text effort only (advertised: %s)", async (advertised) => {
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  const result = runGrokTextPrompt({
+    cwd: "/repo",
+    model: "grok:grok-4.7",
+    modelSettings: { effort: "medium" },
+    prompt: "question",
+  });
+  try {
+    await waitFor(() => !!outbound("initialize"), "initialize");
+    reply("initialize", { protocolVersion: 2 });
+    await waitFor(() => !!outbound("session/new"), "session/new");
+    reply("session/new", {
+      sessionId: "S1",
+      models: { currentModelId: "grok-4.7" },
+      configOptions: [
+        {
+          id: "thinking",
+          type: "select",
+          category: "thought_level",
+          currentValue: "low",
+          options: [{ value: advertised ? "medium" : "low" }],
+        },
+      ],
+    });
+    if (advertised) {
+      await waitFor(() => !!outbound("session/set_config_option"), "effort control");
+      expect(outbound("session/set_config_option")?.params).toEqual({
+        sessionId: "S1",
+        configId: "thinking",
+        value: "medium",
+      });
+      reply("session/set_config_option", {});
+    }
+    await waitFor(() => !!outbound("session/prompt"), "session/prompt");
+    expect(outbound("session/set_mode")).toBeUndefined();
+    expect(outbound("session/set_model")).toBeUndefined();
+    expect(warning).toHaveBeenCalledTimes(advertised ? 0 : 1);
+    reply("session/prompt", {});
+    await expect(result).resolves.toBe("");
+  } finally {
+    warning.mockRestore();
+  }
 });
 
 it("forwards Grok text deltas without duplicating snapshots", async () => {
@@ -189,8 +233,6 @@ it("forwards Grok text deltas without duplicating snapshots", async () => {
   reply("session/new", { sessionId: "550e8400-e29b-41d4-a716-446655440000" });
   await waitFor(() => !!outbound("session/set_model"), "session/set_model");
   reply("session/set_model", {});
-  await waitFor(() => !!outbound("session/set_mode"), "session/set_mode");
-  reply("session/set_mode", {});
   await waitFor(() => !!outbound("session/prompt"), "session/prompt");
 
   onLine?.(
@@ -238,8 +280,6 @@ async function openTextSession(sessionId = "550e8400-e29b-41d4-a716-446655440000
   reply("session/new", { sessionId });
   await waitFor(() => !!outbound("session/set_model"), "session/set_model");
   reply("session/set_model", {});
-  await waitFor(() => !!outbound("session/set_mode"), "session/set_mode");
-  reply("session/set_mode", {});
 }
 
 it("deletes only the temporary session when generation fails", async () => {

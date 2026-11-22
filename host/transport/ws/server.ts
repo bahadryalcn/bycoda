@@ -823,6 +823,11 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       )
         resultLog.warn("slow request", {
           method: request.method,
+          // Multiplexed methods (`assistant.request`) are only diagnosable by their operation.
+          ...(typeof request.params?.op === "string" &&
+          /^[a-z][a-zA-Z0-9.]{0,63}$/.test(request.params.op)
+            ? { op: request.params.op }
+            : {}),
           ms: Math.round(elapsedSince(started.startedAt)),
         });
       peer.inflight.delete(request.id);

@@ -6,7 +6,11 @@
 //! fixed here: the renderer picks a channel, never a URL. Signatures are verified by the
 //! updater plugin with the configured public key either way.
 
-use std::{future::Future, time::Duration};
+use std::{
+    future::Future,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 use serde::Serialize;
 use tauri::{Manager, ResourceId, Runtime, Webview};
@@ -39,7 +43,20 @@ async fn check(builder: UpdaterBuilder) -> Result<Option<Update>, String> {
         .header("Cache-Control", "no-cache")
         .and_then(|builder| builder.build())
         .map_err(|error| error.to_string())?;
-    updater.check().await.map_err(|error| error.to_string())
+    let result = updater.check().await.map_err(|error| error.to_string());
+    note_feed_outcome(result.is_ok(), result.as_ref().err());
+    result
+}
+
+static FEED_DOWN: AtomicBool = AtomicBool::new(false);
+
+/// Logs a failing feed once per outage at info level; a successful check ends the outage.
+fn note_feed_outcome(ok: bool, error: Option<&String>) {
+    if ok {
+        FEED_DOWN.store(false, Ordering::Relaxed);
+    } else if !FEED_DOWN.swap(true, Ordering::Relaxed) {
+        log::info!(target: "bycoda::app_update", "update feed unreachable: {}", error.map_or("", String::as_str));
+    }
 }
 
 /// True when `candidate` is a strictly newer semantic version than `current`.

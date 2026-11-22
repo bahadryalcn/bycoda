@@ -511,6 +511,68 @@ describe("parseWorkspaceSnapshot", () => {
     expect(parsed?.tabs[0] && "extra" in parsed.tabs[0]).toBe(false);
   });
 
+  it("prefers a tab from the saved project when the active tab is missing", () => {
+    const background = chat("background", "/byshoot");
+    const foreground = chat("foreground", "/jira");
+    const backgroundTab = newTab(background.id);
+    const foregroundTab = newTab(foreground.id);
+    const snapshot = collectWorkspaceSnapshot(
+      [backgroundTab, foregroundTab],
+      [background, foreground],
+      "missing",
+      foreground.cwd,
+      new Map(),
+    );
+
+    expect(parseWorkspaceSnapshot(snapshot)?.activeTabId).toBe(foregroundTab.id);
+  });
+
+  it("opens No project when no tab from the saved project survives", () => {
+    const background = chat("background", "/byshoot");
+    const foreground = chat("foreground", "/jira");
+    const backgroundTab = newTab(background.id);
+    const foregroundTab = newTab(foreground.id);
+    const snapshot = collectWorkspaceSnapshot(
+      [backgroundTab, foregroundTab],
+      [background, foreground],
+      foregroundTab.id,
+      foreground.cwd,
+      new Map(),
+    );
+
+    const restored = hydrateWorkspaceSnapshot(
+      snapshot,
+      new Map(),
+      new Set(),
+      new Set([foreground.id]),
+    );
+    const activeTab = restored?.tabs.find((tab) => tab.id === restored.activeTabId);
+    const activeSession = restored?.sessions.find((session) => session.id === activeTab?.focusedId);
+
+    expect(restored?.projectCwd).toBe("~");
+    expect(activeSession).toMatchObject({ cwd: "~", blocks: [] });
+    expect(restored?.tabs.map((tab) => tab.id)).toContain(backgroundTab.id);
+    expect(restored?.sessions.some((session) => session.id === foreground.id)).toBe(false);
+  });
+
+  it("keeps No project selected after another restart with project tabs in the background", () => {
+    const background = chat("background", "/byshoot");
+    const blank = newSession("cursor", "~");
+    const blankTab = newTab(blank.id);
+    const snapshot = collectWorkspaceSnapshot(
+      [newTab(background.id), blankTab],
+      [background, blank],
+      blankTab.id,
+      "~",
+      new Map(),
+    );
+
+    expect(hydrateWorkspaceSnapshot(snapshot, new Map())).toMatchObject({
+      activeTabId: blankTab.id,
+      projectCwd: "~",
+    });
+  });
+
   it.each([
     { releaseNotes: { version: "" } },
     { releaseNotes: { version: 123 } },

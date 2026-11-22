@@ -141,7 +141,7 @@ export const SERVER_CONVERSATION_READS = [
 ] as const;
 export function serverConversationDescription(action: string): string | undefined {
   if (action === "servers.list" || action === "servers.get")
-    return "Read bounded saved-server inventory from the connected desktop. Assistant Room reads include inventoryRevision; use that exact revision with operationId for reviewed server save or removal. Server records are not project development servers.";
+    return "Read bounded saved-server inventory from the connected desktop. Resolve the stable ID after @srv: or @server: with servers.get before requesting a command. Assistant Room reads include inventoryRevision; use that exact revision with operationId for reviewed server save or removal. Server records are not project development servers.";
   if (action === "servers.ssh.save" || action === "servers.ssh.remove")
     return "Save or remove a personal SSH server. Assistant Room requires a stable operationId, expectedInventoryRevision from servers.list or servers.get, and exact in-app owner approval; the desktop rechecks the inventory before applying. An uncertain result must be inspected before any retry.";
   if (action === "servers.ssh.execute")

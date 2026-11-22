@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { observeResize } from "../../../shared/lib/observeResize";
 import { Popover } from "../../../shared/ui/Popover";
 import { Text } from "../../../shared/ui/Text";
+import { SkillIcon } from "../../../shared/ui/icons";
 import {
   HOVER_CARD_CLOSE_MS,
   HOVER_CARD_OPEN_MS,
@@ -46,7 +47,6 @@ export function ComposerSkillGroupHover({
     closeDelay: HOVER_CARD_CLOSE_MS,
     warmMs: TOOLTIP_WARM_MS,
   });
-  const [prefix, setPrefix] = useState("/");
   // Null means the next hit test reads the rects again. Cleared when the draft, the textarea
   // size or any scroll position changes, because the rects are viewport-relative.
   const tokensRef = useRef<TokenRects[] | null>(null);
@@ -73,7 +73,6 @@ export function ComposerSkillGroupHover({
       intent.scheduleClose();
       return;
     }
-    setPrefix(hit.dataset.composerSkillGroupPrefix ?? "/");
     intent.scheduleOpen(hit);
   });
   const onMove = useStableCallback((event: PointerEvent) => {
@@ -85,10 +84,11 @@ export function ComposerSkillGroupHover({
     cancelFrame();
     intent.scheduleClose();
   });
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- textarea pointer listeners; the pointer-transparent overlay never receives them.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Observe the textarea and its reference actions through their common parent.
   useEffect(() => {
     const el = field?.current;
-    if (!el) return;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
     // Scroll events do not bubble; the capture listener on window also sees the textarea,
     // its overlay and any scrolling ancestor.
     const dropRects = () => {
@@ -96,13 +96,13 @@ export function ComposerSkillGroupHover({
     };
     const stopResize = observeResize(el, dropRects);
     window.addEventListener("scroll", dropRects, { capture: true, passive: true });
-    el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerleave", onLeave);
+    parent.addEventListener("pointermove", onMove, true);
+    parent.addEventListener("pointerleave", onLeave, true);
     return () => {
       stopResize();
       window.removeEventListener("scroll", dropRects, { capture: true });
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerleave", onLeave);
+      parent.removeEventListener("pointermove", onMove, true);
+      parent.removeEventListener("pointerleave", onLeave, true);
       cancelFrame();
     };
   }, [field, onMove, onLeave, cancelFrame]);
@@ -134,9 +134,9 @@ export function ComposerSkillGroupHover({
       </Text>
       <ul className="mt-1.5 flex max-h-64 flex-col gap-0.5 overflow-y-auto">
         {group.members.map((member) => (
-          <li key={member}>
+          <li key={member} className="flex items-center gap-1.5">
+            <SkillIcon className="icon-xs shrink-0" aria-hidden />
             <Text size="caption" tone="secondary" truncate className="block">
-              {prefix}
               {member}
             </Text>
           </li>

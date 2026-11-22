@@ -27,6 +27,12 @@ const normalizedPaths = new Map<string, Entry>();
 let lastSweep = 0;
 let refreshes = 0;
 
+/** Forgets every resolved path, for workers that must not trust earlier jobs' mappings. */
+export function resetProjectPathCache() {
+  normalizedPaths.clear();
+  lastSweep = 0;
+}
+
 function expand(path: string): string {
   return path === "~" || path.startsWith("~/") || path.startsWith("~\\")
     ? join(homedir(), path.slice(1))

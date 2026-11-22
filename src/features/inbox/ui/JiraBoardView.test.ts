@@ -498,3 +498,17 @@ it("leaves touch gestures on the card to scrolling and still opens detail", asyn
   expect(select).toHaveBeenCalledOnce();
   expect(hint()).toBeNull();
 });
+it("names the board group and its last verification when a refresh failed over loaded issues", async () => {
+  const previous = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command, args) =>
+    command === "jira_board_issues"
+      ? Promise.reject(new Error("Jira unavailable"))
+      : previous(command, args),
+  );
+  await click("Refresh");
+  const text = container.textContent ?? "";
+  // Which data could not be verified: the group's name, not a generic "data".
+  expect(text).toContain("Updates have not been verified.");
+  expect(text).not.toContain("Showing last loaded data.");
+  expect(container.querySelector('button[aria-label^="Details: "]')).not.toBeNull();
+});

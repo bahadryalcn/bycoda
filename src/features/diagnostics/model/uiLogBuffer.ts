@@ -126,6 +126,15 @@ export function sourceLocation(file: string | undefined, line?: number, column?:
   return `${name}${line ? `:${line}` : ""}${line && column ? `:${column}` : ""}`;
 }
 
+/** The browser's harmless "layout settled over two frames" notice; not a defect worth a log line. */
+export function isBenignResizeObserverError(message: string | undefined): boolean {
+  return (
+    message === "ResizeObserver loop completed with undelivered notifications." ||
+    message === "ResizeObserver loop completed with undelivered notifications" ||
+    message === "ResizeObserver loop limit exceeded"
+  );
+}
+
 let installed = false;
 
 /**
@@ -156,6 +165,7 @@ export function installUiLogBuffer(): void {
   }
   window.addEventListener("error", (event) =>
     guarded(() => {
+      if (isBenignResizeObserverError(event.message)) return;
       const src = sourceLocation(event.filename, event.lineno, event.colno);
       const error = event.error;
       const stack = error instanceof Error && error.stack ? `\n${error.stack}` : "";

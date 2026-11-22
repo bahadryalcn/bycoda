@@ -24,6 +24,7 @@ export type * as modelProtocolApi from "./public/protocol";
 export type * as modelQueueStateApi from "./public/queueState";
 export type * as modelRemoteCapabilitiesApi from "./public/remoteCapabilities";
 export type * as modelRemoteFailureApi from "./public/remoteFailure";
+export type * as modelTransientFailureApi from "./public/transientFailure";
 export type * as modelRemoteHealthApi from "./public/remoteHealth";
 export type * as modelMachineAvailabilityApi from "./public/machineAvailability";
 export type * as modelRemoteMachineChannelApi from "./public/remoteMachineChannel";

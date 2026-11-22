@@ -77,6 +77,12 @@ import { useUnsentComposerDraft } from "../../features/sessions/hooks/useUnsentC
 import { useSessionRankSignals } from "../../features/sessions/hooks/useSessionRankSignals";
 import { useSessionListStatus } from "../../features/sessions/hooks/useSessionListStatus";
 import { useSettledShelf } from "../../features/sessions/hooks/useSettledShelf";
+import { useRemoteSessionLifecycleLists } from "../../features/sessions/hooks/useSessionLifecycle";
+import { isSettledSession } from "../../features/sessions/model/sessionLifecycle";
+import {
+  sessionLifecycleClient,
+  setSessionLifecycle,
+} from "../../features/sessions/model/sessionLifecycleClient";
 import type { BackgroundSessionTarget } from "../../features/tasks/model/backgroundSession";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -103,7 +109,6 @@ import {
   Sparkles,
   SplitSquare,
   StickyNote,
-  Internet,
   Server,
   Trash2,
   Zap,
@@ -155,6 +160,7 @@ import { useMachineFocus } from "../../features/connections/hooks/useMachineFocu
 import {
   classifyRemoteError,
   isConnectionFailure,
+  presentRemoteError,
 } from "../../features/connections/model/remoteFailure";
 import { useResolvedModelName } from "../../features/sessions/model/reactiveReads";
 import {
@@ -172,6 +178,7 @@ import {
 } from "../../features/sessions/model/sessionOrder";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
 import { toast } from "../../shared/ui/ToastRegion";
+import { reportFailure } from "../../shared/ui/reportFailure";
 import "./sessionList.css";
 import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
@@ -252,6 +259,7 @@ import {
   type SessionOrganizationState,
 } from "../../features/sessions/model/sessionOrganizationStore";
 import { isProjectPasswordLocked } from "../../features/group-lock/model/groupLock";
+import { isProjectLocked } from "../../features/group-lock/public/projectLock";
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
 import { roomPrivacyRetryAction } from "../../features/group-lock/ui/roomPrivacyRetry";
 import {
@@ -342,7 +350,7 @@ import { ProjectRail } from "./ProjectRail";
 import { SidebarAccountFooter } from "./SidebarAccountFooter";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
-import { Tooltip } from "../../shared/ui/Tooltip";
+import { detailTooltipFrame, Tooltip } from "../../shared/ui/Tooltip";
 import { Spinner } from "../../shared/ui/Spinner";
 import { PaneHeader } from "../../shared/ui/PaneHeader";
 import { Sash } from "../../shared/ui/Sash";
@@ -351,7 +359,12 @@ import { useKeybindingShortcut } from "../../features/settings/model/useKeybindi
 import { Popover } from "../../shared/ui/Popover";
 import { useProjectMenu } from "./useProjectMenu";
 import { SessionFiltersMenu } from "../../features/sessions/ui/SessionFiltersMenu";
-import { SessionSettleAction } from "../../features/sessions/ui/SessionSettleAction";
+import {
+  SessionSettleAction,
+  SessionSettleButton,
+  useSessionSettleCommand,
+  type SessionSettleCommand,
+} from "../../features/sessions/ui/SessionSettleAction";
 import { LinkSessionWorkItemDialog } from "../../features/sessions/ui/LinkSessionWorkItemDialog";
 import { sessionReminderPresets } from "../../features/sessions/ui/sessionReminderPresets";
 import {
@@ -365,18 +378,25 @@ import { SidebarUpdateFooter } from "./SidebarUpdate";
 import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
 import {
   machineHidesView,
+  readMachineAvailability,
   useMachineAvailability,
 } from "../../features/connections/public/machineAvailability";
 import { MachineUnavailable } from "../../features/connections/public/MachineUnavailable";
 import { useRemoteSessionBindings } from "../../features/connections/model/useRemoteSessionBinding";
 import { pathKey } from "../../shared/lib/paths";
 import {
+  knownRemoteMachine,
   refreshRemoteProjectSessions,
   sessionAccessForMachine,
   remoteSessionFor,
   useRemoteProjectSessions,
 } from "../../features/connections/model/connections";
-import { parseRemotePath, remotePath } from "../../features/connections/model/remoteProjects";
+import {
+  parseRemotePath,
+  remotePath,
+  remoteProjectFor,
+} from "../../features/connections/model/remoteProjects";
+import type { RemoteRailSession } from "../../features/connections/model/remoteRailSessions";
 import { newRequestId } from "../../shared/lib/id/requestId";
 import { requestOpenCrewsPage } from "../../features/crews/model/crewsPage";
 import {
@@ -427,6 +447,7 @@ type Props = {
     refresh: () => void;
     remoteHistoryLimited?: boolean;
   };
+  lastSessionsRemoteRows?: readonly RemoteRailSession[];
   newListedSessionRequest?: number;
   onNewListedSession?: (projectPath: string) => void | Promise<void>;
   onOpenLastSessions?: () => void;
@@ -467,7 +488,7 @@ type Props = {
     sessionId: string,
     options?: { preview?: boolean },
   ) => void;
-  onRemoteSessionDeleted?: (sessionId: string) => void;
+  onRemoteSessionDeleted?: (sessionId: string, project?: string) => void;
   onSessionNavigationOrder?: (ids: readonly string[]) => void;
   onPrefetchSession?: (sessionId: string) => void;
   onPlaceSessionOnPane?: (sessionId: string, targetId: string, edge: PaneEdge) => void;
@@ -525,7 +546,7 @@ type Props = {
   recents?: RecentProject[];
   busyProjectPaths?: Iterable<string>;
   liveAgents?: LiveAgent[];
-  onSelectAgent?: (sessionId: string) => void;
+  onSelectAgent?: (sessionId: string) => void | Promise<boolean>;
   onPreviewSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
   onOpenCrewSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
   recentSessions?: RecentSessionsSource;
@@ -592,6 +613,7 @@ const GLOBAL_SESSION_TIME_FILTERS = ["today", "7d"] as const;
 function SidebarComponent({
   lastSessionsOpen = false,
   lastSessionsData,
+  lastSessionsRemoteRows,
   onNewListedSession,
   newListedSessionRequest = 0,
   onOpenLastSessions,
@@ -735,6 +757,12 @@ function SidebarComponent({
     (!!remote.dataState.error && isConnectionFailure(classifyRemoteError(remote.dataState.error)));
   const hostProject = useRemoteProject(cwd);
   const remoteBindings = useRemoteSessionBindings();
+  const currentRemoteTarget = {
+    cwd,
+    machineId: remote.machine?.id,
+    projectId: hostProject?.projectId,
+    sessions: remote.sessions,
+  };
   const remoteChange = async (
     sessionId: string,
     patch: {
@@ -743,8 +771,9 @@ function SidebarComponent({
       pinned?: boolean;
       linkedWorkItem?: LinkedWorkItem | null;
     },
+    target = currentRemoteTarget,
   ) => {
-    if (!remote.machine || !hostProject) {
+    if (!target.machineId || !target.projectId) {
       toast.show({
         tone: "warning",
         message: "Connect this project's machine to change its sessions.",
@@ -752,23 +781,27 @@ function SidebarComponent({
       return;
     }
     try {
-      await sessionAccessForMachine(remote.machine.id, false, true).update(sessionId, {
-        projectId: hostProject.projectId,
-        authorityGeneration: remote.sessions.find((entry) => entry.id === sessionId)
+      await sessionAccessForMachine(target.machineId, false, true).update(sessionId, {
+        projectId: target.projectId,
+        authorityGeneration: target.sessions.find((entry) => entry.id === sessionId)
           ?.authorityGeneration,
         ...patch,
       });
       refreshRemoteProjectSessions();
     } catch (error) {
-      toast.show({ tone: "danger", message: `Could not update this session.\n\n${String(error)}` });
+      await reportFailure(error, { toast }).catch(() => {});
     }
   };
-  const remoteDelete = async (sessionIds: readonly string[]) => {
+  const remoteDelete = async (
+    sessionIds: readonly string[],
+    target = currentRemoteTarget,
+    canDelete = () => true,
+  ) => {
     if (sessionIds.length === 0) return;
     const authorityById = new Map(
-      remote.sessions.map((entry) => [entry.id, entry.authorityGeneration]),
+      target.sessions.map((entry) => [entry.id, entry.authorityGeneration]),
     );
-    if (!remote.machine || !hostProject) {
+    if (!target.machineId || !target.projectId) {
       toast.show({
         tone: "warning",
         message: "Connect this project's machine to delete its sessions.",
@@ -780,25 +813,26 @@ function SidebarComponent({
         count: sessionIds.length,
         title:
           sessionIds.length === 1
-            ? remote.sessions.find((entry) => entry.id === sessionIds[0])?.title
+            ? target.sessions.find((entry) => entry.id === sessionIds[0])?.title
             : undefined,
       }))
     )
       return;
+    if (!canDelete()) return;
     try {
       for (const sessionId of sessionIds) {
-        await sessionAccessForMachine(remote.machine.id, false, true).delete(
+        await sessionAccessForMachine(target.machineId, false, true).delete(
           sessionId,
-          hostProject.projectId,
+          target.projectId,
           authorityById.get(sessionId),
         );
         forgetRemoteQueue(sessionId);
-        onRemoteSessionDeleted?.(sessionId);
+        onRemoteSessionDeleted?.(sessionId, target.cwd);
       }
       refreshRemoteProjectSessions();
     } catch (error) {
-      toast.show({ tone: "danger", message: `Could not delete this session.\n\n${String(error)}` });
       refreshRemoteProjectSessions();
+      await reportFailure(error, { toast }).catch(() => {});
     }
   };
   const onSelectSession = remoteProject
@@ -962,6 +996,11 @@ function SidebarComponent({
     y: number;
     sessionId: string;
   } | null>(null);
+  const [globalSessionMenu, setGlobalSessionMenu] = useState<{
+    x: number;
+    y: number;
+    session: SessionSummary;
+  } | null>(null);
   const [linkingSession, setLinkingSession] = useState<SessionSummary | null>(null);
   const [copyIdFailure, setCopyIdFailure] = useState<{
     value: string;
@@ -1012,10 +1051,29 @@ function SidebarComponent({
   const [sessionOrder, setSessionOrder] = useState<SessionOrder>(() =>
     NATIVE_SESSION_ORGANIZATION_ACTIVE ? {} : loadSessionOrder(cwd),
   );
-  const [organizationNotice, setOrganizationNotice] = useState<string | null>(null);
+  const [organizationNotice, setOrganizationNoticeText] = useState<string | null>(null);
+  const organizationFailure = useRef<AbortController | null>(null);
+  const sessionStateCwd = useRef(cwd);
+  const setOrganizationNotice = (message: string | null) => {
+    organizationFailure.current?.abort();
+    setOrganizationNoticeText(message);
+  };
+  const reportOrganizationFailure = (error: unknown) => {
+    if (sessionStateCwd.current !== cwd) return;
+    organizationFailure.current?.abort();
+    const controller = new AbortController();
+    organizationFailure.current = controller;
+    setOrganizationNoticeText((current) => (current === t("Saving…") ? null : current));
+    void reportFailure(error, {
+      toast: { show: ({ message }) => setOrganizationNoticeText(message) },
+      signal: controller.signal,
+    }).catch(() => {});
+  };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Abort pending notices when their project or sidebar leaves.
+  useEffect(() => () => organizationFailure.current?.abort(), [cwd]);
   const [partialPinSagas, setPartialPinSagas] = useState<PinSaga[]>([]);
   const organizationBusy = useRef(false);
-  const runSagaAction = useSingleFlight((error) => setOrganizationNotice(String(error)));
+  const runSagaAction = useSingleFlight(reportOrganizationFailure);
   const organizationUnresolved = useRef(false);
   const organizationRefreshRequired = useRef(false);
   const organizationReady = useRef(!NATIVE_SESSION_ORGANIZATION_ACTIVE);
@@ -1055,11 +1113,184 @@ function SidebarComponent({
   const [reminderSessionsCollapsed, setReminderSessionsCollapsed] = useState(() =>
     loadReminderSessionsCollapsed(cwd),
   );
+  const remoteLifecycleMachines = new Set(
+    lastSessionsOpen
+      ? (lastSessionsRemoteRows ?? []).flatMap(({ project, fresh }) => {
+          if (!fresh || isProjectPasswordLocked(project)) return [];
+          const environmentId = parseRemotePath(project)?.environmentId;
+          const machine = environmentId && knownRemoteMachine(environmentId);
+          return machine ? [machine.id] : [];
+        })
+      : [],
+  );
+  const projectLifecycleMachine =
+    remoteProject &&
+    !lastSessionsOpen &&
+    remote.loaded &&
+    machineAvailability.available &&
+    !isProjectPasswordLocked(cwd)
+      ? remote.machine?.id
+      : undefined;
+  if (projectLifecycleMachine) remoteLifecycleMachines.add(projectLifecycleMachine);
+  const remoteLifecycle = useRemoteSessionLifecycleLists(
+    remoteLifecycleMachines.size ? JSON.stringify([...remoteLifecycleMachines].sort()) : "",
+  );
+  const projectLifecycleViews = remote.machine
+    ? remoteLifecycle.lists.get(remote.machine.id)
+    : undefined;
   const {
     shelve: shelveSettled,
     isSettled,
     setCollapsed: setSettledCollapsed,
-  } = useSettledShelf(!remoteProject);
+    lifecycle: localLifecycle,
+  } = useSettledShelf(!remoteProject || lastSessionsOpen, projectLifecycleViews);
+  const lifecycleMachine = remoteProject
+    ? projectLifecycleMachine
+    : localLifecycle.autoSettle && localLifecycle.machineId;
+  const lifecycleViews = remoteProject ? projectLifecycleViews : localLifecycle.views;
+  const settlingProjectSessions = useRef(false);
+  const runProjectSettle = async (sessions: readonly SessionSummary[], undo = false) => {
+    if (!lifecycleMachine || settlingProjectSessions.current) return;
+    settlingProjectSessions.current = true;
+    const client = sessionLifecycleClient(lifecycleMachine);
+    let firstError: unknown;
+    try {
+      for (const session of sessions) {
+        if (remoteProject ? isProjectPasswordLocked(cwd) : isProjectLocked(session.cwd)) continue;
+        if (
+          remoteProject &&
+          (!readMachineAvailability(cwd).available ||
+            remoteProjectFor(cwd)?.projectId !== hostProject?.projectId)
+        ) {
+          firstError ??= t("Connect this project’s machine to load its sessions.");
+          break;
+        }
+        try {
+          if (remoteProject) await remoteLifecycle.change(lifecycleMachine, session.id, undo);
+          else
+            setSessionLifecycle(
+              await (undo ? client.unsettle(session.id) : client.settle(session.id)),
+            );
+        } catch (cause) {
+          firstError ??= cause;
+        }
+      }
+    } finally {
+      settlingProjectSessions.current = false;
+    }
+    if (firstError != null) await reportFailure(firstError, { toast }).catch(() => {});
+  };
+  const canSettleProjectSession = (session: SessionSummary) =>
+    lifecycleMachine &&
+    lifecycleViews &&
+    !session.draft &&
+    !session.archived &&
+    !crewManagedIndex.has(session.id);
+  const projectSettleCommand = (session: SessionSummary): SessionSettleCommand | undefined => {
+    if (!canSettleProjectSession(session)) return undefined;
+    const view = lifecycleViews?.get(session.id);
+    const settled = view?.state === "settling" || isSettledSession(view, session.lastActivityAt);
+    return {
+      settled,
+      label:
+        view?.state === "settling" ? t("Cancel settle") : settled ? t("Un-settle") : t("Settle"),
+      run: () => runProjectSettle([session], settled),
+    };
+  };
+  const globalRemoteView = (session: SessionSummary) => {
+    const environmentId = parseRemotePath(session.cwd)?.environmentId;
+    const machine = environmentId && knownRemoteMachine(environmentId);
+    const views = machine ? remoteLifecycle.lists.get(machine.id) : undefined;
+    return views?.get(session.id) ?? views?.get(remoteSessionFor(session.id) ?? "");
+  };
+  const isGlobalSessionSettled = (session: SessionSummary) =>
+    isRemoteProjectPath(session.cwd)
+      ? isSettledSession(globalRemoteView(session), session.lastActivityAt)
+      : isSettled(session);
+  const globalMenuSession =
+    lastSessionsOpen && globalSessionMenu
+      ? lastSessionsData?.rows.find(
+          (row) =>
+            row.id === globalSessionMenu.session.id &&
+            sameProjectPath(row.cwd, globalSessionMenu.session.cwd),
+        )
+      : undefined;
+  const globalSettle = useSessionSettleCommand(globalMenuSession ?? { id: "" });
+  const remoteMenuSession = !!globalMenuSession && isRemoteProjectPath(globalMenuSession.cwd);
+  const remoteMenuView = remoteMenuSession ? globalRemoteView(globalMenuSession) : undefined;
+  const remoteMenuUndo =
+    remoteMenuSession &&
+    (remoteMenuView?.state === "settling" ||
+      isSettledSession(remoteMenuView, globalMenuSession.lastActivityAt));
+  const runGlobalSessionAction = async (
+    session: SessionSummary,
+    action: "archive" | "delete" | "settle",
+    archived = !session.archived,
+  ) => {
+    if (isProjectPasswordLocked(session.cwd) || crewManagedIndex.has(session.id)) return;
+    if (isRemoteProjectPath(session.cwd)) {
+      const project = remoteProjectFor(session.cwd);
+      const machine = project && knownRemoteMachine(project.environmentId);
+      const boundId = remoteSessionFor(session.id);
+      const listed = lastSessionsRemoteRows?.find(
+        (entry) =>
+          entry.session.projectId === project?.projectId &&
+          sameProjectPath(entry.project, session.cwd) &&
+          (entry.session.id === session.id || entry.session.id === boundId),
+      );
+      const available = () =>
+        !isProjectPasswordLocked(session.cwd) &&
+        readMachineAvailability(session.cwd).available &&
+        remoteProjectFor(session.cwd)?.projectId === project?.projectId;
+      if (!machine || !project || !listed?.fresh || !available()) {
+        toast.show({
+          tone: "warning",
+          message: t("Connect this project’s machine to load its sessions."),
+        });
+        return;
+      }
+      const target = {
+        cwd: session.cwd,
+        machineId: machine.id,
+        projectId: project.projectId,
+        sessions: [listed.session],
+      };
+      if (action === "settle") {
+        await remoteLifecycle
+          .change(machine.id, listed.session.id, remoteMenuUndo)
+          .catch((cause: unknown) => reportFailure(cause, { toast }).catch(() => {}));
+      } else if (action === "archive") await remoteChange(listed.session.id, { archived }, target);
+      else if (listed.session.status === "running") {
+        toast.show({ tone: "warning", message: t("1 running conversation was skipped.") });
+      } else {
+        await remoteDelete([listed.session.id], target, available);
+      }
+      return;
+    }
+    if (action === "settle") {
+      await globalSettle.run();
+      return;
+    }
+    if (action === "delete") {
+      const canDelete = () => {
+        if (isProjectPasswordLocked(session.cwd)) return false;
+        if (!busyIdsRef.current.has(session.id)) return true;
+        toast.show({ tone: "warning", message: t("1 running conversation was skipped.") });
+        return false;
+      };
+      if (!canDelete()) return;
+      const confirmed = await confirmSessionDelete({
+        count: 1,
+        title: sessionDisplayTitle(session.title, session.harness),
+      });
+      if (!confirmed || !canDelete()) return;
+    }
+    const success =
+      action === "archive"
+        ? await onArchiveLocalSession?.(session.id, archived, session)
+        : await onDeleteLocalSession?.(session.id, session);
+    if (success !== false) lastSessionsData?.refresh();
+  };
   const [sessionDrop, setSessionDrop] = useState<SessionListDropTarget | null>(null);
   const [sessionFilters, setSessionFilters] = useState(loadSessionSidebarFilters);
   const [globalSessionFilters, setGlobalSessionFilters] =
@@ -1414,13 +1645,13 @@ function SidebarComponent({
     active: panelOpen && sidebarAvailable,
   });
 
-  const sessionStateCwd = useRef(cwd);
   // Reset project-owned state before paint when switching projects. Initialization already
   // loaded the preferences for the first project.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps project-owned folder state in step with the selected project before paint
   useLayoutEffect(() => {
     if (sessionStateCwd.current === cwd) return;
     sessionStateCwd.current = cwd;
+    setOrganizationNotice(null);
     organizationReady.current = !NATIVE_SESSION_ORGANIZATION_ACTIVE;
     setSessionFolders(NATIVE_SESSION_ORGANIZATION_ACTIVE ? [] : loadSessionFolders(cwd));
     setSessionOrder(NATIVE_SESSION_ORGANIZATION_ACTIVE ? {} : loadSessionOrder(cwd));
@@ -1464,18 +1695,18 @@ function SidebarComponent({
                 setOrganizationNotice(t("Pin change needs review: {p0}", { p0: openSagas[0].id }));
             })
             .catch((error: unknown) => {
-              if (alive && generation === reconciliation) setOrganizationNotice(String(error));
+              if (alive && generation === reconciliation) reportOrganizationFailure(error);
             });
         }
       } catch (error) {
-        setOrganizationNotice(String(error));
+        reportOrganizationFailure(error);
       }
     };
     // A snapshot already in memory (another project was open) shows at once.
     if (cachedSessionOrganization()) onOrganizationChange();
-    const unsubscribe = subscribeSessionOrganization(onOrganizationChange, (error) =>
-      setOrganizationNotice(String(error)),
-    );
+    const unsubscribe = subscribeSessionOrganization(onOrganizationChange, (error) => {
+      if (alive) reportOrganizationFailure(error);
+    });
     return () => {
       alive = false;
       unsubscribe();
@@ -1584,7 +1815,7 @@ function SidebarComponent({
         kind: "replaceSessionIds",
         cwd,
         aliases: [...completedFolderSessions].map(([from, to]) => ({ from, to })),
-      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      }).catch(reportOrganizationFailure);
       return;
     }
     setSessionFolders(next);
@@ -1660,7 +1891,7 @@ function SidebarComponent({
         } catch (error) {
           setOrganizationNotice(
             t("Change was applied, but the display could not be updated: {p0}", {
-              p0: String(error),
+              p0: presentRemoteError(error, { explicit: true }),
             }),
           );
         }
@@ -1678,11 +1909,11 @@ function SidebarComponent({
       return false;
     } catch (error) {
       if (admitted) organizationUnresolved.current = true;
-      setOrganizationNotice(
-        admitted
-          ? t("Folder change outcome needs verification: {p0}", { p0: gestureId })
-          : String(error),
-      );
+      if (admitted)
+        setOrganizationNotice(
+          t("Folder change outcome needs verification: {p0}", { p0: gestureId }),
+        );
+      else reportOrganizationFailure(error);
       return false;
     } finally {
       organizationBusy.current = false;
@@ -1703,7 +1934,7 @@ function SidebarComponent({
           { kind: "assign", cwd, folderId, sessionIds: [sessionId] },
           { kind: "folderCollapsed", cwd, folderId, collapsed: false },
         ],
-      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      }).catch(reportOrganizationFailure);
       return;
     }
     commitSessionFolders(
@@ -1725,6 +1956,20 @@ function SidebarComponent({
   const multipleMenuSessions = menuSessionIds.length > 1;
   // Conversations a live crew runs are archived, deleted and stopped from Crews only.
   const crewManagedIndex = useCrewManagedIndex();
+  const batchSettleCommand = (sessions: SessionSummary[]): SessionSettleCommand | undefined => {
+    const active = sessions.filter(
+      (session) =>
+        canSettleProjectSession(session) &&
+        !isSettled(session) &&
+        lifecycleViews?.get(session.id)?.state !== "settling",
+    );
+    return active.length
+      ? { settled: false, label: t("Settle"), run: () => runProjectSettle(active) }
+      : undefined;
+  };
+  const menuSettle = multipleMenuSessions
+    ? batchSettleCommand(menuSessions)
+    : menuSessions[0] && projectSettleCommand(menuSessions[0]);
   const menuCrewManaged = menuSessionIds.some((id) => crewManagedIndex.has(id));
   const selectedCrewManaged = [...selectedSessionIds].some((id) => crewManagedIndex.has(id));
   const menuReminderTimes = [
@@ -1804,6 +2049,7 @@ function SidebarComponent({
   const sessionMenuItems: ExplorerMenuItem[] = !sessionMenu
     ? EMPTY_MENU_ITEMS
     : [
+        ...(menuSettle ? [{ kind: "item" as const, id: "settle", label: menuSettle.label }] : []),
         ...(onCancelReminders && menuReminderTimes.length > 0
           ? [
               {
@@ -2067,6 +2313,11 @@ function SidebarComponent({
 
   const onSessionMenuPick = (id: string) => {
     if (!sessionMenu) return;
+    if (id === "settle") {
+      closeSessionMenu();
+      void menuSettle?.run().catch(() => {});
+      return;
+    }
     const sessionId = sessionMenu.sessionId;
     const sessionIds = menuSessionIds;
     const providerSessionId = menuSessions[0]?.providerSessionId;
@@ -2151,7 +2402,7 @@ function SidebarComponent({
           .then((applied) => {
             if (applied) setRenamingFolderId(folderId);
           })
-          .catch((error: unknown) => setOrganizationNotice(String(error)));
+          .catch(reportOrganizationFailure);
         return;
       }
       const { folders, id: createdId } = createFolderWithSessions(sessionFolders, sessionIds);
@@ -2170,7 +2421,7 @@ function SidebarComponent({
             { kind: "assign", cwd, folderId, sessionIds },
             { kind: "folderCollapsed", cwd, folderId, collapsed: false },
           ],
-        }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        }).catch(reportOrganizationFailure);
         return;
       }
       const folders = sessionIds.reduce(
@@ -2187,7 +2438,7 @@ function SidebarComponent({
           cwd,
           folderId: null,
           sessionIds,
-        }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        }).catch(reportOrganizationFailure);
         return;
       }
       commitSessionFolders(
@@ -2218,9 +2469,7 @@ function SidebarComponent({
 
   const pinSessions = (sessionIds: readonly string[], pinned: boolean) => {
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-      void performPinSaga(null, [...sessionIds], pinned).catch((error: unknown) =>
-        setOrganizationNotice(String(error)),
-      );
+      void performPinSaga(null, [...sessionIds], pinned).catch(reportOrganizationFailure);
       return;
     }
     if (sessionIds.length > 1 && onPinSessions) {
@@ -2232,6 +2481,10 @@ function SidebarComponent({
 
   // The bar acts on the selection in list order, like the context menu.
   const selectedSessions = listedSessions.filter((session) => selectedSessionIds.has(session.id));
+  const selectedSettle =
+    selectedSessions.length > 1 && !contextSelection
+      ? batchSettleCommand(selectedSessions)
+      : undefined;
   const allSelectedArchived =
     selectedSessions.length > 0 && selectedSessions.every((session) => session.archived);
   const allSelectedPinned =
@@ -2254,7 +2507,7 @@ function SidebarComponent({
     if (id === "move-out") {
       if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
         void performOrganizationOperation({ kind: "moveFolderOut", cwd, folderId }).catch(
-          (error: unknown) => setOrganizationNotice(String(error)),
+          reportOrganizationFailure,
         );
         return;
       }
@@ -2270,7 +2523,7 @@ function SidebarComponent({
             cwd,
             folderId,
             pinned: !folder.pinned,
-          }).catch((error: unknown) => setOrganizationNotice(String(error)));
+          }).catch(reportOrganizationFailure);
         return;
       }
       if (folder) commitSessionFolders(setFolderPinned(sessionFolders, folderId, !folder.pinned));
@@ -2279,7 +2532,7 @@ function SidebarComponent({
     if (id === "ungroup") {
       if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
         void performOrganizationOperation({ kind: "deleteFolder", cwd, folderId }).catch(
-          (error: unknown) => setOrganizationNotice(String(error)),
+          reportOrganizationFailure,
         );
         return;
       }
@@ -2295,7 +2548,7 @@ function SidebarComponent({
         cwd,
         folderId: folderMenu.folderId,
         colorIndex,
-      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      }).catch(reportOrganizationFailure);
       return;
     }
     commitSessionFolders(setFolderColor(sessionFolders, folderMenu.folderId, colorIndex));
@@ -2309,7 +2562,7 @@ function SidebarComponent({
         cwd,
         folderId: folderMenu.folderId,
         color,
-      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      }).catch(reportOrganizationFailure);
       return;
     }
     commitSessionFolders(setFolderCustomColor(sessionFolders, folderMenu.folderId, color));
@@ -2451,11 +2704,14 @@ function SidebarComponent({
       });
     } catch (error) {
       if (sagaPrepared) organizationUnresolved.current = true;
-      setOrganizationNotice(
-        pinConfirmed
-          ? t("A pin was applied; final confirmation failed: {p0}", { p0: String(error) })
-          : String(error),
-      );
+      if (pinConfirmed)
+        setOrganizationNotice(
+          t("A pin was applied; final confirmation failed: {p0}", {
+            p0: presentRemoteError(error, { explicit: true }),
+          }),
+        );
+      else if (sagaPrepared) setOrganizationNotice(presentRemoteError(error, { explicit: true }));
+      else reportOrganizationFailure(error);
     } finally {
       organizationBusy.current = false;
     }
@@ -2581,14 +2837,12 @@ function SidebarComponent({
             };
       }
       if (pinChanges.length) {
-        void performPinSaga(operation, pinChanges, pinTo!).catch((error: unknown) =>
-          setOrganizationNotice(String(error)),
-        );
+        void performPinSaga(operation, pinChanges, pinTo!).catch(reportOrganizationFailure);
         return;
       }
       void performOrganizationOperation(operation, () => {
         if (createdId) setRenamingFolderId(createdId);
-      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      }).catch(reportOrganizationFailure);
       return;
     }
     captureListMotion();
@@ -2785,6 +3039,13 @@ function SidebarComponent({
       onListDropTargetChange={setSessionDrop}
       onContextMenu={cardActions.contextMenu}
       settleable={!remoteProject}
+      settleCommand={
+        selectedSettle && selectedSessionIds.has(session.id)
+          ? selectedSettle
+          : remoteProject
+            ? projectSettleCommand(session)
+            : undefined
+      }
       onArchive={
         onArchiveSession && !crewManagedIndex.has(session.id) ? cardActions.archive : undefined
       }
@@ -2803,7 +3064,7 @@ function SidebarComponent({
     if (next === before) return;
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
       void performOrganizationOperation({ kind: "moveFolder", cwd, folderId, target }).catch(
-        (error: unknown) => setOrganizationNotice(String(error)),
+        reportOrganizationFailure,
       );
       return;
     }
@@ -2936,7 +3197,7 @@ function SidebarComponent({
               folderId: entry.folder.id,
               name,
             })
-              .catch((error: unknown) => setOrganizationNotice(String(error)))
+              .catch(reportOrganizationFailure)
               .then(() => setRenamingFolderId(null));
             return;
           }
@@ -3731,6 +3992,10 @@ function SidebarComponent({
                             filterSessionsByArchive(
                               lastSessionsData?.rows ?? [],
                               globalSessionFilters.showArchived,
+                            ).filter(
+                              (session) =>
+                                globalSessionFilters.showSettled ===
+                                isGlobalSessionSettled(session),
                             ),
                             globalSessionFilters.assistantManaged,
                           ),
@@ -3772,6 +4037,22 @@ function SidebarComponent({
                           showModel={listDisplay.showModel}
                           showBranch={listDisplay.showBranch}
                           showProjectAppearance
+                          settleable={!isRemoteProjectPath(session.cwd)}
+                          onContextMenu={(_, event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            closeSessionMenu();
+                            setFilterMenu(null);
+                            setGlobalSessionMenu({ x: event.clientX, y: event.clientY, session });
+                          }}
+                          onArchive={(_, archived) => {
+                            void runGlobalSessionAction(session, "archive", archived).catch(
+                              () => {},
+                            );
+                          }}
+                          onDelete={() => {
+                            void runGlobalSessionAction(session, "delete").catch(() => {});
+                          }}
                           onSelect={(id, event) =>
                             onSelectListedSession?.(id, session.cwd, {
                               keepOpen: (event.detail ?? 0) > 1,
@@ -3783,7 +4064,9 @@ function SidebarComponent({
                   ) : (
                     <SessionsEmpty
                       message={
-                        narrowedByUser ? "No matching sessions" : "No sessions in the last 7 days"
+                        narrowedByUser || lastSessionsData?.rows.length
+                          ? "No matching sessions"
+                          : "No sessions in the last 7 days"
                       }
                     />
                   );
@@ -3954,7 +4237,6 @@ function SidebarComponent({
             >
               <LiveAgentsPreview
                 agents={liveAgents}
-                currentProject={lastSessionsOpen ? undefined : cwd}
                 activeSessionId={activeSessionId}
                 onSelect={onSelectAgent}
                 bottomSpacing={compactRailVisible}
@@ -3998,6 +4280,41 @@ function SidebarComponent({
           }
           onPick={onSessionMenuPick}
           onClose={closeSessionMenu}
+        />
+      ) : null}
+      {globalSessionMenu && globalMenuSession ? (
+        <ExplorerMenu
+          x={globalSessionMenu.x}
+          y={globalSessionMenu.y}
+          ariaLabel="Session actions"
+          items={[
+            {
+              kind: "item",
+              id: "settle",
+              label: remoteMenuSession
+                ? t(
+                    remoteMenuView?.state === "settling"
+                      ? "Cancel settle"
+                      : remoteMenuUndo
+                        ? "Un-settle"
+                        : "Settle",
+                  )
+                : globalSettle.label,
+            },
+            {
+              kind: "item",
+              id: "archive",
+              label: globalMenuSession.archived ? t("Unarchive") : t("Archive"),
+            },
+            { kind: "item", id: "delete", label: t("Delete"), danger: true },
+          ]}
+          onClose={() => setGlobalSessionMenu(null)}
+          onPick={(id) => {
+            setGlobalSessionMenu(null);
+            if (isProjectPasswordLocked(globalMenuSession.cwd)) return;
+            if (id === "settle" || id === "archive" || id === "delete")
+              void runGlobalSessionAction(globalMenuSession, id).catch(() => {});
+          }}
         />
       ) : null}
       {viewTabMenu && viewTabIndex >= 0 ? (
@@ -4092,10 +4409,7 @@ function SidebarComponent({
                     });
                   },
                 }
-              : roomPrivacyRetryAction(
-                  () => setOrganizationNotice(null),
-                  (error) => setOrganizationNotice(String(error)),
-                )
+              : roomPrivacyRetryAction(() => setOrganizationNotice(null), reportOrganizationFailure)
           }
           actions={
             partialPinSagas.length
@@ -4155,7 +4469,7 @@ function SidebarComponent({
           y={filterMenu.y}
           harnesses={sessionHarnesses}
           local={!remoteProject}
-          settled={!remoteProject && !lastSessionsOpen}
+          settled={lastSessionsOpen || !remoteProject || !!projectLifecycleViews}
           filters={lastSessionsOpen ? globalSessionFilters : sessionFilters}
           allowedTimeFilters={lastSessionsOpen ? GLOBAL_SESSION_TIME_FILTERS : undefined}
           defaultFilters={lastSessionsOpen ? GLOBAL_SESSION_FILTERS : undefined}
@@ -4912,10 +5226,8 @@ function CompactProjectRail({
           active={assistantActive}
           onClick={action(assistantActive, () => openAssistantRoom())}
         />
-        {/* Same order as the full sidebar: panel, search and tools first, then the
-            work sections (recovered work, projects, last sessions, workspace). */}
+        {/* Match the full sidebar's order: tools, then work sections. */}
         <Divider decorative className="my-0.5 w-6 shrink-0 self-center" />
-        {recoveryControl}
         {onOpenProjectNavigation ? (
           <Button
             variant="ghost"
@@ -4952,6 +5264,7 @@ function CompactProjectRail({
       <div className="min-h-2 flex-1" />
       <SidebarAccountFooter
         compact
+        recoveryControl={recoveryControl}
         onOpenSettings={onOpenSettings}
         onOpenAccountSettings={onOpenAccountSettings}
       />
@@ -5341,6 +5654,7 @@ const SessionCard = memo(function SessionCard({
   onListDropTargetChange,
   onContextMenu,
   settleable = false,
+  settleCommand,
   onArchive,
   onRename,
   onDelete,
@@ -5393,6 +5707,7 @@ const SessionCard = memo(function SessionCard({
   onContextMenu?: (sessionId: string, e: ReactMouseEvent<HTMLDivElement>) => void;
   /** A session of this computer's Host: offers Settle / Un-settle. */
   settleable?: boolean;
+  settleCommand?: SessionSettleCommand;
   onArchive?: (sessionId: string, archived: boolean) => void;
   onRename?: (sessionId: string) => void;
   onDelete?: (sessionId: string) => void;
@@ -5559,6 +5874,19 @@ const SessionCard = memo(function SessionCard({
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLElement>) => {
     if (e.target !== e.currentTarget) return;
+    if (onContextMenu && (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10"))) {
+      e.preventDefault();
+      const rect = e.currentTarget.getBoundingClientRect();
+      e.currentTarget.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: rect.left,
+          clientY: rect.bottom,
+        }),
+      );
+      return;
+    }
     if (e.key === "Escape" && detailOpen) hideDetail();
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -5975,7 +6303,7 @@ const SessionCard = memo(function SessionCard({
         {remoteSession ? (
           <Tooltip label={remoteLabel} asChild>
             <Text role="img" aria-label={remoteLabel} size="inherit" tone="secondary">
-              <Internet className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              <Server className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
             </Text>
           </Tooltip>
         ) : null}
@@ -6046,7 +6374,7 @@ const SessionCard = memo(function SessionCard({
     ) : null;
   // Compact idle rows let hover actions sit over the time instead of reserving a gutter.
   const compactActionCount = compact
-    ? [onPin, settleable, onArchive, onDelete].filter(Boolean).length
+    ? [onPin, settleable || settleCommand, onArchive, onDelete].filter(Boolean).length
     : 0;
   const timeYields =
     compactActionCount && idle && !linkedWorkItem && !session.automationId && !orchestration;
@@ -6057,7 +6385,11 @@ const SessionCard = memo(function SessionCard({
       className={`relative flex shrink-0 items-center ${compact ? "" : "gap-0"}`}
     >
       {compact ? pinAction() : null}
-      {settleable ? <SessionSettleAction session={session} title={title} /> : null}
+      {settleCommand ? (
+        <SessionSettleButton command={settleCommand} title={title} />
+      ) : settleable ? (
+        <SessionSettleAction session={session} title={title} />
+      ) : null}
       {onArchive ? (
         <InlineAction
           label={`${archiveLabel} ${title}`}
@@ -6391,15 +6723,11 @@ const SessionCard = memo(function SessionCard({
           anchor={detailRootRef}
           side="right"
           align="start"
-          gap={6}
-          size="sm"
+          {...detailTooltipFrame}
           maxHeight={280}
           role="tooltip"
           id={detailId}
-          passive
-          frosted
           restoreFocus={false}
-          className="pointer-events-none overflow-hidden p-2.5"
         >
           <ClampText
             as="p"

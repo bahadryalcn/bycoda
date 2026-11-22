@@ -1221,7 +1221,8 @@ fn checkpoint_blob(
 }
 
 fn buffers_digest(conn: &Connection, session_id: &str) -> Result<String, String> {
-    let rows = conn.prepare("SELECT owner_id,snapshot_json,confirmed FROM native_workspace_buffers ORDER BY owner_id")
+    // A released row is a clean window of an earlier app run, never confirmed again.
+    let rows = conn.prepare(&format!("SELECT b.owner_id,b.snapshot_json,b.confirmed FROM native_workspace_buffers b WHERE {} ORDER BY b.owner_id", crate::native_workspace::UNRELEASED))
         .map_err(|error|error.to_string())?.query_map([],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,i64>(2)?)))
         .map_err(|error|error.to_string())?.collect::<rusqlite::Result<Vec<_>>>().map_err(|error|error.to_string())?;
     if rows.iter().any(|(_, _, confirmed)| *confirmed != 1) {

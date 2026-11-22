@@ -114,6 +114,20 @@ function fixture() {
   };
 }
 
+it.each([{ messages: [] }, { messages: [message("a", "stale transcript text")] }])(
+  "restoring desktop history cannot release a Host delivery hold (%j)",
+  async (legacy) => {
+    const f = fixture();
+    const held = { ...message("a"), deliveryUnknown: true as const };
+    f.replace({ messages: [held], status: "paused", revision: 1 });
+    await f.client("desktop:a").initialize();
+    const restarted = f.client("desktop:a");
+    await restarted.initialize({ ...legacy, status: "active" });
+    expect(f.queue().messages).toEqual([held]);
+    expect(restarted.snapshot().queue.status).toBe("paused");
+  },
+);
+
 it.each(["reply", "error"])(
   "lets interactive retry overtake a stalled background read and ignores its late stale %s",
   async (settlement) => {

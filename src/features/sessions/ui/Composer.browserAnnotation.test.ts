@@ -106,7 +106,9 @@ it("attaches only to the exact mounted composer, keeps the draft, offers review/
         "Fix spacing",
       ),
     );
-    expect(container.querySelector("textarea")!.value).toBe("Please adjust this [Image 1 · 3 B]");
+    expect(container.querySelector("textarea")!.value).toBe(
+      "Please adjust this [Image 1 · browser-element.jpg · 3 B]",
+    );
     expect(container.textContent).toContain("Inspect browser element");
     expect(container.textContent).toContain("Fix spacing");
     expect(container.querySelector("img[onerror]")).toBeNull();

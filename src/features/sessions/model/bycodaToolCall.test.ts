@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { Block } from "./session";
-import { bycodaToolCall, bycodaWorkSummary } from "./bycodaToolCall";
+import { bycodaConversationLabel, bycodaToolCall, bycodaWorkSummary } from "./bycodaToolCall";
 
 function shell(text: string): Block {
   return { id: text, role: "tool", text, tool: { kind: "shell" } };
 }
+
+it("labels known delegation tools from the Bycoda conversation server", () => {
+  expect(bycodaConversationLabel("bycoda-conversation:conversation_agents_wait")).toBe(
+    "Wait for a subagent",
+  );
+  expect(bycodaConversationLabel("other-server:conversation_agents_wait")).toBeUndefined();
+  expect(
+    bycodaConversationLabel("bycoda-conversation:conversation_agents_unavailable"),
+  ).toBeUndefined();
+});
 
 describe("Bycoda CLI tool calls", () => {
   it("recognizes app actions with absolute, quoted, or bare executables", () => {

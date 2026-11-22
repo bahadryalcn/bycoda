@@ -11,6 +11,9 @@ keep the member's role, model and project scope visible when names or groups wra
 
 Crews connect a coordinator conversation to independently addressable specialist and reviewer conversations. The host task scheduler runs assignments and retains their state when a desktop window closes.
 
+The Crew list and history retry brief Host interruptions while retaining loaded
+work. A sustained interruption shows Retry. A denied read appears immediately.
+
 ## Giving work to a Crew
 
 Choose **Worker** in a task or Epic form to use an Agent or a saved Crew. Crew entry

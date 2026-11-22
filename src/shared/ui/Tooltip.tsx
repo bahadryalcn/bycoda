@@ -12,6 +12,7 @@ import {
   type ReactNode,
   type ReactElement,
   type SyntheticEvent,
+  type ComponentProps,
 } from "react";
 import type { PopoverAlign, PopoverSide } from "../lib/popover";
 import { Popover } from "./Popover";
@@ -28,6 +29,15 @@ export const TOOLTIP_WARM_MS = 250;
 export const HOVER_CARD_OPEN_MS = 300;
 /** Grace period that lets the pointer cross the gap from the trigger into a hover card. */
 export const HOVER_CARD_CLOSE_MS = 150;
+
+/** Appearance of a passive row detail, also used by rows that own their hover timing. */
+export const detailTooltipFrame = {
+  gap: 6,
+  size: "sm",
+  passive: true,
+  frosted: true,
+  className: "pointer-events-none overflow-hidden p-2.5",
+} satisfies Partial<ComponentProps<typeof Popover>>;
 
 /** Last close per hint family, for the warm handoff between neighbouring triggers. */
 const lastClosedAt: Record<string, number> = {};
@@ -132,6 +142,8 @@ export type TooltipContent = {
   shortcut?: string | null;
   side?: PopoverSide;
   align?: PopoverAlign;
+  /** Use the row-detail frame for structured object metadata. */
+  variant?: "detail";
   /** Wider cap for long paths. Defaults to the compact hint width. */
   wide?: boolean;
   /** Pointer rest time in ms. Default {@link TOOLTIP_DELAY_MS}; keyboard focus is always immediate. */
@@ -162,17 +174,23 @@ function TooltipBody({
   label,
   lines,
   shortcut,
+  variant,
 }: {
   label?: ReactNode;
   lines: readonly ReactNode[];
   shortcut?: string | null;
+  variant?: TooltipContent["variant"];
 }) {
   return (
     <>
       {label || shortcut ? (
         <div className="flex items-center gap-2">
           {label ? (
-            <div className="min-w-0 whitespace-pre-line font-medium leading-snug">{label}</div>
+            <div
+              className={`min-w-0 whitespace-pre-line font-medium leading-snug ${variant === "detail" ? "line-clamp-2 wrap-anywhere text-(length:--ui-font-secondary)" : ""}`}
+            >
+              {label}
+            </div>
           ) : null}
           {shortcut ? <ShortcutKeys shortcut={shortcut} size="xs" className="ms-auto" /> : null}
         </div>
@@ -215,6 +233,7 @@ export function useTooltip({
   shortcut,
   side = "bottom",
   align,
+  variant,
   wide,
   delay = TOOLTIP_DELAY_MS,
   describe = true,
@@ -339,14 +358,18 @@ export function useTooltip({
         side={side}
         align={align}
         restoreFocus={false}
-        passive
+        {...(variant === "detail"
+          ? detailTooltipFrame
+          : {
+              passive: true,
+              className: `pointer-events-none break-words p-2 text-(length:--ui-font-caption) text-content ${
+                wide ? "max-w-80" : "max-w-60"
+              }`,
+            })}
         motion="none"
         onDismiss={hide}
-        className={`pointer-events-none break-words p-2 text-(length:--ui-font-caption) text-content ${
-          wide ? "max-w-80" : "max-w-60"
-        }`}
       >
-        <TooltipBody label={label} lines={lines} shortcut={shortcut} />
+        <TooltipBody label={label} lines={lines} shortcut={shortcut} variant={variant} />
       </Popover>
     ) : null,
   };

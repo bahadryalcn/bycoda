@@ -97,7 +97,15 @@ export function resetRetainedProvidersPage() {
   retainedTab = "providers";
 }
 
-export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: RecentProject[] }) {
+export function ProvidersPage({
+  cwd,
+  recents,
+  visible = true,
+}: {
+  cwd?: string;
+  recents?: RecentProject[];
+  visible?: boolean;
+}) {
   useLocale();
   const pendingSources = usePendingSources();
   const modelsVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
@@ -432,7 +440,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                       tone={pendingUpdates.length ? "accent" : "neutral"}
                       disabled={pendingUpdates.length === 0}
                       tooltip={pendingUpdates.length === 0 ? t("Nothing to update") : undefined}
-                      startIcon={<ArrowDownCircle className="icon-sm text-accent" aria-hidden />}
+                      startIcon={<ArrowDownCircle aria-hidden />}
                     >
                       {pendingUpdates.length
                         ? t("Update all ({p0})", { p0: pendingUpdates.length })
@@ -527,6 +535,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                   ) : null}
                   <ProviderAccountsSettings
                     harness={activeProvider ?? undefined}
+                    visible={visible && tab === "providers"}
                     onBusyChange={setAccountBusy}
                     onStandaloneSignIn={setStandaloneSignIn}
                   />

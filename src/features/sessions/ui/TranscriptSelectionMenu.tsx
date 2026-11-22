@@ -33,12 +33,20 @@ import {
 
 type Props = {
   selection: TranscriptSelection | null;
-  onAddToChat?: (text: string) => void;
+  onCopy?: () => Promise<void>;
+  onAddToChat?: (text: string) => void | Promise<void>;
+  addToChatLabel?: string;
   onAddToNotes?: (text: string) => void | Promise<void>;
   onDismiss: () => void;
   onTranslate?: (target: TextActionTarget) => void;
   sessionId?: string;
   allowReprompt?: boolean;
+  extraActions?: {
+    id: string;
+    label: string;
+    icon: FloatingButtonGroupAction["icon"];
+    onSelect: (text: string) => void | Promise<void>;
+  }[];
 };
 
 type Operations = {
@@ -129,12 +137,15 @@ function useSelectionOperationRunner(
 
 export function TranscriptSelectionMenu({
   selection: liveSelection,
+  onCopy,
   onAddToChat,
+  addToChatLabel,
   onAddToNotes,
   onDismiss,
   onTranslate,
   sessionId,
   allowReprompt = false,
+  extraActions,
 }: Props) {
   const t = useT();
   const dismissSelection = useEffectEvent(() => onDismiss());
@@ -293,7 +304,7 @@ export function TranscriptSelectionMenu({
       void run(
         "copy",
         async () => {
-          await copyMessage(selection.text);
+          await (onCopy ? onCopy() : copyMessage(selection.text));
           setCopied(selectionKey);
         },
         false,
@@ -303,7 +314,8 @@ export function TranscriptSelectionMenu({
     items.push({
       ...action(
         "chat",
-        sessionId && selection.responseId ? t("Add citation") : t("Add to chat"),
+        addToChatLabel ??
+          (sessionId && selection.responseId ? t("Add citation") : t("Add to chat")),
         <MessageSquarePlus />,
         () => onAddToChat(selection.text),
       ),
@@ -329,6 +341,8 @@ export function TranscriptSelectionMenu({
         }));
       },
     });
+  for (const extra of extraActions ?? [])
+    items.push(action(extra.id, extra.label, extra.icon, () => extra.onSelect(selection.text)));
   if (onTranslate) {
     if (allowReprompt)
       items.push(action("reprompt", t("Reprompt"), <Sparkles />, () => onTranslate("reprompt")));
@@ -362,6 +376,7 @@ export function TranscriptSelectionMenu({
         align="start"
         width={336}
         kind="dialog"
+        frosted
         aria-label={t("Add citation")}
         flow="scroll"
         onDismiss={closeComment}
@@ -438,6 +453,7 @@ export function TranscriptSelectionMenu({
       side="top"
       align="center"
       width={menuWidth}
+      frosted
       onDismiss={(reason) => {
         if (reason === "escape") window.getSelection()?.removeAllRanges();
         onDismiss();
@@ -445,9 +461,7 @@ export function TranscriptSelectionMenu({
       className={styles.menu}
       data-selection-menu
     >
-      {/* Raised popup family: the Popover owns surface, elevation and radius; the
-          rows are compact and calm. This wrapper is the one scroll owner on
-          short viewports. */}
+      {/* Popover paints the glass. The rail owns scrolling on short viewports. */}
       <div ref={rail} className={styles.rail}>
         <FloatingButtonGroup
           label={t("Selected text actions")}

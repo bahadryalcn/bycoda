@@ -53,7 +53,6 @@ vi.mock("../../../sessions/public/modelSource", () => ({
 vi.mock("../../../sessions/public/ModelLabel", () => ({ ModelLabel: () => null }));
 vi.mock("../../model/modelProfile", () => ({
   modelProfile: () => ({ intelligence: 4, cost: 2, estimated: true }),
-  inferAccountKind: (label: string) => (/work/i.test(label) ? "work" : undefined),
 }));
 vi.mock("./useOrderDraft", () => ({ useOrderSettings: vi.fn(), useOrderDraft: vi.fn() }));
 vi.mock("../../model/modelRoutingClient", () => ({
@@ -94,7 +93,7 @@ vi.mock("../../../providers/public/providerAccounts", () => ({
   subscribeProviderAccounts: () => () => {},
   providerAccounts: () => [
     { id: "default", label: "Default account" },
-    { id: "work", label: "Work login" },
+    { id: "work", label: "Work login", kind: "work" },
     { id: "own", label: "Own login", kind: "personal" },
   ],
   defaultProviderAccountId: () => "default",
@@ -455,8 +454,9 @@ it("returns the Host save promise to the shared leave guard", async () => {
 
 it("starts an empty catalog with setup instead of the role assignment form", async () => {
   await renderScreen([]);
-  expect(container.textContent).toContain("Choose the models for unattended work");
-  expect(container.textContent).toContain("Plan with AI");
+  expect(container.textContent).toContain("No models configured");
+  expect(container.textContent).toContain("Setup options");
+  expect(container.textContent).not.toContain("Plan setup with AI");
   expect(tabButton("Models & order").getAttribute("aria-selected")).toBe("true");
 });
 
@@ -599,7 +599,7 @@ it("edits the group effort and saves it with the draft", async () => {
   )!;
   await act(async () => high.click());
   const save = [...container.querySelectorAll("button")].find(
-    (item) => item.textContent === "Save",
+    (item) => item.textContent === "Save changes",
   );
   await act(async () => save!.click());
   expect(saves[0]!.routing.pools[0]!.effort).toBe("high");
@@ -608,7 +608,7 @@ it("edits the group effort and saves it with the draft", async () => {
 it("splits models into work, personal and shared lists by account kind", async () => {
   saves.length = 0;
   await renderScreen([
-    modelEntry("s1", "grok"),
+    modelEntry("s1", "cursor"),
     modelEntry("w1", "claude", "work"),
     modelEntry("p1", "codex", "own"),
     modelEntry("s2", "claude"),
@@ -616,20 +616,20 @@ it("splits models into work, personal and shared lists by account kind", async (
   await openTab("Models & order");
   expect(headings().slice(0, 3)).toEqual(["Work accounts", "Personal accounts", "Shared models"]);
   expect(container.querySelectorAll('[aria-label^="More for model"]')).toHaveLength(4);
-  // Each list numbers its own rows from 1; shared holds the grok and the default-account model.
+  // Each list numbers its own rows from 1. The legacy default account is Personal.
   const labels = [...container.querySelectorAll('[aria-label^="More for model"]')].map((item) =>
     item.getAttribute("aria-label"),
   );
   expect(labels).toEqual([
     "More for model 1",
     "More for model 1",
-    "More for model 1",
     "More for model 2",
+    "More for model 1",
   ]);
 });
 
-it("uses one All models title when no account has a kind", async () => {
-  await renderScreen([modelEntry("s1", "grok"), modelEntry("s2", "claude")]);
+it("uses one All models title when no entry has a resolvable provider account", async () => {
+  await renderScreen([modelEntry("s1", "cursor"), modelEntry("s2", "claude", "missing")]);
   await openTab("Models & order");
   expect(headings()[0]).toBe("All models");
   expect(headings()).not.toContain("Work accounts");
@@ -657,7 +657,7 @@ it("saves a job choice and a model edit together with one Save", async () => {
   await act(() => picker.onChange("codex", "gpt-new"));
   expect(container.textContent).toContain("unsaved change");
   const save = [...container.querySelectorAll("button")].find(
-    (item) => item.textContent === "Save",
+    (item) => item.textContent === "Save changes",
   );
   expect(save, "Save").toBeTruthy();
   await act(async () => save!.click());
@@ -665,6 +665,6 @@ it("saves a job choice and a model edit together with one Save", async () => {
   expect(saves[0]!.routing.roles["task.worker"]).toEqual({ kind: "pool", poolId: "p" });
   expect(saves[0]!.routing.entries.some((item) => item.model === "gpt-new")).toBe(true);
   expect(
-    [...container.querySelectorAll("button")].filter((item) => item.textContent === "Save"),
+    [...container.querySelectorAll("button")].filter((item) => item.textContent === "Save changes"),
   ).toHaveLength(1);
 });

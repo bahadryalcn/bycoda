@@ -4,6 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
+import { getLanguagePreference, setLanguagePreference } from "../../shared/i18n";
 import type { ProviderRateLimits } from "../../features/providers/model/rateLimits";
 import { projectKey } from "../../shared/lib/paths";
 import {
@@ -361,6 +362,69 @@ describe("UsageProviderChip", () => {
     expect(document.querySelector('[aria-label="Switch Codex account"]')).toBeNull();
     expect(document.body.textContent).not.toContain("Switch to work");
     expect(onSelectAccount).not.toHaveBeenCalled();
+  });
+
+  it("keeps the add-account metadata through a failed sign-in and selects the saved account", async () => {
+    const onSelectAccount = vi.fn();
+    const onAddAccount = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Sign-in failed"))
+      .mockResolvedValueOnce(undefined);
+    act(() =>
+      root.render(
+        createElement(UsageProviderChip, {
+          limits: codexLimits(),
+          now,
+          accountId: "default",
+          accounts: [{ id: "default", provider: "codex", label: "Default account" }],
+          onSelectAccount,
+          onAddAccount,
+        }),
+      ),
+    );
+    await act(async () => button("Codex usage details").click());
+    await act(async () => button("Switch Codex account").click());
+    await act(async () => button("Add account").click());
+    const form = document.querySelector<HTMLFormElement>("[data-modal-placement] form")!;
+    const input = form.querySelector<HTMLInputElement>('input[type="text"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Office",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      form.querySelector<HTMLInputElement>('input[value="work"]')!.click();
+    });
+    await act(async () =>
+      form.querySelector<HTMLButtonElement>('button[aria-label^="Color for Office:"]')!.click(),
+    );
+    await act(async () => button("Blue").click());
+    const submit = () =>
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await act(async () => {
+      submit();
+    });
+    expect(onAddAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "codex", label: "Office", kind: "work", color: "blue" }),
+      expect.any(AbortSignal),
+    );
+    expect(onSelectAccount).not.toHaveBeenCalled();
+    expect(form.textContent).toContain("Could not save this account.");
+    const language = getLanguagePreference();
+    try {
+      await act(async () => setLanguagePreference("tr"));
+      expect(form.textContent).toContain("Bu hesap kaydedilemedi.");
+      expect(input.value).toBe("Office");
+    } finally {
+      await act(async () => setLanguagePreference(language));
+    }
+    const account = onAddAccount.mock.calls[0][0];
+    await act(async () => {
+      submit();
+    });
+    expect(onAddAccount.mock.calls[1][0]).toEqual(account);
+    expect(onSelectAccount).toHaveBeenCalledWith(account.id);
+    expect(document.querySelector("[data-modal-placement]")).toBeNull();
   });
 
   it("updates the chip, tooltip and open cards when the usage preference changes", async () => {

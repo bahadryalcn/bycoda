@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { hostGitExec } from "../git/git-exec-pool";
 import { createHash, randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -24,6 +24,8 @@ type RunResult = { code: number | null; stdout: Buffer; stderr: string };
 
 const STDERR_LIMIT = 64 * 1024;
 const OID = /^[a-f0-9]{40}$/;
+/** Stdin bytes of one fast-import batch; a larger write is split across processes. */
+export const BLOB_BATCH_BYTES = 8 * 1024 * 1024;
 const IDENTITY = {
   GIT_AUTHOR_NAME: "bycoda",
   GIT_AUTHOR_EMAIL: "native-buffer@bycoda.invalid",
@@ -73,57 +75,45 @@ export function createGitObjectStore(options: GitObjectStoreOptions) {
   }
 
   /** Runs git without a shell; rejects on spawn failure, deadline or output overflow. */
-  function run(args: string[], opts: RunOptions = {}): Promise<RunResult> {
+  async function run(args: string[], opts: RunOptions = {}): Promise<RunResult> {
     const deadline = opts.timeoutMs ?? timeoutMs,
       maxBytes = opts.maxBytes ?? 16 * 1024 * 1024;
-    return new Promise<RunResult>((resolve, reject) => {
-      let settled = false;
-      const child = spawn(git, args, {
+    const stdout: Buffer[] = [],
+      stderr: Buffer[] = [];
+    let outBytes = 0,
+      errBytes = 0;
+    const code = await hostGitExec
+      .exec(git, args, {
         cwd: tmpdir(),
+        timeout: deadline,
+        input: opts.input,
+        replaceEnv: true,
         env: environment(gitDir, {
           ...(opts.index ? { GIT_INDEX_FILE: opts.index } : {}),
           ...opts.env,
         }),
-        stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
-      });
-      const stdout: Buffer[] = [],
-        stderr: Buffer[] = [];
-      let outBytes = 0,
-        errBytes = 0;
-      const finish = (error: Error | null, code: number | null = null) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (error) {
-          child.kill();
-          reject(error);
-          return;
-        }
-        // Lossy decoding: invalid UTF-8 in diagnostics never ends the reader.
-        resolve({ code, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr).toString() });
-      };
-      const timer = setTimeout(
-        () => finish(new Error(`git ${args[0]} exceeded its ${deadline} ms deadline`)),
-        deadline,
+        onOutput: (stream, chunk) => {
+          if (stream === "stderr") {
+            if (errBytes < STDERR_LIMIT) stderr.push(chunk);
+            errBytes += chunk.length;
+            return;
+          }
+          outBytes += chunk.length;
+          if (outBytes > maxBytes) throw new Error(`git ${args[0]} output exceeded its limit`);
+          stdout.push(chunk);
+        },
+      })
+      .then(
+        () => 0,
+        (error: { code?: string | number | null; killed?: boolean }) => {
+          if (error.killed || error.code === "ETIMEDOUT")
+            throw new Error(`git ${args[0]} exceeded its ${deadline} ms deadline`);
+          if (typeof error.code === "number" || error.code === null) return error.code;
+          throw error;
+        },
       );
-      child.on("error", (error) => finish(error));
-      child.stdout.on("data", (chunk: Buffer) => {
-        outBytes += chunk.length;
-        if (outBytes > maxBytes) finish(new Error(`git ${args[0]} output exceeded its limit`));
-        else stdout.push(chunk);
-      });
-      child.stderr.on("data", (chunk: Buffer) => {
-        if (errBytes < STDERR_LIMIT) stderr.push(chunk);
-        errBytes += chunk.length;
-      });
-      child.on("close", (code) => finish(null, code));
-      // EPIPE when git exits early is reported through the exit code instead.
-      child.stdin.on("error", () => {});
-      const input = opts.input === undefined ? [] : [opts.input].flat();
-      for (const piece of input) child.stdin.write(piece);
-      child.stdin.end();
-    });
+    return { code, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr).toString() };
   }
   async function exec(args: string[], opts?: RunOptions): Promise<Buffer> {
     const result = await run(args, opts);
@@ -249,6 +239,23 @@ export function createGitObjectStore(options: GitObjectStoreOptions) {
   /** Writes every blob in one fast-import process (small sets stay loose objects). */
   async function writeBlobs(blobs: Buffer[]): Promise<string[]> {
     if (!blobs.length) return [];
+    // The pool copies stdin into its worker while the Host thread waits, so one process
+    // takes a bounded batch and a large import is written in several.
+    const oids: string[] = [];
+    for (let start = 0; start < blobs.length;) {
+      let end = start + 1;
+      for (
+        let bytes = blobs[start].length;
+        end < blobs.length && bytes + blobs[end].length <= BLOB_BATCH_BYTES;
+        end++
+      )
+        bytes += blobs[end].length;
+      oids.push(...(await writeBlobBatch(blobs.slice(start, end))));
+      start = end;
+    }
+    return oids;
+  }
+  async function writeBlobBatch(blobs: Buffer[]): Promise<string[]> {
     const input: (Buffer | string)[] = [];
     blobs.forEach((bytes, index) => {
       input.push(`blob\nmark :${index + 1}\ndata ${bytes.length}\n`, bytes, "\n");

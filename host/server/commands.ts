@@ -63,6 +63,9 @@ export function createCommandsRuntime(
   const commandService = createCommandService<HostSession>({
     repository: {
       receiptStatus: (id, options) => dependencies.engine.store.receiptStatus(id, options),
+      bindSteerClaim: (id, token) => dependencies.engine.store.bindSteerClaim(id, token),
+      settleSteerReceipt: (id, outcome) =>
+        dependencies.engine.store.settleSteerReceipt(id, outcome),
       desktopCommandStatus: (id, principalId, signature) =>
         dependencies.engine.store.desktopCommandStatus(id, principalId, signature),
       acceptDesktopCommand: (input, revalidate) =>
@@ -74,6 +77,14 @@ export function createCommandsRuntime(
       touchWorkspace: dependencies.touchSessionWorkspace,
     },
     execution: {
+      steerDelivery: (receipt, runId, signal) =>
+        dependencies.engine.commandDelivery(
+          receipt.sessionId,
+          runId,
+          receipt.commandId,
+          true,
+          signal,
+        ),
       commandSignature: (command) =>
         createHash("sha256").update(JSON.stringify(command)).digest("hex"),
       persistenceReady: () => dependencies.engine.store.db.persistenceHealth().state === "ready",
@@ -96,6 +107,11 @@ export function createCommandsRuntime(
       isClearCommand: isClearSessionCommand,
     },
     queue: {
+      claimSteer: async (id, row, client, revision, authority) =>
+        (await dependencies.sessionQueues.claim(id, row, client, revision, true, authority)).claim!
+          .token,
+      settleSteer: (id, token, outcome) =>
+        dependencies.sessionQueues.settleSteer(id, token, outcome),
       reapStale: (id) => dependencies.sessionQueues.reapStale(id),
       get: (id) => dependencies.sessionQueues.get(id),
       renew: (id, client) => dependencies.sessionQueues.renew(id, client),

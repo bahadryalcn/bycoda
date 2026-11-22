@@ -655,3 +655,52 @@ it("clears the device screen and control and discovers devices on another machin
     { kind: "local" },
   );
 });
+
+it("moves an explicit Browser request to the project Host and navigates it once", async () => {
+  const cwd = "remote://macbook/Users/owner/project";
+  const props = {
+    cwd,
+    sessionId: "host-session",
+    title: "Remote",
+    initialTab: "devices" as const,
+    initialMachine: "machine:linux",
+  };
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) =>
+    method === "devServers.list"
+      ? { status: "ok", servers: [], scannedAt: Date.now() }
+      : {
+          open: method !== "browser.status",
+          url: "http://localhost:3000/a?b=1#c",
+          controlling: method !== "browser.status",
+          leaseId: method !== "browser.status" ? "lease" : undefined,
+          leaseExpiresAt: Date.now() + 30_000,
+        },
+  );
+  await toolAct(async () => root.render(createElement(SessionHostTools, props)));
+  const viewRequest = {
+    id: "session-host-tools-navigation",
+    tab: "browser" as const,
+    machine: "project",
+    url: "http://localhost:3000/a?b=1#c",
+  };
+  await toolAct(async () =>
+    root.render(createElement(SessionHostTools, { ...props, viewRequest })),
+  );
+  await toolAct(async () =>
+    root.render(createElement(SessionHostTools, { ...props, viewRequest: { ...viewRequest } })),
+  );
+  const opens = vi
+    .mocked(hostFeatureRequest)
+    .mock.calls.filter((call) => call[2] === "browser.open");
+  expect(opens).toEqual([
+    [
+      cwd,
+      "browser.sessionScopes.v1",
+      "browser.open",
+      expect.objectContaining({ url: viewRequest.url }),
+    ],
+  ]);
+  expect(
+    vi.mocked(hostToolRequest).mock.calls.some((call) => String(call[2]).startsWith("browser.")),
+  ).toBe(false);
+});

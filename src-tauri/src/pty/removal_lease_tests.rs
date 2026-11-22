@@ -1,0 +1,58 @@
+use super::*;
+
+#[test]
+fn desktop_removal_lease_refuses_existing_pty_and_fences_new_spawns() {
+    use crate::worktree_lifecycle::{release_desktop_removal_lease, reserve_spawn};
+    let root = tempfile::tempdir().unwrap();
+    let target = root.path().join("target");
+    let child = target.join("child");
+    std::fs::create_dir_all(&child).unwrap();
+    let host = PtyHost::new();
+    let agents = crate::harness::HarnessHost::new();
+    let acquire = |ttl| {
+        acquire_desktop_removal_lease(
+            &host,
+            &agents,
+            &target,
+            "desktop".into(),
+            "lease".into(),
+            ttl,
+        )
+    };
+    #[cfg(windows)]
+    let pair = portable_pty::native_pty_system()
+        .openpty(portable_pty::PtySize::default())
+        .unwrap();
+    host.insert(
+        "existing".into(),
+        Arc::new(LivePty {
+            _jump_config: None,
+            _http_proxy: None,
+            ssh_identity: None,
+            shell_integration: None,
+            cwd: child.clone(),
+            completion_shell: None,
+            writer: Mutex::new(Box::new(std::io::sink())),
+            #[cfg(unix)]
+            master_fd: std::fs::File::open("/dev/null").unwrap(),
+            #[cfg(unix)]
+            child: None,
+            #[cfg(windows)]
+            master: Mutex::new(pair.master),
+            pid: 0,
+            owner: Arc::new(Mutex::new("main".into())),
+            output: Arc::default(),
+        }),
+    );
+    assert!(acquire(Duration::from_secs(30)).is_err());
+    host.sessions.lock().unwrap().remove("existing");
+    acquire(Duration::from_secs(30)).unwrap();
+    assert!(reserve_spawn(&child).is_err());
+    assert!(reserve_spawn(root.path()).is_ok());
+    release_desktop_removal_lease("other", "lease");
+    assert!(reserve_spawn(&child).is_err());
+    release_desktop_removal_lease("desktop", "lease");
+    assert!(reserve_spawn(&child).is_ok());
+    acquire(Duration::ZERO).unwrap();
+    assert!(reserve_spawn(&child).is_ok());
+}

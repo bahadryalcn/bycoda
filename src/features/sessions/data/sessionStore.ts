@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { inlineVisualValue } from "../model/inlineVisual";
 import { readToolWindow } from "../../../app/model/toolWindows";
 import { serverTerminalRestoreState } from "../../connections/public/serverTerminalRestoreState";
+import { bindStoredAdoptedImageReaders } from "../../connections/public/connections";
 import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
 import { parseHead, type ConversationHead } from "../../sync/public/conversationHead";
 import { PersistenceBaselines } from "./persistenceBaselines";
@@ -2655,7 +2656,7 @@ function recordToSession(record: SessionRecord): Session {
       record.modelSettings && typeof record.modelSettings === "object" ? record.modelSettings : {},
     runtimeMode: asRuntimeMode(record.runtimeMode),
     title: record.title,
-    blocks,
+    blocks: adoptedBase ? bindStoredAdoptedImageReaders(record.id, blocks) : blocks,
     busy: false,
     orchestrationLeadId:
       record.orchestrationLeadId ??

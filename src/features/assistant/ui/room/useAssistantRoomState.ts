@@ -66,14 +66,20 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     refresh,
   } = useAssistantSnapshot();
   const environmentId = snapshotEnvironmentId ?? undefined;
-  const assistantRequest: OwnerRequest = (input, expectedEnvironmentId = environmentId) => {
+  const assistantRequest: OwnerRequest = (
+    input,
+    expectedEnvironmentId = environmentId,
+    options,
+  ) => {
     if (!expectedEnvironmentId)
       return Promise.reject(
         new Error(
           "The original computer could not be verified. Keep this draft and reconnect that computer.",
         ),
       );
-    return ownerRequest(input, expectedEnvironmentId);
+    return options
+      ? ownerRequest(input, expectedEnvironmentId, options)
+      : ownerRequest(input, expectedEnvironmentId);
   };
   const [hostProjectRead, setHostProjectRead] = useState<{
     environmentId: string | undefined;

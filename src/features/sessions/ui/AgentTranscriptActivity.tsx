@@ -9,6 +9,7 @@ import {
 } from "../../../integrations/harness/core/handoffPhase";
 import { t, useFormat, useLocale, useT, type BoundFormat } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { stripAnsi } from "../../../shared/lib/ansi";
 import { BrandMark } from "../../../shared/ui/BrandMark";
 import {
   ChatPending,
@@ -956,9 +957,9 @@ function ActivityToolRow({
   );
 }
 
-/** First non-empty line of a failure's raw output; the full text stays in the inspection panel. */
+/** First readable line of a failure; full output stays in the inspection panel. */
 function errorSummaryLine(detail: string): string {
-  return detail.trim().split(String.fromCharCode(10), 1)[0]!.trim();
+  return stripAnsi(detail).trim().split("\n", 1)[0]!.trim();
 }
 
 function BycodaMark({ className = "size-4" }: { className?: string }) {
@@ -1209,7 +1210,10 @@ function ToolCallSummary({
               <span className="font-mono text-ui-secondary text-(--color-content)">{target}</span>
             </>
           ) : (
-            <span className="font-mono text-ui-secondary">{label}</span>
+            <>
+              {command ? <>{t("Running")} </> : null}
+              <span className="font-mono text-ui-secondary">{label}</span>
+            </>
           )}
         </WorkingIndicator>
       </span>

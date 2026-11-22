@@ -122,6 +122,32 @@ const options = () =>
   );
 
 describe("model picker account states", () => {
+  it.each<[HarnessId, string, string]>([
+    ["claude", "Claude Sonnet 5", "Sonnet 5"],
+    ["codex", "Codex GPT-5.4", "GPT-5.4"],
+    ["grok", "Grok 4.6", "4.6"],
+    ["grok", "Grok", "Grok"],
+  ])("shortens the %s composer label %s", async (harness, name, expected) => {
+    const model = { id: `${harness}:fixture`, harness, name };
+    await act(async () =>
+      root.render(
+        createElement(
+          ModelSourceContext.Provider,
+          { value: hostSource([model]) },
+          createElement(ModelPicker, {
+            harness,
+            model: model.id,
+            values: {},
+            compactIdentity: true,
+            onChange: vi.fn(),
+            onSettingsChange: vi.fn(),
+          }),
+        ),
+      ),
+    );
+    expect(trigger().querySelector("[data-model-trigger-name]")?.textContent).toBe(expected);
+  });
+
   it("lists one row per provider account and names the chosen account in the trigger", async () => {
     renameProviderAccount("claude", "default", "personal");
     saveProviderAccount({ id: "account-work", provider: "claude", label: "work" });
@@ -136,6 +162,7 @@ describe("model picker account states", () => {
           model: "claude:opus-5.5",
           values: {},
           hideSettings: true,
+          compactIdentity: true,
           accountChoices: true,
           accountId: "account-lab",
           onChange: vi.fn(),
@@ -144,6 +171,7 @@ describe("model picker account states", () => {
       ),
     );
     expect(trigger().querySelector("[data-model-account]")?.textContent).toBe("lab");
+    expect(trigger().getAttribute("aria-label")).toContain("Account: lab");
     await act(async () => trigger().click());
     expect(
       [...container.querySelectorAll('[role="option"]')].map((row) =>

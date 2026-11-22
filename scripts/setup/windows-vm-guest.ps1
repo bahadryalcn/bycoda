@@ -38,7 +38,7 @@ function Get-GuestToolManifest {
         [pscustomobject]@{ id='rust'; version='1.99.1'; bootstrapVersion='1.29.2'; filename='rustup-init.exe'; sha256='00f139da614dced87d3c3d4121c43eebdac3c1bf8a5ee86b9d80dfd71c8d70fd'; url='https://static.rust-lang.org/rustup/archive/1.29.2/x86_64-pc-windows-msvc/rustup-init.exe'; source='https://static.rust-lang.org/rustup/archive/1.29.2/x86_64-pc-windows-msvc/rustup-init.exe.sha256'; maxBytes=33554432; optional=$false; microsoftSignature=$false }
         [pscustomobject]@{ id='webview2'; version='156.0.4314.50'; filename='MicrosoftEdgeWebView2RuntimeInstallerX64.exe'; sha256='1c401b327fbc7bb9731b4e350a2194f083cbc3ede46508d52e1cae6610a39bea'; url='https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/f699d81e-69ce-4b09-aa07-23ff2713045b/MicrosoftEdgeWebView2RuntimeInstallerX64.exe'; source='https://raw.githubusercontent.com/microsoft/winget-pkgs/master/manifests/m/Microsoft/EdgeWebView2Runtime/156.0.4314.50/Microsoft.EdgeWebView2Runtime.installer.yaml'; maxBytes=314572800; optional=$false; microsoftSignature=$true }
         [pscustomobject]@{ id='python'; version='3.14.10'; filename='python-3.14.10-amd64.exe'; sha256='92480239264744fe0386a1bd8275786fefa126e3129e56a68e22b52c73329965'; url='https://www.python.org/ftp/python/3.14.10/python-3.14.10-amd64.exe'; source='https://www.python.org/downloads/release/python-31410/'; maxBytes=67108864; optional=$true; microsoftSignature=$false }
-        [pscustomobject]@{ id='pnpm'; version='12.15.0'; filename='pnpm-win32-x64.zip'; sha256='84cf69db1be19e95bb4e5bef329291a046f2821b390d87e00f5690809d8a2ed7'; url='https://github.com/pnpm/pnpm/releases/download/v12.15.0/pnpm-win32-x64.zip'; source='https://api.github.com/repos/pnpm/pnpm/releases/tags/v12.15.0'; maxBytes=67108864; optional=$true; microsoftSignature=$false }
+        [pscustomobject]@{ id='pnpm'; version='12.21.0'; filename='pnpm-win32-x64.zip'; sha256='4fb64bb37e46c788309e0fd4ea93beb512546fdc7348121194fb704fbb72c09c'; url='https://github.com/pnpm/pnpm/releases/download/v12.21.0/pnpm-win32-x64.zip'; source='https://api.github.com/repos/pnpm/pnpm/releases/tags/v12.21.0'; maxBytes=67108864; optional=$true; microsoftSignature=$false }
     )
 }
 
@@ -341,7 +341,7 @@ function Normalize-GuestRustProxies([string]$VmUuid, [string]$RunRoot) {
 
 function Get-GuestToolState($Tool) {
     $version = $null; $location = $null
-    $paths = @{node='C:\Program Files\nodejs\node.exe';powershell='C:\Program Files\PowerShell\7\pwsh.exe';git='C:\Program Files\Git\cmd\git.exe';python='C:\Program Files\Python314\python.exe';rust="$CargoHome\bin\rustc.exe";pnpm="$ToolsRoot\pnpm\12.15.0\pnpm.exe"}
+    $paths = @{node='C:\Program Files\nodejs\node.exe';powershell='C:\Program Files\PowerShell\7\pwsh.exe';git='C:\Program Files\Git\cmd\git.exe';python='C:\Program Files\Python314\python.exe';rust="$CargoHome\bin\rustc.exe";pnpm="$ToolsRoot\pnpm\12.21.0\pnpm.exe"}
     if ($paths.ContainsKey($Tool.id)) {
         $location = $paths[$Tool.id]
         if ($Tool.id -eq 'rust' -and (Test-Path -LiteralPath "$CargoHome\bin")) {
@@ -386,7 +386,7 @@ function Get-GuestToolState($Tool) {
 
 function Expand-GuestPnpm([string]$Archive) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $destination = "$ToolsRoot\pnpm\12.15.0"
+    $destination = "$ToolsRoot\pnpm\12.21.0"
     if (Test-Path -LiteralPath $destination) { throw 'Existing incomplete pnpm destination must be reviewed.' }
     $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
     try {

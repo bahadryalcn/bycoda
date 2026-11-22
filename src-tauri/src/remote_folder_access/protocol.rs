@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 const METHODS: &str = "OPTIONS, PROPFIND, GET, HEAD";
 const CHUNK: u64 = 1024 * 1024;
-const MAX_FILE: u64 = 1024 * 1024 * 1024;
+pub(super) const MAX_FILE: u64 = 1024 * 1024 * 1024;
 
 struct Request {
     method: String,
@@ -82,15 +82,23 @@ fn request(header: &str, port: u16, capability: &str) -> Result<Request, String>
             return Err("Duplicate request header".into());
         }
     }
+    // The app's own <audio>/<video> element reads the capability URL from another origin, so the
+    // browser labels it cross-site. The browser sets Sec-Fetch-Dest itself and a page cannot forge
+    // it; the unguessable capability and exact Host still gate the read-only GET/HEAD.
+    let media_element = matches!(method.as_str(), "GET" | "HEAD")
+        && headers
+            .get("sec-fetch-dest")
+            .is_some_and(|value| matches!(value.as_str(), "audio" | "video"));
     if headers.get("host") != Some(&authority)
         || headers.contains_key("transfer-encoding")
-        || headers.get("origin").is_some_and(|value| value != &origin)
-        || headers
-            .get("referer")
-            .is_some_and(|value| !value.starts_with(&format!("{origin}/")))
-        || headers
-            .get("sec-fetch-site")
-            .is_some_and(|value| !matches!(value.as_str(), "none" | "same-origin"))
+        || (!media_element
+            && (headers.get("origin").is_some_and(|value| value != &origin)
+                || headers
+                    .get("referer")
+                    .is_some_and(|value| !value.starts_with(&format!("{origin}/")))
+                || headers
+                    .get("sec-fetch-site")
+                    .is_some_and(|value| !matches!(value.as_str(), "none" | "same-origin"))))
     {
         return Err("Only this computer's private folder address is allowed".into());
     }
@@ -124,7 +132,7 @@ fn request(header: &str, port: u16, capability: &str) -> Result<Request, String>
     })
 }
 
-fn encode_segment(value: &str) -> String {
+pub(super) fn encode_segment(value: &str) -> String {
     value
         .bytes()
         .map(|byte| {
@@ -248,6 +256,28 @@ fn byte_range(value: Option<&str>, size: u64) -> Result<Option<(u64, u64)>, Stri
     Ok(Some((start, end)))
 }
 
+/// Audio/video types for the player; anything else stays an opaque download.
+fn media_type(name: &str) -> &'static str {
+    match name
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("mp4" | "m4v") => "video/mp4",
+        Some("webm") => "video/webm",
+        Some("mov") => "video/quicktime",
+        Some("ogv") => "video/ogg",
+        Some("mkv") => "video/x-matroska",
+        Some("mp3") => "audio/mpeg",
+        Some("m4a") => "audio/mp4",
+        Some("aac") => "audio/aac",
+        Some("wav") => "audio/wav",
+        Some("flac") => "audio/flac",
+        Some("ogg" | "oga" | "opus") => "audio/ogg",
+        _ => "application/octet-stream",
+    }
+}
+
 fn headers(
     socket: &mut TcpStream,
     status: &str,
@@ -333,6 +363,19 @@ pub(super) fn serve(mut socket: TcpStream, gateway: &Gateway) -> Result<(), Stri
             )
         }
     };
+    // A media capability is bound to its one file: no sibling, folder listing, discovery or write.
+    if let Some(file) = &gateway.file {
+        if request.discovery
+            || request.segments.as_slice() != std::slice::from_ref(file)
+            || !matches!(request.method.as_str(), "GET" | "HEAD")
+        {
+            return message(
+                &mut socket,
+                "403 Forbidden",
+                "This private folder address is not available",
+            );
+        }
+    }
     let length = match request.headers.get("content-length") {
         Some(length) if !length.is_empty() && length.bytes().all(|byte| byte.is_ascii_digit()) => {
             length.parse::<usize>().unwrap_or(usize::MAX)
@@ -547,7 +590,14 @@ pub(super) fn serve(mut socket: TcpStream, gateway: &Gateway) -> Result<(), Stri
         None => (0, size, "200 OK"),
     };
     let mut extra = vec![
-        ("Content-Type", "application/octet-stream".into()),
+        (
+            "Content-Type",
+            request
+                .segments
+                .last()
+                .map_or("application/octet-stream", |name| media_type(name))
+                .into(),
+        ),
         ("Accept-Ranges", "bytes".into()),
         ("ETag", tag),
     ];
@@ -646,9 +696,77 @@ mod tests {
             "selected-id".into(),
             "machine".into(),
             "env".into(),
+            None,
         )
         .unwrap();
         (source, gateway)
+    }
+
+    #[test]
+    fn a_media_capability_serves_only_its_own_file() {
+        let source = Arc::new(Fixture {
+            calls: Mutex::new(vec![]),
+            connected: AtomicBool::new(true),
+            bytes: b"0123456789".to_vec(),
+            fail_after_first: false,
+        });
+        let gateway = listen(
+            source.clone(),
+            "/repo/selected".into(),
+            "selected-id".into(),
+            "machine".into(),
+            "env".into(),
+            Some("clip.mp4".into()),
+        )
+        .unwrap();
+        let base = format!("/{}", gateway.capability);
+        let player = "Sec-Fetch-Dest: video\r\nRange: bytes=0-1\r\n";
+        let own = String::from_utf8(exchange(
+            &gateway,
+            "GET",
+            &format!("{base}/clip.mp4"),
+            player,
+        ))
+        .unwrap();
+        assert!(own.starts_with("HTTP/1.1 206"));
+        let calls = source.calls.lock().unwrap().len();
+        for (method, path) in [
+            ("GET", format!("{base}/other.mp4")),
+            ("GET", format!("{base}/clip.mp4.bak")),
+            ("GET", format!("{base}/")),
+            ("GET", base.clone()),
+            ("HEAD", format!("{base}/sub/clip.mp4")),
+            ("PROPFIND", format!("{base}/clip.mp4")),
+            ("PROPFIND", "/".to_owned()),
+            ("OPTIONS", "*".to_owned()),
+            ("PUT", format!("{base}/clip.mp4")),
+        ] {
+            let response = String::from_utf8(exchange(&gateway, method, &path, player)).unwrap();
+            assert!(response.starts_with("HTTP/1.1 403"), "{method} {path}");
+        }
+        assert_eq!(source.calls.lock().unwrap().len(), calls, "no host reads");
+        gateway.stop();
+    }
+
+    #[test]
+    fn only_the_exact_loopback_host_is_accepted() {
+        for host in [
+            "localhost:1234",
+            "127.0.0.1:9999",
+            "127.0.0.1",
+            "evil.example",
+            "127.0.0.1.evil.example:1234",
+        ] {
+            let header = format!("GET /token/file HTTP/1.1\r\nHost: {host}\r\n");
+            assert!(request(&header, 1234, "token").is_err(), "accepted {host}");
+        }
+        assert!(request("GET /token/file HTTP/1.1\r\n", 1234, "token").is_err());
+        assert!(request(
+            "GET /token/file HTTP/1.1\r\nHost: 127.0.0.1:1234\r\n",
+            1234,
+            "token"
+        )
+        .is_ok());
     }
 
     fn exchange(gateway: &Gateway, method: &str, path: &str, extra: &str) -> Vec<u8> {
@@ -836,6 +954,63 @@ mod tests {
             assert_eq!(args["rootIdentity"], "selected-id");
         }
         gateway.stop();
+    }
+
+    #[test]
+    fn media_element_range_requests_get_a_player_type_but_other_cross_site_reads_stay_blocked() {
+        let (source, gateway) = fixture(b"0123456789".to_vec(), false);
+        let file = format!("/{}/clip.MP4", gateway.capability);
+        let player = "Sec-Fetch-Dest: video\r\nSec-Fetch-Site: cross-site\r\nReferer: http://tauri.localhost/\r\nRange: bytes=2-5\r\n";
+        let response = String::from_utf8(exchange(&gateway, "GET", &file, player)).unwrap();
+        assert!(response.starts_with("HTTP/1.1 206"));
+        assert!(response.contains("Content-Type: video/mp4"));
+        assert!(response.contains("Content-Range: bytes 2-5/10"));
+        assert!(response.ends_with("\r\n\r\n2345"));
+        // Seeking past the end is refused without a transfer.
+        let past = String::from_utf8(exchange(
+            &gateway,
+            "GET",
+            &file,
+            "Sec-Fetch-Dest: video\r\nRange: bytes=10-\r\n",
+        ))
+        .unwrap();
+        assert!(past.starts_with("HTTP/1.1 416"));
+        // A script fetch from another site and a wrong capability remain forbidden.
+        for (path, extra) in [
+            (
+                file.clone(),
+                "Sec-Fetch-Dest: empty\r\nSec-Fetch-Site: cross-site\r\n",
+            ),
+            (
+                file.clone(),
+                "Sec-Fetch-Dest: image\r\nSec-Fetch-Site: cross-site\r\n",
+            ),
+            ("/wrong/clip.mp4".to_owned(), "Sec-Fetch-Dest: video\r\n"),
+        ] {
+            let response = String::from_utf8(exchange(&gateway, "GET", &path, extra)).unwrap();
+            assert!(response.starts_with("HTTP/1.1 403"), "{path} {extra}");
+        }
+        // A media element may not write or list through the gateway.
+        let put = String::from_utf8(exchange(
+            &gateway,
+            "PUT",
+            &file,
+            "Sec-Fetch-Dest: video\r\n",
+        ))
+        .unwrap();
+        assert!(put.starts_with("HTTP/1.1 405"));
+        for (_, args) in source.calls.lock().unwrap().iter() {
+            assert_eq!(args["root"], "/repo/selected");
+        }
+        gateway.stop();
+    }
+
+    #[test]
+    fn media_types_cover_players_and_default_to_opaque() {
+        assert_eq!(media_type("a.MOV"), "video/quicktime");
+        assert_eq!(media_type("a.opus"), "audio/ogg");
+        assert_eq!(media_type("archive.tar.gz"), "application/octet-stream");
+        assert_eq!(media_type("noext"), "application/octet-stream");
     }
 
     #[test]

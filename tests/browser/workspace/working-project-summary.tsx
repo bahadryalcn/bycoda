@@ -95,7 +95,6 @@ function Fixture() {
           </p>
           <LiveAgentsPreview
             agents={source}
-            currentProject={project}
             collapsible={!parameters.has("noncollapsible")}
             activeSessionId={selected}
             onSelect={setSelected}
@@ -108,7 +107,6 @@ function Fixture() {
           <p className="mb-4 text-ui-secondary">Sidebar Working band</p>
           <LiveAgentsPreview
             agents={source}
-            currentProject={project}
             collapsible={!parameters.has("noncollapsible")}
             activeSessionId={selected}
             onSelect={setSelected}

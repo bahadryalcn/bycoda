@@ -13,10 +13,9 @@ import { IS_MAC } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
-import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { confirmCloseTerminal } from "../../terminal/model/terminalClose";
 import { ArrowLeft, Terminal, X } from "../../../shared/ui/icons";
-import { Badge, StatusBadge } from "../../../shared/ui/Badge";
+import { Badge } from "../../../shared/ui/Badge";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n";
 import type { ServerRecord, SshEndpoint } from "../model/serverInventory";
@@ -29,7 +28,8 @@ import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import { SshRunbookQueue } from "./SshRunbookQueue";
 import { requestSshStartupReviews } from "../model/sshRunbookQueue";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { ServerTerminalSession } from "./ServerTerminalSession";
+import { ServerTerminalSession, ServerTerminalStatus } from "./ServerTerminalSession";
+import { ServerTerminalAgent } from "./ServerTerminalAgent";
 import { TerminalContext, type SshTerminalOpenResult } from "./serversTerminalContext";
 
 export {
@@ -473,21 +473,7 @@ export function ServersTerminalWorkspace({
                       <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
                         {terminal.name}
                       </Text>
-                      {!terminal.lifecycle ? (
-                        <WorkingIndicator label={t("Opening…")} />
-                      ) : terminal.lifecycle === "failed" ? (
-                        <StatusBadge status="failed" size="xs" />
-                      ) : (
-                        <Text tone="muted">
-                          {t(
-                            terminal.lifecycle === "opened-on-computer"
-                              ? "Running"
-                              : terminal.lifecycle === "exited"
-                                ? "Terminal closed"
-                                : "Closed",
-                          )}
-                        </Text>
-                      )}
+                      <ServerTerminalStatus lifecycle={terminal.lifecycle} />
                     </Tab>
                     <InlineAction
                       reveal="always"
@@ -523,175 +509,196 @@ export function ServersTerminalWorkspace({
                     {t("Identity file")}: {terminal.keyGenerationPath}
                   </Text>
                 ) : null}
-                <ServerTerminalSession
-                  name={terminal.name}
-                  lifecycle={terminal.lifecycle}
-                  keyGenerationPath={terminal.keyGenerationPath}
-                  target={terminal.server?.machine?.ssh?.target}
-                  port={terminal.server?.machine?.ssh?.port}
-                  identityFile={terminal.server?.machine?.ssh?.identityFile}
-                  endpoint={
-                    terminal.endpoint ??
-                    terminal.server?.effectiveSshEndpoint ??
-                    terminal.server?.sshEndpoint
+                <ServerTerminalAgent
+                  visible={visible && active === terminal.id}
+                  target={
+                    terminal.keyGenerationPath
+                      ? undefined
+                      : {
+                          terminalId: terminal.id,
+                          serverId: terminal.server?.id,
+                          name: terminal.name,
+                        }
                   }
                 >
-                  {(fontSize, onFontSizeChange, lineHeight) => (
-                    <TerminalView
-                      fontSize={fontSize}
-                      onFontSizeChange={onFontSizeChange}
-                      lineHeight={lineHeight}
-                      id={terminal.id}
-                      cwd=""
-                      onReturnToServers={() => setActive(null)}
-                      onReconnect={
-                        terminal.server && !terminal.agentForwardingReviewId
-                          ? async () => {
-                              // Resolve current policy and request fresh approvals. A reconnect
-                              // creates a raw PTY, never reuses input, tickets or startup scripts.
-                              const servers = await invoke<ServerRecord[]>("server_inventory_list");
-                              const server = servers.find(
-                                (item) => item.id === terminal.server!.id,
-                              );
-                              if (!server) throw new Error(t("Server not found"));
-                              if (server.metadata.sshInheritance)
-                                requestConfigurationReview({ server, startupEligible: false });
-                              else
-                                await launch(
-                                  server,
-                                  undefined,
-                                  undefined,
-                                  undefined,
-                                  server.name,
-                                  false,
-                                );
-                            }
-                          : terminal.endpoint
-                            ? async () => {
-                                const id = `ssh-quick:${crypto.randomUUID()}`;
-                                const endpoint = { ...terminal.endpoint! };
-                                const approval = authorizeProxy(
-                                  id,
-                                  undefined,
-                                  endpoint,
-                                  terminal.shellIntegration,
-                                );
-                                const httpProxyTicketId = approval ? await approval : undefined;
-                                if (httpProxyTicketId === null) return;
-                                setTerminals((previous) => [
-                                  ...previous,
-                                  {
-                                    id,
-                                    restoreId: crypto.randomUUID(),
-                                    name: terminal.name,
-                                    endpoint,
-                                    shellIntegration: terminal.shellIntegration,
-                                    httpProxyTicketId,
-                                  },
-                                ]);
-                                setActive(id);
-                              }
-                            : undefined
-                      }
-                      sshConnectionId={terminal.server?.id}
-                      canStart={terminal.mobileValid}
-                      authorizeStart={terminal.mobileAuthorize}
-                      onLifecycle={(state) => {
-                        if (mounted.current)
-                          setTerminals((previous) =>
-                            previous.map((value) =>
-                              value.id === terminal.id ? { ...value, lifecycle: state } : value,
-                            ),
-                          );
-                        const entry = mobileResources.current.get(terminal.id);
-                        if (!entry) return;
-                        entry.state = state;
-                        entry.notify(state);
-                        if (
-                          state === "opened-on-computer" ||
-                          state === "failed" ||
-                          state === "closed"
-                        ) {
-                          entry.finishOpen?.(state === "opened-on-computer");
-                          entry.finishOpen = undefined;
-                        }
-                        if (state === "closed") entry.closed?.();
-                        if (state === "failed") entry.closeFailed?.();
-                      }}
-                      sshEndpoint={terminal.endpoint}
-                      shellIntegration={terminal.shellIntegration}
-                      agentForwardingReviewId={terminal.agentForwardingReviewId}
-                      expectedConfigurationDigest={terminal.expectedConfigurationDigest}
-                      httpProxyTicketId={terminal.httpProxyTicketId}
-                      onStartupReview={
-                        terminal.server
-                          ? async () => {
-                              await requestSshStartupReviews(terminal.server!.id);
-                              setReviewQueueRequest((value) => value + 1);
-                            }
-                          : undefined
-                      }
-                      onSshPromptReady={
-                        terminal.server && terminal.startupEligible
-                          ? () => {
-                              if (startupNotified.current.has(terminal.id)) return;
-                              startupNotified.current.add(terminal.id);
-                              void requestSshStartupReviews(terminal.server!.id);
-                            }
-                          : undefined
-                      }
-                      onEnableShellIntegration={
-                        !terminal.keyGenerationPath &&
-                        (!terminal.shellIntegration || terminal.shellIntegration === "auto")
-                          ? async (shell = "bash") => {
-                              if (terminal.server?.metadata.sshInheritance) {
-                                requestConfigurationReview({
-                                  server: terminal.server,
-                                  shellIntegration: shell,
-                                  startupEligible: terminal.startupEligible,
-                                  name: terminal.name,
-                                });
-                                return;
-                              }
-                              const id = `ssh-${shell}:${crypto.randomUUID()}`;
-                              const approval = authorizeProxy(
-                                id,
-                                terminal.server,
-                                terminal.endpoint,
-                                shell,
-                              );
-                              const httpProxyTicketId = approval ? await approval : undefined;
-                              if (httpProxyTicketId === null) return;
-                              const restoreId = crypto.randomUUID();
-                              if (terminal.server)
-                                serverTerminalRestoreState.add({
-                                  tabId: restoreId,
-                                  serverId: terminal.server.id,
-                                });
-                              setTerminals((previous) => [
-                                ...previous,
-                                {
-                                  id,
-                                  restoreId,
-                                  name: `${terminal.name} · ${shell === "powershell" ? "PowerShell 7" : shell === "zsh" ? "Zsh" : "Bash"}`,
-                                  server: terminal.server,
-                                  endpoint: terminal.endpoint
-                                    ? { ...terminal.endpoint }
-                                    : undefined,
-                                  shellIntegration: shell,
-                                  httpProxyTicketId,
-                                  startupEligible: terminal.startupEligible,
-                                },
-                              ]);
-                              setActive(id);
-                            }
-                          : undefined
-                      }
+                  {(actions, onSendToAgent, onSendToHost) => (
+                    <ServerTerminalSession
+                      actions={actions}
+                      name={terminal.name}
+                      lifecycle={terminal.lifecycle}
                       keyGenerationPath={terminal.keyGenerationPath}
-                      active={visible && active === terminal.id}
-                    />
+                      target={terminal.server?.machine?.ssh?.target}
+                      port={terminal.server?.machine?.ssh?.port}
+                      identityFile={terminal.server?.machine?.ssh?.identityFile}
+                      endpoint={
+                        terminal.endpoint ??
+                        terminal.server?.effectiveSshEndpoint ??
+                        terminal.server?.sshEndpoint
+                      }
+                    >
+                      {(fontSize, onFontSizeChange, lineHeight, toolbarTarget) => (
+                        <TerminalView
+                          toolbarTarget={toolbarTarget}
+                          sshConnectionName={terminal.server?.name}
+                          onSendToAgent={onSendToAgent}
+                          onSendToHost={onSendToHost}
+                          fontSize={fontSize}
+                          onFontSizeChange={onFontSizeChange}
+                          lineHeight={lineHeight}
+                          id={terminal.id}
+                          cwd=""
+                          onReturnToServers={() => setActive(null)}
+                          onReconnect={
+                            terminal.server && !terminal.agentForwardingReviewId
+                              ? async () => {
+                                  // Resolve current policy and request fresh approvals. A reconnect
+                                  // creates a raw PTY, never reuses input, tickets or startup scripts.
+                                  const servers =
+                                    await invoke<ServerRecord[]>("server_inventory_list");
+                                  const server = servers.find(
+                                    (item) => item.id === terminal.server!.id,
+                                  );
+                                  if (!server) throw new Error(t("Server not found"));
+                                  if (server.metadata.sshInheritance)
+                                    requestConfigurationReview({ server, startupEligible: false });
+                                  else
+                                    await launch(
+                                      server,
+                                      undefined,
+                                      undefined,
+                                      undefined,
+                                      server.name,
+                                      false,
+                                    );
+                                }
+                              : terminal.endpoint
+                                ? async () => {
+                                    const id = `ssh-quick:${crypto.randomUUID()}`;
+                                    const endpoint = { ...terminal.endpoint! };
+                                    const approval = authorizeProxy(
+                                      id,
+                                      undefined,
+                                      endpoint,
+                                      terminal.shellIntegration,
+                                    );
+                                    const httpProxyTicketId = approval ? await approval : undefined;
+                                    if (httpProxyTicketId === null) return;
+                                    setTerminals((previous) => [
+                                      ...previous,
+                                      {
+                                        id,
+                                        restoreId: crypto.randomUUID(),
+                                        name: terminal.name,
+                                        endpoint,
+                                        shellIntegration: terminal.shellIntegration,
+                                        httpProxyTicketId,
+                                      },
+                                    ]);
+                                    setActive(id);
+                                  }
+                                : undefined
+                          }
+                          sshConnectionId={terminal.server?.id}
+                          canStart={terminal.mobileValid}
+                          authorizeStart={terminal.mobileAuthorize}
+                          onLifecycle={(state) => {
+                            if (mounted.current)
+                              setTerminals((previous) =>
+                                previous.map((value) =>
+                                  value.id === terminal.id ? { ...value, lifecycle: state } : value,
+                                ),
+                              );
+                            const entry = mobileResources.current.get(terminal.id);
+                            if (!entry) return;
+                            entry.state = state;
+                            entry.notify(state);
+                            if (
+                              state === "opened-on-computer" ||
+                              state === "failed" ||
+                              state === "closed"
+                            ) {
+                              entry.finishOpen?.(state === "opened-on-computer");
+                              entry.finishOpen = undefined;
+                            }
+                            if (state === "closed") entry.closed?.();
+                            if (state === "failed") entry.closeFailed?.();
+                          }}
+                          sshEndpoint={terminal.endpoint}
+                          shellIntegration={terminal.shellIntegration}
+                          agentForwardingReviewId={terminal.agentForwardingReviewId}
+                          expectedConfigurationDigest={terminal.expectedConfigurationDigest}
+                          httpProxyTicketId={terminal.httpProxyTicketId}
+                          onStartupReview={
+                            terminal.server
+                              ? async () => {
+                                  await requestSshStartupReviews(terminal.server!.id);
+                                  setReviewQueueRequest((value) => value + 1);
+                                }
+                              : undefined
+                          }
+                          onSshPromptReady={
+                            terminal.server && terminal.startupEligible
+                              ? () => {
+                                  if (startupNotified.current.has(terminal.id)) return;
+                                  startupNotified.current.add(terminal.id);
+                                  void requestSshStartupReviews(terminal.server!.id);
+                                }
+                              : undefined
+                          }
+                          onEnableShellIntegration={
+                            !terminal.keyGenerationPath &&
+                            (!terminal.shellIntegration || terminal.shellIntegration === "auto")
+                              ? async (shell = "bash") => {
+                                  if (terminal.server?.metadata.sshInheritance) {
+                                    requestConfigurationReview({
+                                      server: terminal.server,
+                                      shellIntegration: shell,
+                                      startupEligible: terminal.startupEligible,
+                                      name: terminal.name,
+                                    });
+                                    return;
+                                  }
+                                  const id = `ssh-${shell}:${crypto.randomUUID()}`;
+                                  const approval = authorizeProxy(
+                                    id,
+                                    terminal.server,
+                                    terminal.endpoint,
+                                    shell,
+                                  );
+                                  const httpProxyTicketId = approval ? await approval : undefined;
+                                  if (httpProxyTicketId === null) return;
+                                  const restoreId = crypto.randomUUID();
+                                  if (terminal.server)
+                                    serverTerminalRestoreState.add({
+                                      tabId: restoreId,
+                                      serverId: terminal.server.id,
+                                    });
+                                  setTerminals((previous) => [
+                                    ...previous,
+                                    {
+                                      id,
+                                      restoreId,
+                                      name: `${terminal.name} · ${shell === "powershell" ? "PowerShell 7" : shell === "zsh" ? "Zsh" : "Bash"}`,
+                                      server: terminal.server,
+                                      endpoint: terminal.endpoint
+                                        ? { ...terminal.endpoint }
+                                        : undefined,
+                                      shellIntegration: shell,
+                                      httpProxyTicketId,
+                                      startupEligible: terminal.startupEligible,
+                                    },
+                                  ]);
+                                  setActive(id);
+                                }
+                              : undefined
+                          }
+                          keyGenerationPath={terminal.keyGenerationPath}
+                          active={visible && active === terminal.id}
+                        />
+                      )}
+                    </ServerTerminalSession>
                   )}
-                </ServerTerminalSession>
+                </ServerTerminalAgent>
               </div>
             ))}
           </section>

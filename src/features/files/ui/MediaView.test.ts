@@ -3,12 +3,18 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MediaView } from "./MediaView";
-const mocks = vi.hoisted(() => ({ prepare: vi.fn(), open: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  prepare: vi.fn(),
+  open: vi.fn(),
+  info: vi.fn(async () => ({ size: 4, cachedPath: null as string | null })),
+}));
 vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (path: string) => `asset:${path}` }));
 vi.mock("../../../platform/tauri/fs", () => ({
   basename: (path: string) => path.split("/").at(-1),
   prepareLocalFile: mocks.prepare,
   preparedFileSize: vi.fn(async () => 1024),
+  remoteMediaInfo: mocks.info,
+  remoteMediaStreamUrl: vi.fn(),
   openPathWithDefaultApp: mocks.open,
 }));
 let container: HTMLDivElement, root: Root;
@@ -19,8 +25,10 @@ beforeEach(() => {
   root = createRoot(container);
   mocks.prepare.mockReset();
   mocks.open.mockReset();
+  localStorage.setItem("bycoda.remoteMediaMode", "download");
 });
 afterEach(() => {
+  localStorage.removeItem("bycoda.remoteMediaMode");
   act(() => root.unmount());
   container.remove();
   vi.restoreAllMocks();

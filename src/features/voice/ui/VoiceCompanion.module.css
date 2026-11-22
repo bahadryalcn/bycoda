@@ -14,13 +14,17 @@
 .launcherSlot:not([data-compact]) {
   flex: 0 1 auto;
 }
-.launcherControls {
-  display: flex;
-  align-items: center;
-  min-inline-size: 0;
+.dockedWakeTrigger[data-button-size="xs"] {
+  --button-icon-size: var(--ui-icon-xs);
+  flex: none;
+  inline-size: 1.5rem;
+  margin-block: auto;
 }
-.launcherControls > :first-child {
-  flex: 0 1 auto;
+:global(html[data-control-density="touch"]) .dockedWakeTrigger[data-button-size="xs"] {
+  inline-size: var(--ui-control-height-xs);
+}
+:global(html[data-control-density="touch"]) .launcherSlot[data-compact] .dockedLauncherGroup {
+  flex-direction: column;
 }
 .wakeMenu {
   display: grid;

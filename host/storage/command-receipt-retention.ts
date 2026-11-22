@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { StoreDatabase } from "../store-db";
-import type { CommandReceipt } from "../../src/features/connections/model/protocol";
+import type { StoredCommandReceipt } from "../domains/commands/service";
 import { requestIssuedAt } from "../../src/shared/lib/id/requestId";
 import {
   REQUEST_EXPIRED_ERROR_CODE,
@@ -99,8 +99,8 @@ export async function readCommandReceipt(
   db: StoreDatabase,
   id: string,
   signature?: string,
-  options: { admit?: boolean; now?: number } = {},
-): Promise<CommandReceipt | undefined> {
+  options: { admit?: boolean; now?: number; includeSteer?: boolean } = {},
+): Promise<StoredCommandReceipt | undefined> {
   if (await db.prepare("SELECT id FROM desktop_command_delivery WHERE id=?").get(id)) {
     if (signature !== undefined) throw new Error("Command ID belongs to a desktop control.");
     return undefined;
@@ -121,7 +121,9 @@ export async function readCommandReceipt(
     (full ? full.signature !== signature : compact!.signature_hash !== signatureHash(signature))
   )
     throw new Error("Command ID was already used with a different payload");
-  return JSON.parse(String(row.receipt)) as CommandReceipt;
+  const receipt = JSON.parse(String(row.receipt)) as StoredCommandReceipt;
+  if (!options.includeSteer) delete receipt.steer;
+  return receipt;
 }
 
 /** Caller holds the critical writer transaction. No pending effects or response bytes are removed. */

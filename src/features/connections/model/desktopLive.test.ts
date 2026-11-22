@@ -18,8 +18,13 @@ import {
 } from "./desktopLive";
 
 const native = vi.hoisted(() => ({
+  invoke: vi.fn(),
   approve: vi.fn(),
   adapter: { respondApproval: vi.fn() },
+}));
+vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
+  invoke: native.invoke,
 }));
 vi.mock("../../../integrations/harness", () => ({
   getHarness: () => native.adapter,
@@ -29,8 +34,49 @@ vi.mock("../../../integrations/harness", () => ({
   },
 }));
 beforeEach(() => {
+  native.invoke.mockReset();
   native.approve.mockClear();
   native.adapter = { respondApproval: vi.fn() };
+});
+
+it("applies removal lease jobs for this desktop and replies through the heartbeat", async () => {
+  native.invoke.mockResolvedValue(undefined);
+  const clientId = "desktop";
+  const id = "lease";
+  const request = vi
+    .fn<Parameters<typeof runDesktopLiveTick>[0]["request"]>()
+    .mockResolvedValueOnce({
+      removalLease: {
+        jobs: [
+          { id: "other", clientId: "other", path: "/wrong" },
+          { id, clientId, path: "/worktree" },
+        ],
+        acked: [],
+      },
+    })
+    .mockResolvedValueOnce({ removalLease: { jobs: [{ id, clientId }], acked: [id] } })
+    .mockResolvedValueOnce({ removalLease: { jobs: [], acked: [id] } });
+  const deps = {
+    clientId,
+    request,
+    sessions: () => [],
+    handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+    handled: new Set<string>(),
+    unacked: new Set<string>(),
+  };
+  await runDesktopLiveTick(deps);
+  await runDesktopLiveTick(deps);
+  await runDesktopLiveTick(deps);
+  expect(native.invoke.mock.calls).toEqual([
+    ["desktop_worktree_removal_lease", { clientId, leaseId: id, path: "/worktree" }],
+    ["desktop_worktree_removal_lease", { clientId, leaseId: id, path: null }],
+  ]);
+  expect(request.mock.calls[1]?.[0].removalLeaseReplies).toEqual([
+    { id, granted: true, release: false },
+  ]);
+  expect(request.mock.calls[2]?.[0].removalLeaseReplies).toEqual([
+    { id, granted: true, release: true },
+  ]);
 });
 
 it("dispatches review context and inline review batches through the finite native bridge", async () => {

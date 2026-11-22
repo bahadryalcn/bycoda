@@ -644,14 +644,30 @@ for (const theme of ["light", "dark"]) {
         `/tests/browser/voice/voice-visual-styles.html?wake-quick-settings=error&theme=${theme}${width === 800 ? "&compact-rail" : ""}`,
       );
       const slot = page.locator("[data-voice-launcher-slot]");
+      const launcher = slot.getByRole("button", { name: "Talk to Arif", exact: true });
       const trigger = slot.getByRole("button", { name: "Voice settings", exact: true });
       const popup = page.getByRole("dialog", { name: "Voice settings" });
       const message = "Wake phrase stopped listening. Check the microphone.";
+      const group = slot.getByRole("group", { name: "Voice companion" });
+      await expect(group).toBeVisible();
+      await expect(group.getByRole("button")).toHaveCount(2);
+      const primaryBox = (await launcher.boundingBox())!;
+      const settingsBox = (await trigger.boundingBox())!;
+      expect(settingsBox.x).toBeCloseTo(primaryBox.x + primaryBox.width, 0);
+      expect(settingsBox.y + settingsBox.height / 2).toBeCloseTo(
+        primaryBox.y + primaryBox.height / 2,
+        0,
+      );
+      expect(settingsBox.width).toBe(24);
+      expect(settingsBox.height).toBe(24);
+      await expect(trigger.locator("svg")).toHaveCSS("inline-size", "12px");
+      await expect(group).toHaveAttribute("data-surface", "transparent");
+      if (width === 800) expect((await group.boundingBox())!.width).toBeLessThanOrEqual(56);
       await trigger.click();
       await popup.getByRole("switch", { name: "Wake and sleep phrases" }).click();
       await expect(popup.getByText(message)).toBeInViewport({ ratio: 1 });
       await expect(slot.locator('[data-wake-status="error"][data-tone="warning"]')).toBeVisible();
-      const directory = join(process.cwd(), "temp/verification/voice-wake-quick-settings");
+      const directory = join(process.cwd(), "temp/verification/voice-launcher-compact");
       await mkdir(directory, { recursive: true });
       const clip = { x: 0, y: 440, width: 320, height: 180 };
       await page.screenshot({ path: join(directory, `${theme}-${width}-open.png`), clip });
@@ -659,6 +675,18 @@ for (const theme of ["light", "dark"]) {
       await expect(page.getByText(message)).toHaveCount(0);
       await page.mouse.move(width / 2, 600);
       await page.screenshot({ path: join(directory, `${theme}-${width}-closed.png`), clip });
+
+      if (width === 800) {
+        await page
+          .locator("html")
+          .evaluate((html) => (html.dataset.controlDensity = "comfortable"));
+        expect((await group.boundingBox())!.width).toBeLessThanOrEqual(56);
+        await page.locator("html").evaluate((html) => (html.dataset.controlDensity = "touch"));
+        expect((await group.boundingBox())!.width).toBeLessThanOrEqual(56);
+        await expect(trigger).toHaveCSS("inline-size", "44px");
+        await trigger.click();
+        await expect(popup.getByText(message)).toBeInViewport({ ratio: 1 });
+      }
     });
   }
 }

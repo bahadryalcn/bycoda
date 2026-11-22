@@ -11,8 +11,7 @@ import { Button } from "../Button";
 import { Heading } from "../Heading";
 import { SettingsOperationFeedback, type SettingsFeedbackProps } from "./SettingsFeedback";
 import { InfoPopover } from "../InfoPopover";
-import { Popover } from "../Popover";
-import { Info, RotateCcw } from "../icons";
+import { RotateCcw } from "../icons";
 
 import { useT } from "../../i18n";
 
@@ -352,82 +351,6 @@ export function AdvancedSettings({
         children
       ) : null}
     </section>
-  );
-}
-
-/**
- * Shared page help and optional page reset, reachable by pointer and keyboard.
- * @group overlay
- * @use The "About this page" button of a settings page: description, automatic-save note, page reset.
- * @avoid A hint on one row or group: `info` on Row or Group. Any other hint: InfoPopover.
- */
-export function SettingsPageHelp({
-  description,
-  automaticSave = false,
-  className = "",
-  reset,
-}: {
-  description?: string;
-  automaticSave?: boolean;
-  className?: string;
-  reset?: { label: string; onClick: () => void };
-}) {
-  const t = useT();
-  const anchor = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  if (!description && !automaticSave && !reset) return null;
-  return (
-    <>
-      <Button
-        ref={anchor}
-        variant="ghost"
-        size="sm"
-        iconOnly
-        label={t("About this page")}
-        className={`settings-page-help shrink-0 ${className}`}
-        aria-haspopup="dialog"
-        expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <Info aria-hidden className="icon-sm" />
-      </Button>
-      {open ? (
-        <Popover
-          anchor={anchor}
-          kind="dialog"
-          aria-label={t("About this page")}
-          autoFocus
-          tabIndex={-1}
-          flow="scroll"
-          onDismiss={() => setOpen(false)}
-          className="flex flex-col gap-2 p-3"
-        >
-          {description ? (
-            <Text as="p" tone="secondary">
-              {description}
-            </Text>
-          ) : null}
-          {automaticSave ? (
-            <Text as="p" tone="secondary">
-              {t("Changes save automatically")}
-            </Text>
-          ) : null}
-          {reset ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setOpen(false);
-                reset.onClick();
-              }}
-            >
-              <RotateCcw aria-hidden className="icon-sm" />
-              {reset.label}
-            </Button>
-          ) : null}
-        </Popover>
-      ) : null}
-    </>
   );
 }
 

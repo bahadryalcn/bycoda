@@ -18,8 +18,9 @@ note to read it, then choose **Edit** to use the same document and Markdown edit
 as Notes. Right-click a note, or press **Shift+F10** on its row, to open its actions.
 Select several notes for bulk deletion. **Select all** applies to the current
 search results; notes selected before changing the search remain selected. The
-confirmation shows the total selected count. If deletion stops after a failure,
-confirmed deletions leave the selection and the remaining notes stay selected.
+confirmation shows the total selected count. The Room refreshes in the background
+after the batch. If deletion stops after a failure, confirmed deletions leave
+the selection and the remaining notes stay selected.
 Restore confirmed deletions with **Undo** or **Recently deleted**.
 
 The Room's **Conversations** starts in **Global** scope. Its management history

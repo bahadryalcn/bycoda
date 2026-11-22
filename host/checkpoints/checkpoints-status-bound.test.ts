@@ -8,21 +8,22 @@ const calls = vi.hoisted(() => ({
   peak: 0,
   args: [] as { args: string[]; options: Record<string, unknown> }[],
 }));
-vi.mock("../../src/shared/lib/processExecution.node", async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import("../../src/shared/lib/processExecution.node")>();
+vi.mock("../git/git-exec-pool", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../git/git-exec-pool")>();
   return {
     ...original,
-    execFileAsync: (async (file: string, args: string[], options: Record<string, unknown>) => {
-      calls.args.push({ args, options });
-      calls.active++;
-      calls.peak = Math.max(calls.peak, calls.active);
-      try {
-        return await original.execFileAsync(file, args, options as never);
-      } finally {
-        calls.active--;
-      }
-    }) as typeof original.execFileAsync,
+    hostGitExec: {
+      exec: async (file: string, args: string[], options: Record<string, unknown>) => {
+        calls.args.push({ args, options });
+        calls.active++;
+        calls.peak = Math.max(calls.peak, calls.active);
+        try {
+          return await original.hostGitExec.exec(file, args, options as never);
+        } finally {
+          calls.active--;
+        }
+      },
+    },
   };
 });
 const { execFileAsync: exec } = await import("../../src/shared/lib/processExecution.node");

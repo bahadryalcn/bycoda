@@ -1,14 +1,24 @@
 # Inspect chat output and connected-machine files
 
+The session composer and its docked question form let the chat background show through their theme
+fill. Reduced transparency and forced colors use a solid fill.
+
 Markdown formatting appears in the chat composer as you type. Move the caret onto a Markdown
 marker to see and edit it. Sent messages display Markdown, and **Show full content** opens long
 messages with the same formatting. **Copy message** and **Save as note** use the original Markdown.
+**Copy message** includes file and image attachments, including those loaded from a connected machine or reopened from a saved conversation.
+If an attachment cannot be read, copying fails with its file name in **Details** and keeps the previous clipboard contents.
+If copying fails, press **Copy message** again to retry or open **Details** for the reason.
+Pasting into a Bycoda draft restores the text, files and inline attachment references in place, including in Quick Composer and the queue editor.
+Copied folders appear as paths at their original inline position or after the message if they had no inline reference.
+You can also copy or cut a selection containing attachment references in the chat composer.
+Undoing a cut restores the text and its attachments. Other apps can paste the plain message text.
 
 Markdown replies and document previews up to 131,072 characters parse without a background worker. Longer content, including 1 MiB documents, parses in a background worker. Documents with many blocks fill in progressively while the rendering indicator remains visible; completed blocks stay selectable. If parsing fails, the complete source text remains visible with a warning. Closing the failed preview allows a fresh worker attempt when another preview opens.
 
 When Host delegation is unavailable for a turn, the conversation notice uses your app language. Automatic without an effort ceiling permits built-in subagents; otherwise subagents remain limited to your selected models and effort ceiling. Model-facing fallback guidance stays in English.
 
-Tool rows keep the conversation compact. Long command lines end in an ellipsis. Select the command row or its output chevron to inspect the saved command and result. Use **Changes** beside an edit to inspect its saved code or patch. Expanded text can be selected and copied. A failed call shows its error before any earlier output.
+Tool rows keep the conversation compact. Long command lines end in an ellipsis. Select the command row or its output chevron to inspect the saved command and result. Use **Changes** beside an edit to inspect its saved code or patch. Expanded text can be selected and copied. A failed call shows its error before any earlier output. The summary skips terminal control codes so startup sequences do not hide the error text.
 
 Command details and Copy preserve retained output indentation, blank output and final line breaks. A log containing the failure message remains available alongside the error. If loading full output from a connected machine fails, its summary stays visible and **Retry** requests the same revision again.
 
@@ -49,9 +59,9 @@ If the full-screen image fails, **Retry** reloads it from its owning Host or sav
 file instead of reusing an expired temporary preview URL.
 
 Pasted images are saved before they are accepted as attachments, so their file
-reference survives closing and reopening the app. If an older message saved only
-image metadata without a file reference, attach the original image again; its
-name and size cannot restore the missing picture.
+reference survives closing and reopening the app. Synced conversation history
+can reopen an image by its attachment ID when the Host still has the file. If
+the file is gone, attach the original image again.
 
 ## Visual explanations
 
@@ -63,13 +73,14 @@ The side panel can be resized while you continue using the conversation. Close
 it or press Escape to return to the inline view. Switching to source and back
 keeps the current preview running; reloading starts the example again.
 
-Visuals are saved with the conversation. They cannot access your files, the
+Visuals reopen with the conversation on desktop, including conversations on a
+connected Host that supports visual reads. They cannot access your files, the
 network or application actions. A visual is an explanation or prototype, not an
 implemented change to your project. Unsupported clients retain the source result.
 
 ## Quote and translate selected text
 
-Select text in a message to open actions beside the selection. **Copy** copies the excerpt. **Reprompt** is available only for your own messages; translation remains available on replies too.
+Select text in a message to open actions beside the selection. The menu uses frosted glass when blur is available. **Copy** copies the excerpt. **Reprompt** is available only for your own messages; translation remains available on replies too.
 
 Selection actions stay on one row. In a narrow window, scroll the action row horizontally or use its arrow keys to reach the remaining actions.
 
@@ -101,6 +112,24 @@ keeps the recovery action available. Removing several messages gives each its ow
 
 If the provider refuses a queued follow-up before accepting it, the message returns
 to the queue without a turn-specific delegation notice in the conversation.
+
+Claude can accept a follow-up in the same Host turn once its running CLI reports
+command lifecycle events. While the CLI is getting ready, the composer keeps the
+message queued. Explicitly choosing **Queue message** always waits for dispatch.
+
+For shared queues, the project's Host can send the next message when a desktop
+window stops making progress and the Host verifies the conversation is ready.
+If the window is catching up on Host history, the Host can take over once it
+verifies it already has the window's saved history. Conflicting histories and
+unconfirmed deliveries wait for your review. On a held queue row, **Send again**
+replaces **Steer**. Check the conversation before retrying. Use the row's trash
+button to remove the saved copy, or leave it queued. Retry stays disabled while
+the provider can still answer.
+
+When the previous run is still closing, the queue shows that wait beside the
+message and retries an active queue when it can. If the Host needs you to check
+the conversation before it can resume safely, the queue keeps the message and
+shows that next step beside **Resume**.
 
 When the AI asks a question with a free-text answer, use **Attach files** below the answer, paste copied files or images, or drop files onto the question card. Attached items appear beside the file action, separate from the delivery status and navigation; remove an item before sending if needed. You can send files without adding text. Unfinished attachments stay with that question when you leave and return, and failed delivery keeps them for retry.
 
@@ -150,6 +179,11 @@ the composer or paused queue. Retry is hidden for that admission error so it
 cannot resend an earlier conversation message. Recover the retained input after
 the Host connection and ownership transfer are confirmed.
 
+The composer shows the short model name beside the provider icon. If there are
+multiple accounts, the account number appears on the icon and the account name
+appears in the tooltip. In a narrow chat pane, the model, access, mode and Add
+controls sit close together beside the send controls when there is room.
+
 When a usage limit stops a conversation, use **Switch account**, **Switch model**
 or the reset controls in its usage-limit notice. The generic failed-turn Retry
 stays hidden while this notice is active. Repeated reports of the same Claude
@@ -175,9 +209,16 @@ behavior. In the composer and queue editor, caret movement and selections treat 
 resolved reference as a whole. A missing or unavailable preview never removes the
 attachment.
 
-Web links you type or paste in the composer are boxed in their own color without the
-`https://` prefix, with an open icon at the end that opens the link in your browser.
-Move the caret into a link to see and edit it in full; the message keeps the full link.
+Click a draft link to open it in your browser. Tab moves from the desktop message
+field to its reference actions. Enter opens the focused reference. With a link
+focused, F2 shows its full address for editing.
+
+In the desktop composer, attachment references and file cards show the complete
+filename. An attachment with an inline reference appears at that reference. A long
+filename wraps when the composer is narrow. Click a file or image reference to
+preview it. Focus an attachment reference and press Delete to remove it. Click a skill
+for its description, or a skill group to see its members. Skill icons replace the
+invocation prefix in the display. The draft keeps the original invocation.
 
 Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio use native playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.
 
@@ -196,6 +237,8 @@ Every connected path retains its owning machine. Windows drive paths, macOS/Linu
 - **Open live folder (read-only)** uses the saved bycoda connection to expose a temporary folder to this computer's file manager. It supports browsing and opening; writes are rejected. The OS must provide its WebDAV client. An unavailable OS client produces an actionable error and leaves the shared-folder and copy alternatives available.
 
 Only folders and files inside projects/worktrees already authorized on the owning host can be read through bycoda. Browsing metadata outside those roots does not grant file access. Temporary native-folder access is private to loopback, expires, and does not publish a share or change OS services.
+
+If another Git client moves a linked worktree or replaces it with a separate repository, the Host checks its current Git registration before opening or saving files at the old path.
 
 Local downloads are limited to 1 GiB per file and four simultaneous transfers. The cache is bounded to 4 GiB. Unchanged cached snapshots can be reused; edited copies are preserved. A file changing during transfer causes a retryable failure rather than opening inconsistent bytes.
 

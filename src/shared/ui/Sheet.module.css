@@ -1,3 +1,11 @@
+.sheet[data-sheet-surface="canvas"] {
+  background-color: var(--ui-workspace-canvas);
+}
+
+.sheet[data-sheet-surface="chat"] {
+  background-color: var(--ui-chat-pane-canvas);
+}
+
 /* Sheet entrance: the one overlay enter (opacity + 4px rise at the standard duration), the same
    for both sides. No forwards fill, so no compositor layer is retained after the entrance;
    reduced motion opens in place. Frequent side panels pass motion="none". */

@@ -1,8 +1,66 @@
+import { applyComposerInlineCut } from "./composerInlineInput";
+
 /** Edits the textarea the way typing would, so React and every draft listener see it. */
 export function applyTextareaEdit(el: HTMLTextAreaElement, text: string, caret: number) {
   el.value = text;
   el.setSelectionRange(caret, caret);
   el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/** Replace text in one native undo step, or apply the edit for the caller's fallback history. */
+export function applyUndoableTextareaEdit(
+  el: HTMLTextAreaElement,
+  text: string,
+  caret: number,
+  applying: { current: boolean },
+): boolean {
+  if (applyComposerInlineCut(el, text, caret)) return true;
+  applying.current = true;
+  try {
+    let native = false;
+    if (el.ownerDocument.activeElement === el) {
+      el.select();
+      native = text
+        ? Boolean(el.ownerDocument.execCommand?.("insertText", false, text))
+        : Boolean(el.ownerDocument.execCommand?.("delete"));
+    }
+    if (!native) applyTextareaEdit(el, text, caret);
+    el.setSelectionRange(caret, caret);
+    return native;
+  } finally {
+    applying.current = false;
+  }
+}
+
+/** Type directly before an existing skill without joining the invocation to the new word. */
+export function keepSkillBoundary(
+  field: HTMLTextAreaElement,
+  event: InputEvent,
+  isSkillStart: (text: string, position: number) => boolean,
+) {
+  const { value, selectionStart: caret, selectionEnd } = field;
+  const text = event.data;
+  if (
+    event.defaultPrevented ||
+    !event.cancelable ||
+    event.isComposing ||
+    event.inputType !== "insertText" ||
+    !text ||
+    /\s$/.test(text) ||
+    field.readOnly ||
+    caret !== selectionEnd ||
+    !/[/$]/.test(value[caret] ?? "") ||
+    !isSkillStart(value, caret)
+  )
+    return;
+  event.preventDefault();
+  const end = caret + text.length;
+  // The native insertion keeps this keystroke in the textarea's undo history.
+  if (field.ownerDocument.execCommand?.("insertText", false, `${text} `)) {
+    field.setSelectionRange(end, end);
+  } else {
+    applyTextareaEdit(field, `${value.slice(0, caret)}${text} ${value.slice(caret)}`, end);
+  }
 }
 
 /** Inserts spoken or generated text at the caret, separated from neighboring words. */

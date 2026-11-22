@@ -169,8 +169,8 @@ it("references an attachment in the prompt and drops the token with the chip", a
     prompt.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await attach();
-  expect(prompt.value).toBe("fix the [Image 1 · 4 B]");
-  expect(button("Insert [Image 1 · 4 B] into the message")).toBeDefined();
+  expect(prompt.value).toBe("fix the [Image 1 · image.png · 4 B]");
+  expect(button("Insert [Image 1 · image.png · 4 B] into the message")).toBeDefined();
 
   act(() => button("Remove image.png").click());
   expect(prompt.value).toBe("fix the");

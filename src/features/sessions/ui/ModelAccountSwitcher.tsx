@@ -1,13 +1,13 @@
-/** Different job: Account tiles combine live quota meters and account status; RadioGroup owns tile presentation. */
+/** Different job: Account rows combine live quota meters and account status; RadioGroup owns selection and keyboard focus. */
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Divider } from "../../../shared/ui/Divider";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Check } from "../../../shared/ui/icons";
 import {
@@ -16,6 +16,7 @@ import {
   useProviderAccountUsage,
 } from "../../providers/public/accountUsage";
 import {
+  DEFAULT_PROVIDER_ACCOUNT_ID,
   providerAccounts,
   subscribeProviderAccounts,
   supportsProviderAccounts,
@@ -116,13 +117,12 @@ function DefaultMark() {
   );
 }
 
-/** Switch between multiple accounts without repeating a lone account's identity. */
+/** Disclosure for providers with more accounts than fit above the models. */
 export function ModelAccountControl({
   accounts,
   accountId,
   defaultAccountId,
   listOpen,
-  onSelect,
   onToggleList,
 }: {
   accounts: PanelAccount[];
@@ -130,35 +130,12 @@ export function ModelAccountControl({
   /** Account the default model lives on, when it is on this provider. */
   defaultAccountId?: string;
   listOpen: boolean;
-  onSelect: (accountId: string) => void;
   onToggleList: () => void;
 }) {
   const t = useT();
   const { formatNumber } = useFormat();
-  const kind = accountSwitcherKind(accounts.length);
   const current = accounts.find((account) => account.id === accountId);
-  if (kind === "none" || kind === "label") return null;
-  if (kind === "switch") {
-    return (
-      <SegmentedControl
-        label={t("Account")}
-        className="min-w-0"
-        value={accountId}
-        onValueChange={onSelect}
-        options={accounts.map((account) => ({
-          value: account.id,
-          label: account.label,
-          icon: <ModelAccountNumber account={account} />,
-          accessory: (
-            <>
-              <Percent value={account.usedPercent} />
-              {account.id === defaultAccountId ? <DefaultMark /> : null}
-            </>
-          ),
-        }))}
-      />
-    );
-  }
+  const implicitAccount = !current && accountId === DEFAULT_PROVIDER_ACCOUNT_ID;
   const label = current?.label ?? t("Unavailable Host account");
   // The default lives on another account: hint at it so the path to it stays visible.
   const elsewhere =
@@ -177,22 +154,24 @@ export function ModelAccountControl({
       variant="ghost"
       size="sm"
       type="button"
-      className="min-w-0 max-w-full"
+      fullWidth
+      align="start"
+      motion="none"
+      className="min-w-0 flex-1"
       data-model-account-menu
-      aria-haspopup="listbox"
       expanded={listOpen}
-      aria-label={name}
-      tooltip={name}
+      aria-label={listOpen || implicitAccount ? undefined : name}
+      tooltip={listOpen || implicitAccount ? undefined : name}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onToggleList}
     >
-      <ModelAccountNumber account={current} />
-      <Text size="inherit" tone="inherit" truncate className="min-w-0">
-        {label}
+      {!listOpen ? <ModelAccountNumber account={current} /> : null}
+      <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1 text-start">
+        {listOpen || implicitAccount ? t("Accounts") : label}
       </Text>
+      {!listOpen && current && current.id === defaultAccountId ? <DefaultMark /> : null}
+      {!listOpen && elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
       {!listOpen ? <Percent value={current?.usedPercent ?? null} /> : null}
-      {current && current.id === defaultAccountId ? <DefaultMark /> : null}
-      {elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
     </Button>
   );
 }
@@ -203,12 +182,14 @@ export function ModelAccountList({
   accountId,
   defaultAccountId,
   now,
+  inline,
   onSelect,
 }: {
   accounts: PanelAccount[];
   accountId: string;
   defaultAccountId?: string;
   now: number;
+  inline: boolean;
   onSelect: (accountId: string) => void;
 }) {
   const t = useT();
@@ -220,10 +201,7 @@ export function ModelAccountList({
     ? accounts.filter((account) => account.label.toLocaleLowerCase().includes(needle))
     : accounts;
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-model-account-list>
-      <Text size="caption" tone="secondary" className="px-2 pt-1">
-        {t("{p0} accounts", { p0: accounts.length })}
-      </Text>
+    <div className="shrink-0" data-model-account-list>
       {searchable ? (
         <div className="px-2 pt-1 pb-1.5">
           <SearchInput
@@ -247,11 +225,11 @@ export function ModelAccountList({
       ) : (
         <RadioGroup
           variant="tiles"
-          label={t("Accounts")}
+          label={inline ? t("Account") : t("Accounts")}
           value={accountId}
           keepFocus
-          className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1"
-          tileClassName="w-full text-left"
+          className="grid min-w-0 gap-0.5 p-1"
+          tileClassName="min-h-9 min-w-0 text-start"
           tile={{ fullWidth: true }}
           options={shown.map((account) => {
             const selected = account.id === accountId;
@@ -271,13 +249,14 @@ export function ModelAccountList({
                       size="inherit"
                       tone="inherit"
                       leading="snug"
-                      className="flex min-w-0 items-center gap-1"
+                      className="flex min-w-0 flex-wrap items-baseline gap-x-1.5"
                     >
                       <Text
                         data-model-account-name
                         size="inherit"
                         tone="inherit"
                         leading="snug"
+                        weight="medium"
                         wrap="anywhere"
                         className="min-w-0"
                       >
@@ -288,7 +267,7 @@ export function ModelAccountList({
                           data-model-default-account
                           size="micro"
                           tone="secondary"
-                          className="flex shrink-0 items-center gap-0.5"
+                          wrap="anywhere"
                         >
                           <DefaultMark />
                         </Text>
@@ -307,7 +286,8 @@ export function ModelAccountList({
                     ) : null}
                   </span>
                   {account.usedPercent != null ? (
-                    <span className="flex w-16 shrink-0 flex-col items-end gap-0.5">
+                    <span className="grid w-max min-w-14 shrink-0 justify-items-end gap-0.5">
+                      <Percent value={account.usedPercent} />
                       <UsageMeter
                         compact
                         showLegend={false}
@@ -326,7 +306,6 @@ export function ModelAccountList({
                         }
                         label={t("Usage of {p0}", { p0: account.label })}
                       />
-                      <Percent value={account.usedPercent} />
                     </span>
                   ) : null}
                   {selected ? (
@@ -341,6 +320,7 @@ export function ModelAccountList({
           onValueChange={onSelect}
         />
       )}
+      <Divider decorative inset="sm" />
     </div>
   );
 }

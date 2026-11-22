@@ -703,6 +703,26 @@ describe("streamed markdown", () => {
 });
 
 describe("appendSteerUser", () => {
+  it("continues the open assistant message through steer and starts fresh after completion", () => {
+    let session = appendUser(newSession("codex", "/tmp"), "Start");
+    session = applyHarnessEvent(session, { type: "message.delta", text: "Mes" });
+    const original = session.blocks[1].id;
+    session = appendSteerUser(session, "First steer");
+    session = appendSteerUser(session, "Second steer");
+    session = applyHarnessEvent(session, { type: "message.delta", text: "ajları aldım." });
+    session = applyHarnessEvent(session, { type: "message.completed" });
+    session = applyHarnessEvent(session, { type: "message.delta", text: "A separate answer." });
+
+    expect(session.blocks.map((block) => block.text)).toEqual([
+      "Start",
+      "Mesajları aldım.",
+      "First steer",
+      "Second steer",
+      "A separate answer.",
+    ]);
+    expect(session.blocks[1]).toMatchObject({ id: original, streaming: false });
+  });
+
   it("appends a user message without sealing an in-flight assistant block", () => {
     let session = appendUser(newSession("cursor", "/tmp"), "build it");
     session = applyHarnessEvent(session, {

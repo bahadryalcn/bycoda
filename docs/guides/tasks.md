@@ -22,7 +22,7 @@ revisions and unmerged branches retain their Host protections. Successful deleti
 leave the selection; failures remain available for Retry failed tasks. Identical
 failure reasons share one explanation with the affected task names.
 
-Tasks opens on the current project's Host. Select All projects to include other machines. A remote machine being unavailable does not mean a successfully read local task list failed. Connection details and optional data warnings describe the affected source; Retry refreshes the selected scope.
+Tasks opens on the current project's Host. Select All projects to include other machines. During a brief interruption, the board keeps loaded data and retries in the background. Connection details and optional data warnings appear for sustained interruptions or a failure that needs attention. Retry refreshes the selected scope.
 
 Local project options can appear while other sources are still loading. Sprint data appears as soon as its planning Host answers; source history synchronization can continue afterward. Actions that require current history still wait for that synchronization. Repeated refresh ticks do not accumulate an unlimited queue.
 
@@ -49,11 +49,11 @@ A review with acceptance criteria is bound to the working-copy contents it inspe
 
 An epic runs only the reviews its plan needs. A plan with one task skips the final epic review, because that task's own review already covered the whole job. When the planner marks a small, low-risk job as simple, its tasks run their configured checks without a separate reviewer. Neither rule adds a review you turned off.
 
-An epic is a planned outcome split into tasks for owner approval. Existing saved goal records and Host API identifiers continue to work. Codex's native `/goal` command remains a separate conversation capability; it does not create or approve an epic.
+An epic is a planned outcome split into tasks for owner approval. Existing saved goal records and Host API identifiers continue to work. For a native Codex `/goal`, open **Goal** in the conversation activity bar to see the full objective, usage and available actions.
 
 Epic progress and budget totals reflect the Host scheduler's latest recorded state and can take a scheduler tick to catch up with task changes.
 
-Codex conversation goals appear above the message input, beside current work rather than in the chat header. The row shows the provider's last goal state, objective, reported token usage/budget and elapsed time. An active goal with no current turn reads **Goal set**. **Resume goal** continues a stopped, blocked or limited goal; **Clear goal** removes it. Both actions use the conversation's existing permission and submission gates and preserve the input draft. Wait for current work to finish before changing the goal. A blocked goal does not mean the current turn or its subagents have stopped. Codex does not supply a blocked reason in this state; the row says so instead of guessing.
+Open **Goal** beside the current work above the message input to see the provider's goal status, objective, reported token usage and elapsed time. **Pause** pauses an active goal. **Resume goal** continues a paused, blocked or limited goal. **Clear goal** removes it. These actions preserve the input draft and follow the conversation's messaging permissions. Wait for the current turn to finish before changing the goal. Current work and subagents can still be running while a goal is blocked. The panel shows when Codex has provided no reason for that state.
 
 ## Retry safely
 

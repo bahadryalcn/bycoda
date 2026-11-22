@@ -3,32 +3,40 @@ import { mkdir } from "node:fs/promises";
 
 for (const dark of [false, true]) {
   for (const width of [1280, 800]) {
-    test(`native goal row wraps with owner actions, ${width}, ${dark ? "dark" : "light"}`, async ({
+    test(`goal popover is inset and preserves the draft, ${width}, ${dark ? "dark" : "light"}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(`/tests/browser/chat/chat-chrome.html?goal=blocked&tr${dark ? "&dark" : ""}`);
+      await page.goto(`/tests/browser/chat/chat-chrome.html?goal=active&tr${dark ? "&dark" : ""}`);
       const row = page.locator("[data-provider-goal]");
-      await expect(row).toContainText("Hedef engellendi");
-      await expect(row).toContainText("12.400 / 50.000 token");
-      await expect(row).toContainText("Codex bu hedefin engellenme nedenini bildirmedi.");
-      await expect(
-        page.getByRole("button", { name: "Hedefe devam et", exact: true }),
-      ).toBeVisible();
+      await row.click();
+      const panel = page.getByRole("dialog", { name: "Hedef", exact: true });
+      await expect(panel).toContainText("12.400 / 50.000 token");
+      const padding = await panel.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return Math.min(
+          ...[style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft].map(
+            parseFloat,
+          ),
+        );
+      });
+      expect(padding).toBeGreaterThanOrEqual(8);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await mkdir("temp/verification/codex-goal-row", { recursive: true });
+      await mkdir("temp/verification/codex-goal-popover", { recursive: true });
       await page.screenshot({
-        path: `temp/verification/codex-goal-row/${dark ? "dark" : "light"}-${width}.png`,
+        path: `temp/verification/codex-goal-popover/${dark ? "dark" : "light"}-${width}.png`,
       });
-      await page.getByRole("button", { name: "Hedefe devam et", exact: true }).click();
-      await expect(row).toContainText("Hedef üzerinde çalışılıyor");
+      await panel.getByRole("button", { name: "Duraklat", exact: true }).click();
+      await expect(row).toHaveAttribute("data-provider-goal", "paused");
+      await panel.getByRole("button", { name: "Hedefe devam et", exact: true }).click();
+      await expect(row).toHaveAttribute("data-provider-goal", "active");
       await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue(
         "Taslağım burada kalmalı.",
       );
-      await page.getByRole("button", { name: "Hedefi temizle", exact: true }).click();
+      await panel.getByRole("button", { name: "Hedefi temizle", exact: true }).click();
       await expect(row).toHaveCount(0);
       await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue(
         "Taslağım burada kalmalı.",
@@ -42,11 +50,21 @@ test("goal commands stay locked during work and long objectives remain readable"
 }) => {
   await page.goto("/tests/browser/chat/chat-chrome.html?goal=blocked&busy&long");
   const row = page.locator("[data-provider-goal]");
-  await expect(row).toContainText("Goal blocked");
-  await expect(page.getByRole("button", { name: "Resume goal", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Clear goal", exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: "Show more", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Show less", exact: true })).toBeVisible();
+  await row.click();
+  const panel = page.getByRole("dialog", { name: "Goal", exact: true });
+  await expect(panel).toContainText("Goal blocked");
+  await expect(panel).toContainText(
+    "Codex did not provide a reason for this goal's blocked state.",
+  );
+  await expect(panel.getByRole("button", { name: "Resume goal", exact: true })).toBeDisabled();
+  const clear = panel.getByRole("button", { name: "Clear goal", exact: true });
+  await expect(clear).toBeDisabled();
+  await clear.scrollIntoViewIfNeeded();
+  await expect(clear).toBeInViewport();
+  await expect(panel).toContainText("Hesapları ve seçili modeli doğrula");
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await expect(row).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 

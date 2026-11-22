@@ -450,6 +450,15 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "technical language terminal developer file editor teknik dil geliştirici",
   },
   {
+    id: "remote-media",
+    section: "general",
+    get label() {
+      return t("Remote media");
+    },
+    keywords:
+      "video audio stream play download data saver connected machine remote file uzak medya izle indir veri tasarrufu",
+  },
+  {
     id: "hidden-project-groups",
     section: "groupLock",
     get label() {

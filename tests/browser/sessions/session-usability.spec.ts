@@ -12,7 +12,9 @@ for (const light of [true, false])
       const firstRecent = transcript.locator('[data-transcript-turn="history-12"]');
       const firstOld = transcript.locator('[data-transcript-turn="history-0"]');
       const loading = transcript.getByText("Loading earlier messages…");
-      const folder = "temp/verification/transcript-history";
+      const rail = page.getByRole("toolbar", { name: "Prompts", exact: true });
+      const marker = rail.locator('[data-prompt-bar="history-12"]');
+      const folder = "temp/verification/prompt-outline-prepend";
       const name = `${light ? "light" : "dark"}-${width}`;
       await expect(transcript.getByText("Response 16", { exact: true })).toBeVisible();
       await expect(firstOld).toHaveCount(0);
@@ -22,6 +24,7 @@ for (const light of [true, false])
       await expect(loading).toBeVisible();
       await expect.poll(() => transcript.evaluate((element) => element.scrollTop)).toBe(0);
       const before = (await firstRecent.boundingBox())!.y;
+      const markerBefore = width === 1280 ? (await marker.boundingBox())!.y : null;
       await page.screenshot({ path: `${folder}/loading-${name}.png` });
       await page.evaluate(() => window.sessionUsability.finishHistoryPage());
       await expect(firstOld).toHaveCount(1);
@@ -31,6 +34,19 @@ for (const light of [true, false])
         .poll(async () => Math.abs((await firstRecent.boundingBox())!.y - before))
         .toBeLessThan(2);
       await page.screenshot({ path: `${folder}/loaded-${name}.png` });
+      if (markerBefore !== null) {
+        await expect(marker).toHaveAttribute("aria-current", "true");
+        await expect
+          .poll(async () => Math.abs((await marker.boundingBox())!.y - markerBefore))
+          .toBeLessThan(2);
+        await transcript.hover();
+        await page.mouse.wheel(0, -2400);
+        await expect(rail.locator('[data-prompt-bar="history-0"]')).toHaveAttribute(
+          "aria-current",
+          "true",
+        );
+        await page.screenshot({ path: `${folder}/earlier-${name}.png` });
+      } else await expect(rail).toBeHidden();
     });
 
 for (const light of [true, false])
@@ -40,7 +56,29 @@ for (const light of [true, false])
       await page.goto(
         `/tests/browser/sessions/session-usability.html?reviewFixture${light ? "&light" : ""}`,
       );
+      await page.addStyleTag({
+        content:
+          ".agent-transcript { background-image: radial-gradient(ellipse at 70% 25%, var(--ui-tone-info-subtle), transparent 75%); }",
+      });
       await expect(page.locator("[data-session-review]")).toContainText("Changed 1 file");
+      const review = page.getByRole("button", { name: "Review", exact: true });
+      const undo = page.getByRole("button", { name: "Undo", exact: true });
+      await expect(undo).toBeDisabled();
+      await expect(undo).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      const undoSurface = page.locator("[data-session-review-actions] [data-ui-focus-group] > div");
+      const file = page.locator(".agent-markdown code").filter({ hasText: "src/example.ts" });
+      await expect(file).toBeVisible();
+      for (const [name, control] of Object.entries({ review, undoSurface, file })) {
+        const alpha = await control.evaluate((element) => {
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d")!;
+          context.fillStyle = getComputedStyle(element).backgroundColor;
+          context.fillRect(0, 0, 1, 1);
+          return context.getImageData(0, 0, 1, 1).data[3];
+        });
+        expect(alpha, name).toBeGreaterThan(0);
+        expect(alpha, name).toBeLessThan(255);
+      }
       await page.screenshot({
         path: `temp/verification/sessions-callers/session-review-${light ? "light" : "dark"}-${width}.png`,
       });

@@ -57,9 +57,20 @@ async function render(state: Partial<CrewState>) {
   return refetch;
 }
 
+function visibleFailure(error: Error) {
+  return {
+    error,
+    visibleError: presentRemoteError(error, { graceExpired: true }),
+    errorDetails: error.message,
+  };
+}
+
 it("hands an uninitialized remote query failure to the common notice without an empty success state", async () => {
   const error = new Error("Machine is unreachable");
-  await render({ error });
+  await render({ error, pendingFailure: true });
+  expect(container.textContent).not.toContain("Not connected");
+  expect(reportRemoteConnection).toHaveBeenCalledWith(cwd, "crews", error);
+  await render(visibleFailure(error));
   expect(container.textContent).toContain("Not connected");
   expect(container.textContent).not.toContain("Retry");
   expect(reportRemoteConnection).toHaveBeenCalledWith(cwd, "crews", error);
@@ -94,7 +105,7 @@ it("keeps a service failure and its local retry even with an empty cached collec
   const data = { definitions: [], runs: [] } as unknown as NonNullable<CrewState["data"]>;
   const refetch = await render({
     data,
-    error: new Error("Host rejected request: Crew storage unavailable"),
+    ...visibleFailure(new Error("Host rejected request: Crew storage unavailable")),
   });
   const retry = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Try again",
@@ -108,8 +119,10 @@ it("keeps a service failure and its local retry even with an empty cached collec
 it("retains standalone connection retry when no common owner is mounted", async () => {
   feedback.coordinated = false;
   const error = new Error("Machine is unreachable");
-  await render({ error });
-  expect(container.textContent).toContain(presentRemoteError(error, { explicit: true }));
+  await render({ error, pendingFailure: true });
+  expect(container.textContent).not.toContain("Try again");
+  await render(visibleFailure(error));
+  expect(container.textContent).toContain(presentRemoteError(error, { graceExpired: true }));
   expect(container.textContent).toContain("Try again");
   expect(container.textContent).not.toContain("Not connected");
 });
@@ -117,10 +130,11 @@ it("retains standalone connection retry when no common owner is mounted", async 
 it("shows the presented Host failure as visible text and keeps the raw message behind Details", async () => {
   const raw = "Host rejected request: Crew storage unavailable";
   const data = { definitions: [], runs: [] } as unknown as NonNullable<CrewState["data"]>;
-  const refetch = await render({ data, error: new Error(raw) });
-  const presented = presentRemoteError(new Error(raw), { explicit: true });
+  const failure = visibleFailure(new Error(raw));
+  const refetch = await render({ data, ...failure });
   // The visible sentence is the presented reason, not a button label or tooltip.
-  expect(container.textContent).toContain(presented);
+  expect(container.textContent).toContain(failure.visibleError);
+  expect(container.textContent).not.toContain(raw);
   expect(container.querySelector("[title]")).toBeNull();
   // The raw Host text is one disclosure away, and the retry stays a named button.
   const details = [...container.querySelectorAll("button")].find(
@@ -158,7 +172,7 @@ it("keeps recovery inside Crew management's modal even when a shared notice prov
             createElement(CrewManagementDialog, {
               key: "dialog",
               cwd,
-              state: { error, refetch } as unknown as CrewState,
+              state: { ...(error ? visibleFailure(error) : { error }), refetch } as CrewState,
               onClose: vi.fn(),
             }),
           ],

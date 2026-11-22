@@ -9,6 +9,7 @@ import {
 } from "./LocalSessionReferenceContext";
 import { buildLocalSessionLink, type LocalSessionReference } from "../model/localSessionReference";
 import { NoteEditablePreview } from "../../notes/ui/NoteEditablePreview";
+import { TranscriptSessionId } from "./TranscriptSessionId";
 
 const openWeb = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("../../connections/model/workspaceUrls", () => ({ openWorkspaceUrl: openWeb }));
@@ -110,8 +111,37 @@ describe("local references in the actual Markdown pipeline", () => {
     expect(host.querySelectorAll("[data-local-session-reference]")).toHaveLength(0);
     expect(host.querySelector("code")?.textContent).toBe(href);
     await act(async () => host.querySelector<HTMLAnchorElement>("a")!.click());
-    expect(openWeb).toHaveBeenCalledWith(undefined, "https://example.com/path");
+    expect(openWeb).toHaveBeenCalledWith(undefined, "https://example.com/path", undefined);
     expect(navigation.open).not.toHaveBeenCalled();
+  });
+
+  it("passes the transcript conversation to markdown links and autolinks, not the selected one", async () => {
+    await act(async () =>
+      root.render(
+        createElement(TranscriptSessionId.Provider, {
+          value: "source-session",
+          children: createElement(AgentMarkdown, {
+            text: "[Web](https://example.com/path) https://example.com/auto",
+            cwd: "remote://windows-host/G:/workspace",
+          }),
+        }),
+      ),
+    );
+    const links = [...host.querySelectorAll<HTMLAnchorElement>("a")];
+    expect(links).toHaveLength(2);
+    for (const link of links) await act(async () => link.click());
+    expect(openWeb).toHaveBeenNthCalledWith(
+      1,
+      "remote://windows-host/G:/workspace",
+      "https://example.com/path",
+      "source-session",
+    );
+    expect(openWeb).toHaveBeenNthCalledWith(
+      2,
+      "remote://windows-host/G:/workspace",
+      "https://example.com/auto",
+      "source-session",
+    );
   });
 
   it("makes copied plain URIs actionable while retaining invalid targets and code as text", async () => {
@@ -176,6 +206,24 @@ describe("local references in the actual Markdown pipeline", () => {
     );
     expect(navigation.open).toHaveBeenCalledTimes(2);
     expect(host.textContent).not.toContain("Wrong local profile");
+  });
+
+  it("shows one open action for a subagent and routes to the referenced target", async () => {
+    vi.mocked(navigation.resolve).mockResolvedValueOnce({
+      title: "Backup target",
+      agentRole: "Subagent",
+      status: "Running",
+    });
+    await render(`[W21](${href})`);
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Session details"]')!.click(),
+    );
+    const dialog = document.querySelector('[role="dialog"][aria-label="Session details"]')!;
+    expect(dialog.textContent).toContain("Subagent · Running");
+    const buttons = [...dialog.querySelectorAll("button")];
+    expect(buttons.map((button) => button.textContent)).toEqual(["Open"]);
+    await act(async () => buttons[0].click());
+    expect(navigation.open).toHaveBeenCalledWith(reference, { beside: false });
   });
 
   it("guards repeated activation synchronously and keeps preview reads from cancelling opening feedback", async () => {

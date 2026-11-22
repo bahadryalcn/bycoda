@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 // Fixture evidence for the composer reading mode (V2-001). Captures are written
@@ -40,6 +40,451 @@ const scroller = (page: Page) => page.locator(".agent-transcript");
 const reading = (page: Page) => page.locator("[data-composer][data-composer-reading]");
 const field = (page: Page) => page.locator("[data-composer] textarea");
 
+test("selecting all with an inline skill keeps suggestions closed", async ({ page }) => {
+  for (const light of [false, true]) {
+    await page.goto(url({ inlineExamples: "repeated-pdf" }, light));
+    const editor = page.locator("[data-composer-inline-input]");
+    const picker = page.locator("[data-skill-picker]");
+    await expect(editor.locator('[data-inline-reference="skill"]')).toHaveText("ui-ux-pro-max");
+    const original = await field(page).inputValue();
+    await expect(picker).toBeHidden();
+
+    await editor.press("ControlOrMeta+a");
+    await expect
+      .poll(() =>
+        field(page).evaluate((input: HTMLTextAreaElement) => [
+          input.selectionStart,
+          input.selectionEnd,
+        ]),
+      )
+      .toEqual([0, original.length]);
+    await expect(picker).toBeHidden();
+    await expect(field(page)).toHaveValue(original);
+    await capture(page, `select-all-skill-${light ? "light" : "dark"}`);
+  }
+});
+
+test("cut and paste restores a PNG attachment inside the sentence", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Clipboard permissions are required");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(url({ clipboardRoundTrip: "" }));
+  const image = page.locator('[data-composer-inline-input] [data-inline-reference="attachment"]');
+  await expect(image).toHaveAccessibleName("Open image.png");
+  const original = await field(page).inputValue();
+  await field(page).evaluate((input: HTMLTextAreaElement) => {
+    input.focus();
+    input.select();
+  });
+  await page.keyboard.press("ControlOrMeta+x");
+  await expect(field(page)).toHaveValue("");
+  await expect(image).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(field(page)).toHaveValue(original);
+  await expect(image).toHaveAccessibleName("Open image.png");
+  await expect(page.locator("html")).toHaveAttribute("data-clipboard-image-bytes", "68");
+});
+
+test("inline composer cuts real file bytes and restores the reference on undo", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Clipboard permissions are required");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(url({ inlineExamples: "" }));
+  const editor = page.locator("[data-composer-inline-input]");
+  const csv = editor.locator("[data-inline-reference]").filter({ hasText: "bycoda-usage.csv" });
+  await expect(csv).toBeVisible();
+  const original = await field(page).inputValue();
+  await field(page).evaluate((input: HTMLTextAreaElement) => {
+    const token = /\[[^\]]*bycoda-usage\.csv[^\]]*\]/.exec(input.value)!;
+    input.focus();
+    input.setSelectionRange(token.index, token.index + token[0].length);
+  });
+  await page.keyboard.press("ControlOrMeta+c");
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const [item] = await navigator.clipboard.read();
+        return item?.types.includes("text/html") ? (await item.getType("text/html")).text() : "";
+      }),
+    )
+    .toContain('data-bycoda-file="bycoda-usage.csv"');
+  const html = await page.evaluate(async () => {
+    const [item] = await navigator.clipboard.read();
+    return (await item.getType("text/html")).text();
+  });
+  expect(html).toContain("data:text/csv;base64,ZmVhdHVyZSxldmVudHMKY29tcG9zZXIsMTI4");
+  await expect(csv).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+x");
+  await expect(csv).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(field(page)).toHaveValue(original);
+  await expect(csv).toBeVisible();
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+Shift+z" : "Control+y");
+  await expect(csv).toHaveCount(0);
+});
+
+test("the session composer renders all eight compact references in the editable line", async ({
+  page,
+}) => {
+  const evidence = "temp/verification/composer-compact-references";
+  mkdirSync(evidence, { recursive: true });
+  for (const [width, light] of [
+    [800, false],
+    [800, true],
+    [1280, false],
+    [1280, true],
+  ] as const) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(url({ inlineExamples: "" }, light));
+    const box = page.locator("[data-composer]");
+    const editor = box.locator("[data-composer-inline-input]");
+    const references = editor.locator("[data-inline-reference]");
+    await expect(references).toHaveCount(8);
+    await expect(editor.locator('[data-inline-reference="skill"]')).toHaveAttribute(
+      "spellcheck",
+      "false",
+    );
+    await expect(editor.locator('[data-inline-reference="group"]')).toHaveAttribute(
+      "spellcheck",
+      "false",
+    );
+    await expect(editor).toHaveAttribute("spellcheck", "true");
+    await expect(editor).toHaveCSS("font-family", /sans-serif/);
+    await expect(box.locator("[data-attachment-chip]")).toHaveCount(0);
+    await expect(references.locator(":scope > span")).toHaveText([
+      "image.png",
+      "Bahadir-Halay.pdf",
+      "bycoda-usage.csv",
+      "bycoda-export.json",
+      "PreviewTunnel.ts",
+      "github.com · t3code",
+      "ui-ux-pro-max",
+      "Design and polish interfaces",
+    ]);
+    expect(
+      await references.evaluateAll((chips) =>
+        chips.every((chip) => {
+          const style = getComputedStyle(chip);
+          const first = chip.firstElementChild!.getBoundingClientRect();
+          const last = chip.lastElementChild!.getBoundingClientRect();
+          const rect = chip.getBoundingClientRect();
+          return style.paddingInline === "5px" && rect.width - (last.right - first.left) <= 12.5;
+        }),
+      ),
+    ).toBe(true);
+    await box.screenshot({
+      path: `${evidence}/${light ? "light" : "dark"}-${width}.png`,
+      animations: "disabled",
+    });
+
+    if (width !== 800 || light) continue;
+    await editor.getByRole("button", { name: "Open PreviewTunnel.ts" }).click();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-composer-opened-file",
+      "/fixture/src/PreviewTunnel.ts",
+    );
+    await editor.getByRole("link", { name: "https://github.com/pingdotgg/t3code" }).click();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-composer-opened-url",
+      "https://github.com/pingdotgg/t3code",
+    );
+    await editor.getByRole("link", { name: "https://github.com/pingdotgg/t3code" }).press("F2");
+    await expect(editor).toContainText("https://github.com/pingdotgg/t3code");
+    await page.keyboard.press("Control+End");
+    await expect(references).toHaveCount(8);
+
+    await editor.getByRole("button", { name: "Open image.png" }).click();
+    await expect(page.getByRole("dialog").locator("img")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await editor.getByRole("button", { name: "Open bycoda-usage.csv" }).click();
+    await expect(page.getByRole("dialog").getByText("composer", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await editor.getByRole("button", { name: "Design and polish interfaces" }).click();
+    await expect(page.getByRole("dialog", { name: "Design and polish interfaces" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await editor.focus();
+    await page.keyboard.press("Control+Home");
+    await page.keyboard.type("Not: ");
+    await expect(field(page)).toHaveValue(/^Not: Önce /);
+    await page.keyboard.press("Control+z");
+    await expect(field(page)).toHaveValue(/^Önce /);
+    await expect(references).toHaveCount(8);
+
+    const client = await page.context().newCDPSession(page);
+    await page.keyboard.press("Control+End");
+    await client.send("Input.imeSetComposition", {
+      text: "入力",
+      selectionStart: 2,
+      selectionEnd: 2,
+    });
+    await client.send("Input.insertText", { text: "入力" });
+    await expect(field(page)).toHaveValue(/入力$/);
+    await expect(references).toHaveCount(8);
+    await client.detach();
+    await editor
+      .getByRole("button", { name: "Open bycoda-export.json" })
+      .click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Remove bycoda-export.json" }).click();
+    await expect(references).toHaveCount(7);
+    await expect(field(page)).not.toHaveValue(/bycoda-export\.json/);
+  }
+});
+test("repeated PDF references use their intrinsic width with small padding", async ({ page }) => {
+  const evidence = "temp/verification/composer-repeat-pdf";
+  mkdirSync(evidence, { recursive: true });
+  for (const width of [800, 1280]) {
+    for (const light of [false, true]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ inlineExamples: "repeated-pdf" }, light));
+      const box = page.locator("[data-composer]");
+      const editor = box.locator("[data-composer-inline-input]");
+      const pdfs = editor.getByRole("button", { name: "Open Detailed-project-report-tr (1).pdf" });
+      await expect(pdfs).toHaveCount(2);
+      await expect(editor.locator('[data-inline-reference="skill"]')).toHaveText("ui-ux-pro-max");
+      await expect(box.locator("[data-attachment-chip]")).toHaveCount(0);
+      for (const pdf of await pdfs.all()) {
+        await expect(pdf).toHaveText("Detailed-project-report-tr (1).pdf71 KB");
+        await expect(pdf).toHaveCSS("padding-inline", "5px");
+        const extraWidth = await pdf.evaluate((chip) => {
+          const icon = chip.firstElementChild!.getBoundingClientRect();
+          const size = chip.lastElementChild!.getBoundingClientRect();
+          return chip.getBoundingClientRect().width - (size.right - icon.left);
+        });
+        expect(extraWidth).toBeCloseTo(12, 0);
+      }
+      await box.screenshot({ path: `${evidence}/${light ? "light" : "dark"}-${width}.png` });
+    }
+  }
+});
+test("shows the complete attached filename in the card and inline while writing", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.goto(url({ attach: "" }));
+  const input = field(page);
+  await input.fill("I wrote this first. Review ");
+  const box = page.locator("[data-composer]");
+  const name = box
+    .locator('[data-attachment-chip="file"]')
+    .getByText("draft-context.txt", { exact: true });
+  await expect(name).toBeVisible();
+  expect(await name.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await box.getByRole("button", { name: /^Insert .* into the message$/ }).click();
+  const editor = box.locator("[data-composer-inline-input]");
+  const label = editor.locator('[data-inline-reference="attachment"] > span');
+  await expect(label).toBeVisible();
+  await expect(label).toHaveText("draft-context.txt");
+  await expect(box.locator("[data-attachment-chip]")).toHaveCount(0);
+  expect(await label.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await expect(editor).toBeFocused();
+  await editor.pressSequentially(" and reply.");
+  await expect(input).toHaveValue(/and reply\.$/);
+});
+test("wraps a long attached filename on narrow layouts without losing characters", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  const filename = `${"very-long-export-".repeat(10)}report.txt`;
+  await page.goto(url({ attach: filename, draft: "legacyFile" }));
+  const box = page.locator("[data-composer]");
+  const label = box.locator('[data-inline-reference="attachment"] > span');
+  await expect(label).toBeVisible();
+  await expect(label).toHaveText(filename);
+  expect(await label.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  expect(await box.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await expect(
+    box.getByRole("button", { name: `Open ${filename}`, exact: true }).first(),
+  ).toBeVisible();
+});
+test("skill panels match the composer and keep their actions visible", async ({ page }) => {
+  for (const light of [false, true]) {
+    for (const width of [800, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ inlineExamples: "skill-panels" }, light));
+      const box = page.locator("[data-composer-box]");
+      const editor = box.locator("[data-composer-inline-input]");
+      const composerMaterial = await box.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { fill: style.backgroundColor, filter: style.backdropFilter };
+      });
+      const checkMaterial = async (panel: Locator) => {
+        const surface = panel.locator(':scope > [aria-hidden="true"]');
+        await expect(surface).toHaveCSS("background-color", composerMaterial.fill);
+        await expect(surface).toHaveCSS("backdrop-filter", composerMaterial.filter);
+      };
+      await editor.getByRole("button", { name: "ui-ux-pro-max", exact: true }).click();
+      const details = page.getByRole("dialog", { name: "ui-ux-pro-max" });
+      const openFile = details.getByRole("button", { name: "Open SKILL.md" });
+      await expect(openFile).toBeVisible();
+      await capture(page, `skill-details-${light ? "light" : "dark"}-${width}`);
+      await expect(openFile).toHaveAttribute("data-button-variant", "secondary");
+      await checkMaterial(details.locator(".."));
+      await openFile.click();
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-composer-opened-file",
+        "/fixture/.claude/skills/ui-ux-pro-max/SKILL.md",
+      );
+      await editor.focus();
+      await page.keyboard.press("Control+End");
+      await page.keyboard.type(" /");
+      const list = page.getByRole("listbox", { name: "Commands and skills" });
+      const create = page.getByRole("button", { name: "New skill", exact: true });
+      await expect(list).toBeVisible();
+      await expect(create).toBeVisible();
+      await capture(page, `skill-picker-${light ? "light" : "dark"}-${width}`);
+      await expect(create).toHaveAttribute("data-button-variant", "secondary");
+      const panel = list.locator("xpath=ancestor::*[@data-popover-side][last()]");
+      await checkMaterial(panel);
+      await expect
+        .poll(async () => {
+          const panelBounds = await panel.boundingBox();
+          const boxBounds = await box.boundingBox();
+          if (!panelBounds || !boxBounds) return Infinity;
+          return Math.max(
+            Math.abs(panelBounds.width - boxBounds.width),
+            Math.abs(panelBounds.x - boxBounds.x),
+          );
+        })
+        .toBeLessThanOrEqual(1);
+      await list.getByRole("option").last().scrollIntoViewIfNeeded();
+      await expect(create).toBeInViewport({ ratio: 1 });
+    }
+  }
+});
+
+test("opens references from the real session composer in both themes and widths", async ({
+  page,
+}) => {
+  const evidence = "temp/verification/composer-compact-references";
+  mkdirSync(evidence, { recursive: true });
+  for (const light of [true, false]) {
+    for (const width of [800, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ attach: "", draft: "legacyFile" }, light));
+      const input = field(page);
+      const draft =
+        "I wrote this first. Review [File\u00a01\u00a0·\u00a0draft-context.txt\u00a0·\u00a07\u00a0B] and https://example.com/design";
+      await expect(input).toHaveValue(draft);
+      const references = page.locator("[data-composer-inline-input]");
+      const file = references.getByRole("button", { name: "Open draft-context.txt" });
+      await expect(file).toHaveCSS("cursor", "pointer");
+      await expect(
+        references.getByRole("link", { name: "https://example.com/design" }),
+      ).toBeVisible();
+      await file.click();
+      await expect(page.getByRole("dialog").getByText("context", { exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(file).toBeFocused();
+      await expect(input).toHaveValue(draft);
+      await page.mouse.move(0, 0);
+      await page.locator("[data-composer]").screenshot({
+        path: `${evidence}/session-${light ? "light" : "dark"}-${width}.png`,
+        animations: "disabled",
+      });
+    }
+  }
+});
+const expectedMessageFill = (node: Locator, opacity: number, opaque = false) =>
+  node.evaluate(
+    (element, { opacity, opaque }) => {
+      const sample = document.createElement("span");
+      sample.style.background = opaque
+        ? "var(--ui-chat-message-color)"
+        : `color-mix(in oklab, var(--ui-chat-message-color) ${opacity}%, transparent)`;
+      element.append(sample);
+      const fill = getComputedStyle(sample).backgroundColor;
+      sample.remove();
+      return fill;
+    },
+    { opacity, opaque },
+  );
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`chat message surfaces and Working ${light ? "light" : "dark"} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ goal: "" }, light));
+      await page.evaluate(() => {
+        const root = document.documentElement;
+        root.classList.add(
+          "has-chat-background",
+          "chat-background-effect-ready",
+          "has-user-accent",
+        );
+        root.style.setProperty(
+          "--chat-background-image",
+          "radial-gradient(currentColor 1px, transparent 1px), linear-gradient(120deg, #234368, #284c46)",
+        );
+        root.style.setProperty("--chat-background-session-opacity", "0.65");
+      });
+      const box = page.locator("[data-composer-box]");
+      const dock = page.locator('[data-activity-dock="working"]');
+      const message = page.locator('[data-prompt-anchor="user-39"] .user-message-bubble');
+      const reply = page.locator('[data-selectable-agent-response="reply-39"]');
+      await expect(dock).toBeVisible();
+      await expect(box).toBeVisible();
+      await expect(message).toBeInViewport();
+      await expect(reply).toBeInViewport();
+      await capture(page, `user-message-working-${light ? "light" : "dark"}-${width}`);
+
+      for (const mode of ["glass", "no-blur", "streaming", "forced-colors"] as const) {
+        await page.emulateMedia({ forcedColors: mode === "forced-colors" ? "active" : "none" });
+        await page.evaluate((state) => {
+          document.documentElement.toggleAttribute("data-performance-no-blur", state === "no-blur");
+          const pane = document.querySelector(".chat-pane-background")!;
+          if (state === "streaming") pane.setAttribute("data-session-streaming", "true");
+          else pane.removeAttribute("data-session-streaming");
+        }, mode);
+        const working = await dock.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { fill: style.backgroundColor, filter: style.backdropFilter };
+        });
+        await expect(box).toHaveCSS("background-color", working.fill);
+        await expect(box).toHaveCSS("backdrop-filter", working.filter);
+        for (const [node, opacity] of [
+          [message, 42],
+          [reply, 26],
+        ] as const) {
+          await expect(node).toHaveCSS("backdrop-filter", working.filter);
+          await expect(node).toHaveCSS(
+            "background-color",
+            await expectedMessageFill(node, opacity, mode === "forced-colors"),
+          );
+        }
+      }
+    });
+
+test("saved chat message appearance reaches the real transcript", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "bycoda.appearancePreferences.v1",
+      JSON.stringify({
+        userMessageOpacity: 100,
+        assistantMessageOpacity: 0,
+        messageColor: "neutral",
+      }),
+    );
+  });
+  await page.goto(url());
+  const root = page.locator("html");
+  const message = page.locator('[data-prompt-anchor="user-39"] .user-message-bubble');
+  const reply = page.locator('[data-selectable-agent-response="reply-39"]');
+  await expect(root).toHaveAttribute("data-chat-message-color", "neutral");
+  await expect(root).toHaveAttribute("data-chat-assistant-surface-off", "");
+  await expect(reply).toHaveCSS("backdrop-filter", "none");
+  await expect(message).toHaveCSS("background-color", await expectedMessageFill(message, 100));
+  await expect(reply).toHaveCSS("background-color", await expectedMessageFill(reply, 0));
+});
+
 for (const light of [true, false])
   for (const width of [800, 1280])
     test(`composer workspace stays transparent ${light ? "light" : "dark"} ${width}`, async ({
@@ -59,11 +504,20 @@ for (const light of [true, false])
 
 for (const light of [true, false])
   for (const width of [800, 1280])
-    test(`composer and question glass fallback ${light ? "light" : "dark"} ${width}`, async ({
+    test(`composer and question translucency ${light ? "light" : "dark"} ${width}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(url({ "docked-question": "" }, light));
+      await page.evaluate(() => {
+        const root = document.documentElement;
+        root.classList.add("has-chat-background", "chat-background-effect-ready");
+        root.style.setProperty(
+          "--chat-background-image",
+          "linear-gradient(120deg, oklch(55% 0.18 255), oklch(70% 0.17 170))",
+        );
+        root.style.setProperty("--chat-background-session-opacity", "0.65");
+      });
       const box = page.locator("[data-composer-box]");
       const question = page.locator("[data-question-form] > form");
       await expect(question).toBeVisible();
@@ -72,30 +526,31 @@ for (const light of [true, false])
         await page.emulateMedia({ forcedColors: mode === "forced-colors" ? "active" : "none" });
         await page.evaluate((state) => {
           document.documentElement.toggleAttribute("data-performance-no-blur", state === "no-blur");
-          const session = document.querySelector("[data-composer]");
-          session?.toggleAttribute("data-session-streaming", state === "streaming");
+          const session = document.querySelector(".chat-pane-background");
+          session?.removeAttribute("data-session-streaming");
           if (state === "streaming") session?.setAttribute("data-session-streaming", "true");
         }, mode);
         for (const node of [box, question]) {
           const actual = await node.evaluate((element) => {
             const s = getComputedStyle(element);
-            const probe = document.createElement("span");
-            element.appendChild(probe);
-            probe.style.background = "var(--ui-composer-surface)";
-            const opaque = getComputedStyle(probe).backgroundColor;
-            probe.remove();
-            return { background: s.backgroundColor, filter: s.backdropFilter, opaque };
+            const sample = document.createElement("canvas").getContext("2d")!;
+            sample.fillStyle = s.backgroundColor;
+            sample.fillRect(0, 0, 1, 1);
+            return { alpha: sample.getImageData(0, 0, 1, 1).data[3]!, filter: s.backdropFilter };
           });
-          // Glass was dropped (DECISIONS-LOG): every mode paints the one opaque composer surface.
-          expect(actual.background, `${mode} ${node === box ? "composer" : "question"}`).toBe(
-            actual.opaque,
-          );
-          expect(actual.filter).toBe("none");
+          expect(actual.alpha).toBeGreaterThan(0);
+          if (mode === "glass") {
+            expect(actual.alpha).toBeLessThan(255);
+            expect(actual.filter).toContain("blur(");
+          } else {
+            expect(actual.alpha).toBe(255);
+            expect(actual.filter).toBe("none");
+          }
         }
         await expect(field(page)).toHaveValue("Retained composer draft");
         await page.screenshot({
           animations: "disabled",
-          path: `temp/verification/feature-controls/composer-question-${mode}-${light ? "light" : "dark"}-${width}.png`,
+          path: `temp/verification/composer-translucency/${test.info().project.name}/composer-question-${mode}-${light ? "light" : "dark"}-${width}.png`,
         });
       }
     });

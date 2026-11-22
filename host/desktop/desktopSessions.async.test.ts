@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { fork } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +7,8 @@ import { join, resolve, dirname, basename } from "node:path";
 import { DesktopSessions } from "./desktopSessions";
 import { DesktopLive } from "./desktopLive";
 import { AsyncHostNotes } from "../host-notes-async";
+
+vi.mock("node:child_process", { spy: true });
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -103,6 +106,35 @@ it("does not block a main-thread timer and uses a heartbeat arriving during a lo
   expect(value.sessions[0].title).toBe("committed after lock");
   expect(value.sessions[0].status).toBe("running");
   expect(desktop.opened).toBe(0);
+});
+
+it("reads project cwd through the shared metadata worker with a signal and no fork", async () => {
+  const { desktop, cwd } = fixture();
+  vi.mocked(fork).mockClear();
+  const controller = new AbortController();
+  const lookup = desktop.projectCwdAsync("visible", controller.signal);
+  const shared = desktop.projectCwdAsync("visible", new AbortController().signal);
+  controller.abort();
+  await expect(lookup).rejects.toThrow("cancelled");
+  await expect(shared).resolves.toBe(cwd);
+  await expect(desktop.projectCwdAsync("visible", controller.signal)).rejects.toThrow("cancelled");
+  expect(vi.mocked(fork).mock.calls.length).toBe(0);
+  expect(desktop.opened).toBe(0);
+});
+
+it("bounds a stuck project cwd lookup at 30 seconds with a clear error", async () => {
+  vi.useFakeTimers();
+  try {
+    const { desktop } = fixture();
+    vi.spyOn(desktop, "metadataAsync").mockReturnValue(new Promise(() => undefined));
+    const lookup = desktop.projectCwdAsync("visible");
+    const rejected = expect(lookup).rejects.toThrow("timed out");
+    await vi.advanceTimersByTimeAsync(29_999);
+    await vi.advanceTimersByTimeAsync(1);
+    await rejected;
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("runs stamp, queue metadata, canonical project and complete snapshot reads off the request thread", async () => {

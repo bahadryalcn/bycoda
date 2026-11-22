@@ -60,7 +60,7 @@ function Fixture() {
             kontrol ediyorum.
           </Text>
         </div>
-        <div className="mx-auto w-full max-w-4xl p-4">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-1 p-4">
           {params.has("busy") ? (
             <Text size="caption" tone="secondary" className="px-4 py-2">
               Working · 3 running
@@ -75,9 +75,8 @@ function Fixture() {
             }}
             onCommand={(command) => {
               if (params.has("reject")) return false;
-              setGoal(
-                command === "/goal clear" ? undefined : goal && { ...goal, status: "active" },
-              );
+              const status = command === "/goal pause" ? "paused" : "active";
+              setGoal(command === "/goal clear" ? undefined : goal && { ...goal, status });
               return true;
             }}
           />

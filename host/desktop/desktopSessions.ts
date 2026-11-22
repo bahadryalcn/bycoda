@@ -63,16 +63,26 @@ export function desktopDatabasePaths(
   platform: NodeJS.Platform = process.platform,
   home = homedir(),
 ): string[] {
+  return selectDesktopDatabases(env, platform, home, existsSync);
+}
+
+/** The selection rules behind `desktopDatabasePaths`; `exists` is their only disk access. */
+function selectDesktopDatabases(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+  home: string,
+  exists: (file: string) => boolean,
+): string[] {
   const override = env.BYCODA_DESKTOP_DB;
   if (override)
     return override
       .split(delimiter)
       .filter(Boolean)
-      .filter((p) => existsSync(p));
+      .filter((p) => exists(p));
   // An isolated development run keeps its desktop data under its own identifier. Its Host
   // reads that database only: never the installed app's, and not another run's.
   const isolated = env.BYCODA_DESKTOP_DATA_DIR;
-  if (isolated) return [join(isolated, DATABASE)].filter((p) => existsSync(p));
+  if (isolated) return [join(isolated, DATABASE)].filter((p) => exists(p));
   const base =
     platform === "win32"
       ? env.APPDATA || join(home, "AppData", "Roaming")
@@ -81,14 +91,56 @@ export function desktopDatabasePaths(
         : env.XDG_DATA_HOME || join(home, ".local", "share");
   const release = join(base, RELEASE_IDENTIFIER, DATABASE);
   const dev = join(base, DEV_IDENTIFIER, DATABASE);
-  const found = existsSync(release) ? [release] : [];
+  const found = exists(release) ? [release] : [];
   // With no release database (a machine that only runs the dev app) the dev
   // database is the only session source, so it is read either way.
-  if ((found.length === 0 || includesDevDatabase(env)) && existsSync(dev)) found.push(dev);
+  if ((found.length === 0 || includesDevDatabase(env)) && exists(dev)) found.push(dev);
   return found;
 }
 
-let pathsCache: { key: string; at: number; value: string[] } | undefined;
+/** Same selection as `desktopDatabasePaths()` with its existence checks made on the libuv
+ * pool. Pass one records every file the selection would check (with none present, it checks
+ * the dev database too); pass two applies the real answers. */
+async function desktopDatabasePathsAsync(env: NodeJS.ProcessEnv): Promise<string[]> {
+  const platform = process.platform;
+  const home = homedir();
+  const checked = new Set<string>();
+  selectDesktopDatabases(env, platform, home, (file) => {
+    checked.add(file);
+    return false;
+  });
+  const present = new Set<string>();
+  await Promise.all(
+    [...checked].map((file) =>
+      stat(file).then(
+        () => present.add(file),
+        (error: NodeJS.ErrnoException) => {
+          if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+        },
+      ),
+    ),
+  );
+  return selectDesktopDatabases(env, platform, home, (file) => present.has(file));
+}
+
+const DATABASE_PATHS_TTL_MS = 3_000;
+/** The oldest answer ever served; past it the paths are recomputed instead of revalidated. */
+const DATABASE_PATHS_MAX_AGE_MS = 30_000;
+/** A stat that never returns must not hold `pathsRefresh` forever. */
+const REFRESH_TIMEOUT_MS = 5_000;
+let pathsCache:
+  | {
+      key: string;
+      validatedAt: number;
+      attemptedAt: number;
+      value: string[];
+      /** A candidate could not be checked (EACCES, EBUSY…): the answer is used for one TTL,
+       * then checked again, and it never counts as a validation. */
+      uncertain?: boolean;
+    }
+  | undefined;
+/** The one refresh in flight, if any. */
+let pathsRefresh: Promise<void> | undefined;
 
 /** One fingerprint part: identity, time and size of a file, or why it could not be read. */
 function statPart(file: string, value: Stats | unknown): string {
@@ -98,20 +150,102 @@ function statPart(file: string, value: Stats | unknown): string {
   return code === "ENOENT" || code === "ENOTDIR" ? "-" : `unavailable:${code ?? "unknown"}`;
 }
 
-/** `desktopDatabasePaths()` stats up to three files; watchers ask per tick. */
-function cachedDesktopDatabasePaths(): string[] {
-  const key = [
+/** `desktopDatabasePaths()` stats up to three files; watchers ask per tick. Stale-while-
+ * revalidate: after the first (synchronous) answer, an expired answer is served at once and
+ * refreshed off the main thread, so no request blocks on a stalled disk. An env change
+ * still recomputes synchronously. */
+const desktopPathsKey = () =>
+  [
     process.env.BYCODA_DESKTOP_DB,
     process.env.BYCODA_DESKTOP_DATA_DIR,
     process.env.APPDATA,
     process.env.XDG_DATA_HOME,
     devHostKey(process.env),
   ].join("\0");
+
+export function cachedDesktopDatabasePaths(): string[] {
+  const key = desktopPathsKey();
   const now = Date.now();
-  if (pathsCache?.key === key && now - pathsCache.at < 3_000) return pathsCache.value;
-  const value = desktopDatabasePaths();
-  pathsCache = { key, at: now, value };
-  return value;
+  // An answer older than the age bound is never served: a refresh that keeps failing or
+  // hanging must not pin a pre-install `[]` for the life of the Host.
+  const same = pathsCache?.key === key ? pathsCache : undefined;
+  if (!same || now - same.validatedAt >= DATABASE_PATHS_MAX_AGE_MS) {
+    // An uncertain answer is reused for one TTL instead of re-statting on every call.
+    if (same?.uncertain && now - same.attemptedAt < DATABASE_PATHS_TTL_MS) return same.value;
+    let uncertain = false;
+    const value = selectDesktopDatabases(process.env, process.platform, homedir(), (file) => {
+      try {
+        statSync(file);
+        return true;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        // One unreadable candidate does not hide the others; it reads as absent for now.
+        if (code !== "ENOENT" && code !== "ENOTDIR") uncertain = true;
+        return false;
+      }
+    });
+    pathsCache = {
+      key,
+      validatedAt: uncertain ? (same?.validatedAt ?? 0) : now,
+      attemptedAt: now,
+      value,
+      uncertain,
+    };
+    return value;
+  }
+  if (now - same.attemptedAt >= DATABASE_PATHS_TTL_MS && !pathsRefresh)
+    refreshDesktopDatabasePaths(same);
+  return same.value;
+}
+
+/** Async callers: the cached answer while it is young, else a fresh one made off the main thread. */
+export async function desktopDatabasePathsFresh(): Promise<string[]> {
+  const cached = pathsCache;
+  const key = desktopPathsKey();
+  if (cached?.key === key && Date.now() - cached.validatedAt < DATABASE_PATHS_MAX_AGE_MS)
+    return cachedDesktopDatabasePaths();
+  try {
+    const value = await withTimeout(desktopDatabasePathsAsync(process.env));
+    const now = Date.now();
+    // The environment changed meanwhile: answer for the new one.
+    if (desktopPathsKey() !== key) return cachedDesktopDatabasePaths();
+    if (pathsCache === cached) pathsCache = { key, validatedAt: now, attemptedAt: now, value };
+    return value;
+  } catch {
+    // Past the age bound nothing stale is served (a pre-install `[]` must not stick), and the
+    // disk that just stalled is not statted synchronously.
+    return [];
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("desktop database lookup timed out")),
+      REFRESH_TIMEOUT_MS,
+    );
+    timer.unref();
+    promise.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
+function refreshDesktopDatabasePaths(cached: NonNullable<typeof pathsCache>): void {
+  pathsRefresh = withTimeout(desktopDatabasePathsAsync(process.env))
+    .then(
+      (value) => {
+        if (pathsCache === cached) {
+          const now = Date.now();
+          pathsCache = { key: cached.key, validatedAt: now, attemptedAt: now, value };
+        }
+      },
+      () => {
+        // Keep the last good answer; retry after another TTL instead of on every call.
+        if (pathsCache === cached) cached.attemptedAt = Date.now();
+      },
+    )
+    .finally(() => {
+      pathsRefresh = undefined;
+    });
 }
 
 // One entry per project and provider set. A round over every project (110+
@@ -246,6 +380,7 @@ function userText(block: unknown): string {
  * machine. The desktop is the only writer; this never writes.
  */
 /** Resolves with the shared read, or rejects as soon as `signal` aborts; the read itself continues. */
+const PROJECT_CWD_DEADLINE_MS = 30_000;
 function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   const abort = () => new Error("Session read cancelled before completion.");
   if (signal.aborted) return Promise.reject(abort());
@@ -1163,23 +1298,25 @@ export class DesktopSessions {
   }
 
   async projectCwdAsync(id: string, signal?: AbortSignal): Promise<string | undefined> {
-    if (signal) {
-      const generation = this.metadataGeneration;
-      const record = await this.sessionReadProcesses.read<DesktopMetadataRecord | undefined>(
-        {
-          kind: "desktop",
-          paths: this.paths(),
-          platform: this.platform,
-          method: "metadata",
-          sessionId: id,
-        },
-        signal,
+    if (signal?.aborted) throw new Error("Session read cancelled before completion.");
+    const generation = this.metadataGeneration;
+    const work = this.metadataAsync(id);
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error("Session project folder lookup timed out.")),
+        PROJECT_CWD_DEADLINE_MS,
       );
+      timer.unref();
+    });
+    try {
+      const record = await Promise.race([signal ? untilAborted(work, signal) : work, deadline]);
       this.assertReadGeneration(generation);
-      signal.throwIfAborted();
+      signal?.throwIfAborted();
       return record?.cwd;
+    } finally {
+      clearTimeout(timer);
     }
-    return (await this.metadataAsync(id))?.cwd;
   }
 
   /** Worker-only identity lookup. Reads existing origin identity; never initializes it. */

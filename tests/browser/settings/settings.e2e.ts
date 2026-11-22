@@ -2,6 +2,52 @@ import { test, expect, type Page } from "@playwright/test";
 
 for (const theme of ["dark", "light"])
   for (const width of [1280, 800]) {
+    test(`chat message appearance controls ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=en`,
+      );
+      await page.getByRole("button", { name: "Search settings", exact: true }).click();
+      const search = page.getByRole("combobox", { name: "Search settings", exact: true });
+      await search.fill("AI reply opacity");
+      await expect(page.getByRole("option").first()).toContainText("AI reply opacity");
+      await search.press("Enter");
+      const user = page.getByRole("slider", { name: "Your message opacity" });
+      const reply = page.getByRole("slider", { name: "AI reply opacity" });
+      const preview = page.locator("[data-chat-message-preview]");
+      const neutral = page
+        .locator('[data-setting-id="chat-message-color"]')
+        .getByRole("radio", { name: "Neutral", exact: true });
+      await expect(user).toHaveAttribute("aria-valuenow", "42");
+      await expect(reply).toHaveAttribute("aria-valuenow", "26");
+      await preview.scrollIntoViewIfNeeded();
+      if (process.env.CHAT_MESSAGE_APPEARANCE_CAPTURE) {
+        const directory = "temp/verification/chat-message-appearance";
+        mkdirSync(directory, { recursive: true });
+        await page.screenshot({ path: `${directory}/settings-${theme}-${width}.png` });
+      }
+      await user.press("End");
+      await reply.press("Home");
+      await neutral.click();
+      await expect(page.locator("html")).toHaveAttribute("data-chat-message-color", "neutral");
+      await expect(reply).toHaveAttribute("aria-valuenow", "0");
+      await expect(user).toHaveAttribute("aria-valuenow", "100");
+      await page.reload();
+      await page.getByRole("tab", { name: "Interface", exact: true }).click();
+      await expect(user).toHaveAttribute("aria-valuenow", "100");
+      await expect(reply).toHaveAttribute("aria-valuenow", "0");
+      await expect(neutral).toBeChecked();
+      await page
+        .locator('[data-setting-id="user-message-opacity"]')
+        .getByRole("button", { name: "Restore default" })
+        .click();
+      await expect(user).toHaveAttribute("aria-valuenow", "42");
+      await expect(reply).toHaveAttribute("aria-valuenow", "0");
+    });
+  }
+
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
     test(`appearance image review and replacement: ${theme} ${width}`, async ({ page }, info) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -368,11 +414,14 @@ for (const theme of ["light", "dark"])
       await expect(general.locator('[data-setting-id="technical-language"]')).toContainText(
         "Follow application language",
       );
-      // The header help states automatic saving once; groups no longer repeat it.
       await expect(general.getByText("Changes save automatically", { exact: true })).toHaveCount(0);
-      await page.getByRole("button", { name: "About this page", exact: true }).click();
-      await expect(page.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
+      const restoreDefaults = page.getByRole("button", { name: "Restore defaults", exact: true });
+      await restoreDefaults.press("Enter");
+      await expect(
+        page.getByRole("dialog", { name: "Restore defaults", exact: true }),
+      ).toBeVisible();
       await page.keyboard.press("Escape");
+      await expect(restoreDefaults).toBeFocused();
       await expect(general.locator(".general-about-value")).toBeVisible();
       const overflows = await general.evaluate((root) =>
         [
@@ -398,6 +447,58 @@ for (const theme of ["light", "dark"])
     });
   }
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`appearance dialog header aligns its actions: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?dialog=1&section=appearance&theme=${theme}&lang=en`,
+      );
+      await page.getByTestId("open-settings").click();
+      const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+      await dialog.getByRole("tab", { name: "Background", exact: true }).click();
+      const evidence = "temp/verification/settings-header";
+      mkdirSync(evidence, { recursive: true });
+      await dialog.screenshot({ path: `${evidence}/appearance-${theme}-${width}.png` });
+
+      const close = (await dialog
+        .getByRole("button", { name: "Close", exact: true })
+        .boundingBox())!;
+      for (const name of [
+        "Search settings",
+        "Preview in app",
+        "Reset all appearance settings",
+        "Maximize",
+      ]) {
+        const action = await dialog.getByRole("button", { name, exact: true }).boundingBox();
+        expect(action, name).not.toBeNull();
+        expect(
+          Math.abs(action!.y + action!.height / 2 - close.y - close.height / 2),
+          name,
+        ).toBeLessThanOrEqual(1);
+      }
+      const maximize = (await dialog
+        .getByRole("button", { name: "Maximize", exact: true })
+        .boundingBox())!;
+      expect(close.x - maximize.x - maximize.width).toBeLessThanOrEqual(8);
+      await expect(
+        dialog.getByRole("button", { name: "About this page", exact: true }),
+      ).toHaveCount(0);
+      const reset = dialog.getByRole("button", {
+        name: "Reset all appearance settings",
+        exact: true,
+      });
+      await reset.press("Enter");
+      const confirmation = page.getByRole("dialog", { name: "Restore defaults", exact: true });
+      await expect(confirmation).toBeVisible();
+      await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(reset).toBeFocused();
+      await expect(dialog.getByRole("tab", { name: "Background", selected: true })).toBeVisible();
+    });
+  }
+}
+
 test("appearance topics stay visible and support search into nested controls", async ({
   page,
 }, testInfo) => {
@@ -406,9 +507,6 @@ test("appearance topics stay visible and support search into nested controls", a
   const topics = page.getByRole("tablist", { name: "Appearance", exact: true }).getByRole("tab");
   await expect(topics).toHaveCount(5);
   await page.screenshot({ path: testInfo.outputPath("appearance-overview-dark.png") });
-  await page.getByRole("button", { name: "About this page", exact: true }).click();
-  await expect(page.getByText("Changes save automatically", { exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
   await openAppearanceTab(page, "Typography");
   await expect(page.locator('[data-setting-id="code-font-size"]')).toBeVisible();
   await expect(

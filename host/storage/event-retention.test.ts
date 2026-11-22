@@ -80,7 +80,7 @@ it("caps total event bytes by trimming the largest sessions' oldest revisions", 
   });
 });
 
-it("scans session sizes in short scopes that let queued database work interleave", async () => {
+it("scans session sizes in slices beside the writer so queued database work never waits", async () => {
   const sessions = Object.fromEntries(
     Array.from({ length: 20 }, (_, index) => [
       `s${String(index).padStart(2, "0")}`,
@@ -95,15 +95,15 @@ it("scans session sizes in short scopes that let queued database work interleave
     .prepare("SELECT COALESCE(SUM(octet_length(payload)),0) AS bytes FROM events")
     .get();
   const order: string[] = [];
-  const storeScope = store.db.storeScope.bind(store.db);
+  const readScope = store.db.readScope.bind(store.db);
   let probe: Promise<unknown> | undefined;
-  const spy = vi.spyOn(store.db, "storeScope").mockImplementation((work, options) => {
+  const spy = vi.spyOn(store.db, "readScope").mockImplementation((work, signal) => {
     // Queued behind the first slice, like a desktop request arriving mid-scan.
     probe ??= store.db
       .prepare("SELECT 1")
       .get()
       .then(() => order.push("probe"));
-    return storeScope(work, options);
+    return readScope(work, signal);
   });
   const result = await capEventsGlobally(store.db, checkpoint(store), { cap: 1e9 });
   order.push("scan");
@@ -114,9 +114,9 @@ it("scans session sizes in short scopes that let queued database work interleave
 
   // A stop between slices ends the pass before any trim decision on partial sizes.
   let slices = 0;
-  spy.mockImplementation((work, options) => {
+  spy.mockImplementation((work, signal) => {
     slices++;
-    return storeScope(work, options);
+    return readScope(work, signal);
   });
   const stopped = await capEventsGlobally(store.db, checkpoint(store), {
     cap: 0,

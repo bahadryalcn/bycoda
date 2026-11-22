@@ -209,6 +209,13 @@ pub(super) fn level_from_env(value: Option<&str>) -> LevelFilter {
         })
 }
 
+/// The updater plugin logs an error for every unreachable feed. The renderer already reports
+/// the failed check, and `app_update` logs an outage once, so the repeats are dropped here.
+pub(super) fn is_updater_outage_noise(target: &str, message: &str) -> bool {
+    target.starts_with("tauri_plugin_updater")
+        && message.starts_with("update endpoint did not respond with a successful status code")
+}
+
 impl Log for FileLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         // Dependencies stay at warnings; only this crate follows the configured level.
@@ -220,13 +227,12 @@ impl Log for FileLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
+        let message = record.args().to_string();
+        if is_updater_outage_noise(record.target(), &message) {
+            return;
+        }
         let now = time::OffsetDateTime::now_utc();
-        let mut line = format_line(
-            now,
-            record.level(),
-            record.target(),
-            &record.args().to_string(),
-        );
+        let mut line = format_line(now, record.level(), record.target(), &message);
         if self.echo {
             eprintln!("{line}");
         }

@@ -27,7 +27,8 @@ import {
   sessionsRef,
   subscribeSessionCommits,
 } from "../../../features/sessions/model/sessionsStore";
-import { createWorktree, listWorktrees } from "../../../features/source-control/model/worktrees";
+import { listWorktrees } from "../../../features/source-control/model/worktrees";
+import { createProjectWorktree } from "../../../features/source-control/model/remoteWorktrees";
 import type { useQuickSessionLaunch } from "../bridges/useQuickSessionLaunch";
 import type { useSessionDraftActions } from "../sessions/useSessionDraftActions";
 import type { useSessionLoading } from "../sessions/useSessionLoading";
@@ -894,7 +895,7 @@ export function useAppControlRequests({
           },
           worktrees: (cwd) => listWorktrees(cwd),
           createWorktree: (cwd, branch, base, existing) =>
-            createWorktree(cwd, branch, base, existing),
+            createProjectWorktree(cwd, branch, base, existing),
           notes: () => invoke("notes_list"),
           note: (id) => invoke("notes_get", { id }),
           saveNote: async (note) => {

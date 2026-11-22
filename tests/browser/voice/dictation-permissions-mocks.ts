@@ -72,7 +72,20 @@ export const localVoiceBackend = {
     return { state: "ready", config, requestedConfig: config };
   },
   setupStatus: async () => ({ state: "idle" }),
-  cloudStatus: async () => ({ elevenlabs: false }),
+  // `?cloud-key=saved|status-error` shows the saved and unreachable-status cloud key rows.
+  cloudStatus: async () => {
+    const state = new URLSearchParams(location.search).get("cloud-key");
+    if (state === "status-error") throw new Error("Synthetic key status failure");
+    return { elevenlabs: state === "saved", openrouter: state === "saved" };
+  },
+  setCloudKey: async (provider: string, key: string | null) => {
+    if (new URLSearchParams(location.search).get("cloud-key") === "save-error")
+      throw new Error("The key was rejected by the provider.");
+    return {
+      elevenlabs: provider === "elevenlabs" && key !== null,
+      openrouter: provider === "openrouter" && key !== null,
+    };
+  },
   transcriptionModels: async () => {
     const params = new URLSearchParams(location.search);
     if (params.get("catalog") === "loading")

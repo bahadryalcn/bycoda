@@ -275,6 +275,50 @@ describe("codex live turn sequence", () => {
     await stopCodexSession(sessionId);
   });
 
+  it("joins verified natural exit of the exact settled writer", async () => {
+    const sessionId = "codex-original-natural-exit";
+    const context = Object.freeze({ operation: Object.freeze({}) });
+    const { turn } = await startTurn(sessionId, { operationContext: context });
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await turn;
+    const original = processConstructions.created.find(
+      (process) => process.sessionId === sessionId,
+    );
+    let release!: () => void;
+    killChild.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    onExit?.(0);
+    let retired = false;
+    const retirement = retireOriginalCodexWriter(sessionId, context).then(() => {
+      retired = true;
+    });
+    void retirement.catch(() => {});
+    await waitFor(() => !!release, "exact exited construction settlement");
+    expect(retired).toBe(false);
+    release();
+    await retirement;
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "kill")
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
+    sent.length = 0;
+    const replacement = await startTurn(sessionId, { expectResume: true });
+    await expect(retireOriginalCodexWriter(sessionId, context)).rejects.toMatchObject({
+      reason: "original_unverified",
+    });
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "kill"),
+    ).toHaveLength(1);
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await replacement.turn;
+    await stopCodexSession(sessionId);
+  });
+
   it("keeps A observable while changed-cwd/policy B is queued and cancelled, then admits fresh C", async () => {
     const sessionId = "codex-queued-source-writer";
     const aControl = Object.freeze({}) as ControlTurnHandle,

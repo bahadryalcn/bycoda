@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Attachment } from "../model/session";
+import { attachmentDraftTokens } from "../model/attachmentTokens";
 import { ComposerAttachmentHighlight } from "./ComposerAttachmentHighlight";
 
 const files: Attachment[] = [
@@ -48,19 +49,15 @@ function render(text: string, attachments = files) {
 
 describe("ComposerAttachmentHighlight", () => {
   it("keeps every native character and decorates each resolved attachment type", async () => {
-    // The image keeps its legacy form; the files use the new one.
-    const text = `See [image1], ${tok("File", 1, "200 B")} and ${tok("File", 2, "300 B")}.\nKeep draft.`;
+    const [image, first, second] = attachmentDraftTokens(files);
+    const text = `See ${image}, ${first} and ${second}.\nKeep draft.`;
     render(text);
     expect(sourceText(container)).toBe(text);
     expect(
       [...container.querySelectorAll("[data-draft-token-face] > [aria-hidden]")].map(
         (face) => face.textContent,
       ),
-    ).toEqual([
-      "image1",
-      tok("File", 1, "200 B").slice(1, -1),
-      tok("File", 2, "300 B").slice(1, -1),
-    ]);
+    ).toEqual(["shot.png · 100 B", "notes.pdf · 200 B", "plan.md · 300 B"]);
     expect(
       [...container.querySelectorAll("[data-composer-attachment-kind]")].map((element) =>
         element.getAttribute("data-composer-attachment-kind"),
@@ -89,5 +86,21 @@ describe("ComposerAttachmentHighlight", () => {
     render("[image1]", []);
     expect(container.textContent).toBe("[image1]");
     expect(container.querySelector("[data-composer-attachment-kind]")).toBeNull();
+  });
+
+  it("opens a named marker only through its owning identity, even next to prose", () => {
+    const text = "Look[Image: shot.png; ref=image_image] and [Image: shot.png; ref=image_other]";
+    render(text);
+    expect(sourceText(container)).toBe(text);
+    expect(
+      container
+        .querySelector('[data-composer-reference="attachment"]')
+        ?.getAttribute("data-reference-value"),
+    ).toBe("image");
+    expect(
+      container
+        .querySelector('[data-composer-reference="missing"]')
+        ?.getAttribute("data-reference-value"),
+    ).toBe("shot.png");
   });
 });

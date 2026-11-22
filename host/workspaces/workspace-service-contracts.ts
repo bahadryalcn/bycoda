@@ -153,6 +153,7 @@ export interface WorkspaceRemovalService {
   apply(
     request: WorkspaceRpcRequest<"workspaces.cleanup.apply">,
     authority: WorkspaceOwnerAuthorization | { kind: "retentionScheduler" },
+    assertLease?: () => void,
   ): Promise<WorkspaceRpcResponse<"workspaces.cleanup.apply">>;
   status: WorkspaceRpcHandler<"workspaces.cleanup.status">;
   storageStatus: WorkspaceRpcHandler<"workspaces.storage.status">;

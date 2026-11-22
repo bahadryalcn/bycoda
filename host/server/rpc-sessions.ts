@@ -8,7 +8,8 @@ import {
   readAttachmentChunk,
   writeAttachmentChunk,
 } from "../attachments/attachments";
-import { measure } from "../diagnostics/perf-metrics";
+import { measure, syncDbTiming } from "../diagnostics/perf-metrics";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { ownerVoiceActivity } from "../desktop/desktop-voice-activity";
 import { assertDomainAuthority } from "../domains/context";
 import { type SessionQueueAction } from "../domains/sessions/queue-service";
@@ -754,6 +755,12 @@ export async function handleSessionsRpc(
         request.domainContext,
       );
       break;
+    case "sessions.inlineVisual":
+      request.result = await dependencies.sessionService.inlineVisual(
+        request.params,
+        request.domainContext,
+      );
+      break;
     case "sessions.get":
       request.result = await dependencies.sessionService.get(request.params, request.domainContext);
       break;
@@ -781,7 +788,7 @@ export async function handleSessionsRpc(
       const sinceRev = Number.isSafeInteger(request.params.sinceRev)
         ? Number(request.params.sinceRev)
         : 0;
-      request.result = await syncPull(
+      const work = syncPull(
         dependencies.engine.store.db,
         sinceRev,
         request.params.paginated === true
@@ -794,15 +801,29 @@ export async function handleSessionsRpc(
             }
           : undefined,
       );
+      const timing = syncDbTiming.getStore();
+      if (timing) timing.work = work;
+      request.result = await work;
       break;
     }
     case "sync.push": {
       if (!Array.isArray(request.params.ops)) throw new Error("Invalid sync ops");
       if (request.params.ops.length > SYNC_PUSH_MAX_OPS) throw new Error("Too many sync ops");
-      request.result = await dependencies.engine.store.transaction(
-        async () => await syncPush(dependencies.engine.store.db, request.params.ops as SyncOp[]),
-        "checkpoint",
-      );
+      const store = dependencies.engine.store;
+      const push = () =>
+        store.transaction(() => syncPush(store.db, request.params.ops as SyncOp[]), "checkpoint");
+      const timing = syncDbTiming.getStore();
+      if (!timing) {
+        request.result = await push();
+        break;
+      }
+      const queuedAt = monotonicNow();
+      const work = store.db.scope(() => {
+        timing.dbWaitMs = elapsedSince(queuedAt);
+        return push();
+      });
+      timing.work = work;
+      request.result = await work;
       break;
     }
     case "usage.sessions.read":

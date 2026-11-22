@@ -245,13 +245,17 @@ export function bindNativeDeliveryOwner(
           let verifiedProof;
           if (kind === "buffer" && row?.state !== "retired") {
             verifiedProof = row?.proof;
+            // A recorded buffer was verified when Host recorded it and the producer consumed
+            // that answer, so it never resends this report. Its proof may since have aged out
+            // of the snapshot archive; refusing the ACK then would hold the epoch prefix forever.
             if (
               !verifiedProof ||
-              !(await adapters.workspaceOwner(
-                async (owner) =>
-                  !!owner.nativeActivity.verifyBufferDelivery &&
-                  owner.nativeActivity.verifyBufferDelivery(binding, verifiedProof!),
-              ))
+              (row?.state !== "recorded" &&
+                !(await adapters.workspaceOwner(
+                  async (owner) =>
+                    !!owner.nativeActivity.verifyBufferDelivery &&
+                    owner.nativeActivity.verifyBufferDelivery(binding, verifiedProof!),
+                )))
             )
               throw new Error(
                 "Native buffer delivery ACK requires exact current or archived proof",

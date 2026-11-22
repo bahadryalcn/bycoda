@@ -5,6 +5,7 @@ import { AntigravityAccountSettings } from "../../../src/features/settings/ui/An
 import { seedProvidersFixture, providersFixtureCommand } from "./settings-providers-fixture";
 import { registerBuiltinHarnesses } from "../../../src/integrations/harness/core/register";
 import { agentDefaultsFixtureCommand } from "./agent-defaults-fixture";
+import { installSignedInAccountFixture, signedInAccountCommand } from "./settings-account-fixture";
 import { useState } from "react";
 import { VoiceAssistantFixture } from "./voice-assistant-fixture";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -171,8 +172,14 @@ if (generationFixture) {
     pendingDrawings.clear();
   });
 }
+const signedInAccount = new URLSearchParams(location.search).get("account") === "signedIn";
+if (signedInAccount) installSignedInAccountFixture();
 mockIPC(
   (command, args) => {
+    if (signedInAccount) {
+      const account = signedInAccountCommand(command);
+      if (account !== undefined) return account;
+    }
     if (generationFixture && command === "add_background_library_image")
       return {
         id: String(args.sourcePath),

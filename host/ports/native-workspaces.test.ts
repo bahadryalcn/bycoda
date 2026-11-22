@@ -55,6 +55,30 @@ it("binds every owner operation to the exact issued object without reconstructin
   }
 });
 
+it("keeps the buffer heartbeat outside the delivery-effect fence a full report needs", async () => {
+  // A heartbeat writes nothing durable; under delivery epochs it has no admitted original,
+  // so fencing it failed every 25 s keepalive and turned each into a new full report.
+  const heartbeatBuffers = vi.fn(async () => ({ acknowledged: true }));
+  const updateBuffers = vi.fn(async () => ({ acknowledged: true }));
+  const runtime = { nativeActivity: { heartbeatBuffers, updateBuffers } };
+  const fence = vi.fn(async () => {
+    throw new Error("NATIVE_DELIVERY_EPOCH_PROTOCOL_FENCED");
+  });
+  const bound = bindNativeWorkspaceOwner(
+    runtime as unknown as Parameters<typeof bindNativeWorkspaceOwner>[0],
+    Object.freeze({ ownerId: "owner", authorizationId: "scope" }),
+    fence,
+  );
+  const request = {} as never;
+
+  await expect(bound.nativeActivity.heartbeatBuffers(request)).resolves.toEqual({
+    acknowledged: true,
+  });
+  await expect(bound.nativeActivity.updateBuffers(request)).rejects.toThrow("PROTOCOL_FENCED");
+  expect(updateBuffers).not.toHaveBeenCalled();
+  expect(fence).toHaveBeenCalledTimes(1);
+});
+
 it("supplies real SHA256/canonical base64 and fatal UTF8 decoding for exact Native report bytes", () => {
   const abc = new Uint8Array([97, 98, 99]);
   expect(nativeBufferUploadPlatform.sha256(abc)).toBe(

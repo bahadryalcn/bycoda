@@ -4,41 +4,82 @@ import path from "node:path";
 
 const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-workspace");
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
-for (const theme of ["dark", "light"]) {
-  test(`remote project and session markers in ${theme}`, async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
+for (const [theme, width] of ["dark", "light"].flatMap((theme) =>
+  [1280, 800].map((width) => [theme, width] as const),
+)) {
+  test(`remote project and session markers in ${theme} at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
     await page.goto(
-      `/tests/browser/sessions/session-row-layout.html?remote-header&legacy-remote-label&global&wide&${theme}`,
+      `/tests/browser/sessions/session-row-layout.html?remote-header&legacy-remote-label&global&wide&project-tooltip&${theme}`,
     );
     const project = page.locator(
       '[data-project-path="remote://fixture-office/fixture/bycoda"] [data-project-primary]',
     );
     await expect(project.locator("[data-truncate]").first()).toHaveText("bycoda");
+    await expect(project.locator("svg.lucide-server")).toBeVisible();
     const session = page.locator('[data-session-card="row-multi"]');
     await expect(session.locator("[data-session-row-project] [data-truncate]")).toHaveText(
       "bycoda",
     );
     const marker = session.getByRole("img", { name: "On another machine" });
     await expect(marker).toBeVisible();
+    await expect(marker.locator("svg.lucide-server")).toBeVisible();
     await expect(
       marker.locator("+ [data-tooltip-wrap] [data-session-provider=codex]"),
     ).toBeVisible();
-    const directory = path.resolve("temp/verification/remote-project-marker");
+    const directory = path.resolve("temp/verification/project-row-tooltip");
     await mkdir(directory, { recursive: true });
     await writeFile(
       path.join(directory, "README.md"),
-      "# Remote project and session markers\n\nIsolated desktop browser fixture at 1280 px.\n",
+      "# Project and session detail tooltips\n\nIsolated Chromium fixture at 1280 and 800 px, in light and dark.\n",
     );
-    await page.screenshot({ path: path.join(directory, `${theme}-rows.png`) });
+    await page.screenshot({ path: path.join(directory, `${theme}-${width}-rows.png`) });
     await project.hover();
     const tooltip = page.getByRole("tooltip");
-    await expect(tooltip).toContainText("/fixture/bycoda on Office Mac");
-    await expect(tooltip.locator("svg")).toBeVisible();
-    await page.screenshot({ path: path.join(directory, `${theme}-tooltip.png`) });
+    await expect(tooltip.getByText("bycoda", { exact: true })).toBeVisible();
+    await expect(tooltip.getByText("Office Mac", { exact: true })).toBeVisible();
+    await expect(tooltip.getByText("/fixture/bycoda", { exact: true })).toBeVisible();
+    await expect(tooltip.getByText("Not connected", { exact: true })).toBeVisible();
+    await expect(tooltip.getByText("Working", { exact: true })).toBeVisible();
+    await expect(tooltip.locator("svg.lucide-server")).toBeVisible();
+    await expect(project).toHaveAttribute("aria-describedby", (await tooltip.getAttribute("id"))!);
+    await page.screenshot({ path: path.join(directory, `${theme}-${width}-project.png`) });
+    await project.focus();
+    await page.keyboard.press("Escape");
+    await expect(tooltip).toHaveCount(0);
+
+    await session.hover();
+    await expect(tooltip).toContainText("Last activity");
+    await page.screenshot({ path: path.join(directory, `${theme}-${width}-session.png`) });
+
+    await page.locator('[data-project-path="/fixture/demo-repo"] [data-project-primary]').hover();
+    await expect(tooltip.getByText("/fixture/demo-repo", { exact: true })).toBeVisible();
   });
 }
 
 for (const theme of ["dark", "light"]) {
+  test(`compact projects menu shows a row detail in ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.goto(
+      `/tests/browser/sessions/session-row-layout.html?remote-header&legacy-remote-label&project-tooltip&${theme}`,
+    );
+    await page.getByRole("button", { name: "Projects and groups", exact: true }).click();
+    const project = page
+      .locator("[data-project-navigation-flyout]")
+      .locator(
+        '[data-project-path="remote://fixture-office/fixture/bycoda"] [data-project-primary]',
+      );
+    await expect(project).toBeVisible();
+    const tooltip = page.getByRole("tooltip").filter({ hasText: "/fixture/bycoda" });
+    await expect(tooltip).toHaveCount(0);
+    await project.hover();
+    await expect(tooltip.getByText("Office Mac", { exact: true })).toBeVisible();
+    await expect(tooltip.getByText("Working", { exact: true })).toBeVisible();
+    const directory = path.resolve("temp/verification/project-row-tooltip");
+    await mkdir(directory, { recursive: true });
+    await page.screenshot({ path: path.join(directory, `${theme}-800-projects-menu.png`) });
+  });
+
   test(`managed session mark in ${theme}`, async ({ page }) => {
     const directory = path.resolve("temp/verification/managed-session-mark");
     await mkdir(directory, { recursive: true });
@@ -984,6 +1025,120 @@ for (const light of [false, true]) {
 }
 
 const settleEvidence = path.resolve("temp/verification/2026-11-08-session-settle");
+test("bulk Settle includes all 258 selected remote conversations", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(
+    "/tests/browser/sessions/session-row-layout.html?remote-header&remote-settle&bulk-large",
+  );
+  const row = page.locator('[data-session-card="office-session"]');
+  const select = row.locator("[data-session-select]");
+  await select.hover();
+  await expect(row.getByRole("button", { name: /^Settle / })).toBeVisible();
+  await select.click({ modifiers: ["ControlOrMeta"] });
+  const toolbar = page.getByRole("toolbar", { name: "Selected sessions" });
+  await toolbar.getByRole("button", { name: "Select all", exact: true }).click();
+  await expect(toolbar).toContainText("258 selected");
+  await select.click({ button: "right" });
+  await page
+    .getByRole("menu", { name: "258 selected session actions" })
+    .getByRole("menuitem", { name: "Settle", exact: true })
+    .click();
+  await expect(page.locator("[data-settled-sessions]")).toHaveAttribute(
+    "data-section-collapsed",
+    "",
+  );
+  await expect(page.locator("[data-session-card]")).toHaveCount(0);
+});
+for (const remote of [false, true]) {
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      test(`bulk Settle via menu and row on ${remote ? "remote" : "local"} Host (${theme} ${width})`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        const fixture = remote ? "remote-header&remote-settle&bulk" : "local-bulk-settle";
+        const [first, second, unselected] = (
+          remote
+            ? ["office-session", "office-second", "office-third"]
+            : ["row-multi", "row-long", "row-working"]
+        ).map((id) => page.locator(`[data-session-card="${id}"]`));
+        const selectFirst = first.locator("[data-session-select]");
+        const settle = first.getByRole("button", { name: /^Settle / });
+        const evidence = path.resolve("temp/verification/bulk-session-settle");
+        const name = `${remote ? "remote" : "local"}-${theme}-${width}`;
+        await mkdir(evidence, { recursive: true });
+        for (const action of ["menu", "row"]) {
+          await page.goto(`/tests/browser/sessions/session-row-layout.html?${fixture}&${theme}`);
+          await selectFirst.hover();
+          await expect(settle).toBeVisible();
+          await selectFirst.click({ modifiers: ["ControlOrMeta"] });
+          await second.locator("[data-session-select]").click({ modifiers: ["ControlOrMeta"] });
+          await expect(page.getByRole("toolbar", { name: "Selected sessions" })).toContainText(
+            "2 selected",
+          );
+          if (action === "menu") {
+            await selectFirst.click({ button: "right" });
+            const menuSettle = page
+              .getByRole("menu", { name: "2 selected session actions" })
+              .getByRole("menuitem", { name: "Settle", exact: true });
+            await expect(menuSettle).toBeVisible();
+            await page.screenshot({ path: path.join(evidence, `${name}-menu.png`) });
+            await menuSettle.click();
+          } else {
+            await selectFirst.hover();
+            await page.screenshot({ path: path.join(evidence, `${name}-row.png`) });
+            await settle.click();
+          }
+          const shelf = page.locator("[data-settled-sessions]");
+          await expect(first).toHaveCount(0);
+          await expect(second).toHaveCount(0);
+          await expect(unselected).toBeVisible();
+          await shelf.getByRole("button").first().click();
+          await expect(first).toBeVisible();
+          await expect(second).toBeVisible();
+          await shelf.getByRole("button").first().click();
+        }
+      });
+    }
+  }
+}
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`remote project Settle and Un-settle ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 700 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?remote-header&remote-settle&${theme}`,
+      );
+      const row = page.locator('[data-session-card="office-session"]');
+      const open = row.locator("[data-session-select]");
+      const settle = row.getByRole("button", { name: "Settle Remote project conversation" });
+      const shelf = page.locator("[data-settled-sessions]");
+      await expect(row).toBeVisible();
+      await open.hover();
+      await expect(settle).toBeVisible();
+      const evidence = path.resolve("temp/verification/remote-project-settle");
+      await mkdir(evidence, { recursive: true });
+      await open.click({ button: "right" });
+      const menu = page.getByRole("menu", { name: "Session actions" });
+      await expect(menu.getByRole("menuitem", { name: "Settle", exact: true })).toBeVisible();
+      await page.screenshot({ path: path.join(evidence, `${theme}-${width}-menu.png`) });
+      await menu.getByRole("menuitem", { name: "Settle", exact: true }).click();
+      await expect(row).toHaveCount(0);
+      await expect(shelf).toContainText("Settled");
+      await shelf.getByRole("button").first().click();
+      await open.hover();
+      const undo = row.getByRole("button", { name: "Un-settle Remote project conversation" });
+      await expect(undo).toBeVisible();
+      await page.screenshot({ path: path.join(evidence, `${theme}-${width}-shelf.png`) });
+      await undo.click();
+      await expect(shelf).toHaveCount(0);
+      await expect(row).toBeVisible();
+    });
+  }
+}
+
 for (const light of [false, true]) {
   for (const width of [1280, 800]) {
     test(`settled sessions file on a collapsed Settled group at ${width} ${light ? "light" : "dark"}`, async ({
@@ -1012,34 +1167,44 @@ for (const light of [false, true]) {
 
 for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
-    test(`global Last sessions navigation only ${theme} ${width}`, async ({ page }) => {
+    test(`global Last sessions row actions ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto(`/tests/browser/sessions/session-row-layout.html?global&${theme}`, {
-        waitUntil: "domcontentloaded",
-      });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?global&global-settle&${theme}`,
+        {
+          waitUntil: "domcontentloaded",
+        },
+      );
       const row = page.locator('[data-session-card="row-demo"]');
       const open = row.locator("[data-session-select]");
       await expect(row).toBeVisible();
-      await expect(row.getByRole("button")).toHaveCount(1);
+      await expect(row.getByRole("button", { name: /^Archive / })).toBeAttached();
+      await expect(row.getByRole("button", { name: /^Delete / })).toBeAttached();
       await page.screenshot({
-        path: `temp/verification/2026-11-11-sidebar/last-sessions-${theme}-${width}-rest.png`,
+        path: `temp/verification/last-sessions-actions/${theme}-${width}-rest.png`,
         animations: "disabled",
       });
       await open.hover();
-      await expect(row.getByRole("button")).toHaveCount(1);
       await open.focus();
       await open.press("Shift+F10");
-      await expect(page.getByRole("menu")).toHaveCount(0);
+      const menu = page.getByRole("menu", { name: "Session actions" });
+      await expect(menu.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "Settle", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
       await open.click({ button: "right" });
-      await expect(page.getByRole("menu")).toHaveCount(0);
+      await expect(menu.getByRole("menuitem", { name: "Archive" })).toBeVisible();
       await page.screenshot({
-        path: `temp/verification/2026-11-11-sidebar/last-sessions-${theme}-${width}-hover.png`,
+        path: `temp/verification/last-sessions-actions/${theme}-${width}-menu.png`,
         animations: "disabled",
       });
+      await page.keyboard.press("Escape");
       await open.click();
       await expect(page.getByRole("status", { name: "Selected session" })).toHaveText("row-demo");
       await expect(page.getByRole("status", { name: "Pin operations" })).toHaveText("0");
+      await open.click({ button: "right" });
+      await menu.getByRole("menuitem", { name: "Settle", exact: true }).click();
+      await expect(row).toHaveCount(0);
     });
   }
 }

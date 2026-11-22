@@ -1,3 +1,4 @@
+import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -12,6 +13,62 @@ import { Button } from "../../../shared/ui/Button";
 import { Trash2 } from "../../../shared/ui/icons";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
+import { loadHostStallProfiles, saveHostStallProfiles } from "../model/hostStallProfiles";
+
+/** This computer's Host switch for saving CPU profiles when its event loop stalls. */
+function HostStallProfilesRow() {
+  const [enabled, setEnabled] = useState<boolean>();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Sync the mounted switch with the local Host setting and discard late replies when it closes.
+  useEffect(() => {
+    let active = true;
+    loadHostStallProfiles().then(
+      (value) => {
+        if (active) setEnabled(value);
+      },
+      (reason: unknown) => {
+        if (active) setError(errorText(reason));
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
+  const onChange = (next: boolean) => {
+    setSaving(true);
+    setError(undefined);
+    saveHostStallProfiles(next)
+      .then(setEnabled, (reason: unknown) =>
+        setError(errorText(reason)),
+      )
+      .finally(() => setSaving(false));
+  };
+  return (
+    <Row
+      id="host-stall-profiles"
+      label={t("Host CPU profiles")}
+      description={t(
+        "Save a 30-second CPU profile to the Host log folder when its event loop stalls repeatedly.",
+      )}
+      info={t("For developers. Starting a profile briefly freezes the Host, so keep this off.")}
+      feedback={
+        error ? (
+          <SettingsFeedback state="error">
+            {t("Could not reach this computer's Host setting: {p1}", { p1: error })}
+          </SettingsFeedback>
+        ) : undefined
+      }
+    >
+      <Toggle
+        label={t("Host CPU profiles")}
+        on={enabled === true}
+        disabled={enabled === undefined || saving}
+        onChange={onChange}
+      />
+    </Row>
+  );
+}
 
 /**
  * Page-level "Restore defaults": the trace goes back to off. The mounted group follows through
@@ -125,6 +182,7 @@ export function DiagnosticsGroup() {
           {t("Clear")}
         </Button>
       </Row>
+      <HostStallProfilesRow />
     </Group>
   );
 }

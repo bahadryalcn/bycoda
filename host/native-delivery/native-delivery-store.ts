@@ -20,9 +20,20 @@ import {
   readNativeDeliveryQuota,
 } from "./native-delivery-quota";
 import {
+  nativeDeliveryEpochOriginalId,
   parseNativeDeliveryEpochOriginalId,
   type NativeDeliveryEpochFence,
+  type NativeDeliveryEpochGapParams,
 } from "../../src/shared/model/host-contracts/native-delivery-epochs";
+
+/** Consumed digest of a format retired without a result (see `abandon`). */
+const ABANDONED_FORMAT = (() => {
+  const raw = '{"abandoned":true}';
+  return {
+    sha256: createHash("sha256").update(raw).digest("hex"),
+    byteLength: Buffer.byteLength(raw),
+  };
+})();
 
 export type NativeDeliveryKind =
   | "buffer"
@@ -391,7 +402,13 @@ export function createNativeDeliveryStore(store: HostStore) {
       status: epochs.status,
       compact: epochs.compact,
       close: epochs.close,
-      resolveGap: epochs.resolveGap,
+      async resolveGap(principal: string, input: NativeDeliveryEpochGapParams) {
+        const resolved = await epochs.resolveGap(principal, input);
+        if (resolved.outcome !== "admitted") return resolved;
+        return (await abandon(principal, input))
+          ? { ...resolved, outcome: "abandoned" as const }
+          : resolved;
+      },
     },
     read,
     readMetadata,
@@ -661,6 +678,79 @@ export function createNativeDeliveryStore(store: HostStore) {
       if (remaining === 0) detachedByPrincipal.delete(principal);
       else detachedByPrincipal.set(principal, remaining);
     };
+  }
+  /**
+   * Retire an original the producer lost (it asks only for a slot it never consumed) whose
+   * continuation has ended: its effect failed, or a restart lost it, so nothing is in flight.
+   * Nothing is undone or replayed: format only computes edits, a finish only resolved an
+   * in-memory Host waiter that is gone, and a buffer report is versioned state that the next
+   * full report supersedes, so a buffer is retired even when recorded (its proof may no longer
+   * verify). The producer then fences the slot instead of holding the epoch prefix forever.
+   * True also when an earlier call already abandoned it.
+   */
+  async function abandon(principal: string, input: NativeDeliveryEpochGapParams) {
+    const kind = input.kind;
+    const originalId = nativeDeliveryEpochOriginalId(input);
+    if (inflight.has(inflightKey(principal, kind, { originalId }))) return false;
+    const consumed =
+      kind === "native.services.workspace.format"
+        ? ABANDONED_FORMAT
+        : nativeDeliveryConsumedResult(
+            kind,
+            kind === "buffer" ? { acknowledged: true } : { accepted: true },
+          );
+    return store.transaction(async () => {
+      const row = await store.db
+        .prepare(`SELECT state,result_sha256,result_bytes,consumed_sha256,consumed_bytes,
+          result_json IS NULL AS no_result
+          FROM native_delivery_receipts WHERE environment_id=? AND principal_id=? AND kind=? AND original_id=?
+          AND sha256=? AND byte_length=? AND epoch_owner_id=? AND epoch_generation=? AND epoch_sequence=?`)
+        .get(
+          store.environmentId,
+          principal,
+          kind,
+          originalId,
+          input.sha256,
+          input.byteLength,
+          input.ownerId,
+          input.generation,
+          input.sequence,
+        );
+      if (!row) return false;
+      // An ordinary retirement follows the producer's consumption, and the producer never asks
+      // about a consumed slot, so a retired finish/buffer was abandoned. A format keeps its own
+      // marker because the trigger accepts any consumed digest for it.
+      if (row.state === "retired")
+        return (
+          kind !== "native.services.workspace.format" ||
+          (row.consumed_sha256 === consumed.sha256 && row.consumed_bytes === consumed.byteLength)
+        );
+      const ended =
+        kind === "buffer"
+          ? row.state === "admitted" || row.state === "recorded"
+          : row.state === "admitted" &&
+            row.result_sha256 === null &&
+            row.result_bytes === null &&
+            row.consumed_sha256 === null &&
+            row.consumed_bytes === null &&
+            row.no_result === 1;
+      if (!ended) return false;
+      await store.db.checkAuthorization();
+      const changed = await store.db
+        .prepare(`UPDATE native_delivery_receipts SET state='retired',reserved_bytes=0,result_json=NULL,proof_json=NULL,
+          consumed_sha256=?,consumed_bytes=?
+          WHERE environment_id=? AND principal_id=? AND kind=? AND original_id=? AND state=?`)
+        .run(
+          consumed.sha256,
+          consumed.byteLength,
+          store.environmentId,
+          principal,
+          kind,
+          originalId,
+          String(row.state),
+        );
+      return Number(changed.changes) === 1;
+    }, "critical");
   }
   const inflightKey = (
     principal: string,

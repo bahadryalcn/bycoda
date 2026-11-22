@@ -512,7 +512,7 @@ function dismissAll(placement?: ToastPlacement) {
  */
 export const toast = { show, update, dismiss, dismissAll } as const;
 
-/** `show(options)` returns the id; `update(id, patch)`; `dismiss(id)`; `dismissAll(placement?)`. */
+/** `show` announces immediately. Route operation failures through `reportFailure` first. */
 export function useToast() {
   return toast;
 }

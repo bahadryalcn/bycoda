@@ -6,6 +6,7 @@ import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Link } from "../../../shared/ui/Link";
 import { Popover } from "../../../shared/ui/Popover";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { Info } from "../../../shared/ui/icons";
 import type { LocalSessionReference } from "../model/localSessionReference";
 import {
@@ -172,11 +173,16 @@ export function LocalSessionReferenceLink({
           if (next) void readDetails();
         }}
       >
-        <Info className="icon-sm" />
+        {opening && !details ? <Spinner size="xs" /> : <Info className="icon-sm" />}
       </Button>
-      {!details && (error || opening) ? (
-        <Text id={id} role="status" size="caption" tone="secondary">
-          {opening ? t("Opening session…") : error}
+      {!details && opening ? (
+        <Text id={id} role="status" className="sr-only">
+          {t("Opening session…")}
+        </Text>
+      ) : null}
+      {!details && error ? (
+        <Text id={id} role="status" size="caption" tone="danger">
+          {error}
           {error ? (
             <Button
               type="button"
@@ -214,6 +220,7 @@ export function LocalSessionReferenceLink({
           maxHeight={340}
           flow="scroll"
           kind="dialog"
+          solid
           aria-label={t("Session details")}
           onDismiss={() => setDetails(false)}
           className="p-3"
@@ -238,6 +245,7 @@ export function LocalSessionReferenceLink({
                   <Text size="caption" tone="secondary">
                     {[
                       metadata.origin ?? t("Local"),
+                      metadata.agentRole,
                       metadata.status,
                       metadata.archived ? t("Archived") : undefined,
                     ]
@@ -267,7 +275,7 @@ export function LocalSessionReferenceLink({
                   disabled={!!opening || reading}
                   onClick={() => void open(false, true)}
                 >
-                  {t("Open session")}
+                  {metadata?.agentRole ? t("Open") : t("Open session")}
                 </Button>
               ) : null}
               <Button
@@ -278,18 +286,20 @@ export function LocalSessionReferenceLink({
                 disabled={!!opening || reading || !metadata}
                 onClick={() => void open()}
               >
-                {t("Open session")}
+                {metadata?.agentRole ? t("Open") : t("Open session")}
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                loading={opening === "beside"}
-                disabled={!!opening || reading || !metadata}
-                onClick={() => void open(true)}
-              >
-                {t("Open beside")}
-              </Button>
+              {!metadata?.agentRole ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  loading={opening === "beside"}
+                  disabled={!!opening || reading || !metadata}
+                  onClick={() => void open(true)}
+                >
+                  {t("Open beside")}
+                </Button>
+              ) : null}
             </div>
           </Text>
         </Popover>

@@ -116,7 +116,8 @@ fn ensure_epoch(
     let deadline = std::time::Instant::now() + ACK_BUDGET;
     if let Some(params) =
         epoch_wire::maintenance_params(store, &epoch, channel.delivery_epoch_gaps, |original| {
-            recover_epoch_gap(channel, store, original, deadline)
+            let gap_deadline = std::time::Instant::now() + epoch_wire::GAP_BUDGET;
+            recover_epoch_gap(channel, store, original, gap_deadline)
         })?
     {
         if let Ok(response) = call_until(channel, epoch_wire::COMPACT, params, None, deadline) {
@@ -396,7 +397,56 @@ fn record_held_result(
     admission.finish(outcome)
 }
 
+/// A consumed local report can outlive its remote receipt. Probe before cleanup; absence is
+/// no proof of remote retirement. `unknown` still gets the ACK: this report was consumed, so
+/// Host retires a recorded receipt whose proof aged out and refuses anything else.
+fn acknowledge_consumed(
+    channel: &NativeWorkspaceChannel,
+    store: &SessionStore,
+    original: &journal::Original,
+    deadline: std::time::Instant,
+) -> Result<(), String> {
+    let status = call_until(channel, STATUS, binding(original), None, deadline)
+        .map_err(|failure| failure.message)?;
+    if !matches(&status.reply.value, original)
+        || !matches!(
+            status.reply.value["state"].as_str(),
+            Some("recorded" | "retired" | "unknown")
+        )
+    {
+        return Err(held());
+    }
+    remote_ack(channel, store, original, Some(&status.reply), deadline)
+}
+
 impl NativeWorkspaceTransport {
+    /// Idle maintenance. The pager below runs only beside a new editor report, two rows at
+    /// a time, so a desktop whose buffers stopped changing never ACKed the consumed report
+    /// that held the shared epoch prefix: try that head first, then one page.
+    pub(crate) fn maintain_buffer_acknowledgements(
+        &self,
+        store: &SessionStore,
+    ) -> Result<(), String> {
+        let channel = self.workspace.as_ref().ok_or_else(held)?;
+        if !channel.delivery || !channel.delivery_ack {
+            return Ok(());
+        }
+        channel.selection.with_current(|| Ok(()))?;
+        let route = ws_fingerprint(&channel.selection.machine);
+        if let Some(original) = journal::unacked_prefix_blocker(store, &route)?
+            .filter(|original| original.method() == "native.buffers.update")
+        {
+            acknowledge_consumed(
+                channel,
+                store,
+                &original,
+                std::time::Instant::now() + ACK_BUDGET,
+            )
+            .map_err(|error| format!("buffer prefix ACK: {error}"))?;
+        }
+        self.reconcile_buffer_acknowledgements(store)
+    }
+
     /// Only already-consumed metadata is retried. No result/source owner is
     /// reconstructed, and one page cannot hold a fresh report for a full RPC.
     pub(crate) fn reconcile_buffer_acknowledgements(
@@ -427,21 +477,7 @@ impl NativeWorkspaceTransport {
             }
             cursor = Some(original.ack_cursor());
             if original.method() == "native.buffers.update" {
-                // A consumed local report can outlive its remote receipt. Probe
-                // before cleanup; absence/unknown is no proof of remote retirement.
-                let Ok(status) = call_until(channel, STATUS, binding(&original), None, deadline)
-                else {
-                    continue;
-                };
-                if matches(&status.reply.value, &original)
-                    && matches!(
-                        status.reply.value["state"].as_str(),
-                        Some("recorded" | "retired")
-                    )
-                {
-                    let _held =
-                        remote_ack(channel, store, &original, Some(&status.reply), deadline);
-                }
+                let _held = acknowledge_consumed(channel, store, &original, deadline);
             }
         }
         if complete {

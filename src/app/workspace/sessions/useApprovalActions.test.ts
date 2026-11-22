@@ -144,7 +144,7 @@ it("refuses a session in a locked project group without opening it", async () =>
 
 it("routes an unloaded remote session through the remote opener", async () => {
   const select = vi.fn(async (): Promise<unknown> => true);
-  const remote = vi.fn();
+  const remote = vi.fn(async () => true);
   const dismiss = vi.fn();
   const fixture = await mount(request(), {
     focusOpenSession: () => false,
@@ -157,6 +157,17 @@ it("routes an unloaded remote session through the remote opener", async () => {
   expect(remote).toHaveBeenCalledWith("ssh:/repo", "remote-1");
   expect(dismiss).toHaveBeenCalledWith("remote-1");
   expect(select).not.toHaveBeenCalled();
+});
+
+it("keeps a remote result when the opener cannot acquire its session", async () => {
+  const dismiss = vi.fn();
+  const fixture = await mount(request(), {
+    unopenedRemoteRef: { current: [{ project: "ssh:/repo", session: { id: "remote-1" } }] },
+    dismissRemoteFinished: dismiss,
+    onSelectRemoteSession: async () => false,
+  });
+  expect(await fixture.actions.onOpenApprovalSession("remote-1")).toBe(false);
+  expect(dismiss).not.toHaveBeenCalled();
 });
 
 it("does not open a conversation that no longer exists", async () => {

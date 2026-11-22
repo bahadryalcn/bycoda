@@ -11,11 +11,13 @@ import type {
 import type { ManagedWorkspace } from "../workspaces/workspace-contracts";
 import { createNativeBufferGitPersistence } from "./native-buffer-git-persistence";
 import { createNativeBufferReports } from "./native-buffer-reports";
+import { hostGitExec } from "../git/git-exec-pool";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   return { ...actual, spawn: vi.fn(actual.spawn) };
 });
+const poolExec = vi.spyOn(hostGitExec, "exec");
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 const cleanups: string[] = [];
@@ -24,7 +26,8 @@ afterEach(async () => {
     await rm(path, { recursive: true, force: true, maxRetries: 5 });
 });
 const gitSpawns = () =>
-  vi.mocked(childProcess.spawn).mock.calls.filter(([command]) => command === "git").length;
+  vi.mocked(childProcess.spawn).mock.calls.filter(([command]) => command === "git").length +
+  poolExec.mock.calls.filter(([command]) => command === "git").length;
 
 function clocks(ids: string[]): NativeBufferClockBacking {
   const states = new Map<string, NativeBufferClockState>(

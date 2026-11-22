@@ -31,7 +31,7 @@ export const VOICE_RPC_SCHEMAS = {
   },
   "voice.cloud.transcribe": {
     params: z.strictObject({
-      provider: z.literal("openrouter"),
+      provider: z.enum(["openrouter", "openai", "xai"]),
       audio,
       language,
       model: z.string().min(1).max(200).optional(),

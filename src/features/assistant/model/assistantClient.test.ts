@@ -23,6 +23,8 @@ import {
   assistantRequest,
   possessiveName,
   assistantIdentity,
+  finishAssistantNoteDeletion,
+  latestAssistantSnapshot,
   refreshAssistant,
   refreshAssistantQuietly,
   useAssistantSnapshot,
@@ -274,4 +276,49 @@ it("a mutation refresh reads after an in-flight poll and never flips loading", a
     await act(async () => root.unmount());
     vi.unstubAllGlobals();
   }
+});
+
+it("applies confirmed note deletions without waiting for the Room refresh", async () => {
+  const first = { id: "one", updatedAt: 1 };
+  const second = { id: "two", updatedAt: 1 };
+  const newer = { ...second, updatedAt: 2 };
+  const oldReply = { snapshot: { notes: [first, newer] } };
+  const newReply = { snapshot: { notes: [newer] } };
+  const staleRead = Promise.withResolvers<typeof oldReply>();
+  const reconciliation = Promise.withResolvers<typeof newReply>();
+  const request = vi.mocked(hostToolRequest);
+  request.mockResolvedValueOnce(oldReply);
+  await refreshAssistant();
+  request.mockImplementationOnce(() => staleRead.promise);
+  const callsBeforePoll = request.mock.calls.length;
+  const poll = refreshAssistantQuietly();
+  await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(callsBeforePoll + 1));
+  const callsBeforeDelete = request.mock.calls.length;
+  request.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true });
+  for (const note of [first, second]) {
+    await expect(
+      assistantRequest(
+        { op: "notes.delete", id: note.id, expectedUpdatedAt: note.updatedAt },
+        "env",
+        {
+          deferNoteRefresh: true,
+        },
+      ),
+    ).resolves.toEqual({ ok: true });
+  }
+  expect(request.mock.calls.slice(callsBeforeDelete).map((call) => call[3])).toEqual([
+    { op: "notes.delete", id: first.id, expectedUpdatedAt: first.updatedAt },
+    { op: "notes.delete", id: second.id, expectedUpdatedAt: second.updatedAt },
+  ]);
+  request.mockImplementationOnce(() => reconciliation.promise);
+  finishAssistantNoteDeletion("env", [first, second]);
+  expect(latestAssistantSnapshot()?.notes).toEqual([newer]);
+  const callsBeforeRefresh = request.mock.calls.length;
+  staleRead.resolve(oldReply);
+  await poll;
+  await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(callsBeforeRefresh + 1));
+  expect(latestAssistantSnapshot()?.notes).toEqual([newer]);
+  reconciliation.resolve(newReply);
+  await refreshAssistantQuietly();
+  expect(request).toHaveBeenCalledTimes(callsBeforeRefresh + 1);
 });

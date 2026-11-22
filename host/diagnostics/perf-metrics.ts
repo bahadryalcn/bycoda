@@ -1,9 +1,17 @@
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
+import { AsyncLocalStorage } from "node:async_hooks";
+
+export const syncDbTiming = new AsyncLocalStorage<{
+  dbWaitMs: number;
+  work?: Promise<unknown>;
+}>();
 
 const BUCKETS = 768;
 const RATIO = 1.05;
 const MIN_MS = 0.001;
 const LOG_RATIO = Math.log(RATIO);
+/** The window `recentLoopMaxMs` reports over before it starts a new one. */
+const LOOP_WINDOW_MS = 10_000;
 // Static RPC and MCP labels plus headroom; 768 buckets x 8 bytes each.
 export const MAX_METRICS = 512;
 type Distribution = { buckets: Float64Array; count: number; max: number };
@@ -15,6 +23,8 @@ type Distribution = { buckets: Float64Array; count: number; max: number };
 export class PerfMetrics {
   private readonly series = new Map<string, Distribution>();
   private loop?: ReturnType<typeof monitorEventLoopDelay>;
+  private recentLoop?: ReturnType<typeof monitorEventLoopDelay>;
+  private loopWindowAt = 0;
   private users = 0;
 
   constructor(names: readonly string[] = []) {
@@ -64,11 +74,31 @@ export class PerfMetrics {
     return value;
   }
 
+  /**
+   * The worst event-loop delay of the current window (at least the last 10 s), so a slow
+   * request's log shows the lag around it rather than a stall from hours ago.
+   */
+  recentLoopMaxMs(): number {
+    const recent = this.recentLoop;
+    if (!recent?.count) return 0;
+    const value = recent.max / 1e6;
+    const now = performance.now();
+    if (now - this.loopWindowAt >= LOOP_WINDOW_MS) {
+      recent.reset();
+      this.loopWindowAt = now;
+    }
+    return value;
+  }
+
   /** Shared process monitor, enabled only while a host server owns it. */
   start() {
     if (this.users++ === 0) {
       this.loop = monitorEventLoopDelay({ resolution: 20 });
       this.loop.enable();
+      // A separate windowed histogram: resetting it never touches the cumulative one.
+      this.recentLoop = monitorEventLoopDelay({ resolution: 20 });
+      this.recentLoop.enable();
+      this.loopWindowAt = performance.now();
     }
   }
 
@@ -76,6 +106,8 @@ export class PerfMetrics {
     if (this.users > 0 && --this.users === 0) {
       this.loop?.disable();
       this.loop = undefined;
+      this.recentLoop?.disable();
+      this.recentLoop = undefined;
     }
   }
 
@@ -476,6 +508,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "runtimeLogs.tools.call",
   "sessions.adopted",
   "sessions.block",
+  "sessions.inlineVisual",
   "sessions.workedTime",
   "sessions.delete",
   "sessions.desktopLive",

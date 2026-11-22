@@ -1153,3 +1153,125 @@ it("answers a heartbeat for the last report without writing any history", async 
   await f.service.updateBuffers(f.report(false, true), owner);
   expect(await files()).toBeGreaterThan(before.history);
 });
+
+it("drops an omitted clean unknown owner without a hold but keeps an omitted dirty one", async () => {
+  for (const dirty of [false, true]) {
+    const f = await fixture();
+    const live = f.report(false);
+    const earlier = {
+      ...live.owners[0],
+      ownerId: "earlier-window",
+      unknown: true,
+      buffers: [{ path: join(f.path, "old.txt"), dirty }],
+    };
+    await f.service.updateBuffers({ ...live, owners: [live.owners[0], earlier] }, owner);
+    await f.service.updateBuffers(f.report(false), owner);
+    const owners = (await f.current()).owners.map((item: { ownerId: string }) => item.ownerId);
+    if (dirty) {
+      expect(owners).toContain("earlier-window");
+      expect(await f.service.probe("workspace")).toHaveLength(1);
+    } else {
+      expect(owners).toEqual(["main"]);
+      expect(await f.service.probe("workspace")).toHaveLength(0);
+    }
+  }
+});
+
+it("retires a dead clean unknown predecessor only once its successor stops reporting its owners", async () => {
+  const reconcile = (f: Awaited<ReturnType<typeof fixture>>) =>
+    f.service.reconcileBuffers(
+      { clientId: "client", instanceId: "instance", predecessors: [] },
+      owner,
+    );
+  for (const scenario of ["released", "still-reported", "dirty", "alive"] as const) {
+    const f = await fixture();
+    const live = f.report(false);
+    const earlier = {
+      ...live.owners[0],
+      ownerId: "earlier-window",
+      unknown: true,
+      buffers: [{ path: join(f.path, "old.txt"), dirty: scenario === "dirty" }],
+    };
+    await f.service.updateBuffers(
+      { ...live, instanceId: "prior", processId: 99999, owners: [earlier] },
+      owner,
+    );
+    const successor =
+      scenario === "still-reported"
+        ? [live.owners[0], { ...earlier, updatedAt: live.owners[0].updatedAt }]
+        : [live.owners[0]];
+    await f.service.updateBuffers({ ...live, owners: successor }, owner);
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("probe"), { code: scenario === "alive" ? "EPERM" : "ESRCH" });
+    });
+    const outcome = await reconcile(f);
+    kill.mockRestore();
+    if (scenario === "released") expect(outcome).toEqual({ acknowledged: true });
+    else expect(outcome).toMatchObject({ state: "recovery-required", total: 1 });
+  }
+});
+
+it("lets a clean hold of a retired dead predecessor go inert instead of rewriting it", async () => {
+  const f = await fixture();
+  const live = f.report(false);
+  const prior = { ...live, instanceId: "prior", processId: 99999 };
+  await f.service.updateBuffers(prior, owner);
+  f.advance(61_000);
+  const other = {
+    ...live.owners[0],
+    ownerId: "other-window",
+    updatedAt: live.owners[0].updatedAt + 61_000,
+  };
+  await f.service.updateBuffers({ ...prior, owners: [other] }, owner);
+  const files = await f.files();
+  expect(files.length).toBe(2);
+  const fresh = {
+    ...live.owners[0],
+    ownerId: "fresh-window",
+    updatedAt: live.owners[0].updatedAt + 61_000,
+  };
+  await f.service.updateBuffers({ ...live, owners: [fresh] }, owner);
+  expect(await f.service.probe("workspace")).toHaveLength(1);
+  const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+    throw Object.assign(new Error("gone"), { code: "ESRCH" });
+  });
+  await expect(
+    f.service.reconcileBuffers(
+      { clientId: "client", instanceId: "instance", predecessors: [] },
+      owner,
+    ),
+  ).resolves.toEqual({ acknowledged: true });
+  kill.mockRestore();
+  expect(await f.service.probe("workspace")).toHaveLength(0);
+  expect(await f.files()).toHaveLength(3);
+});
+
+it("retires a dead clean report of the same desktop under an earlier authorization only", async () => {
+  for (const scenario of ["released", "dirty", "alive"] as const) {
+    const f = await fixture();
+    const live = f.report(false);
+    const earlier = {
+      ...live.owners[0],
+      ownerId: "earlier-window",
+      unknown: true,
+      buffers: [{ path: join(f.path, "old.txt"), dirty: scenario === "dirty" }],
+    };
+    await f.service.updateBuffers(
+      { ...live, instanceId: "prior", processId: 99999, owners: [earlier] },
+      other,
+    );
+    await f.service.updateBuffers(live, owner);
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("probe"), { code: scenario === "alive" ? "EPERM" : "ESRCH" });
+    });
+    // The other device's leftover is never this caller's blocker, released or not.
+    await expect(
+      f.service.reconcileBuffers(
+        { clientId: "client", instanceId: "instance", predecessors: [] },
+        owner,
+      ),
+    ).resolves.toEqual({ acknowledged: true });
+    kill.mockRestore();
+    expect(await f.service.probe("workspace")).toHaveLength(scenario === "released" ? 0 : 1);
+  }
+});

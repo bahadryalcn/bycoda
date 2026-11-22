@@ -11,6 +11,8 @@ import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { Tooltip } from "../../shared/ui/Tooltip";
+import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
+import { WorkingIndicator } from "../../shared/ui/WorkingIndicator";
 import { Sash } from "../../shared/ui/Sash";
 import { WindowChromeInset } from "../../shared/ui/PaneHeader";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
@@ -36,7 +38,6 @@ import {
   FolderPlus,
   FolderTree,
   GitBranch,
-  Internet,
   Inbox,
   Link as LinkIcon,
   Lock,
@@ -46,6 +47,7 @@ import {
   PinOff,
   CircleAlert,
   CircleDot,
+  Clock,
   FileDiff,
   StickyNote,
   Sparkles,
@@ -57,6 +59,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -126,7 +129,7 @@ import {
   updateProjectGroup,
   type ProjectGroup,
 } from "../../features/projects/model/projectGroups";
-import { shouldShowLiveAgents, type LiveAgent } from "../../features/sessions/model/liveAgents";
+import { isLiveActivityAgent, type LiveAgent } from "../../features/sessions/model/liveAgents";
 import {
   LiveAgentsPreview,
   liveHeadline,
@@ -1032,7 +1035,6 @@ export function ProjectRail({
       <div className="shrink-0 @max-[140px]/rail:hidden">
         <LiveAgentsPreview
           agents={visibleLiveAgents}
-          currentProject={lastSessionsOpen ? undefined : cwd}
           activeSessionId={activeSessionId}
           onSelect={onSelectAgent}
           collapsible
@@ -1237,10 +1239,6 @@ export function ProjectRail({
                 </nav>
               </>
             ) : null}
-            <div className="bycoda-rail-status shrink-0">
-              {recoveryControl}
-              {navigator ? null : liveStatus}
-            </div>
             <ProjectMultiSelect
               paths={selectionPaths}
               groups={projectGroups.filter(
@@ -1273,13 +1271,13 @@ export function ProjectRail({
                 }}
                 className={`@max-[140px]/rail:[--control-padding-inline:0px] @max-[140px]/rail:[--control-padding-start:0px] @max-[140px]/rail:[--control-padding-end:0px] bycoda-project-ledger flex flex-1 flex-col overflow-y-auto overscroll-none pb-2 ${navigator ? "min-h-0" : "min-h-32 [@container_rail_(max-height:640px)]:flex-none [@container_rail_(max-height:640px)]:overflow-y-visible"}`}
               >
-                {/* The popup has one scroll owner: its live summary scrolls with the list. */}
-                {navigator ? <div className="bycoda-rail-status">{liveStatus}</div> : null}
                 {rail.order.map((id) => (
                   <Fragment key={id}>{sectionNodes[id]}</Fragment>
                 ))}
+                {navigator ? <div className="bycoda-rail-status">{liveStatus}</div> : null}
               </div>
             </ProjectMultiSelect>
+            {navigator ? null : <div className="bycoda-rail-status shrink-0">{liveStatus}</div>}
           </>
         )}
       </div>
@@ -1290,6 +1288,7 @@ export function ProjectRail({
         >
           <div className="@max-[140px]/rail:hidden">
             <SidebarAccountFooter
+              recoveryControl={recoveryControl}
               updateNotice={
                 <SidebarUpdateFooter
                   noticesOnly
@@ -1312,6 +1311,7 @@ export function ProjectRail({
             />
             <SidebarAccountFooter
               compact
+              recoveryControl={recoveryControl}
               onOpenSettings={onOpenSettings}
               onOpenAccountSettings={openAccountSettings}
             />
@@ -2274,25 +2274,16 @@ function ProjectCard({
     remote && machine && (indicator.tone === "down" || remoteConnection.status === "outdated-host")
       ? (remoteConnection.error ?? "")
       : "";
+  const connectionTone =
+    indicator.tone === "connected"
+      ? "success"
+      : indicator.tone === "connecting"
+        ? "warning"
+        : "danger";
   const hostLabel = machine ? machineLabel(machines, machine) : "";
   const context =
     !remote && isDuplicateProjectName(nameCollisions, name) ? parentFolderLabel(item.path) : "";
   const changeSummary = change ? projectGitChangeSummary(change, t, format.formatNumber) : "";
-  const rowTipDetails = [
-    remote ? (
-      <span key="remote-path" className="flex items-start gap-1.5">
-        <Internet className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
-        <span>{t("{p0} on {p1}", { p0: remote.cwd, p1: hostLabel || t("another machine") })}</span>
-      </span>
-    ) : (
-      item.path
-    ),
-    connectionStatus,
-    connectionDetail,
-    busy && t("Working"),
-    change && t("{p0} uncommitted", { p0: changeSummary }),
-    muteStatus,
-  ];
   const cardAriaLabel = [
     machine
       ? t("{p0} on {p1}", { p0: name, p1: hostLabel })
@@ -2411,10 +2402,92 @@ function ProjectCard({
         data-project-primary
         variant="item"
         type="button"
-        tooltip={remote ? undefined : name}
-        tooltipDetails={rowTipDetails}
+        tooltip={name}
+        tooltipDetails={[
+          <DescriptionList key="location" hideTerms size="sm" className="mt-1 gap-y-1.5">
+            <DescriptionItem
+              term={t(remote ? "Machine" : "Folder")}
+              icon={
+                remote ? (
+                  <Server className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                ) : (
+                  <FolderTree className="icon-xs shrink-0" aria-hidden="true" />
+                )
+              }
+            >
+              {remote ? (
+                <>
+                  <Text size="inherit" tone="primary" className="min-w-0 wrap-anywhere">
+                    {hostLabel || t("another machine")}
+                  </Text>
+                  <Text
+                    size="micro"
+                    tone="muted"
+                    className="col-start-2 min-w-0 wrap-anywhere"
+                    dir="auto"
+                  >
+                    {remote.cwd}
+                  </Text>
+                </>
+              ) : (
+                <Text size="inherit" tone="inherit" className="min-w-0 wrap-anywhere" dir="auto">
+                  {item.path}
+                </Text>
+              )}
+            </DescriptionItem>
+            {change ? (
+              <DescriptionItem
+                term={t("Changes")}
+                icon={<GitBranch className="icon-xs shrink-0" aria-hidden="true" />}
+              >
+                {t("{p0} uncommitted", { p0: changeSummary })}
+              </DescriptionItem>
+            ) : null}
+            {muteStatus ? (
+              <DescriptionItem
+                term={t("Notifications")}
+                icon={<BellOff className="icon-xs shrink-0" aria-hidden="true" />}
+              >
+                {muteStatus}
+              </DescriptionItem>
+            ) : null}
+          </DescriptionList>,
+          connectionDetail && (
+            <Text
+              key="connection-detail"
+              as="div"
+              size="caption"
+              tone="secondary"
+              leading="snug"
+              className="mt-1 wrap-anywhere"
+            >
+              {connectionDetail}
+            </Text>
+          ),
+          (connectionStatus || busy) && (
+            <div
+              key="status"
+              {...surfaceAttributes(
+                { frame: "pane", edge: "top" },
+                "mt-2 flex flex-wrap items-center gap-2 pt-2",
+              )}
+            >
+              {connectionStatus ? (
+                <Badge size="sm" tone={connectionTone} appearance="subtle">
+                  {connectionStatus}
+                </Badge>
+              ) : null}
+              {busy ? (
+                <Badge size="sm" tone="accent" appearance="subtle">
+                  <WorkingIndicator />
+                  {t("Working")}
+                </Badge>
+              ) : null}
+            </div>
+          ),
+        ]}
+        tooltipVariant="detail"
         tooltipSide="right"
-        tooltipWide
         // The flyout focuses a row as it opens; a focus hint there would pop over the list. Button
         // skips its focus hint when the handler prevents the event's default.
         onFocus={focusHint ? undefined : (event) => event.preventDefault()}
@@ -2491,17 +2564,11 @@ function ProjectCard({
               tone="secondary"
               className="relative grid size-4 shrink-0 place-items-center @max-[140px]/rail:hidden"
             >
-              <Internet className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
+              <Server className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
               <StatusDot
                 label={connectionStatus}
                 aria-hidden="true"
-                tone={
-                  indicator.tone === "connected"
-                    ? "success"
-                    : indicator.tone === "connecting"
-                      ? "warning"
-                      : "danger"
-                }
+                tone={connectionTone}
                 className="absolute right-0 bottom-0"
               />
             </Text>
@@ -2612,46 +2679,51 @@ function CompactLiveAgents({
   groupMascots: Record<string, string>;
 }) {
   const t = useT();
-  if (!shouldShowLiveAgents(agents, activeSessionId)) return null;
-  const summary = summarizeLiveAgents(agents);
+  const [expanded, setExpanded] = useState(false);
+  const listId = useId();
+  const activeAgents = agents.filter(isLiveActivityAgent);
+  if (activeAgents.length === 0) return null;
+  const summary = summarizeLiveAgents(activeAgents);
   const { title: heading, count: headlineCount } = liveHeadline(summary, t);
   return (
     <section
-      aria-label={t("{p0} agents", { p0: heading })}
+      aria-label={t("Activity")}
       className="hidden shrink-0 flex-col items-center gap-0 px-2 pb-1 @max-[140px]/rail:flex"
     >
-      <Tooltip label={heading} details={[String(headlineCount)]} side="right">
-        <div
-          role="img"
-          aria-label={`${heading}, ${headlineCount}`}
-          className="my-1 grid size-3 shrink-0 place-items-center"
-        >
-          {summary.headline === "attention" ? (
-            <CircleAlert className="icon-xs" tone="warning" strokeWidth={1.75} />
-          ) : (
-            <StatusDot
-              label={heading}
-              aria-hidden
-              tone={summary.working > 0 ? "accent" : "neutral"}
-            />
-          )}
-        </div>
-      </Tooltip>
-      <div className="flex max-h-[30vh] w-full flex-col gap-0 overflow-y-auto overscroll-none">
-        {agents.map((agent) => {
+      <Button
+        variant="ghost"
+        iconOnly
+        label={t("Activity")}
+        tooltip={t("Activity")}
+        tooltipDetails={[`${heading}, ${headlineCount}`]}
+        tooltipSide="right"
+        expanded={expanded}
+        aria-controls={listId}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        {summary.attention > 0 ? (
+          <CircleAlert aria-hidden className="icon-sm" tone="warning" strokeWidth={1.75} />
+        ) : (
+          <Clock aria-hidden className="icon-sm" strokeWidth={1.75} />
+        )}
+      </Button>
+      <div
+        id={listId}
+        hidden={!expanded}
+        className="max-h-[min(14rem,30vh)] w-full overflow-y-auto overscroll-none"
+      >
+        {activeAgents.map((agent) => {
           const seed = projectName(agent.cwd);
           const key = projectKey(agent.cwd);
           const project = resolveTabGroupLabel(key, groupLabels, seed);
           const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
-          const activity = agent.issue
-            ? t(agent.issue === "retrying" ? "Retrying" : "Failed")
-            : agent.needsApproval
-              ? t(agent.inputKind === "question" ? "Question" : "Need approval")
-              : agent.done
-                ? "Done"
-                : agent.waiting
-                  ? t("Waiting")
-                  : agent.activity;
+          const activity = agent.needsApproval
+            ? t(agent.inputKind === "question" ? "Question" : "Need approval")
+            : agent.issue === "retrying"
+              ? t("Retrying")
+              : agent.waiting
+                ? t("Waiting")
+                : agent.activity;
           const parts = [agent.title, project, activity].filter(Boolean);
           return (
             <Button
@@ -2677,7 +2749,7 @@ function CompactLiveAgents({
                 color={color}
                 name={resolveTabGroupMascot(key, groupMascots)}
                 className="size-3"
-                active={!agent.needsApproval && !agent.done && !agent.waiting}
+                active={!agent.needsApproval && !agent.issue && !agent.waiting}
               />
               {agent.needsApproval ? (
                 <StatusDot

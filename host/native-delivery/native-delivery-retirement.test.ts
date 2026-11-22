@@ -321,7 +321,7 @@ it("retires an admitted buffer only after actual original proof and never consul
   expect(f.counts.buffers).toBe(1);
 });
 
-it("refuses buffer retirement without current/archive proof and rejects a changed planned proof", async () => {
+it("rejects a changed planned proof but retires a recorded buffer whose proof aged out", async () => {
   const f = await fixture(),
     paramsJson = f.report(),
     identity = deliveryIdentity(paramsJson);
@@ -337,11 +337,35 @@ it("refuses buffer retirement without current/archive proof and rejects a change
   await f.store.db
     .prepare("UPDATE native_delivery_receipts SET proof_json=? WHERE original_id=?")
     .run(JSON.stringify(proof), identity.originalId);
+  // Repro: the snapshot archive dropped the proof after the producer consumed the recorded
+  // answer; the ACK was refused forever and held the epoch prefix.
   await unlink(join(f.root, "native-activity", "buffers", `${proof.reportId}.json`));
+  expect(
+    await f.call("native.buffers.delivery.ack", { ...identity, consumedResult: consumedBuffer }),
+  ).toEqual({ ...identity, state: "retired", consumedResult: consumedBuffer });
+});
+
+it("still refuses an admitted buffer ACK without current or archived proof", async () => {
+  const f = await fixture(),
+    paramsJson = f.report(),
+    identity = deliveryIdentity(paramsJson);
+  let written = false;
+  f.setWrite(async (path, bytes) => {
+    if (!written && path.includes("buffers")) {
+      written = true;
+      await durableWrite(path, bytes);
+      throw new Error("Original projection committed but record acknowledgement lost");
+    }
+  });
+  await f.call("native.buffers.delivery.apply", { ...identity, paramsJson });
+  f.setWrite(undefined);
+  const row = await f.journal.readMetadata(f.principal, "buffer", identity);
+  expect(row?.state).toBe("admitted");
+  await unlink(join(f.root, "native-activity", "buffers", `${row!.proof!.reportId}.json`));
+  await f.reopen();
   await expect(
     f.call("native.buffers.delivery.ack", { ...identity, consumedResult: consumedBuffer }),
   ).rejects.toThrow("exact current or archived proof");
-  expect((await f.journal.readMetadata(f.principal, "buffer", identity))?.state).toBe("recorded");
 });
 
 it("binds ACK to exact original, target, consumed digest, principal and current authentication", async () => {

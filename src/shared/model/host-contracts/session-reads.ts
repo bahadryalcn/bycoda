@@ -36,6 +36,10 @@ export const SessionsBlockParamsSchema = z.strictObject({
   blockId: z.string(),
   revision: SafeCounterSchema,
 });
+export const SessionsInlineVisualParamsSchema = z.strictObject({
+  sessionId: IdentifierSchema,
+  id: z.string().min(64).max(64),
+});
 export const SessionReferenceLocatorSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("host"),
@@ -253,6 +257,7 @@ export function sessionReadMethods(
     "sessions.syncChunk": sessionRead(SessionsSyncChunkParamsSchema, SessionsSyncChunkResultSchema),
     "sessions.get": sessionRead(SessionsGetParamsSchema, SessionViewSchema.nullable()),
     "sessions.block": sessionRead(SessionsBlockParamsSchema),
+    "sessions.inlineVisual": sessionRead(SessionsInlineVisualParamsSchema),
     "sessions.workedTime": sessionRead(SessionsWorkedTimeParamsSchema, SessionWorkedTimeSchema),
   };
 }

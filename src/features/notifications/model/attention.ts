@@ -47,6 +47,30 @@ export function turnKey(session: Pick<Session, "blocks">): string {
   return "";
 }
 
+/**
+ * When the latest turn ended, when the session knows it (start plus work time). Absent for a
+ * turn without timing: the caller then uses the moment it noticed the end.
+ */
+export function turnEndedAt(session: Pick<Session, "blocks">): number | undefined {
+  for (let i = session.blocks.length - 1; i >= 0; i--) {
+    const block = session.blocks[i];
+    if (block.role !== "user" || block.draft) continue;
+    const end = (block.startedAt ?? NaN) + (block.durationMs ?? NaN);
+    return Number.isFinite(end) && end > 0 ? end : undefined;
+  }
+  return undefined;
+}
+
+/** The block id of the latest error of the turn: two error events are two blocks, whatever
+ * their text, and the same error block is one event however its text is summarized. */
+export function turnErrorId(session: Pick<Session, "blocks">): string {
+  const turn = latestTurn(session.blocks as Block[]);
+  for (let i = turn.length - 1; i >= 0; i--) {
+    if (turn[i].notice === "error") return turn[i].id;
+  }
+  return "";
+}
+
 export type TurnOutcome = "finished" | "failed" | "interrupted";
 
 /**

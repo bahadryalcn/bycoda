@@ -8,8 +8,8 @@ import { hostProviders, withMachineSkillPolicy, type HostProvider } from "./prov
 import type { SendTurnInput } from "../../src/integrations/harness/core/types";
 import { HARNESSES } from "../../src/features/sessions/model/session";
 
-it("does not offer Claude steering while its adapter only supports queued follow-ups", () => {
-  expect(hostProviders.claude.steer).toBeUndefined();
+it("offers Claude steering through the Host provider policy", () => {
+  expect(hostProviders.claude.steer).toBeTypeOf("function");
 });
 
 it("rechecks machine policy after async discovery and at exact prepared dispatch", async () => {

@@ -171,6 +171,53 @@ pub(crate) fn start_desktop_relay(app: AppHandle) {
         }
         std::thread::sleep(std::time::Duration::from_secs(30));
     });
+    // Durable deliveries settle a lost reply or ACK only on new traffic; an idle desktop
+    // would keep that slot holding the epoch prefix. One bounded pass every 30 s, or every
+    // 2 s while the previous pass moved the prefix.
+    let maintenance_app = app.clone();
+    std::thread::spawn(move || {
+        let mut last_error = String::new();
+        loop {
+            if relay_stopped() {
+                return;
+            }
+            // Buffer reports share the epoch: their consumed head is ACKed first so the
+            // service pass below can compact past it.
+            let buffers = {
+                use tauri::Manager;
+                let store = maintenance_app.state::<crate::session_store::SessionStore>();
+                crate::remote::NativeWorkspaceTransport::connect(
+                    &maintenance_app,
+                    "workspaces.native-activity.v1",
+                )
+                .and_then(|host| host.maintain_buffer_acknowledgements(&store))
+            };
+            let outcome = crate::remote::NativeServiceChannel::connect(&maintenance_app)
+                .and_then(|channel| channel.maintain_delivery(std::time::Duration::from_secs(5)))
+                .and_then(|moved| {
+                    buffers
+                        .map(|()| moved)
+                        .or_else(|e| if moved { Ok(true) } else { Err(e) })
+                });
+            // While a backlog drains, each pass is a few sequential Host round trips; idling
+            // 30 s between them stretched an existing user's drain over many hours.
+            let progressed = outcome.as_ref().is_ok_and(|moved| *moved);
+            // Log a failure once per change, never request data: it names only our own stage.
+            let error = outcome.err().unwrap_or_default();
+            if !error.is_empty() && error != last_error {
+                log::warn!(
+                    "[desktop relay] delivery maintenance failed: {}",
+                    error.chars().take(200).collect::<String>()
+                );
+            }
+            last_error = error;
+            std::thread::sleep(std::time::Duration::from_secs(if progressed {
+                2
+            } else {
+                30
+            }));
+        }
+    });
     // Busy replies are network I/O, so they leave the poll thread: it must reach the next take.
     let (busy_queue, busy_jobs) = std::sync::mpsc::sync_channel::<BusyJob>(BUSY_QUEUE);
     std::thread::spawn(move || {

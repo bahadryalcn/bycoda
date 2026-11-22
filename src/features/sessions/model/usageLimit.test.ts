@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { newSession, type Session } from "./session";
 import {
   formatUsageLimitReset,
+  usageLimitAfterTargetChange,
   USAGE_LIMIT_RESUME_GRACE_MS,
   usageLimitResetDelay,
   usageLimitResumeDue,
@@ -14,6 +15,21 @@ function limited(patch: Partial<Session> = {}): Session {
     ...patch,
   };
 }
+
+it.each([{ model: "codex:other" }, { providerAccountId: "work" }, { harness: "claude" as const }])(
+  "offers manual continuation when the confirmed target changes to %j",
+  (target) => {
+    const before = limited();
+    const next = { ...before, ...target };
+    const recovery = usageLimitAfterTargetChange(before, next);
+    expect(recovery?.recoveryFrom).toBeDefined();
+    expect(usageLimitResumeDue({ ...next, usageLimit: recovery }, 100_000)).toBe(false);
+    expect(usageLimitAfterTargetChange({ ...next, usageLimit: recovery }, before)).toEqual(
+      before.usageLimit,
+    );
+    expect(usageLimitAfterTargetChange(before, before)).toBe(before.usageLimit);
+  },
+);
 
 describe("usageLimitResumeDue", () => {
   it("waits for the reset plus a grace period", () => {

@@ -23,8 +23,9 @@ import { droppedFileCount } from "../../../shared/lib/externalDrop";
 import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFeedback";
 import { attachmentDropVerdict } from "../model/attachmentDrop";
 import {
+  clipboardTextWithAttachments,
   isFileReferenceText,
-  messageFilesFromClipboard,
+  messageFromClipboard,
   nativeClipboardAttachments,
 } from "../../../platform/tauri/clipboard";
 import {
@@ -34,7 +35,8 @@ import {
   revokeAttachment,
 } from "../model/attachments";
 import { collectSkippedAttachments } from "../model/attachmentSkips";
-import { attachmentTokens } from "../model/attachmentTokens";
+import { attachmentDraftTokens } from "../model/attachmentTokens";
+import { ComposerHighlight, type ComposerReferenceContext } from "./ComposerHighlight";
 import {
   addDraftAttachments,
   applyQueuedEdit,
@@ -45,6 +47,7 @@ import {
   queuedEditDraft,
   removeDraftAttachment,
   type QueuedEditDraft,
+  type QueuedPasteLayout,
 } from "../model/queuedMessageEdit";
 import type { Attachment, QueuedMessage } from "../model/session";
 import { AttachmentChip } from "./AttachmentChip";
@@ -61,6 +64,7 @@ type Props = {
   message: QueuedMessage;
   /** False when the harness cannot take attachments: chips can then only be removed. */
   canAttach: boolean;
+  references?: ComposerReferenceContext;
   onSave: (text: string, attachments: Attachment[]) => void;
   /** Take the message out of the queue; offered when nothing would be left to send. */
   onRemove: () => void;
@@ -118,6 +122,7 @@ function QueueEditContent({
   parentSessionId,
   message,
   canAttach,
+  references,
   onSave,
   onRemove,
   onCancel,
@@ -174,7 +179,7 @@ function QueueEditContent({
 
   const empty = isQueuedEditEmpty(message, draft);
   const dirty = hasQueuedEditChanges(message, draft);
-  const tokens = attachmentTokens(draft.attachments);
+  const tokens = attachmentDraftTokens(draft.attachments);
 
   useEffect(() => {
     const el = field.current;
@@ -259,15 +264,16 @@ function QueueEditContent({
     updateDraft(edit.draft);
   };
 
-  const attach = (incoming: Attachment[]) => {
+  const attach = (incoming: Attachment[], pasteLayout?: QueuedPasteLayout) => {
     if (!alive.current || saved.current || !canAttachRef.current) {
       incoming.forEach(revokeAttachment);
       return;
     }
     if (incoming.length === 0) return;
     const el = field.current;
-    const selection = el ? { start: el.selectionStart, end: el.selectionEnd } : null;
-    const result = addDraftAttachments(draftRef.current, incoming, selection);
+    const caret = pendingCaret.current;
+    const selection = caret === null ? captureDraft(el) : { start: caret, end: caret };
+    const result = addDraftAttachments(draftRef.current, incoming, selection, pasteLayout);
     for (const file of incoming) {
       if (result.draft.attachments.includes(file)) {
         added.current.set(file.id, file);
@@ -315,12 +321,30 @@ function QueueEditContent({
       return;
     }
     const data = event.clipboardData;
-    const messageFiles = messageFilesFromClipboard(data);
-    const files = messageFiles ?? filesFromClipboard(data);
+    const message = messageFromClipboard(data);
+    const files = message?.files ?? filesFromClipboard(data);
     if (files.length > 0) {
       event.preventDefault();
+      const { value, selectionStart, selectionEnd } = event.currentTarget;
+      if (message?.text) {
+        change(
+          value.slice(0, selectionStart) + message.text + value.slice(selectionEnd),
+          selectionStart + message.text.length,
+        );
+      }
       if (!canAttach) return;
-      void attachBlobs(files);
+      const pastedDraft = draftRef.current;
+      const end = message?.text ? (pendingCaret.current ?? selectionStart) : selectionEnd;
+      const start = message?.text ? end - message.text.length : selectionStart;
+      void attachBlobs(files, (incoming) =>
+        message?.referenceText && draftRef.current === pastedDraft && start >= 0
+          ? {
+              range: { start, end },
+              textWithAttachments: (attachments) =>
+                clipboardTextWithAttachments(message, incoming, attachments),
+            }
+          : undefined,
+      );
       return;
     }
     // A webview reports a pasted screenshot or copied file as text only (or
@@ -346,6 +370,7 @@ function QueueEditContent({
   const collect = async (
     read: () => Promise<Attachment[]>,
     restore?: (incoming: Attachment[]) => void,
+    pasteLayout?: (incoming: Attachment[]) => QueuedPasteLayout | undefined,
   ) => {
     const admitted = parentChanged.admit();
     if (!admitted) return;
@@ -369,7 +394,7 @@ function QueueEditContent({
         apply: (incoming) =>
           admitted.apply(() => {
             restore?.(incoming);
-            attach(incoming);
+            attach(incoming, pasteLayout?.(incoming));
           }),
         isAlive: () => alive.current,
         setError,
@@ -384,14 +409,21 @@ function QueueEditContent({
   };
 
   /** Pasted and dropped files: valid ones attach, skipped blobs are named instead of vanishing. */
-  const attachBlobs = (files: File[]) =>
-    collect(async () => {
-      const skips = collectSkippedAttachments();
-      const attached = await attachmentsFromFiles(files, { onSkipped: skips.onSkipped });
-      const notice = skips.notice();
-      if (alive.current && notice) setError(notice);
-      return attached;
-    });
+  const attachBlobs = (
+    files: File[],
+    pasteLayout?: (incoming: Attachment[]) => QueuedPasteLayout | undefined,
+  ) =>
+    collect(
+      async () => {
+        const skips = collectSkippedAttachments();
+        const attached = await attachmentsFromFiles(files, { onSkipped: skips.onSkipped });
+        const notice = skips.notice();
+        if (alive.current && notice) setError(notice);
+        return attached;
+      },
+      undefined,
+      pasteLayout,
+    );
 
   const hasFiles = (event: DragEvent) =>
     Array.from(event.dataTransfer?.types ?? []).includes("Files");
@@ -507,6 +539,20 @@ function QueueEditContent({
           label={t("Queued message text")}
           readOnly={parentClosed}
           value={draft.text}
+          overlay={
+            <ComposerHighlight
+              text={draft.text}
+              mode={null}
+              names={references?.names ?? new Set()}
+              skillParts={references?.skillParts ?? ((text) => [{ text }])}
+              mentions={references?.mentions ?? new Map()}
+              mcpTags={references?.mcpTags ?? []}
+              {...references}
+              attachments={draft.attachments}
+              citations={0}
+              field={field}
+            />
+          }
           minRows={5}
           maxRows={14}
           spellCheck={false}

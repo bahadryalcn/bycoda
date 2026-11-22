@@ -32,6 +32,7 @@ import { ModelSettingPicker } from "./ModelSettingPicker";
 import { isSubagentSetting } from "../model/crossDelegation";
 import type { AccountModelChoice } from "../model/accountModelChoices";
 import { useModelSource } from "./modelSource";
+import { accountSwitcherKind } from "../model/modelPanelData";
 
 const PANEL_WIDTH = 600;
 const PANEL_HEIGHT = 460;
@@ -109,7 +110,12 @@ export function ModelPanel({
     !!accountHarness,
   );
   const shownAccounts = accountHarness ? accounts : [];
-  const listOpen = accountListOpen && shownAccounts.length > 2;
+  const accountControl = accountSwitcherKind(shownAccounts.length);
+  const inlineAccounts =
+    accountControl === "switch" ||
+    (accountControl === "label" && shownAccounts[0].id !== accountId);
+  const showAccountMenu = accountControl === "menu" || accountControl === "search";
+  const listOpen = accountListOpen && showAccountMenu;
   // The rail already names the provider, so its tab header shows only its accounts.
   const title = browser.query.trim()
     ? t("Results")
@@ -133,6 +139,17 @@ export function ModelPanel({
     onAccountListOpen(false);
     onSelectAccount(id);
   };
+  const accountList =
+    inlineAccounts || listOpen ? (
+      <ModelAccountList
+        accounts={shownAccounts}
+        accountId={accountId}
+        defaultAccountId={defaultAccountId}
+        now={now}
+        inline={inlineAccounts}
+        onSelect={pickAccount}
+      />
+    ) : undefined;
 
   return (
     <Popover
@@ -177,42 +194,36 @@ export function ModelPanel({
               ) : undefined
             }
             header={
-              <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 pt-1.5 pb-1">
-                {title ? (
-                  <Text
-                    as="span"
-                    size="caption"
-                    weight="medium"
-                    tone="secondary"
-                    className="shrink-0"
-                  >
-                    {title}
-                  </Text>
+              <>
+                {title || showAccountMenu ? (
+                  <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 pt-1.5 pb-1">
+                    {title ? (
+                      <Text
+                        as="span"
+                        size="caption"
+                        weight="medium"
+                        tone="secondary"
+                        className="shrink-0"
+                      >
+                        {title}
+                      </Text>
+                    ) : null}
+                    {showAccountMenu ? (
+                      <ModelAccountControl
+                        accounts={shownAccounts}
+                        accountId={accountId}
+                        defaultAccountId={defaultAccountId}
+                        listOpen={listOpen}
+                        onToggleList={() => onAccountListOpen(!listOpen)}
+                      />
+                    ) : null}
+                  </div>
                 ) : null}
-                {shownAccounts.length <= 1 ? null : (
-                  <ModelAccountControl
-                    accounts={shownAccounts}
-                    accountId={accountId}
-                    defaultAccountId={defaultAccountId}
-                    listOpen={listOpen}
-                    onSelect={pickAccount}
-                    onToggleList={() => onAccountListOpen(!listOpen)}
-                  />
-                )}
-              </div>
+                {inlineAccounts ? accountList : null}
+              </>
             }
             leading={leading}
-            body={
-              listOpen ? (
-                <ModelAccountList
-                  accounts={shownAccounts}
-                  accountId={accountId}
-                  defaultAccountId={defaultAccountId}
-                  now={now}
-                  onSelect={pickAccount}
-                />
-              ) : undefined
-            }
+            body={listOpen ? accountList : undefined}
           />
           {settings ? (
             <ModelSettingsColumn

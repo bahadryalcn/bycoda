@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
-import { act, createElement, useCallback, useState, type ComponentProps } from "react";
+import { act, createElement, Fragment, useCallback, useState, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { setLanguagePreference, t } from "../../../shared/i18n";
+import { ToastRegion, type ToastAnnouncement } from "../../../shared/ui/ToastRegion";
 import { SessionPane, type SessionPaneProps } from "../../sessions/ui/SessionPane";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { PaneTree } from "../../workspace/ui/PaneTree";
@@ -221,6 +222,7 @@ let host: HostSession | undefined;
 let catalog: HostModelCatalog | Error;
 let providers: HostDescriptor["providers"];
 let harnessSwitchSupported = false;
+let accountSwitchSupported = false;
 let attachmentOwnershipSupported = false;
 let steerSupported = false;
 let lazyHistorySupported = false;
@@ -298,6 +300,7 @@ beforeEach(() => {
   resetDisabledModels();
   resetHarnessModelOverlays();
   harnessSwitchSupported = false;
+  accountSwitchSupported = false;
   attachmentOwnershipSupported = false;
   steerSupported = false;
   lazyHistorySupported = false;
@@ -409,9 +412,12 @@ beforeEach(() => {
           "workspaces.managed.v1",
           "workspaces.policy.v1",
           ...(managedCreationSupported ? ["sessions.managedCreation.v1"] : []),
-          ...(steerSupported ? ["sessions.steer"] : []),
+          ...(steerSupported
+            ? ["sessions.steer", ...providers.map((id) => `sessions.steer.${id}`)]
+            : []),
           ...(sharedQueueSupported ? ["sessions.queue"] : []),
           ...(harnessSwitchSupported ? ["sessions.harnessSwitch"] : []),
+          ...(accountSwitchSupported ? ["sessions.configure.providerAccount.v1"] : []),
           ...(lazyHistorySupported ? ["sessions.lazyHistory", "machine.changes"] : []),
           ...(inlineSyncSupported ? ["machine.changes", "machine.changes.inlineSync"] : []),
           ...(conversationRewindSupported ? ["sessions.rewind"] : []),
@@ -677,6 +683,7 @@ function dispatch(command: HostCommand) {
         cwd: command.worktreeCwd ?? "/home/me/repo",
         ...(command.workspaceId ? { workspaceId: command.workspaceId, workspaceRevision: 1 } : {}),
         harness: command.harness,
+        providerAccountId: command.providerAccountId,
         model: command.model,
         modelSettings: command.modelSettings ?? {},
         runtimeMode: command.runtimeMode,
@@ -691,6 +698,9 @@ function dispatch(command: HostCommand) {
       session: {
         ...host.session,
         ...(command.harness ? { harness: command.harness } : {}),
+        ...(command.providerAccountId === undefined
+          ? {}
+          : { providerAccountId: command.providerAccountId ?? undefined }),
         model: command.model,
         modelSettings: command.modelSettings,
         runtimeMode: command.runtimeMode,
@@ -892,7 +902,11 @@ it.each(["codex", "cursor"] as const)(
   },
 );
 
-async function render(session = shell(), extra: Partial<SessionPaneProps> = {}) {
+async function render(
+  session = shell(),
+  extra: Partial<SessionPaneProps> = {},
+  onToast?: (entry: ToastAnnouncement) => void,
+) {
   const props = {
     session,
     visible: true,
@@ -904,7 +918,14 @@ async function render(session = shell(), extra: Partial<SessionPaneProps> = {}) 
     onClose: vi.fn(),
     ...extra,
   } as unknown as SessionPaneProps;
-  await act(async () => root.render(createElement(SessionPane, props)));
+  const pane = createElement(SessionPane, props);
+  await act(async () =>
+    root.render(
+      onToast
+        ? createElement(Fragment, null, createElement(ToastRegion, { onRecord: onToast }), pane)
+        : pane,
+    ),
+  );
   await settle();
 }
 let remoteOverrides: RemoteSessionOverrides;
@@ -1225,7 +1246,7 @@ it("keeps admitted evidence when Stop arrives before the original dispatch", asy
   expect(outboxFixture.settlements.size).toBe(0);
 });
 
-it("keeps an existing unknown command when a second-window retry is stopped during admission", async () => {
+it("keeps a restored unknown command when stopped without readmitting it", async () => {
   openExistingChat();
   const original: HostCommand = {
     type: "send",
@@ -1234,20 +1255,15 @@ it("keeps an existing unknown command when a second-window retry is stopped duri
     text: "Original",
   };
   await admitDurableRemoteCommand(projectKey, "env", original, "shell");
-  let release!: () => void;
-  outboxFixture.afterCommit = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  // The pending check retries the saved command by itself; its admission is held here.
+  const revision = outboxFixture.revision;
   await render();
-  await vi.waitFor(() => expect(outboxFixture.afterCommit).toBeUndefined());
+  expect(outboxFixture.revision).toBe(revision);
   await act(async () => transportProbe.current!.onStop!("shell"));
   await vi.waitFor(async () =>
     expect(
       (await readDurableRemoteEntry(projectKey, "env", original.commandId)).entry?.stopRequested,
     ).toBe(true),
   );
-  await act(async () => release());
   await settle();
   expect(
     (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
@@ -1282,8 +1298,7 @@ async function chooseEffort(label: string) {
 it("uses the normal composer with the host branch in its top row", async () => {
   await render();
   expect(container.querySelector("textarea")).not.toBeNull();
-  // The machine is named in the project rail, not the composer.
-  expect(document.body.textContent).not.toContain("Home server");
+  expect(container.querySelector("[data-composer]")?.textContent).not.toContain("Home server");
   expect(byLabel("Branch main")).not.toBeNull();
   expect(
     [...document.body.querySelectorAll("button")].some(
@@ -1729,19 +1744,19 @@ it("lets an existing Claude host session select another installed provider", asy
   expect(document.body.textContent).toContain("Earlier work");
 });
 
-it("applies the local model visibility settings to a historical host chat", async () => {
+it("keeps Host models selectable despite the desktop's local model settings", async () => {
   const visible = {
     id: "claude:sonnet-5",
     name: "Sonnet",
     harness: "claude" as const,
   };
-  const disabled = {
+  const hostOnly = {
     id: "claude:opus-4-6",
     name: "Opus 4.6",
     harness: "claude" as const,
   };
   providers = ["claude"];
-  catalog = { models: { claude: [visible, disabled] }, errors: {} };
+  catalog = { models: { claude: [visible, hostOnly] }, errors: {} };
   saveModelEnabled("claude:opus-4.6", false);
   host = {
     projectId: "project",
@@ -1761,9 +1776,12 @@ it("applies the local model visibility settings to a historical host chat", asyn
   rememberRemoteSession("shell", "host-session");
   await render();
   await openModels("Claude Code Sonnet");
-  expect(
-    [...document.querySelectorAll('[role="option"]')].map((option) => option.textContent),
-  ).toEqual(["Sonnet"]);
+  const options = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')];
+  expect(options.map((option) => option.textContent)).toEqual(["Sonnet", "Opus 4.6"]);
+  await act(async () => options[1].click());
+  await vi.waitFor(() =>
+    expect(commands.at(-1)).toMatchObject({ type: "configure", model: hostOnly.id }),
+  );
 });
 
 it("transport: drops settings from the tab that the host's model does not offer", async () => {
@@ -2354,34 +2372,40 @@ it("holds the Extras setting during a running turn and applies it after the turn
 });
 
 it.each([false, true])(
-  "transport: retries a lost create response without duplicating the first turn (remount: %s)",
+  "transport: reconciles a lost create response without redispatching (remount: %s)",
   async (remount) => {
+    commandStatusSupported = true;
     const original = vi.mocked(invoke).getMockImplementation()!;
     let accepted: ReturnType<typeof dispatch> | undefined;
+    let receiptAvailable = !remount;
     const attempts: HostCommand[] = [];
     vi.mocked(invoke).mockImplementation(async (command, input) => {
       const request = input as { method?: string; params?: HostCommand } | undefined;
       if (request?.method === "commands.dispatch" && request.params?.type === "create") {
         attempts.push(request.params);
-        if (accepted) return accepted;
         accepted = dispatch(request.params);
         throw new Error("Response lost after host accepted the request");
       }
+      if (
+        request?.method === "commands.status" &&
+        request.params?.commandId === attempts[0]?.commandId
+      )
+        return receiptAvailable ? accepted : null;
       return original(command, input);
     });
     await render();
     await sendTransport("Keep this first message");
-    // The lost response is not the end: the pending check sends the same create again.
     await settle();
-    expect(commands.map((command) => command.type)).toEqual(["create", "send"]);
     if (remount) {
+      expect(attempts).toHaveLength(1);
+      expect(commands.map((command) => command.type)).toEqual(["create"]);
       await act(async () => root.unmount());
+      receiptAvailable = true;
       root = createRoot(container);
       await render();
       await settle();
     }
-    expect(attempts).toHaveLength(2);
-    expect(attempts[1]).toEqual(attempts[0]);
+    expect(attempts).toHaveLength(1);
     expect(commands.map((command) => command.type)).toEqual(["create", "send"]);
     expect(commands[1]).toMatchObject({
       text: "Keep this first message",
@@ -2390,6 +2414,24 @@ it.each([false, true])(
     expect(transcriptItems("Keep this first message")).toHaveLength(1);
   },
 );
+
+it("holds an unconfirmed create on an older Host without dispatching it again", async () => {
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  const attempts = vi.fn();
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    const request = input as { method?: string; params?: HostCommand } | undefined;
+    if (request?.method === "commands.dispatch" && request.params?.type === "create") {
+      attempts(request.params.commandId);
+      throw new Error("RPC_WS_INTERRUPTED: reply lost; outcome is unknown");
+    }
+    return original(command, input);
+  });
+  await render();
+  await sendTransport("Keep my unconfirmed request");
+  await settle();
+  expect(attempts).toHaveBeenCalledOnce();
+  expect(document.body.textContent).toContain("Remote outcome is unknown");
+});
 
 it("settles a send whose response was lost once the Host reports its receipt, without sending it again", async () => {
   commandStatusSupported = true;
@@ -2550,6 +2592,107 @@ function openExistingChat(patch: Partial<HostSession> = {}) {
   commands = [];
   rememberRemoteSession("shell", "host-session");
 }
+
+function offerRemoteAccounts(includeDefault = true) {
+  accountSwitchSupported = true;
+  catalog = {
+    models: { codex: [gpt] },
+    errors: {},
+    accounts: {
+      codex: [
+        ...(includeDefault ? [{ id: "default", label: "Host default" }] : []),
+        { id: "remote-work", label: "Remote work" },
+      ],
+    },
+  };
+}
+
+it.each([true, false])(
+  "shows only named remote accounts in the composer when the Host includes its CLI profile: %s",
+  async (includeDefault) => {
+    offerRemoteAccounts(includeDefault);
+    openExistingChat();
+    await render();
+    const picker = container.querySelector<HTMLButtonElement>(
+      "[data-composer-model-controls] button[aria-haspopup]",
+    )!;
+    await act(async () => picker.click());
+    await vi.waitFor(() => {
+      const accounts = container.ownerDocument.querySelector(
+        '[role="radiogroup"][aria-label="Account"]',
+      );
+      expect(accounts?.textContent).toContain("Remote work");
+      expect(accounts?.textContent).not.toContain("Host default");
+    });
+    expect(commands).toHaveLength(0);
+    const account = [
+      ...container.ownerDocument.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+    ].find((button) => button.textContent?.includes("Remote work"))!;
+    await act(async () => account.click());
+    await vi.waitFor(() =>
+      expect(commands.at(-1)).toMatchObject({
+        type: "configure",
+        providerAccountId: "remote-work",
+      }),
+    );
+  },
+);
+
+it("configures and clears the account of a direct remote session on its Host", async () => {
+  offerRemoteAccounts();
+  openExistingChat();
+  await renderRemoteProbe();
+  await vi.waitFor(() => expect(remoteOverrides.onSelectProviderAccount).toBeTypeOf("function"));
+
+  await act(async () => remoteOverrides.onModelChange!("shell", "codex", gpt.id, "local-only"));
+  expect(commands).toHaveLength(0);
+  await act(async () => remoteOverrides.onModelChange!("shell", "codex", gpt.id, "remote-work"));
+  await vi.waitFor(() =>
+    expect(commands.at(-1)).toMatchObject({
+      type: "configure",
+      sessionId: "host-session",
+      providerAccountId: "remote-work",
+    }),
+  );
+  await vi.waitFor(() => expect(host!.session.providerAccountId).toBe("remote-work"));
+  await settle();
+
+  await act(async () => remoteOverrides.onSelectProviderAccount!("shell", "codex", "default"));
+  await vi.waitFor(() =>
+    expect(commands.at(-1)).toMatchObject({ type: "configure", providerAccountId: null }),
+  );
+});
+
+it("creates a direct remote session with its selected Host account", async () => {
+  offerRemoteAccounts();
+  const session = { ...shell(), providerAccountId: "local-only" };
+  await renderRemoteProbe(true, session);
+  await vi.waitFor(() => expect(remoteOverrides.onSelectProviderAccount).toBeTypeOf("function"));
+  expect(remoteOverrides.session?.providerAccountId).toBeUndefined();
+
+  await act(async () => remoteOverrides.onSelectProviderAccount!("shell", "codex", "remote-work"));
+  await act(async () =>
+    expect(remoteOverrides.onSubmit!("shell", "Use the owner's account", [])).toBe(true),
+  );
+  await vi.waitFor(() =>
+    expect(commands[0]).toMatchObject({ type: "create", providerAccountId: "remote-work" }),
+  );
+});
+
+it("keeps model changes available on an older remote Host without account switching", async () => {
+  offerRemoteAccounts();
+  accountSwitchSupported = false;
+  harnessSwitchSupported = true;
+  providers = ["codex", "cursor"];
+  openExistingChat();
+  await renderRemoteProbe();
+  expect(remoteOverrides.onSelectProviderAccount).toBeUndefined();
+  await act(async () => remoteOverrides.onModelChange!("shell", "cursor", cursor.id));
+  await vi.waitFor(() =>
+    expect(commands.at(-1)).toMatchObject({ type: "configure", model: cursor.id }),
+  );
+  expect(commands.at(-1)).not.toHaveProperty("providerAccountId");
+});
 
 it.each(["send", "draft", "shell"] as const)(
   "authority intent: binds a new %s to the displayed generation",
@@ -3488,9 +3631,10 @@ it("marks known revision updates refreshing and settles on the new owner snapsho
 });
 
 it("releases transcript demand and stops polling when the host deletes a session", async () => {
+  const onToast = vi.fn();
   lazyHistorySupported = true;
   openExistingChat();
-  await render();
+  await render(shell(), {}, onToast);
   await vi.waitFor(() =>
     expect(container.querySelector('[aria-label="Transcript"]')?.getAttribute("data-history")).toBe(
       "true",
@@ -3498,8 +3642,14 @@ it("releases transcript demand and stops polling when the host deletes a session
   );
   machineSessionDeleted = true;
   await vi.waitFor(() =>
-    expect(document.body.textContent).toContain("This conversation was deleted on the host."),
+    expect(onToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "This conversation was deleted on the host.",
+        tone: "info",
+      }),
+    ),
   );
+  expect(container.querySelector("[data-remote-data-state]")).toBeNull();
   await vi.waitFor(() =>
     expect(
       vi.mocked(invoke).mock.calls.some((call) => {
@@ -3691,7 +3841,7 @@ it("shows a host turn as running from its status without requiring the transcrip
   openExistingChat({ status: "running", runId: "run-1" });
   host!.session.busy = false;
   await render();
-  expect(document.body.textContent).toContain("Working on Home server.");
+  expect(document.body.textContent).not.toContain("Working on Home server.");
   expect(container.querySelector('[aria-label="Transcript"]')?.getAttribute("data-busy")).toBe(
     "true",
   );
@@ -3699,7 +3849,6 @@ it("shows a host turn as running from its status without requiring the transcrip
   setHost({ status: "idle", busy: true });
   await act(async () => notifyRemoteRecovered());
   await settle();
-  expect(document.body.textContent).not.toContain("Working on Home server.");
   expect(container.querySelector('[aria-label="Transcript"]')?.getAttribute("data-busy")).toBe(
     "false",
   );
@@ -3730,7 +3879,7 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
     Array.from(container.querySelectorAll('[role="status"]'))
       .map((node) => node.textContent)
       .join(" "),
-  ).toContain("Your messages are kept");
+  ).toContain("catching up with the local Host");
   expect(document.body.textContent).toContain("local edit");
   expect(byLabel("Stop")).not.toBeNull();
   await render({ ...session, continuingElsewhere: undefined });
@@ -3740,7 +3889,7 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
     Array.from(container.querySelectorAll('[role="status"]'))
       .map((node) => node.textContent)
       .join(" "),
-  ).toContain("Your messages are kept");
+  ).toContain("catching up with the local Host");
 });
 
 it("refreshes an adopted conversation without remounting or clearing its unsent composer", async () => {
@@ -4450,6 +4599,37 @@ slow(
       "Preserve the refused follow-up",
     );
     expect(remoteOverrides.session?.queueStatus).toBe("paused");
+  },
+);
+
+slow(
+  "retires a pending steer on recovered pre-write refusal without sending it again",
+  async () => {
+    steerSupported = true;
+    commandStatusSupported = true;
+    steerFailure = "The host did not confirm the request";
+    openRunningChat();
+    const original = vi.mocked(invoke).getMockImplementation()!;
+    let attempts = 0;
+    vi.mocked(invoke).mockImplementation(async (command, input) => {
+      const request = input as { method?: string; params?: HostCommand };
+      if (request?.method === "commands.dispatch" && request.params?.type === "steer") attempts++;
+      if (request?.method === "commands.status") {
+        statusRequests.push(request.params!.commandId);
+        throw new Error("Host rejected request: The active turn is not ready for steering.");
+      }
+      return original(command, input);
+    });
+    await render();
+    await whenStopShown();
+    await send("Keep my follow-up");
+    await vi.waitFor(async () => {
+      expect(statusRequests.length).toBeGreaterThan(0);
+      expect(
+        (await readDurableRemoteCommand(projectKey, "env", "host-session", "shell")).command,
+      ).toBeFalsy();
+    });
+    expect(attempts).toBe(1);
   },
 );
 

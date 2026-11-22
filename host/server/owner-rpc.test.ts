@@ -95,6 +95,20 @@ it("does not report a held poll as slow for the wait its caller asked for", asyn
   expect(unheld.log).toContain("slow call method=machine.changes ms=2100");
 });
 
+it("logs only registered workspace command names on failed workspace calls", () => {
+  const failure = new Error("private/path");
+  const fields = (method: string, command: unknown) =>
+    rpcFailureFields(failure, {
+      input: { method },
+      params: { command, args: { cwd: "private/path" } },
+    });
+  expect(fields("workspace.run", "read_text_file").workspaceCommand).toBe("read_text_file");
+  expect(fields("workspace.run", "private/path").workspaceCommand).toBeUndefined();
+  expect(fields("workspace.run", { cwd: "private/path" }).workspaceCommand).toBeUndefined();
+  expect(fields("files.read", "read_text_file").workspaceCommand).toBeUndefined();
+  expect(JSON.stringify(fields("workspace.run", "read_text_file"))).not.toContain("private/path");
+});
+
 it("keeps the plain threshold for calls that do not hold", () => {
   expect(slowRpcThresholdMs("sessions.desktopLive", { waitMs: 30_000 })).toBe(2_000);
   expect(slowRpcThresholdMs("git.action", {})).toBe(2_000);

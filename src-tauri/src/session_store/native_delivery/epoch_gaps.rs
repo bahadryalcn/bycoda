@@ -302,7 +302,7 @@ pub(crate) fn record_gap_tx(conn: &Connection, original: &Original) -> Result<()
         return Err(gap_invalid());
     }
     let (id, row) = expected(&record)?;
-    let value = state(conn, &id.owner, id.generation)?;
+    let value = state(conn, record.runtime, &id.owner, id.generation)?;
     if id.sequence <= value.local_through
         || id.sequence > value.high_water
         || record.route_fingerprint != value.route

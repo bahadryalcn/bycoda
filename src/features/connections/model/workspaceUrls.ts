@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { featureHost } from "./hostFeatureClient";
-import { remoteRequest } from "./connections";
+import { remoteRequest, remoteSessionFor } from "./connections";
 import { parseRemotePath } from "./remoteProjects";
 import type { DevServer, DevServerEndpoint, DevServerScan } from "../../host-tools/devServerTypes";
 
@@ -16,6 +16,12 @@ function isLoopbackDevelopmentHost(host: string): boolean {
     ["::1", "::", "0.0.0.0"].includes(host) ||
     /^127(?:\.\d{1,3}){3}$/.test(host)
   );
+}
+
+function loopbackUrl(url: URL): string {
+  if (url.hostname === "0.0.0.0") url.hostname = "127.0.0.1";
+  if (url.hostname === "[::]") url.hostname = "[::1]";
+  return url.href;
 }
 
 export function isHostDevelopmentUrl(input: string): boolean {
@@ -45,11 +51,7 @@ export async function accessibleDevelopmentUrl(
   const url = new URL(input);
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
     throw new Error("Choose an HTTP or HTTPS development server URL.");
-  if (!parseRemotePath(cwd)) {
-    if (url.hostname === "0.0.0.0") url.hostname = "127.0.0.1";
-    if (url.hostname === "[::]") url.hostname = "[::1]";
-    return url.href;
-  }
+  if (!parseRemotePath(cwd)) return loopbackUrl(url);
   const { machine, projectId } = await featureHost(cwd, "dev.servers.private-access");
   const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
   let match = selected;
@@ -99,21 +101,37 @@ export async function accessibleDevelopmentUrl(
   });
 }
 
-export async function openWorkspaceUrl(cwd: string | undefined, input: string) {
+/**
+ * Opens a private remote chat link on the project's Host. The transcript's
+ * composer ID resolves to a Host session, which owns the browser page.
+ */
+export async function openWorkspaceUrl(
+  cwd: string | undefined,
+  input: string,
+  composerSessionId?: string,
+) {
   if (!cwd || !isHostDevelopmentUrl(input)) return openExternal(input);
 
   const url = new URL(input);
   if (url.username || url.password)
     throw new Error("Choose an HTTP or HTTPS development server URL without credentials.");
-  if (parseRemotePath(cwd) && url.protocol === "https:") {
+  if (parseRemotePath(cwd)) {
+    const sessionId = composerSessionId ? remoteSessionFor(composerSessionId) : undefined;
+    const missingSession = "Open a session on this Host before using project tools.";
+    if (composerSessionId && !sessionId) throw new Error(missingSession);
     await featureHost(cwd, "browser.shared");
     const { openHostToolsWindow } = await import("../../host-tools/ToolsWorkspace");
+    if (composerSessionId && remoteSessionFor(composerSessionId) !== sessionId)
+      throw new Error(missingSession);
+    const initialUrl = loopbackUrl(url);
     await openHostToolsWindow({
       cwd,
-      sessionId: "",
+      sessionId: sessionId ?? "",
+      composerSessionId,
       title: url.host,
       initialTab: "browser",
-      initialUrl: input,
+      initialMachine: "project",
+      initialUrl,
     });
     return;
   }

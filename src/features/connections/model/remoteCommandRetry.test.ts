@@ -10,7 +10,17 @@ const native = (code: string, message = "Host request failed", uncertain = false
   Object.assign(new Error(`${code}: ${message}`), { code, uncertain });
 
 describe("classifyCommandFailure", () => {
+  it("preserves an unknown delivery through a legacy HTTP rejection envelope", () => {
+    expect(classifyCommandFailure("Host rejected request: The operation outcome is unknown.")).toBe(
+      "uncertain",
+    );
+  });
+
   it("treats a Host refusal as definitive", () => {
+    expect(classifyCommandFailure(native("RPC_WS_REMOTE", "Turn not ready"))).toBe("definitive");
+    expect(classifyCommandFailure(native("RPC_WS_REMOTE", "Delivery unknown", true))).toBe(
+      "uncertain",
+    );
     expect(classifyCommandFailure("Host rejected request: Branch x does not exist")).toBe(
       "definitive",
     );

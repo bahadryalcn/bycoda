@@ -488,12 +488,10 @@ describe("settings pages", () => {
     localStorage.setItem("bycoda.showExcludedFiles", "true");
     await render("appearance");
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('button[aria-label="About this page"]')!.click(),
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Reset all appearance settings"]')!
+        .click(),
     );
-    const reset = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
-    ).find((node) => node.textContent?.trim() === "Reset all appearance settings")!;
-    await act(async () => reset.click());
     // Page-level restore is confirmed first; the dialog's confirm button runs the reset.
     const confirmReset = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
@@ -722,12 +720,10 @@ describe("settings pages", () => {
     await render("appearance");
     expect(fontTrigger().textContent).toContain("Verdana");
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('button[aria-label="About this page"]')!.click(),
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Reset all appearance settings"]')!
+        .click(),
     );
-    const reset = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
-    ).find((node) => node.textContent?.trim() === "Reset all appearance settings")!;
-    await act(async () => reset.click());
     // Page-level restore is confirmed first; the dialog's confirm button runs the reset.
     const confirmReset = Array.from(
       document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),

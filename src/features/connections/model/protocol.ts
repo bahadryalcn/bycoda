@@ -24,6 +24,9 @@ export type {
  */
 export const HOST_PROTOCOL_VERSION = 1;
 
+/** The Host advertises this for each installed adapter that can steer its own live turn. */
+export const providerSteerCapability = (provider: string) => `sessions.steer.${provider}`;
+
 /**
  * Tells the reader which side to update. `host` is the protocol the Host serves,
  * `client` the one this app speaks. Returns null when they match.

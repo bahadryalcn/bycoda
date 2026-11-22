@@ -59,6 +59,42 @@ it("keeps a failure visible and reports it until the next press", async () => {
   expect(button().textContent).toContain("Copied");
 });
 
+it.each([true, false])(
+  "keeps copy feedback in one compact alert (icon only: %s)",
+  async (iconOnly) => {
+    const detail =
+      "The request is not allowed by the user agent or the platform in the current context.";
+    copyText.mockRejectedValueOnce(new DOMException(detail, "NotAllowedError"));
+    await act(async () =>
+      root.render(
+        createElement(CopyButton, {
+          iconOnly,
+          label: "Copy message",
+          text: "message",
+          errorDetail: true,
+        }),
+      ),
+    );
+    const retry = button();
+    const copyIcon = retry.querySelector("svg")?.innerHTML;
+    await act(async () => retry.click());
+    const alert = host.querySelector('[role="alert"]')!;
+    expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(
+      [...alert.querySelectorAll("svg")].filter((icon) => !icon.closest("button")),
+    ).toHaveLength(1);
+    expect(alert.textContent).toContain("Copy failed. Try again.");
+    expect(alert.textContent).not.toContain(detail);
+    expect(retry.querySelector("svg")?.innerHTML).toBe(copyIcon);
+    expect(retry.getAttribute("aria-label")).toBe("Copy message");
+    await act(async () => alert.querySelector("button")!.click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(detail);
+    await act(async () => retry.click());
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(retry.dataset.copyState).toBe("copied");
+  },
+);
+
 it("uses a custom clipboard write and reads lazy text at click time", async () => {
   const onCopy = vi.fn(async () => {});
   await act(async () => root.render(createElement(CopyButton, { label: "Copy", onCopy })));

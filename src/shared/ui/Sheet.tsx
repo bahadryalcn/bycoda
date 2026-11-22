@@ -65,6 +65,8 @@ export type SheetProps = {
    * nearest positioned ancestor (a pane); Escape closes it only when focus is in that pane.
    */
   anchor?: "viewport" | "container";
+  /** Non-modal only. `canvas` fits an inline workspace pane; `chat` uses the chat canvas. */
+  surface?: "floating" | "canvas" | "chat";
   /** Non-modal only: `false` keeps the sheet mounted but inert and hidden from Escape. */
   open?: boolean;
   onClose: () => void;
@@ -86,6 +88,8 @@ export type SheetProps = {
   size?: number | string;
   /** Non-modal end sheets: a drag/arrow-key resize edge (shared Sash) on the inner border. */
   resizable?: SheetResize;
+  /** A non-modal container end sheet can fill its pane and restore its previous width. */
+  expanded?: boolean;
   /** Non-modal: a pointer press outside closes the sheet. Default true. */
   dismissOnOutside?: boolean;
   /** Non-modal viewport: presses inside this element or selector are not outside (the trigger). */
@@ -167,7 +171,7 @@ function useContainerFocusReturn(sheet: RefObject<HTMLElement | null>, active: b
 /**
  * A side or bottom sheet. Modal sheets reuse Modal; both share the body `padding` rule. Non-modal sheets are
  * side panels that keep the page usable (session sub-panels, the notification list). Header is the
- * shared PanelHeader; the surface is the shared floating glass (`popover-backdrop`).
+ * shared PanelHeader. Non-modal sheets use floating glass by default and can use the chat canvas.
  * Hand-written side and bottom overlay panels; header, close, padding and footer reuse Modal chrome.
  * @group overlay
  * @use A detail or secondary panel beside or below the work (task detail, notifications).
@@ -236,6 +240,7 @@ function NonModalSheet({
   role = "dialog",
   side = "end",
   anchor = "viewport",
+  surface: fill = "floating",
   open = true,
   onClose,
   title,
@@ -249,6 +254,7 @@ function NonModalSheet({
   children,
   size,
   resizable,
+  expanded,
   dismissOnOutside = true,
   ignore,
   escapeScope,
@@ -334,9 +340,11 @@ function NonModalSheet({
   }, [open, initialFocus]);
 
   const end = side === "end";
+  const fillsPane = end && !viewport && expanded;
   const sized = width !== undefined ? width : size;
-  const sizeStyle: CSSProperties =
-    sized === undefined
+  const sizeStyle: CSSProperties = fillsPane
+    ? { inlineSize: "100%" }
+    : sized === undefined
       ? end
         ? { inlineSize: "min(34rem, 94%)" }
         : {}
@@ -367,9 +375,12 @@ function NonModalSheet({
           insetBlockEnd: 0,
           marginInline: "auto",
         };
-  const frame = end
-    ? `border-s border-(--ui-pane-border) ${viewport ? "" : "rounded-s-(--ui-radius-popup)"}`
-    : "w-full max-w-4xl rounded-t-(--ui-radius-popup) border border-b-0 border-(--ui-pane-border)";
+  const frame =
+    fill === "canvas"
+      ? ""
+      : end
+        ? `border-s border-(--ui-pane-border) ${viewport ? "" : "rounded-s-(--ui-radius-popup)"}`
+        : "w-full max-w-4xl rounded-t-(--ui-radius-popup) border border-b-0 border-(--ui-pane-border)";
 
   const surface = (
     <section
@@ -383,24 +394,28 @@ function NonModalSheet({
       tabIndex={-1}
       data-sheet-side={side}
       data-sheet-motion={motion}
+      data-sheet-surface={fill}
       data-state={open ? "open" : "closed"}
       // A closed sheet a caller keeps mounted (to keep its content) must not stay painted.
       hidden={!open}
       style={{ ...position, ...sizeStyle }}
       className={[
         styles.sheet,
-        "isolate flex flex-col shadow-(--ui-elevation-floating) outline-none",
+        "isolate flex flex-col outline-none",
+        fill !== "canvas" && "shadow-(--ui-elevation-floating)",
         frame,
         className,
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <GlassBackdrop
-        ref={glassRef}
-        className={["popover-backdrop", glassClassName].filter(Boolean).join(" ")}
-      />
-      {resizable && end ? (
+      {fill === "floating" ? (
+        <GlassBackdrop
+          ref={glassRef}
+          className={["popover-backdrop", glassClassName].filter(Boolean).join(" ")}
+        />
+      ) : null}
+      {resizable && end && !fillsPane ? (
         <Sash
           orientation="vertical"
           appearance="hidden"

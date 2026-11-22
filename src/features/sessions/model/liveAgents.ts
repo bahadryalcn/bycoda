@@ -87,9 +87,9 @@ export function liveAgentsFromSessions(
     .sort(compareLiveAgents);
 }
 
-/** Keep the rail card up while a working or unseen-finished chat is not the open session. */
-export function shouldShowLiveAgents(agents: LiveAgent[], activeSessionId?: string): boolean {
-  return agents.some((agent) => agent.id !== activeSessionId);
+/** Activity shows work still in progress or waiting for input. */
+export function isLiveActivityAgent(agent: LiveAgent): boolean {
+  return agent.needsApproval || agent.issue === "retrying" || (!agent.done && !agent.issue);
 }
 
 /** Project activity includes host-owned turns, but excludes finished or waiting chats. */

@@ -43,7 +43,7 @@ function downloadKey(machine: string, session: string, file: AttachmentSource): 
   return JSON.stringify([machine, session, file.id, file.size, file.path]);
 }
 
-function canPreview(file: Attachment): boolean {
+export function canPreview(file: Attachment): boolean {
   return (
     file.kind === "image" &&
     Number.isSafeInteger(file.size) &&
@@ -52,7 +52,7 @@ function canPreview(file: Attachment): boolean {
   );
 }
 
-async function downloadPreview(
+export async function downloadPreview(
   machineId: string,
   sessionId: string,
   file: AttachmentSource,

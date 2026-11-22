@@ -7,6 +7,7 @@ import {
   classifyGitPath,
   GitWatches,
   gitWatchPlan,
+  resolveGitDirs,
   normGitPath,
   type GitWatchFactory,
 } from "./git-watch";
@@ -423,5 +424,31 @@ describe("GitWatches on a real repository", () => {
     } finally {
       watches.close();
     }
+  });
+});
+
+describe("resolveGitDirs", () => {
+  const failing = (error: object) => ({
+    exec: async () => {
+      throw Object.assign(new Error("failed"), error);
+    },
+  });
+
+  it("calls a directory a non-checkout only when Git itself exits non-zero", async () => {
+    await expect(
+      resolveGitDirs("/x", failing({ code: 128, killed: false, signal: null })),
+    ).rejects.toThrow("/x is not a Git checkout");
+  });
+
+  it.each([
+    ["queue timeout", { code: "ETIMEDOUT", killed: false, signal: null }],
+    ["worker crash", { code: "EIO", killed: false, signal: null }],
+    ["abort", { code: "ABORT_ERR", name: "AbortError", killed: false, signal: null }],
+    ["deadline kill", { code: null, killed: true, signal: "SIGTERM" }],
+    ["missing git", { code: "ENOENT", killed: false, signal: null }],
+  ])("propagates a %s instead of reporting a non-checkout", async (_name, error) => {
+    const failure = resolveGitDirs("/x", failing(error));
+    await expect(failure).rejects.toMatchObject({ message: "failed", code: error.code });
+    await expect(failure).rejects.not.toThrow(/not a Git checkout/);
   });
 });

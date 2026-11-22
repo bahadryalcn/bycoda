@@ -1,6 +1,9 @@
 import { lstat, opendir, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { execFileAsync } from "../../src/shared/lib/processExecution.node";
+import { stripVTControlCharacters } from "node:util";
+import { truncateCodeUnits } from "../../src/shared/lib/text/truncate";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+import { hostGitExec } from "./git-exec-pool";
 
 const SKIP = [
   ".git",
@@ -72,30 +75,151 @@ $entries=0; $directories=0; $limit=$null
     if($next -eq $ancestor) { break }
     $ancestor=$next
   }
-  foreach($path in [IO.Directory]::EnumerateFileSystemEntries($directory)) {
+  foreach($entry in [IO.DirectoryInfo]::new($directory).EnumerateFileSystemInfos()) {
     if(++$entries -gt ${limits.entries}) { $limit='entries'; break scan }
-    $name=[IO.Path]::GetFileName($path)
-    if($skip -contains $name) { continue }
-    $attributes=[IO.File]::GetAttributes($path)
+    if($skip -contains $entry.Name) { continue }
+    $attributes=$entry.Attributes
     if(($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
     if(($attributes -band [IO.FileAttributes]::Directory) -eq 0) { continue }
     if($depth -ge ${limits.depth}) { if($null -eq $limit) { $limit='depth' }; continue }
-    $git=[IO.Path]::Combine($path,'.git')
-    $gitAttributes=$null
-    try { $gitAttributes=[IO.File]::GetAttributes($git) }
-    catch [IO.FileNotFoundException] { }
-    catch [IO.DirectoryNotFoundException] { }
-    if($null -ne $gitAttributes) {
-      if(($gitAttributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
-        if($result.Count -ge ${limits.repositories}) { $limit='repositories'; break scan }
-        $result.Add($path)
-      }
+    $path=$entry.FullName
+    foreach($marker in $entry.EnumerateFileSystemInfos('.git')) {
+      if($marker.Name -ine '.git' -or ($marker.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+      if($result.Count -ge ${limits.repositories}) { $limit='repositories'; break scan }
+      $result.Add($path)
     }
     $queue.Enqueue(@($path,($depth+1)))
   }
 }
 ConvertTo-Json -Compress -InputObject @{ repositories=@($result.ToArray()); limit=$limit }
 `;
+
+export type OffThreadCommand = {
+  file: string;
+  args: string[];
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+};
+type DiscoveryFailure = {
+  phase: "spawn" | "exit" | "timeout" | "output-limit" | "parse";
+  exitCode: number | null;
+  spawnCode: string | null;
+  signal: string | null;
+  stderr: string;
+};
+
+export type OffThreadResult = { stdout: string } | { failure: DiscoveryFailure };
+
+function sanitizeStderr(stderr: string, command: OffThreadCommand): string {
+  const argumentLines = new Set(
+    command.args.flatMap((arg) => arg.split(/\r?\n/).map((line) => line.trim())),
+  );
+  const lines = stripVTControlCharacters(stderr)
+    .split(/\r\n|\r|\n/)
+    .map((line) => line.replace(/[\p{Cc}\p{Cf}]/gu, " ").trim())
+    .filter((line) => line && !argumentLines.has(line) && !line.startsWith("Command failed:"));
+  const diagnosticLines =
+    command.file === "powershell.exe"
+      ? lines.filter(
+          (line) => !/^(?:At line:|\+|CategoryInfo\s*:|FullyQualifiedErrorId\s*:)/i.test(line),
+        )
+      : lines;
+  return truncateCodeUnits(diagnosticLines.join("\n"), 500);
+}
+
+export function discoveryCommandError(
+  tool: "powershell" | "git",
+  failure: DiscoveryFailure,
+): Error {
+  const { phase, exitCode, spawnCode, signal, stderr } = failure;
+  const detail = exitCode ?? spawnCode ?? signal;
+  const reason =
+    phase === "timeout" ? "Repository discovery timed out" : "Repository discovery failed";
+  const firstLine = stderr.split("\n", 1)[0];
+  const context = `${tool} ${phase}${detail === null ? "" : ` ${detail}`}`;
+  return new Error(`${reason} (${context})${firstLine ? `: ${firstLine}` : ""}`, {
+    cause: failure,
+  });
+}
+
+/**
+ * Runs commands in order through the shared pool. Queueing and execution spend the same batch
+ * deadline, so a late command does not start with a new timeout budget.
+ */
+export async function execFilesOffThread(
+  commands: OffThreadCommand[],
+  timeout: number,
+  maxBuffer = 8 * 1024 * 1024,
+): Promise<OffThreadResult[]> {
+  const startedAt = monotonicNow();
+  const results: OffThreadResult[] = [];
+  for (const command of commands) {
+    const remaining = Math.floor(timeout - elapsedSince(startedAt));
+    if (remaining <= 0) {
+      results.push({
+        failure: { phase: "timeout", exitCode: null, spawnCode: null, signal: null, stderr: "" },
+      });
+      continue;
+    }
+    const { file, args, cwd, env } = command;
+    try {
+      const { stdout } = await hostGitExec.exec(file, args, {
+        cwd,
+        env,
+        timeout: remaining,
+        maxBuffer,
+      });
+      results.push({ stdout });
+    } catch (error) {
+      const { code, killed, signal, stderr } = error as {
+        code?: string | number | null;
+        killed?: boolean;
+        signal?: string | null;
+        stderr?: string;
+      };
+      const outputLimit = code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+      const timedOut = code === "ETIMEDOUT" || killed;
+      const spawnCode = typeof code === "string" && !outputLimit && !timedOut ? code : null;
+      results.push({
+        failure: {
+          phase: outputLimit ? "output-limit" : timedOut ? "timeout" : spawnCode ? "spawn" : "exit",
+          exitCode: typeof code === "number" ? code : null,
+          spawnCode,
+          signal: signal ?? null,
+          stderr: sanitizeStderr(stderr ?? "", command),
+        },
+      });
+    }
+  }
+  return results;
+}
+
+export function readWindowsRepositoryScan(scan: OffThreadResult): RepositoryDiscovery {
+  if ("failure" in scan) throw discoveryCommandError("powershell", scan.failure);
+  const output = scan.stdout.trim();
+  const cause: DiscoveryFailure = {
+    phase: "parse",
+    exitCode: 0,
+    spawnCode: null,
+    signal: null,
+    stderr: "",
+  };
+  if (!output) throw new Error("Repository discovery returned no output", { cause });
+  let found: { repositories?: unknown; limit?: unknown } | null;
+  try {
+    found = JSON.parse(output);
+  } catch {
+    throw new Error("Repository discovery returned malformed JSON", { cause });
+  }
+  const { repositories, limit = null } = found ?? {};
+  if (
+    !Array.isArray(repositories) ||
+    repositories.some((path) => typeof path !== "string") ||
+    (limit !== null && !LIMIT_NAMES.has(limit))
+  )
+    throw new Error("Repository discovery returned invalid paths", { cause });
+  return { repositories, limit: limit as RepositoryDiscoveryLimit | null };
+}
 
 /**
  * Explicit repository discovery includes ignored source roots, never dependency caches or links.
@@ -109,28 +233,18 @@ export async function nestedRepositoryCandidates(
 ): Promise<RepositoryDiscovery> {
   const limits = { ...DEFAULT_LIMITS, ...override };
   if (process.platform === "win32") {
-    const timeout = remaining();
-    if (timeout <= 0) throw new Error("Repository discovery timed out");
-    const { stdout } = await execFileAsync(
-      "powershell.exe",
-      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", windowsScan(limits)],
-      {
-        windowsHide: true,
-        timeout,
-        maxBuffer: 1024 * 1024,
-        encoding: "utf8",
-        env: { ...process.env, BYCODA_REPOSITORY_SCAN_ROOT: root },
-      },
+    const [scan] = await execFilesOffThread(
+      [
+        {
+          file: "powershell.exe",
+          args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", windowsScan(limits)],
+          env: { BYCODA_REPOSITORY_SCAN_ROOT: root },
+        },
+      ],
+      remaining(),
+      1024 * 1024,
     );
-    const found: { repositories?: unknown; limit?: unknown } | null = JSON.parse(stdout.trim());
-    const { repositories, limit = null } = found ?? {};
-    if (
-      !Array.isArray(repositories) ||
-      repositories.some((path) => typeof path !== "string") ||
-      (limit !== null && !LIMIT_NAMES.has(limit))
-    )
-      throw new Error("Repository discovery returned invalid paths");
-    return { repositories, limit: limit as RepositoryDiscoveryLimit | null };
+    return readWindowsRepositoryScan(scan);
   }
   const skip = new Set(SKIP);
   const queue = [{ path: root, depth: 0 }];

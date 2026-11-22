@@ -89,7 +89,7 @@ export function TaskList({
           const secondary = [
             projectDisplayName(task.cwd),
             task.machineName,
-            task.stale ? t("Offline") : "",
+            task.stale && !task.pendingRefresh ? t("Offline") : "",
             planning,
             description,
           ]

@@ -9,6 +9,19 @@ import { SessionProviderGoal } from "./SessionProviderGoal";
 
 let host: HTMLDivElement;
 let root: Root;
+it("keeps goal details and actions out of the collapsed dock", async () => {
+  const session = {
+    harness: "codex" as const,
+    providerSessionId: "native-conversation",
+    providerGoal: goal(),
+  };
+  await act(async () =>
+    root.render(createElement(SessionProviderGoal, { session, onCommand: vi.fn() })),
+  );
+  expect(host.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+  expect(document.body.textContent).not.toContain(session.providerGoal.objective);
+  expect(document.body.textContent).not.toContain("Clear goal");
+});
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   setLanguagePreference("en");
@@ -32,7 +45,14 @@ const goal = (status: SessionGoal["status"] = "active"): SessionGoal => ({
 const render = async (
   session: Pick<Session, "harness" | "providerSessionId" | "providerGoal" | "busy">,
   onCommand = vi.fn(() => true),
-) => act(async () => root.render(createElement(SessionProviderGoal, { session, onCommand })));
+) => {
+  await act(async () => root.render(createElement(SessionProviderGoal, { session, onCommand })));
+  await openDetails();
+};
+
+const openDetails = async () =>
+  act(async () => host.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click());
+const details = () => document.querySelector<HTMLElement>('[role="dialog"]')!;
 
 it.each([
   null,
@@ -101,10 +121,10 @@ it.each([
     expect(host.querySelector("[data-provider-goal]")?.getAttribute("data-provider-goal")).toBe(
       status,
     );
-    expect(host.textContent).toContain(label);
-    expect(host.textContent).toContain(goal().objective);
+    expect(details().textContent).toContain(label);
+    expect(details().textContent).toContain(goal().objective);
     expect(host.querySelector('[role="progressbar"]')).toBeNull();
-    expect(host.textContent).toContain("Clear goal");
+    expect(details().textContent).toContain("Clear goal");
   },
 );
 
@@ -115,18 +135,37 @@ it("retains complete Turkish, RTL and emoji objective text and updates native st
     providerSessionId: "native-conversation",
     providerGoal: { ...goal(), objective },
   });
-  expect(host.textContent).toContain(objective);
+  expect(details().textContent).toContain(objective);
   await render({
     harness: "codex",
     providerSessionId: "native-conversation",
     providerGoal: { ...goal("paused"), objective },
   });
-  expect(host.textContent).toContain("Goal paused");
+  expect(details().textContent).toContain("Goal paused");
 
-  expect(host.textContent).toContain(objective);
+  expect(details().textContent).toContain(objective);
   await act(async () => setLanguagePreference("tr"));
-  expect(host.textContent).toContain(objective);
-  expect(host.textContent).not.toContain("Goal paused");
+  expect(details().textContent).toContain(objective);
+  expect(details().textContent).not.toContain("Goal paused");
+});
+
+it("pauses the active goal and waits for provider state before offering resume", async () => {
+  const onCommand = vi.fn(() => true);
+  const session = {
+    harness: "codex" as const,
+    providerSessionId: "native-conversation",
+    providerGoal: goal(),
+  };
+  await render(session, onCommand);
+  const pause = [...details().querySelectorAll("button")].find(
+    (button) => button.textContent === "Pause",
+  );
+  expect(pause).toBeDefined();
+  await act(async () => pause!.click());
+  expect(onCommand).toHaveBeenCalledExactlyOnceWith("/goal pause");
+  expect(details().textContent).toContain("Pursuing goal");
+  await render({ ...session, providerGoal: goal("paused") }, onCommand);
+  expect(details().textContent).toContain("Resume goal");
 });
 
 it("resumes and clears the exact goal through owner actions", async () => {
@@ -135,7 +174,7 @@ it("resumes and clears the exact goal through owner actions", async () => {
     { harness: "codex", providerSessionId: "native-conversation", providerGoal: goal("blocked") },
     onCommand,
   );
-  const buttons = [...host.querySelectorAll("button")];
+  const buttons = [...details().querySelectorAll("button")];
   await act(async () =>
     buttons.find((button) => button.textContent?.includes("Resume goal"))!.click(),
   );
@@ -153,11 +192,13 @@ it("shows native usage and keeps goal state separate from current work", async (
     busy: true,
     providerGoal: { ...goal("blocked"), tokensUsed: 1200, tokenBudget: 5000, timeUsedSeconds: 90 },
   });
-  expect(host.textContent).toContain("Goal blocked");
-  expect(host.textContent).toContain("1,200 / 5,000 tokens");
-  expect(host.textContent).toContain("1m 30s");
-  expect(host.textContent).not.toContain("Resume goal");
-  expect(host.querySelector("button")?.getAttribute("aria-disabled")).toBe("true");
+  expect(details().textContent).toContain("Goal blocked");
+  expect(details().textContent).toContain("1,200 / 5,000 tokens");
+  expect(details().textContent).toContain("1m 30s");
+  expect(details().textContent).toContain("Resume goal");
+  for (const button of details().querySelectorAll("button")) {
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+  }
 });
 
 it("reports refused goal commands without changing the provider state", async () => {
@@ -165,8 +206,8 @@ it("reports refused goal commands without changing the provider state", async ()
     { harness: "codex", providerSessionId: "native-conversation", providerGoal: goal("blocked") },
     vi.fn(() => false),
   );
-  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+  await act(async () => details().querySelector<HTMLButtonElement>("button")!.click());
+  expect(details().querySelector('[role="alert"]')?.textContent).toContain(
     "Goal action was not sent. Try again when the conversation is ready.",
   );
   expect(host.getElementsByTagName("button").length).toBeGreaterThan(0);
@@ -180,9 +221,9 @@ it("distinguishes pursuing work from an idle goal and formats unbudgeted usage",
     busy: true,
     providerGoal: { ...goal(), tokensUsed: 123, tokenBudget: null, timeUsedSeconds: 12 },
   });
-  expect(host.textContent).toContain("Pursuing goal");
-  expect(host.textContent).toContain("123 tokens");
-  expect(host.textContent).not.toContain(" / ");
+  expect(details().textContent).toContain("Pursuing goal");
+  expect(details().textContent).toContain("123 tokens");
+  expect(details().textContent).not.toContain(" / ");
 });
 
 it("preserves permission blockers for both goal actions", async () => {
@@ -200,7 +241,8 @@ it("preserves permission blockers for both goal actions", async () => {
       }),
     ),
   );
-  for (const button of host.querySelectorAll<HTMLButtonElement>("button")) {
+  await openDetails();
+  for (const button of details().querySelectorAll<HTMLButtonElement>("button")) {
     await act(async () => button.click());
   }
   expect(onCommand).not.toHaveBeenCalled();

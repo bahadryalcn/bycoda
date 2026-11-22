@@ -315,9 +315,12 @@ describe("runSyncCycle", () => {
 
     await runSyncCycle(MACHINE, request);
 
-    expect(request).toHaveBeenCalledWith("sync.push", {
-      ops: expect.any(Array),
-    });
+    expect(request).toHaveBeenCalledWith(
+      "sync.push",
+      expect.objectContaining({
+        ops: expect.any(Array),
+      }),
+    );
     // First contact pulls before pushing, then pulls again after the push.
     expect(
       request.mock.calls.map(([method, params]) => `${method}:${params.sinceRev ?? ""}`),
@@ -645,11 +648,54 @@ describe("sync status", () => {
         throw new Error("[RPC_TIMEOUT] timed out");
       }),
     ).rejects.toThrow("[RPC_TIMEOUT]");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain('"deadline":"http","host":"no response"');
     expect(getSyncStatus("st-retry")).toMatchObject({ state: "error" });
 
     await runSyncCycle("st-retry", async () => ({ rev: 1, records: [] }));
     expect(getSyncStatus("st-retry")).toMatchObject({ state: "ok", lastError: undefined });
     warn.mockRestore();
+  });
+
+  it("logs one slow response with the transmitted call id and Host timings", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const timings = { dbWaitMs: 1700 };
+    let clock = performance.now();
+    const now = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    // The first request itself takes 2.1 s: queue time alone never makes a call slow.
+    const request = vi.fn(async (_method: string, _params: unknown) => {
+      if (request.mock.calls.length === 1) clock += 2_100;
+      return { rev: 1, records: [], timings };
+    });
+    try {
+      await runSyncCycle("st-slow", request);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const line = String(warn.mock.calls[0]?.[0]);
+      expect(JSON.parse(line.slice("[sync] ".length))).toMatchObject({
+        method: "sync.pull",
+        callId: (request.mock.calls[0]![1] as { syncCallId: string }).syncCallId,
+        host: timings,
+      });
+    } finally {
+      now.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it("does not log a fast call that only waited in the cycle queue", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await runSyncCycle(
+        "st-queued",
+        async () => ({ rev: 1, records: [] }),
+        undefined,
+        undefined,
+        performance.now() - 5_000,
+      );
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("syncNow is a no-op without a loop and runs a cycle through a running one", async () => {

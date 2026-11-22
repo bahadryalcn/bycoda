@@ -23,6 +23,7 @@ import { DelegationNoticeRow, SessionMessageAuthor } from "./SessionMessageAutho
 import { InlineError } from "../../../shared/ui/InlineError";
 import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
 import { InlineVisual } from "./InlineVisual";
+import { InlineVisualHost, type InlineVisualHostRoute } from "../hooks/useInlineVisualSource";
 import { Badge } from "../../../shared/ui/Badge";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import {
@@ -77,6 +78,7 @@ import {
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { AttachmentChip } from "./AttachmentChip";
 import { WorkItemMentionCwd } from "./WorkItemMentionChip";
+import { TranscriptSessionId } from "./TranscriptSessionId";
 import { ChatCitationList } from "./ChatCitationText";
 import { extractChatCitations } from "../model/chatCitation";
 import { TranscriptSkills } from "./SkillTokenText";
@@ -186,6 +188,7 @@ import { AdvisorRow } from "./AdvisorRow";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 export { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
 type Props = {
+  inlineVisualHost?: InlineVisualHostRoute;
   codeExecution?: CodeExecutionScope;
   /** Travels with the element when TranscriptPool renders it in its outlet. */
   approvalContext?: {
@@ -395,23 +398,10 @@ function AgentTranscriptComponent({
   const toggleWork = useCallback((turnId: string, currentlyOpen: boolean) => {
     setOpenWork((open) => ({ ...open, [turnId]: !currentlyOpen }));
   }, []);
-  // Stretch the last turn after a send while this tab stays open. Closing
-  // the tab is a new visit: the remount uses the true transcript height so
-  // the latest reply sits near the composer instead of a hole of empty space.
-  const [anchorTurn, setAnchorTurn] = useState(!!busy);
-  const [wasParked, setWasParked] = useState(parked);
-  if (wasParked !== parked) {
-    setWasParked(parked);
-    if (!parked && anchorTurn !== !!busy) setAnchorTurn(!!busy);
-  }
   const transcriptLayout = useTranscriptLayout();
-  const promptAnchor = useTranscriptAnchor();
+  // The active turn fills the viewport until its reply settles.
+  const anchorTurn = useTranscriptAnchor() && !!busy;
   const lastUserId = lastUserBlockId(blocks, managed);
-  const [seenUserId, setSeenUserId] = useState(lastUserId);
-  if (lastUserId !== seenUserId) {
-    setSeenUserId(lastUserId);
-    if (lastUserId && !anchorTurn) setAnchorTurn(true);
-  }
   const currentModelName = useResolvedModelName(harness, model);
   const blockingQuestion = pendingQuestion && questionBehavior === "blocking";
   const [scanCache] = useState(() => new BlockScanCache());
@@ -424,8 +414,7 @@ function AgentTranscriptComponent({
   // anchored spot at the top. On mount this only plays for a session's first
   // send.
   const introducePrompt = useStableCallback((mounting: boolean, el: HTMLDivElement | null) => {
-    if (!lastUserId || transcriptLayout !== "chat" || !(promptAnchor && anchorTurn) || !visible)
-      return;
+    if (!lastUserId || transcriptLayout !== "chat" || !anchorTurn || !visible) return;
     if (mounting && !(busy && userTurnCount(blocks, managed) === 1)) return;
     return riseIntoAnchor(el, lastUserId);
   });
@@ -463,6 +452,7 @@ function AgentTranscriptComponent({
     pagingLoading,
     pagingError,
   } = useTranscriptPaging({
+    sessionId,
     turns,
     blockCount: blocks.length,
     openWork,
@@ -807,7 +797,7 @@ function AgentTranscriptComponent({
                 activityAfterSilence={activity?.afterSilence}
                 activityOwner={activityOwnsClock ? runOwner : undefined}
                 activitySessionId={activityOwnsClock ? sessionId : undefined}
-                anchorPrompt={promptAnchor && anchorTurn && isLastTurn}
+                anchorPrompt={anchorTurn && isLastTurn}
                 latestTurnAccessory={isLastTurn && !parked ? latestTurnAccessory : undefined}
                 workOpen={
                   (openWork[turnId] ?? false) || (waitingForApproval && hasPendingApproval(turn))
@@ -929,7 +919,9 @@ function VirtualizedTranscriptComponent(props: Props) {
   );
   return (
     <TranscriptVirtualizationContext.Provider value={virtualization}>
-      <AgentTranscriptComponent {...props} />
+      <InlineVisualHost.Provider value={props.inlineVisualHost}>
+        <AgentTranscriptComponent {...props} />
+      </InlineVisualHost.Provider>
     </TranscriptVirtualizationContext.Provider>
   );
 }
@@ -955,15 +947,17 @@ export const AgentTranscript = memo(function AgentTranscript(props: Props) {
       >
         <Activity mode={props.visible === false ? "hidden" : "visible"}>
           <WorkItemMentionCwd value={props.cwd}>
-            <DelegatedRunOwner.Provider value={props.delegatedRunOwner}>
-              {props.approvalContext ? (
-                <ApprovalDecisionProvider {...props.approvalContext}>
-                  {transcript}
-                </ApprovalDecisionProvider>
-              ) : (
-                transcript
-              )}
-            </DelegatedRunOwner.Provider>
+            <TranscriptSessionId.Provider value={props.sessionId}>
+              <DelegatedRunOwner.Provider value={props.delegatedRunOwner}>
+                {props.approvalContext ? (
+                  <ApprovalDecisionProvider {...props.approvalContext}>
+                    {transcript}
+                  </ApprovalDecisionProvider>
+                ) : (
+                  transcript
+                )}
+              </DelegatedRunOwner.Provider>
+            </TranscriptSessionId.Provider>
           </WorkItemMentionCwd>
         </Activity>
       </CodeExecutionProvider>
@@ -2234,6 +2228,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   return (
     <div
       data-selectable-agent-response={block.streaming ? undefined : block.id}
+      data-chat-message-surface={embedded ? undefined : "assistant"}
       className={`min-w-0 pb-1 text-(--ui-tone-neutral-fg) ${embedded ? "" : "px-4"} ${underLine ? "pt-1" : "pt-3"}`}
     >
       <AgentMarkdown
@@ -2473,6 +2468,7 @@ function UserMessageBlock({
       <div className="user-message-hover-zone flex w-full min-w-0 max-w-full flex-col items-end overflow-visible">
         <div
           data-draft={block.draft ? "true" : undefined}
+          data-chat-message-surface={block.draft ? undefined : "user"}
           data-follow-up-delivery={delivery}
           data-bycoda={bycoda ? "true" : undefined}
           className={`user-message-bubble relative min-w-0 bg-(--ui-message-bubble) px-3 py-2 font-sans text-(--ui-text-secondary) transition-[background-color] duration-200 ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}

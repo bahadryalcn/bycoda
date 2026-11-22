@@ -82,6 +82,8 @@ export type PickerListProps = PickerListSource & {
   /** Raw query, to accent matched text in string titles. */
   query?: string;
   checkPlacement?: PickerCheckPlacement;
+  /** Add an accent line at the inline start of the committed row. */
+  selectionIndicator?: "start";
   /** Compatibility density hint; every row follows the shared control-density token. Descriptions grow. */
   density?: "sm" | "md";
   /** Focus the list on mount (list-owned focus only). */
@@ -116,6 +118,7 @@ export function PickerList({
   label,
   query = "",
   checkPlacement = "leading",
+  selectionIndicator,
   density = "md",
   autoFocus = false,
   loading = false,
@@ -194,6 +197,7 @@ export function PickerList({
       ? ({ ref: win.measureElement, "data-index": entryOfOption[index] } as const)
       : {};
     const selected = !option.onAction && list.isSelected(option.value);
+    const selectionClass = selected && selectionIndicator === "start" ? styles.selectionStart : "";
     const highlighted = index === list.activeIndex;
     const unavailable = disabled || !!option.disabled;
     const description =
@@ -241,7 +245,9 @@ export function PickerList({
         onClick={() => {
           if (!unavailable) list.commit(index);
         }}
-        className={styles.row}
+        className={
+          actions == null && selectionClass ? `${styles.row} ${selectionClass}` : styles.row
+        }
       >
         <PickerChoice
           selected={selected}
@@ -259,7 +265,12 @@ export function PickerList({
     return actions == null ? (
       button
     ) : (
-      <ActionHost key={option.value} {...measure} selected={selected} className={styles.actionRow}>
+      <ActionHost
+        key={option.value}
+        {...measure}
+        selected={selected}
+        className={selectionClass ? `${styles.actionRow} ${selectionClass}` : styles.actionRow}
+      >
         {button}
         <div data-picker-actions="" className={styles.actions}>
           {actions}

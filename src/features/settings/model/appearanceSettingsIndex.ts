@@ -4,6 +4,30 @@ import type { SettingsEntry } from "./settings";
 /** Searchable Appearance controls; each `id` is a row's setting id in the Appearance tabs. */
 export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
   {
+    id: "user-message-opacity",
+    section: "appearance",
+    get label() {
+      return t("Your message opacity");
+    },
+    keywords: "chat bubble glass transparency sohbet mesaj saydamlık",
+  },
+  {
+    id: "assistant-message-opacity",
+    section: "appearance",
+    get label() {
+      return t("AI reply opacity");
+    },
+    keywords: "assistant chat bubble glass transparency yanıt saydamlık",
+  },
+  {
+    id: "chat-message-color",
+    section: "appearance",
+    get label() {
+      return t("Message color");
+    },
+    keywords: "chat bubble neutral theme tint sohbet mesaj renk",
+  },
+  {
     id: "tab-animations",
     section: "appearance",
     get label() {

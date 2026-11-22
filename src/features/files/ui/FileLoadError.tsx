@@ -12,10 +12,8 @@ import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionE
 import { useEffect, useRef, useState } from "react";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { isRemoteProjectPath } from "../../projects/public/recents";
-import {
-  isUnsupportedRemoteRoute,
-  presentRemoteError,
-} from "../../connections/public/remoteFailure";
+import { isUnsupportedRemoteRoute } from "../../connections/public/remoteFailure";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import { basename, revealPath } from "../../../platform/tauri/fs";
 import { readTextFileSlice, type TextFileSlice, type TextFileStamp } from "../data/largeTextFile";
 
@@ -37,9 +35,6 @@ const reveal = (path: string) =>
     console.warn("FileLoadError reveal failed", error);
   });
 
-/** Why a paged read stopped: the sentence to show, and whether sending the same request again can help. */
-type PagedFailure = { message: string; retryable: boolean };
-
 /** Shown when the editor cannot load a file. A file over the editor limit opens as a read-only,
  * paged view, on this computer or on the connected machine that owns it. Where the same request
  * cannot succeed (an outdated Host), no Retry is offered: the message names the fix instead. */
@@ -54,29 +49,39 @@ export function FileLoadError({
   retryable?: boolean;
   onRetry: () => void;
 }) {
+  if (isTooLargeToEdit(message)) {
+    return <LargeTextFileView key={path} path={path} onRetry={onRetry} />;
+  }
+  return <FileLoadFailure path={path} message={message} retryable={retryable} onRetry={onRetry} />;
+}
+
+function FileLoadFailure({
+  path,
+  message,
+  retryable,
+  onRetry,
+}: {
+  path: string;
+  message: string;
+  retryable: boolean;
+  onRetry: () => void;
+}) {
   useLocale();
   const local = !isRemoteProjectPath(path);
-  const [fallback, setFallback] = useState<PagedFailure | null>(null);
   const shownCentrally = useConnectionErrorShownCentrally(message);
-  if (isTooLargeToEdit(message) && fallback === null)
-    return <LargeTextFileView key={path} path={path} onError={setFallback} />;
   if (shownCentrally) return null;
-  const failure = fallback ?? { message, retryable };
   return (
     <div className="grid h-full place-items-center p-6">
       <Alert tone="danger" className="max-w-md" title={`${t("Couldn’t open ")}${basename(path)}`}>
-        <p>{failure.message}</p>
+        <p>{message}</p>
         <div className="mt-2 flex flex-wrap items-center gap-1">
-          {failure.retryable ? (
+          {retryable ? (
             <Button
               size="sm"
               variant="ghost"
               motion="none"
               type="button"
-              onClick={() => {
-                setFallback(null);
-                onRetry();
-              }}
+              onClick={onRetry}
               className="shrink-0"
             >
               <RotateCcw className="icon-xs" strokeWidth={1.75} />
@@ -110,23 +115,26 @@ export function FileLoadError({
   );
 }
 
-function LargeTextFileView({
-  path,
-  onError,
-}: {
-  path: string;
-  onError: (failure: PagedFailure) => void;
-}) {
+function LargeTextFileView({ path, onRetry }: { path: string; onRetry: () => void }) {
   useLocale();
   const local = !isRemoteProjectPath(path);
   // Start offsets of the pages before the current one, for "Previous".
   const [history, setHistory] = useState<number[]>([]);
   const [offset, setOffset] = useState(0);
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState<{ key: string; attempt: number; error: unknown }>();
   const [loaded, setLoaded] = useState<{ key: string; slice: TextFileSlice } | null>(null);
   // Version of the file the first page came from; every later page must match it.
   const stamp = useRef<TextFileStamp | null>(null);
   const key = `${path}:${offset}`;
   const page = loaded?.key === key ? loaded.slice : null;
+  const error = failed?.key === key ? failed.error : undefined;
+  const { visibleError } = useGracedFailure({
+    error,
+    loading: !page && attempt !== failed?.attempt,
+    retry: () => setAttempt((value) => value + 1),
+    scope: key,
+  });
 
   // Loads the page at the current byte offset from the host; a superseded request's reply is dropped.
   useEffect(() => {
@@ -135,24 +143,32 @@ function LargeTextFileView({
       (slice) => {
         if (cancelled) return;
         stamp.current ??= { size: slice.size, modifiedUs: slice.modifiedUs };
-        setLoaded({ key: `${path}:${offset}`, slice });
+        setLoaded({ key, slice });
+        setFailed(undefined);
       },
       (error: unknown) => {
-        if (!cancelled)
-          onError({
-            message: presentRemoteError(error, { explicit: true }),
-            retryable: !isUnsupportedRemoteRoute(error),
-          });
+        if (!cancelled) setFailed({ key, attempt, error });
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [path, offset, onError]);
+  }, [path, offset, key, attempt]);
+
+  if (visibleError) {
+    return (
+      <FileLoadFailure
+        path={path}
+        message={visibleError}
+        retryable={!isUnsupportedRemoteRoute(error)}
+        onRetry={onRetry}
+      />
+    );
+  }
 
   if (!page) {
     return (
-      <div className="grid h-full place-items-center p-3">
+      <div aria-busy className="grid h-full place-items-center p-3">
         <Progress label={t("Opening {p0}…", { p0: basename(path) })} compact />
       </div>
     );

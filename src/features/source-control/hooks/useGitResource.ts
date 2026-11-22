@@ -1,6 +1,9 @@
-import { errorText } from "../../../shared/lib/errors";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useMachineAvailability } from "../../connections/public/machineAvailability";
+import {
+  classifyFailureLifetime,
+  useGracedFailure,
+} from "../../connections/public/transientFailure";
+import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 
@@ -8,11 +11,9 @@ type Snapshot<T> = {
   key: string;
   data: T | null;
   loading: boolean;
-  error: string | null;
-  /** What the last read rejected with; unset after a success. `error` is only the
-   * message a screen shows, and a transient failure has none. */
+  /** What the last read rejected with; unset after a success. */
   cause?: unknown;
-  /** `data`, `error` and `cause` are the outcome of a read this hook finished since its
+  /** `data` and `cause` are the outcome of a read this hook finished since its
    * key, availability or refresh last changed, not only what the cache kept. Remote health
    * may learn only from such an outcome: a paused read is no answer from the machine. */
   settled: boolean;
@@ -25,7 +26,7 @@ const MAX_CACHED_BYTES = 16 * 1024 * 1024;
 const cache = new Map<string, unknown>();
 const cacheSizes = new Map<string, number>();
 let cachedBytes = 0;
-const completed = new Map<string, { at: number; error: string | null; cause?: unknown }>();
+const completed = new Map<string, number>();
 type FlightGroup = { latest?: Promise<unknown>; pending: number; latestPending: boolean };
 const flights = new Map<string, FlightGroup>();
 let generation = 0;
@@ -97,6 +98,7 @@ export function useGitResource<T>(
   const enabled = wanted && available;
   const [nonce, setNonce] = useState(0);
   const refreshKey = useRef<string | null>(null);
+  const retryRun = useRef<(() => Promise<void>) | null>(null);
   const refresh = useCallback(() => {
     refreshKey.current = key;
     setNonce((value) => value + 1);
@@ -105,8 +107,6 @@ export function useGitResource<T>(
     key,
     data: readCached<T>(key) ?? null,
     loading: enabled && (!quiet || !completed.has(key)),
-    error: completed.get(key)?.error ?? null,
-    cause: completed.get(key)?.cause,
     settled: false,
   }));
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep this resource's admitted reads synchronized with checkout notifications and resume events until unmount.
@@ -116,22 +116,24 @@ export function useGitResource<T>(
     let cancelled = false;
     let inFlight = false;
     let pending = false;
+    // Throttle background refreshes of this mounted resource after a permanent
+    // refusal without caching its error across visits.
+    let lastPermanentFailure: number | undefined;
     // Progress is for a read someone waits on: the first one, or an explicit
     // refresh. A watcher or focus reload of shown data stays silent, or busy
     // checkouts (many agents committing) would keep the refresh control spinning.
-    const shows = (force: boolean) => (!quiet || !completed.has(key)) && (force || !cache.has(key));
+    const shows = (force: boolean, data: T | null) =>
+      (!quiet || !completed.has(key)) && (force || (data === null && !cache.has(key)));
     setSnapshot((previous) => ({
       key,
       data: previous.key === key ? previous.data : (readCached<T>(key) ?? null),
-      loading: enabled && shows(forced),
-      error: completed.get(key)?.error ?? null,
-      cause: completed.get(key)?.cause,
+      loading: enabled && shows(forced, previous.key === key ? previous.data : null),
       settled: false,
     }));
     if (!enabled) return;
     const load = async (force = false) => {
-      const prior = completed.get(key);
-      if (!force && prior && Date.now() - prior.at < minRefreshMs) {
+      const prior = lastPermanentFailure ?? completed.get(key);
+      if (!force && prior !== undefined && Date.now() - prior < minRefreshMs) {
         setSnapshot((previous) => ({ ...previous, loading: false }));
         return;
       }
@@ -141,7 +143,11 @@ export function useGitResource<T>(
       }
       inFlight = true;
       const readGeneration = generation;
-      if (shows(force)) setSnapshot((previous) => ({ ...previous, loading: true }));
+      setSnapshot((previous) =>
+        shows(force, previous.key === key ? previous.data : null)
+          ? { ...previous, loading: true }
+          : previous,
+      );
       try {
         // An explicit refresh follows a change: a read already running may
         // predate it, so it is replaced, and its late answer is not kept.
@@ -156,17 +162,12 @@ export function useGitResource<T>(
           flight = read()
             .then((data) => {
               if (current() && writeCached(key, data)) {
-                completed.set(key, { at: Date.now(), error: null });
+                completed.set(key, Date.now());
               }
               return data;
             })
             .catch((error) => {
-              if (current())
-                completed.set(key, {
-                  at: Date.now(),
-                  error: errorText(error),
-                  cause: error,
-                });
+              if (current()) completed.delete(key);
               throw error;
             })
             .finally(() => {
@@ -197,15 +198,17 @@ export function useGitResource<T>(
             continue;
           }
           if (!outcome.success) throw outcome.error;
-          setSnapshot({ key, data: outcome.data, loading: false, error: null, settled: true });
+          lastPermanentFailure = undefined;
+          setSnapshot({ key, data: outcome.data, loading: false, settled: true });
           break;
         }
       } catch (error) {
+        lastPermanentFailure =
+          classifyFailureLifetime(error) === "permanent" ? Date.now() : undefined;
         if (!cancelled)
           setSnapshot((previous) => ({
             ...previous,
             loading: false,
-            error: presentRemoteError(error) ?? null,
             cause: error,
             settled: true,
           }));
@@ -217,6 +220,7 @@ export function useGitResource<T>(
         }
       }
     };
+    retryRun.current = load;
     void load(forced);
     // Focus alone is no reason to rerun git: a watched checkout reports its own
     // changes, and others wait out the TTL. A change seen while hidden is. A
@@ -230,9 +234,10 @@ export function useGitResource<T>(
     };
     const resume = () => {
       if (document.hidden) return;
-      const prior = completed.get(key);
+      const prior = lastPermanentFailure ?? completed.get(key);
       const fresh =
-        (covered && isGitWatched(cwd)) || (prior && Date.now() - prior.at < RESUME_TTL_MS);
+        (covered && isGitWatched(cwd)) ||
+        (prior !== undefined && Date.now() - prior < RESUME_TTL_MS);
       if (!missed && fresh) return;
       missed = false;
       void load();
@@ -244,22 +249,28 @@ export function useGitResource<T>(
     }
     return () => {
       cancelled = true;
+      retryRun.current = null;
       unsubscribe();
       window.removeEventListener("focus", resume);
       document.removeEventListener("visibilitychange", resume);
     };
   }, [cwd, key, enabled, read, watch, nonce, minRefreshMs, quiet]);
-  const current =
+  const current: Snapshot<T> =
     snapshot.key === key
       ? snapshot
       : {
           key,
           data: readCached<T>(key) ?? null,
           loading: enabled,
-          error: null,
           settled: false,
         };
-  return { ...current, refresh };
+  const retry = () => retryRun.current?.();
+  const error = enabled ? current.cause : undefined;
+  const { visibleError, pending } = useGracedFailure({ error, retry, scope: key });
+  useReloadOnReconnect(cwd, retry, {
+    active: error != null && classifyFailureLifetime(error) === "transient",
+  });
+  return { ...current, error: visibleError ?? null, loading: current.loading || pending, refresh };
 }
 
 export function resetGitResourceCache() {

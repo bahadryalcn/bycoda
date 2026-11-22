@@ -35,10 +35,9 @@ export function bindNativeWorkspaceOwner(
       updateBuffersWithDelivery: updateBuffers,
       verifyBufferDelivery: (binding, proof) =>
         managed.nativeActivity.verifyBufferDelivery({ binding, proof }, owner),
-      heartbeatBuffers: async (request) => {
-        await beforeBufferEffect();
-        return managed.nativeActivity.heartbeatBuffers(request, owner);
-      },
+      // A heartbeat only extends in-memory freshness and has no delivery original, so the
+      // delivery-effect fence would refuse every keepalive and force a new full report.
+      heartbeatBuffers: (request) => managed.nativeActivity.heartbeatBuffers(request, owner),
       retireBuffers: (request) => managed.nativeActivity.retireBuffers(request, owner),
       reconcileBuffers: (request) => managed.nativeActivity.reconcileBuffers(request, owner),
       listBufferRecovery: (request) => managed.nativeActivity.listBufferRecovery(request, owner),

@@ -97,7 +97,8 @@ export type ConversationTools = {
   hideHeading?: boolean;
   initialMachine?: string;
   initialTab?: ToolsTab;
-  viewRequest?: { id: string; tab?: ToolsTab; machine?: string };
+  /** Immutable presentation request; `url` navigates the project Host Browser once. */
+  viewRequest?: { id: string; tab?: ToolsTab; machine?: string; url?: string };
   onViewChange?: (view: { tab: ToolsTab; machine: string }) => void;
   initialUrl?: string;
   onPresented?: () => void;
@@ -171,10 +172,12 @@ function ConversationHostTools({
     onViewChange?.({ tab, machine: next });
   };
   const [appliedRequest, setAppliedRequest] = useState<string>();
+  const [navigation, setNavigation] = useState<{ id: string; url: string }>();
   if (viewRequest && viewRequest.id !== appliedRequest) {
     setAppliedRequest(viewRequest.id);
     if (viewRequest.tab !== undefined) setTab(onlyTab ?? viewRequest.tab);
     if (viewRequest.machine !== undefined) setTargetValue(viewRequest.machine);
+    if (viewRequest.url !== undefined) setNavigation({ id: viewRequest.id, url: viewRequest.url });
   }
   useEffect(() => {
     onViewChange?.({ tab, machine: targetValue });
@@ -590,6 +593,7 @@ function ConversationHostTools({
                 active={active && tab === "browser"}
                 cwd={cwd}
                 initialUrl={target.kind === "project" ? initialUrl : undefined}
+                navigation={target.kind === "project" ? navigation : undefined}
                 sessionId={sessionId}
                 composerSessionId={composerSessionId ?? sessionId}
                 composerWindow={composerWindow}

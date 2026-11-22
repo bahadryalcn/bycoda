@@ -23,7 +23,8 @@ export interface RemoteRailProjectsDeps {
 }
 
 export interface RemoteRailProjects {
-  listedRemoteSessions: ReturnType<typeof useRemoteRailSessions>;
+  listedRemoteSessions: ReturnType<typeof useRemoteRailSessions>["sessions"];
+  freshRemoteProjects: readonly string[];
   loadedRemoteHostIds: Set<string>;
   unopenedRemote: ReturnType<typeof unopenedRemoteSessions>;
   unopenedRemoteRef: MutableRefObject<ReturnType<typeof unopenedRemoteSessions>>;
@@ -50,7 +51,8 @@ export function useRemoteRailProjects({
     ],
     [visibleRecents, sessionRecovery, lockSnapshot],
   );
-  const listedRemoteSessions = useRemoteRailSessions(remoteRailProjects);
+  const { sessions: listedRemoteSessions, freshProjects: freshRemoteProjects } =
+    useRemoteRailSessions(remoteRailProjects);
   // Bindings and create intents live outside React state: re-derive when they change.
   const [bindingRevision, setBindingRevision] = useState(0);
   const [createIntentRevision, setCreateIntentRevision] = useState(0);
@@ -91,6 +93,7 @@ export function useRemoteRailProjects({
 
   return {
     listedRemoteSessions,
+    freshRemoteProjects,
     loadedRemoteHostIds,
     unopenedRemote,
     unopenedRemoteRef,

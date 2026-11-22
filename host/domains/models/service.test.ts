@@ -82,6 +82,13 @@ it("serves the catalog without models the desktop turned off", async () => {
   const out = await filtered.list({}, f.context);
   expect(out).toMatchObject({ models: { codex: [{ id: "codex:b" }] } });
 });
+
+it("clears the default Codex catalog when only a separate account is signed in", async () => {
+  const f = fixture();
+  f.ports.accounts.mockResolvedValue({ codex: [{ id: "other", label: "Other account" }] });
+  const result = await f.service.list({}, f.context);
+  expect(result).toMatchObject({ models: { codex: [] }, accounts: { codex: [{ id: "other" }] } });
+});
 it("retains legacy non-string project and literal-true flags without weakening canonical params", async () => {
   const f = fixture(),
     raw = { projectId: 123, progressive: "true", refresh: true, unused: true };

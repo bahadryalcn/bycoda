@@ -12,6 +12,18 @@ afterEach(async () => {
 });
 const project = { id: "project", cwd: "/project" };
 
+it("excludes new terminals while their checkout is reserved for removal", async () => {
+  const s = setup();
+  await s.service.withWorktreeRemoval(project.cwd, async () => {
+    await expect(
+      s.service.create(project, { requestId: "blocked-terminal" }, "owner", () => true),
+    ).rejects.toThrow("Worktree removal is running.");
+    expect(s.launch).not.toHaveBeenCalled();
+  });
+  await s.service.create(project, { requestId: "after-removal" }, "owner", () => true);
+  expect(s.launch).toHaveBeenCalledOnce();
+});
+
 it("launches one-shot source once and fences changed source or shell kind", async () => {
   const s = setup();
   const params = { requestId: "one-shot-01", command: "printf hello\nexit 7", shellKind: "posix" };

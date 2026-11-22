@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AgentTranscript } from "../../../src/features/sessions/ui/AgentTranscript";
 import { ActivityDock } from "../../../src/features/sessions/ui/ActivityDock";
@@ -19,7 +19,8 @@ const CodeTerminalFixture = lazy(async () => ({
   default: (await import("./code-terminal-fixture")).CodeTerminalFixture,
 }));
 
-saveTranscriptAnchor(false);
+const anchor = new URLSearchParams(location.search).has("anchor");
+saveTranscriptAnchor(anchor);
 saveTranscriptLayout(new URLSearchParams(location.search).has("full-width") ? "full" : "chat");
 
 // Settled plain text isolates layout during scrolling from streaming, image
@@ -65,6 +66,8 @@ function Fixture() {
   const streaming = new URLSearchParams(location.search).has("streaming");
   const [streamText, setStreamText] = useState("Streaming response");
   const [running, setRunning] = useState(true);
+  const [showJump, setShowJump] = useState(false);
+  const jumpToBottom = useRef<(() => void) | null>(null);
   const longText = new URLSearchParams(window.location.search).has("longText");
   const artifacts = new URLSearchParams(window.location.search).has("artifacts");
   const rewind = new URLSearchParams(window.location.search).has("rewind");
@@ -83,7 +86,7 @@ function Fixture() {
       },
     });
   }, []);
-  return (
+  const transcript = (
     <AgentTranscript
       blocks={
         streaming
@@ -167,6 +170,14 @@ function Fixture() {
       }
       visible={!parked}
       busy={streaming ? running : artifacts}
+      onJumpToBottomChange={anchor ? setShowJump : undefined}
+      onJumpToBottomReady={
+        anchor
+          ? (jump) => {
+              jumpToBottom.current = jump;
+            }
+          : undefined
+      }
       onSaveNote={
         streaming
           ? async (text) => {
@@ -184,6 +195,20 @@ function Fixture() {
       }
       parked={parked}
     />
+  );
+  return anchor ? (
+    <div className="relative h-full">
+      {transcript}
+      {showJump ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
+          <Button className="pointer-events-auto" onClick={() => jumpToBottom.current?.()}>
+            Jump to latest
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  ) : (
+    transcript
   );
 }
 

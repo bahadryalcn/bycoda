@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import {
   ToolsTransferLedger,
+  toolsTransferContent,
   toolsTransferEdits,
   toolsTransferFingerprint,
   type ToolsWorkspaceTransfer,
@@ -22,6 +23,20 @@ it("blocks unresolved capacity without dropping original operations", () => {
   expect(() => ledger.begin("9", "main", "scope", "fingerprint")).toThrow("unresolved");
   expect(ledger.find("0", "main", "scope", "fingerprint")).toBeDefined();
 });
+
+it("keeps a changed Browser destination distinct from an uncertain transfer", () => {
+  const first = {
+    cwd: "/project",
+    sessionId: "session",
+    title: "Browser",
+    initialUrl: "http://localhost:3000/first",
+  };
+  const second = { ...first, initialUrl: "http://localhost:3000/second" };
+  const drafts = { browserDrafts: {}, toolsDrafts: {} };
+  expect(toolsTransferEdits(first, drafts)).not.toEqual(toolsTransferEdits(second, drafts));
+  expect(toolsTransferContent(first, drafts)).not.toEqual(toolsTransferContent(second, drafts));
+});
+
 it("excludes readonly samples from source edit guards while preserving user comments and scopes", async () => {
   const session = { cwd: "G:/Repo", sessionId: "one", title: "One" };
   const before: ToolsWorkspaceTransfer = {

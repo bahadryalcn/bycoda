@@ -72,13 +72,18 @@ test("working sessions and usage meters stay contained in narrow and short works
       (light) => document.documentElement.classList.toggle("theme-light", light),
       theme === "light",
     );
-    for (const width of [390, 768, 1024, 1440]) {
+    for (const width of [390, 768, 800, 1280, 1440]) {
       await page.setViewportSize({ width, height: width === 768 ? 560 : 800 });
       await rail.evaluate((element) => {
         element.style.width = "260px";
       });
+      const toggle = rail.getByRole("button", { name: /^Activity/ });
+      if ((await toggle.getAttribute("aria-expanded")) === "false") await toggle.click();
       const firstCard = rail.locator("[data-live-agent-card]").first();
       await expect(firstCard).toBeVisible();
+      const ledger = await rail.locator(".bycoda-project-ledger").boundingBox();
+      const activity = await rail.locator("[data-live-agents-preview]").boundingBox();
+      expect(ledger!.y + ledger!.height).toBeLessThanOrEqual(activity!.y);
       expect(await firstCard.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       const lines = await firstCard.locator(":scope > span").evaluateAll((nodes) =>
         nodes.map((node) => {
@@ -134,12 +139,17 @@ test("working sessions and usage meters stay contained in narrow and short works
         await page.screenshot({
           path: testInfo.outputPath(`shell-${width}-${theme}.png`),
         });
+      if (width === 800 || width === 1280)
+        await rail.screenshot({
+          path: testInfo.outputPath(`rail-${width}-${theme}.png`),
+        });
     }
   }
   const firstCard = rail.locator("[data-live-agent-card]").first();
-  const more = rail.getByRole("button", { name: "5 more", exact: true });
-  await more.click();
-  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(8);
+  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(6);
+  await expect(
+    rail.locator('[data-live-agent-card="live-6"], [data-live-agent-card="live-7"]'),
+  ).toHaveCount(0);
   // The expanded list must scroll, never squeeze record rows until their text overlaps.
   for (const height of [560, 800]) {
     await page.setViewportSize({ width: 390, height });
@@ -172,19 +182,13 @@ test("working sessions and usage meters stay contained in narrow and short works
       path: testInfo.outputPath(`working-expanded-${height}.png`),
     });
   }
-  const less = rail.getByRole("button", { name: "Show less", exact: true });
-  await expect(less).toBeInViewport();
-  await less.click();
-  // The attention row leads the list and sits outside the two-row cap.
-  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(3);
   await firstCard.focus();
   await firstCard.press("Enter");
   await expect(page.getByLabel("Selected live session")).toHaveText("live-1");
-  // The total stays in the header; the attention badge joins it only while the section is collapsed.
   const activity = rail.getByRole("region", { name: "Activity", exact: true });
   const activityToggle = activity.getByRole("button", { name: /^Activity/ });
   await expect(activityToggle).toHaveAttribute("aria-expanded", "true");
-  await expect(activity.getByLabel("1 needs attention", { exact: true })).toHaveCount(0);
+  await expect(activity.getByLabel("1 needs attention", { exact: true })).toHaveText("1");
   await activityToggle.click();
   await expect(activityToggle).toHaveAttribute("aria-expanded", "false");
   await expect(activity.getByLabel("1 needs attention", { exact: true })).toHaveText("1");
@@ -201,6 +205,16 @@ test("working sessions and usage meters stay contained in narrow and short works
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(details).toBeFocused();
+  await rail.evaluate((element) => {
+    element.style.width = "130px";
+  });
+  const compactActivity = rail.getByRole("button", { name: "Activity", exact: true });
+  await expect(compactActivity).toHaveAttribute("aria-expanded", "false");
+  await compactActivity.press("Enter");
+  await expect(compactActivity).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    rail.getByRole("button", { name: /Improve the shared interface/ }).first(),
+  ).toBeVisible();
 });
 
 test("Inbox keeps long issue titles readable and list actions available", async ({
@@ -992,6 +1006,7 @@ test("rail headers, rows, title bar and session rows grow with the control densi
   await rail.evaluate((element) => {
     element.style.width = "260px";
   });
+  await rail.getByRole("button", { name: /^Activity/ }).click();
   await expect(rail.locator("[data-live-agent-card]").first()).toBeVisible();
   const headers = rail.locator("[data-rail-section-actions]").locator("..");
   const rows = rail.locator(".project-reorder-item");
@@ -1059,6 +1074,7 @@ test("a focused inline action shows one local focus cue and the host only tints"
   await rail.evaluate((element) => {
     element.style.width = "260px";
   });
+  await rail.getByRole("button", { name: /^Activity/ }).click();
   await expect(rail.locator("[data-live-agent-card]").first()).toBeVisible();
   for (const theme of ["dark", "light"]) {
     await page.evaluate(

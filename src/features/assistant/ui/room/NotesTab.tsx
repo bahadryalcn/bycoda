@@ -18,7 +18,10 @@ import { useAssistantRoom } from "./assistantRoomContext";
 import { NotesList } from "./NotesList";
 import { NotesReader } from "./NotesReader";
 import { NoteEditor } from "../AssistantNoteEditor";
-import { assistantRequest as ownerRequest } from "../../model/assistantClient";
+import {
+  assistantRequest as ownerRequest,
+  finishAssistantNoteDeletion,
+} from "../../model/assistantClient";
 import styles from "./NotesTab.module.css";
 
 export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
@@ -67,12 +70,18 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
       confirmLabel: t("Delete"),
       onConfirm: async () => {
         const outcome = await deleteNotesInOrder(notes, (note) =>
-          assistantRequest({ op: "notes.delete", id: note.id, expectedUpdatedAt: note.updatedAt }),
+          assistantRequest(
+            { op: "notes.delete", id: note.id, expectedUpdatedAt: note.updatedAt },
+            environmentId,
+            { deferNoteRefresh: true },
+          ),
         );
+        const deleted = notes.slice(0, outcome.deleted);
+        finishAssistantNoteDeletion(environmentId, deleted);
         // Confirmed deletions leave selection even if the next snapshot is delayed.
         setCheckedIds((current) => {
           const next = new Set(current);
-          for (const note of notes.slice(0, outcome.deleted)) next.delete(note.id);
+          for (const note of deleted) next.delete(note.id);
           return next;
         });
         if (outcome.trashIds.length) {

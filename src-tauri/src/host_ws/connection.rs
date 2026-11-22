@@ -1507,6 +1507,7 @@ async fn serve(
                                 .chars().filter(|character| !character.is_control()).take(1000).collect();
                             let message = message.replace(shared.route.token.as_str(), "[redacted]");
                             let mut error = WsFailure::local(if category == "overload" { "RPC_WS_OVERLOAD" } else { "RPC_WS_REMOTE" }, &message).for_request(&request, generation, true);
+                            error.retryable = value["error"]["data"]["retryable"].as_bool() == Some(true);
                             error.uncertain = request.mutating && !matches!(category, "validation" | "authentication" | "identity" | "schema" | "overload");
                             let delivery = value["error"]["data"]["delivery"].as_str();
                             if matches!(delivery, Some("unknown" | "accepted")) { error.uncertain = true; }
@@ -1605,13 +1606,18 @@ async fn serve(
     }
     shared.capture_resume_cuts(generation, subscriptions.union.retirement_cut());
     shared.permits.phase(generation, false);
+    let interrupted_message = if cause == "host closed code=1001 reason=Host is stopping." {
+        "Host is stopping."
+    } else {
+        "Host connection ended before the result was known"
+    };
     for (_, request) in pending {
         settle(
             request,
             generation,
             true,
             "RPC_WS_INTERRUPTED",
-            "Host connection ended before the result was known",
+            interrupted_message,
         );
     }
     for (_, request) in subscriptions.waiters {

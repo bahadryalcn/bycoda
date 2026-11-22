@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { mockIPC } from "@tauri-apps/api/mocks";
 import { useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { Attachment } from "../../../src/features/sessions/model/session";
@@ -22,6 +23,13 @@ import { languageReady } from "../../../src/shared/i18n";
 import "../../../src/styles/index.css";
 
 const parameters = new URLSearchParams(location.search);
+if (parameters.has("opener")) {
+  mockIPC((command, args) => {
+    if (command === "plugin:opener|open_url") {
+      document.documentElement.dataset.openedUrl = (args as { url: string }).url;
+    }
+  });
+}
 document.documentElement.classList.toggle("theme-light", parameters.get("theme") === "light");
 document.documentElement.dataset.canvasBackground = "pure";
 const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200"><rect width="400" height="200" fill="#243f46"/><path d="M0 180L110 64L190 130L290 35L400 180Z" fill="#a5b9a6"/><circle cx="80" cy="42" r="18" fill="#efdfb5"/></svg>')}`;
@@ -185,8 +193,20 @@ function EditableExample({ name, initial }: { name: string; initial: Attachment[
   );
 }
 
-const referenceSkills = new Set(["frontend-design"]);
-const referenceAttachments = [samples[0], samples[3], samples[5]];
+const referenceSkills = new Set(["frontend-design", "group-interface-design"]);
+const referenceGroups = [
+  { invocation: "group-interface-design", name: "Design interfaces", members: ["frontend-design"] },
+];
+const referenceAttachments = [
+  samples[0],
+  samples[3],
+  {
+    ...samples[5],
+    name: "usage.csv",
+    mimeType: "text/csv",
+    data: btoa("feature,total\ncomposer,42"),
+  },
+];
 const referenceText = [
   "Use /frontend-design and $frontend-design before /unknown.",
   `Review ${attachmentTokens(referenceAttachments).join(" ")} and @mcp/docs.`,
@@ -218,6 +238,7 @@ function ReferenceTokens() {
                 mode={null}
                 names={referenceSkills}
                 skillParts={skillTextParts}
+                skillGroups={referenceGroups}
                 mentions={new Map()}
                 mcpTags={[
                   {

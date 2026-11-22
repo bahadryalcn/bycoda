@@ -1,6 +1,74 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 const fixture = "/tests/browser/sessions/session-tools.html";
 const captures = "temp/verification/2026-11-04-session-tools/hub";
+
+async function previewNavigations(page: Page) {
+  return page.evaluate(() => {
+    const { sessionToolsCalls } = window as unknown as {
+      sessionToolsCalls: {
+        cwd: string;
+        method: string;
+        params: Record<string, unknown>;
+        target?: { kind: string };
+      }[];
+    };
+    return sessionToolsCalls
+      .filter(({ method }) => method === "browser.open" || method === "devServers.list")
+      .map(({ cwd, method, params, target }) => ({
+        cwd,
+        method,
+        sessionId: params.sessionId,
+        url: params.url,
+        target: target?.kind ?? "project",
+      }));
+  });
+}
+
+for (const theme of ["light", "dark"]) {
+  test(`remote chat links reach the project Host in docked and detached Browser (${theme})`, async ({
+    context,
+  }) => {
+    const source = await context.newPage();
+    const hub = await context.newPage();
+    await source.goto(`${fixture}?role=source&remote-preview&theme=${theme}`);
+    await hub.goto(`${fixture}?role=hub&remote-preview&theme=${theme}`);
+    const dock = source.locator('.tools-workspace-pane[aria-hidden="false"]');
+    const pane = hub.locator(".tools-hub-pane:not([hidden])");
+    const expected = {
+      cwd: "remote://fixture-mac-env/Users/demo/Studio",
+      method: "browser.open",
+      sessionId: "host-studio",
+      target: "project",
+    };
+    const patientUrl = "http://localhost:3019/patients?view=active#list";
+    await source.bringToFront();
+    await source.getByRole("link", { name: "Open patient panel", exact: true }).click();
+    await expect.poll(() => previewNavigations(source)).toEqual([{ ...expected, url: patientUrl }]);
+    await expect(dock.locator("img.host-browser-frame")).toBeVisible();
+    await source.screenshot({
+      path: `temp/verification/remote-web-preview-audit/docked-${theme}.png`,
+    });
+
+    await dock.getByRole("button", { name: "Open in new window", exact: true }).click();
+    await expect(dock).toHaveCount(0);
+    await expect(pane.locator(".host-browser-bar")).toBeVisible();
+    expect(await previewNavigations(hub)).toEqual([]);
+    await source.bringToFront();
+    await source.getByRole("link", { name: "Open appointments", exact: true }).click();
+    await expect
+      .poll(() => previewNavigations(hub))
+      .toEqual([{ ...expected, url: "http://localhost:3019/appointments" }]);
+    const frame = pane.locator("img.host-browser-frame");
+    await expect(frame).toBeVisible();
+    expect(
+      await frame.evaluate((image) => atob(image.getAttribute("src")!.split(",")[1])),
+    ).toContain("Remote project Host fixture");
+    await hub.screenshot({
+      path: `temp/verification/remote-web-preview-audit/detached-${theme}.png`,
+    });
+  });
+}
+
 test("two renderer windows follow focused sessions, retain pin, select manually, clear empty sessions and capture both themes", async ({
   context,
 }) => {

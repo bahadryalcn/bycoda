@@ -6,7 +6,8 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { useActionState, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { LAYER } from "../../../shared/lib/layers";
-import { createWorktree, type Worktree } from "../model/worktrees";
+import { type Worktree } from "../model/worktrees";
+import { createProjectWorktree } from "../model/remoteWorktrees";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -67,7 +68,7 @@ export function CreateWorktreeDialog({
   const [error, submit, busy] = useActionState<string | undefined, FormData>(async () => {
     if (!name.trim()) return;
     try {
-      const tree = await createWorktree(baseCwd, name.trim(), base, existing);
+      const tree = await createProjectWorktree(baseCwd, name.trim(), base, existing);
       await onCreated(tree);
     } catch (err) {
       return presentRemoteError(err, { explicit: true });

@@ -1,5 +1,10 @@
 import { createRoot } from "react-dom/client";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { Text } from "../../../src/shared/ui/Text";
+import { surfaceAttributes } from "../../../src/shared/ui/Surface";
+import { VoiceCompanionRecovery } from "../../../src/features/voice/ui/companion/VoiceCompanionRecovery";
+import { VoiceCompanionView } from "../../../src/features/voice/ui/companion/VoiceCompanionView";
+import voiceStyles from "../../../src/features/voice/ui/VoiceCompanion.module.css";
 import { VoiceSettings } from "../../../src/features/voice/ui/VoiceSettings";
 import { DictationButton } from "../../../src/features/voice/ui/DictationButton";
 import { MicrophoneRecoveryAction } from "../../../src/features/voice/ui/MicrophoneRecoveryAction";
@@ -34,6 +39,11 @@ saveVoiceSettings({
   dictationEnabled: params.get("dictation") !== "0",
   ...(params.has("stress") ? dictationSettingsData(params.get("data") ?? "demo") : {}),
   ...(params.get("engine") === "local" ? { dictationEngine: "local" } : {}),
+  // `?engine=openrouter` shows the OpenRouter key row; `?tts=elevenlabs` the ElevenLabs key row.
+  ...(params.get("engine") === "openrouter" ? { dictationEngine: "openrouter" as const } : {}),
+  ...(params.get("tts") === "elevenlabs"
+    ? { mode: "local" as const, natural: true, engine: "elevenlabs" as const }
+    : {}),
   ...(params.has("missing-device") ? { microphoneId: "disconnected-fixture-device" } : {}),
 });
 if (params.has("recording-fixture")) {
@@ -125,6 +135,120 @@ const session = {
   busy: false,
 } as unknown as Session;
 
+/** `?surface=recovery`: the real recovery block with every notice and retry action present. */
+function RecoveryFixture() {
+  const notSaved = params.get("recovery") === "history";
+  return (
+    <section aria-label="Voice companion recovery fixture" className="grid max-w-sm gap-2">
+      <VoiceCompanionRecovery
+        error={notSaved ? "" : "Conversation was not saved. Retry."}
+        shownError=""
+        historyNotice={notSaved ? "Conversation history could not be loaded." : ""}
+        ruleNotice="Rule was not saved. Retry to keep it."
+        returnNotice="You missed a call from the assistant at 14:05."
+        briefing={{ retryable: true, canRetry: true, retry: () => {} }}
+        rulePending
+        savingRule={false}
+        onSaveConversation={() => {}}
+        onRetryHistory={() => {}}
+        onSaveRule={() => {}}
+        onTalkNow={() => {}}
+      />
+    </section>
+  );
+}
+
+/** `?surface=view`: the real VoiceCompanionView in its panel; `compact`, `error` and `chat` vary it. */
+function ViewFixture() {
+  const compact = params.has("compact");
+  const [chatError] = useState(params.get("error") ?? "");
+  const panelRef = useRef<HTMLElement | null>(null);
+  const noop = () => {};
+  const live = params.get("state") !== "idle";
+  return (
+    <Text
+      as="section"
+      size="caption"
+      tone="neutral"
+      leading="inherit"
+      ref={panelRef}
+      aria-label="Voice companion"
+      {...surfaceAttributes(
+        {
+          variant: "floating",
+          frame: chatError ? "danger" : "pane",
+          radius: compact ? "pill" : "panel",
+        },
+        voiceStyles.panel,
+      )}
+      data-compact={compact || undefined}
+      style={{ position: "relative", right: "auto", bottom: "auto", marginInline: "auto" }}
+    >
+      <VoiceCompanionView
+        compact={compact}
+        status={live ? "live" : "idle"}
+        handle={<span className="icon-sm" aria-hidden />}
+        visualState={live ? "listening" : "off"}
+        working={false}
+        audioLevel={{ current: 0.3 }}
+        title="Voice companion"
+        name="Arif"
+        avatar={undefined}
+        scopeTitle="Synthetic dictation session"
+        targetTitle="Synthetic dictation session"
+        summary="Reviewing the release notes with you"
+        muted={false}
+        speakerMuted={false}
+        manual={false}
+        statusText={live ? "Listening" : "Ready"}
+        sessionStatusText="Idle"
+        startDisabled={false}
+        engine="This computer"
+        privacy="Audio is processed on this computer."
+        pushHint=""
+        workspace
+        globalScope={false}
+        canDetach
+        toolActivities={[]}
+        chatTurns={
+          params.has("chat")
+            ? [
+                { id: 1, role: "owner", text: "Summarize what changed in the last release." },
+                {
+                  id: 2,
+                  role: "assistant",
+                  text: "Three fixes shipped: voice setup, the model picker and Git filters.",
+                },
+              ]
+            : []
+        }
+        error={chatError}
+        onDismissError={noop}
+        liveText=""
+        toggleRef={{ current: null }}
+        sessionPicker={null}
+        choice={null}
+        jobReview={null}
+        recovery={null}
+        panel={panelRef}
+        onScopeChange={noop}
+        onFloat={noop}
+        onStopWaiting={noop}
+        onStopWork={noop}
+        onStart={noop}
+        onClose={noop}
+        onDismiss={noop}
+        onToggleCompact={noop}
+        onToggleMute={noop}
+        onToggleSpeaker={noop}
+        onSilence={noop}
+        onFinish={noop}
+        onManualChange={noop}
+      />
+    </Text>
+  );
+}
+
 function Fixture() {
   const [data, setData] = useState(params.get("data") ?? "demo");
   const [draft, setDraft] = useState("Unsent draft remains here.");
@@ -152,7 +276,11 @@ function Fixture() {
           )}
         </div>
       ) : null}
-      {params.get("surface") === "setup" ? (
+      {params.get("surface") === "recovery" ? (
+        <RecoveryFixture />
+      ) : params.get("surface") === "view" ? (
+        <ViewFixture />
+      ) : params.get("surface") === "setup" ? (
         <VoiceSetupSteps step="microphone" onValidChange={() => {}} />
       ) : params.get("surface") === "companion" ? (
         <VoiceCompanion

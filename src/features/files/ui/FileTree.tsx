@@ -1,5 +1,5 @@
-import { errorText } from "../../../shared/lib/errors";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useGracedFailure } from "../../connections/public/transientFailure";
+import { reportFailure } from "../../../shared/ui/reportFailure";
 import type { CSSProperties } from "react";
 /** Different job: Explorer hierarchy owns rename, drag/drop and range selection; TreeRow owns each interactive row. */
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -316,7 +316,7 @@ function FileTreeInner({
   const [selectedPaths, setSelectedPaths, selectionAnchor, setSelectionAnchor] =
     useTreeSelection(selectedPath);
   const [children, setChildren] = useState<FsEntry[] | null>(() => peekDir(cwd));
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [rootRefreshing, setRootRefreshing] = useState(false);
   const [rootUpdatedAt, setRootUpdatedAt] = useState<number | undefined>(() =>
     peekDir(cwd) ? verifiedDirAt(cwd) : undefined,
@@ -377,7 +377,6 @@ function FileTreeInner({
   // File History and Blame need this computer or a host with `git.actions`.
   const canInspectGit = useRemoteSupports(cwd, GIT_ACTIONS) === true;
   const connectionFailure = useRemoteLoadFailure(cwd, "files");
-  const refreshFailureShownCentrally = useConnectionErrorShownCentrally(refreshFailure?.message);
   // Why creating cannot start at all: no folder to create in, or a Host too old to do it. A
   // machine that cannot be asked at all never shows the tree (see `FileTree`); there is no per-folder
   // permission. An offline machine keeps its listing but cannot be changed.
@@ -451,7 +450,13 @@ function FileTreeInner({
     } catch (error) {
       if (activeRoot.current === cwd) {
         setCopyFailedText(value);
-        setOpError(errorText(error));
+        void reportFailure(error, {
+          toast: {
+            show: ({ message }) => {
+              if (activeRoot.current === cwd) setOpError(message);
+            },
+          },
+        });
       }
     }
   };
@@ -899,12 +904,13 @@ function FileTreeInner({
       .then((entries) => {
         if (!cancelled && request === rootRefreshRequest.current) {
           setChildren(entries);
+          setError(null);
           setRootUpdatedAt(Date.now());
         }
       })
       .catch((err: unknown) => {
         if (!cancelled && request === rootRefreshRequest.current) {
-          setError(presentRemoteError(err, { explicit: true }));
+          setError(err);
         }
       });
     return () => {
@@ -917,13 +923,12 @@ function FileTreeInner({
     const request = ++rootRefreshRequest.current;
     const previous = children ?? peekDir(cwd);
     setRootRefreshing(true);
-    setError(null);
     const root = refreshDir(cwd);
     // Expanded folders refresh with the root; their failures keep the last listing.
     const nested = refreshCachedDirs([...expandedRef.current].filter((path) => path !== cwd)).catch(
       () => [],
     );
-    void Promise.all([root, nested])
+    return Promise.all([root, nested])
       .then(([entries]) => {
         if (request !== rootRefreshRequest.current) return;
         setChildren(entries);
@@ -934,7 +939,7 @@ function FileTreeInner({
       .catch((err: unknown) => {
         if (request !== rootRefreshRequest.current) return;
         setChildren(previous);
-        setError(presentRemoteError(err, { explicit: true }));
+        setError(err);
       })
       .finally(() => {
         if (request === rootRefreshRequest.current) {
@@ -943,20 +948,33 @@ function FileTreeInner({
       });
   };
 
-  const rootError = error ?? connectionFailure?.message;
-  // A first load that failed because the connection was down reloads once it is back.
+  const { visibleError: rootError, pending: rootPending } = useGracedFailure({
+    error: error ?? connectionFailure?.message,
+    retry: refreshRoot,
+    loading: rootRefreshing,
+  });
+  const visibleConnectionFailure = rootError ? connectionFailure : undefined;
+  const activeRefreshFailure = refreshFailure?.cwd === cwd ? refreshFailure : null;
+  const { visibleError: refreshError, pending: refreshPending } = useGracedFailure({
+    error: activeRefreshFailure?.error,
+    retry: activeRefreshFailure
+      ? () => refreshAfterMutation(activeRefreshFailure.touched, activeRefreshFailure.forget)
+      : undefined,
+  });
+  const refreshFailureShownCentrally = useConnectionErrorShownCentrally(refreshError);
+  // Recheck listings on an observed reconnect without waiting for the next timed read.
   useReloadOnReconnect(cwd, refreshRoot, {
-    active: children === null && (error !== null || connectionFailure?.kind === "unreachable"),
+    active: error !== null || connectionFailure?.kind === "unreachable",
   });
   const rootDataState: RemoteDataState = {
-    phase: rootRefreshing
+    phase: rootError
       ? children === null
-        ? "loading"
-        : "refreshing"
-      : rootError
+        ? "error"
+        : "stale"
+      : rootRefreshing || rootPending || refreshPending
         ? children === null
-          ? "error"
-          : "stale"
+          ? "loading"
+          : "refreshing"
         : children === null
           ? "loading"
           : rootUpdatedAt === undefined
@@ -1218,32 +1236,32 @@ function FileTreeInner({
               {opError}
             </InlineError>
           ) : null}
-          {refreshFailure?.cwd === cwd && refreshFailureShownCentrally ? (
+          {activeRefreshFailure && refreshError && refreshFailureShownCentrally ? (
             <InlineMessage className="mx-2 my-1" tone="info">
               {t("File change saved.")}
             </InlineMessage>
-          ) : refreshFailure?.cwd === cwd ? (
+          ) : activeRefreshFailure && refreshError ? (
             <InlineError
               className="mx-2 my-1"
               action={{
                 label: t("Retry"),
                 pending: operationPending,
                 onClick: () => {
-                  const failure = refreshFailure;
+                  const failure = activeRefreshFailure;
                   void run(() => refreshAfterMutation(failure.touched, failure.forget));
                 },
               }}
             >
-              {t("File change saved. Refresh failed.")} {refreshFailure.message}
+              {t("File change saved. Refresh failed.")} {refreshError}
             </InlineError>
           ) : null}
           {search ?? (
             <div className="flex min-h-0 flex-1 flex-col">
               <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
-                {connectionFailure ? (
+                {visibleConnectionFailure ? (
                   <RemoteLoadError
                     cwd={cwd}
-                    failure={connectionFailure}
+                    failure={visibleConnectionFailure}
                     stale={children !== null}
                     onRetry={refreshRoot}
                   />
@@ -1253,7 +1271,8 @@ function FileTreeInner({
                     role="tree"
                     aria-multiselectable="true"
                     aria-label={t("{p0} files", { p0: name })}
-                    className={connectionFailure ? "opacity-60" : undefined}
+                    aria-busy={rootPending || rootRefreshing}
+                    className={visibleConnectionFailure ? "opacity-60" : undefined}
                   >
                     <TreeChildren
                       parent={cwd}
@@ -1261,7 +1280,7 @@ function FileTreeInner({
                       depth={0}
                       entries={children}
                       loading={children === null && !rootError}
-                      error={connectionFailure ? null : error}
+                      error={visibleConnectionFailure ? null : (rootError ?? null)}
                       onRetry={refreshRoot}
                     />
                   </div>
@@ -1490,7 +1509,7 @@ const TreeNode = memo(function TreeNode({
     entry.isDir ? peekDir(entry.path) : null,
   );
   // How the current read of this folder ended; null while it is still in flight (or not started).
-  const [settled, setSettled] = useState<{ error: string | null } | null>(null);
+  const [settled, setSettled] = useState<{ error: unknown } | null>(null);
   const [retry, setRetry] = useState(0);
   // Only an open folder watches the cache, and only for its own listing: a
   // change elsewhere leaves this snapshot's identity (and this node) alone.
@@ -1501,8 +1520,13 @@ const TreeNode = memo(function TreeNode({
     () => (watching ? peekDir(entry.path) : null),
   );
   const children = cached ?? loaded;
-  const loading = entry.isDir && open && !cached && settled === null;
-  const loadError = settled?.error ?? null;
+  const loading = watching && !cached && settled === null;
+  const retryRead = () => setRetry((n) => n + 1);
+  const { visibleError: loadError, pending } = useGracedFailure({
+    error: watching && !cached ? settled?.error : null,
+    loading,
+    retry: retryRead,
+  });
   const gitTone = gitStatus ? GIT_STATUS_TONE[gitStatus] : undefined;
   const gitMark = gitStatus ? GIT_STATUS_MARK[gitStatus] : undefined;
 
@@ -1518,7 +1542,7 @@ const TreeNode = memo(function TreeNode({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setSettled({ error: presentRemoteError(err, { explicit: true }) });
+          setSettled({ error: err });
         }
       });
     return () => {
@@ -1530,12 +1554,12 @@ const TreeNode = memo(function TreeNode({
 
   // A failed read leaves nothing cached for the refresh pass to revisit, so
   // the next tree refresh retries this folder.
-  const failed = watching && loadError !== null;
+  const failed = watching && !cached && settled?.error != null;
   useEffect(() => {
     if (!failed) return;
     return subscribeDirListings(() => setRetry((n) => n + 1));
   }, [failed]);
-  useReloadOnReconnect(entry.path, () => setRetry((n) => n + 1), { active: failed });
+  useReloadOnReconnect(entry.path, retryRead, { active: failed });
 
   const onClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
     if (consumeFileClick()) return;
@@ -1615,8 +1639,8 @@ const TreeNode = memo(function TreeNode({
           parentLabel={entry.name}
           depth={depth + 1}
           entries={children}
-          loading={loading}
-          error={loadError}
+          loading={loading || pending}
+          error={loadError ?? null}
           onRetry={() => setRetry((n) => n + 1)}
         />
       ) : null}
@@ -1696,10 +1720,12 @@ export function NameRow({
       finished.current = true;
       setBusy(true);
       setSubmitError(null);
-      void onCommit(value).catch((err: unknown) => {
+      void onCommit(value).catch(async (err: unknown) => {
+        await reportFailure(err, {
+          toast: { show: ({ message }) => setSubmitError(message) },
+        });
         finished.current = false;
         setBusy(false);
-        setSubmitError(presentRemoteError(err, { explicit: true }));
       });
       return;
     }

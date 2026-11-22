@@ -12,7 +12,7 @@ import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConnectionsSettings } from "../../connections/public/ConnectionsSettings";
-import { ArrowLeft, Maximize2, Minimize2 } from "../../../shared/ui/icons";
+import { ArrowLeft, Maximize2, Minimize2, RotateCcw } from "../../../shared/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState, type ComponentProps } from "react";
 import "./BycodaSettings.css";
 import { AccountScreen } from "../../account";
@@ -45,7 +45,6 @@ import {
   PageAutomaticSaveHint,
   SettingsPageResetRegistry,
   type SettingsPageResetRegistration,
-  SettingsPageHelp,
   Group,
   Row,
   Toggle,
@@ -322,7 +321,10 @@ export function SettingsView({
   // One header row per page: identity on the left, 28px ghost icon actions on the right.
   const pageBar = (
     <header
-      {...surfaceAttributes({ variant: "canvas" }, "settings-page-bar bycoda-settings-toolbar")}
+      {...surfaceAttributes(
+        { variant: "canvas", ...(embedded ? { frame: "pane", edge: "block-end" } : {}) },
+        "settings-page-bar bycoda-settings-toolbar",
+      )}
     >
       <div className="settings-page-bar-inner">
         <div className="bycoda-settings-category-picker">
@@ -339,6 +341,11 @@ export function SettingsView({
             onChange={(value) => onReveal(value as SettingsSectionId, null)}
           />
         </div>
+        {embedded ? (
+          <Text as="span" size="secondary" tone="secondary" className="bycoda-settings-breadcrumb">
+            {t("Settings")} <span aria-hidden="true">/</span>
+          </Text>
+        ) : null}
         <Heading size="page" truncate className="settings-page-title" tabIndex={-1}>
           {settingsSectionLabel(section)}
         </Heading>
@@ -346,35 +353,36 @@ export function SettingsView({
           <SidebarUpdateFooter />
           <SettingsSearch onReveal={onReveal} />
           {headerAction}
-          <SettingsPageHelp
-            description={settingsSectionDescription(section)}
-            automaticSave={AUTOMATIC_SAVE_SECTIONS.includes(section)}
-            reset={
-              pageReset
-                ? {
-                    label:
-                      section === "appearance"
-                        ? t("Reset all appearance settings")
-                        : t("Restore defaults"),
-                    onClick: () => {
-                      void confirmPageReset({
-                        title: t("Restore defaults"),
-                        message:
-                          section === "appearance"
-                            ? t(
-                                "Reset every Appearance setting to its default? Saved themes and your background image library are kept. Each tab also keeps its own reset buttons.",
-                              )
-                            : t(
-                                "Restore this page's settings to their defaults? Other pages are not affected.",
-                              ),
-                        confirmLabel: t("Restore defaults"),
-                        onConfirm: pageReset.run,
-                      });
-                    },
-                  }
-                : undefined
-            }
-          />
+          {pageReset ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              iconOnly
+              label={
+                section === "appearance"
+                  ? t("Reset all appearance settings")
+                  : t("Restore defaults")
+              }
+              onClick={() => {
+                void confirmPageReset({
+                  title: t("Restore defaults"),
+                  message:
+                    section === "appearance"
+                      ? t(
+                          "Reset every Appearance setting to its default? Saved themes and your background image library are kept. Each tab also keeps its own reset buttons.",
+                        )
+                      : t(
+                          "Restore this page's settings to their defaults? Other pages are not affected.",
+                        ),
+                  confirmLabel: t("Restore defaults"),
+                  onConfirm: pageReset.run,
+                });
+              }}
+            >
+              <RotateCcw aria-hidden className="icon-sm" strokeWidth={1.75} />
+            </Button>
+          ) : null}
           {onToggleMaximize ? (
             <Button
               variant="ghost"

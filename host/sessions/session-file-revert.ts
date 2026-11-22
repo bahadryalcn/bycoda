@@ -12,7 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { execFileAsync } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "../git/git-exec-pool";
 import { safeGitPath } from "../workspaces/workspace";
 import { writeFileAtomic } from "../storage/atomic-write";
 import { createRevertGuardSession, type RevertFileGuard } from "./session-file-revert-guard";
@@ -529,7 +529,7 @@ export class SessionFileRevert {
   }
   private async paths(cwd: string): Promise<string[]> {
     try {
-      const result = await execFileAsync(
+      const result = await hostGitExec.exec(
         "git",
         ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "."],
         {
@@ -704,7 +704,7 @@ export class SessionFileRevert {
             // overwritten one, so absence there cannot authorize deletion.
             let knownNonIgnored = false;
             try {
-              await execFileAsync("git", ["check-ignore", "-q", "--no-index", "--", path], {
+              await hostGitExec.exec("git", ["check-ignore", "-q", "--no-index", "--", path], {
                 cwd: active.cwd,
                 windowsHide: true,
                 encoding: "utf8",

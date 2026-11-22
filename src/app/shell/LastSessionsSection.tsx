@@ -11,7 +11,7 @@ import { ActionHost } from "../../shared/ui/ActionHost";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
 import { useLocale, useT } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, Clock, FolderOpen, Internet, PenLine } from "../../shared/ui/icons";
+import { CircleAlert, Clock, FolderOpen, PenLine, Server } from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
@@ -401,7 +401,7 @@ function SessionRow({
           />
         ) : null}
         {row.remote ? (
-          <Internet
+          <Server
             aria-label={t("On another machine")}
             className="icon-xs shrink-0"
             tone="secondary"

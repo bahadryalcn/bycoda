@@ -53,12 +53,19 @@ it("keeps a pane that has data while the machine is offline", async () => {
   expect(notice()).toBeNull();
 });
 
-it("shows the notice for an offline machine when the pane has nothing loaded", async () => {
-  await mount(false);
-  await act(async () => recordRemoteConnection("env", "Machine is unreachable"));
-
-  expect(content()).toBeNull();
-  expect(notice()?.getAttribute("data-machine-unavailable")).toBe("offline");
+it("waits before showing the notice for an offline pane with no loaded data", async () => {
+  vi.useFakeTimers();
+  try {
+    await mount(false);
+    await act(async () => recordRemoteConnection("env", "Machine is unreachable"));
+    expect(content()).toBeNull();
+    expect(notice()).toBeNull();
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+    expect(notice()?.getAttribute("data-machine-unavailable")).toBe("offline");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("shows the notice over cached data when the machine refuses this computer", async () => {
@@ -82,7 +89,7 @@ it("shows the notice over cached data for a machine that is not added", async ()
 it("shows the content again once the machine answers", async () => {
   await mount(false);
   await act(async () => recordRemoteConnection("env", "Machine is unreachable"));
-  expect(notice()).not.toBeNull();
+  expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
 
   await act(async () => recordRemoteConnection("env"));
 

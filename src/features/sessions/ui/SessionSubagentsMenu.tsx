@@ -8,12 +8,10 @@ import {
 } from "../../../shared/ui/DropdownMenu";
 import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { MemberAvatar, memberTraits } from "../../crews/public/mentions";
 import { groupDockAgents, type DockAgent } from "../model/activityDock";
 import { AgentStatusDot } from "./ActivityDock";
+import { ModelLabel } from "./ModelLabel";
 import { formatElapsed } from "./useElapsedFrom";
-
-const SUBAGENTS_FACE = memberTraits({ id: "subagents" });
 
 /**
  * The session's subagents, past and running, behind one composer control. It
@@ -42,6 +40,7 @@ export function SessionSubagentsMenu({
     interrupted: t("Interrupted"),
   };
   const row = (agent: DockAgent): DropdownMenuAction => {
+    const status = statusWord[agent.status];
     const elapsed =
       agent.startedAt !== undefined && agent.endedAt !== undefined
         ? formatElapsed(Math.max(0, agent.endedAt - agent.startedAt))
@@ -49,18 +48,31 @@ export function SessionSubagentsMenu({
     return {
       kind: "item",
       id: agent.blockId,
-      label: [agent.name, agent.model, statusWord[agent.status]].filter(Boolean).join(", "),
+      label: [agent.name, agent.model, status, elapsed].filter(Boolean).join(", "),
+      title: `${agent.name} · ${status}`,
       icon: <AgentStatusDot status={agent.status} />,
       content: (
-        <span className="flex min-w-0 flex-col">
-          <Text as="span" size="inherit" tone="neutral" truncate>
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <Text size="inherit" weight="medium" truncate>
             {agent.name}
           </Text>
-          <Text as="span" size="caption" tone="muted" truncate>
-            {[agent.model, statusWord[agent.status], elapsed].filter(Boolean).join(" · ")}
-          </Text>
+          {agent.model ? (
+            <Text size="caption" tone="secondary" className="flex min-w-0">
+              <ModelLabel
+                model={agent.model}
+                harness={agent.harness}
+                name={agent.model}
+                size="xs"
+              />
+            </Text>
+          ) : null}
         </span>
       ),
+      trailing: elapsed ? (
+        <Text size="caption" tone="secondary" className="shrink-0 tabular-nums">
+          {elapsed}
+        </Text>
+      ) : null,
     };
   };
   const { standalone, phases } = groupDockAgents(agents);
@@ -94,7 +106,29 @@ export function SessionSubagentsMenu({
         {running > 0 ? (
           <WorkingIndicator size="xs" />
         ) : (
-          <MemberAvatar traits={SUBAGENTS_FACE} size={16} />
+          <svg aria-hidden="true" width={16} height={16} viewBox="0 0 24 24" fill="none">
+            <path
+              d="M9 9V8a4 4 0 0 1 4-4h5a4 4 0 0 1 4 4v2a4 4 0 0 1-4 4h-1"
+              stroke="currentColor"
+              strokeWidth={1.7}
+              strokeLinecap="round"
+            />
+            <rect
+              x={2}
+              y={11}
+              width={13}
+              height={9}
+              rx={4}
+              stroke="currentColor"
+              strokeWidth={1.7}
+            />
+            <path
+              d="M6.5 15.5h.01m4 0h.01M13.5 8.5h.01m4 0h.01"
+              stroke="currentColor"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+            />
+          </svg>
         )}
         <Text as="span" size="inherit" tone="inherit">
           {agents.length}
@@ -107,7 +141,9 @@ export function SessionSubagentsMenu({
           label={t("Session subagents")}
           side="top"
           align="end"
-          width={280}
+          width={340}
+          density="comfortable"
+          frosted
           items={items}
           onPick={(id) => {
             const agent = agents.find((candidate) => candidate.blockId === id);

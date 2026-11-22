@@ -41,6 +41,7 @@ export function createSubscriptionsRuntime(
     | "desktop"
     | "sessionRead"
     | "sessionService"
+    | "conversationDelegation"
     | "signal"
     | "invalidateSessionSource"
     | "transfers"
@@ -117,7 +118,7 @@ export function createSubscriptionsRuntime(
         signal.throwIfAborted();
         pruneStreamVersions();
         const resource =
-          target.kind === "session"
+          target.kind === "session" || target.kind === "delegationMessages"
             ? `session:${target.sessionId}`
             : target.kind === "project"
               ? `project:${target.projectId}`
@@ -154,7 +155,22 @@ export function createSubscriptionsRuntime(
                 { authorized: context.authorized, principalId, signal },
               ),
             );
-          else if (target.kind === "project") {
+          else if (target.kind === "delegationMessages") {
+            value = await dependencies.engine.store.db.withAuthorization(
+              context.authorized,
+              async () => {
+                const session = await dependencies.engine.store.withReadCancellation(signal, () =>
+                  dependencies.engine.store.sessionStateMetadata(target.sessionId),
+                );
+                if (!session || !(await context.authorized())) return null;
+                return dependencies.conversationDelegation.communication.messagesForSession(
+                  target.sessionId,
+                  session.projectId,
+                );
+              },
+            );
+            if (value === null) return null;
+          } else if (target.kind === "project") {
             streamProjectVersions.set(
               target.projectId,
               dependencies.engine.store.projectVersion(target.projectId),
@@ -350,8 +366,13 @@ export function createSubscriptionsRuntime(
       refreshDirectoryStreams();
   }, DIRECTORY_AGING_CHECK_MS);
   agingTimer.unref();
+  const unsubscribeDelegationMessages =
+    dependencies.conversationDelegation.communication.subscribeMessageChanges((sessionId) => {
+      subscriptionHub.invalidate({ kind: "delegationMessages", sessionId });
+    });
   const unsubscribeChanges = () => {
     unsubscribeStoreChanges();
+    unsubscribeDelegationMessages();
     clearInterval(agingTimer);
     clearTimeout(modelsTimer);
     modelsTimer = undefined;
@@ -379,6 +400,7 @@ export function createSubscriptionsRuntime(
     bulkTransfers.invalidate(`session:${change.sessionId}`);
     dependencies.transfers.forget(change.sessionId);
     subscriptionHub.resnapshot({ kind: "session", sessionId: change.sessionId });
+    subscriptionHub.resnapshot({ kind: "delegationMessages", sessionId: change.sessionId });
     if (change.projectId) {
       bulkTransfers.invalidate(`project:${change.projectId}`);
       subscriptionHub.resnapshot({ kind: "project", projectId: change.projectId });
@@ -449,6 +471,7 @@ export function createSubscriptionsRuntime(
   const unsubscribeAccountStatus = onProviderAccountStatusChange(invalidateModelCatalog);
   const invalidateSessionCopies = (sessionId: string, projectId: string) => {
     subscriptionHub.forget({ kind: "session", sessionId });
+    subscriptionHub.forget({ kind: "delegationMessages", sessionId });
     bulkTransfers.invalidate(`session:${sessionId}`);
     dependencies.transfers.forget(sessionId);
     bulkTransfers.invalidate(`project:${projectId}`);

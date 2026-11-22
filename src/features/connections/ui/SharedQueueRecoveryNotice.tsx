@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { useState, useSyncExternalStore } from "react";
-import { Alert } from "../../../shared/ui/Alert";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { errorText } from "../../../shared/lib/errors";
 import { DeliveryReviewChoice } from "../../sessions/public/DeliveryReviewChoice";
 import { resumeSharedLocalQueue, useLocalSharedQueueClient } from "../model/useSharedLocalQueues";
@@ -64,10 +64,14 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
     }
   };
   return (
-    <Alert tone="warning" className="shrink-0">
-      <Text as="div" tone="inherit">
-        {t("Queued delivery is unknown. Sending is held for review.")}
-      </Text>
+    <Disclosure
+      key={focusRequest}
+      defaultOpen={focusRequest > 0}
+      variant="plain"
+      size="sm"
+      className="shrink-0"
+      summary={t("Delivery unconfirmed · Review")}
+    >
       <DeliveryReviewChoice
         text={state.recovery}
         working={working}
@@ -80,6 +84,6 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
           {error}
         </Text>
       ) : null}
-    </Alert>
+    </Disclosure>
   );
 }

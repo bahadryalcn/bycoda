@@ -8,7 +8,9 @@ import {
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { FailureState } from "../../../../shared/ui/FailureState";
+import { Heading } from "../../../../shared/ui/Heading";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { Group } from "../../../../shared/ui/settings";
 import { LOCAL_MODEL_SOURCE, useModelSource } from "../../../sessions/public/modelSource";
@@ -264,14 +266,40 @@ export function ModelOrderList({
   );
   if (!entries.length)
     return (
-      <EmptyState
-        context="panel"
-        title={t("Choose the models for unattended work")}
-        description={addChoice || !source.probed() ? "" : noProviderReason}
-        showDescription={!addChoice}
-        action={addChoice ? { label: t("Add model"), onClick: addEntry } : undefined}
-        extra={<SmartSetupAction variant="primary" onEdit={edit} />}
-      />
+      <div className="grid gap-4">
+        <div className="grid gap-1">
+          <Heading as="h2" size="page">
+            {t("Model priority")}
+          </Heading>
+          <Text as="p" size="secondary" tone="secondary">
+            {t("Set the order Bycoda tries models for background jobs.")}
+          </Text>
+        </div>
+        <div
+          {...surfaceAttributes(
+            { variant: "canvas", frame: "pane", edge: "block-start" },
+            "grid gap-3 pt-4",
+          )}
+        >
+          <EmptyState
+            context="list"
+            icon={null}
+            title={t("No models configured")}
+            description={addChoice || !source.probed() ? "" : noProviderReason}
+            showDescription={!addChoice}
+            className="p-0"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <SmartSetupAction variant="primary" onEdit={edit}>
+              {addChoice ? (
+                <Button size="sm" onClick={addEntry}>
+                  {t("Add model")}
+                </Button>
+              ) : null}
+            </SmartSetupAction>
+          </div>
+        </div>
+      </div>
     );
   return (
     // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Escape from any control inside the list clears the bulk selection; the controls themselves stay the interactive elements.

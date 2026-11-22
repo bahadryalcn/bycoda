@@ -1,3 +1,4 @@
+import { adoptedTranscriptLead } from "../../src/features/connections/model/adoptedSessions";
 import type { DrainLease } from "../../src/features/connections/model/sharedQueue";
 import { type RunLease } from "../../src/features/sync/model/runLease";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
@@ -243,13 +244,36 @@ export function createSessionLeasesRuntime(
       /** The queue's own revision when the answer was made: a change to that queue ends the answer. */
       revision: number;
       blocked: boolean;
+      syncPending: boolean;
       checkedAt: number;
     }
   >();
-  type QueueLeaseEntry = { sessionId: string; epoch: number; blocked: boolean };
+  type QueueLeaseEntry = {
+    sessionId: string;
+    epoch: number;
+    blocked: boolean;
+    syncPending: boolean;
+  };
+
+  const desktopCopyAlreadySeen = async (id: string): Promise<boolean> => {
+    try {
+      const { desktop, authorityGeneration, projectId, session, status } =
+        await dependencies.engine.store.session(id);
+      if (!desktop || authorityGeneration !== undefined || status !== "idle") return false;
+      const stamp = await dependencies.desktop.stampAsync(id);
+      if (!stamp || stamp.running || stamp.updatedAt > desktop.updatedAt) return false;
+      const snapshot = await dependencies.desktop.snapshotAsync(id, projectId, session.cwd);
+      if (!snapshot || snapshot.status !== "idle" || snapshot.updatedAt !== stamp.updatedAt)
+        return false;
+      const lead = adoptedTranscriptLead(snapshot.session, session);
+      return lead === "same" || lead === "host";
+    } catch {
+      return false;
+    }
+  };
   const renewQueueLease = async (
     holder: string,
-    { sessionId, epoch, blocked }: QueueLeaseEntry,
+    { sessionId, epoch, blocked, syncPending }: QueueLeaseEntry,
   ): Promise<DrainLease | null> => {
     const key = JSON.stringify([holder, sessionId, epoch]);
     const cached = queueLeaseAnswers.get(key);
@@ -259,19 +283,28 @@ export function createSessionLeasesRuntime(
       cached &&
       cached.revision === revision &&
       cached.blocked === blocked &&
+      cached.syncPending === syncPending &&
       Date.now() - cached.checkedAt < 5000 &&
       cached.lease.expiresAt > Date.now() + 5000
     )
       return dependencies.sessionQueues.renew(sessionId, holder, epoch);
     // A holder that cannot send for a reason of its own (a sync conflict on its
     // copy) is neither stalled nor replaced by the host sending on its own copy.
-    dependencies.queueDrainer.noteBlocked(sessionId, holder, blocked);
+    // A mirror that has yet to receive Host changes may yield to the Host only
+    // when its persisted history has already been seen. Divergence and uncertain
+    // delivery continue to use the unconditional block.
+    dependencies.queueDrainer.noteBlocked(
+      sessionId,
+      holder,
+      blocked && !(syncPending && (await desktopCopyAlreadySeen(sessionId))),
+    );
     // A holder that could send but does not is not renewed: its lease ends
     // and the host sends the row.
     const lease = (await dependencies.queueDrainer.holderStalled(sessionId))
       ? await dependencies.sessionQueues.release(sessionId, holder, epoch)
       : await dependencies.sessionQueues.renew(sessionId, holder, epoch);
-    if (lease) queueLeaseAnswers.set(key, { lease, revision, blocked, checkedAt: Date.now() });
+    if (lease)
+      queueLeaseAnswers.set(key, { lease, revision, blocked, syncPending, checkedAt: Date.now() });
     else queueLeaseAnswers.delete(key);
     while (queueLeaseAnswers.size > 1024)
       queueLeaseAnswers.delete(queueLeaseAnswers.keys().next().value!);
@@ -282,13 +315,19 @@ export function createSessionLeasesRuntime(
     const holder = `desktop:${params.clientId}`;
     const reported: QueueLeaseEntry[] = [];
     for (const entry of params.queueLeases.slice(0, 256)) {
-      const { sessionId, epoch, blocked } = (entry ?? {}) as {
+      const { sessionId, epoch, blocked, syncPending } = (entry ?? {}) as {
         sessionId?: unknown;
         epoch?: unknown;
         blocked?: unknown;
+        syncPending?: unknown;
       };
       if (typeof sessionId !== "string" || !Number.isSafeInteger(epoch)) continue;
-      reported.push({ sessionId, epoch: Number(epoch), blocked: blocked === true });
+      reported.push({
+        sessionId,
+        epoch: Number(epoch),
+        blocked: blocked === true,
+        syncPending: syncPending === true,
+      });
     }
     // One store scope for the whole beat. Entries of one session run in the reported
     // order (a later one sees the earlier one's write); different sessions run side by side.

@@ -57,6 +57,11 @@ SDKs and device tools must already be installed by the owner.
   URL and `show:true`. It verifies a frame and requests the originating conversation's
   project-Host panel. Check `execution` and `presentation` separately; headless runs
   may have no visible desktop. Never claim the user saw a page from navigation alone.
+- When asked to open an app on a remote project Host, preview the existing URL on
+  that Host first. A private HTTP(S) page may be running even if development server
+  discovery has no match. If the app needs starting, use the project's verified
+  launch command on the same Host, then verify the page in Browser. Report the
+  machine used and any separate navigation or panel presentation failure.
 - `browser.resize` changes the leased CSS viewport for narrow checks (for example
   390x844). Capture a fresh frame afterwards; old annotation targets are invalidated.
   This does not emulate a physical device. Never take another owner's lease.

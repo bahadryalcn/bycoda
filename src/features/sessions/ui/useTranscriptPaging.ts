@@ -11,7 +11,7 @@ import {
   type SetStateAction,
 } from "react";
 import { flushSync } from "react-dom";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import type { Block } from "../model/session";
 import { pinToBottom, syncTranscriptViewport } from "./transcriptScroll";
 import { TranscriptRetentionContext } from "./TranscriptPool";
@@ -30,6 +30,7 @@ type Anchor = {
   edge: "start" | "end";
 };
 type Options = {
+  sessionId?: string;
   turns: Block[][];
   blockCount: number;
   openWork: Record<string, boolean>;
@@ -52,22 +53,22 @@ export async function runRemoteLoad({
   apply,
   loadingRef,
   setPagingLoading,
-  setPagingError,
+  setPagingFailure,
 }: {
   load: () => Promise<number | void> | void;
   stale: () => boolean;
   apply: () => void;
   loadingRef: { current: boolean };
   setPagingLoading: (loading: boolean) => void;
-  setPagingError: (error: string | null) => void;
+  setPagingFailure: (error: unknown) => void;
 }): Promise<void> {
   try {
     const added = await load();
-    if (stale() || added === 0) return;
-    apply();
+    if (stale()) return;
+    if (added !== 0) apply();
+    setPagingFailure(undefined);
   } catch (error) {
-    // A dropped link is covered by the shared connection notice; the page can be requested again.
-    setPagingError(presentRemoteError(error) ?? null);
+    if (!stale()) setPagingFailure(error);
   } finally {
     loadingRef.current = false;
     setPagingLoading(false);
@@ -103,6 +104,7 @@ function useSurvivingFirstTurn(
 
 /** Bounded settled-history window. Model history remains reachable in both directions. */
 export function useTranscriptPaging({
+  sessionId,
   turns,
   blockCount,
   openWork,
@@ -161,10 +163,12 @@ export function useTranscriptPaging({
   const firstBlockRef = useRef<string | undefined | null>(null);
   const loadingRef = useRef(false);
   const navigationRef = useRef(0);
+  const sessionRef = useRef(sessionId);
   const [pagingLoading, setPagingLoading] = useState(false);
-  const [pagingError, setPagingError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ sessionId?: string; cause: unknown } | null>(null);
   const previousScrollTop = useRef<number | undefined>(undefined);
   useLayoutEffect(() => {
+    sessionRef.current = sessionId;
     turnsRef.current = turns;
     rangeRef.current = { first: firstVisibleTurn, last: lastVisibleTurn, count };
     previous.current = {
@@ -279,6 +283,7 @@ export function useTranscriptPaging({
     (first: number, nextCount: number, edge: Anchor["edge"]) => {
       const all = turnsRef.current;
       navigationRef.current++;
+      setFailure(null);
       captureAnchor(edge);
       setWindow({
         firstId: all[first]?.[0]?.id,
@@ -299,12 +304,12 @@ export function useTranscriptPaging({
     if (!remoteHistoryHasMore || !onLoadRemoteHistory) return;
     loadingRef.current = true;
     setPagingLoading(true);
-    setPagingError(null);
     const firstId = turnsRef.current[0]?.[0]?.id;
     const requestedNavigation = navigationRef.current;
     await runRemoteLoad({
       load: onLoadRemoteHistory,
-      stale: () => navigationRef.current !== requestedNavigation,
+      stale: () =>
+        sessionRef.current !== sessionId || navigationRef.current !== requestedNavigation,
       apply: () => {
         navigationRef.current++;
         captureAnchor("start");
@@ -317,13 +322,25 @@ export function useTranscriptPaging({
       },
       loadingRef,
       setPagingLoading,
-      setPagingError,
+      setPagingFailure: (cause) => setFailure(cause === undefined ? null : { sessionId, cause }),
     });
-  }, [captureAnchor, moveWindow, remoteHistoryHasMore, onLoadRemoteHistory]);
+  }, [captureAnchor, moveWindow, remoteHistoryHasMore, onLoadRemoteHistory, sessionId]);
+  const { visibleError, pending } = useGracedFailure({
+    error: remoteHistoryHasMore && failure?.sessionId === sessionId ? failure?.cause : undefined,
+    retry: loadEarlier,
+    scope: sessionId,
+  });
+  const pagingError = visibleError ?? null;
   const onHistoryScroll = (scrollTop: number, directInput = false, readerMoved = true) => {
     const previousTop = previousScrollTop.current;
     previousScrollTop.current = scrollTop;
-    if (!readerMoved || pagingError || loadingRef.current || scrollTop > EARLIER_SCROLL_THRESHOLD)
+    if (
+      !readerMoved ||
+      pagingError ||
+      pending ||
+      loadingRef.current ||
+      scrollTop > EARLIER_SCROLL_THRESHOLD
+    )
       return;
     if (directInput || (previousTop !== undefined && scrollTop < previousTop)) void loadEarlier();
   };
@@ -337,6 +354,7 @@ export function useTranscriptPaging({
   }, [moveWindow]);
   const jumpLatest = useCallback(() => {
     navigationRef.current++;
+    setFailure(null);
     anchorRef.current = null;
     prependHeightRef.current = null;
     stickToBottomRef.current = true;
@@ -348,6 +366,7 @@ export function useTranscriptPaging({
       const index = all.findIndex((turn) => turn.some((block) => block.id === blockId));
       if (index < 0) return false;
       navigationRef.current++;
+      setFailure(null);
       const range = rangeRef.current;
       if (index >= range.first && index < range.last) return true;
       const first = Math.max(
@@ -387,7 +406,7 @@ export function useTranscriptPaging({
     jumpLatest,
     revealBlock,
     findTurn,
-    pagingLoading,
+    pagingLoading: pagingLoading || pending,
     pagingError,
   };
 }

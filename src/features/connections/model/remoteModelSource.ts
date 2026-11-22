@@ -1,6 +1,7 @@
 import type { ModelSource } from "../../sessions/public/modelSource";
 import type { AgentModel } from "../../sessions/public/models";
 import type { HarnessId, Session } from "../../sessions";
+import { DEFAULT_PROVIDER_ACCOUNT_ID } from "../../providers/public/providerAccounts";
 import type { HostDescriptor, RemoteProvider } from "./protocol";
 import { remoteModelControls } from "./remoteModels";
 import type { useRemoteModelCatalog } from "./useRemoteModelCatalog";
@@ -26,10 +27,17 @@ export function buildRemoteModelSource({
   const models = (harness: HarnessId) => catalog?.models[harness as RemoteProvider] ?? [];
   const savedModel = hostSession?.model;
   const savedSettings = hostSession?.modelSettings ?? {};
+  // A Host can use its CLI profile without listing it alongside named accounts.
+  const accounts = Object.fromEntries(
+    Object.entries(catalog?.accounts ?? {}).map(([provider, profiles]) => {
+      const named = profiles.filter((profile) => profile.id !== DEFAULT_PROVIDER_ACCOUNT_ID);
+      return [provider, named.length ? named : profiles];
+    }),
+  );
   return {
     id: `remote:${environmentId}`,
     // Only the Host's own lists; a provider it has not reported yet stays absent (unknown).
-    accounts: catalog?.accounts ?? {},
+    accounts,
     accountsKnown: (harness) => !!catalog?.accounts?.[harness as "claude" | "codex" | "grok"],
     modelsFor: models,
     resolve: (harness, id = "") => {

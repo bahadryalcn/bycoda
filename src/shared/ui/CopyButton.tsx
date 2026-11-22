@@ -26,7 +26,7 @@ type CopyButtonProps = Omit<
   resetKeys?: readonly unknown[];
   /** Called with the failure after the visible failed state is set, for callers that log it. */
   onCopyError?: (error: unknown) => void;
-  /** Show the failure reason in an inline error beside the button until the next press. */
+  /** Show a compact inline failure beside the retryable copy button, with diagnostics on demand. */
   errorDetail?: boolean;
 };
 
@@ -70,17 +70,18 @@ export function CopyButton({
     );
   };
   const state = feedback.copied ? "copied" : feedback.failed ? "failed" : undefined;
-  const name = feedback.failed ? failedLabel : feedback.copied ? done : label;
+  const showInlineFailure = feedback.failed && errorDetail;
+  const showButtonFailure = feedback.failed && !errorDetail;
+  const name = showButtonFailure ? failedLabel : feedback.copied ? done : label;
   // A failure detail is an alert of its own; otherwise only a shown outcome mounts a live region,
   // so an idle button never adds an empty status next to its neighbours' messages.
-  const announcement =
-    feedback.failed && errorDetail ? (
-      <InlineError className="max-w-xs">
-        {failedLabel} {feedback.error}
-      </InlineError>
-    ) : state && (iconOnly || feedback.failed) ? (
-      <LiveText className="sr-only" text={name} />
-    ) : null;
+  const announcement = showInlineFailure ? (
+    <InlineError className="max-w-xs" details={feedback.error}>
+      {failedLabel}
+    </InlineError>
+  ) : state && (iconOnly || feedback.failed) ? (
+    <LiveText className="sr-only" text={name} />
+  ) : null;
   if (iconOnly) {
     return (
       <>
@@ -97,7 +98,7 @@ export function CopyButton({
         >
           {feedback.copied ? (
             <Check tone="success" className="icon-sm" aria-hidden="true" />
-          ) : feedback.failed ? (
+          ) : showButtonFailure ? (
             <AlertCircle tone="danger" className="icon-sm" aria-hidden="true" />
           ) : (
             (icon ?? <Copy className="icon-sm" aria-hidden="true" />)
@@ -120,9 +121,9 @@ export function CopyButton({
         loading={feedback.pending}
         success={feedback.copied}
         successLabel={done}
-        reserveLabels={[failedLabel]}
+        reserveLabels={errorDetail ? undefined : [failedLabel]}
         startIcon={
-          feedback.failed ? (
+          showButtonFailure ? (
             <AlertCircle tone="danger" className="icon-sm" />
           ) : (
             (icon ?? <Copy className="icon-sm" />)
@@ -130,7 +131,7 @@ export function CopyButton({
         }
         onClick={run}
       >
-        {feedback.failed ? failedLabel : label}
+        {showButtonFailure ? failedLabel : label}
       </Button>
       {announcement}
     </>

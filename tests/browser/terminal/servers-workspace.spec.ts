@@ -8,7 +8,7 @@ for (const theme of ["light", "dark"]) {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
       await page.goto(
-        `/tests/browser/terminal/servers.html?sshFixture&sshKeys&filesFixture&terminalWorkspace&identityColorFixture&groupFixture&inheritedFixture&serversRedesign&theme=${theme}`,
+        `/tests/browser/terminal/servers.html?sshFixture&sshKeys&filesFixture&terminalWorkspace&identityColorFixture&groupFixture&inheritedFixture&serversRedesign&detailLongKey&theme=${theme}`,
       );
       const folder = "temp/verification/2026-11-14-servers-six";
       const capture = async (name: string) => {
@@ -31,6 +31,16 @@ for (const theme of ["light", "dark"]) {
       await inventory.getByRole("button", { name: /^Existing SSH target/ }).click();
       const details = page.getByRole("region", { name: "Server details", exact: true });
       await expect(details).toBeVisible();
+      const credentials = details.getByRole("region", { name: "Credentials" });
+      const key = credentials.locator("dd").filter({ hasText: "long-identity-filename" });
+      await expect(key).toBeVisible();
+      const chooseKey = credentials.getByRole("button", { name: "Choose SSH key", exact: true });
+      for (const content of [key, chooseKey]) {
+        expect(
+          await content.evaluate((element) => element.scrollWidth <= element.clientWidth),
+        ).toBe(true);
+        await expect(content).toBeInViewport();
+      }
       await capture("connection");
       for (const [tab, name] of [
         ["Port forwarding", "forwards"],

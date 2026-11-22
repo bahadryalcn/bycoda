@@ -20,6 +20,7 @@ export type * as modelProjectNamesApi from "./public/projectNames";
 export type * as modelProjectReturnApi from "./public/projectReturn";
 export type * as modelRecentsApi from "./public/recents";
 export type * as uiCwdPickerApi from "./public/CwdPicker";
+export type * as uiNewSessionProjectDialogApi from "./public/NewSessionProjectDialog";
 export type * as uiProjectLogoIconApi from "./public/ProjectLogoIcon";
 export type * as uiProjectMascotApi from "./public/ProjectMascot";
 export type * as uiProjectQuickActionsApi from "./public/ProjectQuickActions";

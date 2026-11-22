@@ -20,6 +20,13 @@
 [data-menu-density="compact"] .item {
   --list-row-height: var(--ui-control-height-sm);
 }
+[data-menu-density="comfortable"] .item {
+  --list-row-height: var(--ui-control-height-lg);
+  padding-block: var(--space-2);
+}
+[data-menu-density="comfortable"] .item + .item {
+  margin-block-start: var(--space-1);
+}
 .destructive {
   composes: danger from "../../ListRow.module.css";
 }

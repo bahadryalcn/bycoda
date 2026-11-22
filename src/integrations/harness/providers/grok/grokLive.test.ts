@@ -50,8 +50,14 @@ vi.mock("../../core/child", () =>
   }),
 );
 
-const { compactGrokContext, sendGrokTurn, respondGrokApproval, stopGrokSession, cancelGrokTurn } =
-  await import("./grok");
+const {
+  bindGrokSession,
+  compactGrokContext,
+  sendGrokTurn,
+  respondGrokApproval,
+  stopGrokSession,
+  cancelGrokTurn,
+} = await import("./grok");
 import type { HarnessEvent } from "../../core/types";
 
 function reply(id: number, result: unknown) {
@@ -86,15 +92,20 @@ const initResult = {
   },
 };
 
-async function handshake() {
+async function handshake(
+  setup: Record<string, unknown> = {},
+  method = "session/new",
+  protocolVersion = 1,
+) {
   await waitFor(() => parse().some((m) => m.method === "initialize"), "initialize");
-  reply(parse().find((m) => m.method === "initialize")!.id, initResult);
+  reply(parse().find((m) => m.method === "initialize")!.id, { ...initResult, protocolVersion });
   await waitFor(() => parse().some((m) => m.method === "authenticate"), "authenticate");
   reply(parse().find((m) => m.method === "authenticate")!.id, {});
-  await waitFor(() => parse().some((m) => m.method === "session/new"), "session/new");
-  reply(parse().find((m) => m.method === "session/new")!.id, {
+  await waitFor(() => parse().some((m) => m.method === method), method);
+  reply(parse().find((m) => m.method === method)!.id, {
     sessionId: "S1",
     models: { currentModelId: "grok-4.6" },
+    ...setup,
   });
 }
 
@@ -238,8 +249,8 @@ describe("grok live turn sequence", () => {
     const turn = sendGrokTurn({
       sessionId: "t1",
       cwd: "/repo",
-      model: "grok:grok-4.6",
-      modelSettings: { effort: "high" },
+      model: "grok:grok-4.7",
+      modelSettings: { effort: "medium" },
       runtimeMode: "supervised",
       text: "hey",
       attachments: [
@@ -255,10 +266,9 @@ describe("grok live turn sequence", () => {
       onAccepted,
       onEvent: (e) => events.push(e),
     });
-    await handshake();
-    await waitFor(() => parse().some((m) => m.method === "session/set_mode"), "set_mode");
-    reply(parse().find((m) => m.method === "session/set_mode")!.id, {});
+    await handshake({ models: { currentModelId: "grok-4.7" } });
     await waitFor(() => parse().some((m) => m.method === "session/prompt"), "prompt");
+    expect(parse().some((m) => m.method === "session/set_mode")).toBe(false);
     const promptRequest = parse().find((m) => m.method === "session/prompt")!;
     expect(promptRequest.params.prompt).toEqual([
       {
@@ -294,10 +304,7 @@ describe("grok live turn sequence", () => {
     const rpcError = (id: number, code: number, message: string) =>
       onLine!(JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } }));
 
-    it.each([
-      ["set_model", "grok:grok-4.7", undefined],
-      ["set_mode", "grok:grok-4.6", "turbo"],
-    ])(
+    it.each([["set_model", "grok:grok-4.7", undefined]])(
       "fails the turn when %s is rejected instead of running misconfigured",
       async (method, model, effort) => {
         const turn = sendGrokTurn(turnInput(`grok-reject-${method}`, model, effort));
@@ -322,23 +329,84 @@ describe("grok live turn sequence", () => {
       },
     );
 
-    it.each([
-      ["set_model", "grok:grok-4.7", undefined],
-      ["set_mode", "grok:grok-4.6", "turbo"],
-    ])("still runs the turn when %s is not implemented (-32601)", async (method, model, effort) => {
-      const turn = sendGrokTurn(turnInput(`grok-missing-${method}`, model, effort));
-      await handshake();
-      await waitFor(() => parse().some((m) => m.method === `session/${method}`), method);
-      rpcError(
-        parse().find((m) => m.method === `session/${method}`)!.id,
-        -32601,
-        "Method not found",
-      );
-      await waitFor(() => parse().some((m) => m.method === "session/prompt"), "prompt");
-      reply(parse().find((m) => m.method === "session/prompt")!.id, { stopReason: "end_turn" });
-      await turn;
-      await stopGrokSession(`grok-missing-${method}`);
-    });
+    it.each([["set_model", "grok:grok-4.7", undefined]])(
+      "still runs the turn when %s is not implemented (-32601)",
+      async (method, model, effort) => {
+        const turn = sendGrokTurn(turnInput(`grok-missing-${method}`, model, effort));
+        await handshake();
+        await waitFor(() => parse().some((m) => m.method === `session/${method}`), method);
+        rpcError(
+          parse().find((m) => m.method === `session/${method}`)!.id,
+          -32601,
+          "Method not found",
+        );
+        await waitFor(() => parse().some((m) => m.method === "session/prompt"), "prompt");
+        reply(parse().find((m) => m.method === "session/prompt")!.id, { stopReason: "end_turn" });
+        await turn;
+        await stopGrokSession(`grok-missing-${method}`);
+      },
+    );
+
+    it.each(["current", "applied", "unadvertised", "rejected", "session error"])(
+      "handles resumed medium effort when %s",
+      async (scenario) => {
+        const thread = `grok-resume-${scenario}`;
+        bindGrokSession(thread, "S1", "/repo");
+        const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        const turn = sendGrokTurn(turnInput(thread, "grok:grok-4.7", "medium"));
+        const outcome = turn.catch((error: unknown) => error);
+        try {
+          await handshake(
+            {
+              models: { currentModelId: "grok-4.7" },
+              modes: { currentModeId: "ask", availableModes: [{ id: "ask" }] },
+              configOptions: [
+                {
+                  type: "select",
+                  category: "thought_level",
+                  id: "thinking",
+                  currentValue: scenario === "current" ? "medium" : "low",
+                  options: [{ value: scenario === "unadvertised" ? "low" : "medium" }],
+                },
+              ],
+            },
+            "session/resume",
+            2,
+          );
+          const control = () => parse().find((m) => m.method === "session/set_config_option");
+          if (["applied", "rejected", "session error"].includes(scenario)) {
+            await waitFor(() => !!control(), "effort control");
+            expect(control()?.params).toEqual({
+              sessionId: "S1",
+              configId: "thinking",
+              value: "medium",
+            });
+            if (scenario === "applied") reply(control()!.id, {});
+            else rpcError(control()!.id, scenario === "rejected" ? -32602 : -32000, scenario);
+          }
+          if (scenario === "session error") {
+            expect(await outcome).toMatchObject({
+              code: -32000,
+              message: "grok set_config_option rejected: session error",
+            });
+            expect(parse().some((m) => m.method === "session/prompt")).toBe(false);
+          } else {
+            await waitFor(() => parse().some((m) => m.method === "session/prompt"), "prompt");
+            reply(parse().find((m) => m.method === "session/prompt")!.id, {
+              stopReason: "end_turn",
+            });
+            await turn;
+          }
+          expect(parse().some((m) => m.method === "session/set_mode")).toBe(false);
+          expect(warning).toHaveBeenCalledTimes(
+            ["unadvertised", "rejected"].includes(scenario) ? 1 : 0,
+          );
+        } finally {
+          warning.mockRestore();
+          await stopGrokSession(thread);
+        }
+      },
+    );
   });
 
   it("runs the selected account's Grok profile", async () => {

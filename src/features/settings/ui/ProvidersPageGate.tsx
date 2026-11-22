@@ -15,7 +15,11 @@ import { SettingsPageLoading } from "./SettingsPageLoading";
  * provider and flips each row. Wait for the first probe (a warm app has already done it) and show
  * the shared placeholder meanwhile. A failed probe still marks itself probed, so this cannot hang.
  */
-export function ProvidersPageGate(props: { cwd?: string; recents?: RecentProject[] }) {
+export function ProvidersPageGate(props: {
+  cwd?: string;
+  recents?: RecentProject[];
+  visible?: boolean;
+}) {
   useSyncExternalStore(
     subscribeHarnessAvailability,
     getHarnessAvailabilitySnapshot,

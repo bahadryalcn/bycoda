@@ -199,6 +199,9 @@ Connected tracker items can be referenced in drafts with `@alias:ref`. Jira acce
 an unavailable lookup does not prevent sending. See [chat references](chat-artifacts-and-connected-files.md#reference-tracker-work-items)
 for reference limits and sent-message behavior.
 
+For a project on a connected machine, GitHub suggestions and references such as
+`#123` use that machine’s registered repository and GitHub CLI sign-in.
+
 Jira key prefixes and numeric queries use Jira Cloud's issue picker, then load up to
 20 existing issues in picker order. Exact keys also retain their direct lookup;
 ordinary text searches use Jira text search. Hidden Jira projects remain excluded.

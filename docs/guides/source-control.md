@@ -99,8 +99,9 @@ folders, and Right/Left move across a row's open, Discard, Stage and More contro
 
 The commit field retains its checkout draft. Message generation remains cancellable
 and allows staging. Commit variants are unavailable while generation is pending;
-if the draft or index changes, an obsolete generated result does not replace the
-current draft. Configure the commit and pull request generation model globally in
+if the staged changes or branch move, the generated message comes with a reminder
+to review it. If the draft changes during generation, **Use AI message** lets you
+replace it with the generated message. Configure the commit and pull request generation model globally in
 **Settings > Models > Background work > Who uses what**. The commit field keeps only the generate/cancel
 action, without a separate model settings menu. Saved legacy checkout selections
 remain available as a fallback when global model routing is unavailable. Account

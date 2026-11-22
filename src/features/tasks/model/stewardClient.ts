@@ -42,6 +42,7 @@ export type BoardSteward = HostSteward & {
   cwd: string;
   /** The machine did not answer; this is what it last reported. */
   stale?: boolean;
+  pendingRefresh?: boolean;
 };
 
 /** What the steward form edits. A draft with an ID edits that steward. */

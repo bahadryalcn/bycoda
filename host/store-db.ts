@@ -1,6 +1,5 @@
 import { URL as NodeURL } from "node:url";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
 import type { SQLInputValue } from "node:sqlite";
 import {
@@ -10,6 +9,7 @@ import {
 } from "./storage/persistence-health";
 import { createDedupedWarn } from "./diagnostics/log-dedupe";
 import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
+import { HostDbClosingError, ReadPoolUnavailableError, StoreReadPool, type ReadLease } from "./storage/store-read-pool";
 
 export type StoreRow = Record<string, any>;
 /** Every Host read and write waits behind a scope this long; the owner names the holder. */
@@ -24,6 +24,8 @@ const SCOPE_DEADLINE_MS = 5 * 60_000;
 const BOUNDARY_DEADLINE_MS = 60_000;
 export type ScopeOptions = {
   deadlineMs?: number;
+  /** Stable attribution for a known database operation when entering an idle queue. */
+  site?: string | (() => string);
   /**
    * Absolute `monotonicNow()` instant after which this request must not be admitted. It is
    * the caller's original ingress deadline, so FIFO queue time counts against it. A scope
@@ -65,15 +67,30 @@ class ScopeDeadlineError extends Error {
     this.name = "ScopeDeadlineError";
   }
 }
+/** Frames kept of a scope's entry stack: enough for the caller names `scopeSite` reports. */
+const SITE_FRAMES = 7;
+/** Reader connections beside the writer; `BYCODA_HOST_READ_POOL=0` turns the pool off. */
+const defaultReaders = (): number => {
+  const configured = process.env.BYCODA_HOST_READ_POOL;
+  if (configured === undefined || configured === "") return 2;
+  const size = Number(configured);
+  return Number.isInteger(size) && size >= 0 ? Math.min(size, 4) : 2;
+};
+const isMemoryPath = (path: string): boolean =>
+  path === "" || path === ":memory:" || /^file:(?::memory:|\?.*mode=memory)/.test(path);
 /** The functions that entered a scope: names only, no paths and none of this module's frames. */
-const scopeSite = (entry: Error, depth = 3): string =>
-  (entry.stack ?? "")
-    .split("\n")
-    .slice(1)
-    .map((line) => /^\s*at (?:async )?([\w$.<>]+) \(/.exec(line)?.[1])
-    .filter((name): name is string => !!name && !/^(?:StoreDatabase|StoreStatement)\./.test(name))
-    .slice(0, depth)
-    .join(" < ") || "unknown";
+const scopeSite = (entry: Error | string, depth = 3): string =>
+  typeof entry === "string"
+    ? entry
+    : (entry.stack ?? "")
+        .split("\n")
+        .slice(1)
+        .map((line) => /^\s*at (?:async )?([\w$.<>]+) \(/.exec(line)?.[1])
+        .filter(
+          (name): name is string => !!name && !/^(?:StoreDatabase|StoreStatement)\./.test(name),
+        )
+        .slice(0, depth)
+        .join(" < ") || "unknown";
 /**
  * Structured clone ships a typed-array view's entire backing ArrayBuffer. A 64 KiB
  * chunk sliced from a 64 MiB artifact would otherwise copy 64 MiB per statement, so
@@ -91,6 +108,8 @@ const workerParams = (
     Array.isArray(param) ? param.map(exactBytes) : exactBytes(param as SQLInputValue),
   ) as SQLInputValue[] | SQLInputValue[][];
 type Owner = { id: string; phase: "open" | "closing" | "closed"; timings?: ScopeTimings };
+/** The owner holding the writer queue, for the one watchdog that names a stuck holder. */
+type Holder = { id: string; entry: Error | string; enteredAt: number; admittedBefore: number };
 type AuthorizationCheck = () => boolean | Promise<boolean>;
 export type StoreAuthorization =
   | AuthorizationCheck
@@ -114,12 +133,22 @@ export class RequestAuthorizationError extends Error {
   }
 }
 
-/** A single SQLite owner. Every operation and whole cache-aware store method
- * shares FIFO admission; only nested work from its live ALS owner can reenter. */
+/** A single SQLite writer. Every write and whole cache-aware store method shares FIFO
+ * admission; only nested work from its live ALS owner can reenter. Pure reads use
+ * `readScope`, which runs on read-only connections beside the writer instead of in the FIFO. */
 export class StoreDatabase {
   readonly ready: Promise<void>;
   private readonly worker: Worker;
   private readonly owners = new AsyncLocalStorage<Owner>();
+  /** The read lease of the current `readScope`; reads inside it use its connection. */
+  private readonly readLeases = new AsyncLocalStorage<ReadLease>();
+  private readonly readPool?: StoreReadPool;
+  /** The reader connections need the WAL file the first writer scope (initialization) made. */
+  private writerSettled = false;
+  private holder?: Holder;
+  private watchdog?: ReturnType<typeof setTimeout>;
+  private watchedHolder?: string;
+  private activeScopes = 0;
   private readonly internal = new AsyncLocalStorage<boolean>();
   private readonly authorizations = new AsyncLocalStorage<StoreAuthorization>();
   onMutation?: (sql: string) => void;
@@ -140,6 +169,7 @@ export class StoreDatabase {
   scopeWarn: (message: string, detail?: string) => void = slowScopeWarn;
   private tail: Promise<unknown> = Promise.resolve();
   private sequence = 0;
+  private ownerSequence = 0;
   admissionVersion = 0;
   dataMutationVersion = 0;
   unattributedMutationVersion = 0;
@@ -169,7 +199,11 @@ export class StoreDatabase {
     }
   >();
 
-  constructor(path: string, workerURL = new NodeURL("./store-worker.mjs", import.meta.url)) {
+  constructor(
+    path: string,
+    workerURL = new NodeURL("./store-worker.mjs", import.meta.url),
+    options: { readers?: number } = {},
+  ) {
     let resolveReady!: () => void;
     let rejectReady!: (error: Error) => void;
     this.ready = new Promise<void>((resolve, reject) => {
@@ -178,6 +212,19 @@ export class StoreDatabase {
     });
     void this.ready.catch(() => undefined);
     this.worker = new Worker(workerURL, { workerData: { path } });
+    const readers = options.readers ?? defaultReaders();
+    // An in-memory database exists only inside the writer's connection.
+    if (readers > 0 && !isMemoryPath(path))
+      this.readPool = new StoreReadPool({
+        path,
+        workerURL,
+        size: readers,
+        // A read changes nothing on disk: only damage it found blocks the store.
+        onError: (error) => {
+          const health = storageFailure(error);
+          if (health?.state === "recovery-required") this.setHealth(health);
+        },
+      });
     this.worker.on("message", (reply: Reply) => {
       if (reply.ready) {
         resolveReady();
@@ -446,12 +493,18 @@ export class StoreDatabase {
     this.health = { state: "recovery-required", reason: "worker" };
     for (const request of this.pending.values()) request.reject(this.failed);
     this.pending.clear();
+    // Readers of a database that needs a restart would serve a state no writer stands behind.
+    void this.readPool?.close(this.failed).catch(() => undefined);
+    clearTimeout(this.watchdog);
+    this.watchdog = undefined;
   }
 
   outsideScope<T>(work: () => T): T {
     return this.owners.exit(() =>
-      this.internal.exit(() =>
-        this.authorizations.exit(() => this.critical.exit(() => this.recovering.exit(work))),
+      this.readLeases.exit(() =>
+        this.internal.exit(() =>
+          this.authorizations.exit(() => this.critical.exit(() => this.recovering.exit(work))),
+        ),
       ),
     );
   }
@@ -519,6 +572,72 @@ export class StoreDatabase {
   storeScope<T>(work: () => T | Promise<T>, options?: ScopeOptions): Promise<T> {
     return this.scope(() => this.internal.run(true, work), undefined, options);
   }
+  /**
+   * One timer for the whole queue: it names a holder that kept the writer through a whole
+   * interval. A holder that changed meanwhile only re-targets it, so scopes pay nothing.
+   */
+  private armWatchdog(): void {
+    if (this.watchdog || !this.holder) return;
+    this.watchedHolder = this.holder.id;
+    this.watchdog = setTimeout(() => {
+      this.watchdog = undefined;
+      const holder = this.holder;
+      if (!holder) return;
+      if (holder.id === this.watchedHolder)
+        console.warn(
+          `Host database queue still held by ${scopeSite(holder.entry, 8)} ms=${Math.round(performance.now() - holder.enteredAt)} queued=${this.admissionVersion - holder.admittedBefore}`,
+        );
+      this.armWatchdog();
+    }, STUCK_SCOPE_MS);
+    this.watchdog.unref?.();
+  }
+
+  /**
+   * Runs pure reads outside the writer FIFO: on a read-only connection, in one read
+   * transaction, so every statement of `work` sees the same committed snapshot. Inside a
+   * writer scope the read runs on the writer and sees that scope's own writes. In-memory
+   * databases, `BYCODA_HOST_READ_POOL=0` and a pool that cannot start fall back to `scope`.
+   * `work` must only read: the connection is `query_only`.
+   *
+   * A reader never sees uncommitted state, and a write whose scope was merely queued before
+   * this call may not be visible yet; await the write when the read must follow it.
+   */
+  async readScope<T>(work: () => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+    if (signal?.aborted) throw new Error("Database read admission cancelled.");
+    // A writer owner reads its own writes; a read inside a read scope shares its snapshot.
+    if (this.owners.getStore()) return this.scope(work, signal);
+    if (this.readLeases.getStore()) return work();
+    const pool = this.readPool;
+    if (!pool?.usable || !this.writerSettled || this.failed || this.closing)
+      return this.scope(work, signal);
+    const authorization = this.authorizations.getStore();
+    if (authorization && typeof authorization !== "function") {
+      const prepared = await this.authorizations.exit(() => authorization.prepare());
+      return this.authorizations.run(prepared, () => this.readScope(work, signal));
+    }
+    await this.authorize(authorization);
+    let started = false;
+    try {
+      return await pool.lease(async (lease) => {
+        started = true;
+        return this.readLeases.run(lease, work);
+      }, signal);
+    } catch (error) {
+      // Nothing ran: serve the read from the writer instead of failing it.
+      if (!started && error instanceof ReadPoolUnavailableError) return this.scope(work, signal);
+      throw error;
+    }
+  }
+  /**
+   * `PRAGMA data_version` of the writer connection: it moves only when another connection
+   * or process committed, which is the store's external-change signal. Answered between
+   * worker operations, so it never waits in the writer queue.
+   */
+  dataVersion(): Promise<number> {
+    // A closed worker never answers; fail like a scope would instead of waiting forever.
+    if (this.terminating) return Promise.reject(new HostDbClosingError("Host database is closed."));
+    return this.probeWorker("dataVersion").then((value) => Number(value));
+  }
   afterCommit(effect: () => void | Promise<void>): void {
     if (this.onCommit) this.onCommit(effect);
     else
@@ -547,7 +666,7 @@ export class StoreDatabase {
       if (this.failed) return Promise.reject(this.failed);
       return Promise.resolve().then(work);
     }
-    if (this.closing) return Promise.reject(new Error("Host database is closing."));
+    if (this.closing) return Promise.reject(new HostDbClosingError());
     const authorization = this.authorizations.getStore();
     // A scoped credential may need metadata from a different database/worker.
     // Prepare it before joining the SQL FIFO, then recheck authority on admission.
@@ -562,11 +681,23 @@ export class StoreDatabase {
     if (signal) this.queuedCancellableReads++;
     // Every later admission queues behind this one (FIFO); nested work never admits.
     const admittedBefore = ++this.admissionVersion;
-    // V8 formats the stack only when it is read, so an unread entry costs one capture.
-    const entry = new Error();
+    // The caller's stack is gone by the time a scope turns out slow, so it is captured here:
+    // V8 formats it only when read, and a short capture is all the caller names need.
+    let entry: Error | string;
+    if (options?.site && this.activeScopes === 0)
+      entry = typeof options.site === "function" ? options.site() : options.site;
+    else {
+      const stackLimit = Error.stackTraceLimit;
+      Error.stackTraceLimit = SITE_FRAMES;
+      try {
+        entry = new Error();
+      } finally {
+        Error.stackTraceLimit = stackLimit;
+      }
+    }
     const queuedAt = performance.now();
     let entered = false;
-    let stuck: ReturnType<typeof setInterval> | undefined;
+    this.activeScopes++;
     const pending = this.tail.then(async () => {
       if (this.failed) throw this.failed;
       await this.ready;
@@ -585,7 +716,7 @@ export class StoreDatabase {
       entered = true;
       const enteredAt = performance.now();
       const owner: Owner = {
-        id: randomUUID(),
+        id: String(++this.ownerSequence),
         phase: "open",
         timings: {
           queueMs: enteredAt - queuedAt,
@@ -596,12 +727,8 @@ export class StoreDatabase {
           requests: 0,
         },
       };
-      stuck = setInterval(() => {
-        console.warn(
-          `Host database queue still held by ${scopeSite(entry, 8)} ms=${Math.round(performance.now() - enteredAt)} queued=${this.admissionVersion - admittedBefore}`,
-        );
-      }, STUCK_SCOPE_MS);
-      stuck.unref?.();
+      this.holder = { id: owner.id, entry, enteredAt, admittedBefore };
+      this.armWatchdog();
       return this.owners.run(owner, async () => {
         await this.request("enter", undefined, [], owner);
         let primary: unknown;
@@ -646,6 +773,7 @@ export class StoreDatabase {
           }
         } finally {
           owner.phase = "closed";
+          if (this.holder?.id === owner.id) this.holder = undefined;
         }
         const held = performance.now() - enteredAt;
         const timings = owner.timings!;
@@ -662,8 +790,13 @@ export class StoreDatabase {
       });
     });
     const settled = pending.finally(() => {
-      clearInterval(stuck);
+      this.writerSettled = true;
       if (signal) this.queuedCancellableReads--;
+      // An idle database keeps no timer; a busy one keeps the one watchdog.
+      if (--this.activeScopes === 0) {
+        clearTimeout(this.watchdog);
+        this.watchdog = undefined;
+      }
     });
     this.tail = settled.catch(() => undefined);
     if (!signal) return settled;
@@ -691,7 +824,7 @@ export class StoreDatabase {
   private withDeadline<T>(
     work: T | Promise<T>,
     owner: Owner,
-    entry: Error,
+    entry: Error | string,
     deadlineMs: number,
   ): Promise<T> {
     if (!Number.isFinite(deadlineMs)) return Promise.resolve(work);
@@ -729,14 +862,20 @@ export class StoreDatabase {
 
   /** Resolves when the worker answers between operations; rejects when it does not in time. */
   private pingWorker(): Promise<void> {
+    return this.probeWorker("ping").then(() => undefined);
+  }
+  /** A request answered between worker operations that owns nothing: a ping or a version read. */
+  private probeWorker(method: "ping" | "dataVersion"): Promise<unknown> {
     if (this.failed) return Promise.reject(this.failed);
     const id = ++this.sequence;
-    return new Promise<void>((resolve, reject) => {
-      const timer = this.watchReply(id, "a liveness ping");
+    return new Promise<unknown>((resolve, reject) => {
+      // A version read waits behind whatever statement the worker runs, however long a
+      // migration makes it; only the liveness ping may declare the worker lost.
+      const timer = method === "ping" ? this.watchReply(id, "a liveness ping") : undefined;
       this.pending.set(id, {
-        resolve: () => {
+        resolve: (value) => {
           clearTimeout(timer);
-          resolve();
+          resolve(value);
         },
         reject: (error) => {
           clearTimeout(timer);
@@ -749,7 +888,7 @@ export class StoreDatabase {
         commit: false,
       });
       try {
-        this.worker.postMessage({ id, owner: "", method: "ping", params: [] });
+        this.worker.postMessage({ id, owner: "", method, params: [] });
       } catch (error) {
         this.pending.delete(id);
         clearTimeout(timer);
@@ -842,10 +981,21 @@ export class StoreDatabase {
     return this.scope(() => this.request("exec", sql));
   }
   registerFunction(name: "social_text_matches"): Promise<void> {
+    this.readPool?.registerFunction(name);
     return this.scope(() => this.request("registerFunction", name));
   }
   query(method: "get" | "all" | "run", sql: string, params: SQLInputValue[]): Promise<any> {
-    return this.scope(() => this.request(method, sql, params));
+    // Inside a read scope (and no writer owner) the statement joins its read transaction.
+    const lease = this.owners.getStore() ? undefined : this.readLeases.getStore();
+    if (lease) {
+      if (method === "run") return Promise.reject(new Error("A read scope cannot write."));
+      return lease.request(method, sql, workerParams(params) as SQLInputValue[]);
+    }
+    return this.scope(() => this.request(method, sql, params), undefined, {
+      // The statement text (never its parameters) names what a slow holder was doing.
+      // Built only when used: nested statements return before the label is needed.
+      site: () => `SQL ${method}: ${sql.replace(/\s+/g, " ").trim().slice(0, 80)}`,
+    });
   }
   runMany(sql: string, rows: SQLInputValue[][]): Promise<void> {
     return this.scope(() => this.request("runMany", sql, rows));
@@ -928,7 +1078,9 @@ export class StoreDatabase {
     this.recoveryTimer = undefined;
     this.closePromise = closing.finally(async () => {
       this.terminating = true;
-      await this.worker.terminate();
+      clearTimeout(this.watchdog);
+      this.watchdog = undefined;
+      await Promise.all([this.worker.terminate(), this.readPool?.close()]);
     });
     return this.closePromise;
   }

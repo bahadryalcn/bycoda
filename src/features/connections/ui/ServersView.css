@@ -1,6 +1,6 @@
 /* Hallmark v2.0.0 | shape: app screen | theme: locked Bycoda | scope: app
-   Signature: user-selected server identity beside a persistent details sheet.
-   Critique: retain compact canvas catalog; distinguish identity from connection health. */
+   Signature: user-selected server identity at the head of a canvas inspector.
+   Critique: align the inspector with the catalog and keep connection actions legible at narrow widths. */
 .server-list-row {
   display: flex;
   align-items: center;
@@ -66,7 +66,7 @@
 }
 @container servers (min-width: 704px) {
   .servers-detail-pane {
-    flex-basis: min(56%, 40rem);
+    flex-basis: clamp(23rem, 48%, 35rem);
   }
 }
 @container servers (max-width: 600px) {

@@ -11,7 +11,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { hostGitSubmodules } from "./git-submodules";
+import { hostGitSubmodules, sharedHostGitSubmodules } from "./git-submodules";
+import { execFilesOffThread } from "./git-repository-discovery";
 
 const paths = async (cwd: string, includeRepositories = false) =>
   (await hostGitSubmodules(cwd, includeRepositories)).paths;
@@ -164,3 +165,46 @@ it("deduplicates conflicted gitlink stages and preserves recursive discovery wit
   f.git(child, "submodule", "deinit", "-f", "--", "nested");
   expect(await paths(parent)).toEqual(["core pack"]);
 });
+
+it("shares one discovery per checkout for a short while and never reuses a failure", async () => {
+  const f = fixture();
+  const parent = f.repo("parent");
+  f.repo("parent/first");
+  const [one, two] = await Promise.all([
+    sharedHostGitSubmodules(parent, true),
+    sharedHostGitSubmodules(parent, true),
+  ]);
+  expect(one).toBe(two);
+  expect(one.paths).toEqual(["first"]);
+  f.repo("parent/second");
+  expect((await sharedHostGitSubmodules(parent, true)).paths).toEqual(["first"]);
+  const fresh = sharedHostGitSubmodules(parent, true, true);
+  const concurrentRefresh = sharedHostGitSubmodules(parent, true, true);
+  const refreshed = await Promise.all([fresh, concurrentRefresh]);
+  expect(refreshed[0]).toBe(refreshed[1]);
+  expect(refreshed[0].paths).toEqual(["first", "second"]);
+  expect((await sharedHostGitSubmodules(parent, true)).paths).toEqual(["first", "second"]);
+  const missing = join(f.root, "missing");
+  await expect(sharedHostGitSubmodules(missing, true)).rejects.toThrow();
+  mkdirSync(missing);
+  expect((await sharedHostGitSubmodules(missing, true)).paths).toEqual([]);
+});
+
+it("runs commands off the main thread in order, reports failures and shares one deadline", async () => {
+  const node = process.execPath;
+  const results = await execFilesOffThread(
+    [
+      { file: node, args: ["-e", "process.stdout.write('one')"] },
+      { file: node, args: ["-e", "process.stderr.write('Scan failed'); process.exitCode = 3"] },
+      { file: node, args: ["-e", "setTimeout(() => {}, 10_000)"] },
+      { file: node, args: ["-e", "process.stdout.write('late')"] },
+    ],
+    3_000,
+  );
+  expect(results[0]).toEqual({ stdout: "one" });
+  expect(results[1]).toMatchObject({
+    failure: { phase: "exit", exitCode: 3, stderr: "Scan failed" },
+  });
+  expect(results[2]).toMatchObject({ failure: { phase: "timeout", signal: "SIGTERM" } });
+  expect(results[3]).toMatchObject({ failure: { phase: "timeout", signal: null, stderr: "" } });
+}, 20_000);

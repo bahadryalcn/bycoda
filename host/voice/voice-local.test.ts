@@ -17,6 +17,20 @@ import {
   validateVoiceAudio,
 } from "./voice-local";
 import * as runtime from "./voice-runtime";
+it("makes an explicit Whisper selection exact and rejects model paths as IDs", () => {
+  expect(runtime.voiceRuntimeConfig({ whisperModel: "small", whisperExact: false })).toEqual({
+    whisperModel: "small",
+    whisperExact: true,
+  });
+  expect(runtime.voiceRuntimeConfig({ whisperModel: "turbo" })).toMatchObject({
+    whisperModel: "turbo",
+    whisperExact: true,
+  });
+  expect(() => runtime.voiceRuntimeConfig({ whisperModel: "../../custom" })).toThrow(
+    "Invalid voice model selection.",
+  );
+});
+
 it("does not expire a live lease because the wall clock jumps forward", async () => {
   vi.useFakeTimers();
   const service = new LocalVoiceService();

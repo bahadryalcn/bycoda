@@ -16,6 +16,7 @@ import { WorkingTreeDiff } from "../../../src/features/source-control/ui/Working
 import { GitHistoryGraph } from "../../../src/features/source-control/ui/GitHistoryGraph";
 import { GitChangesPanel } from "../../../src/features/source-control/ui/GitChangesPanel";
 import { WorkspaceSourceControl } from "../../../src/features/source-control/ui/WorkspaceSourceControl";
+import { buildUnifiedFile } from "../../../src/features/source-control/model/unifiedDiff";
 import { UnifiedDiffView } from "../../../src/features/source-control/ui/UnifiedDiffView";
 
 const bytes = new Uint8Array([1, 2, 3]);
@@ -45,6 +46,44 @@ export function VisualCaller({ view }: { view: string }) {
       />
     ) : view === "unified-empty" ? (
       <UnifiedDiffView files={[]} />
+    ) : view === "unified-truncated" ? (
+      <UnifiedDiffView
+        truncated
+        fileCount={412}
+        totals={{ additions: 2481, deletions: 1903 }}
+        files={[
+          {
+            id: "a",
+            path: "src/features/sessions/ui/Composer.tsx",
+            label: "src/features/sessions/ui/Composer.tsx",
+            ...(() => {
+              const diff = buildUnifiedFile(
+                "const a = 1;\nconst b = 2;\n",
+                "const a = 1;\nconst b = 3;\nconst c = 4;\n",
+              );
+              return { additions: diff.additions, deletions: diff.deletions, blocks: diff.blocks };
+            })(),
+          },
+          {
+            id: "b",
+            path: "assets/vendor/bundle.min.js",
+            label: "assets/vendor/bundle.min.js",
+            additions: 0,
+            deletions: 0,
+            blocks: [],
+            tooLarge: true,
+          },
+          {
+            id: "c",
+            path: "assets/logo.png",
+            label: "assets/logo.png",
+            additions: 0,
+            deletions: 0,
+            blocks: [],
+            binary: true,
+          },
+        ]}
+      />
     ) : view === "workspace-error" ? (
       <WorkspaceSourceControl cwd="/fixture" paths={["/fixture"]} enabled onOpen={noop} />
     ) : view === "document-error" ? (

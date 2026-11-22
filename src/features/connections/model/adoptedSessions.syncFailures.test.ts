@@ -6,7 +6,11 @@ import {
   type AdoptedEntry,
   type AdoptedMirrorDeps,
 } from "./adoptedSessions";
-import { ADOPTED_SYNC_FAILURE_FLAG_AFTER, adoptedSyncFailing } from "./adoptedSyncFailures";
+import {
+  ADOPTED_SYNC_FAILURE_FLAG_AFTER,
+  adoptedSyncFailing,
+  adoptedSyncFailureReason,
+} from "./adoptedSyncFailures";
 import type { HostSession } from "./protocol";
 
 vi.mock("../../diagnostics/public/uiLog", () => ({ recordUiLog: vi.fn() }));
@@ -120,11 +124,13 @@ describe("adopted session sync failures", () => {
     const m = mirror(unreadable);
     await failPasses(m, ADOPTED_SYNC_FAILURE_FLAG_AFTER - 1);
     expect(m.conflict).not.toHaveBeenCalled();
+    expect(adoptedSyncFailureReason(m.mirrored, entry())).toBeUndefined();
 
     await m.pass();
     expect(m.conflict).toHaveBeenCalledTimes(1);
     expect(m.conflict).toHaveBeenCalledWith(expect.objectContaining({ id: "s1" }));
     expect(adoptedSyncFailing(m.mirrored, entry())).toBe(true);
+    expect(adoptedSyncFailureReason(m.mirrored, entry())).toBeTruthy();
   });
 
   it("stops the fast polling cadence for a session that keeps failing at its revision", async () => {
@@ -149,6 +155,7 @@ describe("adopted session sync failures", () => {
     expect(m.apply).toHaveBeenCalledTimes(1);
     expect(m.mirrored.get("s1")).toBe(5);
     expect(adoptedSyncFailing(m.mirrored, entry())).toBe(false);
+    expect(adoptedSyncFailureReason(m.mirrored, entry())).toBeUndefined();
   });
 
   it("logs a persistent failure once, with its error redacted", async () => {
@@ -160,6 +167,7 @@ describe("adopted session sync failures", () => {
     expect([level, category]).toEqual(["warn", "ui.adopted"]);
     expect(fields).toEqual(expect.objectContaining({ scope: "open", failures: 3 }));
     expect(JSON.stringify(fields)).not.toContain("abcdef123456");
+    expect(adoptedSyncFailureReason(m.mirrored, entry())).not.toContain("abcdef123456");
   });
 
   it("backs off a closed session whose stored copy keeps failing to read", async () => {

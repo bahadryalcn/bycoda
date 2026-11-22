@@ -88,6 +88,35 @@
   row-gap: 0.375rem;
 }
 
+/* Keep the toolbar and Add adjacent. Only wrap if the controls run out of room. */
+@container chat-composer (inline-size < 31rem) {
+  [data-composer]:not([data-composer-reading]) .composer-controls {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    padding-inline: var(--space-1);
+  }
+
+  [data-composer]:not([data-composer-reading]) .composer-toolbar {
+    flex: 0 1 auto;
+  }
+
+  [data-composer]:not([data-composer-reading]) .composer-toolbar > div {
+    column-gap: 0;
+  }
+
+  [data-composer]:not([data-composer-reading]) .composer-send-controls {
+    align-self: center;
+  }
+}
+
+/* Give the expanded send controls a row with Add at phone widths. */
+@container chat-composer (inline-size < 24rem) {
+  [data-composer]:not([data-composer-reading]) .composer-controls[data-busy] .composer-toolbar {
+    flex-basis: 100%;
+  }
+}
+
 [data-jump-to-bottom] {
   min-inline-size: 2rem;
   min-block-size: 2rem;

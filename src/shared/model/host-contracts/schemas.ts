@@ -81,6 +81,7 @@ export const SubscriptionTargetSchema = z.discriminatedUnion("kind", [
   }),
   /** Model catalog as `models.list` returns it (capability `models.catalog.stream.v1`). */
   z.strictObject({ kind: z.literal("models"), projectId: IdentifierSchema.optional() }),
+  z.strictObject({ kind: z.literal("delegationMessages"), sessionId: IdentifierSchema }),
   z.strictObject({
     kind: z.literal("session"),
     sessionId: IdentifierSchema,
@@ -117,6 +118,8 @@ export const REQUEST_EXPIRED_MESSAGE =
  */
 export const HOST_REFUSAL_ERROR_CODES = [
   "LEASE_HELD",
+  "HOST_WRITER_RETIREMENT_PENDING",
+  "HOST_WRITER_RETIREMENT_FAILED",
   "QUEUE_DRAIN_HELD",
   "QUEUE_LEASE_CHANGED",
   "QUEUE_CHANGED",

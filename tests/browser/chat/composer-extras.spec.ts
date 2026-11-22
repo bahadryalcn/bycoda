@@ -10,6 +10,31 @@ import {
 
 for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
+    test(`queue writer feedback ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+      for (const [state, message] of [
+        ["writer-wait", "Waiting for the previous run to finish."],
+        ["writer-blocked", "Check the conversation on its Host before resuming."],
+      ] as const) {
+        await page.goto(
+          `/tests/browser/chat/composer-extras.html?chat-layout&delivery-progress&queue-state=${state}&theme=${theme}`,
+        );
+        const queue = page.locator("[data-message-queue-card]");
+        await expect(queue.getByText(message, { exact: true })).toHaveCount(1);
+        await expect(queue.getByText(message, { exact: true })).toBeVisible();
+        await expect(page.locator("[data-delivery-notice-slot]")).toHaveCount(0);
+        await expect(queue.getByRole("button", { name: "Resume", exact: true })).toHaveCount(
+          state === "writer-blocked" ? 1 : 0,
+        );
+        await queue.screenshot({
+          animations: "disabled",
+          path: `temp/verification/queue-writer-recovery/${state}-${theme}-${width}.png`,
+        });
+      }
+    });
+
     test(`queued send details ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -261,28 +286,93 @@ for (const theme of ["light", "dark"] as const) {
     test(`quota recovery retains long draft ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
-      await page.goto(
-        `/tests/browser/chat/composer-extras.html?accounts=8&data=worst&quota-stress&theme=${theme}`,
-      );
       const editor = page.getByRole("textbox", { name: "Message", exact: true });
-      const draft = await editor.inputValue();
-      expect(draft.length).toBeGreaterThan(1000);
-      await expect(page.locator("[data-usage-limit]")).toHaveCount(1);
-      const recover = page.getByRole("button", { name: "Switch model", exact: true });
+      const notice = page.locator("[data-usage-limit]");
+      const switchModel = notice.getByRole("button", { name: "Switch model", exact: true });
+      const switchAccount = notice.getByRole("button", { name: "Switch account", exact: true });
+      const cancel = notice.getByRole("button", { name: "Cancel auto-resume", exact: true });
+      const dismiss = notice.getByRole("button", {
+        name: "Dismiss usage limit notice",
+        exact: true,
+      });
       for (const zoom of [1, 2]) {
+        await page.goto(
+          `/tests/browser/chat/composer-extras.html?accounts=8&account-usage&data=worst&quota-stress&theme=${theme}`,
+        );
+        const draft = await editor.inputValue();
+        expect(draft.length).toBeGreaterThan(1000);
         await page.evaluate((value) => {
           document.documentElement.style.zoom = String(value);
         }, zoom);
-        await recover.scrollIntoViewIfNeeded();
-        await recover.click();
+        await page.screenshot({
+          path: `temp/verification/usage-limit-recovery/notice-${theme}-${width}-${zoom}x.png`,
+        });
+        await switchModel.scrollIntoViewIfNeeded();
+        await expect(switchModel).toBeInViewport();
+        await expect(switchAccount).toBeInViewport();
+        await expect(cancel).toBeInViewport();
+        await expect(dismiss).toBeInViewport();
+        if (width === 1280 && zoom === 1) {
+          const copyTop = (await notice
+            .getByText("Usage limit reached", { exact: true })
+            .boundingBox())!;
+          const copyBottom = (await notice.getByText(/^Resets /).boundingBox())!;
+          const copyCenter = (copyTop.y + copyBottom.y + copyBottom.height) / 2;
+          for (const control of [switchModel, switchAccount, cancel, dismiss]) {
+            const bounds = (await control.boundingBox())!;
+            expect(Math.abs(bounds.y + bounds.height / 2 - copyCenter)).toBeLessThan(2);
+          }
+        }
+        expect(
+          await notice.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            return [...element.querySelectorAll("button")].every((button) => {
+              const rect = button.getBoundingClientRect();
+              return (
+                rect.left >= bounds.left &&
+                rect.right <= bounds.right &&
+                rect.top >= bounds.top &&
+                rect.bottom <= bounds.bottom
+              );
+            });
+          }),
+        ).toBe(true);
         const panel = page.locator("[data-model-panel]");
-        await expect(panel).toBeVisible();
-        await page.keyboard.press("Escape");
+        if (zoom === 1) {
+          await cancel.click();
+          await expect(notice.getByRole("button", { name: "Resume at reset" })).toBeVisible();
+          await switchAccount.click();
+          const accounts = page.getByRole("menuitemradio");
+          await expect(accounts).toHaveCount(8);
+          await expect(panel).toHaveCount(0);
+          await page.screenshot({
+            path: `temp/verification/usage-limit-recovery/accounts-${theme}-${width}.png`,
+          });
+          await accounts.nth(1).click();
+        } else {
+          await switchModel.click();
+          await expect(panel).toBeVisible();
+          await page.screenshot({
+            path: `temp/verification/usage-limit-recovery/models-${theme}-${width}.png`,
+          });
+          await panel.getByRole("option", { name: /^Claude Opus 4\.7$/ }).click();
+        }
         await expect(panel).toHaveCount(0);
+        await expect(notice).toContainText("Ready to continue");
+        await expect(cancel).toHaveCount(0);
+        await expect(switchModel).toHaveCount(0);
+        await expect(switchAccount).toHaveCount(0);
+        const resume = notice.getByRole("button", { name: "Continue", exact: true });
+        await expect(resume).toBeInViewport();
+        await expect(page.getByTestId("quota-resumes")).toHaveText("0");
         await expect(editor).toHaveValue(draft);
         await page.screenshot({
-          path: `temp/verification/2026-11-13-ui-coherence/models/quota-${theme}-${width}-${zoom}x.png`,
+          path: `temp/verification/usage-limit-recovery/continue-${theme}-${width}-${zoom}x.png`,
         });
+        await resume.click();
+        await expect(page.getByTestId("quota-resumes")).toHaveText("1");
+        await expect(notice).toHaveCount(0);
+        await expect(editor).toHaveValue(draft);
       }
     });
   }
@@ -399,12 +489,12 @@ test("composer attachment submission stays local and keeps Stop available", asyn
   );
   await expect(
     page.getByRole("button", {
-      name: "Remove clipboard-image.png",
+      name: "Open clipboard-image.png",
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
-    /Keep this chat draft/,
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toContainText(
+    "Keep this chat draft",
   );
 });
 
@@ -1440,6 +1530,93 @@ test("welcome and working labels stay readable in narrow panels and both themes"
   });
 });
 
+test("composer shows the account name when it fits and keeps narrow controls aligned", async ({
+  page,
+}) => {
+  await initializeChatLayout(page);
+  for (const theme of ["dark", "light"]) {
+    for (const width of [420, 320, 800, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&accounts&workspace-footer&theme=${theme}${width === 320 ? "&long-account" : ""}`,
+      );
+      const box = page.locator("[data-composer-box]");
+      const trigger = box.locator("[data-composer-model-controls] button[aria-haspopup]").first();
+      const access = box.locator("[data-access-picker-trigger]");
+      const mode = box.locator("[data-composer-mode-trigger]");
+      const add = box.getByRole("button", { name: "Add files or skills" });
+      const send = box.getByRole("button", { name: "Send", exact: true });
+      const selectWork = width === 420 || width === 800;
+      if (selectWork) {
+        await trigger.click();
+        const picker = page.getByRole("dialog", { name: "Model and settings", exact: true });
+        await picker.getByRole("radio", { name: /^work\b/ }).click();
+        if (width === 800) {
+          const selected = picker.getByRole("option", { selected: true }).locator("..");
+          const indicator = await selected.evaluate((row) => {
+            const style = getComputedStyle(row, "::before");
+            return { width: style.inlineSize, color: style.backgroundColor };
+          });
+          expect(indicator.width).toBe("2px");
+          expect(indicator.color).not.toBe("rgba(0, 0, 0, 0)");
+          await picker.screenshot({
+            path: `temp/verification/composer-account-layout/picker-${theme}-800.png`,
+          });
+        }
+        await page.keyboard.press("Escape");
+        await expect(picker).toHaveCount(0);
+      }
+      const name = selectWork ? "work" : "personal";
+      await expect(trigger.locator("[data-model-trigger-name]")).toHaveText("Sonnet 5");
+      const accountName = trigger.locator("[data-model-account]");
+      if (width <= 420) await expect(accountName).toBeHidden();
+      else {
+        await expect(accountName).toBeVisible();
+        await expect(accountName).toHaveText(name);
+      }
+      await expect(trigger).toHaveAccessibleName(new RegExp(`Account: ${name}`));
+      const icon = trigger.locator("[data-model-provider-icon]");
+      const number = icon.locator("[data-model-account-number]");
+      await expect(number).toHaveText(selectWork ? "2" : "1");
+      const iconBounds = (await icon.boundingBox())!;
+      const numberBounds = (await number.boundingBox())!;
+      expect(numberBounds.x + numberBounds.width / 2).toBeGreaterThan(
+        iconBounds.x + iconBounds.width,
+      );
+      expect(numberBounds.y).toBeLessThan(iconBounds.y);
+      const model = (await trigger.boundingBox())!;
+      const accessBounds = (await access.boundingBox())!;
+      const modeBounds = (await mode.boundingBox())!;
+      const modelCenter = model.y + model.height / 2;
+      expect(accessBounds.y + accessBounds.height / 2).toBeCloseTo(modelCenter, 0);
+      expect(modeBounds.y + modeBounds.height / 2).toBeCloseTo(modelCenter, 0);
+      await expect(send).toBeInViewport();
+      await expect(add).toBeInViewport();
+      if (width <= 420) {
+        const addBounds = (await add.boundingBox())!;
+        const sendBounds = (await send.boundingBox())!;
+        expect(Math.abs(addBounds.y + addBounds.height / 2 - modelCenter)).toBeLessThanOrEqual(1);
+        expect(Math.abs(sendBounds.y + sendBounds.height / 2 - modelCenter)).toBeLessThanOrEqual(1);
+        expect(addBounds.x - (modeBounds.x + modeBounds.width)).toBeGreaterThanOrEqual(0);
+        expect(addBounds.x - (modeBounds.x + modeBounds.width)).toBeLessThanOrEqual(6);
+      }
+      expect(await box.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(
+        1,
+      );
+      await box.screenshot({
+        path: `temp/verification/composer-account-layout/${theme}-${width}.png`,
+      });
+      if (width === 1280) {
+        await page.locator("main").evaluate((node) => {
+          node.style.inlineSize = "420px";
+        });
+        await expect(accountName).toBeHidden();
+        await expect(trigger).toHaveAccessibleName(new RegExp(`Account: ${name}`));
+      }
+    }
+  }
+});
+
 test("model picker names and selects accounts and session shows its active agent", async ({
   page,
 }, testInfo) => {
@@ -1464,27 +1641,34 @@ test("model picker names and selects accounts and session shows its active agent
   await page.setViewportSize({ width: 1000, height: 800 });
   await page.goto("/tests/browser/chat/composer-extras.html?accounts");
   const main = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
-  await expect(main).toContainText("personal");
+  await expect(main).toHaveAccessibleName(/Account: personal/);
   await main.click();
   const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
   await expect(panel).toBeVisible();
-  // Two accounts: a segmented control in the list header names both; each model is listed once.
+  // Two accounts stay in view above a single copy of the model list.
   const account = panel.getByRole("radiogroup", { name: "Account", exact: true });
-  await expect(account.getByRole("radio", { name: "personal", exact: true })).toBeVisible();
-  await expect(account.getByRole("radio", { name: "work", exact: true })).toBeVisible();
-  await expect(account.getByRole("radio", { name: "personal", exact: true })).toBeChecked();
+  const personal = account.getByRole("radio", { name: /^personal\b/ });
+  const work = account.getByRole("radio", { name: /^work\b/ });
+  await expect(personal).toBeVisible();
+  await expect(work).toBeVisible();
+  await expect(personal).toBeChecked();
   const opus = panel.getByRole("option", { name: "Claude Opus 5.5", exact: true });
   await expect(opus).toHaveCount(1);
   await page.screenshot({
     path: testInfo.outputPath("account-model-picker.png"),
     animations: "disabled",
   });
+  const personalRow = (await personal.boundingBox())!;
+  const workRow = (await work.boundingBox())!;
+  expect(workRow.y).toBeGreaterThanOrEqual(personalRow.y + personalRow.height);
+  expect(workRow.x).toBeCloseTo(personalRow.x);
+  expect(workRow.width).toBeCloseTo(personalRow.width);
   await opus.click();
   await expect(panel).toBeVisible();
-  await account.getByRole("radio", { name: "work", exact: true }).click();
-  await expect(account.getByRole("radio", { name: "work", exact: true })).toBeChecked();
+  await work.click();
+  await expect(work).toBeChecked();
   await expect(main).toContainText("Opus 5.5");
-  await expect(main.locator("[data-model-account]")).toHaveText("work");
+  await expect(main).toHaveAccessibleName(/Account: work/);
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
   await expect(page.locator("[data-session-agent]")).toContainText(
@@ -1911,7 +2095,7 @@ test("external drop: the composer shows one mark and one badge that names the at
   await fileDrag(box, "drop", [{ name: "dropped.png", type: "image/png" }]);
   await expect(dropBadge(page)).toHaveCount(0);
   await expect(dropMarks(page)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^Remove dropped\.png/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open dropped.png", exact: true })).toBeVisible();
 
   // More files than a draft can hold: the badge says how many will be kept.
   await fileDrag(box, "dragover", files(25));
@@ -1981,6 +2165,94 @@ test("model picker selects image models under Agents in both themes and widths",
     await page.screenshot({
       path: `temp/verification/image-models/picker-${width}-${scheme}.png`,
     });
+  }
+});
+
+test("model picker aligns account rows and keeps quota readable in both themes and widths", async ({
+  page,
+}) => {
+  await initializeChatLayout(page);
+  for (const width of [1280, 800]) {
+    for (const theme of ["light", "dark"]) {
+      for (const count of [2, 3]) {
+        await page.setViewportSize({ width, height: 850 });
+        await page.goto(
+          `/tests/browser/chat/composer-extras.html?chat-layout&accounts=${count}&account-usage&theme=${theme}`,
+        );
+        await page.locator("[data-composer-model-controls] button[aria-haspopup]").first().click();
+        const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+        if (count === 3) {
+          const trigger = panel.locator("[data-model-account-menu]");
+          const account = trigger.getByText("personal", { exact: true });
+          const quota = trigger.getByText("8% used", { exact: true });
+          await expect(quota).toBeVisible();
+          const accountBox = (await account.boundingBox())!;
+          const quotaBox = (await quota.boundingBox())!;
+          const triggerBox = (await trigger.boundingBox())!;
+          expect(quotaBox.x).toBeGreaterThanOrEqual(accountBox.x + accountBox.width);
+          expect(triggerBox.x + triggerBox.width - (quotaBox.x + quotaBox.width)).toBeLessThan(60);
+          await trigger.click();
+          await expect(trigger).toHaveAccessibleName("Accounts");
+        }
+        const rows = panel.locator("[data-model-account-list]").getByRole("radio");
+        await expect(rows).toHaveCount(count);
+        await expect(rows.first()).toBeChecked();
+        await expect(rows.first()).toContainText("8% used");
+        await expect(rows.nth(1)).toContainText("35% used");
+        await expect(rows.last()).toBeInViewport();
+        const first = (await rows.first().boundingBox())!;
+        const last = (await rows.last().boundingBox())!;
+        expect(last.y).toBeGreaterThanOrEqual(first.y + first.height);
+        expect(last.x).toBeCloseTo(first.x);
+        expect(last.width).toBeCloseTo(first.width);
+        await panel.screenshot({
+          path: `temp/verification/model-account-rows/${count}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+        if (count === 2) {
+          await panel
+            .getByRole("listbox", { name: "Models" })
+            .getByRole("option")
+            .last()
+            .scrollIntoViewIfNeeded();
+          expect((await rows.first().boundingBox())!.y).toBeCloseTo(first.y);
+          await rows.first().focus();
+          await rows.first().press("ArrowDown");
+          await expect(rows.nth(1)).toBeChecked();
+          await expect(rows.nth(1)).toBeFocused();
+        } else {
+          await expect(rows.last()).toContainText("100% used");
+        }
+      }
+    }
+  }
+});
+
+test("remote model picker selects a Host account in both themes and widths", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const width of [1280, 800]) {
+    for (const theme of ["light", "dark"]) {
+      await page.setViewportSize({ width, height: 850 });
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&accounts&remote&remote-accounts&theme=${theme}`,
+      );
+      const trigger = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
+      await trigger.click();
+      const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+      await expect(panel.locator("[data-model-account-menu]")).toHaveAccessibleName("Accounts");
+      await panel.locator("[data-model-account-menu]").click();
+      const list = panel.locator("[data-model-account-list]");
+      await expect(list.getByRole("radio")).toHaveCount(3);
+      await expect(list.getByRole("radio", { name: /^Host default/ })).toHaveCount(0);
+      await expect(list.getByRole("radio", { checked: true })).toHaveCount(0);
+      await expect(list.getByRole("radio", { name: "work", exact: true })).toHaveCount(0);
+      await panel.screenshot({
+        path: `temp/verification/remote-provider-accounts/picker-${width}-${theme}.png`,
+      });
+      await list.getByRole("radio", { name: /^Mac work/ }).click();
+      await expect(trigger).toHaveAccessibleName(/Account: Mac work/);
+    }
   }
 });
 
@@ -2085,6 +2357,32 @@ test("queue row icons and saved account presentation", async ({ page }) => {
           path: `temp/verification/2026-11-11-queue-row/${theme}-${width}-${state}.png`,
         });
       }
+    }
+  }
+});
+
+test("replaces Steer with Send again on the unconfirmed queue row", async ({ page }) => {
+  await initializeChatLayout(page);
+  for (const theme of ["dark", "light"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 850 });
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&accounts&queue-state=unknown&theme=${theme}`,
+      );
+      const card = page.locator("[data-message-queue-card]");
+      const review = card.locator('[data-delivery-progress="unknown"]');
+      const retry = review.getByRole("button", { name: "Send again", exact: true });
+      await expect(retry).toBeVisible();
+      await expect(retry).toHaveAttribute("data-button-tone", "warning");
+      await expect(retry).toBeEnabled();
+      await expect(card.getByRole("button", { name: "Steer", exact: true })).toHaveCount(1);
+      await expect(card.getByRole("button", { name: "Remove queued message" })).toHaveCount(2);
+      await expect(card.getByRole("button", { name: "Discard", exact: true })).toHaveCount(0);
+      await expect(card.getByRole("button", { name: "Resume", exact: true })).toHaveCount(0);
+      await card.screenshot({
+        animations: "disabled",
+        path: `temp/verification/queue-steer-sync/review-${theme}-${width}.png`,
+      });
     }
   }
 });
@@ -2236,16 +2534,22 @@ for (const theme of ["light", "dark"])
       );
       const marker = page.locator('[data-probe="extras"] [data-surface-radius="pill"]').first();
       const count = page.locator('[data-extras-trigger] [data-surface-radius="sm"]');
-      const ring = page.locator('[data-probe="delegation"] [data-surface-radius="pill"]').first();
+      const account = page.locator('[data-probe="delegation"] [data-model-account-number]');
       const help = page.locator("[data-model-setting-help]");
       await expect(marker).toBeVisible();
       await expect(count).toBeVisible();
-      await expect(ring).toBeVisible();
+      await expect(account).toBeVisible();
+      await expect(account).toHaveText("2");
+      expect(
+        await account.evaluate((node) =>
+          getComputedStyle(node).getPropertyValue("--badge-identity").trim(),
+        ),
+      ).toBe("#b55272");
       const computed = await Promise.all(
-        [marker, count, ring].map((loc) =>
+        [marker, count].map((loc) =>
           loc.evaluate((node) => {
             const s = getComputedStyle(node);
-            return { bg: s.backgroundColor, shadow: s.boxShadow };
+            return { bg: s.backgroundColor };
           }),
         ),
       );
@@ -2258,13 +2562,11 @@ for (const theme of ["light", "dark"])
         };
         const accent = background("var(--color-accent)");
         const selection = background("var(--color-selection)");
-        const base = background("var(--color-background-base)");
         probe.remove();
-        return { accent, selection, base };
+        return { accent, selection };
       });
       expect(computed[0]!.bg).toBe(expected.accent);
       expect(computed[1]!.bg).toBe(expected.selection);
-      expect(computed[2]!.shadow).toContain(`${expected.base} 0px 0px 0px 2px`);
       const helpBorder = await help.evaluate((node) => {
         const style = getComputedStyle(node);
         const probe = document.createElement("span");

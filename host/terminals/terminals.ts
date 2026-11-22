@@ -15,6 +15,8 @@ import {
 } from "../terminal-process";
 import { RetiredRequestFence } from "../storage/request-fence";
 import { TerminalWorkspaceIndex } from "./workspace-index";
+import { inside } from "../workspaces/workspace-cleanup-paths";
+import { workspacePathKey } from "../workspaces/workspace-paths";
 
 export const TERMINAL_OUTPUT_LIMIT = 256 * 1024;
 const MAX_TERMINALS = 32;
@@ -45,6 +47,7 @@ type Creation = {
 export class HostTerminals {
   private entries = new Map<string, TerminalEntry>();
   private readonly workspaceIndex = new TerminalWorkspaceIndex();
+  private readonly removingWorktrees = new Set<string>();
   private creations = new Map<string, Creation>();
   private readonly retired = new RetiredRequestFence();
   private closed = false;
@@ -100,6 +103,17 @@ export class HostTerminals {
       const entry = this.entries.get(id);
       return entry?.value.state === "running" ? [{ ...entry.value }] : [];
     });
+  }
+
+  async withWorktreeRemoval<T>(root: string, remove: () => Promise<T>): Promise<T> {
+    const path = workspacePathKey(root);
+    if (this.removingWorktrees.has(path)) throw new Error("Worktree removal is already running.");
+    this.removingWorktrees.add(path);
+    try {
+      return await remove();
+    } finally {
+      this.removingWorktrees.delete(path);
+    }
   }
 
   create(
@@ -226,6 +240,10 @@ export class HostTerminals {
     const command = typeof params.command === "string" ? params.command : undefined;
     // Validate before retaining activity; unsupported shells never start an uncertain launch.
     if (command !== undefined) terminalCommandArgs(profile.kind, command);
+    const path = workspacePathKey(cwd);
+    for (const root of this.removingWorktrees) {
+      if (path === root || inside(root, path)) throw new Error("Worktree removal is running.");
+    }
     const entry: TerminalEntry = {
       owner,
       value: {

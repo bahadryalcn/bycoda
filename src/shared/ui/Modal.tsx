@@ -96,8 +96,8 @@ type Props = {
   minimalHeader?: boolean;
   /** Extra classes on the panel (fixed height, etc). */
   className?: string;
-  /** Opt into the existing floating surface for preview content. */
-  surface?: "floating";
+  /** `workspace-panel` gives workspace dialogs an opaque canvas shared by header and body. */
+  surface?: "floating" | "workspace-panel";
   /** Keep taller dialogs inside the viewport, scrolling their content. */
   fitViewport?: boolean;
   /**
@@ -239,6 +239,7 @@ export function ModalPanel({
   const descriptionId = description ? `${uid}-desc` : undefined;
   const sheet = placement === "end";
   const bottom = placement === "bottom";
+  const workspacePanel = surface === "workspace-panel";
   const expandLabel = t(expanded ? "Restore window" : "Full screen");
   const headerActions =
     toolbar || expandable ? (
@@ -301,12 +302,11 @@ export function ModalPanel({
               aria-describedby={descriptionId}
               onMouseDown={(event) => event.stopPropagation()}
               {...surfaceAttributes(
-                { variant: surface },
-                `relative isolate flex flex-col overflow-hidden border-(color:--ui-pane-border) shadow-(--ui-elevation-floating) ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`,
+                { variant: workspacePanel ? undefined : surface },
+                `relative isolate flex flex-col overflow-hidden border-[color:var(--modal-frame-color,var(--ui-pane-border))] shadow-(--ui-elevation-floating) ${workspacePanel ? "bg-(--ui-surface-panel)" : ""} ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`,
               )}
             >
-              {/* The shared raised popup surface, so the dialog reads apart from the work beneath. */}
-              <GlassBackdrop />
+              {workspacePanel ? null : <GlassBackdrop />}
               <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
                 <PanelHeader
                   className={

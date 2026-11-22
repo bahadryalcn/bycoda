@@ -15,7 +15,7 @@ import { sessionSubagents } from "../../../src/features/sessions/model/sessionSu
 import { SubagentStack } from "../../../src/features/sessions/ui/SubagentCards";
 import { SubagentStateLine } from "../../../src/features/sessions/ui/SubagentAnatomy";
 import { Button } from "../../../src/shared/ui/Button";
-import type { Block } from "../../../src/features/sessions/model/session";
+import type { AgentStep, Block } from "../../../src/features/sessions/model/session";
 import "../../../src/styles/index.css";
 
 const agent: Block = {
@@ -299,6 +299,61 @@ function Fixture() {
     </main>
   );
 }
+const timelineSteps: AgentStep[] = [
+  { id: "t-a1", kind: "message", round: 1, text: "Brief received. Starting the review." },
+  {
+    id: "t-m2",
+    kind: "message",
+    round: 2,
+    text: `First queued line\nSecond line çğış ${"very-long-unbroken-token-".repeat(14)}\n**not bold**`,
+    input: { sender: "owner", mode: "auto", effectiveMode: "queue", delivery: "accepted" },
+  },
+  { id: "t-a2", kind: "message", round: 2, text: "Answer to the **first** queued message." },
+  {
+    id: "t-m3",
+    kind: "message",
+    round: 3,
+    text: "Second queued message",
+    input: { mode: "queue", delivery: "submitted" },
+  },
+  { id: "t-a3", kind: "message", round: 3, text: "2. sıradaki deneme mesajını aldım." },
+  {
+    id: "t-failed",
+    kind: "message",
+    text: "Failed steer",
+    input: {
+      sender: "parent",
+      mode: "steer",
+      delivery: "failed",
+      detail: "Host restarted before dispatch",
+    },
+  },
+  ...["Queue A", "Queue B", "Queue C"].map((text, index): AgentStep => ({
+    id: `t-q${index}`,
+    kind: "message",
+    text,
+    input: { sender: "parent", mode: "queue", delivery: "queued" },
+  })),
+];
+const timelineBlock: Block = {
+  id: "delegated:timeline",
+  role: "tool",
+  text: "Timeline child",
+  tool: { kind: "subagent", status: "completed" },
+  agentRun: { name: "Timeline child", prompt: "Review the change", steps: timelineSteps, round: 3 },
+};
+
+function TimelineFixture() {
+  return (
+    <main
+      className="relative flex h-dvh min-w-0 flex-col bg-background-base text-content"
+      data-session-drop
+    >
+      <SubagentSheet block={timelineBlock} busy={false} visible onClose={() => {}} />
+    </main>
+  );
+}
+
 // The app resolves durable session owners at boot before any pane renders;
 // the fixture mounts it directly, so it hydrates the same store first.
 await flushHostSessionBindings();
@@ -306,11 +361,14 @@ const nested = new URLSearchParams(location.search).has("nested");
 const retention = nested || new URLSearchParams(location.search).has("retention");
 const audit = new URLSearchParams(location.search).has("audit");
 const workflow = new URLSearchParams(location.search).has("workflow");
+const timeline = new URLSearchParams(location.search).has("timeline");
 if (nested) seedNestedDelegation();
 else if (retention) seedDelegatedRetention();
 if (audit) seedSubagentAudit();
 createRoot(document.getElementById("root")!).render(
-  workflow ? (
+  timeline ? (
+    <TimelineFixture />
+  ) : workflow ? (
     <WorkflowFixture />
   ) : audit ? (
     <SubagentAuditFixture />

@@ -58,7 +58,7 @@ import { delegationBudgetScope, delegationWorkRoot } from "./work-root";
 import { cancelSessionWorkOccurrence } from "../work/session-adapter";
 import { refuseSingleSlotChild } from "./capacity";
 import type { AgentRole } from "./tools";
-import { AgentCommunication } from "./communication";
+import { AgentCommunication, delegationReplyCommandId } from "./communication";
 import { agentMessageDelivery, inspectAgentSession } from "./message-delivery";
 
 export type DelegationDependencies = {
@@ -131,7 +131,8 @@ export class ConversationDelegation {
       result: (record) => this.describe(record, async () => undefined),
       deliver: agentMessageDelivery(deps, async (message) => {
         const target = message.target!;
-        const result = await this.reply(
+        let blockId: string | undefined;
+        const result = await this.replyOne(
           { requestId: message.commandId, runId: target.runId, message: message.text },
           {
             sessionId: target.parentSessionId,
@@ -139,8 +140,11 @@ export class ConversationDelegation {
           },
           async () => undefined,
           message.text,
+          undefined,
+          (id) => (blockId = id),
         );
-        return "waiting" in result ? "waiting" : "started";
+        if ("waiting" in result) return "waiting";
+        return blockId ? { delivery: "started" as const, blockId } : "started";
       }),
     });
   }
@@ -677,6 +681,8 @@ export class ConversationDelegation {
     locate: Locate,
     brief?: string,
     keyParts?: [string, string],
+    /** Learns the user block id of the turn this reply opened, when the Host chose it. */
+    sent?: (blockId: string) => void,
   ) {
     const own = await this.caller(caller);
     if (typeof args.requestId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(args.requestId))
@@ -814,14 +820,18 @@ export class ConversationDelegation {
                 "Delegation reply is waiting for Work admission. Retry with the same requestId.",
             );
         } else {
+          // The engine names the send's user block after its command id.
+          const commandId = delegationReplyCommandId(requestKey);
           await this.deps.engine.command({
             type: "send",
-            commandId: `agents_${createHash("sha256").update(requestKey).digest("hex")}:send`,
+            commandId,
             sessionId: record.childSessionId,
             text: brief ?? replyBrief(args.message as string),
             ...(record.kind === "advisor" ? { intent: "plan" as const } : {}),
           });
+          sent?.(commandId);
         }
+        // A Work-admitted continuation's block id belongs to Work; without proof it stays unjoined.
         const latest = await this.deps.engine.store.session(record.childSessionId);
         await this.store.patch(record.runId, {
           childRunId: latest.runId,
@@ -1025,13 +1035,19 @@ export class ConversationDelegation {
   private async describe(record: DelegationRecord, locate: Locate) {
     record = await this.follow(record);
     const status = await this.statusOf(record);
-    const child = await this.deps.engine.store
-      .session(record.childSessionId)
-      .catch(() => undefined);
-    const reply =
-      child && status.status === "succeeded"
-        ? lastTurnReply(child.session.blocks, { includePlan: true })
-        : "";
+    // Only a succeeded run reports a reply, so any other state never loads the transcript. A
+    // cold transcript is parsed off the writer queue (signalled read) and abandoned if slow.
+    let resultUnavailable = false;
+    const child =
+      status.status === "succeeded"
+        ? await this.deps.engine.store
+            .session(record.childSessionId, AbortSignal.timeout(30_000))
+            .catch(() => {
+              resultUnavailable = true;
+              return undefined;
+            })
+        : undefined;
+    const reply = child ? lastTurnReply(child.session.blocks, { includePlan: true }) : "";
     const result = reply ? truncateGraphemes(reply, DELEGATION_LIMITS.resultGraphemes) : undefined;
     const locator = await locate(record.childSessionId).catch(() => undefined);
     return {
@@ -1044,6 +1060,8 @@ export class ConversationDelegation {
       status: status.status,
       ...(record.ownerFollowUp ? { ownerFollowUp: true } : {}),
       ...(result === undefined ? {} : { result, truncated: result !== reply }),
+      // The run succeeded but its transcript could not be read: not the same as an empty reply.
+      ...(resultUnavailable ? { resultUnavailable: true } : {}),
       ...(status.error ? { error: truncateGraphemes(status.error, 2000) } : {}),
     };
   }

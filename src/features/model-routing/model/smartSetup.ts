@@ -32,7 +32,7 @@ import {
 import type { ModelSource } from "../../sessions/public/modelSource";
 import { catalogModelFacts, valueScore } from "./modelCatalogFacts";
 import { entrySettings, type OrderDraft } from "./modelRoutingDraft";
-import { inferAccountKind, modelProfile, type ModelProfile } from "./modelProfile";
+import { modelProfile, type ModelProfile } from "./modelProfile";
 
 export type SetupAccount = {
   id?: string;
@@ -113,7 +113,7 @@ export function setupCandidates(source: ModelSource, catalog?: SetupCatalog): Se
           account && "kind" in account
             ? (account.kind as ModelRoutingScope | undefined)
             : undefined;
-        const kind = account ? (explicit ?? inferAccountKind(account.label)) : undefined;
+        const kind = account ? (explicit ?? "personal") : undefined;
         return {
           target: {
             harness,

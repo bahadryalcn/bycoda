@@ -60,7 +60,7 @@ it("shows the inline choice for an unconfirmed delivery and never resolves it on
 
 it.each([
   ["Keep queued, pause", false],
-  ["Already delivered", true],
+  ["Mark as delivered", true],
   ["Discard", true],
 ] as const)(
   "resolves the held delivery with %s without sending it again",
@@ -91,7 +91,7 @@ it("moves focus to the choice when Resume asks the owner to decide", async () =>
   const view = await mount();
   try {
     await act(async () => requestDeliveryReview("chat"));
-    expect(document.activeElement?.textContent).toBe("Already delivered");
+    expect(document.activeElement?.textContent).toBe("Mark as delivered");
   } finally {
     await view.cleanup();
   }
@@ -101,9 +101,9 @@ it("shows a failed resolution inline and lets the owner choose again", async () 
   const view = await mount();
   try {
     mocks.resolve.mockRejectedValueOnce(new Error("Host unreachable"));
-    await view.choose("Already delivered");
+    await view.choose("Mark as delivered");
     expect(view.container.textContent).toContain("Host unreachable");
-    await view.choose("Already delivered");
+    await view.choose("Mark as delivered");
     expect(mocks.resolve).toHaveBeenCalledTimes(2);
   } finally {
     await view.cleanup();

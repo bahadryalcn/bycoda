@@ -1,7 +1,12 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { DatabaseSync, backup } from "node:sqlite";
 
-const db = new DatabaseSync(workerData.path);
+// "reader" workers serve concurrent read-only transactions on the same WAL file; the
+// default worker is the one writer that owns scopes, transactions and cursors.
+const reader = workerData.role === "reader";
+// A reader opens read-only, so no statement can turn `query_only` back off and write.
+const db = new DatabaseSync(workerData.path, { readOnly: reader });
+if (reader) db.exec("PRAGMA busy_timeout=5000; PRAGMA query_only=ON");
 let active;
 let databaseClosed = false;
 let cursorSequence = 0;
@@ -24,13 +29,86 @@ const closeCursors = (owner) => {
     }
 };
 const closed = new Set();
-parentPort.postMessage({ ready: true });
+// A reader only reports whether the file is in WAL mode: without it a reader and the
+// writer would block each other, so the pool stays off.
+parentPort.postMessage(
+  reader
+    ? { ready: true, wal: String(db.prepare("PRAGMA journal_mode").get()?.journal_mode) === "wal" }
+    : { ready: true },
+);
+const readerMessage = ({ id, method, sql, params, begin, name }) => {
+  try {
+    if (method === "end") {
+      // Fire and forget: ends the read snapshot so the WAL can checkpoint past it.
+      if (db.isTransaction) db.exec("ROLLBACK");
+      return;
+    }
+    if (method === "ping") {
+      parentPort.postMessage({ id });
+      return;
+    }
+    if (!Number.isSafeInteger(id) || !Array.isArray(params))
+      throw new Error("Invalid database request.");
+    if (method === "registerFunction") registerFunction(name);
+    else if (method === "get" || method === "all") {
+      // The first statement of a lease opens its transaction, so every statement of one
+      // read scope sees the same snapshot; whatever the previous lease left is ended first.
+      if (begin) {
+        if (db.isTransaction) db.exec("ROLLBACK");
+        db.exec("BEGIN");
+      }
+      const startedAt = performance.now();
+      const value = prepare(sql)[method](...params);
+      parentPort.postMessage({ id, value, ms: performance.now() - startedAt });
+      return;
+    } else throw new Error("Unknown database operation.");
+    parentPort.postMessage({ id });
+  } catch (error) {
+    parentPort.postMessage({
+      id,
+      error: error instanceof Error ? error.message : "Database operation failed.",
+      code: error?.code,
+      errcode: error?.errcode,
+    });
+  }
+};
+const registerFunction = (name) => {
+  if (name !== "social_text_matches") throw new Error("Unknown database function.");
+  db.function(name, { deterministic: true }, (value, query, language) =>
+    String(value ?? "")
+      .toLocaleLowerCase(String(language || "en"))
+      .includes(String(query ?? "").toLocaleLowerCase(String(language || "en")))
+      ? 1
+      : 0,
+  );
+};
 // Selected by `durability` for a critical transaction; `leave` restores the normal level.
 let synchronousRaised = false;
-parentPort.on("message", async ({ id, owner, method, sql, params }) => {
+parentPort.on("message", async (message) => {
+  if (reader) return readerMessage(message);
+  const { id, owner, method, sql, params } = message;
   // Liveness probe: answered between operations, owns nothing.
   if (method === "ping") {
     parentPort.postMessage({ id });
+    return;
+  }
+  // The writer connection's data_version moves only when another connection or process
+  // commits: the store's external-change signal. Answered between statements, owns nothing.
+  if (method === "dataVersion") {
+    try {
+      if (databaseClosed) throw new Error("Database is closed.");
+      parentPort.postMessage({
+        id,
+        value: Number(db.prepare("PRAGMA data_version").get().data_version),
+      });
+    } catch (error) {
+      parentPort.postMessage({
+        id,
+        error: error instanceof Error ? error.message : "Database operation failed.",
+        code: error?.code,
+        errcode: error?.errcode,
+      });
+    }
     return;
   }
   const startedAt = performance.now();
@@ -82,14 +160,7 @@ parentPort.on("message", async ({ id, owner, method, sql, params }) => {
         db.close();
         databaseClosed = true;
       } else if (method === "registerFunction") {
-        if (sql !== "social_text_matches") throw new Error("Unknown database function.");
-        db.function(sql, { deterministic: true }, (value, query, language) =>
-          String(value ?? "")
-            .toLocaleLowerCase(String(language || "en"))
-            .includes(String(query ?? "").toLocaleLowerCase(String(language || "en")))
-            ? 1
-            : 0,
-        );
+        registerFunction(sql);
       } else if (method === "cursorOpen") {
         if (cursors.size >= 16) throw new Error("Too many open database cursors.");
         const cursor = ++cursorSequence;

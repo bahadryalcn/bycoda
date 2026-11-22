@@ -7,10 +7,9 @@ import { CrewManagedBar, useCrewManagedSession } from "../../crews/public/manage
 import { AssistantManagedBadge } from "./AssistantManagedBadge";
 import { SessionPanelTargetsContext, SessionPanelTargetHost } from "./SessionPanelTargets";
 import { AssistantSessionControl } from "./AssistantSessionControl";
-import { useSessionLifecycleActions } from "./SessionLifecycleControl";
+import { useSessionLifecycleActions, type RemoteLifecycleTarget } from "./SessionLifecycleControl";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge } from "../../../shared/ui/Badge";
 import { useLocale, useT } from "../../../shared/i18n";
 import { toast } from "../../../shared/ui/ToastRegion";
 import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
@@ -66,7 +65,7 @@ import { DiscussionEmpty } from "./DiscussionEmpty";
 import { LinkedWorkItemUpdateNotice } from "../../inbox/ui/LinkedWorkItemUpdateNotice";
 import { orchestrationLocksUndo } from "./SessionReview";
 import { LatestTurnAccessory } from "./LatestTurnAccessory";
-import { SessionProviderGoal } from "./SessionProviderGoal";
+import { SessionProviderGoal, type SessionProviderGoalCommand } from "./SessionProviderGoal";
 import { PromptOutline } from "./PromptOutline";
 import {
   canCompactHarnessContext,
@@ -119,6 +118,7 @@ import { useSubagentRelay } from "./useSubagentRelay";
 import { dockTurnOpen, isBackgroundOnly } from "../model/activityDock";
 import { requestOpenSubagent } from "./subagentFocus";
 import { AgentTranscript } from "./AgentTranscript";
+import type { InlineVisualHostRoute } from "../hooks/useInlineVisualSource";
 import type { CodeExecutionScope } from "./CodeExecutionContext";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import { EditFromHereDialog } from "./EditFromHereDialog";
@@ -188,6 +188,7 @@ import {
 } from "./LiveSessionBlocks";
 import type { HostSession, RefreshAdoptedSession } from "../../connections";
 import { AdoptedSessionNotice } from "../../connections/public/AdoptedSessionNotice";
+import { useAdoptedSteerSupport } from "../../connections/public/remoteCapabilities";
 import { remoteOrigin } from "./RemoteOriginMark";
 import { SharedQueueRecoveryNotice } from "../../connections/public/SharedQueueRecoveryNotice";
 export type SessionPaneProps = {
@@ -198,6 +199,7 @@ export type SessionPaneProps = {
   visible: boolean;
   focused: boolean;
   addToChatTarget?: boolean;
+  receiveTargetedQuotes?: boolean;
   inSplit: boolean;
   composerFocused: boolean;
   composerFocusToken?: number;
@@ -205,6 +207,10 @@ export type SessionPaneProps = {
   hideProjectPicker?: boolean;
   /** Feature-owned panel: keep the real transcript/composer and hide repository chrome. */
   embedded?: boolean;
+  /** The surrounding pane provides the header. */
+  hideSessionToolbar?: boolean;
+  /** Saved target whose desktop command receipts appear in this transcript. */
+  sshActivityServerId?: string;
   /** Crew screen may show the normal composer for its coordinator only. */
   crewCoordinatorChat?: boolean;
   onFocus: (sessionId: string) => void;
@@ -315,6 +321,8 @@ export type SessionPaneProps = {
   remoteHistoryError?: string;
   onLoadRemoteHistory?: () => Promise<number | void> | void;
   onLoadRemoteBlock?: (blockId: string, revision: number) => Promise<void> | void;
+  inlineVisualHost?: InlineVisualHostRoute;
+  remoteLifecycleTarget?: RemoteLifecycleTarget;
 };
 
 type Props = SessionPaneProps & {
@@ -331,7 +339,6 @@ type Props = SessionPaneProps & {
   remoteSessionLoading?: boolean;
   remoteSessionStarted?: boolean;
   managedWorkspaceCreationReady?: boolean;
-  workingMachine?: string;
   headerStatus?: ReactNode;
   /** A host chat whose last turn the host lost: shows Continue, as a quit turn does locally. */
   interruptedTurn?: boolean;
@@ -413,8 +420,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   remoteFeatures,
   remoteSessionLoading = false,
   remoteSessionStarted = false,
+  remoteLifecycleTarget,
   managedWorkspaceCreationReady = false,
-  workingMachine,
   headerStatus,
   interruptedTurn,
   sendBlockedReason,
@@ -426,12 +433,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
   visible,
   focused,
   addToChatTarget = focused,
+  receiveTargetedQuotes = false,
   inSplit,
   composerFocused,
   composerFocusToken,
   recents,
   hideProjectPicker,
   embedded = false,
+  hideSessionToolbar = false,
+  sshActivityServerId,
   crewCoordinatorChat = false,
   onFocus,
   onClose,
@@ -499,6 +509,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   remoteHistoryError,
   onLoadRemoteHistory,
   onLoadRemoteBlock,
+  inlineVisualHost,
 }: Props) {
   const performanceTraceId = useSessionPerformanceTrace(session.id);
   const rootParentRef = useRef<ParentInputHandle | null>(null);
@@ -621,6 +632,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
       (block.role === "user" || block.role === "assistant") && !block.draft && !block.internal,
   );
   const remote = remoteSession;
+  const adoptedSteerSupported = useAdoptedSteerSupport(
+    !remote && !session.busy && session.continuingElsewhere ? session.harness : undefined,
+  );
   const activeSessionIdRef = useRef(session.id);
   // The pane's `session` keeps its identity across streamed text, so event-time
   // reads go to the store for the current one (a remote session is not in it).
@@ -783,7 +797,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     addSelectionToChat,
     acknowledgeQuote,
     snapshot: quoteSnapshot,
-  } = useQuoteRequests(rootParentRef, addToChatTarget);
+  } = useQuoteRequests(
+    rootParentRef,
+    addToChatTarget,
+    receiveTargetedQuotes ? session.id : undefined,
+  );
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   // The reader scrolled away from the end (from the transcript's follow owner).
   const [readingHistory, setReadingHistory] = useState(false);
@@ -895,8 +913,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
     },
     [navigateBlock],
   );
-  const submitToChild = (sessionId: string, text: string, options: ComposerTurnOptions) =>
-    onSubmit(sessionId, text, [], options);
+  const submitToChild = (
+    sessionId: string,
+    text: string,
+    options: ComposerTurnOptions,
+    attachments: Attachment[] = [],
+    admission?: ParentAdmission,
+  ) => rootMutation(() => onSubmitProp(sessionId, text, attachments, options), admission);
   const subagentSheet = useSubagentSheet(stableBlocks, visible);
   const closeSubagentSheet = subagentSheet.close;
   // Claude can end one task on its own; the others only end the whole turn.
@@ -1298,10 +1321,37 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onOpenDiff,
     ],
   );
-  const providerGoalCommand = useStableCallback((command: "/goal resume" | "/goal clear") =>
+  const providerGoalCommand = useStableCallback((command: SessionProviderGoalCommand) =>
     onSubmit(session.id, command, [], { intent: "default" }),
   );
-  // One status stack above the card: running work, goal, interrupted turn, provider retry.
+  const goalControl = stableSession.providerGoal ? (
+    <SessionProviderGoal
+      key={`${session.id}:${session.providerSessionId}`}
+      session={stableSession}
+      blockedReason={
+        sendBlockedReason ||
+        (managed ||
+        editingLastTurn ||
+        stableSession.worktreeRemoved ||
+        stableSession.inboxAsk ||
+        rewindingMessage ||
+        workspaceSwitchingSessionId === session.id ||
+        windowMovingSessionIds?.has(session.id)
+          ? t("Messaging is unavailable in this conversation.")
+          : undefined)
+      }
+      onCommand={providerGoalCommand}
+    />
+  ) : undefined;
+  const crewManaged = useCrewManagedSession(session.id);
+  const showOwnerComposer =
+    !crewManaged || (crewCoordinatorChat && crewManaged.role === "coordinator");
+  const queueVisible =
+    showOwnerComposer &&
+    (dockComposer || (isEmpty && !embedded && !session.inboxAsk && !remoteSessionLoading));
+  const reviewRow = session.queuedMessages?.find((row) => row.deliveryUnknown);
+  const reviewInQueue = queueVisible && !!reviewRow && reviewRow.author?.kind !== "delegation";
+  const sharedQueueRecovery = <SharedQueueRecoveryNotice key={session.id} sessionId={session.id} />;
   const composerNotices = (
     <>
       <ApprovalDecisionProvider {...approvalContext}>
@@ -1325,25 +1375,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
           onStopAgent={stopDockAgent}
           onStopAll={stopDockAll}
           delegatedAgents={delegatedAgents}
+          goalControl={goalControl}
         />
       </ApprovalDecisionProvider>
-      <SessionProviderGoal
-        key={`${session.id}:${session.providerSessionId}:${session.providerGoal?.status}`}
-        session={stableSession}
-        blockedReason={
-          sendBlockedReason ||
-          (managed ||
-          editingLastTurn ||
-          stableSession.worktreeRemoved ||
-          stableSession.inboxAsk ||
-          rewindingMessage ||
-          workspaceSwitchingSessionId === session.id ||
-          windowMovingSessionIds?.has(session.id)
-            ? t("Messaging is unavailable in this conversation.")
-            : undefined)
-        }
-        onCommand={providerGoalCommand}
-      />
       <InterruptedNotice
         session={stableSession}
         interruptedTurn={interruptedTurn}
@@ -1351,6 +1385,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         message={remote ? "The host stopped this turn before it finished." : undefined}
         onContinue={continueInterruptedTurn}
       />
+      {sharedQueueRecovery}
       {session.retryMessage && (session.busy || session.continuingElsewhere) ? (
         <ProviderRetryNotice
           key={session.id}
@@ -1366,7 +1401,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
       ) : null}
     </>
   );
-  const crewManaged = useCrewManagedSession(session.id);
   const ownerComposer = (
     <Composer
       notices={composerNotices}
@@ -1379,6 +1413,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
       subagents={sessionSubagentRows}
       onOpenSubagent={openDockAgent}
       remoteSession={remoteSession}
+      adoptedSteerSupported={
+        adoptedSteerSupported === undefined
+          ? undefined
+          : adoptedSteerSupported && !!session.adoptedRunId && session.adoptedRunId !== "desktop"
+      }
       remoteOrigin={remoteOrigin(session)}
       managedWorkspaceCreationReady={managedWorkspaceCreationReady}
       sendBlockedReason={sendBlockedReason}
@@ -1534,11 +1573,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   // A live crew runs this conversation: it is read here and managed from Crews.
   const composer =
-    crewManaged && !(crewCoordinatorChat && crewManaged.role === "coordinator") ? (
-      <CrewManagedBar managed={crewManaged} />
-    ) : (
-      ownerComposer
-    );
+    !showOwnerComposer && crewManaged ? <CrewManagedBar managed={crewManaged} /> : ownerComposer;
 
   // A lone chat is named by its title-bar tab, so its pane carries no header of
   // its own; only a real split needs per-pane identity, focus and a drag handle.
@@ -1553,12 +1588,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
     paneHeaderSurface.className,
   );
   const titleBarSlot = useTitleBarActionsSlot();
-  const workingBadge = workingMachine ? (
-    <Badge tone="neutral" role="status" data-working-machine className="min-w-0">
-      {t("Working on ")}
-      {workingMachine}.
-    </Badge>
-  ) : null;
   const notesShortcut = useKeybindingShortcut(NOTES_PANEL_COMMAND);
   const closeShortcut = useKeybindingShortcut("Pane: Close");
   const lifecycle = useSessionLifecycleActions({
@@ -1566,6 +1595,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     cwd: session.cwd,
     local: !remote,
     hasMessages,
+    remoteTarget: remoteLifecycleTarget,
   });
   const notesAction: ExpandingButtonGroupItem | null =
     notesEnabled && visible && focused
@@ -1669,9 +1699,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             onPaneDragStart(event);
           }}
         >
-          <div
-            className={`session-header-title flex min-w-0 items-center gap-1.5 ${workingBadge ? "" : "flex-1"}`}
-          >
+          <div className="session-header-title flex min-w-0 flex-1 items-center gap-1.5">
             {onPaneDragStart ? (
               <GripVertical className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
             ) : null}
@@ -1696,7 +1724,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
               </Text>
             </OverflowTooltip>
           </div>
-          {workingBadge}
           <div className="session-pane-header-actions">
             <AssistantManagedBadge management={session.managedBy} local={!remote} />
             <AssistantSessionControl
@@ -1710,14 +1737,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
           </div>
         </div>
       ) : null}
-      {!hasPaneHeader && !embedded ? (
+      {!hasPaneHeader && !embedded && !hideSessionToolbar ? (
         titleBarSlot ? (
           // A lone chat's actions live in the title bar's chrome row beside its tab (pane-hosted portal,
           // not a popover: the target is the title bar slot).
           visible ? (
             <Portal target={titleBarSlot}>
               <>
-                {workingBadge ? <div className="min-w-0 max-w-56">{workingBadge}</div> : null}
                 <AssistantManagedBadge management={session.managedBy} local={!remote} />
                 <AssistantSessionControl
                   sessionId={session.id}
@@ -1735,7 +1761,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
             data-session-toolbar
             className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center justify-end gap-1 px-2 py-0.5"
           >
-            {workingBadge ? <div className="me-auto min-w-0">{workingBadge}</div> : null}
             <AssistantManagedBadge management={session.managedBy} local={!remote} />
             <AssistantSessionControl
               sessionId={session.id}
@@ -1750,12 +1775,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
       ) : null}
       {lifecycle.dialog}
       <div data-session-body className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <SharedQueueRecoveryNotice key={`queue:${session.id}`} sessionId={session.id} />
-        <DeliveryProgressNotice
-          key={`delivery:${session.id}`}
-          sessionId={session.id}
-          messages={session.queuedMessages ?? []}
-        />
+        {!queueVisible && sharedQueueRecovery}
+        {!reviewInQueue && (
+          <DeliveryProgressNotice
+            key={`delivery:${session.id}`}
+            sessionId={session.id}
+            messages={session.queuedMessages ?? []}
+          />
+        )}
         <AdoptedSessionNotice
           key={session.id}
           session={session}
@@ -1884,6 +1911,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 enabled={!remote}
                 fallback={session.blocks}
                 delegatedCards
+                sshActivityServerId={sshActivityServerId}
               >
                 {(liveBlocks) => (
                   <PooledTranscript
@@ -1930,6 +1958,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           : onLoadRemoteHistory
                       }
                       onLoadRemoteBlock={onLoadRemoteBlock}
+                      inlineVisualHost={inlineVisualHost}
                       canRewindMessage={canRewindMessage}
                       onRewindMessage={rewindMessage}
                       busy={!!session.busy}
@@ -2084,6 +2113,19 @@ const LocalSessionPane = memo(function LocalSessionPane({
           }}
           delegated={delegated}
           onSubmitToSession={submitToChild}
+          localQueueActions={(id) => ({
+            onDeleteQueuedMessage: (messageId) => onDeleteQueuedMessage(id, messageId),
+            onEditQueuedMessage: (messageId, text, attachments) =>
+              onEditQueuedMessage(id, messageId, text, attachments),
+            onQueuedMessageEditingChange: (messageId) =>
+              onQueuedMessageEditingChange(id, messageId),
+            onReorderQueuedMessages: onReorderQueuedMessagesProp
+              ? (messageIds, admission) =>
+                  rootMutation(() => onReorderQueuedMessagesProp(id, messageIds), admission)
+              : undefined,
+            onSteerQueuedMessage: (messageId) => onSteerQueuedMessage(id, messageId),
+            onResumeQueue: () => onResumeQueue(id),
+          })}
           onStopSession={onStop}
           onLoadRemoteBlock={onLoadRemoteBlock}
           onOpenFile={onOpenFile}

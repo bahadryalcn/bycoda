@@ -33,7 +33,6 @@ export function useRecoveryControl({
       visible ? (
         <SessionRecoveryControl
           count={recoveryCount + editorDraftCount}
-          allowEmpty={editorDraftAvailable}
           includeFiles={editorDraftAvailable}
           onOpen={actions.onOpen}
           onClear={recoveryCount > 0 ? actions.onClear : undefined}

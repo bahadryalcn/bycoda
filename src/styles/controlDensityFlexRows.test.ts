@@ -22,7 +22,7 @@ describe("fixed-height rows with controls", () => {
     const branches = source("features/source-control/ui/BranchManagerDialog.tsx");
     expect(branches.match(/min-h-\(--ui-control-height\) items-center/g)).toHaveLength(2);
     const usage = source("app/shell/UsageProviderChip.tsx");
-    expect(usage.match(/min-h-\(--ui-control-height-compact\) items-center/g)).toHaveLength(2);
+    expect(usage.match(/min-h-\(--ui-control-height-compact\) items-center/g)).toHaveLength(1);
     const queue = source("features/sessions/ui/MessageQueue.tsx");
     const queueRows = [...queue.matchAll(/className="([^"]*)"/g)].filter(([, value]) => {
       const classes = value!.split(/\s+/);

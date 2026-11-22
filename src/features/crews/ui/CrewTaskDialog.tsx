@@ -47,8 +47,8 @@ export function CrewTaskDialog({
     />
   ) : (
     <Modal title={t("New task")} onClose={onClose}>
-      {scope.state.error ? (
-        <Alert tone="danger">{scope.state.error.message}</Alert>
+      {scope.state.visibleError ? (
+        <Alert tone="danger">{scope.state.visibleError}</Alert>
       ) : (
         <LoadingText>{t("Loading crews…")}</LoadingText>
       )}

@@ -93,10 +93,12 @@ Per-file/per-match replacement and preserve-case are not available.
 Selection scope is shown when selected entries are hidden by the current filter.
 Review that scope before acting on multiple paths.
 
-A successful filesystem change followed by a failed listing refresh leaves the
-tree stale. Refresh recovery rereads the listing; it does not repeat an already
-completed move, delete, paste or duplication. Clipboard failures remain local so
-you can retry deliberately. Empty, loading and failed folders have distinct states.
+File and folder reads retry short interruptions while the view indicates it is
+waiting. A sustained interruption shows a recovery action. Permission and
+validation failures appear immediately. If the listing refresh after a filesystem
+change fails, recovery rereads the listing. Moves, deletions, pastes and saves
+require a new deliberate action before they run again. Empty, loading and failed
+folders have distinct states.
 
 Preview and Source keep their mounted document state when you switch modes.
 Saving preserves the existing LF, CRLF or CR separators, including mixed files.

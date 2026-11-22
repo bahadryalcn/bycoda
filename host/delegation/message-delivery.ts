@@ -7,15 +7,17 @@ import {
 } from "../../src/features/sessions/model/session";
 import { truncateGraphemes } from "../../src/shared/lib/text/truncate";
 import { isSessionNotFound } from "../sessions/session-authority";
-import type { AgentDelivery } from "./communication";
+import type { AgentDelivery, AgentDeliveryOutcome } from "./communication";
 import type { DelegationDependencies } from "./service";
 
 /** Reuses existing Work admission for children and shared queues for Native parents. */
 export function agentMessageDelivery(
   deps: DelegationDependencies,
-  continueChild: (message: AgentDelivery) => Promise<"started" | "waiting">,
+  continueChild: (
+    message: AgentDelivery,
+  ) => Promise<"started" | "waiting" | { delivery: "started"; blockId: string }>,
 ) {
-  return async (message: AgentDelivery): Promise<"started" | "steered" | "queued" | "waiting"> => {
+  return async (message: AgentDelivery): Promise<AgentDeliveryOutcome> => {
     // Only a missing session means "no host session" (a Native parent); a transient read
     // error must surface instead of silently routing the message elsewhere.
     const target = await deps.engine.store.session(message.targetSessionId).catch((error) => {

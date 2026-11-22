@@ -45,6 +45,7 @@ export function useAcceptedQueueDeparture(messages: QueuedMessage[], delivery?: 
 }
 
 export type MessageQueueProps = {
+  references?: import("./ComposerHighlight").ComposerReferenceContext;
   sessionId?: string;
   parentSessionId?: string;
   messages: QueuedMessage[];

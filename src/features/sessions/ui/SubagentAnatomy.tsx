@@ -136,6 +136,7 @@ export function SubagentStateLine({
   steps,
   model,
   inline = false,
+  needsInput = false,
   className = "",
 }: {
   block: Block;
@@ -143,12 +144,15 @@ export function SubagentStateLine({
   steps: AgentStep[];
   model?: string;
   inline?: boolean;
+  /** The run waits on the user (the dock's `needsInput`); shown only while it is running. */
+  needsInput?: boolean;
   className?: string;
 }) {
   const t = useT();
   const run = block.agentRun;
   const lifecycle = blockLifecycle(block, busy);
   const running = lifecycle === "running";
+  const waiting = running && needsInput;
   const failed = toolCallState(block) === "rejected";
   const summary = lifecycle === "stopped" ? "" : subagentStatusLine(block, steps);
   const identity = [run?.agentType, model].filter(Boolean).join(" · ");
@@ -164,17 +168,19 @@ export function SubagentStateLine({
         size="xs"
         appearance="subtle"
         tone={
-          failed
-            ? "danger"
-            : running
-              ? "accent"
-              : lifecycle === "interrupted" || lifecycle === "stopped"
-                ? "warning"
-                : "success"
+          waiting
+            ? "warning"
+            : failed
+              ? "danger"
+              : running
+                ? "accent"
+                : lifecycle === "interrupted" || lifecycle === "stopped"
+                  ? "warning"
+                  : "success"
         }
-        icon={running ? <StatusDot label={t("Running")} aria-hidden /> : undefined}
+        icon={running && !waiting ? <StatusDot label={t("Running")} aria-hidden /> : undefined}
       >
-        {lifecycleLabel(lifecycle, t)}
+        {waiting ? t("Needs input") : lifecycleLabel(lifecycle, t)}
       </Badge>
       {run?.round && run.round > 1 ? (
         <Badge size="xs" appearance="subtle" tone="neutral">

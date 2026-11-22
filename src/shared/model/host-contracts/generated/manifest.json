@@ -36545,6 +36545,38 @@
               "outcome"
             ],
             "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "byteLength": { "maximum": 16777216, "minimum": 1, "type": "integer" },
+              "generation": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+              "kind": {
+                "enum": [
+                  "buffer",
+                  "native.services.conversation.desktop.finish",
+                  "native.services.workspace.format"
+                ],
+                "type": "string"
+              },
+              "outcome": { "const": "abandoned", "type": "string" },
+              "ownerId": {
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
+              "sequence": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+              "sha256": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+            },
+            "required": [
+              "ownerId",
+              "generation",
+              "sequence",
+              "kind",
+              "sha256",
+              "byteLength",
+              "outcome"
+            ],
+            "type": "object"
           }
         ]
       },
@@ -42365,6 +42397,45 @@
             "type": "object"
           },
           { "type": "null" }
+        ]
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "sessions.inlineVisual": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "maxLength": 64, "minLength": 64, "type": "string" },
+          "sessionId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "required": ["sessionId", "id"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.sessions.v2",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" },
+          { "items": { "$ref": "#" }, "type": "array" },
+          {
+            "additionalProperties": { "$ref": "#" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
         ]
       },
       "retry": "safe-query",
@@ -49371,6 +49442,18 @@
                   }
                 },
                 "required": ["kind"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "delegationMessages", "type": "string" },
+                  "sessionId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  }
+                },
+                "required": ["kind", "sessionId"],
                 "type": "object"
               },
               {
@@ -60511,7 +60594,7 @@
           "audio": { "maxLength": 1000000, "minLength": 1, "type": "string" },
           "language": { "maxLength": 32, "minLength": 1, "type": "string" },
           "model": { "maxLength": 200, "minLength": 1, "type": "string" },
-          "provider": { "const": "openrouter", "type": "string" }
+          "provider": { "enum": ["openrouter", "openai", "xai"], "type": "string" }
         },
         "required": ["provider", "audio"],
         "type": "object"
@@ -60766,6 +60849,147 @@
         ]
       },
       "retry": "never",
+      "scope": "device"
+    },
+    "workItems.get": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "number": { "maximum": 2147483647, "minimum": 1, "type": "integer" },
+          "projectId": { "maxLength": 256, "minLength": 1, "type": "string" }
+        },
+        "required": ["projectId", "number"],
+        "type": "object"
+      },
+      "requiredCapability": "workItems.github.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "errors": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "message": { "type": "string" },
+                "reason": {
+                  "enum": [
+                    "missing-tool",
+                    "unauthenticated",
+                    "rate-limited",
+                    "not-found",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                "retryAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+              },
+              "required": ["reason", "message"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "body": { "type": "string" },
+                "draft": { "type": "boolean" },
+                "kind": { "enum": ["issue", "pr"], "type": "string" },
+                "number": { "maximum": 2147483647, "minimum": 1, "type": "integer" },
+                "repo": { "type": "string" },
+                "state": { "type": "string" },
+                "title": { "type": "string" },
+                "updatedAt": { "type": "string" },
+                "url": { "type": "string" }
+              },
+              "required": ["kind", "repo", "number", "title", "url", "state", "updatedAt", "draft"],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": ["items", "errors"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "workItems.search": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "kind": { "enum": ["issue", "pr"], "type": "string" },
+          "projectId": { "maxLength": 256, "minLength": 1, "type": "string" },
+          "query": { "maxLength": 200, "type": "string" }
+        },
+        "required": ["projectId", "query"],
+        "type": "object"
+      },
+      "requiredCapability": "workItems.github.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "errors": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "message": { "type": "string" },
+                "reason": {
+                  "enum": [
+                    "missing-tool",
+                    "unauthenticated",
+                    "rate-limited",
+                    "not-found",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                "retryAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+              },
+              "required": ["reason", "message"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "body": { "type": "string" },
+                "draft": { "type": "boolean" },
+                "kind": { "enum": ["issue", "pr"], "type": "string" },
+                "number": { "maximum": 2147483647, "minimum": 1, "type": "integer" },
+                "repo": { "type": "string" },
+                "state": { "type": "string" },
+                "title": { "type": "string" },
+                "updatedAt": { "type": "string" },
+                "url": { "type": "string" }
+              },
+              "required": ["kind", "repo", "number", "title", "url", "state", "updatedAt", "draft"],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": ["items", "errors"],
+        "type": "object"
+      },
+      "retry": "safe-query",
       "scope": "device"
     },
     "workspaces.cleanup.apply": {
@@ -63320,7 +63544,7 @@
                 "audio": { "maxLength": 1000000, "minLength": 1, "type": "string" },
                 "language": { "maxLength": 32, "minLength": 1, "type": "string" },
                 "model": { "maxLength": 200, "minLength": 1, "type": "string" },
-                "provider": { "const": "openrouter", "type": "string" }
+                "provider": { "enum": ["openrouter", "openai", "xai"], "type": "string" }
               },
               "required": ["provider", "audio"],
               "type": "object"
@@ -72833,6 +73057,18 @@
                     {
                       "additionalProperties": false,
                       "properties": {
+                        "kind": { "const": "delegationMessages", "type": "string" },
+                        "sessionId": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "sessionId"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
                         "kind": { "const": "session", "type": "string" },
                         "sessionId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -72958,6 +73194,51 @@
                   "type": "array"
                 }
               },
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "workItems.search", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "enum": ["issue", "pr"], "type": "string" },
+                "projectId": { "maxLength": 256, "minLength": 1, "type": "string" },
+                "query": { "maxLength": 200, "type": "string" }
+              },
+              "required": ["projectId", "query"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "workItems.get", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "number": { "maximum": 2147483647, "minimum": 1, "type": "integer" },
+                "projectId": { "maxLength": 256, "minLength": 1, "type": "string" }
+              },
+              "required": ["projectId", "number"],
               "type": "object"
             }
           },
@@ -79890,6 +80171,31 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "sessions.inlineVisual", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "id": { "maxLength": 64, "minLength": 64, "type": "string" },
+                "sessionId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": ["sessionId", "id"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "sessions.workedTime", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -82959,6 +83265,8 @@
                       "enum": [
                         "REQUEST_EXPIRED",
                         "LEASE_HELD",
+                        "HOST_WRITER_RETIREMENT_PENDING",
+                        "HOST_WRITER_RETIREMENT_FAILED",
                         "QUEUE_DRAIN_HELD",
                         "QUEUE_LEASE_CHANGED",
                         "QUEUE_CHANGED",
@@ -83904,5 +84212,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "38970cefefdbce0a89b9568b3900839cc9b1f34ab53d29f76adf146e31998a3f"
+  "schemaHash": "cc34fce461f5202b2de5713fecafe481fd9897659f8dcf4c4336813fd95735c9"
 }

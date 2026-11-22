@@ -1,8 +1,8 @@
-import { errorText } from "../../../shared/lib/errors";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { reportFailure } from "../../../shared/ui/reportFailure";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +25,7 @@ import { useImageZoom } from "../../../shared/hooks/useImageZoom";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import { localExplorerPath } from "../../../shared/lib/remoteExplorerPaths";
 import { OpenInDefaultAppButton, ViewerFooter } from "./ViewerFooter";
 import { useDefaultAppOpen } from "./useDefaultAppOpen";
@@ -39,7 +40,7 @@ type LoadState =
   | { status: "cancelled" }
   | { status: "ready"; path: string; url: string; mime: string; size: number }
   | { status: "unsupported"; size: number }
-  | { status: "error"; message: string };
+  | { status: "error"; path: string; error: unknown };
 
 /**
  * Read-only surface for files the editor can't open. Images render; bytes that
@@ -111,13 +112,10 @@ export function BinaryFileView({ path, cwd }: Props) {
           size: bytes.byteLength,
         });
       },
-      (cause: unknown) => {
+      (error: unknown) => {
         // The Cancel button already showed its own state.
         if (cancelled || controller.signal.aborted) return;
-        settle({
-          status: "error",
-          message: errorText(cause),
-        });
+        settle({ status: "error", path, error });
       },
     );
 
@@ -152,17 +150,34 @@ export function BinaryFileView({ path, cwd }: Props) {
     };
   }, [path, reload]);
 
-  const loadShownCentrally = useConnectionErrorShownCentrally(
-    state.status === "error" ? state.message : undefined,
-  );
+  const { visibleError } = useGracedFailure({
+    error: state.status === "error" && state.path === path ? state.error : undefined,
+    loading: state.status === "loading",
+    retry: reload,
+    scope: path,
+  });
+  const loadShownCentrally = useConnectionErrorShownCentrally(visibleError);
 
-  if (state.status === "loading") {
+  if (visibleError) {
+    if (loadShownCentrally) return null;
     return (
-      <div className="grid h-full place-items-center p-3">
+      <FileCard
+        path={path}
+        cwd={cwd}
+        title={t("Couldn’t open {p0}", { p0: basename(path) })}
+        detail={visibleError}
+        icon={<AlertCircle tone="danger" className="mx-auto mb-3 icon-lg" />}
+        onRetry={reload}
+      />
+    );
+  }
+  if (state.status === "loading" || state.status === "error") {
+    return (
+      <div aria-busy className="grid h-full place-items-center p-3">
         <FileTransferProgress
           label={t("Opening {p0}…", { p0: basename(path) })}
-          received={state.received}
-          total={state.total}
+          received={state.status === "loading" ? state.received : undefined}
+          total={state.status === "loading" ? state.total : undefined}
           onCancel={remote ? cancelTransfer : undefined}
         />
       </div>
@@ -182,20 +197,6 @@ export function BinaryFileView({ path, cwd }: Props) {
           </div>
         }
         onRetry={retry}
-      />
-    );
-  }
-
-  if (state.status === "error") {
-    if (loadShownCentrally) return null;
-    return (
-      <FileCard
-        path={path}
-        cwd={cwd}
-        title={t("Couldn’t open {p0}", { p0: basename(path) })}
-        detail={state.message}
-        icon={<AlertCircle tone="danger" className="mx-auto mb-3 icon-lg" />}
-        onRetry={reload}
       />
     );
   }
@@ -428,8 +429,8 @@ function FileCard({
     setError(undefined);
     try {
       await work();
-    } catch (reason) {
-      setError(errorText(reason));
+    } catch (error) {
+      await reportFailure(error, { toast: { show: ({ message }) => setError(message) } });
     } finally {
       running.current = false;
       setPending(null);

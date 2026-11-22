@@ -13,6 +13,7 @@ import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { t } from "../../../../shared/i18n";
 import { AssistantAvatarMark } from "../../../assistant/public/avatar";
 import { Button } from "../../../../shared/ui/Button";
+import { ButtonGroup } from "../../../../shared/ui/ButtonGroup";
 import { AppWindow } from "../../../../shared/ui/icons";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { Popover } from "../../../../shared/ui/Popover";
@@ -88,7 +89,8 @@ export function voiceStatusTone(state: VoiceVisualState) {
 
 /**
  * Closed voice companion: the assistant's avatar (its default portrait when none was chosen,
- * the name's initial when the image fails) and name in a pill, with a status dot on the avatar.
+ * the name's initial when the image fails) and a status dot. Docked controls show the name
+ * when the rail is expanded.
  * Before setup there is no assistant yet, so the voice visual stands in. The open shortcut works
  * from anywhere in the app.
  */
@@ -134,7 +136,8 @@ export function VoiceLauncher({
   const icon = name ? (
     <span className={styles.launcherAvatar} data-state={state}>
       <AssistantAvatarMark
-        className={styles.launcherMark}
+        avatarSize={slot ? "sm" : undefined}
+        className={slot ? undefined : styles.launcherMark}
         value={avatar}
         name={name}
         size="micro"
@@ -164,34 +167,48 @@ export function VoiceLauncher({
   ) : (
     <VoiceVisualizer visual={visual} state="off" small="icon" />
   );
+  const launchButton = (
+    <Button
+      ref={ref}
+      shape={wakeControls ? undefined : "pill"}
+      variant={slot || wakeControls ? "ghost" : "secondary"}
+      iconOnly={compact}
+      padding={wakeControls && !compact ? { end: slot ? "none" : "xxs" } : undefined}
+      {...(slot || wakeControls
+        ? { className: styles.launcherButton }
+        : surfaceAttributes({ variant: "floating", frame: "pane" }, styles.launcherButton))}
+      data-docked={slot ? "" : undefined}
+      label={label}
+      tooltip={compact || returnToWindow ? label : name ? t("Voice assistant") : undefined}
+      shortcut={shortcut}
+      tooltipSide={compact ? "right" : "top"}
+      startIcon={compact ? undefined : icon}
+      truncate={Boolean(slot)}
+      onClick={onOpen}
+    >
+      {compact ? icon : name || t("Voice")}
+    </Button>
+  );
   return (
     <VoiceLauncherFrame>
-      <div className={styles.launcherControls}>
-        <Button
-          ref={ref}
-          shape="pill"
-          variant={slot ? "ghost" : "secondary"}
-          iconOnly={compact}
-          {...(slot
-            ? { className: styles.launcherButton }
-            : surfaceAttributes({ variant: "floating", frame: "pane" }, styles.launcherButton))}
-          data-docked={slot ? "" : undefined}
-          label={label}
-          tooltip={compact || returnToWindow ? label : name ? t("Voice assistant") : undefined}
-          shortcut={shortcut}
-          tooltipSide={compact ? "right" : "top"}
-          startIcon={compact ? undefined : icon}
-          onClick={onOpen}
+      {wakeControls ? (
+        <ButtonGroup
+          aria-label={t("Voice companion")}
+          surface={slot ? "transparent" : "default"}
+          selection={slot ? "plate" : "segment"}
+          className={slot ? styles.dockedLauncherGroup : undefined}
         >
-          {compact ? icon : name || t("Voice")}
-        </Button>
-        {wakeControls && <VoiceWakeMenu controls={wakeControls} />}
-      </div>
+          {launchButton}
+          <VoiceWakeMenu controls={wakeControls} docked={Boolean(slot)} />
+        </ButtonGroup>
+      ) : (
+        launchButton
+      )}
     </VoiceLauncherFrame>
   );
 }
 
-function VoiceWakeMenu({ controls }: { controls: VoiceWakeControls }) {
+function VoiceWakeMenu({ controls, docked }: { controls: VoiceWakeControls; docked: boolean }) {
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -207,6 +224,8 @@ function VoiceWakeMenu({ controls }: { controls: VoiceWakeControls }) {
         ref={anchor}
         iconOnly
         size="xs"
+        stretch={!docked}
+        className={docked ? styles.dockedWakeTrigger : undefined}
         variant="ghost"
         label={label}
         tooltipSide="top"

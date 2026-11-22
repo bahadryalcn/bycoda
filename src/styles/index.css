@@ -758,6 +758,7 @@ html.theme-light {
   );
   /* Lightest field edge that keeps 3:1 against its surface; light needs more ink. */
   --ui-control-border: color-mix(in oklab, var(--color-content) 44%, var(--ui-surface-muted));
+  --ui-dialog-frame: color-mix(in oklab, var(--ui-pane-border), var(--ui-control-border) 30%);
   /* Ordinary ranges use the exact contrast pair on an opaque fill, including
      content with its own inverse background. Overlay editors keep a tint. */
   /* Before the derived pair is published the plain accent is paired with dark ink. */
@@ -891,6 +892,7 @@ html.theme-light {
   --ui-fill-subtle: color-mix(in srgb, var(--color-content) 8%, transparent);
   --ui-fill-muted: color-mix(in srgb, var(--color-content) 10%, transparent);
   --ui-fill-strong: color-mix(in srgb, var(--color-content) 12%, transparent);
+  --ui-inline-code-surface: var(--ui-fill-strong);
   --theme-hue: 216;
   --theme-saturation: 24%;
   --theme-dark-lightness: 4%;
@@ -1522,6 +1524,42 @@ html.has-native-glass:not(.theme-light) .sidebar-glass {
    Native glass keeps the window translucent: the main pane's glass owns that fill. */
 .chat-pane-background {
   background-color: var(--ui-chat-pane-canvas);
+}
+
+:is(html, [data-chat-message-preview]) {
+  --ui-chat-message-color: var(--ui-tint-base);
+}
+:is(html, [data-chat-message-preview])[data-chat-message-color="neutral"] {
+  --ui-chat-message-color: var(--palette-canvasPureDark);
+}
+html.theme-light[data-chat-message-color="neutral"],
+html.theme-light [data-chat-message-preview][data-chat-message-color="neutral"] {
+  --ui-chat-message-color: var(--palette-canvasPureLight);
+}
+
+/* The composer and floating chat surfaces share one glass treatment. Streaming
+   uses the opaque fallback so each new frame does not re-sample the backdrop. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  html {
+    --ui-chat-glass-fill: var(--ui-activity-dock-glass);
+    --ui-chat-glass-edge: var(--ui-activity-dock-edge);
+    --ui-chat-glass-filter: var(--ui-activity-dock-filter);
+  }
+}
+
+html[data-performance-no-blur],
+[data-session-streaming="true"] {
+  --ui-chat-glass-fill: initial;
+  --ui-chat-glass-edge: initial;
+  --ui-chat-glass-filter: initial;
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  html {
+    --ui-chat-glass-fill: initial;
+    --ui-chat-glass-edge: initial;
+    --ui-chat-glass-filter: initial;
+  }
 }
 
 html.has-native-glass:not(.theme-light) .chat-pane-background {
@@ -2437,9 +2475,8 @@ html.has-user-accent .user-message-bubble[data-draft="true"] {
 }
 
 /*
- * After a send, the live turn fills the transcript viewport so the prompt sits
- * at the top. Switching tabs keeps this. Closing the tab drops it, so opening
- * that conversation again uses the true bottom (latest reply on the composer).
+ * The active turn fills the transcript viewport so the prompt sits at the top.
+ * Once it settles, the transcript ends at the latest reply.
  */
 /* Not inherited: resizing the transcript restyles the anchored turn only, not its rows. */
 @property --transcript-viewport {
@@ -2819,7 +2856,6 @@ html.is-reordering {
   container: composer-controls / inline-size;
 }
 @container composer-controls (width < 560px) {
-  [data-model-account],
   [data-extras-summary] {
     display: none;
   }
@@ -3190,6 +3226,23 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 .agent-markdown a[dir],
 .agent-markdown code[dir] {
   unicode-bidi: isolate;
+}
+
+/* Inline actions let the transcript canvas show through their resting fills. */
+[data-session-review-actions] {
+  --ui-surface: var(--ui-fill-strong);
+  --ui-surface-raised: var(--ui-fill-subtle);
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  :root {
+    --ui-inline-code-surface: var(--ui-surface-raised);
+  }
+
+  [data-session-review-actions] {
+    --ui-surface: var(--ui-surface-panel);
+    --ui-surface-raised: var(--ui-surface-floating);
+  }
 }
 
 .agent-markdown .markdown-code-shell [data-streamdown="code-block"] {
@@ -4435,7 +4488,7 @@ html.theme-light .popover-backdrop {
   background: var(--ui-surface-floating);
 }
 
-/* Frosted glass for non-interactive hover cards (Popover `frosted`). The doubled selector outranks
+/* Frosted glass for opt-in popovers. The doubled selector outranks
    the shared .popover-backdrop rules below; without blur the opaque floating surface stays readable. */
 .popover-backdrop.popover-frosted,
 html.theme-light .popover-backdrop.popover-frosted {
@@ -5000,7 +5053,7 @@ html.is-reordering
 }
 /* The floating surface (.popover-backdrop: popovers, menus, dialogs, sheets) is 95-100% opaque, so a
    blur behind it is invisible yet re-samples the pane on every repaint. Only .popover-frosted
-   (a deliberately translucent hover card) blurs, through its own rule above. */
+   (a deliberately translucent popover) blurs, through its own rule above. */
 /* A nested glass surface samples the already blurred parent only once. */
 .popover-backdrop
   ~ *

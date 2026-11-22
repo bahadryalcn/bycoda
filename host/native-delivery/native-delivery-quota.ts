@@ -106,14 +106,14 @@ export async function initializeNativeDeliveryQuota(db: StoreDatabase): Promise<
     throw quotaFailure("quota metadata is missing for an established journal");
   // Malformed legacy identity or bytes cannot be counted exactly: fail closed.
   const malformed = await db
-    .prepare(`SELECT COUNT(*) AS count FROM native_delivery_receipts WHERE
+    .prepare(`SELECT 1 FROM native_delivery_receipts WHERE
       typeof(environment_id)<>'text' OR typeof(principal_id)<>'text'
       OR kind NOT IN (${KINDS.map(() => "?").join(",")}) OR state NOT IN (${STATES.map(() => "?").join(",")})
       OR (reserved_bytes IS NOT NULL AND (typeof(reserved_bytes)<>'integer' OR reserved_bytes<0))
-      OR (result_bytes IS NOT NULL AND (typeof(result_bytes)<>'integer' OR result_bytes<0))`)
+      OR (result_bytes IS NOT NULL AND (typeof(result_bytes)<>'integer' OR result_bytes<0))
+      LIMIT 1`)
     .get(...KINDS, ...STATES);
-  if (Number(malformed?.count ?? 0) > 0)
-    throw quotaFailure("receipt rows are malformed for quota backfill");
+  if (malformed) throw quotaFailure("receipt rows are malformed for quota backfill");
   // The state row must exist first: charge() reads the NULL fallback from it.
   await db
     .prepare(

@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { setTimeout, clearTimeout } from "node:timers";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { HostEngine } from "./engine";
@@ -11,6 +12,7 @@ import { branchCache } from "./git/git-actions";
 import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
 import { applySessionSync, type HostSession } from "../src/features/connections/model/protocol";
+import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 
 // Seeding and first-listing ten thousand sessions take about 14 s on Linux and
 // 20 s on macOS CI; Windows runners exceed the 30 s default. The list work itself
@@ -107,6 +109,124 @@ async function setup() {
     finish: () => finish(),
   };
 }
+
+it("serves a sync pull with an expired positive credential while an unrelated writer is busy", async () => {
+  const s = await setup();
+  await s.call("sync.pull", { sinceRev: 0 });
+  const writerStarted = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const writer = s.store.db.storeScope(async () => {
+    writerStarted.resolve();
+    await release.promise;
+  });
+  await writerStarted.promise;
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 2000);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const pull = s.call("sync.pull", { sinceRev: 0, syncCallId: "held-writer" });
+  try {
+    const response = await Promise.race([
+      pull,
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), 2000);
+      }),
+    ]);
+    expect(response?.value.result?.records).toEqual([]);
+  } finally {
+    clearTimeout(timer);
+    clock.mockRestore();
+    release.resolve();
+    await Promise.all([writer, pull]);
+  }
+});
+
+it("reads the queue during three live provider streams and a full conversation catch-up", async () => {
+  const s = await setup();
+  const turns: SendTurnInput[] = [];
+  let finish!: () => void;
+  const finished = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  s.send.mockImplementation(async (input) => {
+    turns.push(input);
+    await finished;
+  });
+  try {
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const { sessionId } = await s.engine.command({
+        type: "create",
+        workspaceMode: "current",
+        commandId: `catchup-create-${i}`,
+        projectId: s.project.id,
+        harness: "codex",
+        model: "codex:test",
+        runtimeMode: "supervised",
+      });
+      ids.push(sessionId);
+    }
+    const sessionId = ids[0]!;
+    const initial = await s.store.session(sessionId);
+    const blocks = Array.from({ length: 239 }, (_, i) => ({
+      id: `history-${i}`,
+      role: "assistant" as const,
+      text: String(i).padEnd(1950, "."),
+    }));
+    await s.store.transaction(() =>
+      s.store.save(
+        {
+          ...initial,
+          revision: initial.revision + 1,
+          session: { ...initial.session, blocks },
+        },
+        { type: "fixture" },
+      ),
+    );
+    const queueDuration = async () => {
+      const start = monotonicNow();
+      const response = await s.call("sessions.queue.get", {
+        sessionId,
+        clientId: "desktop:catchup",
+      });
+      expect(response.value.result?.messages).toEqual([]);
+      return elapsedSince(start);
+    };
+    const idleMs = await queueDuration();
+    await Promise.all(
+      ids.slice(1).map((id) =>
+        s.engine.command({
+          type: "send",
+          sessionId: id,
+          commandId: `send-${id}`,
+          text: "stream",
+        }),
+      ),
+    );
+    await vi.waitFor(() => expect(turns).toHaveLength(3), { timeout: 10_000 });
+    const writes = vi.spyOn(s.store, "save");
+    for (const turn of turns) {
+      for (let i = 0; i < 48; i++) turn.onEvent({ type: "context", used: i, window: 100_000 });
+    }
+    const [sync, busyMs] = await Promise.all([
+      s.call("sessions.sync", { sessionId }),
+      queueDuration(),
+    ]);
+    expect(sync.value.result?.value.session.blocks).toHaveLength(239);
+    console.info("Queue RPC with 239 blocks and three streams", { idleMs, busyMs });
+    await vi.waitFor(
+      async () => {
+        for (const id of ids.slice(1))
+          expect((await s.store.session(id)).session.context?.used).toBe(47);
+      },
+      { timeout: 10_000 },
+    );
+    const meterWrites = writes.mock.calls.filter(
+      ([value]) => value.session.context?.window === 100_000 && ids.includes(value.session.id),
+    );
+    expect(meterWrites).toHaveLength(3);
+  } finally {
+    finish();
+  }
+});
 
 it("reads Host change cursors without loading the transcript", async () => {
   const s = await setup();

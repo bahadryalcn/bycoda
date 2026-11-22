@@ -29,7 +29,10 @@ import {
   resetPeerHistory,
   takeOutbox,
 } from "./syncPeerState";
-import { remoteErrorText } from "../../connections/model/remoteFailure";
+import {
+  nativeConnectionFailureCode,
+  remoteErrorText,
+} from "../../connections/model/remoteFailure";
 import { syncOwnerFailureText } from "./nativeSyncCompletion";
 import { ROOM_PRIVACY_NOT_CONFIRMED } from "../../connections/model/syncSummary";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
@@ -171,6 +174,8 @@ export async function runSyncCycle(
   request: SyncRequest,
   environmentId?: string,
   current: () => boolean = () => true,
+  enqueuedAt = monotonicNow(),
+  cycleTimeout?: AbortSignal,
 ): Promise<void> {
   requireCurrent(current);
   recordSyncStatus(machineId, { state: "syncing" });
@@ -178,10 +183,74 @@ export async function runSyncCycle(
   const cycleStartedAt = monotonicNow();
   let requests = 0;
   let last = { method: "none", startedAt: cycleStartedAt };
-  const tracked: SyncRequest = (method, params) => {
+  let lastCallId: string | undefined;
+  const logCall = (
+    method: string,
+    callId: string,
+    queuedAt: number,
+    sentAt: number,
+    host: unknown,
+    deadline: string,
+    error?: unknown,
+  ) => {
+    console.warn(
+      `[sync] ${JSON.stringify({
+        machineId,
+        method,
+        callId,
+        ...(error === undefined ? {} : { error: remoteErrorText(error) }),
+        cycleQueueMs: elapsedSince(enqueuedAt, cycleStartedAt),
+        enqueueToSendMs: elapsedSince(queuedAt, sentAt),
+        sendToSettlementMs: elapsedSince(sentAt),
+        totalMs: elapsedSince(queuedAt),
+        transportDefaultDeadlineMs: 30_000,
+        cycleDeadlineMs: SYNC_CYCLE_DEADLINE_MS,
+        effectiveDeadlineMs: deadline === "cycle" ? SYNC_CYCLE_DEADLINE_MS : 30_000,
+        deadline,
+        host,
+      })}`,
+    );
+  };
+  const tracked: SyncRequest = async (method, params) => {
     requests += 1;
-    last = { method, startedAt: monotonicNow() };
-    return request(method, params);
+    const callId = `${SYNC_CALL_PREFIX}-${++syncCallSequence}`;
+    // SyncRequest enters native IPC here. Native admission and wire time are in settlement.
+    const sentAt = monotonicNow();
+    const queuedAt = requests === 1 ? enqueuedAt : sentAt;
+    last = { method, startedAt: sentAt };
+    const logCycleTimeout = () => logCall(method, callId, queuedAt, sentAt, "no response", "cycle");
+    cycleTimeout?.addEventListener("abort", logCycleTimeout, { once: true });
+    try {
+      const result = await request(method, {
+        ...(params as Record<string, unknown>),
+        syncCallId: callId,
+      });
+      // The threshold is the request itself; time spent waiting for the cycle is only a field.
+      if (!cycleTimeout?.aborted && elapsedSince(sentAt) >= 2_000) {
+        const timings =
+          result && typeof result === "object" && "timings" in result ? result.timings : undefined;
+        logCall(method, callId, queuedAt, sentAt, timings ?? "unavailable", "none reached");
+      }
+      return result;
+    } catch (error) {
+      const wsDeadline = nativeConnectionFailureCode(error) === "RPC_WS_DEADLINE";
+      const httpDeadline = /\[RPC_TIMEOUT\]/.test(remoteErrorText(error));
+      if (!cycleTimeout?.aborted && (wsDeadline || httpDeadline || elapsedSince(sentAt) >= 2_000)) {
+        lastCallId = callId;
+        logCall(
+          method,
+          callId,
+          queuedAt,
+          sentAt,
+          "no response",
+          wsDeadline ? "ws" : httpDeadline ? "http" : "unknown",
+          error,
+        );
+      }
+      throw error;
+    } finally {
+      cycleTimeout?.removeEventListener("abort", logCycleTimeout);
+    }
   };
   try {
     if (environmentId && !adoptPeerEnvironment(machineId, environmentId))
@@ -202,12 +271,13 @@ export async function runSyncCycle(
     const error = held
       ? new Error(`${ROOM_PRIVACY_NOT_CONFIRMED}: ${remoteErrorText(caught)}`)
       : caught;
-    console.warn(
-      "[sync]",
-      machineId,
-      `method=${last.method} requestMs=${Math.round(elapsedSince(last.startedAt))} cycleMs=${Math.round(elapsedSince(cycleStartedAt))} requests=${requests} pending=${pendingCount(machineId)}`,
-      error,
-    );
+    if (!lastCallId)
+      console.warn(
+        "[sync]",
+        machineId,
+        `method=${last.method} requestMs=${Math.round(elapsedSince(last.startedAt))} cycleMs=${Math.round(elapsedSince(cycleStartedAt))} requests=${requests} pending=${pendingCount(machineId)}`,
+        error,
+      );
     recordSyncStatus(machineId, {
       state: "error",
       lastError: remoteErrorText(error),
@@ -398,6 +468,9 @@ export const SYNC_BACKOFF_BASE_MS = 60_000;
 export const SYNC_BACKOFF_MAX_MS = 10 * 60_000;
 /** A machine's cycle that has not settled by then is abandoned: it frees its slot and counts as a failure. */
 export const SYNC_CYCLE_DEADLINE_MS = 2 * 60_000;
+/** Correlates one sync call across client and Host logs; unique per app run, never secret. */
+const SYNC_CALL_PREFIX = Date.now().toString(36);
+let syncCallSequence = 0;
 /** Shutdown waits this long for running cycles before giving up and keeping ownership. */
 export const SYNC_STOP_DRAIN_MS = 10_000;
 
@@ -466,6 +539,7 @@ export function syncNow(machineId?: string): Promise<void> {
 }
 
 type SyncJob = {
+  enqueuedAt: number;
   promise: Promise<void>;
   resolve: () => void;
   /** A user asked for it: ignores the machine's failure backoff and the spacing. */
@@ -488,7 +562,7 @@ type MachineSlot = {
 function makeJob(explicit: boolean): SyncJob {
   let resolve: () => void = () => undefined;
   const promise = new Promise<void>((done) => (resolve = done));
-  return { promise, resolve, explicit };
+  return { promise, resolve, explicit, enqueuedAt: monotonicNow() };
 }
 
 /**
@@ -559,6 +633,7 @@ export function startSyncLoop(
     // Set at the deadline: a response that arrives later is dropped by the cancellation guards.
     let abandoned = false;
     let timedOut = false;
+    const cycleTimeout = new AbortController();
     const attempt = (async () => {
       cycleId = beginCycle ? crypto.randomUUID() : undefined;
       if (cycleId) {
@@ -571,6 +646,8 @@ export function startSyncLoop(
           requestFor(slot.id, cycleId),
           environmentFor?.(slot.id),
           () => !stopped && !abandoned && shouldRunAutomatically(),
+          job.enqueuedAt,
+          cycleTimeout.signal,
         );
     })();
     try {
@@ -580,6 +657,7 @@ export function startSyncLoop(
       if (error instanceof SyncDeadlineError) {
         timedOut = true;
         abandoned = true;
+        cycleTimeout.abort();
         // The slot is freed now, but the request may still land. Ownership stays held until it
         // settles, and a native cycle is completed only then, never while its request is in flight.
         const late: Promise<void> = attempt

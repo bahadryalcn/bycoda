@@ -5,7 +5,6 @@ import { Text } from "../../../shared/ui/Text";
 import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
-import { Modal } from "../../../shared/ui/Modal";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { MoreHorizontal, Plus } from "../../../shared/ui/icons";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
@@ -49,7 +48,6 @@ import {
 import {
   duplicateAccountSignIns,
   identityKey,
-  identityOrganizationTag,
   useProviderAccountIdentities,
 } from "../../providers/model/providerAccountIdentity";
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
@@ -71,7 +69,7 @@ import { AccountStatusLabel, AccountUsageRefresh } from "../../providers/ui/Prov
 import { AntigravityAccountSettings } from "./AntigravityAccountSettings";
 import { AccountKindTag, SharedCliAccountCard } from "./SharedCliAccountCard";
 import { TerminalProfileDiscovery } from "./TerminalProfileDiscovery";
-import { ProviderAccountEditor, type AccountEditor } from "./ProviderAccountEditor";
+import { ProviderAccountDialog, type AccountEditor } from "../../providers/public/accountIdentity";
 import { Button } from "../../../shared/ui/Button";
 import {
   hasProbedHarnessAvailability,
@@ -88,10 +86,12 @@ const SETTINGS_HARNESSES: readonly HarnessId[] = [
 
 export function ProviderAccountsSettings({
   harness,
+  visible = true,
   onBusyChange,
   onStandaloneSignIn,
 }: {
   harness?: HarnessId;
+  visible?: boolean;
   onBusyChange?: (busy: boolean) => void;
   onStandaloneSignIn?: (provider: HarnessId | null) => void;
 }) {
@@ -122,7 +122,6 @@ export function ProviderAccountsSettings({
     anchor: HTMLElement;
   } | null>(null);
   const busy = useRef(false);
-  const pendingAccount = useRef<ProviderAccount | null>(null);
   const registrationAbort = useRef<AbortController | null>(null);
   const editorOpen = useRef(false);
   const addTrigger = useRef<HTMLButtonElement | null>(null);
@@ -152,7 +151,10 @@ export function ProviderAccountsSettings({
       registrationAbort.current.abort();
       return;
     }
-    if (!busy.current) setEditor(null);
+    if (!busy.current) {
+      setError(null);
+      setEditor(null);
+    }
   };
 
   const supportedHarness = !harness || SETTINGS_HARNESSES.includes(harness);
@@ -175,9 +177,13 @@ export function ProviderAccountsSettings({
   const startAdd = (provider: ProviderAccountProvider, trigger: HTMLButtonElement) => {
     if (busy.current) return;
     addTrigger.current = trigger;
-    pendingAccount.current = null;
     setError(null);
-    setEditor({ provider, label: "" });
+    setEditor({
+      provider,
+      accountId: newProviderAccount(provider, "").id,
+      label: "",
+      adding: true,
+    });
   };
 
   const startRename = (account: ProviderAccount) => {
@@ -188,36 +194,38 @@ export function ProviderAccountsSettings({
       accountId: account.id,
       label: account.label,
       color: account.color,
-      kind: account.kind,
+      kind: account.kind ?? "personal",
     });
   };
 
   const submitEditor = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     // Shared CLI sign-ins save from their own card; this list owns profiles only.
-    if (!editor || !editor.label.trim() || !supportsProviderAccounts(editor.provider)) return;
+    if (!editor?.kind || !editor.label.trim() || !supportsProviderAccounts(editor.provider)) return;
     const provider = editor.provider;
-    const key = editor.accountId
-      ? `rename:${editor.provider}:${editor.accountId}`
-      : `add:${editor.provider}`;
+    const key = editor.adding ? `add:${provider}` : `rename:${provider}:${editor.accountId}`;
     if (!begin(key)) return;
     try {
-      if (editor.accountId) {
+      if (!editor.adding) {
         if (!editProviderAccount(provider, editor.accountId, editor))
           throw new ProviderAccountError("accountMissing", "Account no longer exists");
       } else {
-        const account = pendingAccount.current ?? newProviderAccount(provider, editor.label);
-        account.label = editor.label;
-        pendingAccount.current = account;
         const controller = new AbortController();
         registrationAbort.current = controller;
-        await registerProviderAccount(account, controller.signal);
-        pendingAccount.current = null;
+        await registerProviderAccount(
+          {
+            id: editor.accountId,
+            provider,
+            label: editor.label,
+            kind: editor.kind,
+            color: editor.color,
+          },
+          controller.signal,
+        );
       }
       setEditor(null);
     } catch (caught) {
       if (caught instanceof Error && caught.name === "AbortError") {
-        pendingAccount.current = null;
         setEditor(null);
       } else {
         setError({ error: caught, action: "save" });
@@ -352,7 +360,9 @@ export function ProviderAccountsSettings({
   return (
     <div hidden={!supportedHarness}>
       {/* First child: a hidden sibling before it would still add the stack gap. */}
-      {sharedCliHarness ? <SharedCliAccountCard provider={sharedCliHarness} /> : null}
+      {sharedCliHarness ? (
+        <SharedCliAccountCard provider={sharedCliHarness} visible={visible} />
+      ) : null}
       <div hidden={Boolean(sharedCliHarness)}>
         <Group
           id="provider-accounts"
@@ -391,7 +401,7 @@ export function ProviderAccountsSettings({
             ) : undefined
           }
           feedback={
-            error ? (
+            error && !editor ? (
               <SettingsFeedback state="error">
                 {providerAccountErrorText(error.error, error.action)}
               </SettingsFeedback>
@@ -400,7 +410,6 @@ export function ProviderAccountsSettings({
         >
           {PROVIDER_ACCOUNT_PROVIDERS.map((provider) => {
             const accounts = providerAccounts(provider);
-            const adding = editor?.provider === provider && !editor.accountId;
             const duplicates = duplicateAccountSignIns(accounts, identities);
             return (
               <div
@@ -421,16 +430,10 @@ export function ProviderAccountsSettings({
                     autoDefaultLabel ||
                     account.label === "Default" ||
                     account.label === t("Default");
-                  const editing = editor?.provider === provider && editor.accountId === account.id;
                   const removing = working === `remove:${provider}:${account.id}`;
                   const signingIn = working === `signin:${provider}:${account.id}`;
                   const identity = identities[identityKey(account)];
-                  const orgTag =
-                    account.kind === "personal"
-                      ? t("Personal")
-                      : account.kind === "work"
-                        ? t("Work")
-                        : identityOrganizationTag(identity);
+                  const work = account.kind === "work";
                   const limits = usage.usage[accountUsageKey(account)];
                   const signedOut = Boolean(limits && canSignIn(limits));
                   const duplicateOf = duplicates[identityKey(account)];
@@ -438,34 +441,7 @@ export function ProviderAccountsSettings({
                   const exhausted = !signedOut && status.tone === "exhausted";
                   const menuOpen =
                     menu?.account.id === account.id && menu.account.provider === provider;
-                  return editing ? (
-                    <Modal
-                      key={account.id}
-                      size="sm"
-                      title={t("Edit account")}
-                      onClose={cancelEditor}
-                    >
-                      <ProviderAccountEditor
-                        key={account.id}
-                        editor={editor}
-                        identity={identity}
-                        existingLabels={accounts
-                          .filter((other) => other.id !== account.id)
-                          .map((other) => other.label)}
-                        working={Boolean(working)}
-                        onLabel={(label) =>
-                          setEditorState((current) => (current ? { ...current, label } : current))
-                        }
-                        onMetadata={(metadata) =>
-                          setEditorState((current) =>
-                            current ? { ...current, ...metadata } : current,
-                          )
-                        }
-                        onCancel={cancelEditor}
-                        onSubmit={submitEditor}
-                      />
-                    </Modal>
-                  ) : (
+                  return (
                     <ActionHost
                       key={account.id}
                       variant="settings"
@@ -511,15 +487,7 @@ export function ProviderAccountsSettings({
                             tone="secondary"
                             wrap
                           />
-                          {orgTag ? (
-                            <AccountKindTag
-                              tag={orgTag}
-                              work={
-                                account.kind === "work" ||
-                                (account.kind !== "personal" && orgTag !== t("Personal"))
-                              }
-                            />
-                          ) : null}
+                          <AccountKindTag tag={t(work ? "Work" : "Personal")} work={work} />
                         </Text>
                         {exhausted ? (
                           <Text
@@ -611,18 +579,6 @@ export function ProviderAccountsSettings({
                     description={t("No accounts. Add an account to sign in.")}
                   />
                 ) : null}
-                {adding && editor ? (
-                  <ProviderAccountEditor
-                    editor={editor}
-                    existingLabels={accounts.map((account) => account.label)}
-                    working={Boolean(working)}
-                    onLabel={(label) =>
-                      setEditorState((current) => (current ? { ...current, label } : current))
-                    }
-                    onCancel={cancelEditor}
-                    onSubmit={submitEditor}
-                  />
-                ) : null}
               </div>
             );
           })}
@@ -655,6 +611,35 @@ export function ProviderAccountsSettings({
       <div hidden={harness !== "antigravity"}>
         <AntigravityAccountSettings embedded />
       </div>
+      {visible && editor && supportsProviderAccounts(editor.provider) ? (
+        <ProviderAccountDialog
+          editor={editor}
+          identity={
+            editor.adding
+              ? null
+              : identities[
+                  identityKey({
+                    provider: editor.provider,
+                    id: editor.accountId,
+                    label: editor.label,
+                  })
+                ]
+          }
+          existingLabels={providerAccounts(editor.provider)
+            .filter((account) => account.id !== editor.accountId)
+            .map((account) => account.label)}
+          working={Boolean(working)}
+          submitError={error ? providerAccountErrorText(error.error, error.action) : undefined}
+          onLabel={(label) =>
+            setEditorState((current) => (current ? { ...current, label } : current))
+          }
+          onMetadata={(metadata) =>
+            setEditorState((current) => (current ? { ...current, ...metadata } : current))
+          }
+          onCancel={cancelEditor}
+          onSubmit={submitEditor}
+        />
+      ) : null}
       {menu ? (
         <DropdownMenu
           anchor={menu.anchor}

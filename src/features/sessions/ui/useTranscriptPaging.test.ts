@@ -112,6 +112,7 @@ it("keeps a message in place when earlier history changes the first turn key", a
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -248,22 +249,38 @@ it("leaves the scroll position alone when a turn is appended while the reader is
   expect(scroller.scrollTop).toBe(50);
 });
 
-it.each([
-  ["a dropped link", new Error("RPC_WS_INTERRUPTED: Host connection was interrupted"), null],
-  ["a real failure", new Error("Session history is unreadable"), "Session history is unreadable"],
-])("reports %s to the paging error only when it is not transient", async (_name, error, shown) => {
-  const setPagingError = vi.fn();
+it("passes the original failure to the grace policy without changing the window", async () => {
+  const error = new Error("RPC_WS_INTERRUPTED: Host connection was interrupted");
+  const setPagingFailure = vi.fn();
+  const apply = vi.fn();
   const loadingRef = { current: true };
   await runRemoteLoad({
     load: () => Promise.reject(error),
     stale: () => false,
-    apply: () => {},
+    apply,
     loadingRef,
     setPagingLoading: () => {},
-    setPagingError,
+    setPagingFailure,
   });
-  expect(setPagingError).toHaveBeenCalledWith(shown);
+  expect(setPagingFailure).toHaveBeenCalledWith(error);
+  expect(apply).not.toHaveBeenCalled();
   expect(loadingRef.current).toBe(false);
+});
+
+it("retries a transient paging rejection quietly", async () => {
+  vi.useFakeTimers();
+  const load = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("RPC_WS_INTERRUPTED: Host connection was interrupted"))
+    .mockResolvedValueOnce(0);
+  render(history(10), load, true);
+  await act(() => api.loadEarlier());
+  expect(api.pagingError).toBeNull();
+  expect(api.pagingLoading).toBe(true);
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(api.pagingError).toBeNull();
+  expect(api.pagingLoading).toBe(false);
 });
 
 it.each([
@@ -278,7 +295,7 @@ it.each([
     apply,
     loadingRef: { current: true },
     setPagingLoading: () => {},
-    setPagingError: () => {},
+    setPagingFailure: () => {},
   });
   expect(apply).toHaveBeenCalledTimes(moved ? 1 : 0);
 });

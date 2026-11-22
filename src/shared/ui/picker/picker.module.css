@@ -103,6 +103,20 @@
   margin-inline-end: auto;
 }
 
+.selectionStart {
+  position: relative;
+}
+.selectionStart::before {
+  content: "";
+  position: absolute;
+  inset-block: var(--space-1);
+  inset-inline-start: 0;
+  inline-size: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--ui-interaction-accent);
+  pointer-events: none;
+}
+
 /* Primary choice and separately focusable inline actions share the row host. */
 .actionRow > button {
   flex: 1;

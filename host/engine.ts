@@ -88,7 +88,9 @@ import {
   sameByRevisions,
 } from "./sessions/desktop-digest-cache";
 import { LeaseHeldError } from "../src/features/sync/model/runLease";
-import { refuseHost } from "./domains/context";
+import { HostDomainRefusalError, refuseHost } from "./domains/context";
+import { createLogger } from "./diagnostics/logger";
+import { CodexWriterRetirementRefusal } from "../src/integrations/harness/providers/codex/codex";
 import {
   atHead,
   chooseBase,
@@ -102,6 +104,7 @@ import type {
   HarnessOperationContext,
   SendTurnInput,
 } from "../src/integrations/harness/core/types";
+import { TurnNotReadyError } from "../src/integrations/harness/core/types";
 import {
   HARNESS_LABEL,
   RUNTIME_MODES,
@@ -583,7 +586,49 @@ function retainWarmActivity(activity: ProviderActivityRetirement | undefined): v
 type RetainedWriterTurn = Pick<
   ActiveHostTurn,
   "provider" | "activity" | "operationContext" | "authorityGeneration" | "cleanup"
->;
+> & { reportedRetirementReason?: WriterRetirementReason; recoveryScheduled?: boolean };
+
+type WriterRetirementReason =
+  | CodexWriterRetirementRefusal["reason"]
+  | "owner_receipt_missing"
+  | "cleanup_failed"
+  | "waiting_for_original";
+
+const writerRetirementLog = createLogger("host.writer-retirement");
+
+function writerRetirementRefusal(
+  original: RetainedWriterTurn,
+  reason: WriterRetirementReason,
+  deleting: boolean,
+  cause?: unknown,
+): HostDomainRefusalError {
+  const pending = reason === "waiting_for_original";
+  const code = pending ? "HOST_WRITER_RETIREMENT_PENDING" : "HOST_WRITER_RETIREMENT_FAILED";
+  if (original.reportedRetirementReason !== reason) {
+    original.reportedRetirementReason = reason;
+    const fields = { code, reason, operation: deleting ? "delete" : "transfer" };
+    if (pending) writerRetirementLog.info("Waiting for original provider retirement", fields);
+    else writerRetirementLog.warn("Original provider retirement could not be confirmed", fields);
+  }
+  const text = pending
+    ? deleting
+      ? "The original Host writer is still stopping; the session was not deleted."
+      : "The previous Host provider writer is still stopping. Your message was not sent."
+    : deleting
+      ? "The original Host writer could not be retired; the session was not deleted."
+      : "The previous Host writer could not be retired. Your message was not sent.";
+  return new HostDomainRefusalError(code, "conflict", pending, `${code}: ${text}`, { cause });
+}
+
+function writerRetirementFailureReason(error: unknown): WriterRetirementReason {
+  const outcomes = error instanceof AggregateError ? error.errors : [error];
+  return (
+    outcomes.find(
+      (entry): entry is CodexWriterRetirementRefusal =>
+        entry instanceof CodexWriterRetirementRefusal,
+    )?.reason ?? "cleanup_failed"
+  );
+}
 
 export type EngineCommandAdmission = {
   check: (stage: {
@@ -691,71 +736,112 @@ export class HostEngine {
         throw refuseHost(new LeaseHeldError("host"), "LEASE_HELD", "conflict", true);
       const original = this.retainedWriterTurns.get(id);
       if (original) {
+        const deleting = options?.rebind === false;
         if (!original.cleanup) {
           // Providers without an exact hook retire through the same owner-bound stop a
           // failed or cancelled turn uses; the persisted resume identity is rebound below.
           const retire = original.provider.retireOriginal ?? original.provider.stop;
           const context = original.operationContext;
           if (!context || !original.activity)
-            throw new Error(
-              options?.rebind === false
-                ? "HOST_WRITER_RETIREMENT_FAILED: The original Host writer cannot be safely retired; the session was not deleted."
-                : "HOST_WRITER_RETIREMENT_FAILED: The previous Host writer has no owner receipt to retire. Your message was not sent.",
-            );
+            throw writerRetirementRefusal(original, "owner_receipt_missing", deleting);
           original.cleanup = this.store.db.outsideScope(() =>
-            original.activity!.retire(async () => {
-              await this.store.assertAuthority(id, original.authorityGeneration);
-              await retire.call(original.provider, id, context);
-            }),
+            original.activity!.retire(
+              async () => {
+                await this.store.assertAuthority(id, original.authorityGeneration);
+                await retire.call(original.provider, id, context);
+              },
+              { waitForOriginal: true },
+            ),
           );
           void original.cleanup.catch(() => {});
         }
+        const released = original.cleanup.then(() => original.activity?.release());
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
           await Promise.race([
-            original.cleanup.then(() => original.activity?.release()),
+            released,
             new Promise<never>((_, reject) => {
               timer = setTimeout(
-                () =>
-                  reject(
-                    new Error(
-                      options?.rebind === false
-                        ? "HOST_WRITER_RETIREMENT_PENDING: The original Host writer is still stopping; the session was not deleted. Retry after retirement completes."
-                        : "HOST_WRITER_RETIREMENT_PENDING: The previous Host provider writer is still stopping. Your message was not sent; retry after retirement completes.",
-                    ),
-                  ),
+                () => reject(writerRetirementRefusal(original, "waiting_for_original", deleting)),
                 20_000,
               );
             }),
           ]);
         } catch (error) {
-          if (error instanceof Error && error.message.startsWith("HOST_WRITER_RETIREMENT_PENDING:"))
+          if (
+            error instanceof HostDomainRefusalError &&
+            error.code === "HOST_WRITER_RETIREMENT_PENDING"
+          ) {
+            if (!deleting) this.recoverRetiredWriter(id, original, released);
             throw error;
-          throw new Error(
-            options?.rebind === false
-              ? "HOST_WRITER_RETIREMENT_FAILED: The original Host writer could not be retired; the session was not deleted."
-              : "HOST_WRITER_RETIREMENT_FAILED: The previous Host writer could not be retired. Your message was not sent. Inspect the connection or continue through the task repair workflow.",
-            { cause: error },
+          }
+          throw writerRetirementRefusal(
+            original,
+            writerRetirementFailureReason(error),
+            deleting,
+            error,
           );
         } finally {
           clearTimeout(timer);
         }
-        this.retainedWriterTurns.delete(id);
-        this.forgetRetiredProvider(id, original.provider);
-        // Keep only the persisted resume identity; never create a new history.
-        const current =
-          options?.rebind === false ? undefined : (await this.store.session(id)).session;
-        if (current?.providerSessionId)
-          original.provider.bind(
-            id,
-            current.providerSessionId,
-            current.cwd,
-            current.providerAccountId,
-          );
+        if (!(await this.finishRetiredWriter(id, original, deleting)))
+          throw new LeaseHeldError("host");
       }
       if (this.closing) throw new LeaseHeldError("host");
       await admitted?.();
       return grant();
+    });
+  }
+
+  private recoverRetiredWriter(
+    id: string,
+    original: RetainedWriterTurn,
+    released: Promise<void | undefined>,
+  ): void {
+    if (original.recoveryScheduled) return;
+    original.recoveryScheduled = true;
+    this.store.db.outsideScope(() => {
+      void released
+        .then(async () => {
+          const recovered = await this.operations.enqueue(id, () =>
+            this.finishRetiredWriter(id, original, false),
+          );
+          if (recovered && !this.closing) this.onUnblocked?.();
+        })
+        .catch((error: unknown) => {
+          if (this.retainedWriterTurns.get(id) === original)
+            writerRetirementRefusal(original, writerRetirementFailureReason(error), false, error);
+        });
+    });
+  }
+
+  private async finishRetiredWriter(
+    id: string,
+    original: RetainedWriterTurn,
+    deleting: boolean,
+  ): Promise<boolean> {
+    const ownsRetirement = () => !this.closing && this.retainedWriterTurns.get(id) === original;
+    return await this.store.db.scope(async () => {
+      if (!ownsRetirement()) return false;
+      if (!deleting) {
+        await this.store.assertAuthority(id, original.authorityGeneration);
+        const { session } = await this.store.session(id);
+        if (!ownsRetirement()) return false;
+        // Keep the persisted resume identity only for this original provider.
+        if (
+          session.providerSessionId &&
+          this.providers[session.harness as RemoteProvider] === original.provider
+        )
+          original.provider.bind(
+            id,
+            session.providerSessionId,
+            session.cwd,
+            session.providerAccountId,
+          );
+      }
+      this.retainedWriterTurns.delete(id);
+      this.forgetRetiredProvider(id, original.provider);
+      return true;
     });
   }
   /** Deletion may not discard another retained provider cohort or rebind a retired writer. */
@@ -823,13 +909,15 @@ export class HostEngine {
   /** A rewind, clear or branch switch ended: conversations waiting on it may go on. */
   onUnblocked?: () => void;
   /** Why a turn cannot start in this conversation right now, apart from one running in it. */
-  async busyReason(sessionId: string): Promise<string | undefined> {
+  async busyReason(sessionId: string, allowDesktopOnly = false): Promise<string | undefined> {
     await this.ready;
     if (this.closing) return "Host is stopping";
     if (this.retainedWriterTurns.get(sessionId)?.cleanup)
       return "The previous Host writer retirement is pending or failed. Complete the ownership transfer before continuing.";
     if (this.rewinding.has(sessionId)) return "A conversation change is in progress";
     try {
+      // Queue admission separately verifies that a desktop-only session exists.
+      if (allowDesktopOnly && !(await this.store.sessionAuthority(sessionId))) return undefined;
       const value = await this.store.session(sessionId);
       await this.managedWorkspace(value);
       if (this.switchingProjects.has(value.projectId)) return "A branch switch is in progress";
@@ -1442,6 +1530,10 @@ export class HostEngine {
       this.switchingProjects.delete(projectId);
       this.onUnblocked?.();
     }
+  }
+
+  supportsSteer(id: RemoteProvider): boolean {
+    return !!this.providers[id]?.steer;
   }
 
   private provider(id: string): HostProvider {
@@ -3111,8 +3203,16 @@ export class HostEngine {
                   }),
                 );
             } else {
-              if (value.runId !== command.runId || value.status !== "running")
+              if (value.runId !== command.runId || value.status !== "running") {
+                if (command.type === "steer")
+                  throw new HostDomainRefusalError(
+                    "CONTEXT_CHANGED",
+                    "conflict",
+                    true,
+                    "This request belongs to a finished or replaced turn",
+                  );
                 throw new Error("This request belongs to a finished or replaced turn");
+              }
               if (command.type === "cancel") {
                 const original = this.running.get(command.sessionId);
                 const cancel = provider.cancel;
@@ -3222,9 +3322,27 @@ export class HostEngine {
               } else if (command.type === "steer") {
                 assertModelProvider(value.session.harness, value.session.model);
                 const active = this.running.get(command.sessionId);
-                if (!provider.steer) throw new Error("This provider cannot steer an active turn");
+                if (!provider.steer)
+                  throw new HostDomainRefusalError(
+                    "COMMAND_INVALID",
+                    "validation",
+                    false,
+                    "This provider cannot steer an active turn",
+                  );
                 if (!active || active.cancelled || active.ending)
-                  throw new Error("This turn was stopped");
+                  throw new HostDomainRefusalError(
+                    "CONTEXT_CHANGED",
+                    "conflict",
+                    true,
+                    "This turn was stopped",
+                  );
+                if (provider.steerReady && !provider.steerReady(command.sessionId))
+                  throw new HostDomainRefusalError(
+                    "COMMAND_BUSY",
+                    "conflict",
+                    true,
+                    "The active turn is not ready for steering.",
+                  );
                 const attachments = await resolveAttachments(this.store, command.attachments ?? []);
                 const owner = value.session.blocks[executionUserIndex(value.session.blocks)];
                 value = {
@@ -3301,7 +3419,6 @@ export class HostEngine {
                         this.running.get(command.sessionId) !== active
                       )
                         return;
-                      attempted = true;
                       await this.followUpDelivery(
                         command.sessionId,
                         command.runId,
@@ -3319,6 +3436,7 @@ export class HostEngine {
                           runId: command.runId,
                         });
                       await this.checkProviderSchedule(command.sessionId, command.runId);
+                      attempted = true;
                       await provider.steer!(preparedSteer);
                       // Cancellation can resolve a provider's steer without submitting it.
                       // A retired owner therefore cannot establish successful delivery.
@@ -3335,15 +3453,18 @@ export class HostEngine {
                     })
                     .catch(async (reason) => {
                       if (this.running.get(command.sessionId) === active) {
+                        const uncertain = attempted && !(reason instanceof TurnNotReadyError);
                         await this.followUpDelivery(
                           command.sessionId,
                           command.runId,
                           command.commandId,
-                          attempted ? "uncertain" : "undelivered",
+                          uncertain ? "uncertain" : "undelivered",
                         );
                         this.event(command.sessionId, command.runId, {
                           type: "status",
-                          text: `Could not confirm delivery of the follow-up. It is saved as a draft; inspect the provider's work before retrying: ${String(reason)}`,
+                          text: uncertain
+                            ? `Could not confirm delivery of the follow-up. It is saved as a draft; inspect the provider's work before retrying: ${String(reason)}`
+                            : `The follow-up was not sent. It is saved as a draft. ${String(reason)}`,
                         });
                       }
                     });
@@ -3520,7 +3641,15 @@ export class HostEngine {
               : {}),
           };
           if (admission?.onAccepted) await admission.onAccepted(result);
-          await this.store.recordReceipt(signature, result);
+          await this.store.recordReceipt(
+            signature,
+            command.type === "steer"
+              ? {
+                  ...result,
+                  steer: { runId: command.runId },
+                }
+              : result,
+          );
           return { receipt: result, saved };
         }, "critical");
         if (command.type === "cancel") {

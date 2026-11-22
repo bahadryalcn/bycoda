@@ -19,6 +19,7 @@ import {
   createExecutionActivityReservations,
   createWorkspaceRemovalService,
   retentionSourceClean,
+  type WorkspaceCleanupDependencies,
 } from "../workspace-cleanup";
 import {
   createWorkspaceRetentionScheduler,
@@ -48,6 +49,9 @@ export function createManagedWorkspaceRuntime(
   engine: HostEngine,
   options: {
     probe?(workspace: ManagedWorkspace): Promise<WorkspaceActivity[]>;
+    withRemovalLease?: WorkspaceCleanupDependencies["withRemovalLease"];
+    deferRemovalRecovery?(operationId: string): void;
+    retryDeferredRemovals?(): Promise<void>;
     artifactPending?(workspaceId: string, completedDeliveryOperationId?: string): Promise<boolean>;
     canReconcileActivity?(activity: WorkspaceActivity): Promise<boolean>;
     afterNativeReceiptSaved?(): Promise<void>;
@@ -270,6 +274,7 @@ export function createManagedWorkspaceRuntime(
   const currentPolicy = async (value: ManagedWorkspace) => (await policy.resolve(value)).policy;
   const removal = createWorkspaceRemovalService({
     assertAuthorized: () => store.db.checkAuthorization(),
+    withRemovalLease: options.withRemovalLease,
     recoveryBookkeeping: (work) => store.db.runRecoveryBookkeeping(work),
     registry,
     reservations: activity,
@@ -289,6 +294,7 @@ export function createManagedWorkspaceRuntime(
     policy: currentPolicy,
     removal,
     sourceClean: (workspace) => retentionSourceClean(workspace.path),
+    retryDeferredRemovals: options.retryDeferredRemovals,
     onError: () => console.warn("Managed workspace retention is pending"),
   });
   for (const action of ["finish", "close"] as const) {
@@ -553,6 +559,8 @@ export function createManagedWorkspaceRuntime(
             } else if (operation.kind === "removal" && operation.phase !== "complete")
               await removal.recover(operation.id);
           } catch (error) {
+            if (initialStartup && operation.kind === "removal")
+              options.deferRemovalRecovery?.(operation.id);
             results.push({
               operationId: operation.id,
               error: error instanceof Error ? error.message : String(error),

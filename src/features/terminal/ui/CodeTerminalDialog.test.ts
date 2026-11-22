@@ -97,3 +97,40 @@ it("retains the result when chat admission refuses it and allows an explicit ret
     container.remove();
   }
 });
+
+it("holds a known undelivered command failure for grace without replay", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const state: CodeTerminalState = {
+    ...exitedController().snapshot(),
+    phase: "not-started",
+    output: "",
+    actionError: new Error("[RPC_WS_OVERLOAD] Host busy"),
+  };
+  const start = vi.fn(async () => {});
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(CodeTerminalDialog, {
+          controller: { ...exitedController(), start, snapshot: () => state },
+          options,
+          onClose: () => {},
+        }),
+      ),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(2_999));
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("busy right now");
+    expect(document.body.textContent).not.toContain("Command status unknown");
+    expect(start).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});

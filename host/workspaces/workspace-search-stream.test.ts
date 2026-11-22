@@ -1,18 +1,27 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-const api = vi.hoisted(() => ({ spawn: vi.fn() }));
-vi.mock("node:child_process", async (original) => ({
-  ...(await original<typeof import("node:child_process")>()),
-  spawn: api.spawn,
+const api = vi.hoisted(() => ({
+  spawn: vi.fn<
+    (
+      file: string,
+      args: string[],
+      options: {
+        signal: AbortSignal;
+        onOutput: (stream: "stdout" | "stderr", chunk: Buffer) => void;
+      },
+    ) => Promise<{ stdout: string; stderr: string }>
+  >(),
 }));
-vi.mock("../git/git-start-gate", () => ({ hostGitStarts: { enter: async () => {} } }));
+vi.mock("../git/git-exec-pool", () => ({
+  hostGitExec: { exec: api.spawn },
+}));
 import { searchHostContent } from "./workspace";
 
 let child: EventEmitter & {
   stdout: PassThrough;
   stderr: PassThrough;
-  kill: ReturnType<typeof vi.fn>;
+  kill: ReturnType<typeof vi.fn<() => boolean>>;
 };
 beforeEach(() => {
   child = Object.assign(new EventEmitter(), {
@@ -20,9 +29,30 @@ beforeEach(() => {
     stderr: new PassThrough(),
     kill: vi.fn(() => true),
   });
-  api.spawn.mockReset().mockReturnValue(child);
+  api.spawn.mockReset().mockImplementation(
+    (_file, _args, { signal, onOutput }) =>
+      new Promise((resolve, reject) => {
+        child.stdout.on("data", (chunk) => onOutput("stdout", chunk));
+        child.stderr.on("data", (chunk) => onOutput("stderr", chunk));
+        child.on("close", () => resolve({ stdout: "", stderr: "" }));
+        signal.addEventListener("abort", () => {
+          child.kill();
+          child.stdout.destroy();
+          child.stderr.destroy();
+          reject(Object.assign(new Error("aborted"), { code: "ABORT_ERR" }));
+        });
+      }),
+  );
 });
 const started = () => vi.waitFor(() => expect(api.spawn).toHaveBeenCalledOnce());
+
+it.each(["EAGAIN", "ETIMEDOUT"])("reports %s before launch as a busy search", async (code) => {
+  api.spawn.mockRejectedValueOnce(Object.assign(new Error(code), { code, killed: false }));
+  await expect(searchHostContent("C:/repo", { query: "needle" })).rejects.toMatchObject({
+    message: "Git search could not start because the Host is busy. Retry the search.",
+    cause: expect.objectContaining({ code }),
+  });
+});
 
 it("ends grep after a complete result page instead of waiting for a full scan", async () => {
   const pending = searchHostContent("C:/repo", { query: "needle" });

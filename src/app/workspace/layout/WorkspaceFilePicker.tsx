@@ -36,6 +36,7 @@ export interface WorkspaceFilePickerProps {
   activeTab: WorkspaceTab | undefined;
   onOpenFile: FilePickerProps["onOpenFile"];
   onArrangeActiveTab: (preset: LayoutPreset) => void;
+  onOpenRecovery?: () => void;
   actions: MutableRefObject<WorkspaceActions>;
 }
 
@@ -50,6 +51,7 @@ function WorkspaceFilePickerComponent({
   activeTab,
   onOpenFile,
   onArrangeActiveTab,
+  onOpenRecovery,
   actions,
 }: WorkspaceFilePickerProps) {
   return filePickerOpen ? (
@@ -63,6 +65,7 @@ function WorkspaceFilePickerComponent({
         !!active && canStopHarnessBackgroundWork(active.harness) && sessionHasBackgroundWork(active)
       }
       arrangeLayout={Boolean(activeTab)}
+      recoveryAvailable={!!onOpenRecovery}
       onOpenFile={onOpenFile}
       onRunAction={(id) => {
         const layoutPreset = id.startsWith(LAYOUT_ACTION_PREFIX)
@@ -76,6 +79,7 @@ function WorkspaceFilePickerComponent({
         else if (id === "open-notes") actions.current.onOpenNotes();
         else if (id === "open-tasks") actions.current.onOpenTasks();
         else if (id === "open-automations") actions.current.onOpenAutomations();
+        else if (id === "open-recovery") onOpenRecovery?.();
         else if (id === "stop-background" && active) {
           void stopHarnessBackgroundWork(active.harness, active.id).catch(console.error);
         } else if (id === "reconnect-remote") {

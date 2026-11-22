@@ -60,7 +60,8 @@ import { ComposerHighlight } from "../../sessions/ui/ComposerHighlight";
 import { useComposerSkills } from "../../sessions/ui/useComposerSkills";
 import { skillTextParts, skillInvocationTokens } from "../../skills/model/skills";
 import {
-  attachmentTokens,
+  attachmentDraftTokens,
+  compactAttachmentDraftTokens,
   deleteTokenAtCaret,
   attachmentsDroppedByEdit,
   insertAtSelection,
@@ -401,7 +402,7 @@ export function QuickComposer({
       current.pickedRuntimeMode,
     );
     const launchMode = quickPromptMode(submittedPrompt.trim());
-    const text = launchMode.prompt.trim();
+    const text = compactAttachmentDraftTokens(launchMode.prompt.trim(), current.attachments);
     if (
       (!recoveringLaunch && !text && !current.attachments.length) ||
       (!recoveringLaunch && !current.cwd) ||
@@ -707,11 +708,11 @@ export function QuickComposer({
             <AttachmentChip
               key={file.id}
               attachment={file}
-              token={attachmentTokens(attachments.files)[index]}
+              token={attachmentDraftTokens(attachments.files)[index]}
               onInsertToken={
                 busy
                   ? undefined
-                  : () => insertPromptText(attachmentTokens(attachments.files)[index])
+                  : () => insertPromptText(attachmentDraftTokens(attachments.files)[index])
               }
               onRemove={busy ? undefined : () => removeAttachment(file.id)}
             />
@@ -742,6 +743,9 @@ export function QuickComposer({
             modeIconClassName="size-4"
             names={skillNames}
             skillParts={skillTextParts}
+            skillDetails={
+              new Map(skills.map((skill) => [skill.invocation, { description: skill.description }]))
+            }
             mentions={new Map()}
             mcpTags={[]}
             attachments={attachments.files}

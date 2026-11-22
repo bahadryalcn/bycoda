@@ -2304,6 +2304,16 @@ fn host_refusal_over_ws_settles_like_the_http_refusal() {
 }
 
 #[test]
+fn retryable_read_replies_keep_their_retry_marker() {
+    let mut refusal = WsFailure::local("RPC_WS_REMOTE", "Request cancelled.");
+    refusal.retryable = true;
+    assert_eq!(
+        super::native_ws_failure(refusal),
+        "Host rejected request: [RPC_WS_RETRYABLE] Request cancelled."
+    );
+}
+
+#[test]
 fn uncertain_host_error_over_ws_keeps_unknown_outcome_text() {
     let mut unknown = WsFailure::local(
         "RPC_WS_REMOTE",

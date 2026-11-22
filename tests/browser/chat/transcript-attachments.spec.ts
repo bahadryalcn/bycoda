@@ -1,5 +1,48 @@
 import { expect, test } from "@playwright/test";
 
+for (const width of [800, 1000]) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`attachment copy failure stays compact at ${width}px in ${theme}`, async ({
+      page,
+    }, info) => {
+      const detail =
+        "The request is not allowed by the user agent or the platform in the current context.";
+      await page.addInitScript((message) => {
+        let shouldFail = true;
+        navigator.clipboard.write = async () => {
+          if (!shouldFail) return;
+          shouldFail = false;
+          throw new DOMException(message, "NotAllowedError");
+        };
+      }, detail);
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce", colorScheme: theme });
+      await page.goto("/tests/browser/chat/transcript.html?artifacts");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+      }, theme === "light");
+
+      const actions = page.locator(".user-message-actions");
+      const copy = actions.locator('button[aria-label="Copy message"]');
+      const originalIcon = await copy.locator("svg").innerHTML();
+      await copy.click();
+      const alert = actions.getByRole("alert");
+      await expect(alert).toBeVisible();
+      await expect(alert.locator("svg:not(button svg)")).toHaveCount(1);
+      await expect(alert).toContainText("Copy failed. Try again.");
+      await expect(alert).not.toContainText(detail);
+      expect(await copy.locator("svg").innerHTML()).toBe(originalIcon);
+      await page.screenshot({ path: info.outputPath(`copy-failure-${theme}-${width}.png`) });
+      await alert.getByRole("button", { name: /^Details/ }).click();
+      await expect(page.getByRole("dialog")).toContainText(detail);
+      await page.keyboard.press("Escape");
+      await copy.click();
+      await expect(alert).toHaveCount(0);
+      await expect(actions.getByRole("button", { name: "Copied" })).toBeVisible();
+    });
+  }
+}
+
 for (const theme of ["light", "dark"] as const) {
   test(`working rows survive repeated follow-up messages in ${theme}`, async ({ page }, info) => {
     await page.setViewportSize({ width: 1280, height: 800 });

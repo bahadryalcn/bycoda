@@ -3,6 +3,16 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SubagentMessageForm, type SubagentRelay } from "./SubagentMessageForm";
+import { SubagentChatComposer } from "./SubagentMessageForm";
+import { newSession, type Attachment } from "../model/session";
+
+const ownerComposer = vi.hoisted(() => ({ props: undefined as unknown }));
+vi.mock("./Composer", () => ({
+  Composer: (props: unknown) => {
+    ownerComposer.props = props;
+    return null;
+  },
+}));
 
 let container: HTMLDivElement;
 let root: Root;
@@ -161,4 +171,48 @@ it("leaves Enter to insert a newline; Ctrl/Cmd+Enter sends only outside IME comp
   });
   expect(send).toHaveBeenCalledOnce();
   expect(setDraft).not.toHaveBeenCalled();
+});
+
+it("uses the normal composer and keeps direct Steer, Queue and attachments on the child", () => {
+  const session = { ...newSession("codex", "/project"), id: "child", busy: true };
+  const onSubmit = vi.fn(() => true);
+  act(() =>
+    root.render(
+      createElement(SubagentChatComposer, {
+        name: "Reviewer",
+        session,
+        visible: true,
+        remoteSession: true,
+        remoteFeatures: { attachments: true, plan: false, draft: false, steer: true },
+        onSubmit,
+      }),
+    ),
+  );
+  const props = ownerComposer.props as import("react").ComponentProps<
+    typeof import("./Composer").Composer
+  >;
+  expect(props).toMatchObject({
+    sessionId: "child",
+    enabled: true,
+    busy: true,
+    hideIdentityControls: true,
+    remoteFeatures: { attachments: true, steer: true },
+  });
+  expect(props.compact).not.toBe(true);
+  const attachments: Attachment[] = [
+    {
+      id: "image",
+      name: "proof.png",
+      kind: "image",
+      mimeType: "image/png",
+      size: 16,
+      path: "/project/proof.png",
+    },
+  ];
+  props.onSubmit("$review", attachments, { followUpBehavior: "steer" });
+  props.onSubmit("When done", attachments, { followUpBehavior: "queue" });
+  expect(onSubmit.mock.calls).toEqual([
+    ["$review", attachments, { followUpBehavior: "steer" }],
+    ["When done", attachments, { followUpBehavior: "queue" }],
+  ]);
 });

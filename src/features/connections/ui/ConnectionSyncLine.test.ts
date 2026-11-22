@@ -9,6 +9,7 @@ let cleanup: (() => void) | undefined;
 afterEach(() => {
   cleanup?.();
   cleanup = undefined;
+  vi.useRealTimers();
 });
 
 async function render(machineId: string, onSyncNow?: () => void) {
@@ -26,12 +27,16 @@ async function render(machineId: string, onSyncNow?: () => void) {
 }
 
 it("shows a paused warning with a Sync now control for an unreachable machine", async () => {
+  vi.useFakeTimers();
   recordSyncStatus("m-paused", {
     state: "error",
     lastError: "Machine is unreachable. Check the host and SSH tunnel, then reconnect.",
   });
   const onSyncNow = vi.fn();
   const container = await render("m-paused", onSyncNow);
+  expect(container.textContent).toContain("Syncing…");
+  expect(container.querySelector("button")).toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(3_000));
   expect(container.textContent).toContain(
     "Sync is paused because this machine did not answer. It retries automatically.",
   );
@@ -44,6 +49,19 @@ it("shows a paused warning with a Sync now control for an unreachable machine", 
   );
   await act(async () => button?.click());
   expect(onSyncNow).toHaveBeenCalledTimes(1);
+});
+
+it("returns to Synced after a declared restart without showing a sync warning", async () => {
+  vi.useFakeTimers();
+  recordSyncStatus("m-restart", { state: "error", lastError: "[HOST_STOPPING] Host is stopping." });
+  const container = await render("m-restart");
+  await act(async () => vi.advanceTimersByTimeAsync(5_000));
+  expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+  expect(container.textContent).toContain("Syncing…");
+
+  await act(async () => recordSyncStatus("m-restart", { state: "ok", pendingOps: 0 }));
+  expect(container.textContent).toBe("Synced");
+  expect(container.querySelector('[aria-busy="true"]')).toBeNull();
 });
 
 it("shows other errors as a danger failure", async () => {

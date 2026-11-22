@@ -14,7 +14,7 @@ export type RefreshFailure = {
   cwd: string;
   touched: string[];
   forget: string[];
-  message: string;
+  error: unknown;
 };
 
 /**

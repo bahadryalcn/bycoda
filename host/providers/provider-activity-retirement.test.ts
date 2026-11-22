@@ -105,6 +105,48 @@ describe("original provider activity retirement", () => {
     expect(records.observation().retained).toBe(0);
   });
 
+  it.each(["completed", "failed"])(
+    "joins the same physical writer after the ledger's observer deadline (%s)",
+    async (outcome) => {
+      const physical = deferred();
+      const kill = vi
+        .fn(async (_handle: ChildProcessHandle) => {})
+        .mockReturnValueOnce(physical.promise);
+      const { id, handle, ledger } = source(kill);
+      const records = new ProviderActivityRetirements();
+      const activity = records.reserve(id);
+      const release = vi.fn(async () => {});
+      await activity.start(async () => release);
+      const stop = vi.fn(() => ledger.retire([handle]));
+      const observed = vi.fn();
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const retiring = activity.retire(stop, { waitForOriginal: true });
+        void retiring.then(observed, observed);
+        await vi.advanceTimersByTimeAsync(20_000);
+        expect(observed).not.toHaveBeenCalled();
+        expect(release).not.toHaveBeenCalled();
+        if (outcome === "completed") {
+          physical.resolve();
+          await retiring;
+          await activity.release();
+          expect(release).toHaveBeenCalledOnce();
+        } else {
+          physical.reject(new Error("original physical retirement failed"));
+          await expect(retiring).rejects.toThrow("Original physical retirement failed");
+          await expect(activity.release()).rejects.toThrow("Original physical retirement failed");
+          expect(release).not.toHaveBeenCalled();
+        }
+        expect(kill).toHaveBeenCalledExactlyOnceWith(handle);
+        expect(stop).toHaveBeenCalledOnce();
+      } finally {
+        physical.resolve();
+        vi.useRealTimers();
+        if (outcome === "failed") await ledger.retire([handle]);
+      }
+    },
+  );
+
   it("does not release or report failure before the other original cleanup actually finishes", async () => {
     const physical = deferred();
     const { id } = source(() => physical.promise);
@@ -152,6 +194,20 @@ describe("original provider activity retirement", () => {
     expect(release).toHaveBeenCalledOnce();
     expect(kill.mock.calls.map(([handle]) => handle)).toEqual([first]);
     expect(records.observation().retained).toBe(0);
+    await ledger.retire([second]);
+  });
+
+  it("pins the warm original even without a resource release callback", async () => {
+    const kill = vi.fn(async (_handle: ChildProcessHandle) => {});
+    const { ledger, id, handle: first } = source(kill);
+    const records = new ProviderActivityRetirements();
+    const activity = records.reserve(id);
+    await activity.start(async () => undefined);
+    await activity.retainWarm();
+    activity.bookkeepingFinished();
+    const second = ledger.admit(createChildProcessHandle(id));
+    await activity.retire(async () => {});
+    expect(kill).toHaveBeenCalledExactlyOnceWith(first);
     await ledger.retire([second]);
   });
 

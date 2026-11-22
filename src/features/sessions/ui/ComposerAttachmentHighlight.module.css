@@ -3,3 +3,8 @@
   --token-ink: var(--ui-attachment-ink, var(--ui-tone-accent-fg));
   color: var(--token-ink);
 }
+
+.token[data-full-attachment-label] :global([data-draft-token-label]) > :last-child {
+  overflow: visible;
+  text-overflow: clip;
+}

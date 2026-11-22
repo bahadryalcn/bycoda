@@ -8,6 +8,9 @@ import {
   type WorkspaceTab,
 } from "../../../features/workspace/model/layout";
 import { useCloseTabActions, type CloseTabActionDeps } from "./useCloseTabActions";
+import { useTabState } from "../state/useTabState";
+import { useWorkspaceStateRefs } from "../state/useWorkspaceRefMirrors";
+import { newSession } from "../../../features/sessions/model/session";
 
 const confirms = vi.hoisted(() => ({ dirty: vi.fn(), terminals: vi.fn() }));
 vi.mock("../helpers/appHelpers", () => ({ confirmDiscardUnsaved: confirms.dirty }));
@@ -81,6 +84,48 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("activates the neighboring Clinic tab when Jira is first in the workspace", async () => {
+  const sessions = ["/jira", "/clinic", "/clinic"].map((cwd) => newSession("codex", cwd));
+  const tabs = sessions.map((session) => newTab(session.id));
+  const [jira, neighbor, closing] = tabs;
+  let observed!: ReturnType<typeof useTabState>;
+  function Workspace() {
+    const state = useTabState({
+      seed: { session: sessions[0], tab: jira },
+      windowTransfer: null,
+      resumed: {
+        tabs,
+        sessions,
+        activeTabId: closing.id,
+        projectCwd: "/clinic",
+        projectTerminals: [],
+        projectReturnMemory: new Map(),
+      },
+    });
+    const { activeTabIdRef } = useWorkspaceStateRefs({
+      activeTabId: state.activeTabId,
+      projectCwd: "/clinic",
+      dirtyFiles: deps.dirtyFilesRef.current,
+    });
+    actions = useCloseTabActions({
+      ...deps,
+      tabsRef: { current: state.tabs },
+      activeTabIdRef,
+      setTabs: state.setTabs,
+      activateTab: state.setActiveTabIdState,
+      sessionsRef: { current: sessions },
+      sidebarCwd: "/clinic",
+      tabCloseScope: "project",
+    });
+    observed = state;
+    return null;
+  }
+  await act(async () => root.render(createElement(Workspace)));
+  await act(async () => actions.onCloseTab(closing.id));
+  expect(observed.tabs.map((entry) => entry.id)).toEqual([jira.id, neighbor.id]);
+  expect(observed.activeTabId).toBe(neighbor.id);
 });
 
 it("retains newly opened tabs and their current layout, without resurrecting a closed fallback", async () => {

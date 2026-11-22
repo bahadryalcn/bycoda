@@ -71,6 +71,10 @@ export class QueueNotReadyError extends Error {
 }
 /** A follow-up was safely returned to the queue before any provider write. */
 export class QueueDeferredError extends QueueNotReadyError {}
+/** The original Host writer is still closing; no provider received the row. */
+export class QueueRunLeasePendingError extends QueueDeferredError {}
+/** The Host cannot establish ownership; keep the row for an explicit Resume. */
+export class QueueRunLeaseBlockedError extends Error {}
 export const sameQueueValue = (a: unknown, b: unknown): boolean =>
   a === undefined || b === undefined ? a === b : canonicalJson(a) === canonicalJson(b);
 

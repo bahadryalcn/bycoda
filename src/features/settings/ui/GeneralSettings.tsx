@@ -61,6 +61,7 @@ import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
 import { LanguageSettings } from "./LanguageSettings";
 import { BuildIdentityDetails } from "./BuildIdentityDetails";
 import { UpdateChannelRow } from "./UpdateChannelRow";
+import { RemoteMediaSettings } from "./RemoteMediaSettings";
 import { SessionFolderGroup, restoreSessionFolderDefault } from "./SessionFolderSettings";
 import { NewProjectFolderGroup, restoreNewProjectFolderDefault } from "./NewProjectFolderSettings";
 import { DiagnosticsGroup, restorePerformanceTraceDefault } from "./DiagnosticsSettings";
@@ -250,6 +251,8 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           />
         </Row>
       </Group>
+
+      <RemoteMediaSettings />
 
       {/* Updates: version, check/install/restart state and progress share one compact action area. */}
       <Group title={t("Updates")}>

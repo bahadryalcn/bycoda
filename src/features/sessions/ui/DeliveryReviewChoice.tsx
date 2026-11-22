@@ -21,7 +21,7 @@ export function DeliveryReviewChoice({
   focusRequest,
   onChoose,
 }: {
-  text: string;
+  text?: string;
   working: boolean;
   /** The provider has not answered yet: it may still deliver the message. */
   lateSettlement?: boolean;
@@ -32,22 +32,27 @@ export function DeliveryReviewChoice({
   const t = useT();
   const first = useRef<HTMLButtonElement>(null);
   const warning = useId();
+  const retryHint = t(
+    "Check the conversation first. Sending again duplicates a message that was delivered. Keeping it queued pauses the queue and does not resend it.",
+  );
   useEffect(() => {
     if (focusRequest > 0) first.current?.focus();
   }, [focusRequest]);
   return (
     <div className="mt-1" data-delivery-review>
       <div className="flex flex-wrap items-center gap-1">
-        <OverflowTooltip label={text}>
-          <Text
-            size="caption"
-            tone="inherit"
-            truncate
-            className="min-w-0 max-w-full flex-1 basis-40"
-          >
-            {text}
-          </Text>
-        </OverflowTooltip>
+        {text ? (
+          <OverflowTooltip label={text}>
+            <Text
+              size="caption"
+              tone="inherit"
+              truncate
+              className="min-w-0 max-w-full flex-1 basis-40"
+            >
+              {text}
+            </Text>
+          </OverflowTooltip>
+        ) : null}
         <Button
           ref={first}
           size="sm"
@@ -55,12 +60,13 @@ export function DeliveryReviewChoice({
           disabled={working}
           onClick={() => onChoose("delivered")}
         >
-          {t("Already delivered")}
+          {t("Mark as delivered")}
         </Button>
         <Button
           size="sm"
           variant="secondary"
           disabled={working || lateSettlement}
+          tooltip={lateSettlement ? undefined : retryHint}
           aria-describedby={warning}
           onClick={() => onChoose("retry")}
         >
@@ -78,16 +84,14 @@ export function DeliveryReviewChoice({
         as="p"
         size="caption"
         tone="inherit"
-        className="mt-0.5"
+        className={lateSettlement ? "mt-0.5" : "sr-only"}
         data-delivery-review-warning
       >
         {lateSettlement
           ? t(
               "The provider has not answered yet and may still deliver this message. Sending it again could duplicate it. Wait, or stop the turn.",
             )
-          : t(
-              "Check the conversation first. Sending again duplicates a message that was delivered. Keeping it queued pauses the queue and does not resend it.",
-            )}
+          : retryHint}
       </Text>
     </div>
   );

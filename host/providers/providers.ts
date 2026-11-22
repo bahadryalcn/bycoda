@@ -62,6 +62,7 @@ export interface HostProvider {
   /** Async metadata preparation must precede the caller's final authority guard. */
   prepareOperationPolicy?<T extends HostPolicyInput>(input: T): Promise<T>;
   steer?(input: SteerTurnInput): Promise<void>;
+  steerReady?(sessionId: string): boolean;
   compact?(input: CompactContextInput): Promise<void>;
   rewind?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
   cancel(id: string, context?: HarnessOperationContext): Promise<void>;
@@ -118,6 +119,8 @@ const providers: Record<RemoteProvider, HostProvider> = {
     generateBranchName: generateCodexBranchName,
   },
   claude: {
+    steer: claude.steerClaudeTurn,
+    steerReady: claude.claudeSteerReady,
     stopItem: claude.stopClaudeBackgroundWork,
     send: claude.sendClaudeTurn,
     compact: claude.compactClaudeContext,

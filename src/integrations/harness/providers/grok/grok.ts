@@ -70,6 +70,8 @@ import {
   asRecord,
   contextWindowFromSetup,
   currentModelId,
+  applyGrokEffort,
+  grokEffortControl,
   eventsFromAcpUpdate,
   grokAuthError,
   grokAuthMethodId,
@@ -112,6 +114,10 @@ type Live = {
   /** Account profile (GROK_HOME) the process runs under. */
   accountId: string;
   modelId: string;
+  effortControl: ReturnType<typeof grokEffortControl>;
+  effort?: string;
+  init: unknown;
+  setup: unknown;
   contextWindow?: number;
   muteUpdates: boolean;
   cancelled: boolean;
@@ -628,6 +634,9 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
 
     if (startingByThread.get(input.sessionId) !== startup)
       throw new Error("Provider startup cancelled");
+    const modelId =
+      currentModelId(setup) ?? nativeModelIdWithSettings(input.model, input.modelSettings);
+    const effortControl = grokEffortControl(init, setup, modelId);
     const live: Live = {
       operation: input.operationContext?.operation,
       handle,
@@ -636,7 +645,11 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
       acp,
       acpSessionId,
       cwd: input.cwd,
-      modelId: currentModelId(setup) ?? nativeModelIdWithSettings(input.model, input.modelSettings),
+      modelId,
+      init,
+      setup,
+      effortControl,
+      effort: effortControl.current ?? (didLoad ? undefined : grokEffort(input.modelSettings)),
       contextWindow: contextWindowFromSetup(setup) ?? contextWindowFromSetup(init),
       muteUpdates: didLoad,
       cancelled: false,
@@ -680,25 +693,25 @@ async function applyModelSelection(
         { sessionId: live.acpSessionId, modelId: base },
         CONTROL_TIMEOUT_MS,
       )
-      .then(() => {
+      .then((result) => {
         live.modelId = base;
+        const updated = grokEffortControl(live.init, result, base, live.setup);
+        live.effortControl = updated;
+        live.effort = updated.current;
       })
       .catch((error: unknown) => {
         ignoreMissingControlMethod("grok", "set_model", error);
       });
   }
 
-  const effort = grokEffort(input.modelSettings);
-  if (!effort) return;
-  await acp
-    .request(
-      "session/set_mode",
-      { sessionId: live.acpSessionId, modeId: effort },
-      CONTROL_TIMEOUT_MS,
-    )
-    .catch((error: unknown) => {
-      ignoreMissingControlMethod("grok", "set_mode", error);
-    });
+  live.effort = await applyGrokEffort(
+    acp,
+    live.acpSessionId,
+    live.effortControl,
+    live.effort,
+    grokEffort(input.modelSettings),
+    CONTROL_TIMEOUT_MS,
+  );
 }
 
 async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Promise<void> {

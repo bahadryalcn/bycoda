@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useT } from "../../shared/i18n";
 import { InlineAction } from "../../shared/ui/ActionHost";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
-import { Archive, FolderPlus, Internet, Plus } from "../../shared/ui/icons";
+import { Archive, FolderPlus, Plus, Server } from "../../shared/ui/icons";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
 import { OPEN_CODE_WORKSPACE_EVENT } from "../../features/projects/model/codeWorkspace";
 import { OPEN_SESSION_IMPORT_EVENT } from "../../features/sessions/public/importModel";
@@ -59,7 +59,7 @@ export function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void })
               kind: "item",
               id: OPEN_REMOTE_PROJECT_EVENT,
               label: t("Open folder on a machine…"),
-              icon: <Internet className="icon-sm" />,
+              icon: <Server className="icon-sm" />,
             },
             {
               kind: "item",

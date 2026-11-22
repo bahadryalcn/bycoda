@@ -410,29 +410,36 @@ describe("Explorer create availability", () => {
     expect(header("new-file").disabled).toBe(false);
   });
 
-  it("shows the shared notice for an offline machine when nothing was loaded yet", async () => {
-    const reads = vi.fn(async () => [] as FsEntry[]);
-    setRemoteCommandRunner(reads);
-    adoptRemoteMachineInventory([
-      { id: "m1", name: "Desk", endpoint: "http://desk", environmentId: "machine-1" },
-    ]);
-    recordRemoteConnection("machine-1", new Error("Machine is unreachable"));
-    cwd = remoteCwd();
-    props = { ...props, cwd };
-    await act(async () => root.render(createElement(FileTree, props)));
+  it("waits before showing the shared notice when an offline tree has no data", async () => {
+    vi.useFakeTimers();
+    try {
+      const reads = vi.fn(async () => [] as FsEntry[]);
+      setRemoteCommandRunner(reads);
+      adoptRemoteMachineInventory([
+        { id: "m1", name: "Desk", endpoint: "http://desk", environmentId: "machine-1" },
+      ]);
+      recordRemoteConnection("machine-1", new Error("Machine is unreachable"));
+      cwd = remoteCwd();
+      props = { ...props, cwd };
+      await act(async () => root.render(createElement(FileTree, props)));
 
-    expect(container.querySelector("[data-explorer-root]")).toBeNull();
-    expect(container.querySelector('[data-machine-unavailable="offline"]')?.textContent).toContain(
-      "isn’t available",
-    );
-    expect(reads).not.toHaveBeenCalled();
+      expect(container.querySelector("[data-explorer-root]")).toBeNull();
+      expect(container.querySelector('[data-machine-unavailable="offline"]')).toBeNull();
+      await act(async () => vi.advanceTimersByTimeAsync(3_000));
+      expect(
+        container.querySelector('[data-machine-unavailable="offline"]')?.textContent,
+      ).toContain("isn’t available");
+      expect(reads).not.toHaveBeenCalled();
 
-    // The machine answers again: the tree mounts and loads.
-    await act(async () => notifyRemoteRecovered("machine-1"));
-    await act(async () => recordRemoteConnection("machine-1"));
-    expect(container.querySelector("[data-machine-unavailable]")).toBeNull();
-    expect(container.querySelector("[data-explorer-root]")).not.toBeNull();
-    expect(reads).toHaveBeenCalled();
+      // The machine answers again: the tree mounts and loads.
+      await act(async () => notifyRemoteRecovered("machine-1"));
+      await act(async () => recordRemoteConnection("machine-1"));
+      expect(container.querySelector("[data-machine-unavailable]")).toBeNull();
+      expect(container.querySelector("[data-explorer-root]")).not.toBeNull();
+      expect(reads).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("still replaces a loaded tree when the machine is turned off", async () => {

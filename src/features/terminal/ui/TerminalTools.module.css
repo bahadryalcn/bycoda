@@ -7,10 +7,6 @@
   min-block-size: 2rem;
   min-inline-size: 0;
 }
-/* Controls hosted in the "More actions" popover sit on the raised sheet. */
-.popoverBody .tools {
-  padding: 6px 8px;
-}
 .field {
   flex: 1 1 120px;
   min-inline-size: 0;
@@ -67,6 +63,25 @@
 }
 .menuBody {
   padding: 4px;
+}
+.menuActions {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.settings {
+  margin-block-start: 4px;
+  padding: 4px 8px;
+}
+.settingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-block: 6px;
+}
+.settingNote {
+  margin-block: 6px 2px;
 }
 .fontRow {
   display: flex;

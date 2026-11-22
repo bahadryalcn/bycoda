@@ -1,4 +1,8 @@
-import { ModelsListParamsSchema } from "../../../src/shared/model/host-contracts/models";
+import type { z } from "zod";
+import {
+  ModelsListParamsSchema,
+  type ModelsListResultSchema,
+} from "../../../src/shared/model/host-contracts/models";
 import { applyDisabledModels } from "./disabled-models";
 import { assertDomainAuthority, type HostDomainContext } from "../context";
 
@@ -36,8 +40,18 @@ export function createModelsService(ports: ModelsPorts) {
       // models the owner turned off as selectable. `undefined` still means "never published".
       const disabled = await ports.disabledModels?.();
       await assertDomainAuthority(context);
+      const filtered = applyDisabledModels(catalog, disabled) as Partial<
+        z.infer<typeof ModelsListResultSchema>
+      >;
+      // Discovery uses the Host default profile. Other signed-in profiles do not
+      // authorize reusing a snapshot from a default account that signed out.
+      const defaultCodexSignedOut =
+        accounts.codex && !accounts.codex.some((account) => account.id === "default");
       return {
-        ...applyDisabledModels(catalog, disabled),
+        ...filtered,
+        ...(defaultCodexSignedOut && filtered.models?.codex
+          ? { models: { ...filtered.models, codex: [] } }
+          : {}),
         accounts: Object.fromEntries(
           Object.entries(accounts).filter(([provider]) => ports.providers.includes(provider)),
         ),

@@ -810,9 +810,18 @@ export function createNativeBufferReports(deps: Dependencies) {
     if (!stored) throw new Error("Native workspace registry identity is unavailable");
     const workspace = { ...stored, path: await canonicalWorkspaceEntry(stored.path) };
     const result = new Map<string, WorkspaceActivity>();
-    for await (const captured of snapshots()) {
+    const all: Captured[] = [];
+    for await (const captured of snapshots()) all.push(captured);
+    // A parent carries its hold's projection, so reconcile retires it only when that
+    // hold is clean as well; the immutable hold then has nothing left to fence.
+    const retired = new Set(
+      all.filter((item) => item.value.retiredAt !== undefined).map((item) => item.reportId),
+    );
+    for (const captured of all) {
       const report = captured.value;
       if (report.retiredAt !== undefined) continue;
+      if (report.recovery?.kind === "hold" && retired.has(report.recovery.parentReportId!))
+        continue;
       const stale =
         !refreshed.has(captured.reportId) ||
         now() - beats.fresh(captured.reportId, report.receivedAt) > 45_000 ||
@@ -923,6 +932,17 @@ export function createNativeBufferReports(deps: Dependencies) {
           lineages.set(before.ownerId, "legacy");
           continue;
         }
+        // The desktop drops an earlier run's window only when every buffer it recorded was
+        // clean and no editor draft can belong to it. A report holds paths and dirty flags,
+        // never text, so holding a clean unknown owner it omits guards nothing and fenced the
+        // workspace for good. A Host-made missing-owner marker is not such a window.
+        if (
+          !after &&
+          before.unknown &&
+          !before.ownerId.startsWith(EMPTY_PREFIX) &&
+          !before.buffers.some((buffer) => buffer.dirty)
+        )
+          continue;
         const same =
           after &&
           previous?.value.recovery?.ownerLineages[before.ownerId] === "physical" &&
@@ -1086,6 +1106,26 @@ export function createNativeBufferReports(deps: Dependencies) {
     });
   }
 
+  // A dead predecessor that is unknown but not dirty, none of whose owners its live successor
+  // still reports: the successor keeps every earlier window that was dirty or may have a
+  // draft, so it no longer vouches for any of these and nothing unsaved is on record.
+  const released = (prior: BufferLease, successor: BufferLease) => {
+    const kept = new Set(successor.owners.map((item) => item.ownerId));
+    const sources = prior.owners.map((item) => item.ownerId);
+    if (prior.recovery?.sourceOwnerId) sources.push(prior.recovery.sourceOwnerId);
+    return (
+      !prior.owners.some((item) => item.buffers.some((buffer) => buffer.dirty)) &&
+      !sources.some((id) => kept.has(id))
+    );
+  };
+  const processGone = (processId: number) => {
+    try {
+      assertProcessDead(processId);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   const reconcileOutcome = createReconcileOutcome();
   function reconcileBuffers(
     request: {
@@ -1115,7 +1155,6 @@ export function createNativeBufferReports(deps: Dependencies) {
       for await (const captured of snapshots()) {
         const prior = captured.value;
         if (
-          prior.device !== device ||
           prior.clientId !== input.clientId ||
           prior.instanceId === input.instanceId ||
           prior.retiredAt !== undefined
@@ -1128,11 +1167,21 @@ export function createNativeBufferReports(deps: Dependencies) {
           )
         )
           continue;
-        if (!clean(prior) || prior.recovery?.kind === "hold") {
-          blocked.push({ instanceId: prior.instanceId, processId: prior.processId });
-          continue;
-        }
-        assertProcessDead(prior.processId);
+        if (prior.device !== device) {
+          // The same desktop install under an earlier authorization (after re-pairing) never
+          // reports again, so nothing else can ever retire it. Release it only when it is
+          // dead, clean and unreported; anything else stays its own device's to recover.
+          if (!released(prior, latest.value) || !processGone(prior.processId)) continue;
+          if (prior.recovery?.kind === "hold") continue;
+        } else if (!clean(prior) || prior.recovery?.kind === "hold") {
+          if (!released(prior, latest.value) || !processGone(prior.processId)) {
+            blocked.push({ instanceId: prior.instanceId, processId: prior.processId });
+            continue;
+          }
+          // A hold is an immutable shadow: never rewritten, so it cannot carry retiredAt.
+          // It goes inert with its retired parent (`probe` skips it).
+          if (prior.recovery?.kind === "hold") continue;
+        } else assertProcessDead(prior.processId);
         await archive(captured);
         await authenticate(owner, device);
         await writeSnapshot(captured.reportId, JSON.stringify({ ...prior, retiredAt: now() }));

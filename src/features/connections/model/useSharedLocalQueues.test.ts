@@ -8,6 +8,8 @@ import {
   QUEUE_LEASE_TTL_MS,
   QueueNotReadyError,
   QueueDeferredError,
+  QueueRunLeaseBlockedError,
+  QueueRunLeasePendingError,
   type SharedQueue,
 } from "./sharedQueue";
 import { desktopQueueClientId } from "./sharedQueueClient";
@@ -22,6 +24,7 @@ import { setImmediate as nextWorkerTurn } from "node:timers/promises";
 import { SessionQueues } from "../../../../host/sessions/session-queue";
 import {
   heldSharedQueueLeases,
+  noteSharedQueueLeases,
   QUEUE_SYNC_DEADLINE_MS,
   sharedLocalQueueReady,
   resumeSharedLocalQueue,
@@ -643,6 +646,29 @@ it.each(["active", "paused", "restored"] as const)(
   },
 );
 
+it.each([
+  [QueueRunLeasePendingError, "waiting", "active"],
+  [QueueRunLeaseBlockedError, "rejected", "paused"],
+] as const)(
+  "retains the exact row when a Host writer blocks before delivery",
+  async (ErrorClass, stage, status) => {
+    const host = useRealHostQueue();
+    await mount();
+    const detail = "Ownership feedback";
+    await expect(
+      submitSharedLocalQueue("chat", "a", false, () => {
+        throw new ErrorClass(detail);
+      }),
+    ).rejects.toBeInstanceOf(ErrorClass);
+    await tick();
+    const retained = await host.queues.get("chat");
+    expect(retained).toMatchObject({ status, messages: [row("a")] });
+    expect(retained.claim).toBeUndefined();
+    expect(retained.messages[0]?.deliveryUnknown).toBeUndefined();
+    expect(readDeliveryProgress("chat")).toMatchObject({ stage, detail, queueOnly: true });
+  },
+);
+
 it("does not undo a Stop that pauses the host queue while a steer is being deferred", async () => {
   const host = useRealHostQueue();
   sessionsRef.current[0].busy = true;
@@ -1003,8 +1029,8 @@ it("does not resume while a given-up send may still be answered, and resumes onc
   expect(queue.status).toBe("active");
 });
 
-it("tells the host a held lease cannot send while the conversation diverged from its host copy", async () => {
-  useRealHostQueue();
+it("yields a stale mirror's queue to the host but keeps a divergence blocked", async () => {
+  const { queues } = useRealHostQueue();
   await mount();
   expect(heldSharedQueueLeases()).toEqual([{ sessionId: "chat", epoch: 1 }]);
   await act(async () => {
@@ -1013,7 +1039,27 @@ it("tells the host a held lease cannot send while the conversation diverged from
       adoptedSyncConflict: true,
     })) as Session[];
   });
+  expect(heldSharedQueueLeases()).toEqual([
+    { sessionId: "chat", epoch: 1, blocked: true, syncPending: true },
+  ]);
+  await act(async () => {
+    sessionsRef.current = sessionsRef.current.map((session) => ({
+      ...session,
+      adoptedDivergence: { key: "diverged" },
+    })) as Session[];
+  });
   expect(heldSharedQueueLeases()).toEqual([{ sessionId: "chat", epoch: 1, blocked: true }]);
+  await act(async () => {
+    sessionsRef.current = sessionsRef.current.map((session) => ({
+      ...session,
+      adoptedDivergence: undefined,
+    })) as Session[];
+    const lease = (await queues.get("chat")).drain!;
+    await queues.release("chat", lease.holder, lease.epoch);
+    noteSharedQueueLeases({ chat: null });
+    for (let i = 0; i < 20; i++) await flushTurn();
+  });
+  expect(queues.live(await queues.get("chat"))).toBe(false);
 });
 
 function releasing() {

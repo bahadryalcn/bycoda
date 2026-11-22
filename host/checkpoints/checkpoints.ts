@@ -16,7 +16,7 @@ import {
 } from "node:fs/promises";
 import { dirname, join, resolve, relative } from "node:path";
 import { forEachConcurrent } from "../../src/shared/lib/concurrent";
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "../git/git-exec-pool";
 import type {
   CheckpointFileDiff,
   CheckpointStatus,
@@ -118,8 +118,9 @@ const overlap = (a: string, b: string) => {
   return a === b || a.startsWith(b + "/") || b.startsWith(a + "/");
 };
 async function git(cwd: string, args: string[], index?: string, input?: string): Promise<Buffer> {
-  const pending = exec("git", ["--no-pager", ...args], {
+  const { stdout } = await hostGitExec.exec("git", ["--no-pager", ...args], {
     cwd,
+    input,
     encoding: "buffer",
     windowsHide: true,
     timeout: 60_000,
@@ -132,9 +133,7 @@ async function git(cwd: string, args: string[], index?: string, input?: string):
       ...(index ? { GIT_INDEX_FILE: index } : {}),
     },
   });
-  // Commands such as `update-ref --stdin` read their batch from stdin, not argv.
-  if (input !== undefined) pending.child.stdin?.end(input);
-  return (await pending).stdout as Buffer;
+  return stdout;
 }
 const repositoryPrefix = (cwd: string) =>
   git(cwd, ["rev-parse", "--show-prefix"]).then((value) => value.toString().trimEnd());
@@ -1115,23 +1114,25 @@ export class HostCheckpoints {
         writeFile(join(scratch, "before"), original),
         writeFile(join(scratch, "after"), current),
       ]);
-      const result = await exec(
-        "git",
-        [
-          "diff",
-          "--no-index",
-          "--numstat",
-          "--no-ext-diff",
-          "--no-textconv",
-          "--",
-          join(scratch, "before"),
-          join(scratch, "after"),
-        ],
-        { encoding: "utf8", windowsHide: true, timeout: 60_000, maxBuffer: 1024 * 1024 },
-      ).catch((e: { code?: number; stdout?: string }) => {
-        if (e.code === 1) return { stdout: e.stdout ?? "" };
-        throw e;
-      });
+      const result = await hostGitExec
+        .exec(
+          "git",
+          [
+            "diff",
+            "--no-index",
+            "--numstat",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--",
+            join(scratch, "before"),
+            join(scratch, "after"),
+          ],
+          { encoding: "utf8", windowsHide: true, timeout: 60_000, maxBuffer: 1024 * 1024 },
+        )
+        .catch((e: { code?: number; stdout?: string }) => {
+          if (e.code === 1) return { stdout: e.stdout ?? "" };
+          throw e;
+        });
       const fields = String(result.stdout).split("\t");
       additions = Number(fields[0]) || 0;
       deletions = Number(fields[1]) || 0;

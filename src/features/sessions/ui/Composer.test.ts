@@ -63,7 +63,13 @@ import { invalidateProjectFiles } from "../../files/model/fileIndex";
 import { reportSessionCommands } from "../../../integrations/harness/core/reportedCommands";
 import { clearMcpSettingsCache, loadMcpSettings } from "../../settings/model/mcpSettingsCache";
 import type { ComposerTurnOptions, Attachment } from "../model/session";
-import { clearComposerDraft, getComposerDraft, setComposerDraft } from "../model/draftCache";
+import {
+  clearComposerDraft,
+  getComposerAttachments,
+  getComposerDraft,
+  setComposerAttachments,
+  setComposerDraft,
+} from "../model/draftCache";
 import type { NewSessionOptions } from "../model/newSessionCommand";
 import type { UserQuestionPrompt } from "../model/userQuestion";
 import { registerHarness } from "../../../integrations/harness/core/registry";
@@ -1279,10 +1285,10 @@ describe("Composer question focus", () => {
     expect(skill).toBeDefined();
     await act(async () => skill!.click());
     expect(textarea.value).toBe("Review this $plugin:review ");
-    // The chip is the source text itself, so it keeps the textarea's size and spacing.
-    expect(document.querySelector("[data-composer-skill-token]")?.textContent).toBe(
-      "$plugin:review",
-    );
+    // The chip keeps the source text hidden (for the textarea's size and spacing) and draws the skill name as its face.
+    const chip = document.querySelector("[data-composer-skill-token]");
+    expect(chip?.textContent).toContain("$plugin:review");
+    expect(chip?.querySelector("[data-draft-token-label]")?.textContent).toBe("plugin:review");
   });
 
   it("hides /operator from suggestions but submits the typed command", async () => {
@@ -1670,12 +1676,23 @@ describe("Composer question focus", () => {
     expect(document.querySelector('[aria-label="Turn off Operator"]')).toBeNull();
   });
 
-  it("clears the parent draft before submit so a remounting composer stays empty", async () => {
+  it("clears the parent draft and image before submit so a remounting composer stays empty", async () => {
     let parentDraft = "Ship the empty-state fix";
+    const sessionId = "first-send-with-image";
+    const image: Attachment = {
+      id: "first-send-image",
+      name: "sketch.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 4,
+      data: "dGVzdA==",
+    };
+    setComposerAttachments(sessionId, [image]);
     const onDraftChange = vi.fn((text: string) => {
       parentDraft = text;
     });
     const baseProps = {
+      sessionId,
       focused: true,
       harness: "claude" as const,
       model: "claude-sonnet",
@@ -1709,27 +1726,40 @@ describe("Composer question focus", () => {
 
     const textarea = document.querySelector("textarea")!;
     expect(textarea.value).toBe("Ship the empty-state fix");
+    expect(container.querySelector('[aria-label="Remove sketch.png"]')).not.toBeNull();
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click(),
     );
 
-    expect(onSubmit).toHaveBeenCalledWith("Ship the empty-state fix", [], {
+    expect(onSubmit).toHaveBeenCalledWith("Ship the empty-state fix", [image], {
       intent: "default",
       onSendRejected: expect.any(Function),
     });
     expect(onDraftChange).toHaveBeenCalledWith("");
     expect(parentDraft).toBe("");
-    expect(textarea.value).toBe("");
+    expect(container.querySelector("textarea")!.value).toBe("");
+    expect(container.querySelector('[aria-label="Remove sketch.png"]')).toBeNull();
   });
 
   it("restores the draft when submit is rejected", async () => {
     let parentDraft = "Blocked while orchestration is paused";
+    const sessionId = "rejected-send-with-image";
+    const image: Attachment = {
+      id: "rejected-send-image",
+      name: "sketch.png",
+      mimeType: "image/png",
+      kind: "image",
+      size: 4,
+      data: "dGVzdA==",
+    };
+    setComposerAttachments(sessionId, [image]);
     const onDraftChange = vi.fn((text: string) => {
       parentDraft = text;
     });
     await act(async () =>
       root.render(
         createElement(Composer, {
+          sessionId,
           focused: true,
           harness: "claude",
           model: "claude-sonnet",
@@ -1755,6 +1785,9 @@ describe("Composer question focus", () => {
 
     expect(textarea.value).toBe("Blocked while orchestration is paused");
     expect(parentDraft).toBe("Blocked while orchestration is paused");
+    expect(getComposerAttachments(sessionId)).toEqual([image]);
+    expect(container.querySelector('[aria-label="Remove sketch.png"]')).not.toBeNull();
+    clearComposerDraft(sessionId);
   });
 
   it("routes last-turn recall through common rewind and restores as a normal draft", async () => {

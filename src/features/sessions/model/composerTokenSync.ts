@@ -1,7 +1,8 @@
 /** What the last slash, dollar and mention parse looked at. */
 export type TokenSyncSnapshot = {
   value: string;
-  cursor: number;
+  /** Null while a range of text is selected. */
+  cursor: number | null;
   /** Inputs besides the text that change a parse result (skill list, harness). */
   context: readonly unknown[];
 };

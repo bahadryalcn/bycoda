@@ -59,6 +59,44 @@ const entry = (over: Partial<AdoptedEntry> = {}): AdoptedEntry => ({
   ...over,
 });
 
+it.each(["automatic", "explicit"])(
+  "hydrates a reopened tail before %s Host catch-up",
+  async (mode) => {
+    const history = Array.from({ length: 239 }, (_, i) => block(String(i)));
+    const queuedMessages = [{ id: "queued", text: "next", attachments: [] }];
+    let current = local({
+      blocks: history.slice(179, 219),
+      storedHistory: { before: 179, revision: 5 },
+      historyLoading: true,
+      queuedMessages,
+    });
+    const hydrate = vi.fn(async () => {
+      current = {
+        ...current,
+        blocks: history.slice(0, 219),
+        storedHistory: undefined,
+        historyLoading: false,
+      };
+      return true;
+    });
+    const deps = {
+      list: async () => [entry()],
+      load: async () => host({ blocks: history }),
+      local: () => [current],
+      hydrate,
+      mirrored: new Map<string, number>(),
+      apply: (next: Session) => {
+        current = next;
+      },
+    };
+    if (mode === "automatic") await mirrorAdoptedSessions(deps);
+    else await refreshAdoptedSession(deps, "s1");
+    expect(hydrate).toHaveBeenCalledOnce();
+    expect(current.blocks).toEqual(history);
+    expect(current.queuedMessages).toEqual(queuedMessages);
+  },
+);
+
 it("refreshes applied authority at an unchanged transcript revision without upgrading retained queue intent", async () => {
   const queued = [
     { id: "retained", text: "original intent", attachments: [], authorityGeneration: 2 },

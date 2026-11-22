@@ -19,8 +19,9 @@ import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import type { ModelSource } from "./modelSource";
 
 // Revisions are call arguments so React Compiler retains each external store dependency.
-export function modelEnabledAtRevision(id: string, _revision: number) {
-  return isModelEnabled(id);
+export function modelEnabledAtRevision(source: ModelSource, id: string, _revision: number) {
+  // Host catalogs already apply the preferences of the computer that runs the model.
+  return source.id !== undefined || isModelEnabled(id);
 }
 
 export function pickerProviderAtRevision(
@@ -76,9 +77,13 @@ export function visibleModelsAtSnapshot(
           .map((id) => source.find(id))
           .filter(
             (item): item is AgentModel =>
-              item != null && harnesses.includes(item.harness) && isModelEnabled(item.id),
+              item != null &&
+              harnesses.includes(item.harness) &&
+              modelEnabledAtRevision(source, item.id, _catalogVersion),
           )
-      : source.modelsFor(tab).filter((item) => isModelEnabled(item.id));
+      : source
+          .modelsFor(tab)
+          .filter((item) => modelEnabledAtRevision(source, item.id, _catalogVersion));
   // The panel lists each model once; the beside-picker flyout has one row per account.
   const choices = hideSettings
     ? accountModelChoices(pool, accountChoices, source.accounts)

@@ -1,4 +1,7 @@
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import {
+  classifyFailureLifetime,
+  useGracedFailure,
+} from "../../connections/public/transientFailure";
 import {
   useEffect,
   useRef,
@@ -33,9 +36,9 @@ type ReadState = {
   privacy: ReturnType<typeof getGroupLockView>;
   snapshot?: HostSession;
   loading: boolean;
-  error?: string;
+  error?: unknown;
   historyLoading?: boolean;
-  historyError?: string;
+  historyError?: unknown;
 };
 type Reader = {
   loadHistory: () => Promise<number | void>;
@@ -48,6 +51,7 @@ type ReaderStart = {
   privacy: ReturnType<typeof getGroupLockView>;
   previous: ReadState;
   reader: { current: Reader | null };
+  retryRead: { current: (() => Promise<void>) | null };
   setState: Dispatch<SetStateAction<ReadState>>;
 };
 
@@ -62,7 +66,15 @@ export function readOnlyPollDelay(running: boolean, failures: number): number {
 }
 
 /** Connects to the Host session and polls it until the returned cleanup runs. */
-function startReadOnlyReader({ binding, key, privacy, previous, reader, setState }: ReaderStart) {
+function startReadOnlyReader({
+  binding,
+  key,
+  privacy,
+  previous,
+  reader,
+  retryRead,
+  setState,
+}: ReaderStart) {
   let cancelled = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onVisibility: (() => void) | undefined;
@@ -95,13 +107,16 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
     historyError: undefined,
   });
   const connect = async () => {
-    const resolved = await resolveLocalSessionReference({
-      locator: {
-        kind: "host",
-        environmentId: binding.environmentId,
-        sessionId: binding.sessionId,
+    const resolved = await resolveLocalSessionReference(
+      {
+        locator: {
+          kind: "host",
+          environmentId: binding.environmentId,
+          sessionId: binding.sessionId,
+        },
       },
-    });
+      { preserveTransientFailure: true },
+    );
     if (!current()) return;
     const host = resolved.host;
     if (!host || host.machine.id !== binding.machineId || host.project.id !== binding.projectId)
@@ -121,7 +136,7 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
         if (!current() || !original || historyLoading || original.history?.before === undefined)
           return;
         historyLoading = true;
-        publish({ historyLoading: true, historyError: undefined });
+        publish({ historyLoading: true });
         try {
           const next = await loadRemoteHistoryPage(
             binding.machineId,
@@ -130,14 +145,17 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
             () => current() && snapshot === original,
             client,
           );
-          if (!current() || snapshot !== original || !next) return;
+          if (!current() || snapshot !== original) return 0;
+          if (!next) {
+            publish({ historyError: undefined });
+            return 0;
+          }
           validate(next);
           snapshot = next;
-          publish({ snapshot });
+          publish({ snapshot, historyError: undefined });
           return next.session.blocks.length - original.session.blocks.length;
         } catch (error) {
-          const message = presentRemoteError(error);
-          if (message) publish({ historyError: message });
+          if (snapshot === original) publish({ historyError: error });
           // Nothing was added: the transcript window stays where it is.
           return 0;
         } finally {
@@ -202,15 +220,13 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
         }
       } catch (error) {
         failures += 1;
-        // A transient link drop keeps the last snapshot; the shared connection notice covers it.
-        // With nothing loaded yet there is no snapshot to keep: show the wait and its retry.
-        const message = presentRemoteError(error, { explicit: snapshot === undefined });
-        publish(message ? { loading: false, error: message } : { loading: false });
+        publish({ loading: false, error });
       } finally {
         inFlight = false;
         schedule();
       }
     };
+    retryRead.current = poll;
     onVisibility = () => {
       if (document.hidden || !current() || inFlight) return;
       void poll();
@@ -220,14 +236,15 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
     if (document.hidden && snapshot) return;
     await poll();
   };
-  void connect().catch((error) =>
-    publish({ loading: false, error: String(error).replace(/^Error: /, "") }),
-  );
+  const tryConnect = () => connect().catch((error: unknown) => publish({ loading: false, error }));
+  retryRead.current = tryConnect;
+  void tryConnect();
   return () => {
     cancelled = true;
     if (timer) clearTimeout(timer);
     if (onVisibility) document.removeEventListener("visibilitychange", onVisibility);
     reader.current = null;
+    retryRead.current = null;
   };
 }
 
@@ -242,6 +259,8 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
   const [state, setState] = useState<ReadState>({ key, privacy, loading: true });
   const latestState = useStableCallback(() => state);
   const reader = useRef<Reader | null>(null);
+  const retryRead = useRef<(() => Promise<void>) | null>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Owns the poll and read handles for the visible session and current privacy view.
   useEffect(() => {
     if (!binding || !visible) return;
     return startReadOnlyReader({
@@ -250,17 +269,35 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
       privacy,
       previous: latestState(),
       reader,
+      retryRead,
       setState,
     });
   }, [key, privacy, visible, refresh, latestState]);
   const valid = state.key === key && state.privacy === privacy;
   const snapshot = valid ? state.snapshot : undefined;
   const retry = () => setRefresh((value) => value + 1);
-  // A first connect that failed reconnects once the machine's link is back.
-  useReloadOnMachineReconnect(binding?.environmentId, retry, {
-    active: !snapshot && !!state.error,
-  });
+  const retrySession = () => {
+    if (!document.hidden) return retryRead.current?.();
+  };
   const loadHistory = () => reader.current?.loadHistory() ?? Promise.resolve();
+  const retryHistory = async () => {
+    if (!document.hidden) await loadHistory();
+  };
+  const readError = visible && valid ? state.error : undefined;
+  const { visibleError, pending } = useGracedFailure({
+    error: readError,
+    retry: retrySession,
+    scope: key,
+  });
+  const { visibleError: historyError, pending: historyPending } = useGracedFailure({
+    error:
+      visible && valid && snapshot?.history?.before !== undefined ? state.historyError : undefined,
+    retry: retryHistory,
+    scope: key,
+  });
+  useReloadOnMachineReconnect(binding?.environmentId, retrySession, {
+    active: readError != null && classifyFailureLifetime(readError) === "transient",
+  });
   const loadBlock = (id: string) => reader.current?.loadBlock(id) ?? Promise.resolve();
   return {
     session: {
@@ -270,13 +307,13 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
       hostBinding: binding,
       blocks: snapshot?.session.blocks ?? [],
       busy: snapshot?.status === "running",
-      historyLoading: !snapshot && (!valid || state.loading),
+      historyLoading: !snapshot && (!valid || state.loading || pending),
     } as Session,
-    error: valid ? state.error : undefined,
+    error: visibleError,
     retry,
     remoteHistoryHasMore: snapshot?.history?.before !== undefined,
-    remoteHistoryLoading: !!(valid && state.historyLoading),
-    remoteHistoryError: valid ? state.historyError : undefined,
+    remoteHistoryLoading: !!(valid && state.historyLoading) || historyPending,
+    remoteHistoryError: historyError,
     onLoadRemoteHistory: loadHistory,
     onLoadRemoteBlock: loadBlock,
   };

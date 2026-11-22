@@ -163,6 +163,17 @@ impl NativeServiceChannel {
         Self::connect_until(app, None)
     }
 
+    /// Idle durable-delivery maintenance on this channel, bounded by `budget`.
+    pub(crate) fn maintain_delivery(
+        self: &Arc<Self>,
+        budget: std::time::Duration,
+    ) -> Result<bool, String> {
+        if self.journal.is_none() {
+            return Ok(false);
+        }
+        delivery::maintain(self, Instant::now() + budget)
+    }
+
     /// Optional helpers (spawn tool grants, bridge metadata) bound the whole
     /// uncached connect, including its `environment.describe`, by `deadline`.
     pub(crate) fn connect_until(

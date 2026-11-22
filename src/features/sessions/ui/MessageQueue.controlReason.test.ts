@@ -19,7 +19,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("explains a Steer held for an unconfirmed delivery and keeps row action names unduplicated", async () => {
+it("replaces Steer on an unconfirmed delivery with an inline notice and keeps row action names unduplicated", async () => {
   const messages: QueuedMessage[] = [
     { id: "q1", text: "first", attachments: [], deliveryUnknown: true },
     { id: "q2", text: "second", attachments: [] },
@@ -28,12 +28,12 @@ it("explains a Steer held for an unconfirmed delivery and keeps row action names
     root.render(createElement(MessageQueue, { messages, canAttach: true, onSteer: () => true })),
   );
   const steer = [...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Steer"]')];
-  expect(steer).toHaveLength(2);
-  expect(steer[0].getAttribute("aria-disabled")).toBe("true");
-  expect(steer[0].getAttribute("aria-description")).toBe(
-    "Delivery is not confirmed. Automatic resend is held.",
+  // The unconfirmed head settles in its own inline "Send again" notice; only the next row can Steer.
+  expect(container.querySelector("[data-delivery-progress=unknown]")?.textContent).toContain(
+    "Send again",
   );
-  expect(steer[1].getAttribute("aria-disabled")).toBeNull();
+  expect(steer).toHaveLength(1);
+  expect(steer[0].getAttribute("aria-disabled")).toBeNull();
   for (const label of ["Reorder queued message", "Edit queued message"]) {
     for (const node of container.querySelectorAll(`button[aria-label="${label}"]`)) {
       expect(node.textContent).toBe("");

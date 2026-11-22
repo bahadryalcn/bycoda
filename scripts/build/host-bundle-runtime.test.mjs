@@ -76,8 +76,10 @@ test("bundled readonly session helper runs with no TypeScript loader or ambient 
     child.kill("SIGKILL");
   });
   let reply;
-  child.on("message", (value) => {
+  child.once("message", (value) => {
     reply = value;
+    // The bundled helper stays ready for another read until its owner disconnects.
+    child.disconnect();
   });
   const exit = new Promise((resolve, reject) => {
     child.once("exit", resolve);

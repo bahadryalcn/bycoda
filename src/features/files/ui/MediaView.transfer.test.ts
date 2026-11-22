@@ -6,12 +6,17 @@ import { MediaView } from "./MediaView";
 
 // Regression for #930: media shares the document/image transfer progress and gains its Cancel.
 
-const mocks = vi.hoisted(() => ({ prepare: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  prepare: vi.fn(),
+  info: vi.fn(async () => ({ size: 4, cachedPath: null as string | null })),
+}));
 vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (path: string) => `asset:${path}` }));
 vi.mock("../../../platform/tauri/fs", () => ({
   basename: (path: string) => path.split("/").at(-1),
   prepareLocalFile: mocks.prepare,
   preparedFileSize: vi.fn(async () => 1024),
+  remoteMediaInfo: mocks.info,
+  remoteMediaStreamUrl: vi.fn(async () => ({ url: "http://127.0.0.1:1/x/demo.mp4", size: 4 })),
   openPathWithDefaultApp: vi.fn(),
 }));
 
@@ -22,8 +27,10 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   mocks.prepare.mockReset();
+  localStorage.setItem("bycoda.remoteMediaMode", "download");
 });
 afterEach(() => {
+  localStorage.removeItem("bycoda.remoteMediaMode");
   act(() => root.unmount());
   container.remove();
   vi.restoreAllMocks();

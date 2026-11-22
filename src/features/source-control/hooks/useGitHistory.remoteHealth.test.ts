@@ -58,6 +58,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -135,4 +136,28 @@ it("loads no further history while the machine is unavailable", async () => {
   await act(async () => shown?.loadMore());
 
   expect(gitHistory).not.toHaveBeenCalled();
+});
+
+it("retains the base history while retrying an interrupted page read", async () => {
+  vi.useFakeTimers();
+  const commits = Array.from({ length: 200 }, (_, index) => ({ sha: `c${index}` }));
+  gitHistory
+    .mockResolvedValueOnce({ commits })
+    .mockRejectedValueOnce(new Error("RPC_WS_INTERRUPTED: Host connection was interrupted"))
+    .mockResolvedValueOnce({ commits: [{ sha: "next" }] });
+  let shown: ReturnType<typeof useGitHistory> | undefined;
+  const Probe = () => {
+    shown = useGitHistory(CWD, true, false);
+    return null;
+  };
+  await act(async () => root.render(createElement(Probe)));
+  await act(async () => shown?.loadMore());
+  expect(shown?.commits).toEqual(commits);
+  expect(shown?.loading).toBe(true);
+  expect(shown?.error).toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(2_000));
+  expect(gitHistory).toHaveBeenLastCalledWith(CWD, 200, false, 200);
+  expect(shown?.commits.at(-1)?.sha).toBe("next");
+  expect(shown?.loading).toBe(false);
+  expect(shown?.error).toBeNull();
 });

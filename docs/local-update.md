@@ -168,8 +168,10 @@ Build duration depends on the machine and inputs; no fixed completion time is gu
 
 ## Installation and recovery
 
-Each machine has separate hidden host and app helpers. The host waits for running
-sessions in its database; the app waits for its `in_flight_sessions` records.
+Each machine has separate hidden Host and app helpers. Both wait for local Host
+sessions and shells, including active subagents after the parent turn finishes.
+The app also waits for its desktop `in_flight_sessions`. The helpers recheck
+activity after preparing the backup and before closing the app or stopping the Host.
 A database read failure means wait/recovery, never zero active sessions.
 
 Windows helpers launch through the local current-user WMI broker so closing the

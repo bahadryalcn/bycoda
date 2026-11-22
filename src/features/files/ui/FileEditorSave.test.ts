@@ -9,6 +9,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FILE_EDITOR_AUTOSAVE_DELAY_MS, FileEditor } from "./FileEditor";
 import { invalidateWatchedFiles } from "../model/fileWatch";
 import { saveAutosave } from "../../settings/model/settings";
+import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
+import { registerFailurePolicy } from "../../../shared/ui/reportFailure";
+import { describeActionFailure } from "../../connections/public/transientFailure";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", async (original) => ({
@@ -22,6 +25,7 @@ let disk: string;
 const onDirtyChange = vi.fn();
 
 beforeEach(() => {
+  registerFailurePolicy(describeActionFailure);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const storage = new Storage();
   storage.setItem("bycoda.autosave", "0");
@@ -47,6 +51,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 async function render(active = true, path = "/repo/save.txt") {
@@ -336,6 +341,32 @@ it("keeps failed edits dirty and allows retry through the save action", async ()
   expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", false);
 });
 
+it.each([
+  { code: "RPC_WS_OVERLOAD", immediate: false, text: "This computer is busy right now." },
+  { code: "RPC_WS_INTERRUPTED", immediate: true, text: "Remote outcome is unknown." },
+])("preserves the draft and never replays a $code save", async ({ code, immediate, text }) => {
+  vi.useFakeTimers();
+  const view = await render();
+  act(() => view.dispatch({ changes: { from: 0, insert: "unsaved " } }));
+  const original = bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async (command, args) => {
+    if (command === "write_text_file") throw Object.assign(new Error(code), { code });
+    return original(command, args);
+  });
+  const writes = () =>
+    bridge.invoke.mock.calls.filter(([command]) => command === "write_text_file");
+  await act(async () => saveButton().click());
+  expect(writes()).toHaveLength(1);
+  if (!immediate) {
+    expect(container.textContent).not.toContain("Save failed");
+    await act(async () => vi.advanceTimersByTimeAsync(3_000));
+  }
+  expect(container.textContent).toContain(`Save failed: ${text}`);
+  expect(writes()).toHaveLength(1);
+  expect(view.state.doc.toString()).toBe("unsaved original\n");
+  expect(onDirtyChange).toHaveBeenLastCalledWith("/repo/save.txt", true);
+});
+
 it("updates Markdown preview from the edited buffer and saves while preview is open", async () => {
   const view = await render(true, "/repo/save.md");
   const modeButton = (text: string) =>
@@ -408,4 +439,42 @@ it("keeps a mixed draft and reports an imprecise diff without writing", async ()
   } finally {
     build.mockRestore();
   }
+});
+
+it("keeps the draft and offers reload or overwrite when a connected machine refuses a stale save", async () => {
+  // A fake Host with the real versioning contract: every write bumps the stamp.
+  let stamp = 1;
+  const writes: Array<string | undefined> = [];
+  setRemoteCommandRunner(async (command, args) => {
+    if (command === "read_text_file") return { text: disk, version: `v${stamp}` };
+    if (command === "write_text_file") {
+      const base = args.baseVersion as string | undefined;
+      writes.push(base);
+      if (base !== undefined && base !== `v${stamp}`)
+        throw new Error("FILE_CHANGED: The file changed on disk after it was opened.");
+      disk = args.content as string;
+      stamp += 1;
+      return { version: `v${stamp}` };
+    }
+    return [];
+  });
+  const path = "remote://env/repo/save.txt";
+  const view = await render(true, path);
+  act(() => view.dispatch({ changes: { from: 0, insert: "mine " } }));
+  disk = "agent edit\r\n";
+  stamp += 1;
+  await act(async () => saveButton().click());
+  expect(writes).toEqual(["v1"]);
+  expect(disk).toBe("agent edit\r\n");
+  expect(view.state.doc.toString()).toBe("mine original\n");
+  expect(onDirtyChange).toHaveBeenLastCalledWith(path, true);
+  expect(container.textContent).toContain("File changed on disk");
+  await act(async () => conflictAction("Overwrite disk version").click());
+  expect(writes).toEqual(["v1", undefined]);
+  expect(disk).toBe("mine original\r\n");
+  // The next save chains on the version the overwrite returned.
+  act(() => view.dispatch({ changes: { from: 0, insert: "more " } }));
+  await act(async () => saveButton().click());
+  expect(writes.at(-1)).toBe(`v${stamp - 1}`);
+  expect(disk).toBe("more mine original\r\n");
 });

@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  remoteMachineFor: vi.fn(),
+  loadRemoteCapabilities: vi.fn(),
+  remoteRequest: vi.fn(),
+  machineProjects: vi.fn(),
   githubRepo: vi.fn(),
   githubWorkItem: vi.fn(),
   listGithubWorkItems: vi.fn(),
@@ -10,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   azureDevOpsRepo: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("../../connections/public/connections", () => mocks);
+vi.mock("../../automations/public/hostMachines", () => mocks);
 vi.mock("./githubReadGate", () => ({ githubRead: mocks.invoke }));
 vi.mock("./githubRepositories", () => mocks);
 vi.mock("./githubTasks", () => mocks);
@@ -39,6 +45,34 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("provider mention search", () => {
+  it("binds remote GitHub search to the owning environment and project", async () => {
+    mocks.remoteMachineFor.mockResolvedValue({ id: "machine", environmentId: "env" });
+    mocks.loadRemoteCapabilities.mockResolvedValue(["workItems.github.v1"]);
+    mocks.machineProjects.mockResolvedValue([{ id: "project", cwd: "/home/me/app" }]);
+    mocks.remoteRequest.mockResolvedValue({
+      items: [{ kind: "pr", number: 123, repo: "owner/repo" }],
+      errors: [{ reason: "rate-limited", message: "Rate limited" }],
+    });
+    const cwd = "remote://env/home/me/app";
+    expect(await searchWorkItemMentions(cwd, ["github"], "#12")).toEqual([
+      expect.objectContaining({ provider: "github", projectPath: cwd, number: 123 }),
+    ]);
+    expect(mocks.remoteMachineFor).toHaveBeenCalledWith("env");
+    expect(mocks.remoteRequest).toHaveBeenCalledWith(
+      "machine",
+      "workItems.search",
+      { projectId: "project", query: "#12" },
+      false,
+      false,
+      "env",
+    );
+    expect(mocks.githubRepo).not.toHaveBeenCalled();
+    mocks.loadRemoteCapabilities.mockResolvedValue([]);
+    await expect(searchWorkItemMentions(cwd, ["github"], "login")).rejects.toMatchObject({
+      failure: "remote-host-unavailable",
+    });
+    expect(mocks.remoteRequest).toHaveBeenCalledTimes(1);
+  });
   it("sends all-assignee text search to each connected provider", async () => {
     await searchWorkItemMentions(
       "/repo",
@@ -119,8 +153,54 @@ describe("provider mention search", () => {
     mocks.requireHiddenJiraProjectIds.mockImplementation(() => {
       throw new Error("scope unavailable");
     });
-    expect(await searchWorkItemMentions("/repo", ["jira"], "login")).toEqual([]);
+    // An unreadable scope fails closed and says so instead of looking like "no match".
+    await expect(searchWorkItemMentions("/repo", ["jira"], "login")).rejects.toMatchObject({
+      failure: "provider-failed",
+      provider: "jira",
+    });
     expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it.each(["14", "owner/repo#14", "other/project#14"])(
+    "never sends a remote project's path to the local GitHub CLI for %s",
+    async (query) => {
+      await expect(
+        searchWorkItemMentions("remote://env/home/me/app", ["github"], query),
+      ).rejects.toMatchObject({ failure: "remote-host-unavailable", provider: "github" });
+      expect(mocks.githubRepo).not.toHaveBeenCalled();
+      expect(mocks.listGithubWorkItems).not.toHaveBeenCalled();
+      expect(mocks.githubWorkItem).not.toHaveBeenCalled();
+      expect(mocks.invoke).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps account-wide providers working for a remote project", async () => {
+    mocks.invoke.mockResolvedValue([{ id: "id", identifier: "ENG-9", number: 9, assignees: [] }]);
+    expect(
+      await searchWorkItemMentions("remote://env/home/me/app", ["linear", "github"], "login"),
+    ).toMatchObject([{ provider: "linear", identifier: "ENG-9" }]);
+  });
+
+  it("tells no match, an unresolvable repository and a provider error apart", async () => {
+    // No match: the provider answered with nothing.
+    expect(await searchWorkItemMentions("/repo", ["github"], "login")).toEqual([]);
+    expect(await searchWorkItemMentions("/repo", ["github"], "999")).toEqual([]);
+    // Unresolvable repository.
+    mocks.githubRepo.mockRejectedValue(new Error("no git remotes found"));
+    await expect(searchWorkItemMentions("/repo", ["github"], "login")).rejects.toMatchObject({
+      failure: "repository-unresolved",
+    });
+    mocks.githubRepo.mockResolvedValue("");
+    await expect(searchWorkItemMentions("/repo", ["github"], "login")).rejects.toMatchObject({
+      failure: "repository-unresolved",
+    });
+    // Provider error.
+    mocks.githubRepo.mockResolvedValue("owner/repo");
+    mocks.listGithubWorkItems.mockRejectedValue(new Error("gh: authentication required"));
+    await expect(searchWorkItemMentions("/repo", ["github"], "login")).rejects.toMatchObject({
+      failure: "provider-failed",
+      message: expect.stringContaining("authentication required"),
+    });
   });
 
   it("uses qualified repositories for text, batch and exact GitHub sources", async () => {

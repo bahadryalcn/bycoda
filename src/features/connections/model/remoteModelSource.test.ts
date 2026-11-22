@@ -30,3 +30,14 @@ it("reports only providers the Host listed accounts for as known", () => {
   expect(source.accountsKnown?.("claude")).toBe(true);
   expect(source.accountsKnown?.("codex")).toBe(false);
 });
+
+it("keeps the CLI profile usable when the Host provides no named accounts", () => {
+  const cliProfile = { id: "default", label: "Host default" };
+  const named = [{ id: "work", label: "Work" }];
+  const source = build({
+    models: {},
+    errors: {},
+    accounts: { claude: [cliProfile, ...named], codex: [cliProfile], grok: [] },
+  });
+  expect(source.accounts).toEqual({ claude: named, codex: [cliProfile], grok: [] });
+});

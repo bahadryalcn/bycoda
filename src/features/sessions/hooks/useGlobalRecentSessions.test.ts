@@ -26,11 +26,20 @@ let history: SessionSummary[] = [];
 let sessions: Session[] = [];
 let enabled = true;
 let allowed = new Set(["/visible"]);
+let remoteRows: SessionSummary[] = [];
+let freshRemoteProjects: string[] = [];
 let result: ReturnType<typeof useGlobalRecentSessions>;
 let renders = 0;
 function Probe() {
   renders++;
-  const current = useGlobalRecentSessions(history, sessions, enabled, allowed);
+  const current = useGlobalRecentSessions(
+    history,
+    sessions,
+    enabled,
+    allowed,
+    remoteRows,
+    freshRemoteProjects,
+  );
   useLayoutEffect(() => {
     result = current;
   });
@@ -53,6 +62,32 @@ afterEach(() => {
   history = [];
   sessions = [];
   allowed = new Set(["/visible"]);
+  remoteRows = [];
+  freshRemoteProjects = [];
+});
+
+it("uses fresh remote lists, including an empty one, and keeps the note for partial coverage", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const online = "remote://online/visible";
+  const offline = "remote://offline/visible";
+  allowed = new Set(["/visible", online, offline]);
+  history = [row, { ...row, cwd: online, id: "removed" }];
+  remoteRows = [{ ...row, cwd: offline, id: "cached" }];
+  freshRemoteProjects = [online];
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    expect(result.rows.map(({ id }) => id).sort()).toEqual(["a", "cached"]);
+    expect(result.remoteHistoryLimited).toBe(true);
+    freshRemoteProjects = [online, offline];
+    remoteRows = [{ ...row, cwd: offline, id: "live" }];
+    await act(async () => root.render(createElement(Probe)));
+    expect(result.rows.map(({ id }) => id).sort()).toEqual(["a", "live"]);
+    expect(result.remoteHistoryLimited).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
 });
 
 it("does not render the owner for unchanged live provider history on a tick", async () => {
@@ -506,6 +541,35 @@ it("reports a readable retry message after repeated snapshot changes", async () 
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(result.error).toBe("Recent sessions changed while loading. Retry shortly.");
     expect(result.loading).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("retries a five-second local Host restart without publishing a recent-session error", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const started = Date.now();
+  fetch.mockImplementation(async () => {
+    if (Date.now() - started < 5_000) throw new Error("Host database is closing.");
+    return { rows: [row], nextCursor: null };
+  });
+  const root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root.render(createElement(Probe)));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(result.loading).toBe(true);
+    expect(result.error).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(2_300));
+    expect(result.error).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(2_400));
+    expect(result.error).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(1_900));
+    expect(result.error).toBeNull();
+    expect(result.loading).toBe(false);
+    expect(result.rows).toEqual([row]);
+    expect(fetch).toHaveBeenCalledTimes(3);
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

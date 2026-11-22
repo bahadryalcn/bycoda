@@ -1,10 +1,12 @@
 import { useState, type ComponentProps } from "react";
+import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { buildGlobalRecentSessions } from "../../../src/features/sessions/model/globalRecentSessions";
 import { pathKey } from "../../../src/shared/lib/paths";
 import { LastSessionsRows } from "../../../src/app/shell/LastSessionsSection";
 import { Sidebar } from "../../../src/app/shell/Sidebar";
+import { remoteMachineFor } from "../../../src/features/connections/model/connections";
 import { rememberRemoteProject } from "../../../src/features/connections/model/remoteProjects";
 import { saveSessionFolders } from "../../../src/features/sessions/model/sessionFolders";
 import { setSessionLifecycleList } from "../../../src/features/sessions/model/sessionLifecycleClient";
@@ -25,10 +27,106 @@ import { LiveAgentsPreview } from "../../../src/features/sessions/ui/LiveAgentsP
 import type { SessionWait } from "../../../src/features/sessions/model/sessionWait";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import { languageReady } from "../../../src/shared/i18n";
+import type { SessionLifecycleView } from "../../../src/features/sessions/model/sessionLifecycle";
 import "./session-row-layout.css";
 
 // Isolated browser-local history and preferences. No native writes or provider calls.
 const params = new URLSearchParams(location.search);
+if (params.has("remote-settle") || params.has("local-bulk-settle")) {
+  mockWindows("main");
+  const local = params.has("local-bulk-settle");
+  const machineId = local ? "fixture-local-host" : "office";
+  const remoteSessions = [
+    { id: "office-session", title: "Remote project conversation" },
+    ...(params.has("bulk")
+      ? [
+          { id: "office-second", title: "Second remote conversation" },
+          { id: "office-third", title: "Unselected remote conversation" },
+        ]
+      : []),
+    ...Array.from({ length: params.has("bulk-large") ? 257 : 0 }, (_, index) => ({
+      id: `office-bulk-${index}`,
+      title: `Remote conversation ${index + 2}`,
+    })),
+  ];
+  const lifecycle = new Map<string, SessionLifecycleView>();
+  mockIPC(
+    (command, args) => {
+      if (command === "local_host_connect" && local) return { id: machineId };
+      if (command === "remote_machines") {
+        return [
+          {
+            id: machineId,
+            environmentId: local ? "fixture-local" : "fixture-office",
+            name: local ? "This computer (local sync)" : "Office",
+            endpoint: local ? "http://127.0.0.1:12345" : "http://office.invalid",
+          },
+        ];
+      }
+      if (command !== "remote_request" || args.machineId !== machineId) return null;
+      if (args.method === "environment.describe") {
+        return {
+          protocolVersion: 1,
+          environmentId: "fixture-office",
+          name: "Office",
+          providers: [],
+          capabilities: ["sessions.lifecycle.v2", "workspace.run"],
+        };
+      }
+      if (args.method === "sessions.list") {
+        return remoteSessions.map((row, index) => ({
+          ...row,
+          projectId: "fixture-project",
+          revision: 1,
+          status: "idle",
+          harness: "codex",
+          updatedAt: Date.now() - index * 1000,
+        }));
+      }
+      if (args.method === "sessions.lifecycle.list") {
+        return {
+          records: [...lifecycle.values()],
+          autoSettle: { afterDays: 3 },
+        };
+      }
+      if (args.method === "sessions.lifecycle.settle") {
+        const { sessionId } = args.params as { sessionId: string };
+        const view: SessionLifecycleView = {
+          sessionId,
+          state: "settled",
+          settledAt: Date.now(),
+          participants: [],
+        };
+        lifecycle.set(sessionId, view);
+        return view;
+      }
+      if (args.method === "sessions.lifecycle.unsettle") {
+        const { sessionId } = args.params as { sessionId: string };
+        lifecycle.delete(sessionId);
+        return { sessionId, state: "active", participants: [] };
+      }
+      return null;
+    },
+    { shouldMockEvents: true },
+  );
+  await import("../../../src/features/connections/model/remoteCommands");
+  await remoteMachineFor(local ? "fixture-local" : "fixture-office");
+}
+if (params.has("global-settle")) {
+  mockIPC((command, args) => {
+    if (command === "local_host_connect") return { id: "fixture-local-host" };
+    if (
+      command === "remote_request" &&
+      args.machineId === "fixture-local-host" &&
+      args.method === "sessions.lifecycle.settle"
+    ) {
+      const { sessionId } = args.params as { sessionId: string };
+      return { sessionId, state: "settled", settledAt: Date.now(), participants: [] };
+    }
+    if (command === "remote_machines") return [];
+    return null;
+  });
+}
 const cwd = params.has("remote-header")
   ? rememberRemoteProject("fixture-office", {
       id: "fixture-project",
@@ -289,6 +387,7 @@ function Fixture() {
           compactProjectRail={!params.has("no-rail")}
           titleBarAbove
           sessions={history.filter((row) => row.cwd === projectCwd)}
+          busyProjectPaths={params.has("project-tooltip") ? [cwd] : undefined}
           busySessionIds={new Set(params.has("statuses") ? ["status-working"] : ["row-working"])}
           sessionWaits={params.has("statuses") ? statusWaits : undefined}
           unseenFinishedIds={params.has("statuses") ? new Set(["status-done"]) : undefined}

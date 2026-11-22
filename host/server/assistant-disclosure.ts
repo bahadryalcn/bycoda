@@ -259,6 +259,10 @@ export function createAssistantDisclosureRuntime(
     );
   };
   let taskNotificationReadyUntil = 0;
+  // A closed Room refuses every tick the same way, and each refusal is a durable desktop
+  // delivery. Ask again only after a backoff that doubles up to two minutes.
+  let roomClosedUntil = 0;
+  let roomClosedBackoff = 0;
   const withNativeObservationScope = async <T>(
     threadId: string,
     requestId: string,
@@ -430,7 +434,9 @@ export function createAssistantDisclosureRuntime(
   dependencies.assistantPorts.pollObservedTasks = async (projectIds, accept, active) => {
     const room = await dependencies.assistant.globalRoomBinding();
     if (!room) throw new Error("Assistant global Room source is unavailable.");
-    let incomplete = false;
+    if (monotonicNow() < roomClosedUntil) throw new Error(ROOM_SOURCE_CLOSED);
+    let incomplete = false,
+      closed = false;
     for (const projectId of new Set(projectIds)) {
       const authorized = async () =>
         active() &&
@@ -571,9 +577,14 @@ export function createAssistantDisclosureRuntime(
         incomplete = true;
         // Every project needs the same closed Room; asking again per project only adds
         // desktop round trips and durable delivery rows on each idle tick.
-        if (error instanceof Error && error.message === ROOM_SOURCE_CLOSED) break;
+        if (error instanceof Error && error.message === ROOM_SOURCE_CLOSED) {
+          closed = true;
+          break;
+        }
       }
     }
+    roomClosedBackoff = closed ? Math.min(Math.max(roomClosedBackoff * 2, 15_000), 120_000) : 0;
+    roomClosedUntil = closed ? monotonicNow() + roomClosedBackoff : 0;
     if (incomplete)
       throw new Error("Some task observation sources were unavailable or need resnapshot.");
   };

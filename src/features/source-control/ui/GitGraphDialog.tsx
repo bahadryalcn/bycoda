@@ -24,6 +24,7 @@ export function GitGraphDialog({ title, toolbar, onClose, children, expandable =
   return (
     <Modal
       padding="none"
+      surface="workspace-panel"
       title={title}
       onClose={onClose}
       size={expandable ? "full" : "xl"}

@@ -1,6 +1,9 @@
 import { registerHooks } from "node:module";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
+process.once("disconnect", () => process.exit(0));
+
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier.startsWith(".") && context.parentURL) {
@@ -16,15 +19,17 @@ registerHooks({
 const { DesktopSessions } = await import("./desktop/desktopSessions.ts");
 const { createHostNotesDatabaseFactory } = await import("./host-notes-admission.ts");
 const { SessionReadError } = await import("./domains/sessions/read-errors.ts");
-let admitted = false;
-process.on("message", ({ id, request, comparison }) => {
-  if (admitted) process.exit(1);
-  admitted = true;
+const { resetProjectPathCache } = await import("./desktop/project-path.ts");
+process.on("message", (message) => {
+  if (!message || typeof message !== "object" || typeof message.id !== "string") process.exit(1);
+  const { id, request, comparison } = message;
+  // The helper outlives jobs; a cwd check must never trust an earlier job's junction mapping.
+  resetProjectPathCache();
   let value, error, errorKind;
-  let desktop, db;
-  const factory = createHostNotesDatabaseFactory(comparison);
+  let desktop, db, factory, retire;
   try {
-    if (typeof id !== "string" || !request || typeof request.sessionId !== "string")
+    factory = createHostNotesDatabaseFactory(comparison);
+    if (!request || typeof request.sessionId !== "string")
       throw new Error("Invalid session read identity.");
     if (request.kind === "desktop") {
       if (!Array.isArray(request.paths) || request.paths.some((path) => typeof path !== "string"))
@@ -37,7 +42,16 @@ process.on("message", ({ id, request, comparison }) => {
         (path, options) => {
           if (!options.readOnly) throw new Error("Session helper cannot open a writer.");
           const connection = factory.open(path, options);
-          connection.exec("PRAGMA query_only=ON; BEGIN");
+          try {
+            connection.exec("PRAGMA query_only=ON; BEGIN");
+          } catch (cause) {
+            try {
+              connection.close();
+            } catch {
+              /* the factory reports an unclosed connection and the job retires the helper */
+            }
+            throw cause;
+          }
           const close = connection.close.bind(connection);
           connection.close = () => {
             if (connection.isTransaction) connection.exec("ROLLBACK");
@@ -52,8 +66,7 @@ process.on("message", ({ id, request, comparison }) => {
           request.projectId,
           request.expectedProjectCwd,
         );
-      // One child for both reads: each read starts a process, and that start blocks the
-      // Host event loop. Both reads share this helper's read transaction.
+      // Both reads share this job's read transaction.
       else if (request.method === "snapshotStamp") {
         const record = desktop.readSnapshotRecord(
           request.sessionId,
@@ -64,7 +77,6 @@ process.on("message", ({ id, request, comparison }) => {
       } else if (request.method === "metadata")
         value = desktop.readMetadataRecord(request.sessionId, true);
       else throw new Error("Unknown readonly desktop operation.");
-      desktop.releaseReadHandles();
     } else if (request.kind === "host") {
       const path = realpathSync(request.path);
       const before = statSync(path);
@@ -115,8 +127,6 @@ process.on("message", ({ id, request, comparison }) => {
       )
         throw new Error("Host session database physical source changed.");
     } else throw new Error("Unknown readonly session operation.");
-    if (!factory.connectionsClosed() || factory.closeFault())
-      throw new Error("Session read connection close was not confirmed.");
     if (Buffer.byteLength(JSON.stringify(value) ?? "null") > 32 * 1024 * 1024)
       throw new SessionReadError("snapshot-budget");
   } catch (cause) {
@@ -128,9 +138,11 @@ process.on("message", ({ id, request, comparison }) => {
       db?.close();
       desktop?.releaseReadHandles();
     } catch {
-      error = "Session read close was not confirmed.";
-      errorKind = undefined;
+      retire = true;
     }
+    if (factory && (!factory.connectionsClosed() || factory.closeFault())) retire = true;
   }
-  process.send?.({ id, value, error, errorKind }, () => process.exit(error ? 1 : 0));
+  process.send?.(retire ? { id, retire } : { id, value, error, errorKind }, (sendError) => {
+    if (sendError) process.exit(1);
+  });
 });

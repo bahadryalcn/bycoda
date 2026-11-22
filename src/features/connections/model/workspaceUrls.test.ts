@@ -1,16 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { invoke, openUrl, featureHost, remoteRequest, openHostToolsWindow } = vi.hoisted(() => ({
-  invoke: vi.fn(),
-  openUrl: vi.fn(),
-  featureHost: vi.fn(),
-  remoteRequest: vi.fn(),
-  openHostToolsWindow: vi.fn(),
-}));
+const { invoke, openUrl, featureHost, remoteRequest, remoteSessionFor, openHostToolsWindow } =
+  vi.hoisted(() => ({
+    invoke: vi.fn(),
+    openUrl: vi.fn(),
+    featureHost: vi.fn(),
+    remoteRequest: vi.fn(),
+    remoteSessionFor: vi.fn(),
+    openHostToolsWindow: vi.fn(),
+  }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
 vi.mock("./hostFeatureClient", () => ({ featureHost }));
-vi.mock("./connections", () => ({ remoteRequest }));
+vi.mock("./connections", () => ({ remoteRequest, remoteSessionFor }));
 vi.mock("../../host-tools/ToolsWorkspace", () => ({ openHostToolsWindow }));
 import { accessibleDevelopmentUrl, isHostDevelopmentUrl, openWorkspaceUrl } from "./workspaceUrls";
 
@@ -35,6 +37,7 @@ beforeEach(() => {
     projectId: "project",
   });
   remoteRequest.mockResolvedValue({ status: "ok", servers: [server] });
+  remoteSessionFor.mockReturnValue("host-session");
   invoke.mockResolvedValue("http://127.0.0.1:49123/nested?x=1#here");
   openUrl.mockResolvedValue(undefined);
 });
@@ -54,8 +57,75 @@ describe("workspace development URLs", () => {
     expect(isHostDevelopmentUrl(`http://${host}:5173/`)).toBe(true);
   });
 
-  it("opens remote loopback through the exact owning machine and preserves the destination", async () => {
-    await openWorkspaceUrl(cwd, "http://localhost:5173/nested?x=1#here");
+  it.each([
+    "http://localhost:5173/nested?x=1#here",
+    "http://10.0.0.8:3000/",
+    "http://[::1]:5173/",
+    "https://localhost:5173/nested",
+  ])("opens remote %s in the owning Host Browser without discovery", async (url) => {
+    await openWorkspaceUrl(cwd, url, "composer-session");
+    expect(featureHost).toHaveBeenCalledWith(cwd, "browser.shared");
+    expect(featureHost).not.toHaveBeenCalledWith(cwd, "dev.servers.private-access");
+    expect(remoteRequest).not.toHaveBeenCalled();
+    expect(openHostToolsWindow).toHaveBeenCalledTimes(1);
+    expect(openHostToolsWindow).toHaveBeenCalledWith({
+      cwd,
+      sessionId: "host-session",
+      composerSessionId: "composer-session",
+      title: new URL(url).host,
+      initialTab: "browser",
+      initialMachine: "project",
+      initialUrl: url,
+    });
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("opens remote links without an origin session as a Host Browser request", async () => {
+    await openWorkspaceUrl(cwd, "http://localhost:5173/");
+    expect(openHostToolsWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "", initialMachine: "project" }),
+    );
+  });
+
+  it.each([
+    ["0.0.0.0", "127.0.0.1"],
+    ["[::]", "[::1]"],
+  ])("opens remote listen address %s on Host loopback", async (address, loopback) => {
+    await openWorkspaceUrl(cwd, `http://${address}:5173/patients?active#today`, "composer-session");
+    expect(openHostToolsWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ initialUrl: `http://${loopback}:5173/patients?active#today` }),
+    );
+  });
+
+  it("requires the originating conversation's Host binding for remote chat links", async () => {
+    remoteSessionFor.mockReturnValueOnce(undefined);
+    await expect(
+      openWorkspaceUrl(cwd, "http://localhost:5173/", "composer-session"),
+    ).rejects.toThrow("Open a session on this Host before using project tools.");
+    expect(openHostToolsWindow).not.toHaveBeenCalled();
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects a binding change during Host discovery", async () => {
+    remoteSessionFor.mockReturnValueOnce("host-session").mockReturnValueOnce("another-session");
+    await expect(
+      openWorkspaceUrl(cwd, "http://localhost:5173/", "composer-session"),
+    ).rejects.toThrow("Open a session on this Host before using project tools.");
+    expect(openHostToolsWindow).not.toHaveBeenCalled();
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("opens local development links through the local system browser bridge", async () => {
+    await openWorkspaceUrl("C:\\app", "http://localhost:5173/page", "session");
+    expect(openUrl).toHaveBeenCalledWith("http://localhost:5173/page");
+    expect(openHostToolsWindow).not.toHaveBeenCalled();
+    expect(featureHost).not.toHaveBeenCalled();
+  });
+
+  it("opens discovered remote endpoints through the exact owning machine bridge", async () => {
+    const url = await accessibleDevelopmentUrl(cwd, "http://localhost:5173/nested?x=1#here");
+    expect(url).toBe("http://127.0.0.1:49123/nested?x=1#here");
     expect(featureHost).toHaveBeenCalledWith(cwd, "dev.servers.private-access");
     expect(remoteRequest).toHaveBeenCalledWith("mac", "devServers.list", { projectId: "project" });
     expect(invoke).toHaveBeenCalledWith("remote_dev_server_url", {
@@ -68,7 +138,6 @@ describe("workspace development URLs", () => {
       address: "0.0.0.0",
       url: "http://localhost:5173/nested?x=1#here",
     });
-    expect(openUrl).toHaveBeenCalledWith("http://127.0.0.1:49123/nested?x=1#here");
   });
 
   it("never opens a local fallback when the owning computer is disconnected", async () => {
@@ -124,8 +193,11 @@ describe("workspace development URLs", () => {
 
   it("routes a fully qualified localhost name through the owning host", async () => {
     await openWorkspaceUrl(cwd, "http://localhost.:5173/nested?x=1#here");
-    expect(featureHost).toHaveBeenCalledWith(cwd, "dev.servers.private-access");
-    expect(openUrl).toHaveBeenCalledWith("http://127.0.0.1:49123/nested?x=1#here");
+    expect(featureHost).toHaveBeenCalledWith(cwd, "browser.shared");
+    expect(openHostToolsWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ initialUrl: "http://localhost.:5173/nested?x=1#here" }),
+    );
+    expect(openUrl).not.toHaveBeenCalled();
   });
 
   it.each(["http", "https"])(
@@ -155,16 +227,11 @@ describe("workspace development URLs", () => {
     );
   });
 
-  it("opens remote HTTPS in the owning host's browser preview", async () => {
-    await openWorkspaceUrl(cwd, "https://localhost:5173/nested");
-    expect(featureHost).toHaveBeenCalledWith(cwd, "browser.shared");
-    expect(openHostToolsWindow).toHaveBeenCalledWith({
-      cwd,
-      sessionId: "",
-      title: "localhost:5173",
-      initialTab: "browser",
-      initialUrl: "https://localhost:5173/nested",
-    });
+  it("does not open a local fallback when the owning Host browser fails", async () => {
+    openHostToolsWindow.mockRejectedValue(new Error("Browser setup required"));
+    await expect(openWorkspaceUrl(cwd, "http://localhost:5173", "origin")).rejects.toThrow(
+      "Browser setup required",
+    );
     expect(openUrl).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
   });

@@ -1,4 +1,3 @@
-import { errorText } from "../../../shared/lib/errors";
 import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import {
@@ -10,6 +9,7 @@ import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { remotePollDue, reportRemoteLoad } from "../../connections/public/remoteHealth";
 import { useMachineAvailability } from "../../connections/public/machineAvailability";
+import { useGracedFailure } from "../../connections/public/transientFailure";
 import { sameConflicts } from "../model/conflictSection";
 import { gitPanelRuntime } from "../model/gitPanelState";
 import {
@@ -61,10 +61,11 @@ export function useDiffIndex(
   const enabled = wanted && available;
   const [index, setIndex] = useState<GitDiffIndex | null>(() => peekDiffIndex(cwd));
   const [nonce, setNonce] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ cwd: string; cause: unknown } | null>(null);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(enabled);
   const handledRefresh = useRef({ cwd, nonce: 0 });
+  const retryRun = useRef<(() => Promise<void>) | null>(null);
   const failedRead = useRef<{ cwd: string; at: number } | null>(null);
   const indexRef = useRef(index);
   useLayoutEffect(() => {
@@ -133,7 +134,7 @@ export function useDiffIndex(
         });
         if (cancelled || holdRef.current) return;
         failedRead.current = null;
-        setError(null);
+        setFailure(null);
         if (remote) reportRemoteLoad(cwd, "changes");
         const prev = indexRef.current;
         const announced = announcedRef.current;
@@ -169,11 +170,8 @@ export function useDiffIndex(
       } catch (error) {
         if (cancelled) return;
         failedRead.current = { cwd, at: Date.now() };
-        if (remote) {
-          reportRemoteLoad(cwd, "changes", error);
-        } else {
-          setError(errorText(error));
-        }
+        setFailure({ cwd, cause: error });
+        if (remote) reportRemoteLoad(cwd, "changes", error);
       } finally {
         if (!cancelled) setLoading(false);
         inFlight = false;
@@ -184,6 +182,7 @@ export function useDiffIndex(
       }
     };
 
+    retryRun.current = () => load(true);
     const explicitRefresh =
       handledRefresh.current.cwd === cwd && handledRefresh.current.nonce !== nonce;
     handledRefresh.current = { cwd, nonce };
@@ -229,6 +228,7 @@ export function useDiffIndex(
     );
     return () => {
       cancelled = true;
+      retryRun.current = null;
       pane?.removeEventListener("focusin", onPanelFocus);
       pane?.removeEventListener("pointerdown", onPanelInteraction);
       window.clearInterval(timer);
@@ -239,7 +239,22 @@ export function useDiffIndex(
     };
   }, [cwd, enabled, available, nonce, remote, polling, panel]);
 
-  return { index, reload, showOptimistic, error, loading, checking: enabled && checking };
+  const { visibleError, pending } = useGracedFailure({
+    error: enabled && failure?.cwd === cwd ? failure.cause : undefined,
+    retry: () => {
+      if (!document.hidden && !holdRef.current && !gitPanelRuntime(cwd).state.busy)
+        return retryRun.current?.();
+    },
+    scope: cwd,
+  });
+  return {
+    index,
+    reload,
+    showOptimistic,
+    error: visibleError ?? null,
+    loading: loading || (pending && !index),
+    checking: enabled && checking,
+  };
 }
 
 /** Whether HEAD, its branch and its upstream counts are unchanged. */

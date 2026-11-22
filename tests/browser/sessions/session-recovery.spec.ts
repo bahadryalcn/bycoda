@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["dark", "light"]) {
-  test(`rail header keeps search and recovery readable in ${theme}`, async ({ page }) => {
+  test(`rail keeps search and footer recovery readable in ${theme}`, async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.clear();
       localStorage.setItem("bycoda.language", "en");
@@ -29,10 +29,7 @@ for (const theme of ["dark", "light"]) {
         (element as HTMLElement).style.width = `${width}px`;
       }, width);
       await expect(search).toBeVisible();
-      // Exactly one count: the corner badge on a label-less rail, else the plain section count.
-      await expect(
-        recovery.locator(".recovery-rail-count:visible, .recovery-rail-number:visible"),
-      ).toHaveCount(1);
+      await expect(recovery.locator('[data-variant="count"]')).toHaveText("99+");
       const bounds = await rail.boundingBox();
       for (const control of [search, recovery]) {
         const box = (await control.boundingBox())!;
@@ -53,11 +50,21 @@ for (const theme of ["dark", "light"]) {
         .getByRole("button", { name: "Settings", exact: true });
       await expect(settings).toBeVisible();
       await expect(settings).toBeInViewport();
+      const ledgerBox = (await rail.locator(".bycoda-project-ledger").boundingBox())!;
+      const recoveryBox = (await recovery.boundingBox())!;
+      expect(recoveryBox.y).toBeGreaterThanOrEqual(ledgerBox.y + ledgerBox.height);
+      const settingsBox = (await settings.boundingBox())!;
+      if (width > 140) {
+        expect(recoveryBox.x + recoveryBox.width).toBeLessThanOrEqual(settingsBox.x);
+        expect(recoveryBox.y).toBe(settingsBox.y);
+      } else {
+        expect(recoveryBox.y + recoveryBox.height).toBeLessThanOrEqual(settingsBox.y);
+      }
       await settings.focus();
       await page.keyboard.press("Enter");
       await expect(page.getByTestId("settings-destination")).toHaveText("general");
       await page.screenshot({
-        path: `temp/verification/2026-10-20-rail-header/${theme}-${width}.png`,
+        path: `temp/verification/recovery-footer-icon/${theme}-${width}.png`,
       });
     }
     // A wide footer keeps its controls inline; only a footer under 640px folds them into "More".
@@ -142,9 +149,7 @@ test("cleanup updates the list and survives closing the dialog", async ({ page }
   await expect(dialog.getByRole("checkbox")).toHaveCount(0);
 });
 
-test("compact navigation keeps tabs reachable and recovery count above its icon", async ({
-  page,
-}) => {
+test("compact navigation keeps tabs and the footer recovery icon reachable", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.clear();
     localStorage.setItem("bycoda.language", "en");
@@ -222,11 +227,15 @@ test("compact navigation keeps tabs reachable and recovery count above its icon"
   await pane.evaluate((element) => {
     (element as HTMLElement).style.width = "220px";
   });
-  const recovery = page.locator("[data-compact-project-rail] .recovery-rail-control");
+  const recovery = page.locator("[data-compact-project-rail] [data-recovery-control]");
   await expect(recovery).toHaveAccessibleName("Recovered sessions (40)");
-  const icon = await recovery.locator("svg").boundingBox();
-  const badge = await recovery.locator(".recovery-rail-count").boundingBox();
-  expect(badge!.y).toBeLessThan(icon!.y);
+  const compactSettings = page.locator("[data-compact-project-rail]").getByRole("button", {
+    name: "Settings",
+    exact: true,
+  });
+  expect((await recovery.boundingBox())!.y).toBeLessThan((await compactSettings.boundingBox())!.y);
+  await expect(recovery).toBeInViewport();
+  await expect(recovery.locator('[data-variant="count"]')).toHaveText("40");
   await page.screenshot({
     path: "temp/verification/2026-10-13-session-recovery/compact-sidebar.png",
   });

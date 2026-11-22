@@ -1,5 +1,8 @@
 import { hostname } from "node:os";
-import { HOST_PROTOCOL_VERSION } from "../../src/features/connections/model/protocol";
+import {
+  HOST_PROTOCOL_VERSION,
+  providerSteerCapability,
+} from "../../src/features/connections/model/protocol";
 import { createEnvironmentService } from "../domains/environment/service";
 import { reachableAddresses } from "../mobile/mobile-lan";
 import { defaultRouteAddress } from "../mobile/mobile-network";
@@ -10,6 +13,8 @@ import { WORKSPACE_CAPABILITIES } from "../workspaces/workspace-contracts";
 import type { ServerBindings } from "./bindings";
 import { GROUP_LOCK_REMOTE_CAPABILITY } from "../../src/shared/model/host-contracts/group-lock";
 import { DECISION_INSTALL_CAPABILITY } from "../../src/shared/model/host-contracts/decision-models";
+import { DELEGATION_MESSAGES_STREAM } from "../../src/shared/model/host-contracts/delegation";
+import { GITHUB_WORK_ITEMS } from "../../src/shared/model/host-contracts/work-items";
 export function createEnvironmentRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -152,6 +157,7 @@ export function createEnvironmentRuntime(
         "sessions.longPoll",
         "sessions.lazyHistory",
         "sessions.block",
+        "sessions.inlineVisual",
         "sessions.digests",
         "machine.changes",
         "machine.changes.inlineSync",
@@ -159,6 +165,9 @@ export function createEnvironmentRuntime(
         "commands.status",
         "sessions.harnessSwitch",
         "sessions.steer",
+        ...dependencies.providers
+          .filter((id) => dependencies.engine.supportsSteer(id))
+          .map(providerSteerCapability),
         "sessions.executionOwner",
         "sessions.queue.claimDispatch",
         "sessions.rewind",
@@ -184,6 +193,7 @@ export function createEnvironmentRuntime(
         "models.list",
         "models.providerAccounts.v1",
         "models.catalog.stream.v1",
+        DELEGATION_MESSAGES_STREAM,
         "sessions.configure.providerAccount.v1",
         "crews.v1",
         "crews.tasks.v1",
@@ -205,6 +215,7 @@ export function createEnvironmentRuntime(
         "git.createBranch",
         "git.worktrees",
         "git.worktreeCreate",
+        "git.worktreeRemoval.v1",
         "files.read",
         "files.list",
         "files.index",
@@ -278,6 +289,7 @@ export function createEnvironmentRuntime(
         "preferences.desktop.v1",
         "worktrees.removal.desktop.v1",
         "git.selective.review",
+        GITHUB_WORK_ITEMS,
         "usage.sessions.read",
         "usage.limits.read",
         "usage.cost.read",
@@ -321,6 +333,7 @@ export function createEnvironmentRuntime(
         "voice.tools.v1",
         "voice.local.v1",
         "voice.cloud.v1",
+        "voice.transcription-models.v1",
         "voice.local.setup.v1",
         "social.v1",
         "social.policy.reviewed.v1",

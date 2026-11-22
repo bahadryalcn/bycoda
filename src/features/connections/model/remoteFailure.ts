@@ -40,6 +40,16 @@ const UNSUPPORTED = /isn.t available for projects on another machine/i;
  */
 const TEMPORARY =
   /\[RPC_TIMEOUT\]|\[RPC_PROTOCOL\]|^Invalid host response$|Host read capacity is busy|Host pending (read request|control queue) limit reached|Session read owner changed; retry/;
+const HOST_RESTART_CODE = /^(?:HOST_STOPPING|HOST_DB_CLOSING)$/;
+const HOST_RESTART_TEXT = /^(?:Host is stopping|Host database is (?:closing|closed))\.?$/i;
+const TRANSIENT_CODE =
+  /^(?:ABORT_ERR|REQUEST_CANCELLED|RPC_CANCELLED|GIT_START_TIMEOUT|HOST_RPC_DEADLINE|RPC_TIMEOUT|RPC_PROTOCOL|RPC_WS_(?:DEADLINE|OVERLOAD|DETACHED|CANCELLED|RETRYABLE))$/;
+const TRANSIENT_TEXT =
+  /^(?:Request cancell?ed|Command timed out before launch|AbortError(?::.*)?|Host did not answer .+ within \d+ s)\.?$/i;
+const PERMANENT_CODE =
+  /^(?:EACCES|EPERM|ENOENT|FILE_CHANGED|FORBIDDEN|NOT_FOUND|INVALID_(?:INPUT|PARAMS|ARGUMENT)|RPC_(?:AUTHORIZATION|VALIDATION|NOT_FOUND)|RPC_WS_(?:VALIDATION|RESOURCE_RETIRED))$/;
+const PERMANENT_TEXT =
+  /^(?:permission denied|access denied|unauthori[sz]ed|forbidden|invalid (?:input|argument|params?|request)|validation failed|(?:[\w -]+ )?not found|no such file)(?:\b|$)/i;
 
 export function remoteErrorText(error: unknown): string {
   if (typeof error === "string") return error;
@@ -57,7 +67,35 @@ export function isHostAuthorizationRefusal(error: unknown): boolean {
 export function nativeConnectionFailureCode(error: unknown): string | undefined {
   const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
   if (typeof code === "string" && /^RPC_WS_[A-Z_]+$/.test(code)) return code;
-  return remoteErrorText(error).match(/^(?:Error: )?(RPC_WS_[A-Z_]+):/)?.[1];
+  const message = remoteErrorText(error).replace(
+    /^(?:Error: )?(?:Host rejected request:\s*)?/i,
+    "",
+  );
+  return message
+    .match(/^(?:\[(RPC_WS_[A-Z_]+)\]|(RPC_WS_[A-Z_]+):)/)
+    ?.slice(1)
+    .find(Boolean);
+}
+
+function failureCode(error: unknown, message: string): string {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+  return typeof code === "string"
+    ? code
+    : (message
+        .match(/^(?:\[([A-Z][A-Z_]+)\]|([A-Z][A-Z_]+):)/)
+        ?.slice(1)
+        .find(Boolean) ?? "");
+}
+
+export function isHostRestartFailure(error: unknown): boolean {
+  const message = remoteErrorText(error).replace(
+    /^(?:Error: )?(?:Host rejected request:\s*)?/i,
+    "",
+  );
+  return (
+    HOST_RESTART_CODE.test(failureCode(error, message)) ||
+    HOST_RESTART_TEXT.test(message.replace(/^RPC_WS_INTERRUPTED:\s*/, ""))
+  );
 }
 
 /** Sorts a rejected remote request into what the user can do about it. The
@@ -67,7 +105,7 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
   // Checkpoint review errors carry a typed marker for programs; people never need to read it.
   const message =
     text
-      .replace(/^Host rejected request:\s*/i, "")
+      .replace(/^(?:Error: )?(?:Host rejected request:\s*)?/i, "")
       .replace(/\s*\[CHECKPOINT_(?:RECORDING|FAILED)\]/g, "")
       .trim() || text;
   const code = nativeConnectionFailureCode(error);
@@ -75,14 +113,6 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
     return { kind: "disabled", message };
   if (code === "RPC_WS_IDENTITY") return { kind: "identity", message };
   if (code === "RPC_WS_UNSUPPORTED") return { kind: "outdated", message };
-  // CANCELLED never reached the Host (its window or issuer was replaced mid-reconnect).
-  if (
-    code &&
-    ["RPC_WS_DEADLINE", "RPC_WS_OVERLOAD", "RPC_WS_DETACHED", "RPC_WS_CANCELLED"].includes(code)
-  )
-    return { kind: "temporary", message };
-  // A local bounded wait (e.g. Host discovery) elapsed; the same request can be sent again.
-  if (error instanceof TimeoutError) return { kind: "temporary", message };
   if (
     code &&
     [
@@ -101,17 +131,36 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
     )
   )
     return { kind: "identity", message };
+  if (OUTDATED.test(text)) return { kind: "outdated", message };
+  if (UNSUPPORTED.test(text)) return { kind: "unsupported", message };
+  const operationCode = failureCode(error, message);
+  const operationText = message.replace(
+    /^(?:(?:RPC_WS_REMOTE|ETIMEDOUT):\s*|\[RPC_WS_RETRYABLE\]\s*)/,
+    "",
+  );
+  if (PERMANENT_CODE.test(operationCode) || PERMANENT_TEXT.test(operationText))
+    return { kind: "other", message };
+  if (/^RPC_(?:HOST_UNAVAILABLE|CONNECTION_INTERRUPTED|DNS|PROXY)$/.test(operationCode))
+    return { kind: "unreachable", message };
+  if (
+    isHostRestartFailure(error) ||
+    TRANSIENT_CODE.test(operationCode) ||
+    TRANSIENT_TEXT.test(operationText) ||
+    error instanceof TimeoutError ||
+    (error !== null &&
+      typeof error === "object" &&
+      (("name" in error && error.name === "AbortError") ||
+        ("retryable" in error && error.retryable === true)))
+  )
+    return { kind: "temporary", message };
   // A Host rejection proves transport worked. Its operation may mention SSH or
   // another service being unreachable; that is not this machine's connection.
-  if (/^Host rejected request:/i.test(text)) {
-    if (OUTDATED.test(text)) return { kind: "outdated", message };
-    if (TEMPORARY.test(text)) return { kind: "temporary", message };
+  if (/^(?:Error: )?Host rejected request:/i.test(text)) {
+    if (TEMPORARY.test(operationText)) return { kind: "temporary", message };
     return { kind: "other", message };
   }
   if (SUPERSEDED.test(text) || LOCAL_TIMEOUT.test(text)) return { kind: "temporary", message };
   if (UNREACHABLE.test(text)) return { kind: "unreachable", message };
-  if (OUTDATED.test(text)) return { kind: "outdated", message };
-  if (UNSUPPORTED.test(text)) return { kind: "unsupported", message };
   if (TEMPORARY.test(text)) return { kind: "temporary", message };
   return { kind: "other", message };
 }
@@ -192,14 +241,17 @@ export function isTransientTransportError(error: unknown): boolean {
  * transient transport error, otherwise the classified, human message. An
  * explicit user action passes `{ explicit: true }` to always get a message.
  */
-export function presentRemoteError(error: unknown, options: { explicit: true }): string;
 export function presentRemoteError(
   error: unknown,
-  options?: { explicit?: boolean },
+  options: { explicit: true } | { graceExpired: true },
+): string;
+export function presentRemoteError(
+  error: unknown,
+  options?: { explicit?: boolean; graceExpired?: boolean },
 ): string | undefined;
 export function presentRemoteError(
   error: unknown,
-  options: { explicit?: boolean } = {},
+  options: { explicit?: boolean; graceExpired?: boolean } = {},
 ): string | undefined {
   if (classifyRemoteError(error).kind === "disabled")
     return t("This machine is turned off. Turn it on in Machines settings.");
@@ -209,7 +261,7 @@ export function presentRemoteError(
       localizeRemoteMessage(classifyRemoteError(error).message) ||
       t("Something went wrong. Try again.")
     );
-  if (!options.explicit) return undefined;
+  if (!options.explicit && !options.graceExpired) return undefined;
   if (SUPERSEDED.test(remoteErrorText(error)))
     return t(
       "The connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.",

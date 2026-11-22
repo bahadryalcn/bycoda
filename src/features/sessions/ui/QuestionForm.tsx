@@ -520,7 +520,10 @@ function QuestionFormContent({
           </div>
         </FieldGroup>
         <div
-          {...surfaceAttributes({ variant: "inset", frame: "pane", edge: "top" }, styles.footer)}
+          {...surfaceAttributes(
+            { variant: docked ? "page" : "inset", frame: "pane", edge: "top" },
+            styles.footer,
+          )}
         >
           <div className={styles.feedback}>
             {parentClosed && !checkpointNoticeOwned ? (

@@ -7,6 +7,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 
 pub(crate) mod epochs;
+#[path = "native_delivery/usage.rs"]
+mod usage;
 
 pub(crate) const MAX_PARAMS_BYTES: usize = 16 * 1024 * 1024;
 pub(crate) const MAX_RESULT_BYTES: usize = 32 * 1024 * 1024;
@@ -15,7 +17,7 @@ const MAX_FORMAT_ACTIVE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ACTIVE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_ACTIVE_ROWS: usize = 256;
 const MAX_ROWS: usize = 65_536;
-const MAX_PAGE: usize = 32;
+pub(crate) const MAX_PAGE: usize = 32;
 const MAX_KEY_BYTES: usize = 2048;
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
 
@@ -127,6 +129,10 @@ impl Original {
     /// consumer must still hold its original native authority before dispatch.
     pub(crate) fn can_dispatch(&self) -> bool {
         self.phase == Phase::Prepared && self.created_instance == self.runtime.to_string()
+    }
+    /// Created by an earlier app runtime, so no consumer of this process waits for it.
+    pub(crate) fn from_earlier_runtime(&self) -> bool {
+        self.created_instance != self.runtime.to_string()
     }
 }
 
@@ -489,6 +495,7 @@ fn prepare_tx(
     let ids = identity(conn)?;
     epochs::check_semantic(
         conn,
+        store.native_instance_id(),
         &ids,
         semantic_key,
         route_fingerprint,
@@ -515,14 +522,8 @@ fn prepare_tx(
         }
         return Ok(record);
     }
-    let counts = |conn: &Connection| -> Result<(i64, i64, i64), String> {
-        // Independent bounded lanes prevent uncertain formatter work and
-        // unconfirmed buffer snapshots from using control capacity, so a relay
-        // finish is never starved by them. Legacy 32 MiB reservations retain
-        // their original allowance; only a qualified Host may use the smaller
-        // format lane.
-        conn.query_row("SELECT (SELECT COUNT(*) FROM native_delivery_originals),COALESCE(SUM(CASE WHEN EXISTS(SELECT 1 FROM native_delivery_unavailable_results u WHERE u.original_id=native_delivery_originals.original_id) THEN 0 ELSE 1 END),0),COALESCE(SUM(payload_bytes+CASE WHEN EXISTS(SELECT 1 FROM native_delivery_unavailable_results u WHERE u.original_id=native_delivery_originals.original_id) THEN 0 ELSE result_budget END),0) FROM native_delivery_originals WHERE phase!='acknowledged' AND CASE WHEN ?1='native.services.workspace.format' THEN method=?1 AND result_budget=?2 WHEN ?1=?3 THEN method=?3 ELSE method NOT IN('native.services.workspace.format',?3) END",params![method,budget as i64,BUFFER_UPDATE],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())
-    };
+    usage::initialize(conn)?;
+    let counts = |conn: &Connection| usage::read(conn, method, budget);
     let full = |(rows, active, bytes): (i64, i64, i64)| {
         rows < 0
             || active < 0
@@ -610,14 +611,14 @@ pub(crate) fn retire_stale_buffer_originals(store: &SessionStore) -> Result<usiz
         if !exists(&conn)? {
             return Ok(0);
         }
-        let stale: i64 = conn
+        let stale: bool = conn
             .query_row(
-                "SELECT COUNT(*) FROM native_delivery_originals WHERE phase='recorded' AND method=?1 AND created_instance!=?2",
+                "SELECT EXISTS(SELECT 1 FROM native_delivery_originals WHERE phase='recorded' AND method=?1 AND created_instance!=?2)",
                 params![BUFFER_UPDATE, store.native_instance_id().to_string()],
                 |r| r.get(0),
             )
             .map_err(|e| e.to_string())?;
-        if stale == 0 {
+        if !stale {
             return Ok(0);
         }
     }
@@ -891,6 +892,47 @@ fn remote_acked(conn: &Connection, original: &Original) -> Result<bool, String> 
     }
 }
 
+/// The original just past an open epoch's prefix when it is consumed locally but its remote
+/// ACK is missing. The paged ACK retry walks thousands of rows, so a timed-out ACK of this one
+/// slot otherwise waits a whole lap of the pager while the prefix it blocks cannot compact.
+pub(crate) fn unacked_prefix_blocker(
+    store: &SessionStore,
+    route_fingerprint: &str,
+) -> Result<Option<Original>, String> {
+    let connection = pin(store)?;
+    let conn = store.lock_conn()?;
+    let epochs: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_delivery_epochs')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if !epochs || !exists(&conn)? {
+        return Ok(None);
+    }
+    let head: Option<(String, i64, i64)> = conn
+        .query_row(
+            "SELECT owner_id,generation,local_through+1 FROM native_delivery_epochs
+             WHERE route_fingerprint=?1 AND closed=0 AND local_through<high_water ORDER BY local_through LIMIT 1",
+            [route_fingerprint],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let Some((owner, generation, sequence)) = head else {
+        return Ok(None);
+    };
+    let id = format!("nd2:{owner}:{generation}:{sequence}");
+    let Some(record) = read(&conn, &id, store.native_instance_id(), connection)? else {
+        return Ok(None);
+    };
+    if record.phase != Phase::Acknowledged || remote_acked(&conn, &record)? {
+        return Ok(None);
+    }
+    Ok(Some(record))
+}
+
 /// Reload an exact original after its local ACK committed. A pre-ACK metadata
 /// handle cannot itself authorize retirement; the actual current row must agree.
 pub(crate) fn remote_ack_candidate(
@@ -1007,6 +1049,7 @@ pub(crate) fn pending_remote_acks(
         .prepare(&format!("{SELECT} WHERE rowid=?1"))
         .map_err(|error| error.to_string())?;
     let mut originals = Vec::with_capacity(rowids.len());
+    let mut validator = epochs::PageValidator::new(&conn);
     for rowid in rowids {
         // Keep storage/SQL execution errors distinct from malformed metadata.
         // The actual Store writer remains held throughout both reads.
@@ -1016,7 +1059,7 @@ pub(crate) fn pending_remote_acks(
             })
             .map_err(|error| error.to_string())?;
         if let Ok(record) = record {
-            if epochs::validate_original(&conn, &record).is_err() {
+            if validator.check(&record).is_err() {
                 continue;
             }
             originals.push(record);
@@ -1040,13 +1083,85 @@ pub(crate) fn pending(
     }
     let connection = pin(store)?;
     store.with_read_conn(|conn| {
-        if !exists(conn)? { return Ok(PendingPage{originals:vec![],next:None}); }
-        let ids=identity(conn)?;
-        let mut statement=conn.prepare(&format!("{SELECT} WHERE source_store_id=?1 AND source_profile_id=?2 AND route_fingerprint=?3 AND phase!='acknowledged' AND original_id>?4 ORDER BY original_id LIMIT ?5")).map_err(|e|e.to_string())?;
-        let mut records=statement.query_map(params![ids.0,ids.1,route_fingerprint,after_id.unwrap_or(""),(limit+1) as i64],|r|checked_record(r,store.native_instance_id(),connection)).map_err(|_|invalid())?.collect::<rusqlite::Result<Vec<_>>>().map_err(|_|invalid())?;
-        for record in &records { epochs::validate_original(conn, record)?; }
-        let next=if records.len()>limit { records.truncate(limit); records.last().map(|r|r.id.clone()) } else { None };
-        Ok(PendingPage{originals:records,next})
+        // One snapshot for the page: on the separate reader the writer commits between
+        // statements, and an epoch validated across a commit sees its high water move.
+        let snapshot = conn.is_autocommit();
+        if snapshot {
+            conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+        }
+        let page = pending_page(store, conn, connection, route_fingerprint, after_id, limit);
+        if snapshot {
+            conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
+        }
+        page
+    })
+}
+
+fn pending_page(
+    store: &SessionStore,
+    conn: &Connection,
+    connection: usize,
+    route_fingerprint: &str,
+    after_id: Option<&str>,
+    limit: usize,
+) -> Result<PendingPage, String> {
+    if !exists(conn)? {
+        return Ok(PendingPage {
+            originals: vec![],
+            next: None,
+        });
+    }
+    let ids = identity(conn)?;
+    let mut statement=conn.prepare(&format!("{SELECT} WHERE source_store_id=?1 AND source_profile_id=?2 AND route_fingerprint=?3 AND phase!='acknowledged' AND original_id>?4 ORDER BY original_id LIMIT ?5")).map_err(|e|e.to_string())?;
+    let rows = statement
+        .query_map(
+            params![
+                ids.0,
+                ids.1,
+                route_fingerprint,
+                after_id.unwrap_or(""),
+                (limit + 1) as i64
+            ],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    checked_record(r, store.native_instance_id(), connection),
+                ))
+            },
+        )
+        .map_err(|_| invalid())?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|_| invalid())?;
+    let next = (rows.len() > limit).then(|| rows[limit - 1].0.clone());
+    // Like `pending_remote_acks`: a record that fails verification stays held unchanged and
+    // is skipped, so one damaged row can never stop recovery of every row after it.
+    let mut records = Vec::with_capacity(limit);
+    let mut validator = epochs::PageValidator::new(conn);
+    for (id, record) in rows.into_iter().take(limit) {
+        match record
+            .map_err(|_| invalid())
+            .and_then(|record| validator.check(&record).map(|()| record))
+        {
+            Ok(record) => records.push(record),
+            Err(error) => {
+                // Once per original and process: maintenance revisits it every pass.
+                static LOGGED: std::sync::Mutex<std::collections::BTreeSet<String>> =
+                    std::sync::Mutex::new(std::collections::BTreeSet::new());
+                if LOGGED
+                    .lock()
+                    .is_ok_and(|mut logged| logged.len() < 256 && logged.insert(id.clone()))
+                {
+                    log::warn!(
+                        "Native delivery original {} is held: {error}",
+                        id.rsplit(':').next().unwrap_or_default()
+                    );
+                }
+            }
+        }
+    }
+    Ok(PendingPage {
+        originals: records,
+        next,
     })
 }
 

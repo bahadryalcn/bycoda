@@ -258,7 +258,7 @@ export function ModelsPage({
       ) : null}
       {/* Background work reads top-down: models, groups, who uses what, limits; one Save. */}
       <div id={settingDomId("models-roles")} data-setting-id="models-roles" hidden={tab !== "work"}>
-        <div className="grid gap-4">
+        <div className="grid max-w-4xl gap-4">
           <SettingsHostPicker scope={scope} />
           <div id={settingDomId("models-order")} data-setting-id="models-order">
             {/* Only a connected machine reaches the editor; any other state is reported instead. */}

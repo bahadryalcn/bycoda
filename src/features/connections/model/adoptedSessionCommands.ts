@@ -4,6 +4,7 @@ import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
 import { loadRemoteCapabilities, remoteRequest } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import type { CommandReceipt, HostCommand, HostSession, RemoteMachine } from "./protocol";
+import { providerSteerCapability } from "./protocol";
 import { uploadRemoteAttachments } from "./remoteAttachments";
 import { desktopQueueClientId } from "./sharedQueueClient";
 import type { SharedQueue } from "./sharedQueue";
@@ -12,7 +13,7 @@ import { remoteIntentAuthority } from "./remoteOutbox";
 import { newRequestId } from "../../../shared/lib/id/requestId";
 import { QueueDeferredError } from "./sharedQueue";
 import { classifyCommandFailure } from "./remoteCommandRetry";
-import { followUpRefusalEvent } from "./queueState";
+import { followUpRefusalEvent, steerWaitReason } from "./queueState";
 
 const submitting = new Set<string>();
 export const adoptedFollowUpPending = (sessionId: string): boolean => submitting.has(sessionId);
@@ -86,7 +87,10 @@ export async function sendAdoptedFollowUp(input: {
       throw new QueueDeferredError(
         "This turn is running in the desktop app. New messages are queued until it finishes.",
       );
-    if (snapshot.status === "running" && !capabilities?.includes("sessions.steer"))
+    if (
+      snapshot.status === "running" &&
+      !capabilities?.includes(providerSteerCapability(snapshot.session.harness))
+    )
       throw new QueueDeferredError(
         "This host cannot steer the active turn. The message remains queued.",
       );
@@ -106,6 +110,8 @@ export async function sendAdoptedFollowUp(input: {
       await remoteRequest<CommandReceipt>(machine.id, "commands.dispatch", command);
     } catch (error) {
       const failure = classifyCommandFailure(error);
+      if (command.type === "steer" && failure === "definitive" && steerWaitReason(String(error)))
+        throw new QueueDeferredError(String(error));
       if (failure === "not-sent") throw new QueueDeferredError(String(error));
       if (failure === "definitive") {
         if (
@@ -118,7 +124,15 @@ export async function sendAdoptedFollowUp(input: {
       const receipt = capabilities?.includes("commands.status")
         ? await remoteRequest<CommandReceipt | null>(machine.id, "commands.status", {
             commandId: command.commandId,
-          }).catch(() => null)
+          }).catch((statusError: unknown) => {
+            if (
+              command.type === "steer" &&
+              classifyCommandFailure(statusError) === "definitive" &&
+              steerWaitReason(String(statusError))
+            )
+              throw new QueueDeferredError(String(statusError));
+            return null;
+          })
         : null;
       if (!receipt)
         throw new DeliveryUnknownError(

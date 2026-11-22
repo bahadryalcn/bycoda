@@ -1084,6 +1084,58 @@ fn restored_format_reconciliation_discards_terminal_orphan_without_recreating_co
 }
 
 #[test]
+fn restored_finish_reconciliation_consumes_an_orphaned_result_once() {
+    // Repro: a finish recorded by an earlier runtime whose relay caller was gone stayed
+    // `recorded` forever and held the epoch prefix (live slots 12180/12181).
+    let (done, finished) = mpsc::channel();
+    let server = serve(move |listener| async move {
+        let mut first = accept(&listener).await;
+        let methods = [
+            "native.services.delivery.apply",
+            "native.services.delivery.status",
+        ];
+        hello(&mut first, &methods, "host.1").await;
+        let apply = next(&mut first).await;
+        let identity = apply["params"].clone();
+        result(
+            &mut first,
+            &apply,
+            recorded(&identity, json!({"accepted":true})),
+        )
+        .await;
+        let mut second = accept(&listener).await;
+        hello(&mut second, &methods, "host.1").await;
+        let status = next(&mut second).await;
+        assert_eq!(status["method"], "native.services.delivery.status");
+        assert_eq!(status["params"]["originalId"], identity["originalId"]);
+        result(
+            &mut second,
+            &status,
+            recorded(&status["params"], json!({"accepted":true})),
+        )
+        .await;
+        finish_after(finished).await;
+    });
+    let mut fixture = Fixture::new(&server.endpoint, true);
+    let reply = fixture
+        .channel()
+        .request(
+            "conversation.desktop.finish",
+            json!({"id":"orphan-finish","result":"x"}),
+        )
+        .unwrap();
+    drop(reply);
+    assert_eq!(fixture.pending()[0].phase(), Phase::Recorded);
+    fixture.reopen();
+    assert_eq!(
+        reconcile_pending(fixture.channel(), Instant::now() + FIXTURE_WAIT).unwrap(),
+        1
+    );
+    assert!(fixture.pending().is_empty());
+    done.send(()).unwrap();
+}
+
+#[test]
 fn http_lost_finish_reply_reconciles_without_second_effect() {
     let (done, finished) = mpsc::channel();
     let server = serve(move |listener| async move {

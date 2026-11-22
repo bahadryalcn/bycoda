@@ -2,3 +2,4 @@
 export { ApprovalDecisionProvider } from "../ui/ApprovalDecisionContext";
 export { ActivityRow } from "../ui/AgentTranscriptActivity";
 export { ComposerQuestionForm } from "../ui/ComposerQuestionForm";
+export { SubagentChatComposer } from "../ui/SubagentMessageForm";

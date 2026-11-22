@@ -1,7 +1,7 @@
 import { existsSync, watch as fsWatch } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join, resolve as resolvePath } from "node:path";
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "./git-exec-pool";
 
 // Mirrors src-tauri/src/git_watch.rs for checkouts on this host. Only `.git`
 // metadata is watched (gitdir, common dir, `refs/`, the stash reflog), never
@@ -96,19 +96,31 @@ export function gitWatchPlan(gitDir: string, commonDir: string): GitWatchPlan[] 
 }
 
 /** The checkout's gitdir and common dir, absolute. */
-async function resolveGitDirs(cwd: string): Promise<{ gitDir: string; commonDir: string }> {
+export async function resolveGitDirs(
+  cwd: string,
+  exec: Pick<typeof hostGitExec, "exec"> = hostGitExec,
+): Promise<{ gitDir: string; commonDir: string }> {
   let stdout: string;
   try {
-    ({ stdout } = await exec("git", ["rev-parse", "--git-dir", "--git-common-dir"], {
+    ({ stdout } = await exec.exec("git", ["rev-parse", "--git-dir", "--git-common-dir"], {
       cwd,
       timeout: 10_000,
       maxBuffer: 64 * 1024,
       encoding: "utf8",
       windowsHide: true,
-      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+      env: { GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
     }));
-  } catch {
-    throw new Error(`${cwd} is not a Git checkout`);
+  } catch (reason) {
+    const { code, killed, signal } = reason as {
+      code?: unknown;
+      killed?: boolean;
+      signal?: unknown;
+    };
+    // Only Git's own exit means "not a checkout"; a pool timeout, abort, crash or missing
+    // binary says nothing about the directory and must reach the caller unchanged.
+    if (typeof code === "number" && !killed && !signal)
+      throw new Error(`${cwd} is not a Git checkout`);
+    throw reason;
   }
   const lines = stdout
     .split("\n")

@@ -75,16 +75,19 @@ function schedulerFixture(initial = workspace(), sourceClean?: () => Promise<boo
     recoveryIds: [],
   }));
   const activePolicy = policy();
+  const retryDeferredRemovals = vi.fn(async () => {});
   const scheduler = createWorkspaceRetentionScheduler({
     list: async () => [current],
     get: async () => structuredClone(current),
     policy: async () => activePolicy,
     removal: { plan, apply },
     sourceClean,
+    retryDeferredRemovals,
     now: () => now,
   });
   return {
     scheduler,
+    retryDeferredRemovals,
     plan,
     apply,
     policy: activePolicy,
@@ -107,6 +110,14 @@ it("skips full cleanup planning when retention preflight rejects or fails", asyn
     expect(fixture.plan).not.toHaveBeenCalled();
     expect(fixture.apply).not.toHaveBeenCalled();
   }
+});
+
+it("retries deferred removals on whole-Host sweeps even without a desktop heartbeat", async () => {
+  const f = schedulerFixture();
+  await f.scheduler.run({ trigger: "startup" });
+  await f.scheduler.run({ trigger: "hourly" });
+  await f.scheduler.run({ trigger: "lifecycle", workspaceId: "workspace" });
+  expect(f.retryDeferredRemovals).toHaveBeenCalledTimes(2);
 });
 
 describe("retention eligibility", () => {

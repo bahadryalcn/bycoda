@@ -1,5 +1,14 @@
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
-import { readWithDeadline, searchWorkItemMentions } from "./workItemMentionSearch";
+import { ignoredMentionMarkdown } from "../../../shared/lib/text/ignoredMentionMarkdown";
+import {
+  readRemoteGithubMentions,
+  readWithDeadline,
+  searchWorkItemMentions,
+  WorkItemSearchError,
+} from "./workItemMentionSearch";
+import { isRemoteProjectPath } from "../../../shared/lib/paths";
+import { remoteMachineFor } from "../../connections/public/connections";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import {
   githubStatus,
   githubWorkItem,
@@ -85,49 +94,12 @@ export function workItemMentionToken(item: InboxItem): string {
   return `${alias}:${item.repo}${separator}${item.number}`;
 }
 
-/** Mask Markdown contexts without a dependency on the sessions feature's internals. */
-function ignoredMarkdown(text: string): Uint8Array {
-  const ignored = new Uint8Array(text.length);
-  let fence: { marker: string; length: number } | undefined;
-  for (const match of text.matchAll(/[^\n]*(?:\n|$)/g)) {
-    const line = match[0];
-    const start = match.index;
-    const marker = /^ {0,3}(`{3,}|~{3,})(.*)/.exec(line);
-    if (fence) {
-      ignored.fill(1, start, start + line.length);
-      if (
-        marker &&
-        marker[1]![0] === fence.marker &&
-        marker[1]!.length >= fence.length &&
-        !marker[2]!.trim()
-      )
-        fence = undefined;
-    } else if (marker) {
-      fence = { marker: marker[1]![0]!, length: marker[1]!.length };
-      ignored.fill(1, start, start + line.length);
-    } else if (/^ {0,3}>/.test(line)) {
-      ignored.fill(1, start, start + line.length);
-    }
-  }
-  const ticks = [...text.matchAll(/`+/g)];
-  for (let i = 0; i < ticks.length; i++) {
-    const open = ticks[i]!;
-    if (ignored[open.index]) continue;
-    const close = ticks.findIndex(
-      (tick, index) => index > i && !ignored[tick.index] && tick[0].length === open[0].length,
-    );
-    if (close < 0) continue;
-    ignored.fill(1, open.index, ticks[close]!.index + ticks[close]![0].length);
-    i = close;
-  }
-  return ignored;
-}
-
 export function findWorkItemMentions(text: string): WorkItemMention[] {
-  const ignored = ignoredMarkdown(text);
+  const ignored = ignoredMentionMarkdown(text);
   const mentions: WorkItemMention[] = [];
   const seen = new Set<string>();
-  for (const match of text.matchAll(/(^|\s)@([a-z]+):([^\s]+)/gi)) {
+  const pattern = /(^|\s)@([a-z]+):([^\s]+)/gi;
+  for (const match of text.matchAll(pattern)) {
     const start = match.index + match[1]!.length;
     if (ignored[start]) continue;
     const alias = match[2]!.toLowerCase();
@@ -137,7 +109,7 @@ export function findWorkItemMentions(text: string): WorkItemMention[] {
     const key = `${provider}:${ref.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const end = start + 1 + match[2]!.length + 1 + ref.length;
+    const end = start + alias.length + 2 + ref.length;
     mentions.push({ provider, alias, ref, raw: text.slice(start, end), start, end });
     if (mentions.length === 5) break;
   }
@@ -197,7 +169,14 @@ const CONNECTION_TTL_MS = 60_000;
 let connections: { providers: InboxProvider[]; expires: number } | undefined;
 let connectionFlight: Promise<InboxProvider[]> | undefined;
 
-export async function connectedWorkItemProviders(): Promise<InboxProvider[]> {
+export async function connectedWorkItemProviders(cwd?: string): Promise<InboxProvider[]> {
+  const providers = await localWorkItemProviders();
+  return cwd && isRemoteProjectPath(cwd) && !providers.includes("github")
+    ? ["github", ...providers]
+    : providers;
+}
+
+async function localWorkItemProviders(): Promise<InboxProvider[]> {
   if (connections && connections.expires > Date.now()) return [...connections.providers];
   if (connectionFlight) return [...(await connectionFlight)];
   const checks: [InboxProvider, () => Promise<{ connected: boolean }>][] = [
@@ -250,6 +229,43 @@ export function peekWorkItemMentionCandidates(cwd: string, provider?: InboxProvi
   ).filter((item) => !provider || item.provider === provider);
 }
 
+/** Cached rows plus whatever the provider search found; `failure` says why it could not answer. */
+export type WorkItemMentionSearchResult = {
+  items: InboxItem[];
+  failure?: WorkItemSearchError;
+  /** Name of the connected machine the project lives on; absent for this computer. */
+  machine?: string;
+};
+
+async function failureMachineName(cwd: string): Promise<string | undefined> {
+  const parsed = parseRemotePath(cwd);
+  if (!parsed) return undefined;
+  return (await remoteMachineFor(parsed.environmentId).catch(() => undefined))?.name;
+}
+
+/** Search tracker rows, reporting a typed failure next to the cached rows instead of hiding it. */
+export async function searchWorkItemMentionCandidates(
+  cwd: string,
+  provider: InboxProvider | undefined,
+  search: string,
+  connected?: readonly InboxProvider[],
+  signal?: AbortSignal,
+): Promise<WorkItemMentionSearchResult> {
+  const cached = peekWorkItemMentionCandidates(cwd, provider);
+  try {
+    const providers = provider
+      ? [provider]
+      : (connected ?? (await connectedWorkItemProviders(cwd)));
+    const found = await searchWorkItemMentions(cwd, providers, search, signal);
+    return { items: mergeWorkItemMentionCandidates(cached, found) };
+  } catch (error) {
+    if (error instanceof WorkItemSearchError)
+      return { items: cached, failure: error, machine: await failureMachineName(cwd) };
+    console.warn("Work item mention candidates unavailable", error);
+    return { items: cached };
+  }
+}
+
 export async function workItemMentionCandidates(
   cwd: string,
   provider?: InboxProvider,
@@ -257,13 +273,13 @@ export async function workItemMentionCandidates(
   connected?: readonly InboxProvider[],
   signal?: AbortSignal,
 ): Promise<InboxItem[]> {
+  if (search !== undefined) {
+    const result = await searchWorkItemMentionCandidates(cwd, provider, search, connected, signal);
+    if (result.failure && isRemoteProjectPath(cwd)) throw result.failure;
+    return result.items;
+  }
   const cached = peekWorkItemMentionCandidates(cwd, provider);
   try {
-    if (search !== undefined) {
-      const providers = provider ? [provider] : (connected ?? (await connectedWorkItemProviders()));
-      const found = await searchWorkItemMentions(cwd, providers, search, signal);
-      return mergeWorkItemMentionCandidates(cached, found);
-    }
     const projects = [{ path: cwd }];
     const result =
       peekInboxList(projects, CANDIDATE_QUERY) ??
@@ -310,10 +326,20 @@ async function resolveMention(
   if (provider === "github") {
     const match = /^(?:(.+)#|#?)(\d+)$/.exec(ref);
     if (!match) throw new Error("Invalid GitHub work item reference");
-    const repo = match[1] || (await readWithDeadline(() => githubRepo(cwd)));
-    if (!repo) throw new Error("GitHub repository unavailable");
     const number = Number(match[2]);
     if (!Number.isSafeInteger(number) || number <= 0) throw new Error("Invalid work item number");
+    if (isRemoteProjectPath(cwd)) {
+      const [item] = await readWithDeadline(() => readRemoteGithubMentions(cwd, { number }));
+      if (!item || (match[1] && match[1].toLowerCase() !== item.repo.toLowerCase()))
+        throw new WorkItemSearchError(
+          "not-found",
+          provider,
+          "GitHub work item was not found in this project.",
+        );
+      return resolved({ ...mention, ref: `${item.repo}#${number}` }, item.body ?? "", item);
+    }
+    const repo = match[1] || (await readWithDeadline(() => githubRepo(cwd)));
+    if (!repo) throw new Error("GitHub repository unavailable");
     for (const kind of ["pr", "issue"] as const) {
       try {
         const item = await readWithDeadline(() => githubWorkItem(cwd, repo, kind, number));

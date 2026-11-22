@@ -2,6 +2,7 @@ import machineOffline from "../../../assets/connections/machine-offline.webp";
 import { t, useLocale } from "../../../shared/i18n";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { FailureState } from "../../../shared/ui/FailureState";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { CloudOff } from "../../../shared/ui/icons";
 import { knownRemoteMachine, OPEN_CONNECTIONS_EVENT } from "../model/connections";
 import type { ReactNode } from "react";
@@ -11,6 +12,7 @@ import {
   type MachineUnavailableReason,
 } from "../model/machineAvailability";
 import { parseRemotePath } from "../model/remoteProjects";
+import { useGracedFailure } from "../model/transientFailure";
 
 /** The one sentence that says why, and what the user can do about it. */
 function reasonText(reason: MachineUnavailableReason): string {
@@ -49,7 +51,17 @@ export function MachineUnavailable({
   useLocale();
   const availability = useMachineAvailability(cwd);
   const reason = shownReason ?? (availability.available ? undefined : availability.reason);
+  const offline = useGracedFailure({
+    error: reason === "offline" ? "Machine is unreachable" : undefined,
+    scope: cwd,
+  });
   if (!reason) return null;
+  if (offline.pending)
+    return (
+      <div className="grid h-full place-items-center" aria-busy>
+        <Spinner />
+      </div>
+    );
   const environmentId = parseRemotePath(cwd)?.environmentId;
   const name = environmentId ? knownRemoteMachine(environmentId)?.name : undefined;
   const title = name

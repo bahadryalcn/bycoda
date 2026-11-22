@@ -199,7 +199,10 @@ export function ModelBrowser({
               >
                 <span className="relative block">
                   <HarnessIcon harness={harness} className="icon-lg" />
-                  <ModelAccountNumber account={account} className="absolute -top-1 -right-2" />
+                  <ModelAccountNumber
+                    account={account}
+                    className="absolute -end-2.5 [inset-block-start:-0.375rem]"
+                  />
                   {defaultMark?.harness === harness && account?.accountNumber === undefined ? (
                     <StatusDot data-model-default-provider className="absolute -top-0.5 -right-1" />
                   ) : null}
@@ -229,6 +232,7 @@ export function ModelBrowser({
                 label={t("Models")}
                 controller={list}
                 query={query}
+                selectionIndicator="start"
                 emptyLabel={
                   tab === "favorites" && !query.trim()
                     ? t("No favorite models")

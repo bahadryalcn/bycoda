@@ -133,6 +133,37 @@ describe("Claude Code stop keys", () => {
   });
 });
 
+it("keeps skill suggestions closed when selecting a draft that starts with a skill", async () => {
+  const textarea = await renderComposer({});
+  await type(textarea, "/plan Explain this");
+  expect(document.querySelectorAll("[data-skill-picker]")).toHaveLength(0);
+
+  act(() => {
+    textarea.select();
+    textarea.dispatchEvent(new KeyboardEvent("keyup", { key: "a", ctrlKey: true, bubbles: true }));
+  });
+  expect(textarea.selectionStart).toBe(0);
+  expect(textarea.selectionEnd).toBe(textarea.value.length);
+  expect(document.querySelectorAll("[data-skill-picker]")).toHaveLength(0);
+});
+
+it("closes skill suggestions on selection and restores them at the same caret", async () => {
+  const textarea = await renderComposer({});
+  await type(textarea, "/plan");
+  expect(document.querySelectorAll("[data-skill-picker]")).toHaveLength(1);
+
+  const syncSelection = (end: number) =>
+    act(() => {
+      textarea.setSelectionRange(2, end);
+      textarea.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true }));
+    });
+  syncSelection(2);
+  syncSelection(5);
+  expect(document.querySelectorAll("[data-skill-picker]")).toHaveLength(0);
+  syncSelection(2);
+  expect(document.querySelectorAll("[data-skill-picker]")).toHaveLength(1);
+});
+
 it("keeps native draft text and selection intact when token styling toggles", async () => {
   const textarea = await renderComposer({});
   await type(textarea, "Plain draft");

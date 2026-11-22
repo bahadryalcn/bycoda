@@ -6110,14 +6110,8 @@ fn gh_run(root: &Path, args: &[&str], allow_empty: bool) -> Result<String, Strin
     gh_run_with_token(root, args, allow_empty, None)
 }
 
-fn gh_run_with_token(
-    root: &Path,
-    args: &[&str],
-    allow_empty: bool,
-    token: Option<&str>,
-) -> Result<String, String> {
-    let program = crate::github_cli::gh_program()?;
-    let mut cmd = Command::new(&program);
+fn gh_command(program: &Path, root: &Path, args: &[&str], token: Option<&str>) -> Command {
+    let mut cmd = Command::new(program);
     cmd.current_dir(root)
         .args(args)
         .env("GIT_TERMINAL_PROMPT", "0")
@@ -6125,6 +6119,10 @@ fn gh_run_with_token(
         .env("GH_PAGER", "cat")
         .env("GIT_PAGER", "cat");
     crate::harness::apply_gui_env(&mut cmd);
+    if args.starts_with(&["repo", "view"]) {
+        // Inbox discovery recognizes Git's non-repository diagnostic in gh stderr.
+        cmd.env("LC_ALL", "C");
+    }
     if let Some(token) = token {
         cmd.env("GH_TOKEN", token)
             .env_remove("GITHUB_TOKEN")
@@ -6132,6 +6130,17 @@ fn gh_run_with_token(
             .env_remove("GITHUB_ENTERPRISE_TOKEN");
     }
     crate::hide_window_console(&mut cmd);
+    cmd
+}
+
+fn gh_run_with_token(
+    root: &Path,
+    args: &[&str],
+    allow_empty: bool,
+    token: Option<&str>,
+) -> Result<String, String> {
+    let program = crate::github_cli::gh_program()?;
+    let mut cmd = gh_command(&program, root, args, token);
     let output = output_with_timeout(&mut cmd, GIT_NETWORK_TIMEOUT).map_err(|error| {
         if error.kind() == ErrorKind::NotFound {
             "GitHub CLI (`gh`) is not installed.".to_string()
@@ -6326,6 +6335,11 @@ pub(crate) fn output_with_timeout(
     cmd: &mut Command,
     timeout: Duration,
 ) -> std::io::Result<std::process::Output> {
+    let _reservation = cmd
+        .get_current_dir()
+        .map(crate::worktree_lifecycle::reserve_spawn)
+        .transpose()
+        .map_err(std::io::Error::other)?;
     let child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -12338,6 +12352,26 @@ mod tests {
         let json = r#"[{"number":9,"title":"Fork","url":"https://example.com/9","state":"OPEN","headRepositoryOwner":{"login":"someone"}},{"number":4,"title":"Ours","url":"https://example.com/4","state":"MERGED","headRepositoryOwner":{"login":"acme"}},{"number":5,"title":"Gone","url":"https://example.com/5","state":"OPEN","headRepositoryOwner":null}]"#;
         assert_eq!(parse_gh_pr_list(json, "acme").unwrap().number, 4);
         assert!(parse_gh_pr_list(json, "nobody").is_none());
+    }
+
+    #[test]
+    fn github_repository_discovery_uses_stable_git_diagnostics() {
+        let command = gh_command(
+            Path::new("gh"),
+            Path::new("."),
+            &["repo", "view", "--json", "nameWithOwner,parent"],
+            None,
+        );
+        assert_eq!(
+            command
+                .get_envs()
+                .find(|(key, _)| *key == "LC_ALL")
+                .and_then(|(_, value)| value),
+            Some(std::ffi::OsStr::new("C")),
+        );
+
+        let command = gh_command(Path::new("gh"), Path::new("."), &["pr", "view"], None);
+        assert!(!command.get_envs().any(|(key, _)| key == "LC_ALL"));
     }
 
     #[test]

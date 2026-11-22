@@ -1,8 +1,9 @@
 import { lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  providerAccountDir,
   providerAccountEnvironment,
   hostProviderAccounts,
   assertHostProviderAccount,
@@ -280,5 +281,27 @@ describe("provider account styles", () => {
       label: "Claude account 2",
       color: "#333",
     });
+  });
+});
+
+describe("providerAccountDir with the desktop database found late", () => {
+  it("sees a database that appeared after the Host started, once the cache is stale", async () => {
+    const saved = process.env.BYCODA_DESKTOP_DB;
+    const root = temp();
+    process.env.BYCODA_DESKTOP_DB = join(root, "bycoda.db");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-11-21T10:00:00Z"));
+      expect(await providerAccountDir("codex", "work")).toBeNull();
+      writeFileSync(join(root, "bycoda.db"), "");
+      const profile = join(root, "provider-accounts", "codex", "work");
+      mkdirSync(profile, { recursive: true });
+      vi.setSystemTime(new Date("2026-11-21T10:01:00Z"));
+      expect(await providerAccountDir("codex", "work")).toBe(profile);
+    } finally {
+      vi.useRealTimers();
+      if (saved === undefined) delete process.env.BYCODA_DESKTOP_DB;
+      else process.env.BYCODA_DESKTOP_DB = saved;
+    }
   });
 });

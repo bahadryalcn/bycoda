@@ -1,4 +1,4 @@
-import { execFileAsync as exec } from "../../src/shared/lib/processExecution.node";
+import { hostGitExec } from "../git/git-exec-pool";
 import { openDevServerBrowser } from "../dev-servers/dev-server-browser";
 import { createDevServersService } from "../domains/dev-servers/service";
 import { createFileService } from "../domains/files/service";
@@ -78,7 +78,7 @@ export function createGitRuntime(
     invalidateRoots: () => dependencies.workspace.invalidateRoots(),
     diff: async (cwd) =>
       (
-        await exec(
+        await hostGitExec.exec(
           "git",
           ["-c", "core.pager=cat", "diff", "--no-ext-diff", "--no-textconv", "HEAD", "--"],
           { cwd, timeout: 10_000, maxBuffer: 2 * 1024 * 1024 },

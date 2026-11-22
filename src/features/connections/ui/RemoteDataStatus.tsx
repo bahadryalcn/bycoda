@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { redactDiagnosticText } from "@bycoda/account-contracts";
 import { Text } from "../../../shared/ui/Text";
 import { Toast } from "../../../shared/ui/ToastRegion";
 import { Button } from "../../../shared/ui/Button";
@@ -6,17 +7,19 @@ import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import { useDelayedVisible } from "../../../shared/hooks/useDelayedVisible";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
+import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Check, RefreshCw, Server } from "../../../shared/ui/icons";
 import type { RemoteDataState } from "../model/remoteDataState";
+import { sanitizeConnectionError } from "../model/connectionReason";
 import {
   classifyRemoteError,
   describeRemoteError,
   isConnectionFailure,
   isTransientTransportError,
 } from "../model/remoteFailure";
-import { useQuietRetry } from "../model/useQuietRetry";
+import { useGracedFailure } from "../model/transientFailure";
 import { useRemoteConnectionFeedback } from "./RemoteConnectionFeedback";
 
 /** Retained content stays visible; this strip explains whether it was verified. */
@@ -29,6 +32,8 @@ export function RemoteDataStatus({
   connectionIssueHandled = false,
   presentation = "auto",
   machineName,
+  machineLabel,
+  autoRetry = true,
 }: {
   state: RemoteDataState;
   /** The data's owning remote project, for the workspace connection notice. */
@@ -42,6 +47,10 @@ export function RemoteDataStatus({
   presentation?: "auto" | "indicator" | "notice";
   /** Keep remote identity in a project heading, with freshness in its tooltip. */
   machineName?: string;
+  /** The machine this data belongs to, named in the floating notice and its details. */
+  machineLabel?: string;
+  /** Paired toolbar and notice displays share one read owner. */
+  autoRetry?: boolean;
 }) {
   useLocale();
   // A first load that ends quickly never shows its indicator; a background refresh only spins
@@ -49,15 +58,22 @@ export function RemoteDataStatus({
   const loadingShown = useDelayedVisible(state.phase === "loading");
   // The notice the owner closed; a different phase, error or verification time shows again.
   const [dismissed, setDismissed] = useState("");
-  const noticeKey = JSON.stringify([state.phase, state.error ?? "", state.updatedAt ?? 0]);
   const failure = state.error ? classifyRemoteError(state.error) : undefined;
   const sharedConnectionIssue = useRemoteConnectionFeedback(cwd, failure);
   // A busy machine is retried in the background; its failure is not an error yet.
-  const retrying = useQuietRetry(
-    state.phase === "error" ? state.error : undefined,
-    disabled ? undefined : onRefresh,
-    state.phase === "loading" || state.phase === "refreshing",
-  );
+  const { pending, visibleError } = useGracedFailure({
+    error: state.error,
+    retry: disabled || !autoRetry ? undefined : onRefresh,
+    loading: state.phase === "loading" || state.phase === "refreshing",
+    scope: cwd,
+  });
+  const refreshing = state.phase === "loading" || state.phase === "refreshing";
+  const phase = visibleError && refreshing ? "error" : state.phase;
+  const noticeKey = JSON.stringify([
+    phase,
+    state.error ?? visibleError ?? "",
+    state.updatedAt ?? 0,
+  ]);
   // A machine-level notice cannot explain a failed data/service operation.
   if (
     !machineName &&
@@ -71,9 +87,9 @@ export function RemoteDataStatus({
   // The classified, localized reason; the raw transport text stays behind Details.
   const replacedError = !!state.error && isTransientTransportError(state.error);
   const errorView = state.error ? describeRemoteError(state.error) : undefined;
-  const shownError = errorView?.message;
-  const busy = retrying || state.phase === "loading" || state.phase === "refreshing";
-  const needsAttention = !retrying && (state.phase === "error" || state.phase === "stale");
+  const shownError = visibleError;
+  const busy = pending || refreshing;
+  const needsAttention = !pending && (phase === "error" || phase === "stale");
   const message =
     machineName &&
     (connectionIssueHandled || sharedConnectionIssue) &&
@@ -82,18 +98,22 @@ export function RemoteDataStatus({
       ? state.updatedAt
         ? t("Showing last loaded data. Updates have not been verified.")
         : t("Couldn’t refresh {p0}. Data has not been verified.", { p0: dataLabel })
-      : retrying
+      : pending
         ? t("The machine is busy. Retrying…")
-        : state.phase === "loading"
+        : phase === "loading"
           ? t("Loading {p0}…", { p0: dataLabel })
-          : state.phase === "refreshing"
+          : phase === "refreshing"
             ? t("Refreshing {p0}… Showing last loaded data.", { p0: dataLabel })
-            : state.phase === "error"
+            : phase === "error"
               ? state.updatedAt
                 ? t("Couldn’t refresh {p0}. Showing last loaded data.", { p0: dataLabel })
                 : t("Couldn’t refresh {p0}. Data has not been verified.", { p0: dataLabel })
               : state.phase === "stale"
-                ? t("Showing last loaded data. Updates have not been verified.")
+                ? presentation === "notice"
+                  ? t("Showing last loaded {p0}. Updates have not been verified.", {
+                      p0: dataLabel,
+                    })
+                  : t("Showing last loaded data. Updates have not been verified.")
                 : state.phase === "empty"
                   ? t("No {p0}.", { p0: dataLabel })
                   : t("Up to date");
@@ -103,13 +123,13 @@ export function RemoteDataStatus({
         minute: "2-digit",
       })
     : undefined;
-  if (state.phase === "loading" && !loadingShown && !machineName) return null;
+  if (phase === "loading" && !loadingShown && !machineName) return null;
   if (presentation === "notice" && !needsAttention) return null;
   if (presentation === "indicator" && needsAttention && !machineName) return null;
   if (!needsAttention || (presentation === "indicator" && machineName)) {
     const detail = `${machineName ? `${machineName} · ` : ""}${message}${time ? ` · ${t("Last verified {p0}", { p0: new Date(state.updatedAt!).toLocaleString(getLocale()) })}` : ""}`;
     const spinning =
-      retrying ||
+      pending ||
       (state.phase === "loading" && loadingShown) ||
       (state.phase === "refreshing" && onRefresh !== undefined);
     const icon = spinning ? (
@@ -155,26 +175,32 @@ export function RemoteDataStatus({
       </Text>
     );
   }
-  const tone = state.phase === "error" ? "danger" : "info";
+  const tone = phase === "error" ? "danger" : "info";
   const retryLabel =
-    state.phase === "error"
+    phase === "error"
       ? t("Retry loading {p0}", { p0: dataLabel })
       : t("Refresh {p0}", { p0: dataLabel });
   // A floating notice joins the shared alert stack (errors at top center) and can be closed;
   // the same state comes back only once it changes.
   if (presentation === "notice") {
     if (dismissed === noticeKey) return null;
+    // Which machine and which data, when it was last verified and why it failed: technical
+    // lines behind Details, so cards of different data or times stay distinguishable.
+    const noticeDetails = noticeDetailLines({
+      machine: machineLabel ?? machineName,
+      data: dataLabel,
+      verifiedAt: state.updatedAt,
+      reason: errorView
+        ? sanitizeConnectionError(redactDiagnosticText(errorView.details))
+        : undefined,
+    });
     return (
       <Toast
         tone={tone}
+        title={machineLabel ?? machineName ?? dataLabel}
         message={
-          <span data-remote-data-state={state.phase} aria-busy={busy}>
+          <span data-remote-data-state={phase} aria-busy={busy}>
             {message}
-            {time ? (
-              <Text size="inherit" tone="muted" className="ml-1">
-                · {time}
-              </Text>
-            ) : null}
             {shownError && fitsOneLine(shownError) ? (
               <Text as="p" size="inherit" tone="muted" className="mt-1 break-words">
                 {shownError}
@@ -182,17 +208,13 @@ export function RemoteDataStatus({
             ) : null}
           </span>
         }
-        historyMessage={message}
+        historyMessage={`${message}\n${noticeDetails}`}
         durationMs={null}
-        extra={
-          shownError && (!fitsOneLine(shownError) || replacedError) ? (
-            <ErrorDetails title={message} detail={errorView?.details ?? shownError} />
-          ) : null
-        }
+        extra={<ErrorDetails title={message} detail={noticeDetails} />}
         action={
           onRefresh
             ? {
-                label: state.phase === "error" ? t("Retry") : t("Refresh"),
+                label: phase === "error" ? t("Retry") : t("Refresh"),
                 ariaLabel: retryLabel,
                 onClick: onRefresh,
                 pending: busy,
@@ -206,7 +228,7 @@ export function RemoteDataStatus({
   }
   return (
     <Alert
-      data-remote-data-state={state.phase}
+      data-remote-data-state={phase}
       aria-busy={busy}
       tone={tone}
       icon={busy ? <Spinner /> : undefined}
@@ -261,4 +283,21 @@ export function RemoteDataStatus({
       </div>
     </Alert>
   );
+}
+
+/** The identity, last verification and reason of a data notice, one line each. */
+export function noticeDetailLines(input: {
+  machine?: string;
+  data: string;
+  verifiedAt?: number;
+  reason?: string;
+}): string {
+  return [
+    input.machine ? `machine: ${input.machine}` : "",
+    `data: ${input.data}`,
+    input.verifiedAt ? `last verified: ${isoTimestamp(input.verifiedAt) ?? ""}` : "",
+    input.reason ? `reason: ${input.reason}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }

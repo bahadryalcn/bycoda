@@ -11,7 +11,7 @@ import {
   restoreToolsWorkspaceDrafts,
   type ToolsWorkspaceDrafts,
 } from "./toolsDraftTransfer";
-import type { ToolsSession } from "./toolsSessionRegistry";
+import type { ToolsRegistration, ToolsSession } from "./toolsSessionRegistry";
 
 export type ToolsWorkspaceTransfer = {
   browserDrafts: BrowserWorkspaceDrafts;
@@ -37,7 +37,10 @@ export function restoreWorkspaceTransfer(session: ToolsSession, value: ToolsWork
 export function toolsTransferScope(session: ToolsSession) {
   return JSON.stringify([pathKey(session.cwd), session.sessionId, session.onlyTab ?? "all"]);
 }
-export function toolsTransferContent(session: ToolsSession, drafts?: ToolsWorkspaceTransfer) {
+export function toolsTransferContent(
+  session: ToolsSession | ToolsRegistration,
+  drafts?: ToolsWorkspaceTransfer,
+) {
   return {
     cwd: pathKey(session.cwd),
     sessionId: session.sessionId,
@@ -46,6 +49,10 @@ export function toolsTransferContent(session: ToolsSession, drafts?: ToolsWorksp
     onlyTab: session.onlyTab,
     tab: session.onlyTab ?? session.initialTab ?? "devices",
     machine: session.initialMachine ?? "project",
+    url:
+      "viewRequest" in session
+        ? (session.viewRequest?.url ?? session.initialUrl)
+        : session.initialUrl,
     browserDraft: session.browserDraft,
     drafts,
   };
@@ -60,6 +67,7 @@ export function toolsTransferEdits(session: ToolsSession, drafts: ToolsWorkspace
       onlyTab: session.onlyTab,
       tab: session.onlyTab ?? session.initialTab ?? "devices",
       machine: session.initialMachine ?? "project",
+      url: session.initialUrl,
     },
     browser: Object.fromEntries(
       Object.entries(drafts.browserDrafts).map(([target, draft]) => [

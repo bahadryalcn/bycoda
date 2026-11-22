@@ -326,7 +326,7 @@ function SessionReviewContent({
               className="flex font-sans -mt-0.5"
             />
           </div>
-          <div className="flex shrink-0 items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-0.5" data-session-review-actions>
             <Button
               variant="ghost"
               type="button"

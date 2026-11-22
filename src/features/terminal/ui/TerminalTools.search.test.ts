@@ -36,6 +36,7 @@ vi.mock("../../../shared/ui/SearchInput", () => ({
 it("does not navigate or dismiss Find on WebKit composition confirmation", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
+  const toolbarTarget = document.createElement("div");
   const root = createRoot(host);
   const changeMode = vi.fn();
   const disposable = { dispose() {} };
@@ -55,9 +56,15 @@ it("does not navigate or dismiss Find on WebKit composition confirmation", async
           mode: "search",
           ready: true,
           onModeChange: changeMode,
+          toolbarTarget,
         }),
       ),
     );
+    expect(toolbarTarget.querySelector('button[aria-label="Find in terminal"]')).not.toBeNull();
+    expect(
+      toolbarTarget.querySelector('button[aria-label="Terminal pane actions"]'),
+    ).not.toBeNull();
+    expect(host.querySelector('button[aria-label="Find in terminal"]')).toBeNull();
     const input = host.querySelector("input")!;
     await act(async () => {
       input.value = "needle";

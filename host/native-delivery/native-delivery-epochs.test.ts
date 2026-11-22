@@ -580,6 +580,21 @@ it("blocks missing/corrupt owners or witnesses without rebuilding them from rece
   }
 });
 
+it("skips the full header count on ordinary status, admission and compaction", async () => {
+  const f = await fixture();
+  const first = await f.journal.epochs.open(f.principal, randomUUID());
+  for (let index = 0; index < 32; index++) {
+    await f.journal.epochs.open(f.principal, randomUUID());
+  }
+  const statements = vi.spyOn(f.store.db, "prepare");
+  const id = await retire(f, first, 1);
+  await f.journal.epochs.compact(f.principal, { ...first, expectedThrough: 0, through: 1 });
+  expect(await f.journal.readMetadata(f.principal, finish, id)).toMatchObject({ state: "fenced" });
+  expect(statements.mock.calls.some(([sql]) => sql.includes("AS matched,MAX(o.generation)"))).toBe(
+    false,
+  );
+});
+
 it("never remints a compacted open intent after both retained header rows disappear", async () => {
   for (const missing of ["first", "middle"]) {
     const f = await fixture();
@@ -847,6 +862,119 @@ const gapRows = async (f: Awaited<ReturnType<typeof fixture>>) =>
         .get()
     )?.count,
   );
+
+it("abandons an admitted format whose effect ended without a result, so its slot no longer holds the prefix", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID());
+  let runs = 0;
+  // Repro: the formatter failed after admission; status says result-unavailable forever.
+  await f.journal.execute(f.principal, format, identity(epoch, 1), async () => {
+    runs++;
+    throw new Error("Formatter exited without a result");
+  });
+  await retire(f, epoch, 2);
+  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, format))).toEqual({
+    ...gap(epoch, 1, format),
+    outcome: "abandoned",
+  });
+  // A retry after a lost reply gets the same answer; nothing was re-run.
+  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, format))).toMatchObject({
+    outcome: "abandoned",
+  });
+  await f.journal.execute(f.principal, format, identity(epoch, 1), async () => {
+    runs++;
+  });
+  expect(runs).toBe(1);
+  expect(
+    await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 2 }),
+  ).toMatchObject({ through: 2 });
+});
+
+it("never abandons an original whose effect is still running in this process", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID());
+  for (const [sequence, kind] of [
+    [1, format],
+    [2, finish],
+  ] as const) {
+    let release!: () => void;
+    const running = f.journal.execute(
+      f.principal,
+      kind,
+      identity(epoch, sequence),
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    await vi.waitFor(() => expect(release).toBeDefined());
+    expect(
+      await f.journal.epochs.resolveGap(f.principal, gap(epoch, sequence, kind)),
+    ).toMatchObject({ outcome: "admitted" });
+    release();
+    await running;
+  }
+});
+
+it.each([finish, "buffer"] as const)(
+  "abandons an admitted %s that ended without a result instead of holding the prefix",
+  async (kind) => {
+    const f = await fixture(),
+      epoch = await f.journal.epochs.open(f.principal, randomUUID());
+    let runs = 0;
+    // Repro: the effect failed (or a restart lost it); before, this answered `admitted` forever.
+    await f.journal.execute(f.principal, kind, identity(epoch, 1), async () => {
+      runs++;
+      throw new Error("Effect ended without a result");
+    });
+    await retire(f, epoch, 2);
+    expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, kind))).toMatchObject({
+      outcome: "abandoned",
+    });
+    expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, kind))).toMatchObject({
+      outcome: "abandoned",
+    });
+    await f.journal.execute(f.principal, kind, identity(epoch, 1), async () => {
+      runs++;
+    });
+    expect(runs).toBe(1);
+    expect(
+      await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 2 }),
+    ).toMatchObject({ through: 2 });
+  },
+);
+
+it("abandons a recorded buffer whose producer lost the reply, since a newer report supersedes it", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID());
+  // Repro: the report was recorded but its proof aged out, so status and ACK refused it forever.
+  await f.journal.execute(f.principal, "buffer", identity(epoch, 1), async () => ({
+    acknowledged: true,
+  }));
+  await retire(f, epoch, 2);
+  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, "buffer"))).toMatchObject({
+    outcome: "abandoned",
+  });
+  expect(
+    await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 2 }),
+  ).toMatchObject({ through: 2 });
+});
+
+it("compacts past one lost original followed by many settled ones", async () => {
+  const f = await fixture(),
+    epoch = await f.journal.epochs.open(f.principal, randomUUID());
+  await f.journal.execute(f.principal, finish, identity(epoch, 1), async () => {
+    throw new Error("Host restarted before the relay answered");
+  });
+  for (let sequence = 2; sequence <= 40; sequence++) await retire(f, epoch, sequence);
+  await expect(
+    f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 32 }),
+  ).rejects.toThrow("HOLE");
+  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1))).toMatchObject({
+    outcome: "abandoned",
+  });
+  await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 32 });
+  expect(
+    await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 32, through: 40 }),
+  ).toMatchObject({ through: 40 });
+});
 
 it("resolves a never-admitted hole only through an exact no-effect fence, then compacts across it", async () => {
   const f = await fixture(),

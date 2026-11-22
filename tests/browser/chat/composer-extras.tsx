@@ -29,6 +29,7 @@ import { WorkingIndicator } from "../../../src/shared/ui/WorkingIndicator";
 import { WorkspaceFooter } from "../../../src/app/workspace/layout/WorkspaceFooter";
 import { UsageFooter } from "../../../src/app/shell/UsageFooter";
 import { ModelSourceContext } from "../../../src/features/sessions/ui/modelSource";
+import { buildRemoteModelSource } from "../../../src/features/connections/model/remoteModelSource";
 import {
   modelsFor,
   resolveModel,
@@ -41,7 +42,9 @@ import {
   newSession,
   type HarnessId,
   type RuntimeMode,
+  type UsageLimit,
 } from "../../../src/features/sessions/model/session";
+import { usageLimitAfterTargetChange } from "../../../src/features/sessions/model/usageLimit";
 import { modelsForClaudeVersion } from "../../../src/integrations/harness/providers/claude/claudeCatalog";
 import { parseCodexModelList } from "../../../src/integrations/harness/providers/codex/codexCatalog";
 import { languageReady } from "../../../src/shared/i18n";
@@ -49,6 +52,8 @@ import {
   renameProviderAccount,
   saveProviderAccount,
 } from "../../../src/features/providers/model/providerAccounts";
+import { idleRateLimits } from "../../../src/features/providers/model/rateLimits";
+import { setCachedRateLimits } from "../../../src/features/providers/model/rateLimitsCache";
 import "../../../src/styles/index.css";
 
 // Real composer and catalogs, without a native host or provider invocation.
@@ -78,6 +83,33 @@ const source = {
   probed: () => true,
   refresh: () => {},
 };
+// `?mention-files[=incomplete]`: the project file listing answers, so typing "@" in the composer
+// shows the real mention picker with rows instead of the "Could not index files" failure.
+if (new URLSearchParams(location.search).has("mention-files")) {
+  const relatives = [
+    "src/app/App.tsx",
+    "src/features/sessions/ui/Composer.tsx",
+    "src/features/sessions/ui/ComposerSuggestions.tsx",
+    "src/features/voice/ui/VoiceSettings.tsx",
+    "src/shared/ui/Button.tsx",
+    "docs/guides/chat-artifacts-and-connected-files.md",
+    "package.json",
+    "README.md",
+  ];
+  const listing = {
+    root: "/fixture",
+    files: relatives.map((relative) => ({ name: relative.split("/").at(-1)!, relative })),
+    truncated: new URLSearchParams(location.search).get("mention-files") === "incomplete",
+  };
+  Object.assign(window, {
+    __TAURI_INTERNALS__: {
+      invoke: async (cmd: string) => {
+        if (cmd === "list_project_files") return listing;
+        throw new Error(`Unmocked fixture command: ${cmd}`);
+      },
+    },
+  });
+}
 const accountPicker = new URLSearchParams(location.search).has("accounts");
 // A provider whose transport takes text only: files dragged over the composer are refused with a reason.
 if (new URLSearchParams(location.search).has("no-attachments"))
@@ -88,6 +120,16 @@ const withFooter = new URLSearchParams(location.search).has("footer");
 const chatLayout = new URLSearchParams(location.search).has("chat-layout");
 const workspaceFooter = new URLSearchParams(location.search).has("workspace-footer");
 const remoteLayout = new URLSearchParams(location.search).has("remote");
+const remoteAccountCatalog = new URLSearchParams(location.search).has("remote-accounts")
+  ? {
+      claude: [
+        { id: "default", label: "Host default" },
+        { id: "mac-work", label: "Mac work" },
+        { id: "mac-review", label: "Mac review" },
+        { id: "mac-personal", label: "Mac personal" },
+      ],
+    }
+  : undefined;
 const showProjectPicker = new URLSearchParams(location.search).has("project-picker");
 const longAccount = new URLSearchParams(location.search).has("long-account");
 // Test-only data boundary. The URL retains the stress case across reloads.
@@ -189,6 +231,21 @@ if (accountPicker) {
     .forEach((label, index) =>
       saveProviderAccount({ id: `account-extra-${index}`, provider: "claude", label }),
     );
+  if (new URLSearchParams(location.search).has("account-usage")) {
+    const now = Date.now();
+    for (const [id, usedPercent, hours] of [
+      ["default", 8, 131],
+      ["account-work", 35, 100],
+      ["account-extra-0", 100, 7],
+    ] as const) {
+      setCachedRateLimits("claude", id, {
+        ...idleRateLimits("claude"),
+        status: "ok",
+        updatedAt: now,
+        weekly: { usedPercent, windowMinutes: 10_080, resetsAt: now + hours * 3_600_000 },
+      });
+    }
+  }
 }
 
 import {
@@ -215,7 +272,7 @@ function Fixture() {
   const queueFeedback = new URLSearchParams(location.search).has("queue-feedback");
   const deliveryProgress = new URLSearchParams(location.search).has("delivery-progress");
   const [queueStatus, setQueueStatus] = useState<"paused" | "active">(
-    ["active", "busy", "one", "empty", "last-success"].includes(queueVisual ?? "")
+    ["active", "busy", "one", "empty", "last-success", "writer-wait"].includes(queueVisual ?? "")
       ? "active"
       : "paused",
   );
@@ -223,6 +280,21 @@ function Fixture() {
     if (queueVisual === "last-success") {
       const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
       updateDeliveryProgress("composer-layout-fixture", progress, "accepted");
+      return () => clearDeliveryProgress("composer-layout-fixture", progress);
+    }
+    if (queueVisual === "writer-wait" || queueVisual === "writer-blocked") {
+      const progress = beginDeliveryProgress("composer-layout-fixture", "queued", "preparing");
+      const waiting = queueVisual === "writer-wait";
+      updateDeliveryProgress(
+        "composer-layout-fixture",
+        progress,
+        waiting ? "waiting" : "rejected",
+        waiting
+          ? "Waiting for the previous run to finish."
+          : "Check the conversation on its Host before resuming.",
+        false,
+        true,
+      );
       return () => clearDeliveryProgress("composer-layout-fixture", progress);
     }
     if (queueVisual !== "rejected" && queueVisual !== "waiting") return;
@@ -261,6 +333,10 @@ function Fixture() {
   );
   const [disabled, setDisabled] = useState(false);
   const [accountId, setAccountId] = useState("default");
+  const [quotaLimit, setQuotaLimit] = useState<UsageLimit | undefined>(() =>
+    quotaStress ? { resetsAt: Date.now() + 9 * 24 * 60 * 60_000, resumeAtReset: true } : undefined,
+  );
+  const [quotaResumes, setQuotaResumes] = useState(0);
   const [terminalOpened, setTerminalOpened] = useState(false);
   const [compacted, setCompacted] = useState(0);
   const compactReading = new URLSearchParams(location.search).get("compact-context");
@@ -442,7 +518,15 @@ function Fixture() {
           return true;
         }}
         initialDraft={quotaStress ? stressDraft : "Keep this chat draft"}
-        usageLimit={quotaStress ? {} : undefined}
+        usageLimit={quotaLimit}
+        onUsageLimitResume={() => {
+          setQuotaResumes((count) => count + 1);
+          setQuotaLimit(undefined);
+        }}
+        onUsageLimitDismiss={() => setQuotaLimit(undefined)}
+        onUsageLimitResumeAtReset={(resumeAtReset) =>
+          setQuotaLimit((limit) => (limit ? { ...limit, resumeAtReset } : undefined))
+        }
         editLastTurnSupported={new URLSearchParams(location.search).has("shortcuts")}
         lastTurnRecall={
           new URLSearchParams(location.search).has("shortcuts")
@@ -453,11 +537,29 @@ function Fixture() {
         busy={busy}
         disabled={disabled}
         providerAccountId={accountId}
-        onSelectProviderAccount={accountPicker ? (_, id) => setAccountId(id) : undefined}
+        onSelectProviderAccount={
+          accountPicker || remoteAccountCatalog
+            ? (_, id) => {
+                setAccountId(id);
+                setQuotaLimit((usageLimit) =>
+                  usageLimitAfterTargetChange(
+                    { harness, model, providerAccountId: accountId, usageLimit },
+                    { harness, model, providerAccountId: id },
+                  ),
+                );
+              }
+            : undefined
+        }
         onFocus={() => {}}
         onCwdChange={() => {}}
         onSubmit={() => {}}
         onModelChange={(next, id, account) => {
+          setQuotaLimit((usageLimit) =>
+            usageLimitAfterTargetChange(
+              { harness, model, providerAccountId: accountId, usageLimit },
+              { harness: next, model: id, providerAccountId: account ?? accountId },
+            ),
+          );
           setHarness(next);
           setModel(id);
           if (account) setAccountId(account);
@@ -482,7 +584,24 @@ function Fixture() {
     </>
   );
   return (
-    <ModelSourceContext.Provider value={source}>
+    <ModelSourceContext.Provider
+      value={
+        remoteAccountCatalog
+          ? {
+              ...source,
+              id: "remote:fixture",
+              accounts: buildRemoteModelSource({
+                catalog: { models: {}, errors: {}, accounts: remoteAccountCatalog },
+                environmentId: "fixture",
+                hostSession: undefined,
+                descriptor: undefined,
+                providers: ["claude"],
+                refreshCatalog: source.refresh,
+              }).accounts,
+            }
+          : source
+      }
+    >
       <main
         style={
           visualBackground
@@ -611,6 +730,9 @@ function Fixture() {
         <output data-testid="compacted" className="hidden">
           {compacted}
         </output>
+        <output data-testid="quota-resumes" className="hidden">
+          {quotaResumes}
+        </output>
       </main>
     </ModelSourceContext.Provider>
   );
@@ -645,7 +767,7 @@ function SurfaceProbeFixture() {
     label: "Advisor",
     kind: "select" as const,
     value,
-    options: [{ value, label: "Fixture account", accountColor: "#b55272" }],
+    options: [{ value, label: "Fixture account", accountColor: "#b55272", accountNumber: 2 }],
   };
   const [values, setValues] = useState({ effort: "low" });
   return (
