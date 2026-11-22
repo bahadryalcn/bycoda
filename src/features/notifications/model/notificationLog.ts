@@ -22,7 +22,10 @@ function record(entry: NotificationHistoryEntry) {
  * A toast announcement as the log reads it. `persist` (a notice that asks to be kept) and
  * `hasAction` (it carries an action) are optional extras of the announcing region.
  */
-export type LoggedToastAnnouncement = ToastAnnouncement & { persist?: boolean; hasAction?: boolean };
+export type LoggedToastAnnouncement = ToastAnnouncement & {
+  persist?: boolean;
+  hasAction?: boolean;
+};
 
 /**
  * Keeps a toast in the capped device-local log only when it is a warning, an error, or asks to be

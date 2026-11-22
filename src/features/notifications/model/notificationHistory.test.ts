@@ -187,7 +187,11 @@ it("records an entry once per key and time and announces the change in this wind
   expect(await recordNotificationHistory(logged)).toBe(true);
   expect(await recordNotificationHistory(logged)).toBe(false);
   expect(
-    await recordNotificationHistory({ ...logged, label: "Other", occurredAt: logged.occurredAt + 1 }),
+    await recordNotificationHistory({
+      ...logged,
+      label: "Other",
+      occurredAt: logged.occurredAt + 1,
+    }),
   ).toBe(true);
   expect(readNotificationHistory()).toHaveLength(2);
   expect(changed).toHaveBeenCalledTimes(2);

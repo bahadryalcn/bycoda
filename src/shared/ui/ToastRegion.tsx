@@ -595,7 +595,14 @@ export function ToastRegion({ insets: next, onRecord }: ToastRegionProps) {
   return (
     <>
       {entries.map(
-        ({ id, placement, dismissible = true, onDismiss: _onDismiss, fixedId: _fixedId, ...props }) => (
+        ({
+          id,
+          placement,
+          dismissible = true,
+          onDismiss: _onDismiss,
+          fixedId: _fixedId,
+          ...props
+        }) => (
           <Toast
             key={id}
             {...props}

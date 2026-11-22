@@ -3,20 +3,12 @@ import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
-import {
-  ActionHost,
-  InlineAction,
-  actionContentAttributes,
-} from "../../../shared/ui/ActionHost";
+import { ActionHost, InlineAction, actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Text } from "../../../shared/ui/Text";
-import {
-  Check,
-  ExternalLink,
-  X,
-} from "../../../shared/ui/icons";
+import { Check, ExternalLink, X } from "../../../shared/ui/icons";
 import { NoticeGlyph } from "../../../shared/ui/Notice";
 import { useNotificationProjects } from "../../notifications/hooks/useNotificationProjects";
 import { historyTone, type NotificationHistoryEntry } from "../../notifications";

@@ -821,9 +821,7 @@ export function QuickComposer({
           className="mx-3 mb-2 min-w-0 break-words"
           extra={
             <>
-              {longReason && notice ? (
-                <ErrorDetails title={error.title} detail={notice} />
-              ) : null}
+              {longReason && notice ? <ErrorDetails title={error.title} detail={notice} /> : null}
               {error.recovery === "screen-recording" ? (
                 <PermissionRecoveryAction id="screen-recording" />
               ) : null}

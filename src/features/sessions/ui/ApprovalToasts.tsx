@@ -16,6 +16,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Badge } from "../../../shared/ui/Badge";
 import { ToastCard, ToastSlot, useAutoDismiss } from "../../../shared/ui/ToastRegion";
 import { useT } from "../../../shared/i18n";
+import { useToday } from "../../../shared/ui/arc/lib/use-today";
 import { Bell, BellOff, Settings } from "../../../shared/ui/icons";
 import {
   Fragment,
@@ -144,6 +145,7 @@ export function ApprovalToasts({
   onOpenSettings,
 }: Props) {
   const t = useT();
+  const currentDay = useToday();
   const localHostNotice = useLocalHostDownNotice();
   const revokedLocalMachine = useRevokedLocalMachine();
   useProjectNotificationPreferences();
@@ -206,7 +208,12 @@ export function ApprovalToasts({
   // Rows stay unread until the owner marks them read; looking at the sheet does not.
   const unreadCount = recent.filter(({ entry }) => isHistoryUnread(entry, seenAt)).length;
   const badgeCount = count + unreadCount;
-  const { today, earlier } = groupHistoryByDay(recent, ({ entry }) => entry.occurredAt);
+  // Today follows the local midnight through the shared clock store, not a render-time read.
+  const { today, earlier } = groupHistoryByDay(
+    recent,
+    ({ entry }) => entry.occurredAt,
+    currentDay?.getTime() ?? 0,
+  );
   // Project preferences and the project catalog live in browser storage, so React reads them
   // through their stores.
   const eligibleKeys: string[] = JSON.parse(
@@ -360,7 +367,12 @@ export function ApprovalToasts({
                 <LiveText text={unreadCount > 0 ? t("{p0} unread", { p0: unreadCount }) : ""} />
               </Text>
               {unreadCount > 0 ? (
-                <Button variant="ghost" size="sm" type="button" onClick={() => markNotificationsSeen()}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => markNotificationsSeen()}
+                >
                   {t("Mark all read")}
                 </Button>
               ) : null}
@@ -373,11 +385,7 @@ export function ApprovalToasts({
                 aria-controls={optionsAnchor ? `${panelId}-options` : undefined}
                 onClick={(event) => setOptionsAnchor(optionsAnchor ? null : event.currentTarget)}
               >
-                {popupsEnabled ? (
-                  <Settings className="icon-sm" />
-                ) : (
-                  <BellOff className="icon-sm" />
-                )}
+                {popupsEnabled ? <Settings className="icon-sm" /> : <BellOff className="icon-sm" />}
               </Button>
             </>
           }

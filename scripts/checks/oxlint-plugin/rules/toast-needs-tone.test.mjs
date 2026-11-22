@@ -33,9 +33,10 @@ const toast = id("toast");
 
 test("toast-needs-tone flags toast.show without a tone", () => {
   const bare = show(toast, [prop("message")]);
-  const nested = show({ type: "MemberExpression", computed: false, object: id("api"), property: id("toast") }, [
-    prop("title"),
-  ]);
+  const nested = show(
+    { type: "MemberExpression", computed: false, object: id("api"), property: id("toast") },
+    [prop("title")],
+  );
   assert.deepEqual(run(file, [bare, nested]), [bare.arguments[0], nested.arguments[0]]);
 });
 

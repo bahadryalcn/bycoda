@@ -28,7 +28,9 @@ it("is unread only after the seen marker and until marked read", () => {
 
 it("splits today from earlier at local midnight, keeping order", () => {
   const now = new Date(2026, 10, 22, 15, 0).getTime();
-  const at = (day: number, hour: number) => ({ occurredAt: new Date(2026, 10, day, hour).getTime() });
+  const at = (day: number, hour: number) => ({
+    occurredAt: new Date(2026, 10, day, hour).getTime(),
+  });
   const rows = [at(22, 14), at(22, 0), at(21, 23), at(1, 9)];
   const { today, earlier } = groupHistoryByDay(rows, (row) => row.occurredAt, now);
   expect(today).toEqual(rows.slice(0, 2));

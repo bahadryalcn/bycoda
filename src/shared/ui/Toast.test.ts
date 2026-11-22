@@ -74,7 +74,14 @@ it("announces the message and does not restart expiry when a parent rerenders", 
   const latest = vi.fn();
   try {
     act(() =>
-      root.render(createElement(Toast, { tone: "info", durationMs: TOAST_VISIBLE_MS, message: "Could not save", onDismiss: first })),
+      root.render(
+        createElement(Toast, {
+          tone: "info",
+          durationMs: TOAST_VISIBLE_MS,
+          message: "Could not save",
+          onDismiss: first,
+        }),
+      ),
     );
     const status = document.querySelector('[role="status"]')!;
     expect(status.textContent).toContain("Could not save");
@@ -84,7 +91,14 @@ it("announces the message and does not restart expiry when a parent rerenders", 
       await vi.advanceTimersByTimeAsync(6_000);
     });
     act(() =>
-      root.render(createElement(Toast, { tone: "info", durationMs: TOAST_VISIBLE_MS, message: "Could not save", onDismiss: latest })),
+      root.render(
+        createElement(Toast, {
+          tone: "info",
+          durationMs: TOAST_VISIBLE_MS,
+          message: "Could not save",
+          onDismiss: latest,
+        }),
+      ),
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4_000);
@@ -208,7 +222,16 @@ it("pauses expiry in a hidden document and still permits explicit dismissal whil
   const root = createRoot(container);
   const onDismiss = vi.fn();
   try {
-    act(() => root.render(createElement(Toast, { tone: "info", durationMs: TOAST_VISIBLE_MS, message: "Saved", onDismiss })));
+    act(() =>
+      root.render(
+        createElement(Toast, {
+          tone: "info",
+          durationMs: TOAST_VISIBLE_MS,
+          message: "Saved",
+          onDismiss,
+        }),
+      ),
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6000);
     });
@@ -247,14 +270,29 @@ it("does not expire while dismissal is disabled by an operation", async () => {
   try {
     act(() =>
       root.render(
-        createElement(Toast, { tone: "info", durationMs: TOAST_VISIBLE_MS, message: "Updating", dismissDisabled: true, onDismiss }),
+        createElement(Toast, {
+          tone: "info",
+          durationMs: TOAST_VISIBLE_MS,
+          message: "Updating",
+          dismissDisabled: true,
+          onDismiss,
+        }),
       ),
     );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60000);
     });
     expect(onDismiss).not.toHaveBeenCalled();
-    act(() => root.render(createElement(Toast, { tone: "info", durationMs: TOAST_VISIBLE_MS, message: "Updated", onDismiss })));
+    act(() =>
+      root.render(
+        createElement(Toast, {
+          tone: "info",
+          durationMs: TOAST_VISIBLE_MS,
+          message: "Updated",
+          onDismiss,
+        }),
+      ),
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(TOAST_VISIBLE_MS);
     });
@@ -275,9 +313,7 @@ it("expires a danger notice after ten seconds by default", async () => {
   const root = createRoot(container);
   const onDismiss = vi.fn();
   try {
-    act(() =>
-      root.render(createElement(Toast, { tone: "danger", message: "Failed", onDismiss })),
-    );
+    act(() => root.render(createElement(Toast, { tone: "danger", message: "Failed", onDismiss })));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(9_999);
     });
@@ -289,7 +325,16 @@ it("expires a danger notice after ten seconds by default", async () => {
     expect(onDismiss).toHaveBeenCalledOnce();
     onDismiss.mockClear();
     // Other tones share the same default.
-    act(() => root.render(createElement(Toast, { tone: "info", durationMs: TOAST_VISIBLE_MS, message: "Saved", onDismiss })));
+    act(() =>
+      root.render(
+        createElement(Toast, {
+          tone: "info",
+          durationMs: TOAST_VISIBLE_MS,
+          message: "Saved",
+          onDismiss,
+        }),
+      ),
+    );
     await act(async () => {
       await vi.advanceTimersByTimeAsync(TOAST_VISIBLE_MS);
     });

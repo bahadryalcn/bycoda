@@ -242,7 +242,7 @@ export function ToastCard({
     resetKey: `${title ?? ""}\n${typeof message === "string" ? message : ""}\n${count ?? 1}`,
   });
   const actionButton = action ? <NoticeButton action={action} /> : null;
-  const actionRow =(placement: "header" | "footer") =>
+  const actionRow = (placement: "header" | "footer") =>
     hasActions && actionsPlacement === placement ? (
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {actions?.map((item) => (

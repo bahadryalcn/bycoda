@@ -205,11 +205,9 @@ function foldArrival(
   arrival: NotificationHistoryEntry,
 ): NotificationHistoryEntry {
   const newest = arrival.occurredAt >= existing.occurredAt ? arrival : existing;
-  const times = [
-    existing.occurredAt,
-    ...(existing.earlier ?? []),
-    arrival.occurredAt,
-  ].sort((a, b) => b - a);
+  const times = [existing.occurredAt, ...(existing.earlier ?? []), arrival.occurredAt].sort(
+    (a, b) => b - a,
+  );
   const { read: _read, ...base } = newest;
   return {
     ...base,
@@ -236,7 +234,8 @@ export async function recordNotificationHistory(entry: NotificationHistoryEntry)
         return false;
       }
       const index = read.entries.findIndex((item) => sameContent(item, entry));
-      if (index < 0) return writeNotificationHistory(mergeNotificationHistory([entry], read.entries));
+      if (index < 0)
+        return writeNotificationHistory(mergeNotificationHistory([entry], read.entries));
       const folded = foldArrival(read.entries[index], entry);
       return writeNotificationHistory(
         mergeNotificationHistory(

@@ -252,7 +252,9 @@ function SessionReviewContent({
   const errorNotice = error ? (
     <Alert
       tone="danger"
-      title={error.saved ? t("Could not record this turn's changes.") : t("Could not load the changes.")}
+      title={
+        error.saved ? t("Could not record this turn's changes.") : t("Could not load the changes.")
+      }
     >
       {presentedReason}{" "}
       {error.saved && (

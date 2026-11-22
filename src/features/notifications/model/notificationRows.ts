@@ -27,7 +27,7 @@ export function isHistoryUnread(entry: NotificationHistoryEntry, seenAt: number)
 export function groupHistoryByDay<T>(
   entries: readonly T[],
   timeOf: (item: T) => number,
-  now: number = Date.now(),
+  now: number,
 ): { today: T[]; earlier: T[] } {
   const startOfDay = new Date(now);
   startOfDay.setHours(0, 0, 0, 0);

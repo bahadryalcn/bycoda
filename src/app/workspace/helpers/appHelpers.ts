@@ -60,7 +60,11 @@ export async function revealExistingTool(tool: ToolId, cwd: string): Promise<boo
   try {
     return await routeWindowDestination({ kind: "tool", tool, cwd });
   } catch (cause) {
-    toast.show({ tone: "danger", title: t("Could not open window"), message: workspaceFailureDetail(cause) });
+    toast.show({
+      tone: "danger",
+      title: t("Could not open window"),
+      message: workspaceFailureDetail(cause),
+    });
     return true;
   }
 }

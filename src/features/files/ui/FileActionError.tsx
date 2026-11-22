@@ -11,7 +11,5 @@ export function FileActionError({
   useLocale();
   // Shared notice: portalled to the body so a transformed or contained
   // ancestor cannot clip it, and sticky until the user dismisses it.
-  return (
-    <Toast tone="danger" message={message} durationMs={null} onDismiss={onDismiss} />
-  );
+  return <Toast tone="danger" message={message} durationMs={null} onDismiss={onDismiss} />;
 }
