@@ -407,6 +407,28 @@ describe("coordinated quit", () => {
     expect(invokedWith("quit_decision")).toEqual({ id: 4, confirmed: true });
   });
 
+  it("lists the running Host sessions in the quit dialog, and cancelling stays", async () => {
+    vi.mocked(platformConfirm).mockResolvedValue(false);
+    await askQuitConfirmation(5, 2, {
+      desktopInFlight: 0,
+      hostActivity: {
+        sessions: 2,
+        shells: 0,
+        automations: 0,
+        runningSessions: [
+          { id: "a", title: "Fix login" },
+          { id: "b", title: "Ship release" },
+        ],
+      },
+    });
+    const message = vi.mocked(platformConfirm).mock.calls.at(-1)?.[0].message ?? "";
+    expect(message).toContain("2 sessions on this computer are still running.");
+    expect(message).toContain("• Fix login");
+    expect(message).toContain("• Ship release");
+    expect(message).toContain("stops them gracefully");
+    expect(invokedWith("quit_decision")).toEqual({ id: 5, confirmed: false });
+  });
+
   it("tells the coordinator when a required quit write fails", async () => {
     const release = busyWorkspace();
     vi.mocked(invoke).mockImplementation((command) =>

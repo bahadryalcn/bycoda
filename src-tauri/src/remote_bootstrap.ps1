@@ -5,6 +5,7 @@ $version = @@VERSION@@
 $release = @@RELEASE@@
 $forceUpgrade = $env:BYCODA_HOST_FORCE_UPGRADE -eq '1'
 $repair = $env:BYCODA_HOST_REPAIR -eq '1'
+$noService = $env:BYCODA_HOST_NO_SERVICE -eq '1'
 $hostPort = if ($env:BYCODA_HOST_PORT) { [int] $env:BYCODA_HOST_PORT } else { 3776 }
 # A package shipped inside the desktop installer, verified like a download.
 $bundledArchive = $env:BYCODA_HOST_ARCHIVE
@@ -151,15 +152,32 @@ try {
   if (-not $runtime) { $runtime = $previousRuntime }
   $node = Join-Path $runtime 'node.exe'
   $entry = Join-Path $runtime 'host.mjs'
-  if ($existed -and ($forceUpgrade -or $repair)) {
-    & $node $entry service uninstall | Out-Null
+  $modePath = Join-Path $base 'lifecycle.json'
+  $appMode = (Test-Path -LiteralPath $modePath) -and ((Get-Content -Raw -LiteralPath $modePath | ConvertFrom-Json).mode -eq 'app')
+  if (-not $noService -and -not $appMode -and $existed -and ($forceUpgrade -or $repair)) {
+    & $node $entry service uninstall --preserve-mode | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Could not stop the old host service.' }
   }
   try {
-    & $node $entry service install --port $hostPort | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Host service setup failed. Check the error above and sign in to the Windows desktop as the SSH user.' }
-    $connection = & $node $entry connection-info
-    if ($LASTEXITCODE -ne 0) { throw 'The host did not report a connection.' }
+    if ($noService) {
+      if (-not (Test-Path -LiteralPath $modePath)) {
+        & $node $entry service uninstall --initialize-app | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Could not confirm fresh app lifecycle mode.' }
+      }
+      & $node $entry app-runtime-prepare | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw 'Could not prepare the app-owned Host runtime.' }
+    } else {
+      $installArgs = @('service', 'install', '--port', $hostPort)
+      if (-not $bundledArchive) { $installArgs += '--ssh-setup' }
+      $installed = & $node $entry @installArgs
+      if ($LASTEXITCODE -ne 0) { throw 'Host service setup failed. Check the error above and sign in to the Windows desktop as the SSH user.' }
+      $connectionArgs = @('connection-info')
+      if (($installed | Select-Object -Last 1) -match '"enabledBackgroundService":true') {
+        $connectionArgs += '--background-service-enabled'
+      }
+      $connection = & $node $entry @connectionArgs
+      if ($LASTEXITCODE -ne 0) { throw 'The host did not report a connection.' }
+    }
     # Publish the installed version only after the new service answers.
     if ($nextPointer) {
       if ($existed) {
@@ -189,15 +207,15 @@ try {
         Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue
       }
     }
-    Write-Output $connection
+    if (-not $noService) { Write-Output $connection }
   } catch {
     $failure = $_
     if ($published -and $previousRuntime) {
       [IO.File]::WriteAllText($pointer, $previousRuntime, (New-Object Text.UTF8Encoding($false)))
       if ($null -ne $previousLauncher) { [IO.File]::WriteAllBytes($launcherPath, $previousLauncher) }
     }
-    if ($previousRuntime -and $runtime -ne $previousRuntime) {
-      & $node $entry service uninstall | Out-Null
+    if (-not $noService -and -not $appMode -and $previousRuntime -and $runtime -ne $previousRuntime) {
+      & $node $entry service uninstall --preserve-mode | Out-Null
       if ($LASTEXITCODE -eq 0) {
         & (Join-Path $previousRuntime 'node.exe') (Join-Path $previousRuntime 'host.mjs') service install --port $hostPort | Out-Null
       }

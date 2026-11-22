@@ -104,6 +104,8 @@ static QUIT_COUNTER: AtomicU32 = AtomicU32::new(1);
 struct QuitConfirm {
     id: u32,
     in_flight: u32,
+    desktop_in_flight: u32,
+    host_activity: crate::host_lifecycle::Activity,
 }
 
 pub fn open_new_window(app: &AppHandle) -> Result<(), String> {
@@ -727,6 +729,13 @@ pub fn allow_exit() -> bool {
     ALLOW_EXIT.load(Ordering::SeqCst)
 }
 
+pub(crate) fn quit_in_progress() -> bool {
+    QUIT_RUN
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .is_some()
+}
+
 /// What the coordinator should do once a stage's bookkeeping is settled.
 #[derive(Debug, PartialEq)]
 enum Next {
@@ -1018,7 +1027,20 @@ fn start_confirm(app: &AppHandle, id: u32) {
     ) else {
         return;
     };
-    if in_flight == 0 {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let host_activity = crate::host_lifecycle::quit_activity();
+        present_quit_confirmation(&app, id, in_flight, host_activity);
+    });
+}
+
+fn present_quit_confirmation(
+    app: &AppHandle,
+    id: u32,
+    in_flight: u32,
+    host_activity: crate::host_lifecycle::Activity,
+) {
+    if in_flight == 0 && host_activity.count() == 0 && !host_activity.unknown {
         start_commit(app, id);
         return;
     }
@@ -1052,7 +1074,16 @@ fn start_confirm(app: &AppHandle, id: u32) {
             run.prompt = Some(label.clone());
         }
     }
-    let payload = QuitConfirm { id, in_flight };
+    let payload = QuitConfirm {
+        id,
+        desktop_in_flight: in_flight,
+        // Existing clients only know this total. S4 can show the Host subtotal
+        // separately using hostActivity.
+        in_flight: in_flight
+            .saturating_add(host_activity.count())
+            .saturating_add(u32::from(host_activity.unknown)),
+        host_activity,
+    };
     if app
         .emit_to(EventTarget::webview_window(&label), QUIT_CONFIRM, payload)
         .is_err()

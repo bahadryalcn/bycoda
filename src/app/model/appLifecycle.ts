@@ -17,7 +17,6 @@ import {
   inFlightRefs,
   isInFlightSession,
   markTurnInterrupted,
-  quitWhileBusyMessage,
   wasTurnInterrupted,
   workspaceFromResumed,
   type ResumedWorkspace,
@@ -74,6 +73,7 @@ import {
 } from "../../features/projects/model/recents";
 import { workspaceTabCwd } from "../../features/workspace/model/workspaceTabGroups";
 import { showBootRestoreNotice } from "./bootRestoreNotice";
+import { quitConfirmMessage, type QuitConfirmPayload } from "./quitConfirmMessage";
 import type { ProjectReturnMemory } from "../../features/projects/model/projectReturn";
 import { appName } from "../../shared/lib/appName";
 import { platformConfirm } from "../../shared/model/appConfirm";
@@ -355,14 +355,18 @@ export async function reportQuitPoll(id: number): Promise<void> {
 }
 
 /** The one quit dialog, shown by whichever window the coordinator picked. */
-export async function askQuitConfirmation(id: number, inFlight: number): Promise<void> {
+export async function askQuitConfirmation(
+  id: number,
+  inFlight: number,
+  host: Pick<QuitConfirmPayload, "desktopInFlight" | "hostActivity"> = {},
+): Promise<void> {
   let confirmed = false;
   if (!quitDialogOpen) {
     quitDialogOpen = true;
     try {
       confirmed = await platformConfirm({
         title: appName(),
-        message: quitWhileBusyMessage(inFlight),
+        message: quitConfirmMessage({ id, inFlight, ...host }),
         confirmLabel: t("Quit"),
         tone: "danger",
       });

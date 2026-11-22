@@ -31,7 +31,12 @@ pub fn request_app_restart(app: AppHandle) {
 }
 
 fn start_run(app: &AppHandle, restart: bool) {
-    let labels = workspace_labels(app);
+    let mut labels = workspace_labels(app);
+    if labels.is_empty() && crate::host_lifecycle::owned_pid().is_some() {
+        // A dock-only app must still be able to ask before interrupting its Host.
+        let _ = super::show_hidden_or_open_new(app);
+        labels = workspace_labels(app);
+    }
     if labels.is_empty() {
         RESTART.store(restart, Ordering::SeqCst);
         confirm_quit(app.clone());
@@ -61,19 +66,26 @@ pub fn confirm_quit(app: AppHandle) {
     if !begin_finalization(&FINALIZING) {
         return;
     }
+    crate::host_lifecycle::begin_quit();
     *QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner()) = None;
-    for window in workspace_windows(&app) {
-        let _ = window.show();
+    if crate::host_lifecycle::owned_pid().is_some() {
+        for window in workspace_windows(&app) {
+            let _ = window.hide();
+        }
     }
     // Belt and braces. `RunEvent::Exit` reaps too, and it also runs before the
     // process is gone, but a macOS terminate that skips the run loop would not
     // reach it — and `kill_all`'s SIGKILL wait only works while we're alive.
     std::thread::spawn(move || {
+        crate::host_lifecycle::finish_quit();
         if let Some(host) = app.try_state::<crate::harness::HarnessHost>() {
             host.kill_all();
         }
         if let Some(host) = app.try_state::<crate::pty::PtyHost>() {
             host.kill_all();
+        }
+        for window in workspace_windows(&app) {
+            let _ = window.show();
         }
         ALLOW_EXIT.store(true, Ordering::SeqCst);
         if RESTART.load(Ordering::SeqCst) {

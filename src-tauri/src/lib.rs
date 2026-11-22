@@ -47,6 +47,7 @@ mod gitlab;
 mod handoff_history;
 mod harness;
 mod harness_updates;
+mod host_lifecycle;
 mod host_ws;
 mod html_preview;
 mod inbox_media;
@@ -523,6 +524,7 @@ pub fn run() {
             reminders::init(app.handle());
             // Keep this computer's host in step with the desktop it shipped with.
             if !package_smoke::active() {
+                host_lifecycle::start(app.handle());
                 bundled_host::start(app.handle());
             }
             conversation_tools_bridge::start_desktop_relay(app.handle().clone());
@@ -647,6 +649,8 @@ pub fn run() {
             local_host::local_host_reconnect,
             local_host::local_host_status,
             local_host::local_host_start,
+            host_lifecycle::switch::local_host_mode,
+            host_lifecycle::switch::local_host_set_mode,
             bundled_host::local_host_bundle_status,
             bundled_host::local_host_bundle_update,
             generic_acp::generic_acp_list,
