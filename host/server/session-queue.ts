@@ -92,15 +92,25 @@ export async function createSessionQueueRuntime(
   };
   /** Where watchers of `id` should look: the desktop app's copy for a
    * desktop-only session, or for an adopted one the app is running a turn in. */
-  const desktopWatch = async (id: string, polling = false, signal?: AbortSignal) => {
+  const desktopWatch = async (
+    id: string,
+    polling = false,
+    signal?: AbortSignal,
+    /** Pure transcript reads stay out of the writer queue; admission decisions keep its order. */
+    pureRead = false,
+  ) => {
     if (!id) return undefined;
     const { store } = dependencies.engine;
     signal?.throwIfAborted();
     let hosted: Awaited<ReturnType<typeof store.sessionStateMetadata>>;
     try {
-      const metadata = await store.sessionStateMetadata(id);
+      const metadata = await (pureRead
+        ? store.sessionReadMetadata(id)
+        : store.sessionStateMetadata(id));
       if (metadata?.authorityGeneration !== undefined)
-        await store.assertAuthority(id, metadata.authorityGeneration);
+        await (pureRead
+          ? store.assertAuthorityRead(id, metadata.authorityGeneration)
+          : store.assertAuthority(id, metadata.authorityGeneration));
       hosted = metadata;
     } catch {
       /* desktop-only */

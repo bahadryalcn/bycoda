@@ -24,7 +24,12 @@ export const MAX_TRANSFER_CACHE_BYTES = 128 * 1024 * 1024;
 // that text for the response envelope instead of stringifying the value again.
 const serialized = new WeakMap<object, string>();
 
-/** JSON text of a value returned inline by `respond`, if it is still known. */
+/** Reuse JSON already encoded to enforce an inline transfer's byte budget. */
+export function rememberSerializedResponse(value: object, text: string): void {
+  serialized.set(value, text);
+}
+
+/** JSON of an inline result whose producer already measured the wire bytes. */
 export function serializedResponse(value: unknown): string | undefined {
   return value && typeof value === "object" ? serialized.get(value) : undefined;
 }
@@ -70,7 +75,7 @@ export class SyncTransfers {
         "Session content exceeds the transfer budget; use bounded history pages or read the source file.",
       );
     if (text.length * 3 <= this.limits.inline || Buffer.byteLength(text) <= this.limits.inline) {
-      serialized.set(sync, text);
+      rememberSerializedResponse(sync, text);
       return sync;
     }
     const now = Date.now();

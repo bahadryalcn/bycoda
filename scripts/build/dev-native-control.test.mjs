@@ -31,7 +31,7 @@ test("run-local controls execute once and reject unknown commands without dispat
       error: "Unsupported native acceptance control",
     });
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
 });
 
@@ -52,6 +52,6 @@ test("failed restart acknowledges failure and a later request may retry", async 
     await control.poll();
     assert.equal(JSON.parse(await readFile(control.resultPath, "utf8")).pid, 123);
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
 });

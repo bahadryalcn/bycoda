@@ -531,7 +531,7 @@ it("routes file and summary requests to the lightweight index, including conflic
       additions: 2,
       deletions: 1,
     });
-    expect(read).toHaveBeenLastCalledWith(await realpath(cwd), false);
+    expect(read).toHaveBeenLastCalledWith(await realpath(cwd), false, false);
     await commands.run("git_diff_index", { cwd });
     expect(read).toHaveBeenLastCalledWith(await realpath(cwd), true);
   } finally {

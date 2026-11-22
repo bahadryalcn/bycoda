@@ -281,6 +281,10 @@ export class HostStore {
   assertAuthority(sessionId: string, expectedGeneration?: number): Promise<boolean> {
     return this.db.scope(() => assertHostAuthority(this.db, sessionId, expectedGeneration));
   }
+  /** Fence check for pure reads: answers from the latest committed head beside the writer queue. */
+  assertAuthorityRead(sessionId: string, expectedGeneration?: number): Promise<boolean> {
+    return this.db.readScope(() => assertHostAuthority(this.db, sessionId, expectedGeneration));
+  }
   private async sessionWrite<T>(
     sessionId: string,
     expectedGeneration: number | undefined,
@@ -354,6 +358,8 @@ export class HostStore {
   private authCache = new Map<string, { version: number; expires: number }>();
   private deviceLastSeen = new Map<string, number>();
   private pendingBefore?: Map<string, PendingWrite | undefined>;
+  /** Values taken from `pending` whose checkpoint has not committed yet. */
+  private readonly flushing = new Map<string, HostSession>();
   private snapshotPending(id: string): void {
     if (!this.pendingBefore || this.pendingBefore.has(id)) return;
     const entry = this.pending.get(id);
@@ -623,6 +629,7 @@ export class HostStore {
     const pendingBefore = this.pendingBefore;
     this.pendingBefore = undefined;
     this.inTransaction = false;
+    this.flushing.clear();
     this.transactionChanges = 0;
     this.transactionProjectChanges.clear();
     this.versions.clearPending();
@@ -1998,26 +2005,39 @@ export class HostStore {
       return runs;
     });
   }
-  async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
-    if (signal) return this.cancellableSessionRead(id, signal, () => this.sync(id, revision));
+  /** The session and its sync answer from one writer admission, so both describe one revision. */
+  async sessionSync(
+    id: string,
+    revision?: number,
+    signal?: AbortSignal,
+  ): Promise<{ current: HostSession; sync: SessionSync }> {
+    if (signal)
+      return this.cancellableSessionRead(id, signal, () => this.sessionSync(id, revision));
     return this.db.storeScope(async () => {
       const value = await this.session(id);
+      if (revision === value.revision)
+        return { current: value, sync: { kind: "unchanged", revision } };
       const { blockRevisions, ...snapshot } = value;
-      if (revision === value.revision) return { kind: "unchanged", revision };
       if (revision === undefined || revision > value.revision || !blockRevisions)
-        return { kind: "snapshot", value: snapshot };
+        return { current: value, sync: { kind: "snapshot", value: snapshot } };
       const {
         session: { blocks, ...session },
         ...rest
       } = snapshot;
       return {
-        kind: "delta",
-        base: revision,
-        value: { ...rest, session },
-        blockIds: blocks.map((block) => block.id),
-        blocks: blocks.filter((block) => (blockRevisions[block.id] ?? value.revision) > revision),
+        current: value,
+        sync: {
+          kind: "delta",
+          base: revision,
+          value: { ...rest, session },
+          blockIds: blocks.map((block) => block.id),
+          blocks: blocks.filter((block) => (blockRevisions[block.id] ?? value.revision) > revision),
+        },
       };
     });
+  }
+  async sync(id: string, revision?: number, signal?: AbortSignal): Promise<SessionSync> {
+    return (await this.sessionSync(id, revision, signal)).sync;
   }
   /** Sessions taken over from this machine's desktop app, without parsing
    * their transcripts. */
@@ -2239,27 +2259,44 @@ export class HostStore {
         this.stateMetadata.set(id, known);
         return known;
       }
-      const row = await this.db
-        .prepare(
-          `SELECT project_id, revision, status, has_desktop,
-            json_extract(summary, '$.authorityGeneration') AS authority_generation,
-            COALESCE(json_extract(summary, '$.createdAt'), updated_at) AS created_at
-          FROM session_state WHERE id=?`,
-        )
-        .get(id);
-      if (!row) return undefined;
-      const value: SessionStateMetadata = {
-        projectId: String(row.project_id),
-        revision: Number(row.revision),
-        status: row.status as HostSession["status"],
-        desktop: !!Number(row.has_desktop),
-        authorityGeneration:
-          row.authority_generation == null ? undefined : Number(row.authority_generation),
-        createdAt: row.created_at == null ? undefined : Number(row.created_at),
-      };
-      this.rememberStateMetadata(id, value);
+      const value = await this.storedStateMetadata(id);
+      if (value) this.rememberStateMetadata(id, value);
       return value;
     });
+  }
+  /**
+   * Metadata for pure session reads, beside the writer queue. It answers with the state before
+   * an open transaction, and keeps an unwritten value visible until its checkpoint commits.
+   * Decisions that must follow queued writes use `sessionStateMetadata`.
+   */
+  async sessionReadMetadata(id: string): Promise<SessionStateMetadata | undefined> {
+    if (this.db.ownsScope) return this.sessionStateMetadata(id);
+    const unwritten = this.pendingBefore?.has(id)
+      ? this.pendingBefore.get(id)?.value
+      : (this.flushing.get(id) ?? this.pending.get(id)?.value);
+    return this.db.readScope(() =>
+      unwritten ? stateMetadataOf(unwritten) : this.storedStateMetadata(id),
+    );
+  }
+  private async storedStateMetadata(id: string): Promise<SessionStateMetadata | undefined> {
+    const row = await this.db
+      .prepare(
+        `SELECT project_id, revision, status, has_desktop,
+          json_extract(summary, '$.authorityGeneration') AS authority_generation,
+          COALESCE(json_extract(summary, '$.createdAt'), updated_at) AS created_at
+        FROM session_state WHERE id=?`,
+      )
+      .get(id);
+    if (!row) return undefined;
+    return {
+      projectId: String(row.project_id),
+      revision: Number(row.revision),
+      status: row.status as HostSession["status"],
+      desktop: !!Number(row.has_desktop),
+      authorityGeneration:
+        row.authority_generation == null ? undefined : Number(row.authority_generation),
+      createdAt: row.created_at == null ? undefined : Number(row.created_at),
+    };
   }
   private rememberStateMetadata(id: string, value: SessionStateMetadata) {
     this.stateMetadata.delete(id);
@@ -2456,6 +2493,7 @@ export class HostStore {
   private async flushPending(id: string): Promise<void> {
     const entry = this.take(id);
     if (!entry) return;
+    this.flushing.set(id, entry.value);
     try {
       await this.writeJournal(entry.value, entry.events, entry);
     } catch (error) {
@@ -2464,6 +2502,8 @@ export class HostStore {
       entry.unwritable = isStorageConstraintFailure(error);
       this.restore(entry);
       throw error;
+    } finally {
+      this.flushing.delete(id);
     }
     // The aggregate counts each block independently (a conservative estimate
     // even with shared children). Reserve space for array and revision keys.

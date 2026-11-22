@@ -123,18 +123,23 @@ export async function createSessionListRuntime(
     );
   };
   const sessionSourceKey = async (id: string): Promise<string> => {
-    const watch = await dependencies.desktopWatch(id);
+    const { store } = dependencies.engine;
+    const known = await store.sessionReadMetadata(id).catch(() => undefined);
+    // An unfenced Host-owned session has no desktop owner to ask about, so one read answers.
+    const hostOwned =
+      known?.authorityGeneration === undefined && (!known?.desktop || known.status === "running");
+    const watch =
+      known && hostOwned ? undefined : await dependencies.desktopWatch(id, false, undefined, true);
     if (watch) {
       const overlay = dependencies.desktop.live.overlay(id);
       return createHash("sha256")
         .update(JSON.stringify([sessionListEpoch, "desktop", overlay?.sourceEpoch ?? null]))
         .digest("hex");
     }
-    const { store } = dependencies.engine;
-    const session = await store.sessionStateMetadata(id);
+    const session = known && hostOwned ? known : await store.sessionReadMetadata(id);
     if (!session) throw new Error("Session not found on this machine");
     if (session.authorityGeneration !== undefined)
-      await store.assertAuthority(id, session.authorityGeneration);
+      await store.assertAuthorityRead(id, session.authorityGeneration);
     return createHash("sha256")
       .update(
         JSON.stringify([
@@ -155,7 +160,7 @@ export async function createSessionListRuntime(
         .prepare("SELECT source_key, epoch FROM session_read_sources WHERE session_id=?")
         .get(id);
     // The steady state is a match; only a changed source takes the write lock.
-    const stored = await readKnown();
+    const stored = await dependencies.engine.store.db.readScope(readKnown);
     const epoch =
       stored && stored.source_key === source
         ? String(stored.epoch)

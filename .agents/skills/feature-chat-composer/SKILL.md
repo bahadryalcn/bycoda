@@ -39,6 +39,7 @@ Own input preparation and its UI state. Provider/account policy belongs to featu
 - Stop/cancel remains usable during preparation. Question drafts retain exact input and separate semantic lineages; bounded admission must not evict pending/unknown data.
 - Citation snapshots persist with the draft outside the textarea, which holds only `[quoteN]` tokens (`citationTokens.ts`). Preserve them through remount, send rejection and retained input; removing one drops only its token and renumbers. Providers get the expanded input plus literal snapshots tagged with `ref`, so quotes never trigger file or skill expansion.
 - Citation previews: six words/80 graphemes; data intact.
+- A draft whose longest line reaches 16,000 characters leaves the inline CodeMirror editor for the native field (`composerInlineLongLine.ts`); CodeMirror re-measures one giant wrapped line without converging. Undo/redo history moves with it (`composerInlineHistory.ts`) and returns when every line is under 8,000; a composition in the editor finishes first.
 
 ## Focused checks
 

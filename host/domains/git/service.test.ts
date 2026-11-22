@@ -35,6 +35,7 @@ async function fixture() {
     project: async () => ({ id: "project", cwd: root }),
     resolveWorktree: resolveHostWorktreeAsync,
     withIdleProject: async (_id, work) => work(),
+    withStableCheckout: async (_id, work) => work(),
     serializeMutation: (cwd, work, scope) => withHostGitMutation(cwd, work, undefined, scope),
     startActivity: vi.fn(async () => release),
     invalidateRoots: vi.fn(),
@@ -124,6 +125,39 @@ it("rechecks a revoked device after the real repository mutex without staging", 
   expect(f.release).toHaveBeenCalledTimes(1);
   expect((await f.git("ls-files")).stdout).toBe("");
 });
+it("lets index, commit and push run beside an active session, but not file rewrites", async () => {
+  const f = await fixture();
+  const busy = new Error("Wait for running sessions");
+  f.ports.withIdleProject = async () => {
+    throw busy;
+  };
+  const action = vi.fn<HostGitServicePorts["action"]>(async () => undefined);
+  f.ports.action = action;
+  for (const name of ["stage", "stageAll", "unstageAll", "commit", "push", "createPr"])
+    await f.service.action({ projectId: "project", action: name, path: "file.txt" }, f.context);
+  expect(action).toHaveBeenCalledTimes(6);
+  for (const name of ["discard", "discardFiles", "discardAll", "resolveContents"])
+    await expect(
+      f.service.action({ projectId: "project", action: name, path: "file.txt" }, f.context),
+    ).rejects.toBe(busy);
+  await expect(f.service.switch({ projectId: "project", branch: "other" }, f.context)).rejects.toBe(
+    busy,
+  );
+  expect(action).toHaveBeenCalledTimes(6);
+});
+it("refuses a commit during a branch switch without touching the repository", async () => {
+  const f = await fixture();
+  const switching = new Error("A branch switch is already in progress");
+  f.ports.withStableCheckout = async () => {
+    throw switching;
+  };
+  const action = vi.fn<HostGitServicePorts["action"]>(async () => undefined);
+  f.ports.action = action;
+  await expect(
+    f.service.action({ projectId: "project", action: "commit", message: "Fix" }, f.context),
+  ).rejects.toBe(switching);
+  expect(action).not.toHaveBeenCalled();
+});
 it("rechecks idle-project wait and refuses delayed query disclosure", async () => {
   const f = await fixture();
   f.ports.withIdleProject = async (_id, work) => {
@@ -132,7 +166,7 @@ it("rechecks idle-project wait and refuses delayed query disclosure", async () =
   };
   const action = vi.spyOn(f.ports, "action");
   await expect(
-    f.service.action({ projectId: "project", action: "stageAll" }, f.context),
+    f.service.action({ projectId: "project", action: "discardAll" }, f.context),
   ).rejects.toThrow("revoked");
   expect(action).not.toHaveBeenCalled();
   f.context.authorized.mockResolvedValue(true);

@@ -623,3 +623,56 @@ for (const width of [800, 1280]) {
     expect(errors).toEqual([]);
   });
 }
+
+test("a referenced draft with one very long wrapped line keeps its caret in view and its undo", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 850 });
+  await page.goto("/tests/browser/sessions/session-usability.html?machineFixture=project");
+  const field = page.locator("[data-composer-box] textarea");
+  const editor = page.locator("[data-composer-box] .cm-editor");
+  const link = "https://example.com/fixture ";
+  await field.fill(link);
+  await expect(editor).toHaveCount(1);
+  // Cross the long-line limit inside the editor, then undo and redo the insertion.
+  const rest = "a b ".repeat(16384).slice(0, 65536 - link.length);
+  const draft = link + rest;
+  await page.locator("[data-composer-box] .cm-content").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.insertText(rest);
+  await expect(editor).toHaveCount(0);
+  await expect(field).toBeVisible();
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue(draft);
+  const atBottom = () =>
+    field.evaluate(
+      (input) =>
+        input.scrollHeight - input.scrollTop - input.clientHeight <=
+        parseFloat(getComputedStyle(input).paddingBottom) + 2,
+    );
+  await expect.poll(atBottom).toBe(true);
+  await page.keyboard.press("Control+z");
+  await expect(field).toHaveValue(link);
+  await page.keyboard.press("Control+Shift+z");
+  await expect(field).toHaveValue(draft);
+  await field.focus();
+  await page.keyboard.press("Control+Home");
+  await expect
+    .poll(() =>
+      field.evaluate(
+        (input: HTMLTextAreaElement) =>
+          input.selectionEnd === 0 &&
+          input.scrollTop <= parseFloat(getComputedStyle(input).paddingTop) + 2,
+      ),
+    )
+    .toBe(true);
+  await page.keyboard.press("Control+End");
+  await expect.poll(atBottom).toBe(true);
+  expect(await field.evaluate((input: HTMLTextAreaElement) => input.selectionEnd)).toBe(
+    draft.length,
+  );
+  await page.keyboard.type("xy");
+  await expect(field).toHaveValue(draft + "xy");
+  await expect.poll(atBottom).toBe(true);
+  await expect(editor).toHaveCount(0);
+});

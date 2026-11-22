@@ -1554,6 +1554,20 @@ export class HostEngine {
     }
   }
 
+  /** Git work that leaves working files alone may overlap agents, but never a branch switch. */
+  async withStableCheckout<T>(projectId: string, action: () => Promise<T>): Promise<T> {
+    await this.ready;
+    if (this.switchingProjects.has(projectId))
+      throw new HostDomainRefusalError(
+        "COMMAND_BUSY",
+        "conflict",
+        false,
+        "A branch switch is already in progress",
+      );
+    await this.store.db.checkAuthorization();
+    return await action();
+  }
+
   supportsSteer(id: RemoteProvider): boolean {
     return !!this.providers[id]?.steer;
   }
