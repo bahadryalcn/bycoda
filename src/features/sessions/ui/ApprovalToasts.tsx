@@ -16,7 +16,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Badge } from "../../../shared/ui/Badge";
 import { ToastCard, ToastSlot, useAutoDismiss } from "../../../shared/ui/ToastRegion";
 import { useT } from "../../../shared/i18n";
-import { useToday } from "../../../shared/ui/arc/lib/use-today";
+import { useToday } from "../../../shared/ui/useToday";
 import { Bell, BellOff, Settings } from "../../../shared/ui/icons";
 import {
   Fragment,
