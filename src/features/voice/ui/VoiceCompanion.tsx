@@ -18,6 +18,8 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { Session } from "../../sessions/public/session";
+import { currentExecutionTools } from "../../sessions/public/commandInspection";
+import { voiceLiveResults } from "../model/voiceLiveWork";
 import { sessionsRef as liveSessions, useSession } from "../../sessions/model/sessionsStore";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
@@ -33,15 +35,10 @@ import { VoiceToolActivity, type VoiceToolActivityEntry } from "../model/voiceTo
 import { VoiceCompanionView } from "./companion/VoiceCompanionView";
 import { VoiceLiveWorkspace } from "./companion/VoiceLiveWorkspace";
 import {
-  showVoiceWorkTool,
-  voiceLiveWorkSuggestion,
-  type VoiceWorkspaceTool,
-} from "../model/voiceLiveWork";
-import { useVoiceWorkspaceJobs } from "../model/voiceWorkspaceJobs";
-import {
-  useVoiceWorkspaceTrackedWork,
-  type VoiceWorkspaceTrackedWork,
-} from "../model/voiceWorkspaceTrackedWork";
+  presentVoiceResultTool,
+  VoicePresentedResultSchema,
+  type VoicePresentedResult,
+} from "../model/voicePresentedResult";
 import {
   VoiceLauncher,
   VoiceReturnButton,
@@ -55,7 +52,7 @@ import {
   waitForAssistantControlSource,
 } from "../../assistant/model/useAssistantControlSource";
 import { truncateGraphemes } from "../../../shared/lib/text/truncate";
-import { elapsedSince } from "../../../shared/lib/time/timestamps";
+import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import { LocalVoice, type SpeechBinding } from "../model/localVoice";
 import {
   useVoicePresence,
@@ -230,18 +227,11 @@ export type VoiceCompanionProps = {
   projectPath?: string;
   ensureToolSession?: (projectPath: string) => Promise<string>;
   assistantSession?: Session;
-  registerWorkspaceOpener?: (open?: (target: Pick<Session, "id" | "cwd">) => void) => void;
-  renderWorkspaceTool?: (panel: VoiceWorkspaceTool, session: Session) => React.ReactNode;
-  openWorkspaceTrackedWork?: (work: VoiceWorkspaceTrackedWork) => boolean;
 };
 export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: VoiceWakeControls }) {
   const locale = useLocale();
   useSyncExternalStore(subscribeGroupLock, getGroupLockView);
-  const {
-    snapshot: assistantSnapshot,
-    environmentId: assistantEnvironmentId,
-    error: assistantSnapshotError,
-  } = useAssistantSnapshot();
+  const { snapshot: assistantSnapshot } = useAssistantSnapshot();
   const snapshotRef = useRef(assistantSnapshot);
   snapshotRef.current = assistantSnapshot;
   const identity = assistantIdentity(assistantSnapshot?.profile, locale);
@@ -254,13 +244,20 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   const latest = useRef(props);
   const [open, setOpen] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
-  const [workPanelOpen, setWorkPanelOpen] = useState(false);
   const workPanelToggle = useRef<HTMLButtonElement>(null);
-  const [workspaceAnchor, setWorkspaceAnchor] = useState<Pick<Session, "id" | "cwd">>();
-  const [workspaceDrafts, setWorkspaceDrafts] = useState<ReadonlyMap<string, string>>(
-    () => new Map(),
-  );
-  const [dismissedWork, setDismissedWork] = useState<ReadonlySet<string>>(() => new Set());
+  const [voiceResultTurn, setVoiceResultTurn] = useState<{ revision: number; since: number }>();
+  const [hiddenResults, setHiddenResults] = useState<number>();
+  const [presentedResult, setPresentedResult] = useState<{
+    revision: number;
+    result: VoicePresentedResult;
+  }>();
+  const [voiceSubmittedWork, setVoiceSubmittedWork] = useState<{
+    revision: number;
+    sessionId: string;
+    cwd: string;
+    text: string;
+    previousTurnId: string | undefined;
+  }>();
   const [status, setStatus] = useState<
     "idle" | "connecting" | "live" | "reconnecting" | "sleeping" | "ready"
   >("idle");
@@ -869,7 +866,6 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   const panel = useRef<HTMLElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const compactToggle = useRef<HTMLButtonElement>(null);
-  const workspaceReturnFocus = useRef<HTMLElement | null>(null);
   useLayoutEffect(() => {
     if (open && panel.current?.contains(document.activeElement)) compactToggle.current?.focus();
   }, [compact]);
@@ -1318,17 +1314,55 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       workspace: {
         tools: [
           ...(latest.current.workspace?.tools ?? []),
-          ...(panel.current?.hasAttribute("data-full-screen") ? [showVoiceWorkTool] : []),
+          ...(panel.current?.hasAttribute("data-live-call") ? [presentVoiceResultTool] : []),
         ],
         execute: async (action, input) => {
-          if (action === showVoiceWorkTool.name) {
-            if (!panel.current?.hasAttribute("data-full-screen") || Object.keys(input).length)
-              throw new Error("The full-screen work panel is unavailable for this request.");
-            setWorkPanelOpen(true);
+          if (action === presentVoiceResultTool.name) {
+            if (
+              !panel.current?.hasAttribute("data-live-call") ||
+              !turnCaptured.current ||
+              !voiceDisclosureCurrent()
+            )
+              throw new Error("There is no active full-screen voice turn to show this result in.");
+            const parsed = VoicePresentedResultSchema.safeParse(input);
+            if (!parsed.success)
+              throw new Error("This result cannot be displayed. Use short, non-sensitive facts.");
+            setPresentedResult({ revision: turnRevision.current, result: parsed.data });
             return { action, status: "completed" };
           }
           if (!latest.current.workspace) throw new Error("Workspace actions are unavailable.");
-          return latest.current.workspace.execute(action, input);
+          const submission = action === "workspace.sessions.submit";
+          const creation = action === "workspace.sessions.create" && input.submit === true;
+          const brief = submission ? input.text : creation ? input.prompt : undefined;
+          if (typeof brief !== "string" || !turnCaptured.current)
+            return latest.current.workspace.execute(action, input);
+          const revision = turnRevision.current;
+          const before =
+            submission && typeof input.sessionId === "string"
+              ? findSession(input.sessionId)
+              : undefined;
+          const previousTurnId = before && currentExecutionTools(before.blocks).turnId;
+          const result = await latest.current.workspace.execute(action, input);
+          if (
+            revision === turnRevision.current &&
+            result.status === "accepted" &&
+            result.sessionId &&
+            result.projectPath &&
+            ((submission &&
+              before?.id === result.sessionId &&
+              pathKey(before.cwd) === pathKey(result.projectPath) &&
+              result.accepted === true) ||
+              (creation && result.submitted === true))
+          ) {
+            setVoiceSubmittedWork({
+              revision,
+              sessionId: result.sessionId,
+              cwd: result.projectPath,
+              text: brief.trim(),
+              previousTurnId,
+            });
+          }
+          return result;
         },
       },
       ensureToolSession: latest.current.ensureToolSession,
@@ -1440,6 +1474,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   function captureTurn(snapshot: SpeechTarget) {
     turnRevision.current++;
     const revision = turnRevision.current;
+    setVoiceResultTurn({ revision, since: monotonicNow() });
+    setPresentedResult(undefined);
+    setVoiceSubmittedWork(undefined);
     const global = snapshot.globalScope ?? scopeRef.current;
     const binding =
       snapshot.historyBinding ??
@@ -1487,9 +1524,19 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     }
     // Store before invoking the callback, including ambiguous failures. Rephrasing
     // or retrying a tool call is not a second user authorization.
+    const revision = turnRevision.current;
+    const previousTurnId = currentExecutionTools(session.blocks).turnId;
     const result = Promise.resolve().then(async () => {
       if (generation.current !== epoch || !active()) return { accepted: false };
       const accepted = await latest.current.onSubmit(session.id, text);
+      if (accepted && generation.current === epoch && active() && turnRevision.current === revision)
+        setVoiceSubmittedWork({
+          revision,
+          sessionId: session.id,
+          cwd: session.cwd,
+          text,
+          previousTurnId,
+        });
       if (generation.current === epoch && accepted)
         jobs.current.set(session.id, {
           sawBusy: Boolean(session.busy),
@@ -1502,6 +1549,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     return result;
   }
   function stopCapture(next: typeof status, preserveDrafts = false) {
+    setVoiceResultTurn(undefined);
+    setPresentedResult(undefined);
+    setVoiceSubmittedWork(undefined);
     setLastAdmittedSpeechAt(null);
     lastDeliveredAssistant.current = "";
     manualPresenceCapture.current = false;
@@ -1530,6 +1580,9 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     setMuted(false);
   }
   function close() {
+    setVoiceResultTurn(undefined);
+    setPresentedResult(undefined);
+    setVoiceSubmittedWork(undefined);
     invalidateFeatureHosts();
     setLastAdmittedSpeechAt(null);
     lastDeliveredAssistant.current = "";
@@ -1581,17 +1634,21 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   }
   function exitFullScreen() {
     setFullScreen(false);
-    setWorkPanelOpen(false);
     compactToggle.current?.focus();
   }
   function closeWorkPanel() {
-    setWorkPanelOpen(false);
+    setHiddenResults(voiceResultTurn?.revision);
     workPanelToggle.current?.focus();
   }
   const workspaceOverlay = useOverlay(
     panel,
     fullScreen,
-    fullScreen ? (workPanelOpen ? closeWorkPanel : exitFullScreen) : undefined,
+    fullScreen
+      ? () => {
+          if (workPanelToggle.current?.getAttribute("aria-expanded") === "true") closeWorkPanel();
+          else exitFullScreen();
+        }
+      : undefined,
     open && !detached,
     undefined,
     false,
@@ -3141,143 +3198,56 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
             ),
       )
     : [];
-  const storedWorkspaceSession = useSession(fullScreen ? workspaceAnchor?.id : undefined);
-  const matchesWorkspaceAnchor = (session: Session) =>
-    session.id === workspaceAnchor?.id && pathKey(session.cwd) === pathKey(workspaceAnchor.cwd);
-  const workspaceSession =
-    storedWorkspaceSession && matchesWorkspaceAnchor(storedWorkspaceSession)
-      ? storedWorkspaceSession
-      : fullScreen && workspaceAnchor
-        ? props.sessions.find(matchesWorkspaceAnchor)
-        : undefined;
-  const workSessionVisible = (session: Session) =>
-    bodyVisible &&
-    !isProjectLocked(session.cwd) &&
-    (props.projects ?? [{ path: props.projectPath ?? target?.cwd ?? "" }]).some(
-      (project) => pathKey(project.path) === pathKey(session.cwd),
-    );
-  const visibleWorkspaceSession =
-    workspaceSession && workSessionVisible(workspaceSession) ? workspaceSession : undefined;
-  const workspaceDraftKey = visibleWorkspaceSession
-    ? JSON.stringify([pathKey(visibleWorkspaceSession.cwd), visibleWorkspaceSession.id])
-    : undefined;
-  const workspacePaths = (props.projects ?? [{ path: props.projectPath ?? target?.cwd ?? "" }]).map(
-    (project) => project.path,
-  );
-  const trackedProjectPath = workspaceAnchor
-    ? visibleWorkspaceSession?.cwd
-    : (target?.cwd ?? props.projectPath);
-  const workspaceTrackedWork = useVoiceWorkspaceTrackedWork({
-    enabled: fullScreen && workPanelOpen && bodyVisible,
-    projectPath: trackedProjectPath,
-    visibleProjectPaths: workspacePaths,
-  });
-  const workspaceJobs = useVoiceWorkspaceJobs({
-    enabled: fullScreen && workPanelOpen && !assistantSnapshotError && bodyVisible,
-    snapshot: assistantSnapshot,
-    environmentId: assistantEnvironmentId,
-    visibleProjectPaths: workspacePaths,
-    scope: globalScope
-      ? { kind: "global" }
-      : {
-          kind: "project",
-          path: visibleWorkspaceSession?.cwd ?? target?.cwd ?? props.projectPath ?? "",
-        },
-    request: assistantRequest,
-    jobVisible: assistantJobVisible,
-    jobProjectIds: assistantJobProjectIds,
-  });
-  const suggestedWork = !fullScreen
-    ? voiceLiveWorkSuggestion(
-        target && workSessionVisible(target) ? target : undefined,
-        visibleToolActivities,
+  const currentResultTurn =
+    fullScreen && status === "live" && bodyVisible ? voiceResultTurn : undefined;
+  const acceptedWork =
+    currentResultTurn?.revision === voiceSubmittedWork?.revision ? voiceSubmittedWork : undefined;
+  const storedResultSession = useSession(acceptedWork?.sessionId);
+  const resultSession = acceptedWork
+    ? [storedResultSession, ...props.sessions].find(
+        (session) =>
+          session?.id === acceptedWork.sessionId &&
+          pathKey(session.cwd) === pathKey(acceptedWork.cwd),
       )
     : undefined;
-  function enterFullScreen(showWork = false) {
-    if (showWork && suggestedWork) dismissWorkSuggestion(suggestedWork);
-    showWorkspace(target, showWork);
-    compactToggle.current?.focus();
-  }
-  function showWorkspace(session: Session | undefined, showWork: boolean) {
-    setWorkspaceAnchor(session ? { id: session.id, cwd: session.cwd } : undefined);
+  const resultSessionVisible =
+    resultSession &&
+    !isProjectLocked(resultSession.cwd) &&
+    (props.projects ?? [{ path: target?.cwd ?? props.projectPath ?? "" }]).some(
+      (project) => pathKey(project.path) === pathKey(resultSession.cwd),
+    );
+  const resultTurnId = resultSessionVisible
+    ? currentExecutionTools(resultSession.blocks).turnId
+    : undefined;
+  const boundedSession =
+    resultSession &&
+    acceptedWork &&
+    resultTurnId &&
+    resultTurnId !== acceptedWork.previousTurnId &&
+    resultSession.blocks.find((block) => block.id === resultTurnId)?.text.trim() ===
+      acceptedWork.text
+      ? resultSession
+      : undefined;
+  const resultActivities = currentResultTurn
+    ? visibleToolActivities.filter((entry) => entry.startedAt >= currentResultTurn.since)
+    : [];
+  const visiblePresentation =
+    currentResultTurn && presentedResult?.revision === currentResultTurn.revision
+      ? presentedResult.result
+      : undefined;
+  const hasLiveResults = Boolean(
+    visiblePresentation || voiceLiveResults(boundedSession, resultActivities).length,
+  );
+  const workPanelOpen = hasLiveResults && hiddenResults !== currentResultTurn?.revision;
+  function enterFullScreen() {
     if (detached) dock();
     setOpen(true);
-    setWorkPanelOpen(showWork);
     setFullScreen(true);
   }
-  const openWorkspaceFromChat = useEffectEvent((anchor: Pick<Session, "id" | "cwd">) => {
-    const session = [...liveSessions.current, ...latest.current.sessions].find(
-      (item) => item.id === anchor.id && pathKey(item.cwd) === pathKey(anchor.cwd),
-    );
-    if (!session || !workSessionVisible(session)) return;
-    workspaceReturnFocus.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    showWorkspace(session, true);
-  });
-  const registerWorkspaceOpener = props.registerWorkspaceOpener;
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Registers this window's mounted voice controller with its chat action and releases it on unmount.
-  useEffect(() => {
-    if (!registerWorkspaceOpener) return;
-    registerWorkspaceOpener((anchor) => openWorkspaceFromChat(anchor));
-    return () => registerWorkspaceOpener();
-  }, [registerWorkspaceOpener]);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Restores DOM focus after the shared overlay commits the new focus scope.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Moves DOM focus into the shared overlay after the fullscreen transition.
   useLayoutEffect(() => {
     if (fullScreen) compactToggle.current?.focus();
-    else if (workspaceReturnFocus.current) {
-      workspaceReturnFocus.current.focus();
-      workspaceReturnFocus.current = null;
-    }
   }, [fullScreen]);
-  function dismissWorkSuggestion(key: string) {
-    setDismissedWork((current) => new Set([...current, key].slice(-100)));
-  }
-  async function openWorkspaceSession(session: Session) {
-    const result = await props.workspace?.execute("workspace.sessions.open", {
-      projectPath: session.cwd,
-      sessionId: session.id,
-      requestId: crypto.randomUUID(),
-    });
-    if (result?.status === "completed" || result?.status === "accepted") exitFullScreen();
-    else if (result?.error) setError(result.error);
-  }
-  async function openTrackedWork(item: VoiceWorkspaceTrackedWork) {
-    const current = workspaceTrackedWork.find(
-      (row) =>
-        row.kind === item.kind &&
-        row.id === item.id &&
-        row.machineId === item.machineId &&
-        row.environmentId === item.environmentId &&
-        row.projectId === item.projectId,
-    );
-    if (!current || isProjectLocked(current.projectPath)) return;
-    if (props.openWorkspaceTrackedWork?.(current)) {
-      exitFullScreen();
-      return;
-    }
-    const linked = current.sessionId && findSession(current.sessionId);
-    if (
-      linked &&
-      workSessionVisible(linked) &&
-      pathKey(linked.cwd) === pathKey(current.projectPath)
-    ) {
-      await openWorkspaceSession(linked);
-    }
-  }
-  const workspaceViews = props.workspace?.tools.find((tool) => tool.name === "workspace.views.open")
-    ?.parameters.properties.view;
-  const workspaceViewIds =
-    workspaceViews &&
-    typeof workspaceViews === "object" &&
-    "enum" in workspaceViews &&
-    Array.isArray(workspaceViews.enum)
-      ? workspaceViews.enum.filter((view): view is string => typeof view === "string")
-      : undefined;
-  async function openWorkspaceView(view: string) {
-    const result = await props.workspace?.execute("workspace.views.open", { view });
-    if (result?.status === "completed" || result?.status === "accepted") exitFullScreen();
-    else if (result?.error) setError(result.error);
-  }
   useVoiceOverlayHost({
     detached: open && detached,
     level: audioLevel,
@@ -3441,6 +3411,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       )}
       data-compact={compact || undefined}
       data-full-screen={fullScreen || undefined}
+      data-live-call={(fullScreen && status === "live") || undefined}
       data-work-panel={(fullScreen && workPanelOpen) || undefined}
       data-dock={dockMode}
       data-detaching={detaching || undefined}
@@ -3455,64 +3426,29 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       <VoiceCompanionView
         compact={compact}
         status={status}
+        phase={phase}
         handle={fullScreen ? null : handle}
         headerDrag={fullScreen ? undefined : panelDrag.header}
         resize={fullScreen ? null : <VoicePanelResize panel={panel} onPosition={setPosition} />}
         fullScreen={fullScreen}
         workPanelToggleRef={workPanelToggle}
-        onToggleWorkPanel={workPanelOpen ? closeWorkPanel : () => setWorkPanelOpen(true)}
+        onToggleWorkPanel={
+          hasLiveResults
+            ? workPanelOpen
+              ? closeWorkPanel
+              : () => setHiddenResults(undefined)
+            : undefined
+        }
         workPanel={
           fullScreen && workPanelOpen ? (
             <VoiceLiveWorkspace
-              key={workspaceDraftKey}
-              session={visibleWorkspaceSession}
-              activities={visibleToolActivities}
-              jobs={workspaceJobs}
-              trackedWork={workspaceTrackedWork}
-              onOpenTrackedWork={(work) =>
-                void openTrackedWork(work).catch((cause) =>
-                  setError(voiceError(cause, "Unable to open the workspace view.")),
-                )
-              }
-              renderTool={props.renderWorkspaceTool}
-              draft={
-                workspaceDraftKey === undefined
-                  ? undefined
-                  : (workspaceDrafts.get(workspaceDraftKey) ?? "")
-              }
-              onDraftChange={(value) => {
-                if (workspaceDraftKey === undefined) return;
-                setWorkspaceDrafts((current) => {
-                  const next = new Map(current);
-                  if (value) next.set(workspaceDraftKey, value);
-                  else next.delete(workspaceDraftKey);
-                  return next;
-                });
-              }}
-              onStopWaiting={(id) => toolActivity.current?.stopWaiting(id)}
-              onOpenSession={
-                props.workspace && visibleWorkspaceSession
-                  ? () =>
-                      void openWorkspaceSession(visibleWorkspaceSession).catch((cause) =>
-                        setError(voiceError(cause, "Unable to open the conversation.")),
-                      )
-                  : undefined
-              }
-              views={workspaceViewIds}
-              onOpenView={(view) =>
-                void openWorkspaceView(view).catch((cause) =>
-                  setError(voiceError(cause, "Unable to open the workspace view.")),
-                )
-              }
+              session={boundedSession}
+              activities={resultActivities}
+              presented={visiblePresentation}
             />
           ) : null
         }
-        workSuggestion={Boolean(suggestedWork && !dismissedWork.has(suggestedWork))}
-        onDismissWorkSuggestion={() => {
-          if (suggestedWork) dismissWorkSuggestion(suggestedWork);
-        }}
-        onOpenSuggestedWork={() => enterFullScreen(true)}
-        onToggleFullScreen={fullScreen ? exitFullScreen : () => enterFullScreen()}
+        onToggleFullScreen={fullScreen ? exitFullScreen : enterFullScreen}
         panel={panel}
         sideKey={choice?.id ?? jobReview?.id}
         visualState={visualState}

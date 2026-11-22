@@ -101,6 +101,7 @@ it("shows the engine always and the session clock only while live", () => {
   vi.useFakeTimers();
   const props = {
     visualState: "listening" as const,
+    artwork: "listening" as const,
     working: false,
     audioLevel: { current: 0.5 },
     statusText: "Listening",

@@ -547,7 +547,7 @@
                 "Mobile connects to a running Bycoda Host. Pair on the same Wi-Fi or LAN, use a configured Tailscale route, or enable discovery for phones signed in to your Bycoda account."
               ],
               "steps": [
-                "Keep the computer awake with Bycoda and its Host available.",
+                "Keep the computer awake. Its Host stops when Bycoda quits unless Settings → Connections → Computers → This computer → Keep this computer reachable when bycoda is closed is on.",
                 "On the computer, open Settings → Connections → Devices → Phone access. Set up Same Wi-Fi or Tailscale, then scan the QR code or paste the pairing code on your phone.",
                 "For account discovery, enable Let my signed-in phones find this computer. Compare the six-digit code on both screens and choose Allow on the computer.",
                 "Confirm the computer name. Open a project and conversation to test access."

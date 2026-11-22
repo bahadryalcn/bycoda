@@ -8,6 +8,7 @@ import {
   type PersistenceHealth,
 } from "./storage/persistence-health";
 import { createDedupedWarn } from "./diagnostics/log-dedupe";
+import { currentRequestTrace, traceDbWait, traceWriterHold } from "./diagnostics/request-trace";
 import { elapsedSince, monotonicNow } from "../src/shared/lib/time/timestamps";
 import {
   HostDbClosingError,
@@ -114,7 +115,13 @@ const workerParams = (
   ) as SQLInputValue[] | SQLInputValue[][];
 type Owner = { id: string; phase: "open" | "closing" | "closed"; timings?: ScopeTimings };
 /** The owner holding the writer queue, for the one watchdog that names a stuck holder. */
-type Holder = { id: string; entry: Error | string; enteredAt: number; admittedBefore: number };
+type Holder = {
+  id: string;
+  entry: Error | string;
+  enteredAt: number;
+  admittedBefore: number;
+  traceSuffix: string;
+};
 type AuthorizationCheck = () => boolean | Promise<boolean>;
 export type StoreAuthorization =
   | AuthorizationCheck
@@ -590,7 +597,7 @@ export class StoreDatabase {
       if (!holder) return;
       if (holder.id === this.watchedHolder)
         console.warn(
-          `Host database queue still held by ${scopeSite(holder.entry, 8)} ms=${Math.round(performance.now() - holder.enteredAt)} queued=${this.admissionVersion - holder.admittedBefore}`,
+          `Host database queue still held by ${scopeSite(holder.entry, 8)} ms=${Math.round(performance.now() - holder.enteredAt)} queued=${this.admissionVersion - holder.admittedBefore}${holder.traceSuffix}`,
         );
       this.armWatchdog();
     }, STUCK_SCOPE_MS);
@@ -622,12 +629,15 @@ export class StoreDatabase {
     }
     await this.authorize(authorization);
     let started = false;
+    const endTraceWait = traceDbWait("read");
     try {
       return await pool.lease(async (lease) => {
         started = true;
+        endTraceWait?.();
         return this.readLeases.run(lease, work);
       }, signal);
     } catch (error) {
+      endTraceWait?.();
       // Nothing ran: serve the read from the writer instead of failing it.
       if (!started && error instanceof ReadPoolUnavailableError) return this.scope(work, signal);
       throw error;
@@ -701,6 +711,11 @@ export class StoreDatabase {
       }
     }
     const queuedAt = performance.now();
+    const trace = currentRequestTrace();
+    // In the detail only: the deduplicated warning identity stays the call site.
+    const traceSuffix = trace ? ` traceId=${trace.id}` : "";
+    const endTraceWait = traceDbWait("writer");
+    let endTraceHold: (() => void) | undefined;
     let entered = false;
     this.activeScopes++;
     const pending = this.tail.then(async () => {
@@ -714,11 +729,12 @@ export class StoreDatabase {
         if (waitedMs >= this.slowScopeMs)
           this.scopeWarn(
             `Host database request expired in queue before ${scopeSite(entry)}`,
-            `queue=${waitedMs}ms queued=${this.admissionVersion - admittedBefore}`,
+            `queue=${waitedMs}ms queued=${this.admissionVersion - admittedBefore}${traceSuffix}`,
           );
         throw new StoreAdmissionExpiredError(waitedMs);
       }
       entered = true;
+      endTraceWait?.();
       const enteredAt = performance.now();
       const owner: Owner = {
         id: String(++this.ownerSequence),
@@ -732,7 +748,8 @@ export class StoreDatabase {
           requests: 0,
         },
       };
-      this.holder = { id: owner.id, entry, enteredAt, admittedBefore };
+      if (trace) endTraceHold = traceWriterHold(trace, owner.timings!);
+      this.holder = { id: owner.id, entry, enteredAt, admittedBefore, traceSuffix };
       this.armWatchdog();
       return this.owners.run(owner, async () => {
         await this.request("enter", undefined, [], owner);
@@ -780,6 +797,7 @@ export class StoreDatabase {
           owner.phase = "closed";
           if (this.holder?.id === owner.id) this.holder = undefined;
         }
+        endTraceHold?.();
         const held = performance.now() - enteredAt;
         const timings = owner.timings!;
         if (held >= this.slowScopeMs || timings.queueMs >= this.slowScopeMs) {
@@ -787,7 +805,7 @@ export class StoreDatabase {
           // Numbers only: never SQL text, parameters, payloads, tokens or paths.
           this.scopeWarn(
             `Host database queue held by ${scopeSite(entry)}`,
-            `ms=${ms(held)} queued=${this.admissionVersion - admittedBefore} queue=${ms(timings.queueMs)}ms guard=${ms(timings.guardMs)}ms worker=${ms(timings.workerMs)}ms roundTrip=${ms(timings.roundTripMs)}ms commit=${ms(timings.commitMs)}ms requests=${timings.requests}`,
+            `ms=${ms(held)} queued=${this.admissionVersion - admittedBefore} queue=${ms(timings.queueMs)}ms guard=${ms(timings.guardMs)}ms worker=${ms(timings.workerMs)}ms roundTrip=${ms(timings.roundTripMs)}ms commit=${ms(timings.commitMs)}ms requests=${timings.requests}${traceSuffix}`,
           );
         }
         if (workFailed) throw primary;
@@ -795,6 +813,8 @@ export class StoreDatabase {
       });
     });
     const settled = pending.finally(() => {
+      endTraceWait?.();
+      endTraceHold?.();
       this.writerSettled = true;
       if (signal) this.queuedCancellableReads--;
       // An idle database keeps no timer; a busy one keeps the one watchdog.

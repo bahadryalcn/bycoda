@@ -1,5 +1,7 @@
 import { markdownLanguage } from "@codemirror/lang-markdown";
-import type { SyntaxNode } from "@lezer/common";
+import type { Range } from "@codemirror/state";
+import { Decoration, type DecorationSet } from "@codemirror/view";
+import type { SyntaxNode, Tree } from "@lezer/common";
 import { Fragment, useEffect, useState, type ReactNode, type RefObject } from "react";
 import { cachedUserLinkRanges } from "../model/linkPreview";
 import styles from "./ComposerHighlight.module.css";
@@ -28,6 +30,59 @@ const marks = new Set([
   "LinkMark",
   "TaskMarker",
 ]);
+
+function markdownFormat(node: SyntaxNode) {
+  if (/^(?:ATX|Setext)Heading[1-6]$/.test(node.name)) return "heading";
+  // Lezer also treats unresolved app references such as [file1] as shortcut links.
+  if (
+    node.name === "Link" &&
+    node.getChildren("LinkMark").length === 2 &&
+    !node.getChild("LinkLabel")
+  )
+    return undefined;
+  return formats[node.name];
+}
+
+function markdownMarker(node: SyntaxNode, raw: string) {
+  if (node.name === "TaskMarker") return raw === "[ ]" ? "task-open" : "task-done";
+  if (node.name === "QuoteMark") return "quote-mark";
+  if (node.name !== "ListMark") return "mark";
+  if (!/^[*+-]$/.test(raw)) return undefined;
+  return node.nextSibling?.name === "Task" ? "mark" : "bullet";
+}
+
+export function composerMarkdownMarkAt(tree: Tree, from: number, to: number): number | null {
+  if (from !== to) return null;
+  const node = tree.resolveInner(from, 1);
+  return marks.has(node.name) ? node.from : null;
+}
+
+/** Paint the parsed draft in CodeMirror, preserving the source for editing and clipboard. */
+export function composerMarkdownDecorations(
+  tree: Tree,
+  text: string,
+  editedMark: number | null,
+): DecorationSet {
+  const ranges: Range<Decoration>[] = [];
+  tree.iterate({
+    enter({ node, from, to }) {
+      if (from === to) return;
+      const marker = marks.has(node.name);
+      const kind = marker ? markdownMarker(node, text.slice(from, to)) : markdownFormat(node);
+      if (node.name === "Link" && !kind) return false;
+      if (!kind) return;
+      const attributes: Record<string, string> = { "data-draft-markdown": kind };
+      if (marker && from === editedMark) attributes["data-editing-mark"] = "";
+      ranges.push(
+        Decoration.mark({
+          class: marker ? styles.markdownMarker : styles.markdownText,
+          attributes,
+        }).range(from, to),
+      );
+    },
+  });
+  return Decoration.set(ranges, true);
+}
 
 /** Format the existing text overlay, keeping source offsets in the native input. */
 export function ComposerMarkdown({
@@ -59,8 +114,7 @@ export function ComposerMarkdown({
         setEditedMark(null);
         return;
       }
-      const node = tree.resolveInner(position, 1);
-      setEditedMark(marks.has(node.name) ? node.from : null);
+      setEditedMark(composerMarkdownMarkAt(tree, position, position));
     };
     sync();
     document.addEventListener("selectionchange", sync);
@@ -74,29 +128,10 @@ export function ComposerMarkdown({
   }, [field, offset, text, tree]);
 
   function paint(node: SyntaxNode, literal = false): ReactNode | undefined {
-    // Lezer recognizes shortcut references without a definition. Leave bracketed
-    // app tokens intact so the composer can still paint attachments and citations.
-    if (
-      node.name === "Link" &&
-      node.getChildren("LinkMark").length === 2 &&
-      !node.getChild("LinkLabel")
-    ) {
-      return undefined;
-    }
     if (marks.has(node.name)) {
       const raw = text.slice(node.from, node.to);
-      const bullet = node.name === "ListMark" && /^[*+-]$/.test(raw);
-      if (node.name === "ListMark" && !bullet) return undefined;
-      const kind =
-        node.name === "TaskMarker"
-          ? raw === "[ ]"
-            ? "task-open"
-            : "task-done"
-          : bullet && node.nextSibling?.name !== "Task"
-            ? "bullet"
-            : node.name === "QuoteMark"
-              ? "quote-mark"
-              : "mark";
+      const kind = markdownMarker(node, raw);
+      if (!kind) return undefined;
       return (
         <span
           className={styles.markdownMarker}
@@ -107,8 +142,8 @@ export function ComposerMarkdown({
         </span>
       );
     }
-    const heading = /^(?:ATX|Setext)Heading[1-6]$/.test(node.name);
-    const format = heading ? "heading" : formats[node.name];
+    const format = markdownFormat(node);
+    if (node.name === "Link" && !format) return undefined;
     const destination = format === "link" ? node.getChild("URL") : null;
     const rawUrl = destination ? text.slice(destination.from, destination.to) : "";
     const url = cachedUserLinkRanges(rawUrl).find(

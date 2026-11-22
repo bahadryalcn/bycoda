@@ -28453,11 +28453,18 @@
         "additionalProperties": false,
         "properties": {
           "branch": { "type": ["string", "null"] },
+          "dirty": { "type": ["boolean", "null"] },
           "head": { "type": "string" },
           "isMain": { "type": "boolean" },
           "locked": { "type": "boolean" },
           "missing": { "type": "boolean" },
-          "path": { "type": "string" }
+          "path": { "type": "string" },
+          "unpushed": {
+            "anyOf": [
+              { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              { "type": "null" }
+            ]
+          }
         },
         "required": ["path", "branch", "head", "isMain", "missing"],
         "type": "object"
@@ -28496,11 +28503,18 @@
               "additionalProperties": false,
               "properties": {
                 "branch": { "type": ["string", "null"] },
+                "dirty": { "type": ["boolean", "null"] },
                 "head": { "type": "string" },
                 "isMain": { "type": "boolean" },
                 "locked": { "type": "boolean" },
                 "missing": { "type": "boolean" },
-                "path": { "type": "string" }
+                "path": { "type": "string" },
+                "unpushed": {
+                  "anyOf": [
+                    { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    { "type": "null" }
+                  ]
+                }
               },
               "required": ["path", "branch", "head", "isMain", "missing"],
               "type": "object"
@@ -81144,5 +81158,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "acaa475350d65a14a6052e8561d97e7ff365a7edd5e16e32f628267e0b6acfe7"
+  "schemaHash": "ef7b1f6f4fd781dfa70cf0358b383eaa47ffd7c14ca44cfd4f2608dbf14ac05c"
 }

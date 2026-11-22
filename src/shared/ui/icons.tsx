@@ -484,6 +484,10 @@ export const Languages = wrap(LucideLanguages, "Languages");
 export const Volume2 = wrap(LucideVolume2, "Volume2");
 export const VolumeX = wrap(LucideVolumeX, "VolumeX");
 export const MessageSquarePlus = wrap(LucideMessageSquarePlus, "MessageSquarePlus");
+export const NewSession = custom(
+  "NewSession",
+  <path d="M18 14v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5l3 3h.5M18.5 3.5v7M15 7h7" />,
+);
 export const Minus = wrap(LucideMinus, "Minus");
 export const Strikethrough = wrap(LucideStrikethrough, "Strikethrough");
 export const Table = wrap(LucideTable, "Table");

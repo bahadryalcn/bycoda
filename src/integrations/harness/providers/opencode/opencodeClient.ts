@@ -37,6 +37,7 @@ export type OpenCodeSession = {
   parentID?: string;
   directory?: string;
   title?: string;
+  time?: { archived?: number };
 };
 
 export type OpenCodePromptPart =
@@ -210,6 +211,17 @@ export class OpenCodeClient {
         body: normalizedBody,
       }),
     );
+  }
+
+  async archiveDelegatedSession(session: OpenCodeSession): Promise<void> {
+    if (isArchivedSession(session)) return;
+    await this.request<void>("PATCH", this.path(`/session/${enc(session.id)}`), {
+      body: this.generation === "v2" ? { archived: true } : { time: { archived: Date.now() } },
+    });
+    const archived = await this.getSession(session.id);
+    if (archived?.id !== session.id || !isArchivedSession(archived)) {
+      throw new Error("OpenCode did not confirm that the delegated session was archived.");
+    }
   }
 
   /**
@@ -805,6 +817,11 @@ function normalizeSession(session: OpenCodeSession): OpenCodeSession {
   const directory =
     stringField(rec, "directory") ?? stringField(asRecord(rec.location), "directory");
   return directory ? { ...session, directory } : session;
+}
+
+function isArchivedSession(session: OpenCodeSession): boolean {
+  const archived = session.time?.archived;
+  return typeof archived === "number" && Number.isFinite(archived) && archived > 0;
 }
 
 function normalizeV2Message(value: unknown): OpenCodeMessage {

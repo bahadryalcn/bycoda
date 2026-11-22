@@ -174,6 +174,12 @@ The app also waits for its desktop `in_flight_sessions`. The helpers recheck
 activity after preparing the backup and before closing the app or stopping the Host.
 A database read failure means wait/recovery, never zero active sessions.
 
+The local Host's lifecycle follows its mode in `~/.bycoda-host/lifecycle.json`. In app
+mode the Host is a child of the desktop app: an app update or quit stops it with the app,
+the Host update stops it before replacing its files, and the app starts it again when it
+reopens. Rollback restores files only. In service mode the login service is kept: the
+updater reinstalls it as before and does not stop it outside that step.
+
 Windows helpers launch through the local current-user WMI broker so closing the
 desktop does not terminate its updater. The broker verifies the same user and
 interactive session, uses hidden processes, and creates no scheduled task or stored

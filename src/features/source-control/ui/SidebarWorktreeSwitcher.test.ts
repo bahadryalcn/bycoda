@@ -8,6 +8,13 @@ import { type Worktree } from "../model/worktrees";
 import { createProjectWorktree as createWorktree } from "../model/remoteWorktrees";
 import { SidebarWorktreeSwitcher } from "./SidebarWorktreeSwitcher";
 
+const changeTotals = vi.hoisted(() => ({
+  ready: false,
+  total: 0,
+  stats: { files: 0, additions: 0, deletions: 0 },
+  byRoot: new Map<string, number>(),
+}));
+vi.mock("../hooks/useChangeTotals", () => ({ useChangeTotals: () => changeTotals }));
 vi.mock("../hooks/useProjectWorktrees", () => ({
   useProjectWorktrees: vi.fn(),
 }));
@@ -345,7 +352,7 @@ it("labels detached and folder-only working copies with the shared messages", as
   expect(options).toHaveLength(3);
   expect(options[0]!.textContent).toContain("All worktrees");
   expect(options[1]!.textContent).toContain("Detached abcdef1");
-  expect(options[1]!.textContent).toContain("Project folder");
+  expect(options[1]!.textContent).not.toContain("Project folder");
   expect(options[2]!.textContent).toContain("Detached abcdef1");
 });
 
@@ -368,8 +375,9 @@ it("hides missing and prunable worktrees and lists dirty ones before clean ones"
   const titles = [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent);
   expect(titles).toHaveLength(4);
   expect(titles[0]).toContain("All worktrees");
-  expect(titles[1]).toContain("main");
-  expect(titles[2]).toContain("dirty");
+  // Worktrees with changes lead; the project folder follows, then the clean ones.
+  expect(titles[1]).toContain("dirty");
+  expect(titles[2]).toContain("main");
   expect(titles[3]).toContain("clean");
 });
 
@@ -435,7 +443,7 @@ it("names the project and All worktrees without a branch icon when none is selec
   expect(trigger().querySelector("svg.lucide-git-branch")).toBeNull();
 });
 
-it("lists the picker in the panel's groups and order: leading rows, With changes, Clean", async () => {
+it("lists the picker as the repository list: changes, project folder, other, agent worktrees", async () => {
   vi.mocked(useProjectWorktrees).mockReturnValue({
     data: { worktrees: mixedTrees(), defaultRoot: "/picker-worktrees" },
     refresh,
@@ -444,17 +452,17 @@ it("lists the picker in the panel's groups and order: leading rows, With changes
   await act(async () => trigger().click());
   const options = [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent);
   expect(options[0]).toContain("All worktrees");
-  expect(options[1]).toContain("main");
-  expect(options[2]).toContain("feat/dirty-one");
+  expect(options[1]).toContain("feat/dirty-one");
+  expect(options[2]).toContain("main");
   expect(options[3]).toContain("feat/ahead-one");
   expect(options[4]).toContain("by/clean-one");
   const headings = [...document.querySelectorAll('[role="group"] > [role="presentation"]')].map(
     (node) => node.textContent,
   );
-  expect(headings).toEqual(["With changes", "Clean · 1"]);
+  expect(headings).toEqual(["Uncommitted changes", "Agent worktrees · 1"]);
 });
 
-it("shows each picker row once: one branch icon, bold branch, muted folder, session marker, no Worktree label", async () => {
+it("shows each picker row once with no text marker; agent worktrees get the agent icon and no folder", async () => {
   vi.mocked(useProjectWorktrees).mockReturnValue({
     data: { worktrees: mixedTrees(), defaultRoot: "/picker-worktrees" },
     refresh,
@@ -464,17 +472,79 @@ it("shows each picker row once: one branch icon, bold branch, muted folder, sess
   const dirty = option("feat/dirty-one");
   expect(dirty.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
   expect(dirty.querySelector("svg.lucide-folder-tree")).toBeNull();
-  expect(dirty.textContent).toContain("dirty-one");
   expect(dirty.textContent).not.toContain("Worktree");
   expect(dirty.textContent).not.toContain("/picker-worktrees");
   // The change dot is named for assistive tech.
   expect(dirty.querySelector('[aria-label="Changes"]')).not.toBeNull();
   expect(option("by/clean-one").querySelector('[aria-label="Changes"]')).toBeNull();
   expect(option("feat/ahead-one").textContent).toContain("↑2");
-  // The project folder is named, and the session's checkout is marked.
-  expect(option("main").textContent).toContain("Project folder");
-  expect(option("main").textContent).toContain("This session");
-  expect(option("feat/dirty-one").textContent).not.toContain("This session");
+  // No text markers: the project folder and the session checkout carry no label.
+  expect(option("main").textContent).not.toContain("Project folder");
+  expect(option("main").textContent).not.toContain("This session");
+  // Agent worktrees: robot icon, no hash-like folder name.
+  const agent = option("by/clean-one");
+  expect(agent.querySelector("svg.lucide-bot")).not.toBeNull();
+  expect(agent.querySelector("svg.lucide-git-branch")).toBeNull();
+  expect(agent.textContent).not.toContain("clean-one" + "clean-one");
+});
+
+it("collapses a long agent group to five rows and expands it from the more row", async () => {
+  const agents = Array.from({ length: 8 }, (_, index) => ({
+    ...tree("/picker-worktrees/a" + index, "by/a" + index),
+    unpushed: index,
+  }));
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: {
+      worktrees: [tree("/picker", "main", true), ...agents],
+      defaultRoot: "/picker-worktrees",
+    },
+    refresh,
+  });
+  await render();
+  await act(async () => trigger().click());
+  const names = () =>
+    [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent);
+  expect(names().filter((name) => name?.includes("by/a"))).toHaveLength(5);
+  const more = names().find((name) => name?.includes("3 more"));
+  expect(more).toBeDefined();
+  const headings = [...document.querySelectorAll('[role="group"] > [role="presentation"]')].map(
+    (node) => node.textContent,
+  );
+  expect(headings).toEqual(["Agent worktrees · 8"]);
+  const row = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((node) =>
+    node.textContent?.includes("3 more"),
+  )!;
+  await act(async () => row.click());
+  expect(select).not.toHaveBeenCalled();
+  expect(names().filter((name) => name?.includes("by/a"))).toHaveLength(8);
+});
+
+it("shows the total and per-worktree counts of uncommitted files, with no chip for an unknown state", async () => {
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: {
+      worktrees: [
+        ...mixedTrees(),
+        { ...tree("/picker-worktrees/unknown", "feat/unknown"), dirty: null, unpushed: null },
+      ],
+      defaultRoot: "/picker-worktrees",
+    },
+    refresh,
+  });
+  changeTotals.ready = true;
+  changeTotals.total = 324;
+  changeTotals.byRoot = new Map([["/picker-worktrees/dirty-one", 321]]);
+  try {
+    await render();
+    await act(async () => trigger().click());
+    expect(option("All worktrees").textContent).toContain("324");
+    expect(option("feat/dirty-one").textContent).toContain("321");
+    expect(option("feat/unknown").querySelector('[aria-label^="Changes"]')).toBeNull();
+    expect(option("feat/unknown").textContent).not.toContain("↑");
+  } finally {
+    changeTotals.ready = false;
+    changeTotals.total = 0;
+    changeTotals.byRoot = new Map();
+  }
 });
 
 it("keeps the full path in the row's hint rather than in its text", async () => {

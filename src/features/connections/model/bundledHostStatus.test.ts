@@ -7,6 +7,7 @@ const fake = vi.hoisted(() => ({
   value: null as unknown,
   hidden: { current: false },
   polls: vi.fn(),
+  renders: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: async (command: string) => {
@@ -19,6 +20,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 import { bundledHostWaitsForSessions, useBundledHostStatus } from "./bundledHostStatus";
 
 function Consumer() {
+  fake.renders();
   const status = useBundledHostStatus();
   return createElement("span", null, status?.state ?? "none");
 }
@@ -80,7 +82,7 @@ it("shares one native poll across consumers and pauses while the document is hid
   expect(fake.polls).toHaveBeenCalledTimes(3);
 });
 
-it("refreshes on focus only while visible", async () => {
+it("refreshes on visible focus and coalesces focus with show", async () => {
   vi.useFakeTimers();
   fake.value = { state: "current" };
   fake.polls.mockClear();
@@ -94,7 +96,20 @@ it("refreshes on focus only while visible", async () => {
   await act(async () => setHidden(false));
   expect(fake.polls).toHaveBeenCalledTimes(2);
   await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(fake.polls).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(300);
+  await act(async () => window.dispatchEvent(new Event("focus")));
   expect(fake.polls).toHaveBeenCalledTimes(3);
+});
+
+it("does not rerender consumers after an equal status reply", async () => {
+  vi.useFakeTimers();
+  fake.value = { state: "current", installed: "1.0.0" };
+  await mount(2);
+  fake.renders.mockClear();
+  fake.value = { state: "current", installed: "1.0.0" };
+  await act(async () => vi.advanceTimersByTimeAsync(15_000));
+  expect(fake.renders).not.toHaveBeenCalled();
 });
 
 it("stops the poller when the last consumer unmounts", async () => {

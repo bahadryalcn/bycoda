@@ -202,7 +202,6 @@ import { RemoteConnectionNotice } from "./RemoteConnectionFeedback";
 import {
   parseRemotePath,
   remotePath,
-  remoteProjectFor,
   verifyRemoteProjectAlias,
   type RemoteProject,
 } from "../model/remoteProjects";
@@ -220,6 +219,9 @@ import {
   type RemoteProvider,
 } from "../model/protocol";
 import { newRequestId } from "../../../shared/lib/id/requestId";
+import { SessionMachinePicker } from "./SessionMachinePicker";
+import { hasForeignMachineAttachment, remoteSessionProject } from "../model/sessionMachineTarget";
+import { PROJECTLESS_SESSIONS_CAPABILITY } from "../../../shared/model/host-contracts/projectless-sessions";
 
 export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
   remoteSession: boolean;
@@ -232,6 +234,7 @@ export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
   };
   remoteSessionLoading: boolean;
   remoteSessionStarted: boolean;
+  remoteSessionRetargetBlocked?: boolean;
   managedWorkspaceCreationReady: boolean;
   headerStatus?: ReactNode;
   /** The host recorded that this chat's last turn was lost; Continue is offered. */
@@ -250,6 +253,7 @@ export function RemoteSession({
   onOpenFile,
   onOpenDiff,
   onOpenPlan,
+  onSelectMachine,
   render,
   compactPresentation = false,
 }: {
@@ -260,12 +264,13 @@ export function RemoteSession({
   onOpenFile: SessionPaneProps["onOpenFile"];
   onOpenDiff: SessionPaneProps["onOpenDiff"];
   onOpenPlan: SessionPaneProps["onOpenPlan"];
+  onSelectMachine?: (environmentId: string | undefined) => void;
   render: (overrides: RemoteSessionOverrides) => ReactNode;
   compactPresentation?: boolean;
 }) {
   useLocale();
   const owner = hostSessionBinding(shell);
-  const project = hostExecutionProject(shell) ?? remoteProjectFor(shell.cwd);
+  const project = hostExecutionProject(shell) ?? remoteSessionProject(shell);
   const { machines, loaded } = useRemoteMachines(!!project);
   const machine = project
     ? machines.find(
@@ -286,17 +291,27 @@ export function RemoteSession({
     );
   if (!machine)
     return loaded ? (
-      <MachineUnavailable
-        cwd={shell.cwd}
-        reason="not-added"
-        size={compactPresentation ? "panel" : "page"}
-      />
+      <div className="flex h-full flex-col">
+        {onSelectMachine ? (
+          <div className="p-2">
+            <SessionMachinePicker
+              environmentId={project.environmentId}
+              onSelect={remoteSessionFor(shell.id) || owner ? undefined : onSelectMachine}
+            />
+          </div>
+        ) : null}
+        <MachineUnavailable
+          cwd={project.key}
+          reason="not-added"
+          size={compactPresentation ? "panel" : "page"}
+        />
+      </div>
     ) : (
       <LoadingText>{t("Connecting to the machine…")}</LoadingText>
     );
   return (
     <DurableRemoteSessionGate
-      key={`${machine.id}:${shell.id}`}
+      key={`${machine.id}:${project.key}:${shell.id}`}
       shell={shell}
       visible={visible}
       onSnapshot={onSnapshot}
@@ -408,6 +423,7 @@ function ConnectedRemoteSession({
   useLocale();
   const visibleRef = useRef(visible),
     owner = hostSessionBinding(shell);
+  const projectless = shell.cwd === "~" && !!shell.remoteExecutionEnvironmentId;
   const consumedContextReplay = useRef<string | undefined>(undefined);
   const displayPath = (path: string) => (owner ? path : remotePath(machine.environmentId, path));
   const executionClient = sessionExecutionClientForMachine(
@@ -591,7 +607,7 @@ function ConnectedRemoteSession({
     scope: {
       machineId: machine.id,
       environmentId: machine.environmentId,
-      projectId: project.projectId,
+      projectId: projectless ? undefined : project.projectId,
     },
     enabled: !!descriptor && visible,
     hostEnvironmentId: descriptor?.environmentId,
@@ -743,7 +759,7 @@ function ConnectedRemoteSession({
     if (hostSession) rememberRemotePendingWorktree(shell.id);
   }, [hostSession?.id, shell.id]);
   const executionCwd = hostSession?.cwd ?? selectedCwd;
-  const { branches } = useProjectBranchesState(displayPath(executionCwd), online);
+  const { branches } = useProjectBranchesState(displayPath(executionCwd), online && !projectless);
   const activeSessionId = hostSession?.id ?? sessionId;
   const hasHostBlock = (commandId: string) =>
     !!hostSession?.blocks.some((block) => block.id === commandId);
@@ -2058,26 +2074,28 @@ function ConnectedRemoteSession({
     // tab; the intent keeps the rail, openers and tab cleanup from claiming it.
     const createIntent = beginRemoteCreate(
       shell.id,
-      shell.cwd,
+      project.key,
       machine.environmentId,
-      cachedRemoteSessionIds(shell.cwd),
+      cachedRemoteSessionIds(project.key),
     );
     try {
       const managedCreation = descriptor?.capabilities.includes("sessions.managedCreation.v1");
       if (!descriptor || (!managedCreation && draftWorkspaceMode === "worktree"))
         throw new Error(t("Update bycoda to create managed sessions on this remote Host."));
       const reservedSessionId = managedCreateId();
-      const workspace = await prepareSessionWorkspace(
-        {
-          ...shell,
-          id: reservedSessionId,
-          cwd: project.key,
-          workspaceMode: draftWorkspaceMode,
-          worktreeBase: draftWorktreeBase,
-          worktreeCwd: selectedCwd !== project.cwd ? selectedCwd : undefined,
-        },
-        !!managedCreation,
-      );
+      const workspace = projectless
+        ? undefined
+        : await prepareSessionWorkspace(
+            {
+              ...shell,
+              id: reservedSessionId,
+              cwd: project.key,
+              workspaceMode: draftWorkspaceMode,
+              worktreeBase: draftWorktreeBase,
+              worktreeCwd: selectedCwd !== project.cwd ? selectedCwd : undefined,
+            },
+            !!managedCreation,
+          );
       if (
         !alive.current ||
         version !== bindingGen.version ||
@@ -2130,11 +2148,13 @@ function ConnectedRemoteSession({
         {
           type: "create",
           commandId: reservedSessionId,
-          ...(managedCreation ? { sessionId: reservedSessionId } : {}),
+          ...(managedCreation || projectless ? { sessionId: reservedSessionId } : {}),
           projectId: project.projectId,
           ...(workspace ? { workspaceId: workspace.id } : {}),
-          ...(draftWorkspaceMode === "current" ? { workspaceMode: "current" as const } : {}),
-          ...(worktreeCwd !== project.cwd ? { worktreeCwd } : {}),
+          ...(!projectless && draftWorkspaceMode === "current"
+            ? { workspaceMode: "current" as const }
+            : {}),
+          ...(!projectless && worktreeCwd !== project.cwd ? { worktreeCwd } : {}),
           harness: draft.harness,
           ...(draft.providerAccountId ? { providerAccountId: draft.providerAccountId } : {}),
           model: draft.model,
@@ -2465,7 +2485,7 @@ function ConnectedRemoteSession({
       return true;
     }
     // A new conversation: the command needs a session to run in.
-    if (sessionId || !draft.model) return false;
+    if (sessionId || !draft.model || projectless) return false;
     const managedCreation = descriptor.capabilities.includes("sessions.managedCreation.v1");
     if (!managedCreation && draftWorkspaceMode === "worktree") {
       setError(t("Update bycoda to create managed sessions on this remote Host."));
@@ -2527,6 +2547,18 @@ function ConnectedRemoteSession({
       setRefusal(reason);
       return false;
     };
+    if (
+      projectless &&
+      descriptor &&
+      !descriptor.capabilities.includes(PROJECTLESS_SESSIONS_CAPABILITY)
+    )
+      return refused(
+        t("This host cannot start sessions without a project. Update it and try again."),
+      );
+    if (hasForeignMachineAttachment(attachments, machine.environmentId))
+      return refused(
+        t("This file belongs to another machine. Remove it or switch back before sending."),
+      );
     if (
       !asDraft &&
       shell.pendingContextReplay &&
@@ -2943,8 +2975,10 @@ function ConnectedRemoteSession({
           providerAccountId: selectedProviderAccountId,
         })
       : undefined,
-    cwd: displayPath(project.cwd),
-    worktreeCwd: executionCwd === project.cwd ? undefined : displayPath(executionCwd),
+    cwd: projectless ? "~" : displayPath(project.cwd),
+    remoteExecutionEnvironmentId: shell.remoteExecutionEnvironmentId,
+    worktreeCwd:
+      projectless || executionCwd === project.cwd ? undefined : displayPath(executionCwd),
     workspaceMode: hostSession ? undefined : draftWorkspaceMode,
     worktreeBase: hostSession ? undefined : draftWorktreeBase,
     branch: branches?.current ?? hostSession?.branch,
@@ -3986,6 +4020,7 @@ function ConnectedRemoteSession({
     },
     remoteSessionLoading: !!sessionId && !hostSession && !session.blocks.length,
     remoteSessionStarted: !!sessionId,
+    remoteSessionRetargetBlocked: !!pending || sending || startingActive,
     remoteLifecycleTarget:
       hostSession && !remoteDeleted && !pageCacheOnly && !blocksSending(connection.status)
         ? {
@@ -4011,32 +4046,42 @@ function ConnectedRemoteSession({
             environmentId: machine.environmentId,
             sessionId: activeSessionId,
           },
-    sendBlockedReason: deletedNotice
-      ? deletedNotice
-      : pageCacheOnly
-        ? // Opening from the saved preview while the host answers is loading, not a problem.
-          blocksSending(connection.status)
-          ? t("Showing a saved transcript preview. Reconnect to confirm the host before sending.")
-          : t("Loading conversation…")
-        : queue.error
-          ? queueRetrying
-            ? t(
-                "Waiting for the bycoda Host to coordinate the queued messages. They send as soon as it answers.",
-              )
-            : t("Could not load queued messages. Use Reload queue above.")
-          : snapshot?.historyLoading
-            ? t("Loading earlier messages…")
-            : outboxIssues.length
+    sendBlockedReason:
+      projectless &&
+      descriptor &&
+      !descriptor.capabilities.includes(PROJECTLESS_SESSIONS_CAPABILITY)
+        ? t("This host cannot start sessions without a project. Update it and try again.")
+        : deletedNotice
+          ? deletedNotice
+          : pageCacheOnly
+            ? // Opening from the saved preview while the host answers is loading, not a problem.
+              blocksSending(connection.status)
               ? t(
-                  "An unfinished request needs recovery. Check the host and review the request above.",
+                  "Showing a saved transcript preview. Reconnect to confirm the host before sending.",
                 )
-              : blocksSending(connection.status)
-                ? needsSignIn(connection.status)
-                  ? t("{p0} needs you to sign in first. Use the notice at the top of the window.", {
-                      p0: hostLabel,
-                    })
-                  : t("Can’t reach {p0}. Send reconnects first.", { p0: hostLabel })
-                : undefined,
+              : t("Loading conversation…")
+            : queue.error
+              ? queueRetrying
+                ? t(
+                    "Waiting for the bycoda Host to coordinate the queued messages. They send as soon as it answers.",
+                  )
+                : t("Could not load queued messages. Use Reload queue above.")
+              : snapshot?.historyLoading
+                ? t("Loading earlier messages…")
+                : outboxIssues.length
+                  ? t(
+                      "An unfinished request needs recovery. Check the host and review the request above.",
+                    )
+                  : blocksSending(connection.status)
+                    ? needsSignIn(connection.status)
+                      ? t(
+                          "{p0} needs you to sign in first. Use the notice at the top of the window.",
+                          {
+                            p0: hostLabel,
+                          },
+                        )
+                      : t("Can’t reach {p0}. Send reconnects first.", { p0: hostLabel })
+                    : undefined,
     allowedModelHarnesses:
       hostSession && !descriptor?.capabilities.includes("sessions.harnessSwitch")
         ? [hostSession.harness]

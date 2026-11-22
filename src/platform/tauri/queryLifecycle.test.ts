@@ -2,6 +2,7 @@
 import { focusManager, onlineManager } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { installQueryLifecycle } from "./queryLifecycle";
+import { startForegroundPolling } from "../../shared/lib/foregroundPolling";
 
 const native = vi.hoisted(() => ({
   isVisible: vi.fn(async () => true),
@@ -49,6 +50,7 @@ it("uses native focus when DOM visibility is stale and handles offline/online ev
   expect(focusManager.isFocused()).toBe(false);
   // A focused native window wins over a stale hidden DOM snapshot as well.
   focus({ payload: true });
+  window.dispatchEvent(new Event("focus"));
   expect(focusManager.isFocused()).toBe(true);
   visibility.mockReturnValue("visible");
   native.isMinimized.mockResolvedValueOnce(true);
@@ -84,6 +86,50 @@ it("restores focus on show when a resize burst supersedes the show read", async 
   resize();
   await settle();
   expect(focusManager.isFocused()).toBe(true);
+});
+
+it("pauses idle work on native minimize even when DOM visibility stays visible", async () => {
+  vi.useFakeTimers();
+  let resize!: () => void;
+  let focus!: (event: { payload: boolean }) => void;
+  native.onFocusChanged.mockImplementation(async (listener) => {
+    focus = listener;
+    return () => undefined;
+  });
+  native.onResized.mockImplementation(async (listener) => {
+    resize = listener;
+    return () => undefined;
+  });
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  stop = installQueryLifecycle();
+  await settle();
+  const refresh = vi.fn();
+  const polling = startForegroundPolling(refresh, 1_000);
+  try {
+    visibility.mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    focus({ payload: false });
+    await settle();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(refresh).toHaveBeenCalledOnce();
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await settle();
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    native.isMinimized.mockResolvedValueOnce(true);
+    resize();
+    await settle();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    focus({ payload: true });
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+    expect(refresh).toHaveBeenCalledTimes(3);
+  } finally {
+    polling.stop();
+    vi.useRealTimers();
+  }
 });
 
 it("falls back to DOM focus on show when every native read fails", async () => {

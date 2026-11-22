@@ -9,7 +9,7 @@ import {
   type Attachment,
   type Session,
 } from "../../../features/sessions/model/session";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 import {
   discardDraftSessionRecord,
@@ -70,7 +70,7 @@ export function useSessionDraftActions({
   const onSaveDraft = useCallback(
     (sessionId: string, text: string, attachments: Attachment[] = [], appRequestId?: string) => {
       const current = sessionsRef.current.find((session) => session.id === sessionId);
-      if (current && (hostSessionBinding(current) || remoteProjectFor(current.cwd)))
+      if (current && (hostSessionBinding(current) || remoteSessionProject(current)))
         return !!remoteSessionActions(sessionId)?.saveDraft(text, attachments);
       if (
         !current ||

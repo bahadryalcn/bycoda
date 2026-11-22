@@ -8,48 +8,64 @@ import {
   sealPairTicket,
   type PairRandomBytes,
 } from "../../../integrations/account-pair-crypto";
+import { startForegroundPolling } from "../../../shared/lib/foregroundPolling";
 
 export const PAIR_POLL_VISIBLE_MS = 3_000;
-export const PAIR_POLL_HIDDEN_MS = 20_000;
+// No mailbox push in the account contract. At 4× this leaves time to surface
+// an unsolicited request before its two-minute expiry.
+export const PAIR_POLL_DISCOVERY_MS = 12_000;
+const pairingListeners = new Set<(open: boolean) => void>();
+let pairingViews = 0;
+
+export function watchPairingView() {
+  if (++pairingViews === 1) for (const listener of pairingListeners) listener(true);
+  return () => {
+    if (--pairingViews === 0) for (const listener of pairingListeners) listener(false);
+  };
+}
 
 export type PhoneConnectInboxDeps = {
   api: Pick<AccountClient, "listPairRequests">;
   onRequests: (requests: PendingPairRequest[]) => void;
-  isVisible?: () => boolean;
-  visibleMs?: number;
-  hiddenMs?: number;
   onError?: (error: unknown) => void;
 };
 
 /** Polls the pair requests addressed to this computer; a 404 (old API) ends it quietly. */
 export function startPhoneConnectInbox(deps: PhoneConnectInboxDeps): () => void {
   let stopped = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const visible = deps.isVisible ?? (() => typeof document === "undefined" || !document.hidden);
+  let pending = false;
+  const poll = startForegroundPolling(tick, PAIR_POLL_DISCOVERY_MS, { immediate: false });
+  function updatePeriod() {
+    const urgent = pending || pairingViews > 0;
+    poll.setPeriod(urgent ? PAIR_POLL_VISIBLE_MS : PAIR_POLL_DISCOVERY_MS, urgent);
+  }
+  const onPairing = (open: boolean) => {
+    updatePeriod();
+    if (open) poll.refresh();
+  };
+  const stop = () => {
+    stopped = true;
+    pairingListeners.delete(onPairing);
+    poll.stop();
+  };
 
   async function tick(): Promise<void> {
     try {
       const list = await deps.api.listPairRequests();
       if (stopped) return;
+      pending = list.items.length > 0;
+      updatePeriod();
       deps.onRequests(list.items);
     } catch (error) {
-      if (error instanceof AccountApiError && error.status === 404) return;
-      deps.onError?.(error);
+      if (error instanceof AccountApiError && error.status === 404) stop();
+      else if (!stopped) deps.onError?.(error);
     }
-    if (!stopped)
-      timer = setTimeout(
-        () => tick().catch(() => undefined),
-        visible()
-          ? (deps.visibleMs ?? PAIR_POLL_VISIBLE_MS)
-          : (deps.hiddenMs ?? PAIR_POLL_HIDDEN_MS),
-      );
   }
 
-  tick().catch(() => undefined); // -- tick handles its own failures.
-  return () => {
-    stopped = true;
-    clearTimeout(timer);
-  };
+  pairingListeners.add(onPairing);
+  updatePeriod();
+  poll.refresh();
+  return stop;
 }
 
 /** The six digits both screens show, so the owner can compare them. */

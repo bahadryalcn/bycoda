@@ -14,12 +14,14 @@ import {
   subscribeRemoteCreateIntents,
 } from "../../../features/connections/model/remoteCreateIntent";
 import { unopenedRemoteSessions } from "../../../features/connections/model/remoteRailSessions";
+import { remoteSessionProjectKey } from "../../../features/connections/model/sessionMachineTarget";
 
 export interface RemoteRailProjectsDeps {
   visibleRecents: ReadonlyArray<{ path: string }>;
   sessionRecovery: SessionRecovery | null;
   lockSnapshot: ReturnType<typeof useLockSnapshot>;
   sessions: Session[];
+  includeProjectless?: boolean;
 }
 
 export interface RemoteRailProjects {
@@ -37,6 +39,7 @@ export function useRemoteRailProjects({
   sessionRecovery,
   lockSnapshot,
   sessions,
+  includeProjectless = false,
 }: RemoteRailProjectsDeps): RemoteRailProjects {
   const remoteRailProjects = useMemo(
     () => [
@@ -52,7 +55,7 @@ export function useRemoteRailProjects({
     [visibleRecents, sessionRecovery, lockSnapshot],
   );
   const { sessions: listedRemoteSessions, freshProjects: freshRemoteProjects } =
-    useRemoteRailSessions(remoteRailProjects);
+    useRemoteRailSessions(remoteRailProjects, includeProjectless);
   // Bindings and create intents live outside React state: re-derive when they change.
   const [bindingRevision, setBindingRevision] = useState(0);
   const [createIntentRevision, setCreateIntentRevision] = useState(0);
@@ -68,7 +71,7 @@ export function useRemoteRailProjects({
   const remoteShellIds = useMemo(
     () =>
       sessions
-        .filter((session) => isRemoteProjectPath(session.cwd))
+        .filter((session) => isRemoteProjectPath(remoteSessionProjectKey(session)))
         .map((session) => session.id)
         .join("\n"),
     [sessions],

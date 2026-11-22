@@ -62,6 +62,10 @@ hints only, never sessions, prompts, code or credentials. The entry is removed w
 switch off or remove the device, and every connection still needs your approval on the computer
 ([details](mobile-connections.md)).
 
+Keep the computer's bycoda window visible when you request a connection. It checks again as soon
+as it returns from being hidden or minimized. Pairing controls check every few seconds. A visible
+idle window can take about a minute to discover a request.
+
 ## Activity on this computer
 
 Sessions, agent run time, active time and cost for today or this week on this computer, with

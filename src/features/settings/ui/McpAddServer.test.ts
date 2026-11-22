@@ -31,7 +31,7 @@ it("retries discovery without adding the server again after a confirmed write", 
   invoke.mockResolvedValue(undefined);
   onAdded.mockRejectedValueOnce(new Error("Discovery unavailable"));
   await render();
-  await pick("Setup method: Server URL", "JSON configuration");
+  await choose("Setup method", "JSON configuration");
   const config = dialog().querySelector<HTMLTextAreaElement>("textarea")!;
   const value = '{"mcpServers":{"docs":{"command":"docs"}}}';
   await act(async () => {
@@ -82,29 +82,30 @@ function dialog() {
   return document.querySelector<HTMLElement>('[role="dialog"]')!;
 }
 
-async function pick(trigger: string, option: string) {
-  const button = dialog().querySelector<HTMLButtonElement>(`[aria-label="${trigger}"]`)!;
-  await act(async () => button.click());
-  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-    (candidate) => candidate.textContent === option,
+async function choose(label: string, option: string) {
+  const trigger = dialog().querySelector<HTMLButtonElement>(`button[aria-label^="${label}:"]`)!;
+  await act(async () => trigger.click());
+  const target = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (node) => node.textContent?.trim() === option,
   )!;
-  await act(async () => item.click());
+  await act(async () => target.click());
 }
 
 it("keeps global context concise and reveals project identity only for project scope", async () => {
   await render();
-  await pick("Scope: Local project", "Global");
+  expect(dialog().textContent).toContain("/selected-project");
+  await choose("Scope", "Global");
   expect(dialog().textContent).not.toContain("/selected-project");
   expect(dialog().textContent).not.toContain("Advanced: configuration requirements");
-  await pick("Scope: Global", "Project");
+  await choose("Scope", "Project");
   expect(dialog().textContent).toContain("/selected-project");
 });
 
 it("retains JSON draft and exact provider/scope identity after a rejected save", async () => {
   invoke.mockRejectedValueOnce(new Error("Configuration changed; reload before saving"));
   await render();
-  await pick("Scope: Local project", "Global");
-  await pick("Setup method: Server URL", "JSON configuration");
+  await choose("Scope", "Global");
+  await choose("Setup method", "JSON configuration");
   const config = dialog().querySelector<HTMLTextAreaElement>("textarea")!;
   const value = '{"mcpServers":{"docs":{"command":"npx","args":["docs"]}}}';
   await act(async () => {

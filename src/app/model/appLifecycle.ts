@@ -27,6 +27,7 @@ import {
   claimRestoredSessions,
   remoteSessionOwnershipKey,
 } from "./sessionWindowOwnership";
+import { remoteSessionProjectKey } from "../../features/connections/model/sessionMachineTarget";
 import { parseRemotePath } from "../../features/connections/model/remoteProjects";
 import { remoteSessionFor } from "../../features/connections/model/connections";
 import { killPty } from "../../platform/tauri/pty";
@@ -568,8 +569,9 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
   const remoteKeys = new Map<string, string>();
   for (const stub of snapshot?.sessions ?? []) {
     const remoteId = stub.remoteSessionId ?? remoteSessionFor(stub.id);
-    if (remoteId && parseRemotePath(stub.cwd))
-      remoteKeys.set(stub.id, remoteSessionOwnershipKey(stub.cwd, remoteId));
+    const project = remoteSessionProjectKey(stub);
+    if (remoteId && parseRemotePath(project))
+      remoteKeys.set(stub.id, remoteSessionOwnershipKey(project, remoteId));
   }
   for (const tab of snapshot?.tabs ?? [])
     for (const id of leafIds(tab.layout)) if (!paneIds.has(id)) claimIds.add(id);

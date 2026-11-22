@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef } from "react";
+import { useForegroundQueryPolling } from "../../../shared/hooks/useQueryVisible";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import { automationKey } from "../model/automationKey";
 import type { Automation } from "../model/automations";
@@ -117,9 +118,10 @@ export function useHostAutomations(enabled: boolean) {
     },
     enabled,
     staleTime: 30_000,
-    refetchInterval: 30_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
+  useForegroundQueryPolling(query.refetch, 30_000, enabled);
 
   const remember = useCallback(
     (key: string, automation: Automation | null) => {

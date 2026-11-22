@@ -446,7 +446,16 @@ the owner's other MCP servers disabled for that thread; no config file is change
 a short bycoda hint without the owner's persona. Normal subagents use the parent project's
 folder or worktree and its runtime permissions. Omit `files` or set `files: true` for a
 normal session. When tools are unnecessary or unavailable, give the child enough context
-to answer from the brief. Use `files: false` only when the owner asks for scratch mode and the selected
+to answer from the brief.
+
+New Codex and Claude Code delegates keep their saved conversation in Bycoda. If their
+provider process restarts, Bycoda restores a bounded excerpt of saved conversation context,
+including available tool results. Provider-native state and previous attachment contents are
+not restored from this excerpt. New Pi and OMP delegates use a private native session directory
+and can resume from that directory. OpenCode keeps new tool-enabled delegates archived in its
+own history and can resume them by ID. Existing delegates keep their original storage.
+
+Use `files: false` only when the owner asks for scratch mode and the selected
 model's `filesFalse.available` in `agents.options` is true. Claude and Codex run read-only in
 an empty scratch folder under
 the Host's state directory, with reduced context. Stock Pi uses a tool-free scratch session

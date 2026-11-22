@@ -1,4 +1,10 @@
-import { DESKTOP_TAKE_WAIT_MS } from "../../src/shared/model/host-contracts/native-services";
+import { elapsedSince } from "../../src/shared/lib/time/timestamps";
+import {
+  currentRequestTrace,
+  heldPollWaitMs,
+  slowRequestFields,
+  type RequestTrace,
+} from "../diagnostics/request-trace";
 import { WORKSPACE_COMMANDS } from "../workspaces/workspace-commands";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
@@ -51,31 +57,32 @@ import { SessionReadError } from "../domains/sessions/read-errors";
 
 const rpcLog = createLogger("host.rpc");
 const SLOW_RPC_MS = 2_000;
-/** `RemoteChanges.read` and `RevisionWaits.wait` end a poll after this long, whatever wait was asked. */
-const HELD_POLL_CAP_MS = 10_000;
-const heldPollMs = (params: Record<string, unknown>): number => {
-  const wait = Number(params.waitMs);
-  return wait > 0 ? Math.min(HELD_POLL_CAP_MS, wait) : 0;
-};
 /**
- * Time a method may take on top of SLOW_RPC_MS before it counts as slow. A held poll is
- * entitled to the wait its caller asked for. A method that runs an owner command or an
- * assistant turn lasts as long as that work, which has its own deadline, so it is never
- * reported. Every other method, including the `sessions.desktopLive` heartbeat, gets none.
+ * Time a method may take before it counts as slow. A held poll is entitled to the wait the
+ * Host really holds it for. A method that runs an owner command or an assistant turn lasts
+ * as long as that work, which has its own deadline, so it is never reported. Every other
+ * method, including the `sessions.desktopLive` heartbeat, gets SLOW_RPC_MS alone.
  */
-/** An idle desktop take is held for the wait it asked for, up to the relay's bound. */
-const heldTakeMs = (params: Record<string, unknown>): number =>
-  Math.min(DESKTOP_TAKE_WAIT_MS, Math.max(0, Number(params.waitMs) || 0));
-const RPC_HOLD_MS: Record<string, (params: Record<string, unknown>) => number> = {
-  "machine.changes": heldPollMs,
-  "sessions.sync": heldPollMs,
-  "conversation.desktop.take": heldTakeMs,
-  "native.services.conversation.desktop.take": heldTakeMs,
-  "workspace.run": () => Infinity,
-  "assistant.request": () => Infinity,
-};
 export function slowRpcThresholdMs(method: string, params: Record<string, unknown>): number {
-  return SLOW_RPC_MS + (Object.hasOwn(RPC_HOLD_MS, method) ? RPC_HOLD_MS[method]!(params) : 0);
+  if (method === "workspace.run" || method === "assistant.request") return Infinity;
+  return SLOW_RPC_MS + heldPollWaitMs(method, params);
+}
+
+/** Stage fields once the whole request, queueing before the handler included, is slow. */
+function tracedSlowFields(
+  trace: RequestTrace | undefined,
+  method: string,
+  params: Record<string, unknown>,
+  at: number,
+) {
+  if (!trace) return undefined;
+  const thresholdMs = slowRpcThresholdMs(method, params);
+  if (elapsedSince(trace.receivedAt, at) < thresholdMs) return undefined;
+  return slowRequestFields(trace, {
+    thresholdMs,
+    heldWaitMs: heldPollWaitMs(method, params),
+    at,
+  });
 }
 
 /**
@@ -859,6 +866,8 @@ export async function dispatchOwnerRpc(
   // Only the desktop app sends this heartbeat; it is how the Host recognizes the desktop principal.
   if (method === "sessions.desktopLive") dependencies.approvals.noteDesktop(request.tokenHash);
   const startedAt = performance.now();
+  const trace = currentRequestTrace();
+  if (trace) trace.handlerStartedAt = startedAt;
   const signal = request.domainContext?.signal;
   try {
     const work = handler(dependencies, request);
@@ -871,16 +880,22 @@ export async function dispatchOwnerRpc(
         )
       : work);
   } catch (error) {
+    const failedAt = performance.now();
+    if (trace) trace.handlerEndedAt = failedAt;
     const fields = {
       ...rpcFailureFields(error, request),
-      ms: Math.round(performance.now() - startedAt),
+      ms: Math.round(failedAt - startedAt),
+      ...tracedSlowFields(trace, String(method), request.params, failedAt),
     };
     // A refusal made before execution is a normal answer to the caller, not a Host failure.
     if (error instanceof HostDomainRefusalError) rpcLog.debug("refused", fields);
     else rpcLog.warn("handler failed", fields);
     throw error;
   }
-  const ms = Math.round(performance.now() - startedAt);
-  if (ms >= slowRpcThresholdMs(String(method), request.params))
-    rpcLog.warn("slow call", { method: String(method), ms });
+  const finishedAt = performance.now();
+  if (trace) trace.handlerEndedAt = finishedAt;
+  const ms = Math.round(finishedAt - startedAt);
+  const traced = tracedSlowFields(trace, String(method), request.params, finishedAt);
+  if (traced || ms >= slowRpcThresholdMs(String(method), request.params))
+    rpcLog.warn("slow call", { method: String(method), ms, ...traced });
 }

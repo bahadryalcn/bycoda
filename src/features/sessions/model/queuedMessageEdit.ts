@@ -9,6 +9,7 @@ import {
   type TextSelection,
 } from "./attachmentTokens";
 import { mergeAttachments } from "./attachments";
+import { deleteScopedMentionAtCaret } from "./composerMentionScopes";
 import { withoutMissingAttachments } from "./queuePersistence";
 import type { Attachment, QueuedMessage } from "./session";
 
@@ -79,7 +80,14 @@ export function deleteDraftTokenAtCaret(
   draft: QueuedEditDraft,
   caret: number,
   direction: "back" | "forward",
-): { draft: QueuedEditDraft; caret: number } | null {
+): { draft: QueuedEditDraft; caret: number; mentionEnd?: number } | null {
+  const mentionEdit = deleteScopedMentionAtCaret(draft.text, caret, direction);
+  if (mentionEdit) {
+    return {
+      ...editDraftText(draft, mentionEdit.text, mentionEdit.caret),
+      mentionEnd: mentionEdit.end,
+    };
+  }
   const edit = deleteTokenAtCaret(draft.text, caret, direction, draft.attachments);
   if (!edit) return null;
   return editDraftText(draft, edit.text, edit.caret);

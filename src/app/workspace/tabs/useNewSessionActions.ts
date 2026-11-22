@@ -28,6 +28,10 @@ import {
 import { resolveRemoteSessionTarget } from "../../../features/connections/model/remoteSessionNavigation";
 import { remoteCreateShellFor } from "../../../features/connections/model/remoteCreateIntent";
 import {
+  projectlessMachineSession,
+  remoteSessionProjectKey,
+} from "../../../features/connections/model/sessionMachineTarget";
+import {
   worktreeFocus,
   type WorktreeFocus,
 } from "../../../features/source-control/model/worktreeFocus";
@@ -58,7 +62,8 @@ export function listedRemoteSessionId(
   listedId: string,
 ): string {
   const shell = sessions.find(
-    (session) => session.id === listedId && sameProjectPath(session.cwd, project),
+    (session) =>
+      session.id === listedId && sameProjectPath(remoteSessionProjectKey(session), project),
   );
   return (shell && remoteSessionFor(shell.id)) || listedId;
 }
@@ -242,7 +247,10 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
           const remoteId = remoteSessionFor(id);
           if (!candidate || !remoteId) return false;
           try {
-            return remoteSessionOwnershipKey(candidate.cwd, remoteId) === requestedKey;
+            return (
+              remoteSessionOwnershipKey(remoteSessionProjectKey(candidate), remoteId) ===
+              requestedKey
+            );
           } catch {
             return false;
           }
@@ -303,7 +311,11 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
           return true;
         }
         // Never reuse a blank remote composer: it may hold a create/upload in flight.
-        const session = newDefaultSession(project, sessionDefaults?.runtimeMode);
+        const scope = projectlessMachineSession(project);
+        const session = {
+          ...newDefaultSession(scope?.cwd ?? project, sessionDefaults?.runtimeMode),
+          ...scope,
+        };
         const replacement = options?.preview
           ? openSessionPreview(tabsRef.current, session, sessionsRef.current)
           : undefined;
@@ -316,9 +328,9 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
         if (replacement) {
           tabsRef.current = replacement.tabs;
           setTabs(replacement.tabs);
-        } else appendTab(tab, project);
+        } else appendTab(tab, session.cwd);
         setActiveTabId(tab.id);
-        followProject(project);
+        if (!scope) followProject(project);
         retained = true;
         return true;
       } finally {

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
-import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
+import {
+  useForegroundQueryFamilyPolling,
+  useQueryVisible,
+} from "../../../shared/hooks/useQueryVisible";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import type { RemoteMachine } from "../../connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
@@ -40,6 +43,8 @@ import {
 } from "../../connections/public/transientFailure";
 
 const EMPTY_MACHINES: RemoteMachine[] = [];
+const TASK_BOARD_QUERY_KEY = ["task-board"] as const;
+const TASK_BOARD_POLL_MS = 15_000;
 const identity = (machine: RemoteMachine) =>
   [machine.id, machine.environmentId, machine.endpoint, isLocalSyncMachine(machine)] as const;
 type Description = { capabilities: string[]; error?: unknown };
@@ -82,7 +87,7 @@ function useMachineReads<T>(
             ? !description.error && description.capabilities.includes(capability)
             : !!description.error || description.capabilities.includes(capability)),
         staleTime: 15_000,
-        refetchInterval: 15_000,
+        refetchOnWindowFocus: false,
         retry: false,
       };
     }),
@@ -95,6 +100,7 @@ function useMachineReads<T>(
 export function useTaskBoardQueries(projectScope = "all", { planningCatalog = false } = {}) {
   const client = useQueryClient();
   const visible = useQueryVisible();
+  useForegroundQueryFamilyPolling(TASK_BOARD_QUERY_KEY, TASK_BOARD_POLL_MS);
   const forceCapabilities = useRef(new Set<string>());
   const forceTasks = useRef(new Set<string>());
   const inventory = useQuery({
@@ -106,7 +112,7 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
     },
     enabled: visible,
     staleTime: 15_000,
-    refetchInterval: 15_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
   const machines = useMemo(() => {
@@ -150,7 +156,7 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
       },
       enabled: visible,
       staleTime: 15_000,
-      refetchInterval: 15_000,
+      refetchOnWindowFocus: false,
       retry: false,
     })),
     combine: combine<Description>,

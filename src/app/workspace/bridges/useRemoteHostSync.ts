@@ -24,7 +24,7 @@ import {
   keepUnchangedFields,
   remoteSessionState,
 } from "../../../features/connections/model/remoteSessionState";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import {
   acknowledgedHostSessionBinding,
   hostSessionBinding,
@@ -163,7 +163,7 @@ export function useRemoteHostSync(): RemoteHostSync {
     setSessions((current) => {
       const entry = current.find((candidate) => candidate.id === shellId);
       if (!entry) return current;
-      const project = remoteProjectFor(entry.cwd);
+      const project = remoteSessionProject(entry);
       if (!project) return current;
       return current.map((candidate) =>
         candidate.id === shellId ? remoteSessionState(candidate, snapshot, project) : candidate,

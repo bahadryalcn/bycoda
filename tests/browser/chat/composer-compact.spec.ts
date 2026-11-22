@@ -40,6 +40,59 @@ const scroller = (page: Page) => page.locator(".agent-transcript");
 const reading = (page: Page) => page.locator("[data-composer][data-composer-reading]");
 const field = (page: Page) => page.locator("[data-composer] textarea");
 
+for (const [width, light] of [
+  [800, false],
+  [800, true],
+  [1280, false],
+  [1280, true],
+] as const) {
+  const surface = `${light ? "light" : "dark"}-${width}`;
+  test(`Markdown stays formatted after the inline editor activates (${surface})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(url({ inlineExamples: "repeated-pdf" }, light));
+    const editor = page.locator("[data-composer-inline-input]");
+    await expect(editor.locator('[data-inline-reference="attachment"]')).toHaveCount(2);
+    const source =
+      "## İş teklifleri\n\n**Eksik kalanlar:** Spam araması boş döndü. [file1]\n\n- `Takip` notu";
+    await field(page).evaluate((input: HTMLTextAreaElement) => {
+      input.focus();
+      input.select();
+    });
+    await page.keyboard.insertText(source);
+    await expect(field(page)).toHaveValue(source);
+    await expect(editor.locator('[data-inline-reference="attachment"]')).toHaveCount(1);
+    await expect(editor.locator('[data-draft-markdown="strong"]')).toContainText("Eksik kalanlar:");
+    await expect(editor.locator('[data-draft-markdown="heading"]')).toContainText("İş teklifleri");
+    await expect(editor.locator('[data-draft-markdown="code"]')).toContainText("Takip");
+    const marker = editor
+      .locator('[data-draft-markdown="strong"] [data-draft-markdown="mark"]')
+      .first();
+    await expect(marker).toHaveCSS("color", "rgba(0, 0, 0, 0)");
+    await field(page).evaluate((input: HTMLTextAreaElement) => {
+      const start = input.value.indexOf("**");
+      input.setSelectionRange(start + 1, start + 1);
+    });
+    await expect(marker).toHaveAttribute("data-editing-mark", "");
+    await expect(marker).not.toHaveCSS("color", "rgba(0, 0, 0, 0)");
+    await editor.blur();
+    await expect(marker).toHaveCSS("color", "rgba(0, 0, 0, 0)");
+    await editor.focus();
+    const scroller = page.locator(".cm-scroller");
+    const shortHeight = await scroller.evaluate((element) => element.clientHeight);
+    expect(shortHeight).toBeLessThan(180);
+    await field(page).evaluate((input: HTMLTextAreaElement) => {
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+    await page.keyboard.insertText(`\n${"\nBir satır daha.".repeat(15)}`);
+    await expect.poll(() => scroller.evaluate((element) => element.clientHeight)).toBe(180);
+    expect(await scroller.evaluate((element) => element.scrollHeight)).toBeGreaterThan(180);
+    await scroller.evaluate((element) => (element.scrollTop = 0));
+    await capture(page, `markdown-${surface}`);
+  });
+}
+
 test("selecting all with an inline skill keeps suggestions closed", async ({ page }) => {
   for (const light of [false, true]) {
     await page.goto(url({ inlineExamples: "repeated-pdf" }, light));
@@ -131,6 +184,7 @@ test("inline composer cuts real file bytes and restores the reference on undo", 
 
 test("the session composer renders all eight compact references in the editable line", async ({
   page,
+  browserName,
 }) => {
   const evidence = "temp/verification/composer-compact-references";
   mkdirSync(evidence, { recursive: true });
@@ -217,17 +271,19 @@ test("the session composer renders all eight compact references in the editable 
     await expect(field(page)).toHaveValue(/^Önce /);
     await expect(references).toHaveCount(8);
 
-    const client = await page.context().newCDPSession(page);
-    await page.keyboard.press("Control+End");
-    await client.send("Input.imeSetComposition", {
-      text: "入力",
-      selectionStart: 2,
-      selectionEnd: 2,
-    });
-    await client.send("Input.insertText", { text: "入力" });
-    await expect(field(page)).toHaveValue(/入力$/);
-    await expect(references).toHaveCount(8);
-    await client.detach();
+    if (browserName === "chromium") {
+      const client = await page.context().newCDPSession(page);
+      await page.keyboard.press("Control+End");
+      await client.send("Input.imeSetComposition", {
+        text: "入力",
+        selectionStart: 2,
+        selectionEnd: 2,
+      });
+      await client.send("Input.insertText", { text: "入力" });
+      await expect(field(page)).toHaveValue(/入力$/);
+      await expect(references).toHaveCount(8);
+      await client.detach();
+    }
     await editor
       .getByRole("button", { name: "Open bycoda-export.json" })
       .click({ button: "right" });

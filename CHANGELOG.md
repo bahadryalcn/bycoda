@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The local Host now runs with the desktop app and stops when you quit, after listing running sessions and stopping them gracefully. Turn on "Keep this computer reachable when bycoda is closed" under Settings → Connections → Computers to keep it running as a login service.
+
 ### Improved
 
 - Native buffer reads reuse one long-lived git reader instead of starting three git processes per read.

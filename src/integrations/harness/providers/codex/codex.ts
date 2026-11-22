@@ -157,6 +157,8 @@ type Live = {
   model?: string;
   cwd: string;
   providerAccountId?: string;
+  privateDelegateHistory: boolean;
+  privateDelegateReplayPending: boolean;
   /** Thread-level network policy used when this app-server opened the thread. */
   controlsAgents: boolean;
   runtimeMode: RuntimeMode;
@@ -913,11 +915,13 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
   const existing = liveByThread.get(input.sessionId);
   const controlsAgents = input.controlsAgents === true;
+  const privateDelegateHistory = input.privateDelegateHistory === true;
   if (
     existing &&
     existing.cwd === input.cwd &&
     sameProviderAccountId(existing.providerAccountId, input.providerAccountId) &&
     existing.controlsAgents === controlsAgents &&
+    existing.privateDelegateHistory === privateDelegateHistory &&
     existing.nativeSubagents === input.modelSettings?.nativeSubagents &&
     existing.autoCompactWindow === input.modelSettings?.autoCompactWindow &&
     existing.skillPolicyKey === JSON.stringify(input.skillPolicy)
@@ -954,12 +958,14 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     const resume = resumeByThread.get(input.sessionId);
     const canResume =
+      !privateDelegateHistory &&
       resume != null &&
       resume.cwd === input.cwd &&
       sameProviderAccountId(resume.providerAccountId, input.providerAccountId);
     if (
       resume &&
-      (resume.cwd !== input.cwd ||
+      (privateDelegateHistory ||
+        resume.cwd !== input.cwd ||
         !sameProviderAccountId(resume.providerAccountId, input.providerAccountId))
     ) {
       resumeByThread.delete(input.sessionId);
@@ -1178,19 +1184,22 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     }
 
     if (!threadId) {
-      const opened = await startupRpc.request<{ thread?: { id?: string }; model?: string }>(
-        "thread/start",
-        {
-          ...(threadConfig ? { config: threadConfig } : {}),
-          ...buildThreadStartParams({
-            cwd: input.cwd,
-            ...codexMode(input),
-            model,
-            serviceTier,
-            additionalDirs: additionalDirsFor(input.sessionId),
-          }),
-        },
-      );
+      const opened = await startupRpc.request<{
+        thread?: { id?: string; ephemeral?: boolean };
+        model?: string;
+      }>("thread/start", {
+        ...(privateDelegateHistory ? { ephemeral: true } : {}),
+        ...(threadConfig ? { config: threadConfig } : {}),
+        ...buildThreadStartParams({
+          cwd: input.cwd,
+          ...codexMode(input),
+          model,
+          serviceTier,
+          additionalDirs: additionalDirsFor(input.sessionId),
+        }),
+      });
+      if (privateDelegateHistory && opened.thread?.ephemeral !== true)
+        throw new Error("Codex did not confirm private session storage.");
       threadId = opened.thread?.id?.trim();
       threadModel = opened.model?.trim() || model;
     }
@@ -1208,6 +1217,8 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       model: threadModel,
       cwd: input.cwd,
       providerAccountId: input.providerAccountId,
+      privateDelegateHistory,
+      privateDelegateReplayPending: privateDelegateHistory,
       controlsAgents,
       runtimeMode: input.runtimeMode,
       planning: input.intent === "plan",
@@ -1258,15 +1269,17 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     };
     liveRef.current = live;
     liveByThread.set(input.sessionId, live);
-    resumeByThread.set(input.sessionId, {
-      threadId,
-      cwd: input.cwd,
-      providerAccountId: input.providerAccountId,
-    });
-    live.onEvent({
-      type: "session.providerBound",
-      providerSessionId: threadId,
-    });
+    if (!privateDelegateHistory) {
+      resumeByThread.set(input.sessionId, {
+        threadId,
+        cwd: input.cwd,
+        providerAccountId: input.providerAccountId,
+      });
+      live.onEvent({
+        type: "session.providerBound",
+        providerSessionId: threadId,
+      });
+    }
     live.onEvent({ type: "session.started" });
     void loadCodexSkills(live, input.sessionId, startupRpc);
     return live;
@@ -1396,12 +1409,14 @@ async function startParentTurn(
   const model = (live.model = nativeModelId(input.model) || live.model); // sticks to the thread
   const effort = input.modelSettings?.reasoningEffort;
   const serviceTier = input.modelSettings?.serviceTier;
+  const replay = live.privateDelegateReplayPending ? input.privateDelegateReplay : undefined;
 
   const params = buildTurnStartParams({
     threadId: live.threadId,
     ...codexMode(input),
     prompt:
-      [input.runtimeInstructions, input.text].filter(Boolean).join("\n\n").trim() || undefined,
+      [input.runtimeInstructions, replay, input.text].filter(Boolean).join("\n\n").trim() ||
+      undefined,
     attachments: input.attachments,
     skills: live.skills,
     model,
@@ -1443,6 +1458,7 @@ async function startParentTurn(
           // Natural completion may arrive before this response. Still acknowledge it,
           // but never accept a stopped turn or an old transport's late response.
           if (live.cancelled || live.muteUpdates) return response;
+          live.privateDelegateReplayPending = false;
           input.onAccepted?.();
           const turnId = response.turn?.id ?? live.activeTurnId;
           // turn/completed can arrive before turn/start returns; don't resurrect a

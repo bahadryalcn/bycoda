@@ -8,7 +8,7 @@
 }
 
 .mount :global(.cm-scroller) {
-  max-block-size: 10rem;
+  max-block-size: var(--composer-draft-max-height);
   overflow: auto;
   font-family: var(--font-sans);
 }

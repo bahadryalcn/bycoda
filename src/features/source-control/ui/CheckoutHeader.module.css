@@ -133,8 +133,3 @@
     display: none;
   }
 }
-
-.marker {
-  flex-shrink: 0;
-  white-space: nowrap;
-}

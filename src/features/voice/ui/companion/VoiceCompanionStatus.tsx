@@ -14,16 +14,17 @@ import type { VoiceVisualState } from "../../model/voiceVisualState";
 import { VoiceCallScene } from "./VoiceCallScene";
 import { VoiceCore } from "./VoiceCore";
 import { voiceStatusTone } from "./VoiceLauncher";
+import type { VoiceCallArtworkState } from "./voiceCallArtwork";
 import styles from "./VoiceCompanionParts.module.css";
 
 /**
- * With the transcript hidden, the expanded panel
- * is a call screen: a large voice core, the status, the engine and session clock, and the words
- * in flight. With the transcript shown it shrinks to a strip: the small core beside the status.
- * The scope choice sits under both, so no state moves another control.
+ * Fullscreen keeps its call stage while the transcript is open. The floating panel can fit its
+ * transcript by switching to the status strip.
  */
 export function VoiceCompanionStatus({
   visualState,
+  artwork,
+  fullScreen,
   working,
   audioLevel,
   statusText,
@@ -41,6 +42,8 @@ export function VoiceCompanionStatus({
   onStopWork,
 }: {
   visualState: VoiceVisualState;
+  artwork: VoiceCallArtworkState;
+  fullScreen?: boolean;
   working: boolean;
   audioLevel: { readonly current: number };
   statusText: string;
@@ -56,7 +59,7 @@ export function VoiceCompanionStatus({
   /** Assistant name; empty before setup, when there is no avatar to show. */
   name: string;
   avatar: string | undefined;
-  /** The transcript is hidden: show the large call stage. */
+  /** Show the large call stage. */
   stage: boolean;
   /** The latest spoken line, shown under the status on the large stage. */
   caption: string;
@@ -66,10 +69,14 @@ export function VoiceCompanionStatus({
   const tone = voiceStatusTone(visualState);
   const work = working ? sessionStatusText : "";
   return (
-    <div className={styles.stage} data-layout={stage ? "stage" : "strip"}>
+    <div
+      className={styles.stage}
+      data-layout={stage ? "stage" : "strip"}
+      data-full-call={fullScreen || undefined}
+    >
       <div className={styles.status}>
         {stage ? (
-          <VoiceCallScene part="orb" state={visualState} level={audioLevel} />
+          <VoiceCallScene part="orb" state={artwork} level={audioLevel} expanded={fullScreen} />
         ) : (
           <VoiceCore state={visualState} level={audioLevel} name={name} avatar={avatar} />
         )}
@@ -77,10 +84,11 @@ export function VoiceCompanionStatus({
           <div className={styles.statusLine}>
             {tone && <StatusDot tone={tone} size="fixed" appearance="solid" />}
             <LiveText
-              size={stage ? "body" : "secondary"}
+              size={fullScreen ? "heading" : stage ? "body" : "secondary"}
               weight="medium"
               leading="snug"
-              truncate
+              lines={fullScreen ? 2 : undefined}
+              truncate={!fullScreen}
               text={statusText}
             />
             {working && (
@@ -106,17 +114,21 @@ export function VoiceCompanionStatus({
           <VoiceMeta live={live} engine={engine} privacy={privacy} />
         </div>
       </div>
-      {stage && caption ? (
-        <Text
-          as="p"
-          size="secondary"
-          tone="secondary"
-          leading="normal"
-          lines={4}
-          className={styles.spoken}
-        >
-          {caption}
-        </Text>
+      {stage && (fullScreen || caption) ? (
+        <div className={styles.captionSlot}>
+          {caption && (
+            <Text
+              as="p"
+              size={fullScreen ? "body" : "secondary"}
+              tone="secondary"
+              leading="normal"
+              lines={fullScreen ? 2 : 4}
+              className={styles.spoken}
+            >
+              {caption}
+            </Text>
+          )}
+        </div>
       ) : null}
       {workspace && (
         <div className={styles.scope}>

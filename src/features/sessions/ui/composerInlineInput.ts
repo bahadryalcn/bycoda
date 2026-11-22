@@ -10,7 +10,7 @@ import {
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 
 const externalChange = Annotation.define<boolean>();
-const managedCut = Annotation.define<boolean>();
+const managedDeletion = Annotation.define<boolean>();
 const editors = new WeakMap<HTMLTextAreaElement, EditorView>();
 
 export function composerInputFocused(field: HTMLTextAreaElement) {
@@ -56,15 +56,20 @@ function changesBetween(before: string, after: string) {
   return { from, to, insert: after.slice(from, end) };
 }
 
-/** A Composer cut needs its own editor undo step because it also moves files. */
-export function applyComposerInlineCut(field: HTMLTextAreaElement, text: string, caret: number) {
+/** Composer-owned deletion is recorded in one isolated editor undo step. */
+export function applyComposerInlineDeletion(
+  field: HTMLTextAreaElement,
+  text: string,
+  caret: number,
+  userEvent = "delete.cut",
+) {
   const view = editors.get(field);
   if (!view) return false;
   view.dispatch({
     changes: changesBetween(view.state.doc.toString(), text),
     selection: EditorSelection.single(caret),
-    annotations: [managedCut.of(true), isolateHistory.of("full")],
-    userEvent: "delete.cut",
+    annotations: [managedDeletion.of(true), isolateHistory.of("full")],
+    userEvent,
   });
   return true;
 }
@@ -171,7 +176,7 @@ export function attachComposerInlineInput(
               : update.transactions.some((transaction) => transaction.isUserEvent("redo"))
                 ? "historyRedo"
                 : "";
-            if (!update.transactions.some((transaction) => transaction.annotation(managedCut)))
+            if (!update.transactions.some((transaction) => transaction.annotation(managedDeletion)))
               field.dispatchEvent(new InputEvent("beforeinput", { inputType }));
             field.value = update.state.doc.toString();
             pendingInput = inputType;

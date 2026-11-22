@@ -2,6 +2,7 @@ import { workspaceFailureDetail } from "../../model/workspaceActionError";
 import { remoteSessionOwnershipKey } from "../../model/sessionWindowOwnership";
 import { remoteSessionFor } from "../../../features/connections/model/connections";
 import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProjectKey } from "../../../features/connections/model/sessionMachineTarget";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -252,8 +253,9 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
               ...payload,
               ownershipIds: payload.sessions.flatMap((session) => {
                 const remoteId = remoteSessionFor(session.id);
-                return remoteId && parseRemotePath(session.cwd)
-                  ? [remoteSessionOwnershipKey(session.cwd, remoteId)]
+                const project = remoteSessionProjectKey(session);
+                return remoteId && parseRemotePath(project)
+                  ? [remoteSessionOwnershipKey(project, remoteId)]
                   : [];
               }),
             }),

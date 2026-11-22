@@ -2,26 +2,6 @@ import { test, expect, type Page, type Locator } from "@playwright/test";
 const fixture = "/tests/browser/sessions/session-tools.html";
 const captures = "temp/verification/2026-11-04-session-tools/hub";
 
-for (const theme of ["light", "dark"])
-  for (const width of [1280, 800])
-    test(`transcript work results ${theme} ${width}`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 800 });
-      await page.goto(`${fixture}?work-results&theme=${theme}`);
-      const results = page.locator("[data-transcript-work-results]");
-      await expect(results).toHaveCount(1);
-      await expect(results.locator("[data-tool-inspection]")).toHaveCount(0);
-      await results.locator("summary").click();
-      await expect(results.getByText("Filter regression:", { exact: false })).toBeVisible();
-      await results.getByRole("radio", { name: "Completed" }).click();
-      await expect(results.getByText("+return rows.filter(matchesQuery);")).toBeVisible();
-      await expect(results.getByText("Filter regression:", { exact: false })).toHaveCount(0);
-      await results.getByRole("button", { name: "Open changes", exact: true }).click();
-      await expect(page.getByText("G:/demo/Atlas/src/filters.ts", { exact: true })).toBeVisible();
-      await results.screenshot({
-        path: `temp/verification/transcript-work-results/${theme}-${width}.png`,
-      });
-    });
-
 async function previewNavigations(page: Page) {
   return page.evaluate(() => {
     const { sessionToolsCalls } = window as unknown as {

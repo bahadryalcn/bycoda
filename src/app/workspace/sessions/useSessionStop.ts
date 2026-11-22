@@ -22,7 +22,7 @@ import { hasActiveSubmit } from "../../../features/sessions/model/activeSubmits"
 import { notifyReviewChanged } from "../../../features/sessions/model/checkpoint";
 import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import { cancelAdoptedTurn } from "../../../features/connections/model/adoptedSessionCommands";
 import {
   deferUnhandledEscape,
@@ -70,14 +70,14 @@ export function useSessionStop(deps: SessionStopDeps) {
       // Crew conversations are stopped from Crews only.
       if (refuseCrewManagedSession(sessionId)) return;
       const remote = sessionsRef.current.find((s) => s.id === sessionId);
-      if (current && remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) return;
+      if (current && remote && (hostSessionBinding(remote) || remoteSessionProject(remote))) return;
       // A remote desktop command has no original orchestration receipt. Hold it
       // rather than retargeting an orchestrator that appeared after the heartbeat.
       if (current && !managed && orchestrator.forSession(sessionId)) {
         if (current.stopOrchestration) void current.stopOrchestration().catch(console.error);
         return;
       }
-      if (remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) {
+      if (remote && (hostSessionBinding(remote) || remoteSessionProject(remote))) {
         remoteSessionActions(sessionId)?.stop();
         return;
       }
@@ -292,7 +292,7 @@ export function useSessionStop(deps: SessionStopDeps) {
         !session ||
         session.continuingElsewhere ||
         hostSessionBinding(session) ||
-        remoteProjectFor(session.cwd) ||
+        remoteSessionProject(session) ||
         orchestrator.forSession(sessionId)
       )
         throw new Error("Session stop owner is unavailable in this window.");

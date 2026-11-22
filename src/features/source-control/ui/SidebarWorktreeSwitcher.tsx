@@ -10,6 +10,8 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
+import { useChangeTotals } from "../hooks/useChangeTotals";
+import { changeSectionRoots } from "../model/worktreeScope";
 import { useWorktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
 import { createProjectWorktree } from "../model/remoteWorktrees";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
@@ -45,6 +47,7 @@ export function SidebarWorktreeSwitcher({
   const [query, setQuery] = useState("");
   const [activePath, setActivePath] = useState<string | null>(null);
   const [reportedSwitchError, setReportedSwitchError] = useState<string | undefined>(undefined);
+  const [agentsExpanded, setAgentsExpanded] = useState(false);
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState<string>();
   const creatingRef = useRef(false);
@@ -71,10 +74,14 @@ export function SidebarWorktreeSwitcher({
   const showAll = hasAll && !query.trim();
   const allSelected = hasAll && !focus;
 
+  // Counts of the worktrees that have uncommitted changes: the same sections the Changes panel
+  // and its tab badge add up, so the chips and "All worktrees" agree with them.
+  const totals = useChangeTotals(changeSectionRoots(data?.worktrees, cwd), open);
   const canCreate = !!data && !error && !!createName && rows.length === 0;
 
   const closePicker = () => {
     setOpen(false);
+    setAgentsExpanded(false);
     setQuery("");
     setActivePath(null);
     setCreationError(undefined);
@@ -148,9 +155,13 @@ export function SidebarWorktreeSwitcher({
     value: focus?.path ?? main?.path ?? cwd,
     activePath:
       activePath ?? (showAll && allSelected ? ALL_WORKTREES_ACTIVE : null) ?? rows[0]?.path ?? null,
+    counts: totals.byRoot,
+    agentsExpanded: agentsExpanded || !!query.trim(),
+    onExpandAgents: () => setAgentsExpanded(true),
     all: showAll
       ? {
           selected: allSelected,
+          changes: totals.ready ? totals.total : undefined,
           onPick: () => {
             if (creating) return;
             onSelect?.(undefined);

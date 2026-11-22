@@ -34,6 +34,8 @@ export type GitMenuState = {
   tagCount: number;
   remoteCount: number;
   autoFetch: boolean;
+  /** A repository section of several: offers narrowing the list to it, or showing all again. */
+  repositoryScope?: { only: boolean };
 };
 
 export type CommitMenuOptions = {
@@ -192,6 +194,16 @@ export function gitActionsMenuItems(state: GitMenuState): ExplorerMenuItem[] {
     ]),
     SEP,
     entry("auto-fetch", "Auto Fetch", canFetch, { checked: state.autoFetch }),
+    ...(state.repositoryScope
+      ? [
+          SEP,
+          entry(
+            "repository-scope",
+            state.repositoryScope.only ? "Show all repositories" : "Show only this repository",
+            true,
+          ),
+        ]
+      : []),
   ];
   const eligible = state.generating
     ? items.map((item) => {

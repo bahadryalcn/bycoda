@@ -19,7 +19,7 @@ import { NOTES_CHANGED_EVENT, upsertNote } from "../../../features/notes";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { sameProjectPath } from "../../../features/projects/model/recents";
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import { getSession, listSessionsByProject } from "../../../features/sessions/data/sessionStore";
 import { sessionDraftBlock, sessionWorkCwd } from "../../../features/sessions/model/session";
 import { useHistorySourceRegistration } from "./useHistorySourceRegistration";
@@ -327,7 +327,7 @@ export function useAppControlRequests({
               session.inboxAsk ||
               orchestrator.run(sessionId) ||
               hostSessionBinding(session) ||
-              remoteProjectFor(session.cwd)
+              remoteSessionProject(session)
             )
               throw new Error("Session is unavailable in this project.");
             const block = session.blocks.find(

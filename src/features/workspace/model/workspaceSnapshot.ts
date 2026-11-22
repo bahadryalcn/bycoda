@@ -29,6 +29,7 @@ import { parseRecoveredEditorDraft } from "../../files/model/editorDraftRecovery
 import type { ServerTerminalRestore } from "../../connections/model/serverTerminalRestore";
 import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
 import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
+import { remoteSessionProjectKey } from "../../connections/public/sessionMachineTarget";
 import {
   cachedRemoteSessionSummary,
   rememberRemoteSession,
@@ -55,6 +56,7 @@ export type WorkspaceSessionStub = {
   id: string;
   cwd: string;
   scratchWorkspace?: true;
+  remoteExecutionEnvironmentId?: string;
   harness: HarnessId;
   model: string;
   modelSettings: Record<string, string>;
@@ -295,7 +297,7 @@ export function hydrateWorkspaceSnapshot(
       excludedIds.add(id);
       return null;
     }
-    if (stub?.remoteSessionId && parseRemotePath(stub.cwd)) {
+    if (stub?.remoteSessionId && parseRemotePath(remoteSessionProjectKey(stub))) {
       const bound = remoteSessionFor(id);
       if (!bound) {
         // Decide before binding: binding takes the host id away from any other shell.
@@ -387,14 +389,18 @@ export function hydrateWorkspaceSnapshot(
 
 function sessionStub(session: Session): WorkspaceSessionStub | null {
   if (!session.id) return null;
-  const remoteSessionId = parseRemotePath(session.cwd) ? remoteSessionFor(session.id) : undefined;
+  const projectKey = remoteSessionProjectKey(session);
+  const remoteSessionId = parseRemotePath(projectKey) ? remoteSessionFor(session.id) : undefined;
   const remote = remoteSessionId
-    ? cachedRemoteSessionSummary(session.cwd, remoteSessionId)
+    ? cachedRemoteSessionSummary(projectKey, remoteSessionId)
     : undefined;
   return {
     id: session.id,
     cwd: session.cwd || "~",
     ...(session.cwd === "~" && session.scratchWorkspace ? { scratchWorkspace: true } : {}),
+    ...(session.cwd === "~" && session.remoteExecutionEnvironmentId
+      ? { remoteExecutionEnvironmentId: session.remoteExecutionEnvironmentId }
+      : {}),
     harness: remote?.harness ?? session.harness,
     model: session.model,
     modelSettings: { ...session.modelSettings },
@@ -422,6 +428,7 @@ function sessionFromStub(stub: WorkspaceSessionStub): Session {
     ...session,
     id: stub.id,
     scratchWorkspace: stub.scratchWorkspace,
+    remoteExecutionEnvironmentId: stub.remoteExecutionEnvironmentId,
     // A snapshot is a saved choice, not a new conversation. Catalog discovery
     // and the current picker preferences must not replace its model.
     model: stub.model || session.model,
@@ -443,6 +450,12 @@ function sanitizeStub(raw: unknown): WorkspaceSessionStub | null {
   const harness = asHarness(value.harness);
   const runtimeMode = asRuntimeMode(value.runtimeMode);
   if (!harness || !runtimeMode) return null;
+  const remoteExecutionEnvironmentId =
+    value.cwd === "~" &&
+    typeof value.remoteExecutionEnvironmentId === "string" &&
+    /^[A-Za-z0-9_-]{1,180}$/.test(value.remoteExecutionEnvironmentId)
+      ? value.remoteExecutionEnvironmentId
+      : undefined;
   const modelSettings =
     value.modelSettings &&
     typeof value.modelSettings === "object" &&
@@ -457,12 +470,14 @@ function sanitizeStub(raw: unknown): WorkspaceSessionStub | null {
     id: value.id,
     cwd: typeof value.cwd === "string" && value.cwd.trim() ? value.cwd.trim() : "~",
     ...(value.cwd === "~" && value.scratchWorkspace === true ? { scratchWorkspace: true } : {}),
+    ...(remoteExecutionEnvironmentId ? { remoteExecutionEnvironmentId } : {}),
     harness,
     model: typeof value.model === "string" ? value.model : "",
     modelSettings,
     runtimeMode,
     title: typeof value.title === "string" ? value.title : "",
-    ...(parseRemotePath(typeof value.cwd === "string" ? value.cwd : "") &&
+    ...((remoteExecutionEnvironmentId ||
+      parseRemotePath(typeof value.cwd === "string" ? value.cwd : "")) &&
     typeof value.remoteSessionId === "string" &&
     value.remoteSessionId.trim()
       ? { remoteSessionId: value.remoteSessionId.trim() }

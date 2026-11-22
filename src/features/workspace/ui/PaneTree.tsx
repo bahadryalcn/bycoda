@@ -110,7 +110,6 @@ type Shared = {
   hideProjectPicker?: boolean;
   onFocus: (paneId: string) => void;
   onSessionInteraction?: (sessionId: string) => void;
-  onOpenVoiceWork?: SessionPaneProps["onOpenVoiceWork"];
   onClose: (sessionId: string) => void;
   onRemoteSnapshot?: SessionPaneProps["onRemoteSnapshot"];
   onRefreshAdoptedSession?: SessionPaneProps["onRefreshAdoptedSession"];
@@ -134,6 +133,8 @@ type Shared = {
   onFileErrorCountChange: (fileId: string, count: number) => void;
   onRatio: (splitId: string, index: number, ratio: number) => void;
   onCwdChange: (sessionId: string, cwd: string) => void;
+  onSessionMachineChange?: SessionPaneProps["onSessionMachineChange"];
+  onSessionMachinePickerTrigger?: SessionPaneProps["onSessionMachinePickerTrigger"];
   onBranchChange: (sessionId: string) => void;
   onWorktreeChange?: (sessionId: string, tree: Worktree) => Promise<void>;
   onWorkspaceModeChange: (sessionId: string, mode: WorkspaceMode, base?: string) => void;
@@ -257,7 +258,6 @@ function PaneTreeComponent({
   workspaceSwitchingSessionId,
   onFocus,
   onSessionInteraction,
-  onOpenVoiceWork,
   onClose,
   onRemoteSnapshot,
   onRefreshAdoptedSession,
@@ -275,6 +275,8 @@ function PaneTreeComponent({
   onFileErrorCountChange,
   onRatio,
   onCwdChange,
+  onSessionMachineChange,
+  onSessionMachinePickerTrigger,
   onBranchChange,
   onWorktreeChange,
   onWorkspaceModeChange,
@@ -851,7 +853,6 @@ function PaneTreeComponent({
                     >
                       <SessionPane
                         session={session}
-                        onOpenVoiceWork={onOpenVoiceWork}
                         workspaceSwitchingSessionId={workspaceSwitchingSessionId}
                         reviewUndoLocked={paneSessions.undoLocked.has(session.id)}
                         visible={visible && !hidden}
@@ -870,6 +871,8 @@ function PaneTreeComponent({
                         onLoadSessionHistory={onLoadSessionHistory}
                         onPrepareSessionHistory={onPrepareSessionHistory}
                         onCwdChange={onCwdChange}
+                        onSessionMachineChange={onSessionMachineChange}
+                        onSessionMachinePickerTrigger={onSessionMachinePickerTrigger}
                         onBranchChange={onBranchChange}
                         onWorktreeChange={onWorktreeChange}
                         onWorkspaceModeChange={onWorkspaceModeChange}

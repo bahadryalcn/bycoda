@@ -231,6 +231,32 @@ it("Backspace after a token removes the whole token and its attachment", async (
   expect(chipCount()).toBe(0);
 });
 
+it("Backspace after the picker space removes only the last scoped mention", () => {
+  const field = render("@crews:release-team @crews:backend-engineer ");
+  field.setSelectionRange(field.value.length, field.value.length);
+  userType(field, field.value.slice(0, -1), "deleteContentBackward");
+  expect(field.value).toBe("@crews:release-team ");
+});
+
+it("Delete before a scoped mention preserves its neighbor", () => {
+  const field = render("Ask @crews:release-team @notes:plan");
+  field.setSelectionRange(4, 4);
+  userType(field, "Ask crews:release-team @notes:plan", "deleteContentForward");
+  expect(field.value).toBe("Ask @notes:plan");
+  expect(field.selectionStart).toBe(4);
+});
+
+it("does not take a scoped mention from code or an active search", () => {
+  const field = render("Use `@crews:release-team`");
+  field.setSelectionRange(field.value.length - 1, field.value.length - 1);
+  userType(field, "Use `@crews:release-tea`", "deleteContentBackward");
+  expect(field.value).toBe("Use `@crews:release-tea`");
+  type(field, "@crews:back");
+  field.setSelectionRange(field.value.length, field.value.length);
+  userType(field, "@crews:bac", "deleteContentBackward");
+  expect(field.value).toBe("@crews:bac");
+});
+
 it.each(["/break-ui", "$break-ui"])(
   "deletes recognized skill %s as one reference",
   async (token) => {

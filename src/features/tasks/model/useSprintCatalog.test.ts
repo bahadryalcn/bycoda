@@ -12,7 +12,6 @@ vi.mock("../../connections/public/connections", () => ({ remoteRequest: mocks.re
 vi.mock("../../automations/public/hostMachines", () => ({
   machineCapabilities: mocks.capabilities,
 }));
-vi.mock("../../../shared/hooks/useQueryVisible", () => ({ useQueryVisible: () => true }));
 
 it("keeps equal sprint IDs separate across server owners", () => {
   expect(sprintCatalogKey({ environmentId: "pc" }, { id: "same" })).not.toBe(

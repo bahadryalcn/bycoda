@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { PROJECTLESS_SESSIONS_CAPABILITY } from "../../src/shared/model/host-contracts/projectless-sessions";
 import { attachDevServerTunnel, TUNNEL_CAPABILITY } from "../dev-servers/dev-server-tunnel";
 import { hostBulkDependencies } from "../transport/http/bulk";
 import { attachHostWebSocketTransport } from "../transport/ws/server";
@@ -67,6 +68,7 @@ export function createWebsocketRuntime(
       "sessions.references.v1",
       "sessions.approvalOccurrence.v1",
       "sessions.desktopControlReceipts.v1",
+      PROJECTLESS_SESSIONS_CAPABILITY,
       "transport.ws.queue.v2",
       "transport.ws.files.v2",
       "transport.ws.terminals.v2",

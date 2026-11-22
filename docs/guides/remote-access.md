@@ -516,6 +516,16 @@ execution default. Installed multi-device migration still requires acceptance.
 
 HTTPS endpoints can also be entered if you operate a reverse proxy to the loopback host. Plain HTTP is accepted only for loopback endpoints. Native desktop HTTP carries the saved credential; it is not exposed to the renderer or browser storage. The native connection store is `remote-machines.json` in the desktop app's data directory, with mode 0600 on Unix. This initial implementation does not use the OS keychain.
 
+## Keep this computer reachable when bycoda is closed
+
+By default the local Host belongs to the desktop app: it starts when bycoda opens and stops when bycoda quits. While it is stopped, phones and other computers cannot reach this computer's projects, and automations do not run.
+
+To keep it reachable, open **Settings → Connections → Computers** and turn on **Keep this computer reachable when bycoda is closed** on the **This computer** row. The Host then runs as a login service and keeps running after bycoda closes. Turning the switch off hands the Host back to the app. Computers that already had a login service keep it.
+
+A change while sessions or shells are running waits until they finish, shown as "Turning on/off when running sessions finish". **Switch now** interrupts them after a confirmation; their history is kept. Quitting bycoda while sessions run lists them and asks first. Quitting then stops them gracefully and keeps their history.
+
+Setting up SSH access to a remote machine turns this switch on for that machine, and the success notice says so. To return it to app mode, turn the switch off on that computer.
+
 ## Manage the host
 
 ```sh

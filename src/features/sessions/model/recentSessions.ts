@@ -8,6 +8,7 @@ import { wasTurnInterrupted } from "./inFlight";
 import { sessionActivityAt } from "./sessionActivity";
 import { pathKey } from "../../../shared/lib/paths";
 import { isRemoteProjectPath } from "../../projects/public/recents";
+import { projectlessMachineSession } from "../../connections/public/sessionMachineTarget";
 import { sessionDisplayTitle, sessionNeedsInput, type HarnessId, type Session } from "./session";
 
 /** Minimal shape of a stored session row; `SessionSummary` satisfies it. */
@@ -68,7 +69,7 @@ export type RecentSessionRow = {
 export const PROJECTLESS_CWD = "~";
 
 export function isProjectlessCwd(cwd: string): boolean {
-  return cwd === PROJECTLESS_CWD;
+  return cwd === PROJECTLESS_CWD || !!projectlessMachineSession(cwd);
 }
 
 /** Project keys a recent-sessions list may show: the given projects plus projectless sessions. */

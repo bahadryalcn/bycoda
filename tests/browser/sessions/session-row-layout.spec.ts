@@ -781,12 +781,14 @@ for (const light of [false, true]) {
       const labelText = create.getByText("New session", { exact: true });
       if (width === 1280) await expect(labelText).toBeVisible();
       else await expect(labelText).toBeHidden();
-      await expect
-        .poll(() =>
-          create.locator("img").evaluate((icon) => (icon as HTMLImageElement).naturalWidth),
-        )
-        .toBe(48);
-      const evidence = path.resolve("temp/verification/new-session-button");
+      const icon = create.locator("svg");
+      await expect(icon).toBeVisible();
+      await expect(icon).toHaveAttribute("stroke", "currentColor");
+      await expect(icon).toHaveCSS(
+        "stroke",
+        await create.evaluate((button) => getComputedStyle(button).color),
+      );
+      const evidence = path.resolve("temp/verification/new-session-theme");
       await mkdir(evidence, { recursive: true });
       const label = `${light ? "light" : "dark"}-${width}`;
       await header.screenshot({ path: path.join(evidence, `${label}-workspace-header.png`) });

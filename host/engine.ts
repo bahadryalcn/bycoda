@@ -51,6 +51,12 @@ import { homedir } from "node:os";
 import { HandoffHistoryStore } from "./tasks/handoff-history";
 import { buildBudgetedHandoff, handoffHistory } from "../src/features/sessions/model/handoffBudget";
 import { renameHostWorktreeBranch, resolveHostWorktreeAsync } from "./git/git-worktrees";
+import { PROJECTLESS_PROJECT_ID } from "../src/shared/model/host-contracts/projectless-sessions";
+import {
+  assertProjectlessCreate,
+  isProjectlessScope,
+  projectlessSessionCwd,
+} from "./sessions/projectless-scope";
 import {
   applyHarnessEvent,
   promoteLastAssistantToPlan,
@@ -137,7 +143,11 @@ import { assertShellOwnershipAvailable, reserveShellOwnership } from "./executio
 import { isTaskWorktreeRemoving } from "./tasks/task-worktree-cleanup";
 import { prepareHostSkillPrompt } from "./skills/prompt-skills";
 import { DELEGATION_PARENT_KEY } from "../src/shared/model/host-contracts/delegation";
-import { delegatedChatOnlyHistory } from "./delegation/child-native";
+import {
+  delegatedChatOnlyHistory,
+  privateDelegateDirectory,
+  privateDelegateReplay,
+} from "./delegation/child-native";
 import { projectChatCitationsForProvider } from "../src/features/sessions/model/chatCitation";
 import { bykitHint } from "./bykit/bykit-hint";
 import {
@@ -249,6 +259,7 @@ function parseCommandBody(input: unknown): HostCommand {
         !/^mc\/[a-z0-9]{8}$/.test(v.autoWorktreeBranch))
     )
       throw new Error("Invalid automatically created worktree branch");
+    if (v.projectId === PROJECTLESS_PROJECT_ID) assertProjectlessCreate(v);
     return {
       type: "create",
       commandId,
@@ -1518,12 +1529,23 @@ export class HostEngine {
 
   async withIdleProject<T>(projectId: string, action: () => Promise<T>): Promise<T> {
     await this.ready;
+    // Both refusals happen before the action, so clients must not report an unknown outcome.
     if (this.switchingProjects.has(projectId))
-      throw new Error("A branch switch is already in progress");
+      throw new HostDomainRefusalError(
+        "COMMAND_BUSY",
+        "conflict",
+        false,
+        "A branch switch is already in progress",
+      );
     this.switchingProjects.add(projectId);
     try {
       if (await this.store.hasRunning(projectId))
-        throw new Error("Wait for running host sessions before switching branches");
+        throw new HostDomainRefusalError(
+          "COMMAND_BUSY",
+          "conflict",
+          false,
+          "Wait for running sessions in this project to finish, then try again.",
+        );
       await this.store.db.checkAuthorization();
       return await action();
     } finally {
@@ -2427,6 +2449,7 @@ export class HostEngine {
   }
 
   private async prepareCreation(command: Extract<HostCommand, { type: "create" }>) {
+    if (isProjectlessScope(command.projectId)) return undefined;
     if (command.workspaceId) return { workspaceId: command.workspaceId };
     // Adapter-less engines are legacy embeddings. Production attaches the managed
     // runtime before accepting transports; configured managed engines fail closed.
@@ -2610,7 +2633,10 @@ export class HostEngine {
           let value: HostSession;
           if (command.type === "create") {
             assertModelProvider(command.harness, command.model);
-            const project = await this.store.project(command.projectId);
+            const projectless = isProjectlessScope(command.projectId);
+            const project = projectless
+              ? await this.store.ensureProjectlessScope()
+              : await this.store.project(command.projectId);
             if (this.switchingProjects.has(project.id))
               throw new Error("Wait for the branch switch to finish");
             this.provider(command.harness);
@@ -2630,8 +2656,10 @@ export class HostEngine {
               await this.managedTurns!.assertWritable(managed.workspaceId);
             if (command.sessionId && managed?.sessionId && command.sessionId !== managed.sessionId)
               throw new Error("Requested session identity does not own this workspace");
-            const cwd =
-              managed?.path ?? (await resolveHostWorktreeAsync(project.cwd, command.worktreeCwd));
+            const cwd = projectless
+              ? await projectlessSessionCwd(command.commandId)
+              : (managed?.path ??
+                (await resolveHostWorktreeAsync(project.cwd, command.worktreeCwd)));
             const sessionId = managed?.sessionId ?? command.sessionId ?? randomUUID();
             await this.store.assertAuthority(sessionId, command.authorityGeneration);
             if (await this.store.sessionAuthority(sessionId))
@@ -3863,6 +3891,10 @@ export class HostEngine {
           cwd: initial.session.cwd ?? "",
           model: initial.session.model,
           modelSettings: initial.session.modelSettings,
+          delegateHistoryDirectory: await privateDelegateDirectory(
+            initial.session,
+            dirname(this.store.attachmentDir),
+          ),
           providerAccountId: initial.session.providerAccountId,
           runtimeMode: initial.session.runtimeMode,
           providerTurnId: strategy.providerTurnId,
@@ -4544,6 +4576,10 @@ export class HostEngine {
               cwd: session.cwd,
               model: session.model,
               modelSettings: session.modelSettings,
+              delegateHistoryDirectory: await privateDelegateDirectory(
+                session,
+                dirname(this.store.attachmentDir),
+              ),
               providerAccountId: session.providerAccountId,
               runtimeMode: session.runtimeMode,
               intent,
@@ -4616,6 +4652,9 @@ export class HostEngine {
               const providerInput: SendTurnInput = {
                 ...input,
                 ...(chatOnlyHistory === undefined ? {} : { chatOnlyHistory }),
+                ...(!rewindReplay
+                  ? { privateDelegateReplay: privateDelegateReplay(session, userBlockId) }
+                  : {}),
                 onAccepted: () => {
                   markHint();
                   this.queueEvent(session.id, acceptReplay, active);

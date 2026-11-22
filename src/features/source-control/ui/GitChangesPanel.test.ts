@@ -902,7 +902,7 @@ it("shows live detached HEAD instead of a stale worktree branch label", async ()
   const header = container.querySelector("header")!;
   expect(header.textContent).toContain("Detached HEAD · 1234567");
   expect(header.textContent).not.toContain("old-branch");
-  expect(header.textContent).toContain("This session");
+  expect(header.textContent).not.toContain("This session");
   expect(await tooltipText(header.querySelector("button")!)).toContain("/repo-detached");
 });
 
@@ -2741,7 +2741,7 @@ it("shows one header row for a worktree: its branch picker alone, with no worktr
   expect(picker.textContent).not.toContain("Worktrees");
 });
 
-it("titles an open worktree row once: the branch picker, with the title for assistive tech", async () => {
+it("titles an open worktree section once by its branch, with no picker, folder or text marker", async () => {
   vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "feature/row" }));
   await act(async () =>
     root.render(
@@ -2773,19 +2773,20 @@ it("titles an open worktree row once: the branch picker, with the title for assi
     ),
   );
   const header = container.querySelector("header")!;
-  expect(header.querySelector('button[aria-label="Branch feature/row"]')).not.toBeNull();
-  // The folder name is the visible identity beside the picker; the path is only its hint.
+  // The branch is the visible identity; a worktree's branch is not switched here, so no picker.
+  expect(header.querySelector('button[aria-label="Branch feature/row"]')).toBeNull();
   const toggle = header.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
-  expect(toggle.textContent).toContain("open-worktree");
+  expect(toggle.textContent).toMatch(/^feature\/row/);
+  expect(toggle.textContent).not.toContain("open-worktree");
   expect(await tooltipText(toggle)).toContain("/open-worktree");
-  // One leading icon (the picker's branch icon), and no "Worktree" label or path in the row.
+  // One leading icon, and no "Worktree" label or path in the row.
   expect(header.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
   expect(toggle.querySelector("svg.lucide-folder-tree")).toBeNull();
   expect(header.textContent).not.toContain("Worktree");
   expect(header.textContent).not.toContain("/open-worktree");
 });
 
-it("shows a collapsed worktree as one row: branch icon, bold branch, muted folder, session marker", async () => {
+it("shows a collapsed worktree as one row: branch icon and bold branch, no folder or text marker", async () => {
   vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "feature/row" }));
   await act(async () =>
     root.render(
@@ -2818,13 +2819,15 @@ it("shows a collapsed worktree as one row: branch icon, bold branch, muted folde
     ),
   );
   const toggle = container.querySelector<HTMLButtonElement>("header button[aria-expanded]")!;
-  expect(toggle.textContent).toMatch(/feature\/row.*open-worktreeThis session$/);
+  expect(toggle.textContent).toMatch(/^feature\/row/);
+  expect(toggle.textContent).not.toContain("open-worktree");
+  expect(toggle.textContent).not.toContain("This session");
   expect(toggle.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
   expect(await tooltipText(toggle)).toContain("/work/open-worktree");
   expect(container.querySelector("header")!.textContent).not.toContain("/work");
 });
 
-it("shows a nested separate repository with the repository icon and its marker", async () => {
+it("shows a nested separate repository with the repository icon, muted branch and no text label", async () => {
   vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "main" }));
   await act(async () =>
     root.render(
@@ -2840,7 +2843,9 @@ it("shows a nested separate repository with the repository icon and its marker",
     ),
   );
   const toggle = container.querySelector<HTMLButtonElement>("header button[aria-expanded]")!;
-  expect(toggle.textContent).toMatch(/mobile.*mainSeparate repository$/);
+  expect(toggle.textContent).toBe("mobilemain");
+  expect(toggle.textContent).not.toContain("Separate repository");
+  expect(await tooltipText(toggle)).toContain("Separate repository");
   expect(toggle.querySelector("svg.lucide-folder-git-2")).not.toBeNull();
   expect(toggle.querySelector("svg.lucide-git-branch")).toBeNull();
 });

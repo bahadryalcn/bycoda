@@ -61,6 +61,24 @@ async function typeInto(field: HTMLTextAreaElement, text: string) {
 }
 
 describe("QueuedMessageEditDialog", () => {
+  it("saves the draft with just the targeted mention removed", async () => {
+    const { field, button, onSave } = await open({
+      message: { id: "mentions", text: "@notes:plan @crews:planner ", attachments: [] },
+    });
+    field.setSelectionRange(field.value.length, field.value.length);
+    act(() =>
+      field.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Backspace",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    expect(field.value).toBe("@notes:plan ");
+    await act(async () => button("Save").click());
+    expect(onSave).toHaveBeenCalledWith("@notes:plan ", []);
+  });
   it("snaps selections around attached references", async () => {
     const { field } = await open();
     act(() => field.setSelectionRange(10, 10));

@@ -78,6 +78,20 @@ describe("buildPiSpawnArgs", () => {
     ]);
   });
 
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "keeps $label's private session directory on resume",
+    (flavor) => {
+      expect(buildPiSpawnArgs(flavor, { sessionDir: "/private/agent", resume: "abc123" })).toEqual([
+        "--mode",
+        "rpc",
+        "--session-dir",
+        "/private/agent",
+        flavor.resumeFlag,
+        "abc123",
+      ]);
+    },
+  );
+
   it("can skip session files without disabling extensions", () => {
     expect(buildPiSpawnArgs(PI_FLAVOR, { noSession: true })).toEqual([
       "--mode",

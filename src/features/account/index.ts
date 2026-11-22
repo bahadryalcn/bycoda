@@ -36,6 +36,7 @@ export {
   createPairRequestHandler,
   pairRequestCode,
   startPhoneConnectInbox,
+  watchPairingView,
   type PairingCodeSource,
 } from "./model/phoneConnectInbox";
 export { listOtherComputers } from "./model/accountComputers";

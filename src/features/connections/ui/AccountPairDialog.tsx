@@ -1,4 +1,6 @@
 import { t, useLocale } from "../../../shared/i18n";
+import { useEffect } from "react";
+import { watchPairingView } from "../../account";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -58,6 +60,8 @@ export function AccountPairDialog({
   onPaired: (machine: RemoteMachine) => void;
 }) {
   useLocale();
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps account mailbox discovery responsive while this pairing dialog is mounted.
+  useEffect(watchPairingView, []);
   const { view, retry, signedIn } = useAccountDesktopPair(plan);
   const done = view.step === "connected";
   const failed = view.step !== "starting" && view.step !== "waiting" && !done;

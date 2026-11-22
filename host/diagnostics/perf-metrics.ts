@@ -90,6 +90,16 @@ export class PerfMetrics {
     return value;
   }
 
+  /**
+   * The same process-wide window without starting a new one, so a reader here never shortens
+   * what `recentLoopMaxMs` reports. Its age is unrelated to any single request.
+   */
+  recentLoopWindow(): { maxMs: number; ageMs: number } | undefined {
+    const recent = this.recentLoop;
+    if (!recent?.count) return undefined;
+    return { maxMs: recent.max / 1e6, ageMs: Math.max(0, performance.now() - this.loopWindowAt) };
+  }
+
   /** Shared process monitor, enabled only while a host server owns it. */
   start() {
     if (this.users++ === 0) {

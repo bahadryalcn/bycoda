@@ -391,31 +391,15 @@ compositor.
 
 ### Push to talk and tool activity
 
-The expanded desktop companion offers **Full screen** in its header. The call fills the
-window. Select **Activity** in the header to open the work panel on the right. The assistant
-can open the panel when showing a result helps answer your request. Escape closes the work
-panel first, then exits full screen.
-Search or filter the activity list, then select a row to keep its details open.
-**Follow** returns to the latest visible entry. Copy the command or output from its details.
-The captured project's Tasks, Goals and active or paused Crew runs appear alongside the
-conversation and Assistant jobs when the owning Host supports them. Filter by **Source**
-and select **Open** to reveal a tracked record in its workspace view.
-**Results** groups the visible work by status. Filter by status in the chart, sort the
-table, or select a result to open its details. **Generate with AI** asks the configured
-decision model to choose a chart and table layout using aggregate counts. **Use default**
-restores the standard layout. **Compare** shows two retained command
-outputs side by side. In **Draft**, you can insert the selected result and edit the
-text before copying it.
-**Changes** shows the session's recorded diff. **Browser**, **Devices**, and
-**Logs** use the conversation's existing tool dock and its current access rules.
-When viewable work is active, **View live work** appears in the header. Bycoda displays
-the suggestion silently and waits for you to open it. Escape returns to the previous
-view while the voice session and work continue. Use **Open conversation** to inspect the
-source and its native panels, or open another available workspace view from the activity area.
-The conversation activity bar also offers **View live work** for work with tool output
-when the voice companion is available. In the transcript, open **Results** beneath a
-completed turn to search its retained output and inspect or copy the result. **Full screen** in the expanded floating window
-returns to the app and opens the same workspace.
+Choose **Full screen** to expand the call. Use **Chat** to read the conversation while
+keeping the voice controls visible. The call visual changes as the assistant connects,
+listens, works, speaks or reconnects.
+
+**Live results** opens when the current voice turn has something to show. The assistant
+can present a short answer, a comparison or a chart. Recognized work outcomes can also
+appear as cards, such as test counts or a build result. Select **Live results** to hide
+or reopen the panel. Escape closes the open panel first, then exits full screen.
+**Full screen** in the expanded floating window returns to the app.
 
 Assign **Voice: Push to Talk** in Keyboard shortcuts. It has no default binding.
 While voice is connected and the microphone is paused, hold the shortcut to
@@ -992,9 +976,10 @@ default) let you open and close the conversation by voice. While no conversation
 open, the desktop is unlocked and you are not Away or on Do not disturb, the
 microphone listens on this computer only for your wake phrase. The assistant
 avatar shows a green dot while listening and an amber dot when listening needs
-attention. Select the assistant's avatar or name to open the companion. Select
-the arrow on the same control to see the status and switch **Wake and sleep
-phrases** on or off. Short sounds are recognized with the local
+attention. Select the assistant's avatar or name to open the companion. In the
+collapsed sidebar, the arrow below the avatar opens quick settings for **Wake
+and sleep phrases**. In the expanded sidebar, the arrow sits beside the name.
+Short sounds are recognized with the local
 voice pack (never a cloud provider), compared with the phrase and discarded;
 nothing is saved or sent. On a match the listener releases the microphone. The
 workspace comes forward and opens the voice companion, even when the keyboard

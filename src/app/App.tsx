@@ -2,6 +2,10 @@ import { Text } from "../shared/ui/Text";
 import { CrewManagedSessionsFeed } from "../features/crews/public/managed";
 import { parseRemotePath } from "../features/connections/model/remoteProjects";
 import {
+  projectlessMachineSession,
+  remoteSessionProjectKey,
+} from "../features/connections/model/sessionMachineTarget";
+import {
   configureSessionWindowFocus,
   remoteSessionOwnershipKey,
   syncSessionWindowOwnership,
@@ -14,12 +18,6 @@ import { RemoteConnectionFeedbackProvider } from "../features/connections/ui/Rem
 import { AssistantNotifications } from "../features/assistant/ui/AssistantNotifications";
 import { AssistantBackgroundRoom } from "../features/assistant/model/AssistantBackgroundRoom";
 import { useVoiceAppBridge, useVoiceRailProjects } from "./workspace/bridges/useVoiceAppBridge";
-import {
-  VoiceWorkspacePanel,
-  type OpenVoiceTrackedWork,
-  type OpenVoiceWorkspace,
-  type VoiceToolsOutlet,
-} from "./workspace/bridges/VoiceWorkspacePanels";
 import { useAppUiControl } from "./workspace/control/useAppUiControl";
 import {
   createConversationTerminalControl,
@@ -126,6 +124,7 @@ import { useOrchestrationWorkerPanes } from "./workspace/bridges/useOrchestratio
 import { useOrchestrationActions } from "./workspace/bridges/useOrchestrationActions";
 import { useWorktreeRemoval } from "./workspace/projects/useWorktreeRemoval";
 import { useWorkspaceDirectoryActions } from "./workspace/projects/useWorkspaceDirectoryActions";
+import { useSessionMachineActions } from "./workspace/projects/useSessionMachineActions";
 import { useWorktreeSelection } from "./workspace/projects/useWorktreeSelection";
 import { useProjectOpen } from "./workspace/projects/useProjectOpen";
 import { useProjectImport } from "./workspace/projects/useProjectImport";
@@ -239,6 +238,7 @@ import { useQuickComposerLaunches } from "../features/quick-composer/hooks/useQu
 import {
   rememberRemotePendingWorktree,
   rememberRemoteSession,
+  remoteMachineFor,
   remoteSessionFor,
 } from "../features/connections/model/connections";
 import { useRemoteUnseenFinished } from "../features/connections/model/useRemoteUnseenFinished";
@@ -862,7 +862,13 @@ function Workspace({
     loadedRemoteHostIds,
     unopenedRemote,
     unopenedRemoteRef,
-  } = useRemoteRailProjects({ visibleRecents, sessionRecovery, lockSnapshot, sessions });
+  } = useRemoteRailProjects({
+    visibleRecents,
+    sessionRecovery,
+    lockSnapshot,
+    sessions,
+    includeProjectless: sidebarCwd === "~" || lastSessionsOpen,
+  });
   // The unopened list already leaves out loaded sessions and the one a tab is
   // creating, so the user's own first turn never shows as finished elsewhere.
   const [remoteUnseenFinishedIds, dismissRemoteFinished] = useRemoteUnseenFinished(
@@ -1042,6 +1048,19 @@ function Workspace({
     setSidebarTab("sessions");
     setNewListedSessionRequest((request) => request + 1);
   }, [lastSessionsOpen, onNewInProject, setSessionSidebarOpen, setSidebarTab]);
+  const machinePickerRequest = useRef<string | undefined>(undefined);
+  const onNewOnMachine = useStableCallback(() => {
+    machinePickerRequest.current = onNewInProject();
+  });
+  const onSessionMachinePickerTrigger = useStableCallback(
+    (sessionId: string, trigger: HTMLButtonElement | null) => {
+      if (!trigger || machinePickerRequest.current !== sessionId) return;
+      machinePickerRequest.current = undefined;
+      queueMicrotask(() => {
+        if (trigger.isConnected) trigger.click();
+      });
+    },
+  );
 
   useAddNoteToChatListener(onAddNoteToChat);
 
@@ -1785,6 +1804,7 @@ function Workspace({
     openProjects,
     onSelectProject,
     pickProject,
+    pickProjectOnMachine,
     openSyncedProject,
   } = useProjectOpen({
     setServersViewOpen,
@@ -1921,7 +1941,7 @@ function Workspace({
       .filter((entry) => !isRemoteProjectPath(entry.path))
       .map((entry) => ({ root: entry.path, projectCwd: entry.path })),
     ...sessions
-      .filter((session) => !isRemoteProjectPath(session.cwd))
+      .filter((session) => !isRemoteProjectPath(remoteSessionProjectKey(session)))
       .map((session) => ({ root: sessionWorkCwd(session), projectCwd: session.cwd })),
   ];
   const allowEditorRecoveryPath = (path: string) =>
@@ -2055,15 +2075,6 @@ function Workspace({
   });
   useQuickComposerLaunches(launchQuickSession);
   const voiceProjects = useVoiceRailProjects(recents, projectCwd, lockSnapshot);
-  const [voiceToolsOutlet, setVoiceToolsOutlet] = useState<VoiceToolsOutlet>();
-  const [openVoiceWork, setOpenVoiceWork] = useState<OpenVoiceWorkspace | undefined>();
-  const registerVoiceWork = useStableCallback((open?: OpenVoiceWorkspace) =>
-    setOpenVoiceWork(() => open),
-  );
-  const voiceTrackedWorkOpener = useRef<OpenVoiceTrackedWork | undefined>(undefined);
-  const registerVoiceTrackedWork = useStableCallback((open?: OpenVoiceTrackedWork) => {
-    voiceTrackedWorkOpener.current = open;
-  });
   const voiceApp = useVoiceAppBridge({
     projects: voiceProjects,
     sessions,
@@ -2307,11 +2318,21 @@ function Workspace({
     () => withProjectlessKey(visibleRecents.map((project) => pathKey(project.path))),
     [visibleRecents],
   );
+  const listedRecentProjectKeys = useMemo(
+    () =>
+      new Set([
+        ...allowedRecentProjectKeys,
+        ...listedRemoteSessions.flatMap(({ project }) =>
+          projectlessMachineSession(project) ? [pathKey(project)] : [],
+        ),
+      ]),
+    [allowedRecentProjectKeys, listedRemoteSessions],
+  );
   const lastSessionsData = useGlobalRecentSessions(
     history,
     sessions,
     lastSessionsOpen,
-    allowedRecentProjectKeys,
+    listedRecentProjectKeys,
     useMemo(
       () =>
         lastSessionsOpen
@@ -2538,8 +2559,9 @@ function Workspace({
       const remoteId = remoteSessionFor(id);
       if (remoteId) {
         announcedSessionIds.push(remoteId);
-        if (parseRemotePath(session.cwd)) {
-          const key = remoteSessionOwnershipKey(session.cwd, remoteId);
+        const project = remoteSessionProjectKey(session);
+        if (parseRemotePath(project)) {
+          const key = remoteSessionOwnershipKey(project, remoteId);
           ownedWindowSessionIds.push(key);
           announcedSessionIds.push(key);
         }
@@ -2585,9 +2607,11 @@ function Workspace({
                 session.id === target.sessionId ||
                 remoteSessionFor(session.id) === target.sessionId ||
                 (!!remoteSessionFor(session.id) &&
-                  !!parseRemotePath(session.cwd) &&
-                  remoteSessionOwnershipKey(session.cwd, remoteSessionFor(session.id)!) ===
-                    target.sessionId),
+                  !!parseRemotePath(remoteSessionProjectKey(session)) &&
+                  remoteSessionOwnershipKey(
+                    remoteSessionProjectKey(session),
+                    remoteSessionFor(session.id)!,
+                  ) === target.sessionId),
             )?.id ?? target.sessionId;
           if (target.requireOwned) {
             if (!focusOpenSession(localId))
@@ -2826,8 +2850,17 @@ function Workspace({
 
   const { onManageWorktrees } = useManageWorktrees({ openSettings });
 
+  const onSessionMachineChange = useSessionMachineActions({
+    sessionsRef,
+    onCwdChange,
+    chooseProject: async (environmentId) => {
+      if (!environmentId) return pickProjectOnMachine({ kind: "local" });
+      const machine = await remoteMachineFor(environmentId);
+      if (!machine) throw new Error("The selected machine is unavailable");
+      return pickProjectOnMachine({ kind: "remote", machineId: machine.id });
+    },
+  });
   const { sessionPaneProps } = useSessionPaneProps({
-    onOpenVoiceWork: openVoiceWork,
     onKeepSession,
     tabs,
     movingWindows,
@@ -2838,6 +2871,8 @@ function Workspace({
     onFocusPane,
     onClosePane,
     onCwdChange,
+    onSessionMachineChange,
+    onSessionMachinePickerTrigger,
     onBranchChange,
     onComposerWorktreeChange,
     onRemoteSnapshot,
@@ -3111,13 +3146,14 @@ function Workspace({
       onShowWorkspace();
     },
     onSelectListedSession: (sessionId: string, cwd: string, options?: { keepOpen?: boolean }) => {
-      if (!allowedRecentProjectKeys.has(pathKey(cwd))) return;
+      if (!listedRecentProjectKeys.has(pathKey(cwd))) return;
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setServersViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
-      if (sidebarTab === "sessions") setSidebarTab("sessions", cwd);
+      if (sidebarTab === "sessions")
+        setSidebarTab("sessions", projectlessMachineSession(cwd)?.cwd ?? cwd);
       if (isRemoteProjectPath(cwd)) {
         onSelectRemoteSession(cwd, listedRemoteSessionId(sessionsRef.current, cwd, sessionId), {
           preview: !options?.keepOpen,
@@ -3260,15 +3296,6 @@ function Workspace({
               )}
               <VoiceCompanionGate
                 {...voiceApp}
-                renderWorkspaceTool={(panel, session) => (
-                  <VoiceWorkspacePanel
-                    panel={panel}
-                    session={session}
-                    present={setVoiceToolsOutlet}
-                  />
-                )}
-                registerWorkspaceOpener={registerVoiceWork}
-                openWorkspaceTrackedWork={(work) => voiceTrackedWorkOpener.current?.(work) ?? false}
                 activeId={activeSessionId}
                 onSubmit={submitSession}
                 onStop={onStop}
@@ -3367,6 +3394,7 @@ function Workspace({
                       onRemoveProject={sidebarActions.onRemoveProject}
                       onRenameProjectFolder={sidebarActions.onRenameProjectFolder}
                       onNew={sidebarActions.onNew}
+                      onNewOnMachine={onNewOnMachine}
                       openSessions={openProjectSessions}
                       onNewTerminal={sidebarActions.onNewTerminal}
                       onSearch={sidebarActions.onSearch}
@@ -3466,7 +3494,6 @@ function Workspace({
 
                       <SessionPanelTargetsContext.Provider value={socialSessionTargets}>
                         <WorkspaceMainArea
-                          voiceToolsOutlet={voiceToolsOutlet}
                           dockGridRef={dockGridRef}
                           projectCwd={projectCwd}
                           projectTerminals={projectTerminals}
@@ -3565,7 +3592,6 @@ function Workspace({
                       sessionPaneProps={sessionPaneProps}
                     />
                     <WorkspaceToolPanels
-                      registerVoiceTrackedWork={registerVoiceTrackedWork}
                       serverAgent={serverAgentPanel.api}
                       sessionPaneProps={sessionPaneProps}
                       onLoadCrewCoordinator={(target) =>

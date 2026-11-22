@@ -37,11 +37,31 @@
 .stage[data-layout="stage"] .scope {
   justify-content: center;
 }
+.stage[data-full-call] {
+  gap: clamp(var(--space-2), 1.3dvh, var(--space-4));
+  padding: 0;
+}
+.stage[data-full-call] .status {
+  gap: var(--space-3);
+}
+.stage[data-full-call] .statusLine {
+  min-block-size: 1.6rem;
+}
+.stage[data-full-call] .captionSlot {
+  min-block-size: 2.75rem;
+  display: grid;
+  justify-items: center;
+  inline-size: 100%;
+}
 /* The words in flight on the call stage; long replies stay readable in the transcript. */
 .spoken {
   max-inline-size: min(100%, 36ch);
   margin: 0;
   overflow-wrap: anywhere;
+}
+.stage[data-full-call] .spoken {
+  max-inline-size: min(100%, 58ch);
+  margin: 0;
 }
 .meta {
   display: flex;
@@ -152,6 +172,12 @@
 /* A resized panel gives the transcript all the height it has. */
 [data-sized] .chat {
   max-block-size: none;
+}
+[data-full-screen] .chat {
+  min-block-size: 0;
+  max-block-size: none;
+  padding-block-start: var(--space-3);
+  margin-block-end: 0;
 }
 
 /* Open question or job review in its own panel beside the companion (VoiceSidePanel). Fixed to

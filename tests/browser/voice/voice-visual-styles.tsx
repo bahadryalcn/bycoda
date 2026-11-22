@@ -214,25 +214,6 @@ function FixtureCompanion() {
       )}
       <Companion
         activeId={params.has("no-active") ? undefined : current.id}
-        openWorkspaceTrackedWork={
-          params.has("tracked-work")
-            ? (work) => {
-                fixtureVoice.actions.push(
-                  `open-${work.kind}:${work.environmentId}:${work.projectId}:${work.id}`,
-                );
-                return true;
-              }
-            : undefined
-        }
-        renderWorkspaceTool={
-          params.has("live-jobs")
-            ? (tab, source) => (
-                <p data-testid="voice-tool-fixture">
-                  {tab} · {source.id}
-                </p>
-              )
-            : undefined
-        }
         sessions={navigation ? [work, second] : [work]}
         onSubmit={() => {
           fixtureVoice.submits++;

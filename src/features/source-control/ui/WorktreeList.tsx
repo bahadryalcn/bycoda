@@ -2,13 +2,15 @@ import type { ReactNode, RefObject } from "react";
 import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { t } from "../../../shared/i18n/git";
 import { pathKey } from "../../../shared/lib/paths";
-import { FolderTree, GitBranch } from "../../../shared/ui/icons";
+import { Bot, FolderTree, GitBranch } from "../../../shared/ui/icons";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { CheckoutIdentity, CheckoutStatus } from "./CheckoutIdentity";
-import { worktreeGroupLabel, type WorktreeRow } from "../model/worktreeRows";
+import { collapseAgentRows, worktreeGroupLabel, type WorktreeRow } from "../model/worktreeRows";
 
 /** Active-path marker of the leading "All worktrees" row. */
 export const ALL_WORKTREES_ACTIVE = "*all-worktrees*";
+/** Active-path marker of the "… N more" row that ends a long agent group. */
+export const MORE_AGENTS_ACTIVE = "*more-agents*";
 
 /**
  * Controller for the one worktree list shared by the sidebar header and the composer
@@ -24,6 +26,9 @@ export function useWorktreeList({
   disabled = false,
   trailing,
   all,
+  counts,
+  agentsExpanded = false,
+  onExpandAgents,
   onPick,
 }: {
   rows: readonly WorktreeRow[];
@@ -37,10 +42,16 @@ export function useWorktreeList({
   trailing?: (row: WorktreeRow) => ReactNode;
   onPick: (row: WorktreeRow) => void;
   /** A leading "All worktrees" row; `selected` takes the place of `value`. */
-  all?: { selected: boolean; onPick: () => void };
+  all?: { selected: boolean; onPick: () => void; changes?: number };
+  /** Uncommitted file count per worktree (by `pathKey`); a row without one shows a plain dot when dirty. */
+  counts?: ReadonlyMap<string, number>;
+  /** Long agent groups show five rows until expanded; picking "… N more" calls `onExpandAgents`. */
+  agentsExpanded?: boolean;
+  onExpandAgents?: () => void;
 }) {
+  const shown = onExpandAgents ? collapseAgentRows(rows, agentsExpanded) : { rows, hidden: 0 };
   const byKey = (key: string | null | undefined) =>
-    key == null ? undefined : rows.find((row) => pathKey(row.path) === key);
+    key == null ? undefined : shown.rows.find((row) => pathKey(row.path) === key);
   const allOption = all
     ? [
         {
@@ -48,24 +59,20 @@ export function useWorktreeList({
           title: t("All worktrees"),
           icon: <FolderTree className="icon-sm shrink-0" tone="secondary" />,
           disabled,
+          trailing: all?.changes ? <CheckoutStatus changes={all.changes} /> : undefined,
         },
       ]
     : [];
   return usePickerList({
     options: [
       ...allOption,
-      ...rows.map((row) => ({
+      ...shown.rows.map((row) => ({
         value: pathKey(row.path),
-        // The one row format: bold branch, muted folder, marker; the full path is the hint.
+        // The one row format: bold branch, muted folder, no text marker; the full path is the hint.
         title: (
           <Tooltip label={row.path} asChild>
-            <span className="flex min-w-0">
-              <CheckoutIdentity
-                icon={false}
-                title={row.title}
-                detail={row.folder}
-                marker={row.current ? t("This session") : undefined}
-              />
+            <span className="flex min-w-0" data-current-checkout={row.current || undefined}>
+              <CheckoutIdentity icon={false} title={row.title} detail={row.detail} />
             </span>
           </Tooltip>
         ),
@@ -74,28 +81,53 @@ export function useWorktreeList({
           row.group,
           rows.filter((other) => other.group === row.group).length,
         ),
-        icon: <GitBranch className="icon-sm shrink-0" tone="secondary" />,
+        icon: row.agent ? (
+          <Bot className="icon-sm shrink-0" tone="secondary" />
+        ) : (
+          <GitBranch className="icon-sm shrink-0" tone="secondary" />
+        ),
         trailing: (
           <>
-            <CheckoutStatus dirty={row.tree.dirty} ahead={row.tree.unpushed ?? 0} />
+            <CheckoutStatus
+              changes={counts?.get(pathKey(row.path))}
+              dirty={row.tree.dirty}
+              ahead={row.tree.unpushed ?? 0}
+            />
             {trailing?.(row)}
           </>
         ),
         disabled,
       })),
+      ...(shown.hidden
+        ? [
+            {
+              value: MORE_AGENTS_ACTIVE,
+              title: t("… {p0} more", { p0: shown.hidden }),
+              textValue: "",
+              group: worktreeGroupLabel(
+                "agent",
+                rows.filter((row) => row.group === "agent").length,
+              ),
+              disabled,
+            },
+          ]
+        : []),
     ],
     value: all?.selected ? ALL_WORKTREES_ACTIVE : value == null ? null : pathKey(value),
     activeValue:
       activePath == null
         ? null
-        : activePath === ALL_WORKTREES_ACTIVE
-          ? ALL_WORKTREES_ACTIVE
+        : activePath === ALL_WORKTREES_ACTIVE || activePath === MORE_AGENTS_ACTIVE
+          ? activePath
           : pathKey(activePath),
     onActiveValueChange: (key) =>
-      onActivePathChange(key === ALL_WORKTREES_ACTIVE ? key : byKey(key)?.path),
+      onActivePathChange(
+        key === ALL_WORKTREES_ACTIVE || key === MORE_AGENTS_ACTIVE ? key : byKey(key)?.path,
+      ),
     inputRef,
     onChange: (key) => {
       if (key === ALL_WORKTREES_ACTIVE) return all?.onPick();
+      if (key === MORE_AGENTS_ACTIVE) return onExpandAgents?.();
       const row = byKey(key);
       if (row) onPick(row);
     },

@@ -221,6 +221,8 @@ type Live = {
   runtimeMode: RuntimeMode;
   planning: boolean;
   settingsKey: string;
+  privateDelegateHistory: boolean;
+  privateDelegateReplayPending: boolean;
   onEvent: (event: HarnessEvent) => void;
   approvals: Map<number, PendingApproval>;
   questions: Map<number, PendingQuestion>;
@@ -824,6 +826,7 @@ function newLiveState(input: {
   runtimeMode: RuntimeMode;
   planning: boolean;
   settingsKey: string;
+  privateDelegateHistory?: boolean;
   onEvent: (event: HarnessEvent) => void;
   claudeTasks?: Map<string, TaskListItem>;
 }): Live {
@@ -836,6 +839,8 @@ function newLiveState(input: {
     runtimeMode: input.runtimeMode,
     planning: input.planning,
     settingsKey: input.settingsKey,
+    privateDelegateHistory: input.privateDelegateHistory === true,
+    privateDelegateReplayPending: input.privateDelegateHistory === true,
     onEvent: input.onEvent,
     approvals: new Map(),
     questions: new Map(),
@@ -926,12 +931,14 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     const resume = resumeByThread.get(input.sessionId);
     const canResume =
+      !input.privateDelegateHistory &&
       resume != null &&
       resume.cwd === input.cwd &&
       sameProviderAccountId(resume.providerAccountId, input.providerAccountId);
     if (
       resume &&
-      (resume.cwd !== input.cwd ||
+      (input.privateDelegateHistory ||
+        resume.cwd !== input.cwd ||
         !sameProviderAccountId(resume.providerAccountId, input.providerAccountId))
     ) {
       resumeByThread.delete(input.sessionId);
@@ -961,6 +968,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       runtimeMode: input.runtimeMode,
       planning,
       settingsKey,
+      privateDelegateHistory: input.privateDelegateHistory,
       onEvent: input.onEvent,
       claudeTasks,
     });
@@ -1091,6 +1099,14 @@ async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter)
   });
   const content = (message.message as { content: unknown[] }).content;
   if (content.length === 0) return;
+  if (live.privateDelegateReplayPending && input.privateDelegateReplay) {
+    content.unshift({
+      type: "text",
+      text:
+        "Prior Bycoda conversation, quoted for context. The current request follows.\n" +
+        JSON.stringify(input.privateDelegateReplay),
+    });
+  }
   // Claude reports a command lifecycle only for a message with its own uuid; Steer needs it.
   message.uuid = crypto.randomUUID();
   const queryGeneration = live.queryFence.begin();
@@ -1126,6 +1142,7 @@ async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter)
   try {
     try {
       await writeJson(live, message, writer);
+      live.privateDelegateReplayPending = false;
     } catch (error) {
       live.queryFence.writeFailed(queryGeneration);
       throw error;
@@ -1217,7 +1234,6 @@ function handleLine(sessionId: string, live: Live, line: string): void {
   const sessionIdFromLine = sessionIdFromMessage(rec);
   if (sessionIdFromLine) {
     const changed = sessionIdFromLine !== live.claudeSessionId;
-    const unbound = resumeByThread.get(sessionId)?.sessionId !== sessionIdFromLine;
     if (changed) {
       live.claudeSessionId = sessionIdFromLine;
       // A different conversation starts with its own task ids.
@@ -1227,16 +1243,19 @@ function handleLine(sessionId: string, live: Live, line: string): void {
       providerSessionId: sessionIdFromLine,
       tasks: live.claudeTasks,
     });
-    resumeByThread.set(sessionId, {
-      sessionId: sessionIdFromLine,
-      cwd: live.cwd,
-      providerAccountId: live.providerAccountId,
-    });
-    if (changed || unbound) {
-      live.onEvent({
-        type: "session.providerBound",
-        providerSessionId: sessionIdFromLine,
+    if (!live.privateDelegateHistory) {
+      const unbound = resumeByThread.get(sessionId)?.sessionId !== sessionIdFromLine;
+      resumeByThread.set(sessionId, {
+        sessionId: sessionIdFromLine,
+        cwd: live.cwd,
+        providerAccountId: live.providerAccountId,
       });
+      if (changed || unbound) {
+        live.onEvent({
+          type: "session.providerBound",
+          providerSessionId: sessionIdFromLine,
+        });
+      }
     }
   }
 
@@ -2631,7 +2650,9 @@ function writeJson(
 }
 
 function settingsKeyFor(input: HarnessSessionInput): string {
-  return `${input.providerAccountId ?? "default"}:${claudeSettingsKey({
+  const account = input.providerAccountId ?? "default";
+  const historyScope = input.privateDelegateHistory ? ":private" : "";
+  return `${account}${historyScope}:${claudeSettingsKey({
     model: nativeModelId(input.model),
     effort: input.modelSettings?.effort,
     fast: input.modelSettings?.fast,
@@ -2663,6 +2684,7 @@ function launchOptions(
   settings?: ClaudeCliSettings;
   additionalDirs: string[];
   leanContext?: boolean;
+  privateDelegateHistory?: boolean;
 } & ReturnType<typeof claudeNativeLaunch> {
   const native = nativeModelId(input.model);
   const effortRaw = input.modelSettings?.effort;
@@ -2693,6 +2715,7 @@ function launchOptions(
     settings: Object.keys(settings).length > 0 ? settings : undefined,
     additionalDirs: additionalDirsFor(input.sessionId),
     ...(leanContext(input.modelSettings) ? { leanContext: true } : {}),
+    ...(input.privateDelegateHistory ? { privateDelegateHistory: true } : {}),
   };
 }
 

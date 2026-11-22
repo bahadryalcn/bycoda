@@ -1,4 +1,8 @@
 import { useQueries } from "@tanstack/react-query";
+import {
+  useForegroundQueryFamilyPolling,
+  useQueryVisible,
+} from "../../../../shared/hooks/useQueryVisible";
 import { t, useLocale } from "../../../../shared/i18n";
 import type { ModelRoutingRole } from "../../../../shared/model/host-contracts/model-routing";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
@@ -9,7 +13,10 @@ import {
   MODEL_ROLE_GROUPS,
   MODEL_ROLE_METADATA,
 } from "../../model/modelRoutingRoles";
-import { modelRoutingPreviewOptions } from "../../model/useModelRoutingPreview";
+import {
+  MODEL_ROUTING_PREVIEW_POLL_MS,
+  modelRoutingPreviewOptions,
+} from "../../model/useModelRoutingPreview";
 import { ModelRoleRow } from "./ModelRoleRow";
 import { waitsForModel, type RolePreview } from "./ModelRolePreview";
 
@@ -41,6 +48,7 @@ export function ModelRolesGroups({
   useLocale();
   const { roles, pools, entries } = draft.routing;
   const orderReady = live && entries.length > 0;
+  const visible = useQueryVisible();
   // One read for the whole list, so a single notice can speak for every job that would wait.
   const previews = useQueries({
     queries: MODEL_ROLE_METADATA.map((item) => {
@@ -51,10 +59,15 @@ export function ModelRolesGroups({
           ["model-routing-role-preview", machineId, item.role, choice, savedVersion],
           { role: item.role, choice },
         ),
-        enabled: orderReady && !!choice && choice.kind !== "fixed",
+        enabled: visible && orderReady && !!choice && choice.kind !== "fixed",
       };
     }),
   });
+  useForegroundQueryFamilyPolling(
+    ["model-routing-role-preview", machineId],
+    MODEL_ROUTING_PREVIEW_POLL_MS,
+    { enabled: orderReady },
+  );
   const previewOf = (role: ModelRoutingRole): RolePreview | undefined => {
     const query = previews[MODEL_ROLE_METADATA.findIndex((item) => item.role === role)];
     const choice = effectiveRoleChoice(roles, role);

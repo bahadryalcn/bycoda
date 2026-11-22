@@ -8,7 +8,7 @@ import {
   type UserQuestionReply,
 } from "../../../integrations/harness";
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
-import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../features/connections/model/sessionMachineTarget";
 import { type Session } from "../../../features/sessions/model/session";
 import {
   pruneApprovalIntents,
@@ -106,7 +106,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
         ["sending", "queued", "unknown"].includes(session.pendingQuestion.delivery ?? "")
       )
         return;
-      if (hostSessionBinding(session) || remoteProjectFor(session.cwd)) {
+      if (hostSessionBinding(session) || remoteSessionProject(session)) {
         if (current) return;
         const actions = remoteSessionActions(sessionId);
         if (!actions) throw new Error("Question connection is unavailable");
@@ -127,7 +127,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
   const onQuestionInteraction = useCallback(
     (sessionId: string, requestId: number) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
-      if (session && (hostSessionBinding(session) || remoteProjectFor(session.cwd))) return;
+      if (session && (hostSessionBinding(session) || remoteSessionProject(session))) return;
       if (session && !session.worktreeRemoved)
         keepHarnessQuestionOpen(liveTurnHarness(session), sessionId, requestId);
     },

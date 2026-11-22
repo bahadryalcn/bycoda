@@ -1,6 +1,9 @@
 import { useQueries } from "@tanstack/react-query";
 import { t } from "../../../shared/i18n";
-import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
+import {
+  useForegroundQueryFamilyPolling,
+  useQueryVisible,
+} from "../../../shared/hooks/useQueryVisible";
 import { machineCapabilities } from "../../automations/public/hostMachines";
 import { remoteRequest } from "../../connections/public/connections";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
@@ -49,6 +52,7 @@ export function sprintCatalogKey(
 /** Query-owned server snapshots survive view changes; route identities never share cached records. */
 export function useSprintCatalog(machines: readonly RemoteMachine[]) {
   const visible = useQueryVisible();
+  useForegroundQueryFamilyPolling(SPRINT_CATALOG_QUERY_KEY, 15_000);
   const routes = [...new Map(machines.map((machine) => [machine.environmentId, machine])).values()];
   const answers = useQueries({
     queries: routes.map((machine) => ({
@@ -61,8 +65,7 @@ export function useSprintCatalog(machines: readonly RemoteMachine[]) {
       enabled: visible,
       retry: false,
       staleTime: 15_000,
-      refetchInterval: visible ? 15_000 : false,
-      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: false,
     })),
   });
   return {

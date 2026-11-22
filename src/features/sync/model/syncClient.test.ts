@@ -820,35 +820,35 @@ describe("sync loop pacing", () => {
   });
 
   it("skips the 30 s poll while the window is hidden but keeps nudges, explicit syncs and catch-up", async () => {
-    const page = { hidden: true };
+    const page = Object.assign(new EventTarget(), { hidden: true });
     vi.stubGlobal("document", page);
     const request = async () => ({ rev: 1, records: [], applied: [], rejected: [] });
     const cycles = vi.fn(() => ["pace-hidden"]);
     const loop = startSyncLoop(cycles, () => request);
     try {
       await vi.advanceTimersByTimeAsync(0);
-      expect(cycles).toHaveBeenCalledTimes(1);
+      expect(cycles).toHaveBeenCalledTimes(0);
 
       // Hidden: no periodic round, however long the window stays hidden.
       await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS * 4);
-      expect(cycles).toHaveBeenCalledTimes(1);
+      expect(cycles).toHaveBeenCalledTimes(0);
 
       // A local-change nudge still syncs, and so does an explicit refresh.
       loop.nudge();
       await vi.advanceTimersByTimeAsync(0);
-      expect(cycles).toHaveBeenCalledTimes(2);
+      expect(cycles).toHaveBeenCalledTimes(1);
       const explicit = syncNow();
       await vi.advanceTimersByTimeAsync(0);
       await explicit;
-      expect(cycles).toHaveBeenCalledTimes(3);
+      expect(cycles).toHaveBeenCalledTimes(2);
 
-      // Back in view: the wake nudge catches up at once, and the poll resumes.
+      // Back in view: visibility catches up and the poll resumes.
       page.hidden = false;
-      loop.nudge();
+      page.dispatchEvent(new Event("visibilitychange"));
       await vi.advanceTimersByTimeAsync(MIN_CYCLE_SPACING_MS);
-      expect(cycles).toHaveBeenCalledTimes(4);
+      expect(cycles).toHaveBeenCalledTimes(3);
       await vi.advanceTimersByTimeAsync(CYCLE_INTERVAL_MS);
-      expect(cycles.mock.calls.length).toBeGreaterThanOrEqual(5);
+      expect(cycles.mock.calls.length).toBeGreaterThanOrEqual(4);
     } finally {
       loop.stop();
       vi.unstubAllGlobals();

@@ -29,15 +29,28 @@ existing repository. A project opened on an empty folder outside any repository,
 including one created by the assistant, a crew or a remote machine, is
 initialized automatically.
 
-**All worktrees** (the default when a project has several worktrees) shows the project
-folder and every worktree as expandable changes panels. The session's worktree and the
-project folder open first, worktrees with changes come next, and clean ones collapse
-into a **Clean · N** row. A row's changes load when you expand it. Folder names lead
-with the branch on the same line; when the panel narrows the branch label shortens
-before the name. Child repositories are indented beneath their checkout. A workspace
-with only one repository shows its full panel, named in the header, instead of a single
-row. Each panel keeps its own expanded state and commit draft when collapsed or when you
-review another target.
+**All worktrees** (the default when a project has several worktrees) lists a section
+for each worktree that has uncommitted changes, and for each separate repository inside
+it (such as `mobile`), all on the same level with no indentation. A section header
+shows the repository icon, the bold name (the project name for the project folder, the
+branch for another worktree), the muted branch, sync arrows, the change count, and refresh
+and a menu on hover. Clean, ahead-only and unknown worktrees are not listed here; they are
+in the header picker. With none changed, the session's worktree is shown. The first
+section opens; the rest open on click. Each section's menu offers **Show only this
+repository** (remembered per project) and **Show all repositories**. Rows carry no text
+markers such as "This session" or "Separate repository"; hover for the path. The Changes
+tab badge is the sum of the section counts.
+
+The header picker is the repository list: **All worktrees** with the total count, worktrees
+with uncommitted changes first, then the project folder and other worktrees, and last
+**Agent worktrees** (shown with an agent icon, no folder name), collapsed to **… N more**
+after five rows. A worktree whose state could not be read shows no change count and is
+never counted as clean. A panel keeps its own expanded state and commit draft when
+collapsed or when you review another target.
+
+Change totals update when the changed-file, added-line or deleted-line count changes.
+Each machine loads a few summaries at a time, giving the selected checkout priority
+over background summaries.
 
 With one worktree selected, the Changes header is a single row: a `folder · branch`
 picker leads, with refresh, worktree management and the Git menu at the end. The panel

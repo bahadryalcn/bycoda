@@ -5366,6 +5366,22 @@ describe("headless session ownership", () => {
     expect(turns).toHaveLength(1);
     turns[0].finish();
   });
+  it("refuses idle-only work with a known outcome while a session runs", async () => {
+    const { engine, project, id, turns, waitForTurnStart } = await setup();
+    await engine.command({ type: "send", commandId: "busy-turn", sessionId: id, text: "Work" });
+    await waitForTurnStart();
+    const action = vi.fn(async () => {});
+    await expect(engine.withIdleProject(project.id, action)).rejects.toMatchObject({
+      name: "HostDomainRefusalError",
+      code: "COMMAND_BUSY",
+      category: "conflict",
+      retryable: false,
+      delivery: "not-sent",
+      message: "Wait for running sessions in this project to finish, then try again.",
+    });
+    expect(action).not.toHaveBeenCalled();
+    turns[0].finish();
+  });
 
   it("runs provider context compaction once and persists its transcript marker", async () => {
     const { engine, store, provider, id } = await setup();

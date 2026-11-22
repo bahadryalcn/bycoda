@@ -1,5 +1,5 @@
-/** Matches the composer's `max-h-40`, so the field stops growing where it clips. */
-export const COMPOSER_MAX_HEIGHT = 160;
+/** Shared height ceiling for the native field, its overlay and the inline editor. */
+export const COMPOSER_MAX_HEIGHT = 180;
 
 const READING_MIN_HEIGHT = 68;
 const READING_MAX_HEIGHT = 132;

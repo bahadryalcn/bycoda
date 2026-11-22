@@ -1,13 +1,23 @@
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
-import { useId, useState, type HTMLAttributes, type ReactNode, type RefObject } from "react";
+import {
+  useId,
+  useRef,
+  useState,
+  type HTMLAttributes,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Button } from "../../../../shared/ui/Button";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { motionAttributes } from "../../../../shared/ui/Motion";
+import { useOverlay } from "../../../../shared/ui/overlay";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { OverflowTooltip, Tooltip } from "../../../../shared/ui/Tooltip";
 import {
   Maximize2,
+  MessageSquare,
   Mic,
   MicOff,
   Minimize2,
@@ -33,6 +43,7 @@ import { VoiceErrorMark, VoiceErrorNotice, voiceErrorTitle } from "./VoiceErrorN
 import { VoiceSidePanel } from "./VoiceSidePanel";
 import type { VoiceChatTurn, VoiceCompanionStatus as Status } from "./voiceCompanionTypes";
 import parts from "./VoiceCompanionParts.module.css";
+import { callArtworkState, type VoiceCallPhase } from "./voiceCallArtwork";
 
 export type VoiceCompanionViewProps = {
   compact: boolean;
@@ -40,11 +51,9 @@ export type VoiceCompanionViewProps = {
   workPanel?: ReactNode;
   onToggleWorkPanel?: () => void;
   workPanelToggleRef?: RefObject<HTMLButtonElement | null>;
-  onOpenSuggestedWork?: () => void;
-  workSuggestion?: boolean;
-  onDismissWorkSuggestion?: () => void;
   onToggleFullScreen?: () => void;
   status: Status;
+  phase?: VoiceCallPhase;
   /** The drag handle: the orb in compact mode, the grip when expanded. */
   handle: ReactNode;
   /** Pointer handlers that let the whole header, not only the handle, move the panel. */
@@ -125,21 +134,37 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   );
   // Like the phone call screen: a large stage by default, the transcript on request. Kept here,
   // above the compact switch, so the choice survives collapsing the panel.
-  const [chatShown, setChatShown] = useState(false);
+  const [chatRequested, setChatShown] = useState(false);
+  const canShowDrawers = !p.fullScreen || (!p.choice && !p.jobReview);
+  const chatShown = chatRequested && canShowDrawers;
+  const chatToggle = useRef<HTMLButtonElement>(null);
+  const chatPanel = useRef<HTMLElement>(null);
+  const closeChat = () => {
+    setChatShown(false);
+    chatToggle.current?.focus();
+  };
+  useOverlay(chatPanel, false, closeChat, Boolean(p.fullScreen && chatShown), undefined, false);
+  const chatPanelId = useId();
+  const chatLabelId = useId();
   const workPanelId = useId();
+  const artwork = p.fullScreen ? callArtworkState(p.status, p.visualState, p.phase) : p.visualState;
   const drawerMotion = motionAttributes(
-    { enter: p.workPanel ? "right" : undefined, duration: "standard" },
+    {
+      enter: canShowDrawers && p.workPanel && !chatShown ? "right" : undefined,
+      duration: "standard",
+    },
     styles.workDrawer,
   );
   const caption = p.chatTurns[p.chatTurns.length - 1]?.text ?? "";
   return (
     <>
-      {!p.compact && !chatShown && (
+      {!p.compact && (p.fullScreen || !chatShown) && (
         <VoiceCallScene
           part="backdrop"
-          state={p.visualState}
+          state={artwork}
           level={audioLevel}
           className={styles.stageLight}
+          expanded={p.fullScreen}
         />
       )}
       <header
@@ -148,7 +173,6 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           styles.header,
         )}
         {...p.headerDrag}
-        data-work-suggestion={p.workSuggestion || undefined}
       >
         {p.handle}
         {p.error ? (
@@ -231,26 +255,35 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               entries={p.toolActivities}
               onStopWaiting={p.onStopWaiting}
             />
-            {p.workSuggestion ? (
-              <div className={styles.workSuggestion}>
-                <Button onClick={p.onOpenSuggestedWork}>{t("View live work")}</Button>
-                <Button iconOnly label={t("Dismiss")} onClick={p.onDismissWorkSuggestion}>
-                  <X className="icon-sm" />
-                </Button>
-              </div>
-            ) : null}
+            {p.fullScreen && canShowDrawers && (
+              <Button
+                ref={chatToggle}
+                touchTarget="control"
+                label={t("Chat")}
+                startIcon={<MessageSquare className="icon-sm" />}
+                aria-expanded={chatShown}
+                aria-controls={chatPanelId}
+                selected={chatShown}
+                onClick={() => setChatShown(!chatShown)}
+              >
+                {t("Chat")}
+              </Button>
+            )}
             <VoiceOptionsMenu onFloat={p.canDetach ? p.onFloat : undefined} />
-            {p.fullScreen && p.onToggleWorkPanel ? (
+            {p.fullScreen && canShowDrawers && p.onToggleWorkPanel ? (
               <Button
                 ref={p.workPanelToggleRef}
                 touchTarget="control"
                 iconOnly
-                label={t("Activity")}
-                aria-expanded={Boolean(p.workPanel)}
+                label={t("Live results")}
+                aria-expanded={Boolean(p.workPanel) && !chatShown}
                 aria-controls={workPanelId}
-                onClick={p.onToggleWorkPanel}
+                onClick={() => {
+                  setChatShown(false);
+                  if (!chatShown || !p.workPanel) p.onToggleWorkPanel?.();
+                }}
               >
-                {p.workPanel ? (
+                {p.workPanel && !chatShown ? (
                   <PanelRightClose className="icon-sm" />
                 ) : (
                   <PanelRight className="icon-sm" />
@@ -302,14 +335,16 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
         <>
           <div
             className={styles.body}
-            data-call-stage={!chatShown || undefined}
+            data-call-stage={p.fullScreen || !chatShown || undefined}
             data-call-live={live || undefined}
           >
             <VoiceCompanionStatus
               visualState={p.visualState}
+              artwork={artwork}
+              fullScreen={p.fullScreen}
               working={p.working}
               audioLevel={audioLevel}
-              statusText={p.statusText}
+              statusText={p.fullScreen && p.error ? voiceErrorTitle(p.error) : p.statusText}
               sessionStatusText={p.sessionStatusText}
               live={live}
               engine={p.engine}
@@ -318,13 +353,13 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               globalScope={p.globalScope}
               name={p.name}
               avatar={p.avatar}
-              stage={!chatShown}
+              stage={Boolean(p.fullScreen) || !chatShown}
               caption={caption}
               onScopeChange={p.onScopeChange}
               onStopWork={p.onStopWork}
             />
             {p.sessionPicker}
-            {chatShown ? <VoiceChatTranscript turns={p.chatTurns} /> : null}
+            {!p.fullScreen && chatShown ? <VoiceChatTranscript turns={p.chatTurns} /> : null}
             {p.error ? (
               <VoiceErrorNotice
                 error={p.error}
@@ -363,9 +398,39 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
             </VoiceSidePanel>
           ) : null}
           {p.fullScreen && (
+            <section
+              ref={chatPanel}
+              id={chatPanelId}
+              aria-labelledby={chatLabelId}
+              hidden={!chatShown}
+              {...surfaceAttributes(
+                { variant: "opaque-canvas", frame: "pane", edge: "responsive-start" },
+                styles.chatDrawer,
+              )}
+            >
+              {chatShown && (
+                <>
+                  <div className={styles.chatHeader}>
+                    <SectionLabel as="h3" id={chatLabelId}>
+                      {t("Conversation")}
+                    </SectionLabel>
+                    <Button touchTarget="control" iconOnly label={t("Close")} onClick={closeChat}>
+                      <X className="icon-sm" />
+                    </Button>
+                  </div>
+                  {p.chatTurns.length ? (
+                    <VoiceChatTranscript turns={p.chatTurns} />
+                  ) : (
+                    <EmptyState title={t("No messages yet")} context="panel" />
+                  )}
+                </>
+              )}
+            </section>
+          )}
+          {p.fullScreen && (
             <div
               id={workPanelId}
-              hidden={!p.workPanel}
+              hidden={!canShowDrawers || !p.workPanel || chatShown}
               {...drawerMotion}
               {...surfaceAttributes(
                 { variant: "opaque-canvas", frame: "pane", edge: "responsive-start" },
@@ -377,7 +442,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           )}
           <div
             {...surfaceAttributes(
-              { frame: chatShown ? "pane" : "none", edge: "block-start" },
+              { frame: !p.fullScreen && chatShown ? "pane" : "none", edge: "block-start" },
               styles.actions,
             )}
           >
@@ -388,7 +453,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               speakerMuted={p.speakerMuted}
               manual={p.manual}
               chatShown={chatShown}
-              onToggleChat={() => setChatShown(!chatShown)}
+              onToggleChat={p.fullScreen ? undefined : () => setChatShown(!chatShown)}
               onStart={p.onStart}
               onClose={p.onClose}
               onToggleMute={p.onToggleMute}

@@ -3,22 +3,19 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { Text } from "../../../shared/ui/Text";
-import { Fragment, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   checkoutSelectionScope,
   checkoutRepositoryPaths,
   dropLegacyCheckoutSelections,
-  groupCheckouts,
   sessionCheckout,
 } from "../model/checkoutSelection";
 import { worktreeRowTitle } from "../model/worktreeRows";
+import { changeSectionRoots } from "../model/worktreeScope";
+import { loadOnlyRepository, saveOnlyRepository } from "../model/onlyRepository";
 import { t, useLocale } from "../../../shared/i18n/git";
-import {
-  basename,
-  notifyGitChanged,
-  type GitFileDiffKind,
-  type GitHistoryCommit,
-} from "../../../platform/tauri/fs";
+import { basename, type GitFileDiffKind, type GitHistoryCommit } from "../../../platform/tauri/fs";
+import { notifyGitChangedWith } from "../model/gitIndexStore";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { GitChangesPanel } from "./GitChangesPanel";
 import { GitPanelSections } from "./GitPanelSections";
@@ -34,7 +31,6 @@ import { subscribeProjectPathsChanged } from "../../projects/public/recents";
 import { worktreeDeletedExternally, type Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
 import { SearchableSelect, type SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
-import { CollapsedWorktreeRow } from "./WorktreeOverviewRow";
 import { useGitSubmodules } from "../hooks/useGitSubmodules";
 import type { SubmodulePointers } from "../model/submodulePointers";
 import { SubmodulePointer } from "./SubmodulePointer";
@@ -101,39 +97,47 @@ export function WorkspaceSourceControl({
     `${stateKey}:expanded`,
     {},
   );
-  const [cleanOpen, setCleanOpen] = useRetainedState(`${stateKey}:clean-open`, false);
+  // Single-repository mode (as in VS Code): one section stays and the others are hidden until shown again.
+  const projectRoot = Object.values(worktrees).find((tree) => tree.isMain)?.path ?? cwd;
+  const [only, setOnly] = useRetainedState(`${stateKey}:only`, () =>
+    checkouts ? loadOnlyRepository(projectKey(projectRoot)) : "",
+  );
+  const chooseOnly = (repository: string) => {
+    setOnly(repository);
+    saveOnlyRepository(projectKey(projectRoot), repository);
+  };
   const [savedLabels, setSavedLabels] = useState(loadTabGroupLabels);
   useEffect(() => subscribeProjectPathsChanged(() => setSavedLabels(loadTabGroupLabels())), []);
 
   // A focus on a worktree that left the list (deleted elsewhere) quietly shows the overview.
   const focused = checkouts && focusPath ? paths.find((path) => same(path, focusPath)) : undefined;
-  const groups = checkouts
-    ? groupCheckouts(
-        paths.flatMap((path) => (worktrees[path] ? [worktrees[path]] : [])),
-        cwd,
-      )
-    : undefined;
-  // Overview rows open by default for the session's worktree and the project folder.
-  const rowOpen = (path: string) =>
-    expanded[projectKey(path)] ??
-    (focused ? same(path, focused) : !!groups?.primary.some((tree) => same(tree.path, path)));
-  // Only an open row reads Git: collapsed worktrees are never scanned for child repositories.
-  const discoveryRoots = checkouts
-    ? focused
+  // The Changes panel lists sections of the focused worktree, or of every worktree with
+  // uncommitted changes (the session's worktree when none has); the header picker lists the rest.
+  const listedTrees = paths.flatMap((path) => (worktrees[path] ? [worktrees[path]] : []));
+  const sessionRoot = checkouts ? sessionCheckout(cwd, paths) : undefined;
+  const sectionRoots = !checkouts
+    ? []
+    : focused
       ? [focused]
-      : paths.filter(rowOpen)
-    : selected === cwd
-      ? [...paths, cwd]
-      : paths;
+      : (() => {
+          const roots = changeSectionRoots(listedTrees, cwd);
+          return roots.length ? roots : [sessionRoot ?? paths[0] ?? cwd];
+        })();
+  // The first section opens by default, as does a focused worktree; the rest are one click away.
+  const rowOpen = (path: string) => expanded[projectKey(path)] ?? same(path, sectionRoots[0] ?? "");
+  // Only the listed sections read Git: other worktrees are never scanned for child repositories.
+  const discoveryRoots = checkouts ? sectionRoots : selected === cwd ? [...paths, cwd] : paths;
   const { modules, limits, error, refresh } = useGitSubmodules(discoveryRoots, enabled, true);
   const connectionShownCentrally = useConnectionErrorShownCentrally(error);
   // Another listed worktree is never a repository of this one, even when it sits inside its folder.
-  const repositories = checkoutRepositoryPaths(checkouts ? discoveryRoots : paths, modules).filter(
+  const sections = checkoutRepositoryPaths(checkouts ? discoveryRoots : paths, modules).filter(
     (path) =>
       !checkouts ||
       discoveryRoots.some((root) => same(root, path)) ||
       !paths.some((other) => same(other, path)),
   );
+  const narrowed = checkouts && only ? sections.find((path) => same(path, only)) : undefined;
+  const repositories = narrowed ? [narrowed] : sections;
   const childNames = new Map(
     Object.entries(modules).flatMap(([parent, children]) =>
       children.map(
@@ -186,7 +190,7 @@ export function WorkspaceSourceControl({
   // One focused worktree without child repositories is the plain single-header panel; one
   // repository in a workspace needs no overview row to expand either.
   const target = checkouts
-    ? focused && repositories.length <= 1
+    ? focused && repositories.length === 1 && !narrowed
       ? focused
       : ""
     : active || (repositories.length === 1 && !pendingSelection ? repositories[0] : "");
@@ -239,8 +243,9 @@ export function WorkspaceSourceControl({
       ? projectKey(path) === projectKey(session)
       : projectKey(path) === projectKey(cwd);
   };
+  // The project folder reads as the project; any other worktree as its branch.
   const name = (path: string) =>
-    (worktrees[path] ? worktreeRowTitle(worktrees[path]) : undefined) ||
+    (worktrees[path] && !worktrees[path].isMain ? worktreeRowTitle(worktrees[path]) : undefined) ||
     childNames.get(projectKey(path)) ||
     resolveTabGroupLabel(projectKey(path), savedLabels, basename(path));
   const callbacks = (path: string) => ({
@@ -256,10 +261,10 @@ export function WorkspaceSourceControl({
     onRefresh?.();
     refresh();
     (target ? [target, ...(modules[target] ?? [])] : repositories).forEach((path) =>
-      notifyGitChanged(path, "checkout"),
+      notifyGitChangedWith(path, "checkout", { refresh: true }),
     );
   };
-  const plain = singleRepository && repositories.length === 1 && !pendingSelection;
+  const plain = singleRepository && repositories.length === 1 && !pendingSelection && !narrowed;
   // Worktrees have no header of their own: the sidebar header chooses the worktree and each
   // panel carries its refresh. A workspace of repositories keeps its repository selector.
   const showHeader = !checkouts && (!plain || !!error);
@@ -294,20 +299,10 @@ export function WorkspaceSourceControl({
       ? [{ value: cwd, label: `${name(cwd)} · ${t("Workspace")}` }]
       : []),
   ];
-  const childrenOf = (path: string) =>
-    repositories.filter(
-      (child) =>
-        !same(child, path) &&
-        isEqualOrInside(child, path) &&
-        !paths.some((other) => same(other, child)),
-    );
   const renderRepository = (path: string) => (
     <div
       key={path}
-      {...surfaceAttributes(
-        { separator: "block" },
-        childNames.has(projectKey(path)) ? styles.nested : undefined,
-      )}
+      {...surfaceAttributes({ separator: "block" })}
       onPointerDownCapture={() => setLastUsed(path)}
       onFocusCapture={() => setLastUsed(path)}
     >
@@ -329,8 +324,13 @@ export function WorkspaceSourceControl({
           checkout: worktrees[path],
           current: checkouts && own(path),
           nested: checkouts && childNames.has(projectKey(path)),
+          // Sections of one project stay on one level; the menu narrows the list to one.
+          scope:
+            checkouts && sections.length > 1
+              ? { only: !!narrowed, onToggle: () => chooseOnly(narrowed ? "" : path) }
+              : undefined,
           pointer: pointerOf(path),
-          expanded: expanded[projectKey(path)] ?? (checkouts ? rowOpen(path) : undefined),
+          expanded: checkouts ? rowOpen(path) : expanded[projectKey(path)],
           onToggle: (value) =>
             setExpanded((current) => ({
               ...current,
@@ -341,22 +341,6 @@ export function WorkspaceSourceControl({
       />
     </div>
   );
-  // A collapsed worktree is a plain row; opening it mounts its own changes panel (and, below
-  // it, the child repositories found for that worktree).
-  const renderWorktree = (tree: Worktree) =>
-    rowOpen(tree.path) ? (
-      <Fragment key={tree.path}>
-        {[tree.path, ...childrenOf(tree.path)].map(renderRepository)}
-      </Fragment>
-    ) : (
-      <div key={tree.path} {...surfaceAttributes({ separator: "block" })}>
-        <CollapsedWorktreeRow
-          tree={tree}
-          current={own(tree.path)}
-          onExpand={() => setExpanded((current) => ({ ...current, [projectKey(tree.path)]: true }))}
-        />
-      </div>
-    );
   return (
     <div
       className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
@@ -455,46 +439,7 @@ export function WorkspaceSourceControl({
               className={`min-h-0 flex-1 overflow-y-auto ${styles.overview}`}
               data-checkout-overview={checkouts || undefined}
             >
-              {checkouts && groups && !focused ? (
-                <>
-                  {groups.primary.map(renderWorktree)}
-                  {groups.active.length > 0 ? (
-                    <>
-                      <div {...surfaceAttributes({ separator: "block" })}>
-                        <Text
-                          as="div"
-                          size="caption"
-                          tone="secondary"
-                          className={styles.groupLabel}
-                        >
-                          {t("With changes")}
-                        </Text>
-                      </div>
-                      {groups.active.map(renderWorktree)}
-                    </>
-                  ) : null}
-                  {groups.idle.length > 0 ? (
-                    <>
-                      <div {...surfaceAttributes({ separator: "block" })}>
-                        <Button
-                          variant="item"
-                          motion="none"
-                          size="sm"
-                          className="w-auto gap-1"
-                          expanded={cleanOpen}
-                          chevron="start"
-                          onClick={() => setCleanOpen((open) => !open)}
-                        >
-                          {t("Clean · {p0}", { p0: groups.idle.length })}
-                        </Button>
-                      </div>
-                      {cleanOpen ? groups.idle.map(renderWorktree) : null}
-                    </>
-                  ) : null}
-                </>
-              ) : (
-                repositories.map(renderRepository)
-              )}
+              {repositories.map(renderRepository)}
             </div>
             {sectionsCwd ? (
               <GitPanelSections

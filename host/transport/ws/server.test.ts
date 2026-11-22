@@ -477,13 +477,42 @@ describe("WebSocket read admission and safe disclosure", () => {
       );
       // Both dispatches finished together; give the held one's log the same chance.
       await new Promise((resolve) => setTimeout(resolve, 200));
-      expect(stderr.mock.calls.map(([line]) => String(line)).join("")).not.toMatch(
-        /slow request method=native\.services\.conversation\.desktop\.take/,
+      const log = stderr.mock.calls.map(([line]) => String(line)).join("");
+      expect(log).not.toMatch(/slow request method=native\.services\.conversation\.desktop\.take/);
+      // The line ties the request's stages together under a Host-made id, without its content.
+      expect(log).toMatch(
+        /slow request method=projects\.list ms=\d+ traceId=r[0-9a-z]+ transport=ws outcome=(sent|disconnected) totalMs=\d+ admissionMs=\d+ handlerMs=\d+ .*heldWaitMs=0 thresholdMs=5000/,
       );
+      expect(log).not.toMatch(/traceId=(slow|op|held)\b/);
     } finally {
       stderr.mockRestore();
     }
   }, 20_000);
+
+  it("logs a typed deadline outcome with the handler still running and no response time", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const host = await fixture({
+        methods: ["projects.list"],
+        limits: { defaultResponseTimeoutMs: 5_050 },
+        dispatch: () => new Promise(() => undefined),
+      });
+      const client = await host.ready();
+      void client.request("expired", "projects.list").catch(() => {});
+      await vi.waitFor(
+        () =>
+          expect(stderr.mock.calls.map(([line]) => String(line)).join("")).toMatch(
+            /slow request method=projects\.list .*outcome=deadline .*handlerRunning=yes/,
+          ),
+        { timeout: 8_000 },
+      );
+      expect(stderr.mock.calls.map(([line]) => String(line)).join("")).not.toMatch(
+        /outcome=deadline.*responseMs=/,
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+  }, 12_000);
 
   it("keeps typed method result validation before delivery", async () => {
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);

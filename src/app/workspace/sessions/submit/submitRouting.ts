@@ -1,7 +1,7 @@
 import type { SubmitDeps, SubmitInput } from "./submitTypes";
 import { hostSessionBinding } from "../../../../features/connections/model/sessionExecutionBinding";
 
-import { remoteProjectFor } from "../../../../features/connections/model/remoteProjects";
+import { remoteSessionProject } from "../../../../features/connections/model/sessionMachineTarget";
 import { remoteSessionActions } from "../../../../features/connections/model/remoteSessionActions";
 import {
   sharedLocalQueueClaiming,
@@ -104,7 +104,7 @@ export function routeSubmitSession(
         : t("This conversation is still loading. Send again in a moment."),
     );
   const remote = sessionsRef.current.find((session) => session.id === sessionId);
-  if (remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) {
+  if (remote && (hostSessionBinding(remote) || remoteSessionProject(remote))) {
     const actions = remoteSessionActions(sessionId);
     if (!actions)
       return refuse(

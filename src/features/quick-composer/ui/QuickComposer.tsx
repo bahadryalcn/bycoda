@@ -69,6 +69,10 @@ import {
   removeAttachmentFromText,
   tokensForIncoming,
 } from "../../sessions/model/attachmentTokens";
+import {
+  applyMentionDeletion,
+  deleteScopedMentionAtCaret,
+} from "../../sessions/public/composerMentions";
 import { quickLaunchAttachments } from "../model/quickAttachments";
 import { useQuickAttachments } from "./useQuickAttachments";
 import type { QuickNotice } from "../model/screenCaptureAccess";
@@ -522,10 +526,20 @@ export function QuickComposer({
       !event.metaKey &&
       field.selectionStart === field.selectionEnd
     ) {
+      const direction = event.key === "Backspace" ? "back" : "forward";
+      const mentionEdit = deleteScopedMentionAtCaret(field.value, field.selectionStart, direction);
+      if (mentionEdit) {
+        event.preventDefault();
+        if (!applyMentionDeletion(field, mentionEdit)) {
+          setPrompt(mentionEdit.text);
+          syncPromptCommand(field);
+        }
+        return;
+      }
       const edit = deleteTokenAtCaret(
         field.value,
         field.selectionStart,
-        event.key === "Backspace" ? "back" : "forward",
+        direction,
         attachments.files,
         [],
         skillInvocationTokens(field.value).filter((token) => skillNames.has(token.name)),

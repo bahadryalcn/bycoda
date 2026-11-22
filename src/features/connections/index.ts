@@ -48,6 +48,8 @@ export type * as uiRemoteActionErrorApi from "./public/RemoteActionError";
 export type * as uiRemoteLoadErrorApi from "./public/RemoteLoadError";
 export type * as uiMachineUnavailableApi from "./public/MachineUnavailable";
 export type * as uiRemoteSessionApi from "./public/RemoteSession";
+export type * as uiSessionMachinePickerApi from "./public/SessionMachinePicker";
+export type * as modelSessionMachineTargetApi from "./public/sessionMachineTarget";
 export type * as uiSharedQueueRecoveryNoticeApi from "./public/SharedQueueRecoveryNotice";
 export type * as uiUnreachableMachinesNoticeApi from "./public/UnreachableMachinesNotice";
 

@@ -26,6 +26,7 @@ import { GitFileInspector } from "../../../features/source-control/ui/GitFileIns
 import { SessionImportHost } from "../../../features/sessions/ui/SessionImportHost";
 import { OnboardingHost } from "../../../features/onboarding/ui/OnboardingHost";
 import { AddRemoteProjectDialog } from "../../../features/connections/ui/AddRemoteProjectDialog";
+import { MachineFolderPickerHost } from "../../../features/connections/ui/MachineFolderPickerHost";
 import { ProjectNameConflictDialog } from "../../../features/projects/ui/ProjectNameConflictDialog";
 import {
   projectNameError,
@@ -213,6 +214,7 @@ function WorkspacePickerDialogsComponent({
           }}
         />
       ) : null}
+      <MachineFolderPickerHost />
       {nameConflicts[0] ? (
         <ProjectNameConflictDialog
           key={nameConflicts[0].path}

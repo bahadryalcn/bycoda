@@ -457,6 +457,9 @@ The ambient **Agent crew** scene in Appearance is separate from a reusable Crew:
 its Classic, Star Wars, Lord of the Rings and Matrix characters do not start
 assignments.
 
+In an open conversation, both the crew artwork and its role labels are dimmed
+behind the transcript. The welcome scene keeps full-opacity labels.
+
 Source and browser fixtures do not prove installed-host, physical-device or paid
 provider acceptance. Compare build identity before treating an owner screenshot
 as a new defect; then exercise the affected flow on the identified app and host.

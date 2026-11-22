@@ -1,3 +1,4 @@
+import { isProjectlessScope, PROJECTLESS_SCOPE } from "./sessions/projectless-scope";
 import { sessionWidgetContext } from "./sessions/session-widget-context";
 import { sessionMetadataUpdate, type SessionMetadataPatch } from "./sessions/session-metadata";
 import {
@@ -1512,7 +1513,11 @@ export class HostStore {
   }
   async project(id: string): Promise<HostProject> {
     return this.db.readScope(async () => {
-      const row = await this.db.prepare("SELECT * FROM projects WHERE id=?").get(id);
+      // The reserved row exists for the foreign key; project, Git and path features
+      // all resolve through here and must never see it.
+      const row = isProjectlessScope(id)
+        ? undefined
+        : await this.db.prepare("SELECT * FROM projects WHERE id=?").get(id);
       if (!row) throw new Error("Project is not registered on this machine");
       return row as unknown as HostProject;
     });
@@ -1520,8 +1525,17 @@ export class HostStore {
   async projects(): Promise<HostProject[]> {
     return this.db.readScope(async () => {
       return (await this.db
-        .prepare("SELECT * FROM projects ORDER BY name")
-        .all()) as unknown as HostProject[];
+        .prepare("SELECT * FROM projects WHERE id<>? ORDER BY name")
+        .all(PROJECTLESS_SCOPE.id)) as unknown as HostProject[];
+    });
+  }
+  /** Only session creation in the reserved scope may call this. */
+  async ensureProjectlessScope(): Promise<HostProject> {
+    return this.db.storeScope(async () => {
+      await this.db
+        .prepare("INSERT OR IGNORE INTO projects VALUES (?, ?, ?)")
+        .run(PROJECTLESS_SCOPE.id, PROJECTLESS_SCOPE.cwd, PROJECTLESS_SCOPE.name);
+      return PROJECTLESS_SCOPE;
     });
   }
   /**
@@ -1546,6 +1560,8 @@ export class HostStore {
     return this.readStates.getStore()?.pending ?? this.pending;
   }
   async addProject(cwd: string, name: string): Promise<HostProject> {
+    if (cwd.trim().toLowerCase() === PROJECTLESS_SCOPE.cwd)
+      throw new Error("This location is reserved for sessions without a project");
     return this.db.storeScope(async () => {
       // Use the same filesystem identity as desktop session discovery. Legacy
       // spellings remain registered so their sessions and feature data stay valid.

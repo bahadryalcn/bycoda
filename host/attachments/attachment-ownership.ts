@@ -304,10 +304,14 @@ export class AttachmentOwnership {
   ): Promise<void> {
     return this.store.db.scope(async () => {
       await this.ready;
+      const managed = input.ownerId !== undefined || input.claimId !== undefined;
+      if (managed) this.parse({ ids: [], ownerId: input.ownerId, claimId: input.claimId });
       const unique = [...new Set(ids)];
+      // Most queue replies carry no attachment. The scope above already queued
+      // FIFO and rechecked authority, so nothing is left to write or lock.
+      if (!unique.length) return;
       await this.store.transaction(async () => {
-        if (input.ownerId !== undefined || input.claimId !== undefined) {
-          this.parse({ ids: [], ownerId: input.ownerId, claimId: input.claimId });
+        if (managed) {
           for (let at = 0; at < unique.length; at += 20)
             await this.claim(principal, {
               ids: unique.slice(at, at + 20),

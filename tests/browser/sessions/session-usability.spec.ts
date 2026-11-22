@@ -1,5 +1,45 @@
 import { expect, test } from "@playwright/test";
 
+for (const kind of ["projectless", "project"])
+  for (const light of [true, false])
+    for (const width of [800, 1280])
+      test(`session machine picker ${kind} ${light ? "light" : "dark"} ${width}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 850 });
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.goto(
+          `/tests/browser/sessions/session-usability.html?machineFixture=${kind}${light ? "&light" : ""}`,
+        );
+        const picker = page.getByRole("button", { name: /^Run on:/ });
+        await expect(picker).toContainText("This computer");
+        await picker.click();
+        await expect(page.getByRole("option", { name: /Office Mac/ })).toBeVisible();
+        await expect(page.getByRole("option", { name: /Build PC.*Offline/ })).toBeDisabled();
+        if (width === 1280) await expect(page.locator(".crew-scene")).toBeVisible();
+        const choices = page.getByRole("listbox", { name: "Run on" });
+        await expect
+          .poll(async () => {
+            const trigger = (await picker.boundingBox())!;
+            const list = (await choices.boundingBox())!;
+            return Math.min(
+              Math.abs(list.y - trigger.y - trigger.height),
+              Math.abs(trigger.y - list.y - list.height),
+            );
+          })
+          .toBeLessThan(18);
+        await page.screenshot({
+          path: `temp/verification/session-machine-selection/${kind}-${light ? "light" : "dark"}-${width}.png`,
+        });
+        await page.getByRole("option", { name: /Office Mac/ }).click();
+        await expect
+          .poll(() => page.evaluate(() => window.sessionUsability.events.machine))
+          .toBe("office");
+        await expect(page.locator("[data-composer-box] textarea")).toHaveValue(
+          "Keep this integrated draft",
+        );
+      });
+
 for (const light of [true, false])
   for (const width of [800, 1280])
     test(`earlier history scroll ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
@@ -328,19 +368,25 @@ for (const light of [false, true]) {
       "data-delivery-progress",
       "unknown",
     );
-    await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeDisabled();
+    // An unconfirmed row is settled by the owner's explicit choice on that row, never by a blind
+    // header Resume: Resume is absent, and "Send again" is the only way to resend it.
+    await expect(page.getByRole("button", { name: "Resume", exact: true })).toHaveCount(0);
     await expect(input).toHaveValue("Keep this changed draft");
-    // The unconfirmed message stays visible in the queue and in the delivery notice that settles it.
+    // The unconfirmed message stays visible in its queue row, which carries the settling control (the pane banner steps aside).
     const retained = "Retained follow-up with unknown delivery";
     const queueRows = page.locator("[data-message-queue-rows]");
+    await expect(queueRows.getByRole("button", { name: "Send again", exact: true })).toHaveCount(1);
     const queuedMessage = queueRows.getByText(retained, { exact: true });
     await expect(queuedMessage).toHaveCount(1);
     await expect(queuedMessage).toBeVisible();
     await expect(
       queueRows.getByRole("button", { name: "Remove queued message", exact: true }),
     ).toHaveCount(1);
+    // The row's own delivery control is where the owner settles it; nothing was resent meanwhile.
     await expect(
-      page.locator("[data-delivery-progress]").getByText(retained, { exact: true }),
+      page
+        .locator("[data-delivery-progress]")
+        .getByRole("button", { name: "Send again", exact: true }),
     ).toBeVisible();
     expect(await page.evaluate(() => window.sessionUsability.events.queueAttempts)).toBe(0);
     await page.screenshot({

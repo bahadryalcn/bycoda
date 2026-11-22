@@ -15,7 +15,7 @@ afterEach(() => {
 const list = (status: "idle" | "running" = "idle") =>
   [{ id: "s", title: "S", status }] as HostSessionSummary[];
 
-it("slows hidden fallback reads and wakes immediately online without overlapping reads", async () => {
+it("pauses hidden fallback reads and wakes immediately when visible and online", async () => {
   vi.useFakeTimers();
   const doc = Object.assign(new EventTarget(), { hidden: true });
   const win = new EventTarget();
@@ -26,16 +26,17 @@ it("slows hidden fallback reads and wakes immediately online without overlapping
   const load = vi.fn(async () => list());
   const stop = startRailPoller({ targets: ["a"], load, onResult: vi.fn() });
   await vi.advanceTimersByTimeAsync(60_000);
-  expect(load).toHaveBeenCalledTimes(3);
+  expect(load).not.toHaveBeenCalled();
   network.onLine = false;
   win.dispatchEvent(new Event("offline"));
   await vi.advanceTimersByTimeAsync(60_000);
-  expect(load).toHaveBeenCalledTimes(3);
+  expect(load).not.toHaveBeenCalled();
   doc.hidden = false;
+  doc.dispatchEvent(new Event("visibilitychange"));
   network.onLine = true;
   win.dispatchEvent(new Event("online"));
   await vi.advanceTimersByTimeAsync(0);
-  expect(load).toHaveBeenCalledTimes(4);
+  expect(load).toHaveBeenCalledOnce();
   stop();
   expect(vi.getTimerCount()).toBe(0);
 });
@@ -133,9 +134,9 @@ it("keeps the backoff of a failing target on focus but resets it when the networ
   stop();
 });
 
-it("re-times a failing target's slow hidden retry when the window becomes visible", async () => {
+it("pauses a failing target until the window becomes visible, then resumes its backoff", async () => {
   vi.useFakeTimers();
-  const { doc } = railWindow({ hidden: true });
+  const { doc } = railWindow();
   const load = vi.fn(async (_target: string, _force?: boolean): Promise<HostSessionSummary[]> => {
     throw new Error("unreachable");
   });
@@ -148,15 +149,17 @@ it("re-times a failing target's slow hidden retry when the window becomes visibl
   });
   await vi.advanceTimersByTimeAsync(0);
   expect(load).toHaveBeenCalledTimes(1);
-  // Hidden: the next retry waits the 30 s hidden cadence. Visible again: the 6 s foreground
-  // backoff counted from the failed read applies, not a forced redial.
-  await vi.advanceTimersByTimeAsync(2_000);
+  doc.hidden = true;
+  doc.dispatchEvent(new Event("visibilitychange"));
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(load).toHaveBeenCalledTimes(1);
   doc.hidden = false;
   doc.dispatchEvent(new Event("visibilitychange"));
-  await vi.advanceTimersByTimeAsync(3_999);
-  expect(load).toHaveBeenCalledTimes(1);
-  await vi.advanceTimersByTimeAsync(1);
+  await vi.advanceTimersByTimeAsync(0);
   expect(load).toHaveBeenCalledTimes(2);
+  expect(load).toHaveBeenLastCalledWith("down", true);
+  await vi.advanceTimersByTimeAsync(12_000);
+  expect(load).toHaveBeenCalledTimes(3);
   expect(load).toHaveBeenLastCalledWith("down");
   stop();
 });

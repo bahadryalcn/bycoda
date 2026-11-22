@@ -10,6 +10,7 @@ import {
   DELEGATION_CHAT_ONLY_KEY,
   DELEGATION_LIMITS,
   DELEGATION_PARENT_KEY,
+  DELEGATION_PROVIDER_HISTORY_KEY,
   type DelegateModelRef,
 } from "../../src/shared/model/host-contracts/delegation";
 import { STOPPED_BY_USER } from "../sessions/sessionRuns";
@@ -628,6 +629,7 @@ describe("launch", () => {
     const settings = (host.commandsOf("create")[0]!.modelSettings ?? {}) as Record<string, string>;
     // The selection bounds the child's own runs; the advisor stays with the owner's conversation.
     expect(settings[CROSS_SUBAGENTS_KEY]).toBe(JSON.stringify([codexFive]));
+    expect(settings[DELEGATION_PROVIDER_HISTORY_KEY]).toBe("ephemeral");
     expect(settings).not.toHaveProperty(CROSS_ADVISOR_KEY);
     expect(settings).not.toHaveProperty("effort");
     expect(JSON.parse(settings[DELEGATION_PARENT_KEY]!)).toEqual({
@@ -654,6 +656,7 @@ describe("launch", () => {
     expect(String(send.text)).toContain("It drops a column.");
     expect(host.commandsOf("create")[0]).toMatchObject({
       model: "codex:gpt-6.1",
+      modelSettings: { [DELEGATION_PROVIDER_HISTORY_KEY]: "ephemeral" },
     });
   });
 

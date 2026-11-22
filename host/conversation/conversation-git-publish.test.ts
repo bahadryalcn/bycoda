@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -10,7 +10,10 @@ import {
   runGitPublish,
   stripRemoteCredentials,
 } from "./conversation-git-publish";
-import { ConversationManagementTools } from "./conversation-management-tools";
+import {
+  ConversationManagementTools,
+  type ManagementReceipt,
+} from "./conversation-management-tools";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -162,24 +165,52 @@ it("never starts a merge that conflicts at run time, leaving the checkout clean"
   expect(await head(f)).toBe(late);
   expect((await f.git("status", "--porcelain")).stdout.trim()).toBe("");
 });
-it("requires native approval before any push executes", async () => {
-  let executed = 0;
+it("requires native approval before any push executes, persists the denial and replays it", async () => {
+  const receipts = new Map<string, ManagementReceipt>();
+  const execute = vi.fn(async () => ({}));
+  const approve = vi.fn(async () => ({ approved: false }));
   const tools = new ConversationManagementTools<"git.push">(
     {
-      execute: async () => (executed++, {}),
-      approve: async () => ({ approved: false }),
-      receipt: async () => undefined,
-      saveReceipt: async () => undefined,
+      execute,
+      approve,
+      receipt: async (key) => receipts.get(key),
+      saveReceipt: async (key, entry) => {
+        receipts.set(key, entry);
+      },
     },
     new Set(),
   );
   const principal = { kind: "session", sessionId: "s", projectId: "p" } as never;
-  const result = (await tools.call(
-    "git.push",
-    { requestId: "r1", review: { remote: "origin" } },
+  const input = { requestId: "r1", review: { remote: "origin" } };
+  const attempt = () => tools.call("git.push", input, principal, async () => true);
+
+  expect(await attempt()).toMatchObject({
+    requestId: "r1",
+    state: "failed",
+    error: "Native owner approval required.",
+  });
+  expect(approve).toHaveBeenCalledOnce();
+  expect(approve).toHaveBeenCalledWith(
+    { action: "git.push", input, operationHash: expect.any(String) },
     principal,
-    async () => true,
-  )) as { state: string };
-  expect(result.state).toBe("failed");
-  expect(executed).toBe(0);
+    expect.any(Function),
+  );
+  const [stored] = [...receipts.values()];
+  expect(receipts.size).toBe(1);
+  expect(stored).toMatchObject({ state: "failed", error: "Native owner approval required." });
+
+  expect(await attempt()).toMatchObject({ requestId: "r1", state: "failed" });
+  expect(approve).toHaveBeenCalledOnce();
+  expect(execute).not.toHaveBeenCalled();
+
+  await expect(
+    tools.call(
+      "git.push",
+      { requestId: "r1", review: { remote: "other" } },
+      principal,
+      async () => true,
+    ),
+  ).rejects.toThrow("reused with different input");
+  expect(approve).toHaveBeenCalledOnce();
+  expect(execute).not.toHaveBeenCalled();
 });

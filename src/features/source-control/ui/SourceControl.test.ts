@@ -181,7 +181,8 @@ it("focuses a remote worktree without changing machine identity and returns to a
     },
   };
   await render(main);
-  expect(container.querySelectorAll("[data-checkout-overview] section")).toHaveLength(1);
+  // Both worktrees have uncommitted changes, so both are same-level sections.
+  expect(container.querySelectorAll("[data-checkout-overview] section")).toHaveLength(2);
   await act(async () => setWorktreeFocus(main, { path: task, branch: "mc/task" }));
   expect(container.querySelectorAll("section")).toHaveLength(1);
   expect(container.querySelector("section")?.dataset.cwd).toBe(task);
@@ -226,7 +227,7 @@ it("preserves the ordinary panel when discovery fails and keeps a usable list on
     },
   };
   await render();
-  expect(container.querySelectorAll("section")).toHaveLength(1);
+  expect(container.querySelectorAll("section")).toHaveLength(2);
   expect(container.querySelector('[role="status"]')?.textContent).toContain(
     "Could not refresh worktrees",
   );

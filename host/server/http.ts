@@ -12,6 +12,7 @@ import { getHostRpcMethod } from "../../src/shared/model/host-contracts/methods"
 import { trackRpc } from "../diagnostics/loop-stall";
 import { createLogger } from "../diagnostics/logger";
 import { mcpMetricName, perfMetrics, syncDbTiming } from "../diagnostics/perf-metrics";
+import { runWithRequestTrace, startRequestTrace } from "../diagnostics/request-trace";
 import { HostDomainAuthorizationError, HostDomainOutcomeError } from "../domains/context";
 import { requestingDeviceName } from "../desktop/remoteActivity";
 import { memoized } from "../desktop/requester-name";
@@ -221,7 +222,10 @@ export function createHttpRuntime(
       }
       // Shorter receive window until the RPC credential is accepted (see disarmReceive below).
       const disarmReceive = boundRequestReceive(request);
-      const accepted = dependencies.engine.store.db.outsideScope(async () => {
+      const trace = startRequestTrace("http");
+      const inRequestScope = (work: () => Promise<void>) =>
+        runWithRequestTrace(trace, () => dependencies.engine.store.db.outsideScope(work));
+      const accepted = inRequestScope(async () => {
         const mcpMetric = mcpMetricName(request.url ?? "");
         if (mcpMetric) {
           await perfMetrics.measure(
