@@ -50,7 +50,7 @@ export function WorktreePicker({
   const [activePath, setActivePath] = useState<string>();
   const anchor = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
-  const { branches, settled } = useProjectBranchesState(
+  const { branches, settled, unreachable } = useProjectBranchesState(
     worktreeRemoved ? cwd : executionCwd,
     !!cwd && cwd !== "~",
   );
@@ -145,7 +145,9 @@ export function WorktreePicker({
               : settled
                 ? inWorktree
                   ? t("Worktree unavailable")
-                  : t("No repo")
+                  : unreachable
+                    ? t("Unavailable")
+                    : t("No repo")
                 : t("Loading…")
         }
         worktree={!worktreeRemoved && inWorktree}

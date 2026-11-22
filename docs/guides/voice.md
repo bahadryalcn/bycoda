@@ -87,9 +87,13 @@ voice and later open the companion. After setup it shows the assistant's avatar
 and name (the narrow rail shows the avatar alone). The avatar has no dot while
 voice is off; the dot pulses green while the assistant listens or speaks, turns
 yellow while connecting, red on an error and grey while the microphone is paused. When
-no sidebar is visible the button floats at the bottom right of the window. Before the first conversation,
-complete the assistant setup: choose its name, spoken language, provider and
-voice, verify playback and a microphone sentence, and review the autonomy budget.
+no sidebar is visible the button floats at the bottom right of the window. For a new
+assistant, set its name and language or use **Set up with AI** to draft its profile
+from a description. Review the proposed profile before applying it. An existing
+assistant goes directly to voice setup. Check the provider connection, then optionally
+preview the speaker and record a local microphone sample. The sample stays on this
+device. Continue to review and start even if you skipped either audio test. Work mode
+and presence settings can be reviewed separately during initial setup or changed later.
 Existing device settings prefill setup; the assistant has no default name.
 The microphone opens only after you choose **Test microphone**, **Start voice**
 or **Talk**. Closing voice never stops coding work.
@@ -387,8 +391,10 @@ compositor.
 
 ### Push to talk and tool activity
 
-The expanded desktop companion offers **Full screen** in its header. Open it at any time
-to see the selected conversation's current tool output alongside the voice controls.
+The expanded desktop companion offers **Full screen** in its header. The call fills the
+window. Select **Activity** in the header to open the work panel on the right. The assistant
+can open the panel when showing a result helps answer your request. Escape closes the work
+panel first, then exits full screen.
 Search or filter the activity list, then select a row to keep its details open.
 **Follow** returns to the latest visible entry. Copy the command or output from its details.
 The captured project's Tasks, Goals and active or paused Crew runs appear alongside the

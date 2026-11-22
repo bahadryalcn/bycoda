@@ -19,7 +19,7 @@ import { setLanguagePreference } from "../../../src/shared/i18n";
 import { noteDisplayRefreshRate } from "../../../src/features/settings/model/decorativeMotion";
 import type { Session } from "../../../src/features/sessions/model/session";
 import { registerVoiceDraftReader } from "../../../src/features/voice/model/voiceDraftContext";
-import { VoiceSetupSteps } from "../../../src/features/voice/ui/VoiceSetupSteps";
+import { AssistantSetup } from "../../../src/features/assistant/ui/AssistantSetup";
 import { saveKeybindingOverride } from "../../../src/features/settings/model/settings";
 import "../../../src/styles/index.css";
 const params = new URLSearchParams(location.search);
@@ -332,17 +332,8 @@ createRoot(document.getElementById("root")!).render(
         ]}
       />
     </main>
-  ) : params.has("setup-step") ? (
-    <main style={{ padding: 24, maxInlineSize: 560 }}>
-      <p>Fixture evidence · actual setup controls, no microphone/provider acceptance</p>
-      <h1>Assistant Arif · {params.get("setup-step")}</h1>
-      <VoiceSetupSteps
-        step={params.get("setup-step") as "provider" | "voice" | "microphone"}
-        language="tr-TR"
-        name="Arif"
-        onValidChange={() => {}}
-      />
-    </main>
+  ) : params.has("setup-wizard") ? (
+    <AssistantSetup voice onClose={() => {}} />
   ) : (
     <FixtureCompanion />
   ),

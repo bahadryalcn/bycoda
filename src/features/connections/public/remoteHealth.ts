@@ -2,6 +2,7 @@
 export {
   reportRemoteConnection,
   reportRemoteLoad,
+  subscribeRemoteRecovered,
   useRemoteLoadFailure,
 } from "../model/remoteHealth";
 /** Background polls also stop while the project's machine is unavailable. */

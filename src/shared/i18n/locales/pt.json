@@ -12398,7 +12398,6 @@
   "Saved folder permissions could not be read, so folders need approval again.": "As permissões de pasta salvas não puderam ser lidas, então as pastas precisam de aprovação novamente.",
   "Unreadable copy kept at {p0}": "Cópia ilegível mantida em {p0}",
   "Could not dismiss the notice. Try again.": "Não foi possível dispensar o aviso. Tente novamente.",
-  "{p0} isn’t available": "{p0} não está disponível",
   "This project’s machine isn’t available": "A máquina deste projeto não está disponível",
   "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "Este computador ainda não tem a máquina deste projeto. Adicione-a em Máquinas para abrir o projeto.",
   "The machine no longer accepts this computer. Pair them again in Connections.": "A máquina não aceita mais este computador. Emparelhe-os novamente em Máquinas.",
@@ -12475,5 +12474,14 @@
   "All worktrees": "Todas as árvores de trabalho",
   "Clean · {p0}": "Limpo · {p0}",
   "With changes": "Com alterações",
-  "Separate repository": "Repositório separado"
+  "Separate repository": "Repositório separado",
+  "This computer has no network connection. bycoda reconnects when it is back.": "Este computador está sem conexão de rede. O bycoda reconecta quando ela voltar.",
+  "The machine doesn’t answer on its home-network address or through Tailscale. It may be asleep or off, or Tailscale may be disconnected. bycoda keeps trying.": "A máquina não responde no endereço da rede local nem pelo Tailscale. Ela pode estar suspensa ou desligada, ou o Tailscale pode estar desconectado. O bycoda continua tentando.",
+  "Not added on this computer": "Não adicionada neste computador",
+  "Pairing refused": "Pareamento recusado",
+  "Turned off on this computer": "Desativada neste computador",
+  "Waiting to reconnect": "Aguardando para reconectar",
+  "Try now": "Tentar agora",
+  "Your computer {p0} isn’t reachable right now": "Não é possível acessar seu computador {p0} agora",
+  "Your computer {p0} isn’t available": "Seu computador {p0} não está disponível"
 }

@@ -12398,7 +12398,6 @@
   "Could not save note. ": "Not kaydedilemedi. ",
   "Availability change was not confirmed.": "Uygunluk değişikliği doğrulanmadı.",
   "Saving this question is unconfirmed. Retry to verify the original card.": "Bu sorunun kaydedildiği doğrulanmadı. Özgün kartı doğrulamak için yeniden deneyin.",
-  "{p0} isn’t available": "{p0} kullanılamıyor",
   "This project’s machine isn’t available": "Bu projenin makinesi kullanılamıyor",
   "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "Bu bilgisayarda bu projenin makinesi henüz yok. Projeyi açmak için Bağlantılar'dan ekle.",
   "The machine no longer accepts this computer. Pair them again in Connections.": "Makine artık bu bilgisayarı kabul etmiyor. Bağlantılar'dan yeniden eşleştir.",
@@ -12475,5 +12474,14 @@
   "All worktrees": "Tüm çalışma ağaçları",
   "Clean · {p0}": "Temiz · {p0}",
   "With changes": "Değişiklik olanlar",
-  "Separate repository": "Ayrı depo"
+  "Separate repository": "Ayrı depo",
+  "This computer has no network connection. bycoda reconnects when it is back.": "Bu bilgisayarın ağ bağlantısı yok. bycoda bağlantı geri gelince yeniden bağlanır.",
+  "The machine doesn’t answer on its home-network address or through Tailscale. It may be asleep or off, or Tailscale may be disconnected. bycoda keeps trying.": "Makine ev ağı adresinden de Tailscale üzerinden de yanıt vermiyor. Uykuda ya da kapalı olabilir veya Tailscale bağlı olmayabilir. bycoda denemeye devam ediyor.",
+  "Not added on this computer": "Bu bilgisayarda eklenmemiş",
+  "Pairing refused": "Eşleştirme reddedildi",
+  "Turned off on this computer": "Bu bilgisayarda kapalı",
+  "Waiting to reconnect": "Yeniden bağlanmak için bekleniyor",
+  "Try now": "Şimdi dene",
+  "Your computer {p0} isn’t reachable right now": "{p0} bilgisayarınıza şu an ulaşılamıyor",
+  "Your computer {p0} isn’t available": "{p0} bilgisayarınız kullanılamıyor"
 }

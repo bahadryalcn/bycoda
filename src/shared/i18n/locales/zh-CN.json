@@ -12398,7 +12398,6 @@
   "Saved folder permissions could not be read, so folders need approval again.": "无法读取已保存的文件夹权限，因此文件夹需要重新批准。",
   "Unreadable copy kept at {p0}": "无法读取的副本已保留在 {p0}",
   "Could not dismiss the notice. Try again.": "无法关闭该通知。请重试。",
-  "{p0} isn’t available": "{p0} 不可用",
   "This project’s machine isn’t available": "此项目的机器不可用",
   "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "此电脑还没有此项目的机器。请在“设备”中添加后打开项目。",
   "The machine no longer accepts this computer. Pair them again in Connections.": "该机器不再接受此电脑。请在“设备”中重新配对。",
@@ -12475,5 +12474,14 @@
   "All worktrees": "所有工作树",
   "Clean · {p0}": "干净 · {p0}",
   "With changes": "有更改",
-  "Separate repository": "独立仓库"
+  "Separate repository": "独立仓库",
+  "This computer has no network connection. bycoda reconnects when it is back.": "这台电脑没有网络连接。网络恢复后 bycoda 会自动重新连接。",
+  "The machine doesn’t answer on its home-network address or through Tailscale. It may be asleep or off, or Tailscale may be disconnected. bycoda keeps trying.": "这台机器在家庭网络地址和 Tailscale 上都没有响应。它可能已休眠或关机，也可能是 Tailscale 已断开。bycoda 会继续尝试。",
+  "Not added on this computer": "未在这台电脑上添加",
+  "Pairing refused": "配对被拒绝",
+  "Turned off on this computer": "已在这台电脑上关闭",
+  "Waiting to reconnect": "等待重新连接",
+  "Try now": "立即重试",
+  "Your computer {p0} isn’t reachable right now": "你的计算机 {p0} 当前无法访问",
+  "Your computer {p0} isn’t available": "你的计算机 {p0} 不可用"
 }

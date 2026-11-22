@@ -8,6 +8,8 @@ export type SurfaceVariant =
   | "card"
   | "inset"
   | "canvas"
+  /** Full-window overlays that need a solid palette ground even over native glass. */
+  | "opaque-canvas"
   | "workspace-panel"
   | "canvas-chat"
   | "reading-base"
@@ -49,6 +51,7 @@ export type SurfaceRole = "page" | "card" | "inset" | "floating";
 const VARIANT_ROLE: Partial<Record<SurfaceVariant, SurfaceRole>> = {
   page: "page",
   canvas: "page",
+  "opaque-canvas": "page",
   "canvas-chat": "page",
   "reading-base": "page",
   "workspace-panel": "page",

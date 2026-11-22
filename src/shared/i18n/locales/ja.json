@@ -12398,7 +12398,6 @@
   "Saved folder permissions could not be read, so folders need approval again.": "保存されたフォルダー権限を読み取れなかったため、フォルダーの再承認が必要です。",
   "Unreadable copy kept at {p0}": "読み取れないコピーを {p0} に保存しました",
   "Could not dismiss the notice. Try again.": "通知を閉じられませんでした。もう一度お試しください。",
-  "{p0} isn’t available": "{p0} は利用できません",
   "This project’s machine isn’t available": "このプロジェクトのマシンは利用できません",
   "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "このコンピューターにはこのプロジェクトのマシンがまだありません。プロジェクトを開くには「マシン」で追加してください。",
   "The machine no longer accepts this computer. Pair them again in Connections.": "マシンがこのコンピューターを受け付けなくなりました。「マシン」で再度ペアリングしてください。",
@@ -12475,5 +12474,14 @@
   "All worktrees": "すべてのワークツリー",
   "Clean · {p0}": "クリーン · {p0}",
   "With changes": "変更あり",
-  "Separate repository": "別のリポジトリ"
+  "Separate repository": "別のリポジトリ",
+  "This computer has no network connection. bycoda reconnects when it is back.": "このコンピューターはネットワークに接続されていません。復旧すると bycoda が再接続します。",
+  "The machine doesn’t answer on its home-network address or through Tailscale. It may be asleep or off, or Tailscale may be disconnected. bycoda keeps trying.": "このマシンはホームネットワークのアドレスでも Tailscale でも応答しません。スリープ中か電源オフ、または Tailscale が切断されている可能性があります。bycoda は接続を試み続けます。",
+  "Not added on this computer": "このコンピューターには追加されていません",
+  "Pairing refused": "ペアリングが拒否されました",
+  "Turned off on this computer": "このコンピューターではオフです",
+  "Waiting to reconnect": "再接続を待機中",
+  "Try now": "今すぐ再試行",
+  "Your computer {p0} isn’t reachable right now": "あなたのコンピューター {p0} に現在接続できません",
+  "Your computer {p0} isn’t available": "あなたのコンピューター {p0} は利用できません"
 }

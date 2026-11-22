@@ -12398,7 +12398,6 @@
   "Saved folder permissions could not be read, so folders need approval again.": "Gespeicherte Ordnerberechtigungen konnten nicht gelesen werden. Ordner müssen erneut genehmigt werden.",
   "Unreadable copy kept at {p0}": "Unlesbare Kopie gespeichert unter {p0}",
   "Could not dismiss the notice. Try again.": "Der Hinweis konnte nicht geschlossen werden. Versuche es erneut.",
-  "{p0} isn’t available": "{p0} ist nicht verfügbar",
   "This project’s machine isn’t available": "Die Maschine dieses Projekts ist nicht verfügbar",
   "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "Dieser Computer kennt die Maschine dieses Projekts noch nicht. Füge sie unter Rechner hinzu, um das Projekt zu öffnen.",
   "The machine no longer accepts this computer. Pair them again in Connections.": "Die Maschine akzeptiert diesen Computer nicht mehr. Kopple sie unter Rechner erneut.",
@@ -12475,5 +12474,14 @@
   "All worktrees": "Alle Arbeitsbäume",
   "Clean · {p0}": "Sauber · {p0}",
   "With changes": "Mit Änderungen",
-  "Separate repository": "Separates Repository"
+  "Separate repository": "Separates Repository",
+  "This computer has no network connection. bycoda reconnects when it is back.": "Dieser Computer hat keine Netzwerkverbindung. bycoda verbindet sich wieder, sobald es zurück ist.",
+  "The machine doesn’t answer on its home-network address or through Tailscale. It may be asleep or off, or Tailscale may be disconnected. bycoda keeps trying.": "Der Rechner antwortet weder unter seiner Heimnetz-Adresse noch über Tailscale. Möglicherweise schläft er, ist aus oder Tailscale ist getrennt. bycoda versucht es weiter.",
+  "Not added on this computer": "Auf diesem Computer nicht hinzugefügt",
+  "Pairing refused": "Kopplung abgelehnt",
+  "Turned off on this computer": "Auf diesem Computer ausgeschaltet",
+  "Waiting to reconnect": "Warte auf erneute Verbindung",
+  "Try now": "Jetzt versuchen",
+  "Your computer {p0} isn’t reachable right now": "Dein Computer {p0} ist gerade nicht erreichbar",
+  "Your computer {p0} isn’t available": "Dein Computer {p0} ist nicht verfügbar"
 }

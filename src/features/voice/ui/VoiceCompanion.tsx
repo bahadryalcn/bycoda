@@ -32,7 +32,11 @@ import { useVoiceSessionProgress } from "../model/voiceSessionProgress";
 import { VoiceToolActivity, type VoiceToolActivityEntry } from "../model/voiceToolActivity";
 import { VoiceCompanionView } from "./companion/VoiceCompanionView";
 import { VoiceLiveWorkspace } from "./companion/VoiceLiveWorkspace";
-import { voiceLiveWorkSuggestion, type VoiceWorkspaceTool } from "../model/voiceLiveWork";
+import {
+  showVoiceWorkTool,
+  voiceLiveWorkSuggestion,
+  type VoiceWorkspaceTool,
+} from "../model/voiceLiveWork";
 import { useVoiceWorkspaceJobs } from "../model/voiceWorkspaceJobs";
 import {
   useVoiceWorkspaceTrackedWork,
@@ -250,6 +254,8 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   const latest = useRef(props);
   const [open, setOpen] = useState(false);
   const [fullScreen, setFullScreen] = useState(false);
+  const [workPanelOpen, setWorkPanelOpen] = useState(false);
+  const workPanelToggle = useRef<HTMLButtonElement>(null);
   const [workspaceAnchor, setWorkspaceAnchor] = useState<Pick<Session, "id" | "cwd">>();
   const [workspaceDrafts, setWorkspaceDrafts] = useState<ReadonlyMap<string, string>>(
     () => new Map(),
@@ -1309,10 +1315,20 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       invalidateCausalContext: async () => {
         await causalGeneration.current?.invalidate("unverified-tool");
       },
-      workspace: latest.current.workspace ?? {
-        tools: [],
-        execute: async () => {
-          throw new Error("Workspace actions are unavailable.");
+      workspace: {
+        tools: [
+          ...(latest.current.workspace?.tools ?? []),
+          ...(panel.current?.hasAttribute("data-full-screen") ? [showVoiceWorkTool] : []),
+        ],
+        execute: async (action, input) => {
+          if (action === showVoiceWorkTool.name) {
+            if (!panel.current?.hasAttribute("data-full-screen") || Object.keys(input).length)
+              throw new Error("The full-screen work panel is unavailable for this request.");
+            setWorkPanelOpen(true);
+            return { action, status: "completed" };
+          }
+          if (!latest.current.workspace) throw new Error("Workspace actions are unavailable.");
+          return latest.current.workspace.execute(action, input);
         },
       },
       ensureToolSession: latest.current.ensureToolSession,
@@ -1565,12 +1581,17 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
   }
   function exitFullScreen() {
     setFullScreen(false);
+    setWorkPanelOpen(false);
     compactToggle.current?.focus();
+  }
+  function closeWorkPanel() {
+    setWorkPanelOpen(false);
+    workPanelToggle.current?.focus();
   }
   const workspaceOverlay = useOverlay(
     panel,
     fullScreen,
-    fullScreen ? exitFullScreen : undefined,
+    fullScreen ? (workPanelOpen ? closeWorkPanel : exitFullScreen) : undefined,
     open && !detached,
     undefined,
     false,
@@ -3147,12 +3168,12 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     ? visibleWorkspaceSession?.cwd
     : (target?.cwd ?? props.projectPath);
   const workspaceTrackedWork = useVoiceWorkspaceTrackedWork({
-    enabled: fullScreen && bodyVisible,
+    enabled: fullScreen && workPanelOpen && bodyVisible,
     projectPath: trackedProjectPath,
     visibleProjectPaths: workspacePaths,
   });
   const workspaceJobs = useVoiceWorkspaceJobs({
-    enabled: fullScreen && !assistantSnapshotError && bodyVisible,
+    enabled: fullScreen && workPanelOpen && !assistantSnapshotError && bodyVisible,
     snapshot: assistantSnapshot,
     environmentId: assistantEnvironmentId,
     visibleProjectPaths: workspacePaths,
@@ -3172,15 +3193,16 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         visibleToolActivities,
       )
     : undefined;
-  function enterFullScreen() {
-    if (suggestedWork) dismissWorkSuggestion(suggestedWork);
-    showWorkspace(target);
+  function enterFullScreen(showWork = false) {
+    if (showWork && suggestedWork) dismissWorkSuggestion(suggestedWork);
+    showWorkspace(target, showWork);
     compactToggle.current?.focus();
   }
-  function showWorkspace(session: Session | undefined) {
+  function showWorkspace(session: Session | undefined, showWork: boolean) {
     setWorkspaceAnchor(session ? { id: session.id, cwd: session.cwd } : undefined);
     if (detached) dock();
     setOpen(true);
+    setWorkPanelOpen(showWork);
     setFullScreen(true);
   }
   const openWorkspaceFromChat = useEffectEvent((anchor: Pick<Session, "id" | "cwd">) => {
@@ -3190,7 +3212,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     if (!session || !workSessionVisible(session)) return;
     workspaceReturnFocus.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    showWorkspace(session);
+    showWorkspace(session, true);
   });
   const registerWorkspaceOpener = props.registerWorkspaceOpener;
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Registers this window's mounted voice controller with its chat action and releases it on unmount.
@@ -3411,7 +3433,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       aria-modal={fullScreen || undefined}
       {...surfaceAttributes(
         {
-          variant: fullScreen ? "canvas" : "floating",
+          variant: fullScreen ? "opaque-canvas" : "floating",
           frame: detaching ? "focus" : shownError ? "danger" : "pane",
           radius: fullScreen ? undefined : compact ? "pill" : "panel",
         },
@@ -3419,6 +3441,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       )}
       data-compact={compact || undefined}
       data-full-screen={fullScreen || undefined}
+      data-work-panel={(fullScreen && workPanelOpen) || undefined}
       data-dock={dockMode}
       data-detaching={detaching || undefined}
       data-voice-state={visualState}
@@ -3436,8 +3459,10 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         headerDrag={fullScreen ? undefined : panelDrag.header}
         resize={fullScreen ? null : <VoicePanelResize panel={panel} onPosition={setPosition} />}
         fullScreen={fullScreen}
+        workPanelToggleRef={workPanelToggle}
+        onToggleWorkPanel={workPanelOpen ? closeWorkPanel : () => setWorkPanelOpen(true)}
         workPanel={
-          fullScreen ? (
+          fullScreen && workPanelOpen ? (
             <VoiceLiveWorkspace
               key={workspaceDraftKey}
               session={visibleWorkspaceSession}
@@ -3486,7 +3511,8 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         onDismissWorkSuggestion={() => {
           if (suggestedWork) dismissWorkSuggestion(suggestedWork);
         }}
-        onToggleFullScreen={fullScreen ? exitFullScreen : enterFullScreen}
+        onOpenSuggestedWork={() => enterFullScreen(true)}
+        onToggleFullScreen={fullScreen ? exitFullScreen : () => enterFullScreen()}
         panel={panel}
         sideKey={choice?.id ?? jobReview?.id}
         visualState={visualState}

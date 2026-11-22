@@ -17,7 +17,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Stepper } from "../../../shared/ui/Stepper";
 import { Sparkles } from "../../../shared/ui/icons";
 import { loadVoicePersona } from "../../voice/model/voicePersona";
-import { VoiceSetupSteps } from "../../voice/ui/VoiceSetupSteps";
+import { useVoiceSetupProviderKey, VoiceSetupSteps } from "../../voice/public/setup";
 import { assistantRequest, useAssistantSnapshot } from "../model/assistantClient";
 import { assistantSetupDefaults } from "../model/assistantSetupDefaults";
 import { createLocalDraftWriter } from "../model/assistantLocalDraft";
@@ -55,13 +55,14 @@ const FREQUENCY_LABEL = {
 } as const;
 const labels = {
   identity: "Identity",
-  voice: "Voice",
+  voice: "Voice provider",
+  speaker: "Speaker",
+  microphone: "Microphone",
   workmode: "Work mode",
   presence: "Presence and hours",
   review: "Review",
 } as const;
 type StepId = keyof typeof labels;
-const voiceChecks = ["provider", "voice", "microphone"] as const;
 // Numeric drafts predate grouped setup. Preserve their content and resume in the owning step.
 const legacySteps: StepId[] = [
   "identity",
@@ -86,6 +87,7 @@ type Draft = {
   patch: AssistantProfilePatch;
   rules: string;
   environmentId?: string;
+  detailedVoice?: boolean;
 };
 function readDraft(): Draft | null {
   try {
@@ -120,6 +122,7 @@ export function AssistantSetup({
     getHarnessAvailabilitySnapshot,
   );
   const [draft, setDraft] = useState<Draft | null>(readDraft);
+  const [legacyDetails] = useState(() => draft?.step === "workmode" || draft?.step === "presence");
   const [pending, setPending] = useState(false);
   const busy = useRef(false),
     liveEnvironment = useRef(environmentId);
@@ -131,16 +134,27 @@ export function AssistantSetup({
     (): typeof assistantRequest => (input) => assistantRequest(input, draft?.environmentId),
     [draft?.environmentId],
   );
-  const [verified, setVerified] = useState<Record<string, boolean>>({});
-  // Core setup stays short; voice setup groups every existing capability into five steps.
+  const providerKey = useVoiceSetupProviderKey();
+  const [verifiedProvider, setVerifiedProvider] = useState<string>();
+  const providerVerified = verifiedProvider === providerKey;
+  const voiceOnly = voice && snapshot?.profile.setupComplete === true;
   const steps: StepId[] = voice
-    ? ["identity", "voice", "workmode", "presence", "review"]
+    ? [
+        ...(voiceOnly ? [] : ["identity" as const]),
+        "voice",
+        "speaker",
+        "microphone",
+        ...(!voiceOnly && (draft?.detailedVoice || legacyDetails)
+          ? (["workmode", "presence"] as const)
+          : []),
+        "review",
+      ]
     : ["identity", "workmode", "review"];
   useEffect(() => {
     if (!draft && snapshot && environmentId) {
       const legacy = loadVoicePersona();
       setDraft({
-        step: "identity",
+        step: voice && snapshot.profile.setupComplete ? "voice" : "identity",
         environmentId,
         patch: assistantSetupDefaults({
           ...snapshot.profile,
@@ -152,7 +166,7 @@ export function AssistantSetup({
     } else if (draft && !draft.environmentId && snapshot && environmentId) {
       setDraft({ ...draft, environmentId });
     }
-  }, [snapshot, draft, environmentId]);
+  }, [snapshot, draft, environmentId, voice]);
   const [draftWriter] = useState(() => createLocalDraftWriter(DRAFT_KEY));
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Attach the draft writer's page lifecycle listener and flush on unmount.
   useEffect(() => draftWriter.attach(), [draftWriter]);
@@ -221,12 +235,13 @@ export function AssistantSetup({
     }
   }
   function update(next: AssistantProfilePatch) {
-    if (next.language !== undefined) setVerified({});
     setDraft((current) =>
       current ? { ...current, patch: { ...current.patch, ...next } } : current,
     );
   }
   function valid() {
+    if (step === "voice") return providerVerified;
+    if (step === "review" && voiceOnly) return providerVerified;
     if (step === "identity") return Boolean(patch.name?.trim());
     if (step === "workmode" && workModeUnchosen) return false;
     if (
@@ -236,16 +251,15 @@ export function AssistantSetup({
         (patch.dailyTokenBudget ?? 0) < ASSISTANT_MIN_DAILY_TOKEN_BUDGET)
     )
       return false;
-    if (step === "voice") return voiceChecks.every((check) => verified[check] === true);
     return true;
   }
   async function finish() {
-    if (!snapshot || !draft || busy.current) return;
+    if (!snapshot || !draft || busy.current || (voice && !providerVerified)) return;
     const expectedEnvironmentId = draft.environmentId;
     let execution = patch.execution;
     try {
       assertSource();
-      execution = reviewedExecution();
+      if (!voiceOnly) execution = reviewedExecution();
       if (execution !== patch.execution)
         setDraft({ ...draft, patch: { ...draft.patch, execution } });
     } catch (cause) {
@@ -256,7 +270,7 @@ export function AssistantSetup({
     setPending(true);
     setError("");
     try {
-      for (const rule of draft.rules
+      for (const rule of (voiceOnly ? "" : draft.rules)
         .split(/\r?\n/)
         .map((text) => text.trim())
         .filter(Boolean)) {
@@ -280,58 +294,61 @@ export function AssistantSetup({
         {
           op: "profile.update",
           expectedVersion: snapshot.profile.version,
-          patch: {
-            name: patch.name,
-            showTitle: patch.showTitle,
-            avatar: patch.avatar,
-            addressAs: patch.addressAs,
-            language: patch.language,
-            execution,
-            chiefExecution: patch.chiefExecution,
-            replyExecution: patch.replyExecution,
-            planningExecution: patch.planningExecution,
-            autonomy: patch.autonomy,
-            allowRoutineQuestions: patch.allowRoutineQuestions,
-            confirmJobs: patch.confirmJobs,
-            addressFrequency: patch.addressFrequency,
-            tone: patch.tone,
-            allowProfanity: patch.allowProfanity,
-            persona: patch.persona,
-            planApproval: patch.planApproval,
-            dailyTokenBudget: patch.dailyTokenBudget,
-            workerSoftContext: patch.workerSoftContext,
-            workerHardContext: patch.workerHardContext,
-            workerCompactPercent: patch.workerCompactPercent,
-            workerHandoffPercent: patch.workerHandoffPercent,
-            proactiveSpeech: patch.proactiveSpeech,
-            keepAwakeWhileWorking: patch.keepAwakeWhileWorking,
-            keepAwakeWhileAway: patch.keepAwakeWhileAway,
-            urgentNotificationRepeats: patch.urgentNotificationRepeats,
-            urgentNotificationIntervalMinutes: patch.urgentNotificationIntervalMinutes,
-            notificationTelegram: patch.notificationTelegram,
-            quietStart: patch.quietStart,
-            quietEnd: patch.quietEnd,
-            stallMinutes: patch.stallMinutes,
-            idleMinutes: patch.idleMinutes,
-            awayMinutes: patch.awayMinutes,
-            chiefWakeLimit: patch.chiefWakeLimit,
-            nudgeLimit: patch.nudgeLimit,
-            activeStart: patch.activeStart,
-            activeEnd: patch.activeEnd,
-            notificationPresent: patch.notificationPresent,
-            notificationAway: patch.notificationAway,
-            notificationDnd: patch.notificationDnd,
-            observationTaskDone: patch.observationTaskDone,
-            observationTaskNeedsInput: patch.observationTaskNeedsInput,
-            setupComplete: true,
-            ...(voice ? { voiceSetupComplete: true } : {}),
-            enabled: true,
-          },
+          patch: voiceOnly
+            ? { voiceSetupComplete: true }
+            : {
+                name: patch.name,
+                showTitle: patch.showTitle,
+                avatar: patch.avatar,
+                addressAs: patch.addressAs,
+                language: patch.language,
+                execution,
+                chiefExecution: patch.chiefExecution,
+                replyExecution: patch.replyExecution,
+                planningExecution: patch.planningExecution,
+                autonomy: patch.autonomy,
+                allowRoutineQuestions: patch.allowRoutineQuestions,
+                confirmJobs: patch.confirmJobs,
+                addressFrequency: patch.addressFrequency,
+                tone: patch.tone,
+                allowProfanity: patch.allowProfanity,
+                persona: patch.persona,
+                planApproval: patch.planApproval,
+                dailyTokenBudget: patch.dailyTokenBudget,
+                workerSoftContext: patch.workerSoftContext,
+                workerHardContext: patch.workerHardContext,
+                workerCompactPercent: patch.workerCompactPercent,
+                workerHandoffPercent: patch.workerHandoffPercent,
+                proactiveSpeech: patch.proactiveSpeech,
+                keepAwakeWhileWorking: patch.keepAwakeWhileWorking,
+                keepAwakeWhileAway: patch.keepAwakeWhileAway,
+                urgentNotificationRepeats: patch.urgentNotificationRepeats,
+                urgentNotificationIntervalMinutes: patch.urgentNotificationIntervalMinutes,
+                notificationTelegram: patch.notificationTelegram,
+                quietStart: patch.quietStart,
+                quietEnd: patch.quietEnd,
+                stallMinutes: patch.stallMinutes,
+                idleMinutes: patch.idleMinutes,
+                awayMinutes: patch.awayMinutes,
+                chiefWakeLimit: patch.chiefWakeLimit,
+                nudgeLimit: patch.nudgeLimit,
+                activeStart: patch.activeStart,
+                activeEnd: patch.activeEnd,
+                notificationPresent: patch.notificationPresent,
+                notificationAway: patch.notificationAway,
+                notificationDnd: patch.notificationDnd,
+                observationTaskDone: patch.observationTaskDone,
+                observationTaskNeedsInput: patch.observationTaskNeedsInput,
+                setupComplete: true,
+                ...(voice ? { voiceSetupComplete: true } : {}),
+                enabled: true,
+              },
         },
         expectedEnvironmentId,
       );
       assertSource();
-      if (!profile?.setupComplete) throw new Error(t("Setup could not be confirmed by the Host."));
+      if (!profile?.setupComplete || (voice && !profile.voiceSetupComplete))
+        throw new Error(t("Setup could not be confirmed by the Host."));
       draftWriter.clear();
       setFinished(true);
     } catch (cause) {
@@ -344,7 +361,7 @@ export function AssistantSetup({
   if (finished && snapshot)
     return (
       <Modal
-        title={t("Ready for 24/7")}
+        title={t(voice ? "Voice is ready" : "Ready for 24/7")}
         size="md"
         fitViewport
         onClose={onClose}
@@ -356,19 +373,23 @@ export function AssistantSetup({
           </ModalActions>
         }
       >
-        <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.setup}>
-          <Text as="p" leading="normal" className={styles.muted}>
-            {t(
-              "Optional. Check what keeps the assistant working around the clock; you can skip this and find it later in Settings, Access.",
-            )}
+        {voice ? (
+          <Text tone="secondary">{t("The microphone opens only when you choose to talk.")}</Text>
+        ) : (
+          <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.setup}>
+            <Text as="p" leading="normal" className={styles.muted}>
+              {t(
+                "Optional. Check what keeps the assistant working around the clock; you can skip this and find it later in Settings, Access.",
+              )}
+            </Text>
+            <AlwaysOnChecklist request={checklistRequest} snapshot={snapshot} />
           </Text>
-          <AlwaysOnChecklist request={checklistRequest} snapshot={snapshot} />
-        </Text>
+        )}
       </Modal>
     );
   return (
     <Modal
-      title={t("Set up")}
+      title={t(voice ? "Voice setup" : "Set up")}
       onClose={() => {
         if (!pending) onClose();
       }}
@@ -389,7 +410,7 @@ export function AssistantSetup({
               <Button
                 variant="primary"
                 loading={pending}
-                disabled={!valid() || (voice && !voiceChecks.every((check) => verified[check]))}
+                disabled={!valid() || (voice && !providerVerified)}
                 onClick={() => void finish()}
               >
                 {t("Start")}
@@ -420,11 +441,16 @@ export function AssistantSetup({
         {!draft ? null : (
           <>
             <Stepper
-              steps={steps.map((id) => ({ id, label: t(labels[id]) }))}
+              steps={steps.map((id) => ({
+                id,
+                label: t(labels[id]),
+                description: id === "speaker" || id === "microphone" ? t("Optional") : undefined,
+              }))}
               current={index}
+              details="current"
               label={t("Set up")}
             />
-            <div className={styles.content}>
+            <div className={styles.content} key={step}>
               {step === "identity" && (
                 <Button
                   type="button"
@@ -443,25 +469,15 @@ export function AssistantSetup({
               {step === "identity" && voice && (
                 <AssistantProfileFields section="language" value={patch} onChange={update} />
               )}
-              {step === "voice" &&
-                voiceChecks.map((check) => (
-                  <VoiceSetupSteps
-                    key={check}
-                    step={check}
-                    language={patch.language}
-                    name={patch.name}
-                    onValidChange={(valid) =>
-                      setVerified((current) =>
-                        current[check] === valid ? current : { ...current, [check]: valid },
-                      )
-                    }
-                  />
-                ))}
-              {step === "identity" && voice && (
-                <div className={styles.grid}>
-                  <AssistantProfileFields section="personality" value={patch} onChange={update} />
-                  <AssistantProfileFields section="behavior" value={patch} onChange={update} />
-                </div>
+              {(step === "voice" || step === "speaker" || step === "microphone") && (
+                <VoiceSetupSteps
+                  step={step === "voice" ? "provider" : step === "speaker" ? "voice" : "microphone"}
+                  language={patch.language}
+                  name={patch.name}
+                  onValidChange={(valid) => {
+                    if (step === "voice") setVerifiedProvider(valid ? providerKey : undefined);
+                  }}
+                />
               )}
               {step === "workmode" && (
                 <div className={styles.grid}>
@@ -499,7 +515,7 @@ export function AssistantSetup({
                   onChange={(event) => setDraft({ ...draft, rules: event.currentTarget.value })}
                 />
               )}
-              {step === "review" && (
+              {step === "review" && !voiceOnly && (
                 <div className={styles.review}>
                   <DescriptionList>
                     <DescriptionItem term={t("Name")}>{patch.name}</DescriptionItem>
@@ -547,7 +563,20 @@ export function AssistantSetup({
                   </Text>
                 </div>
               )}
-              {step === "review" && voice && !voiceChecks.every((check) => verified[check]) && (
+              {step === "review" && voiceOnly && (
+                <Text tone="secondary">
+                  {t("The microphone opens only when you choose to talk.")}
+                </Text>
+              )}
+              {step === "review" && voice && !voiceOnly && !draft.detailedVoice && (
+                <Button
+                  className={styles.aiStart}
+                  onClick={() => setDraft({ ...draft, detailedVoice: true, step: "workmode" })}
+                >
+                  {t("Work mode")}
+                </Button>
+              )}
+              {step === "review" && voice && !providerVerified && (
                 <Button
                   onClick={() =>
                     setDraft({
@@ -567,7 +596,11 @@ export function AssistantSetup({
         <AssistantBuilderDialog
           current={patch}
           onClose={() => setBuilderOpen(false)}
-          onApply={update}
+          onApply={(changes) => {
+            if (voice && draft && (changes.name ?? patch.name)?.trim()) {
+              setDraft({ ...draft, patch: { ...patch, ...changes }, step: "voice" });
+            } else update(changes);
+          }}
         />
       )}
     </Modal>

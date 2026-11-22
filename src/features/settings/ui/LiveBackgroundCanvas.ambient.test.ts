@@ -20,8 +20,8 @@ vi.mock("../model/decorativeMotion", () => ({
     return () => state.listeners.delete(fn);
   },
 }));
-vi.mock("./live-background/reactBitsSurface", () => ({
-  createReactBitsSurface: () => {
+vi.mock("./live-background/shaderSurface", () => ({
+  createShaderSurface: () => {
     state.create();
     return { resize: vi.fn(), draw: state.draw, dispose: state.dispose };
   },

@@ -1,4 +1,5 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
+import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -126,7 +127,12 @@ export function MicrophoneInputSettings() {
             <Button onClick={() => recording.current?.cancel()}>{t("Discard recording")}</Button>
           ) : null}
         </ButtonGroup>
-        {error ? <SettingsFeedback state="error">{t(error)}</SettingsFeedback> : null}
+        {error ? (
+          <>
+            <SettingsFeedback state="error">{t(error)}</SettingsFeedback>
+            <MicrophoneRecoveryAction message={error} />
+          </>
+        ) : null}
       </Row>
     </>
   );

@@ -4,6 +4,13 @@ import type { VoiceToolActivityEntry } from "./voiceToolActivity";
 
 export type VoiceWorkspaceTool = "changes" | "browser" | "devices" | "logs";
 
+export const showVoiceWorkTool = {
+  name: "workspace.live_work.open",
+  description:
+    "Open the work panel beside the current full-screen voice call when the owner asks to see work, or when showing an actual result helps answer their request. Keep it closed for ordinary conversation.",
+  parameters: { type: "object", properties: {}, additionalProperties: false },
+};
+
 export function voiceLiveWorkSuggestion(
   session: Pick<Session, "id" | "busy" | "blocks"> | undefined,
   activities: readonly VoiceToolActivityEntry[],

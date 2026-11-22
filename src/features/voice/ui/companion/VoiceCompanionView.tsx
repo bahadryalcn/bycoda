@@ -1,16 +1,19 @@
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
-import { useState, type HTMLAttributes, type ReactNode, type RefObject } from "react";
+import { useId, useState, type HTMLAttributes, type ReactNode, type RefObject } from "react";
 import { Button } from "../../../../shared/ui/Button";
 import { LiveText } from "../../../../shared/ui/LiveText";
+import { motionAttributes } from "../../../../shared/ui/Motion";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { OverflowTooltip, Tooltip } from "../../../../shared/ui/Tooltip";
 import {
-  ChevronDown,
   Maximize2,
   Mic,
   MicOff,
   Minimize2,
+  Minus,
+  PanelRight,
+  PanelRightClose,
   Square,
   X,
 } from "../../../../shared/ui/icons";
@@ -35,6 +38,9 @@ export type VoiceCompanionViewProps = {
   compact: boolean;
   fullScreen?: boolean;
   workPanel?: ReactNode;
+  onToggleWorkPanel?: () => void;
+  workPanelToggleRef?: RefObject<HTMLButtonElement | null>;
+  onOpenSuggestedWork?: () => void;
   workSuggestion?: boolean;
   onDismissWorkSuggestion?: () => void;
   onToggleFullScreen?: () => void;
@@ -120,6 +126,11 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   // Like the phone call screen: a large stage by default, the transcript on request. Kept here,
   // above the compact switch, so the choice survives collapsing the panel.
   const [chatShown, setChatShown] = useState(false);
+  const workPanelId = useId();
+  const drawerMotion = motionAttributes(
+    { enter: p.workPanel ? "right" : undefined, duration: "standard" },
+    styles.workDrawer,
+  );
   const caption = p.chatTurns[p.chatTurns.length - 1]?.text ?? "";
   return (
     <>
@@ -222,13 +233,30 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
             />
             {p.workSuggestion ? (
               <div className={styles.workSuggestion}>
-                <Button onClick={p.onToggleFullScreen}>{t("View live work")}</Button>
+                <Button onClick={p.onOpenSuggestedWork}>{t("View live work")}</Button>
                 <Button iconOnly label={t("Dismiss")} onClick={p.onDismissWorkSuggestion}>
                   <X className="icon-sm" />
                 </Button>
               </div>
             ) : null}
             <VoiceOptionsMenu onFloat={p.canDetach ? p.onFloat : undefined} />
+            {p.fullScreen && p.onToggleWorkPanel ? (
+              <Button
+                ref={p.workPanelToggleRef}
+                touchTarget="control"
+                iconOnly
+                label={t("Activity")}
+                aria-expanded={Boolean(p.workPanel)}
+                aria-controls={workPanelId}
+                onClick={p.onToggleWorkPanel}
+              >
+                {p.workPanel ? (
+                  <PanelRightClose className="icon-sm" />
+                ) : (
+                  <PanelRight className="icon-sm" />
+                )}
+              </Button>
+            ) : null}
             {p.resize}
             {p.onToggleFullScreen && !p.fullScreen ? (
               <Button
@@ -237,7 +265,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
                 label={t("Compact voice companion")}
                 onClick={p.onToggleCompact}
               >
-                <ChevronDown className="icon-sm" />
+                <Minus className="icon-sm" />
               </Button>
             ) : null}
           </>
@@ -328,7 +356,19 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               {p.jobReview}
             </VoiceSidePanel>
           ) : null}
-          {p.workPanel}
+          {p.fullScreen && (
+            <div
+              id={workPanelId}
+              hidden={!p.workPanel}
+              {...drawerMotion}
+              {...surfaceAttributes(
+                { variant: "opaque-canvas", frame: "pane", edge: "responsive-start" },
+                drawerMotion.className,
+              )}
+            >
+              {p.workPanel}
+            </div>
+          )}
           <div
             {...surfaceAttributes(
               { frame: chatShown ? "pane" : "none", edge: "block-start" },

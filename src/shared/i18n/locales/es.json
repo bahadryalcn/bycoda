@@ -12398,7 +12398,6 @@
   "Saved folder permissions could not be read, so folders need approval again.": "No se pudieron leer los permisos de carpeta guardados, así que las carpetas necesitan aprobación de nuevo.",
   "Unreadable copy kept at {p0}": "Copia ilegible conservada en {p0}",
   "Could not dismiss the notice. Try again.": "No se pudo descartar el aviso. Inténtalo de nuevo.",
-  "{p0} isn’t available": "{p0} no está disponible",
   "This project’s machine isn’t available": "La máquina de este proyecto no está disponible",
   "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "Este equipo aún no tiene la máquina de este proyecto. Agrégala en Equipos para abrir el proyecto.",
   "The machine no longer accepts this computer. Pair them again in Connections.": "La máquina ya no acepta este equipo. Vuelve a emparejarlos en Equipos.",
@@ -12475,5 +12474,14 @@
   "All worktrees": "Todos los árboles de trabajo",
   "Clean · {p0}": "Limpio · {p0}",
   "With changes": "Con cambios",
-  "Separate repository": "Repositorio independiente"
+  "Separate repository": "Repositorio independiente",
+  "This computer has no network connection. bycoda reconnects when it is back.": "Este ordenador no tiene conexión de red. bycoda se reconecta cuando vuelva.",
+  "The machine doesn’t answer on its home-network address or through Tailscale. It may be asleep or off, or Tailscale may be disconnected. bycoda keeps trying.": "La máquina no responde en su dirección de la red local ni por Tailscale. Puede estar suspendida o apagada, o Tailscale puede estar desconectado. bycoda sigue intentándolo.",
+  "Not added on this computer": "No añadida en este ordenador",
+  "Pairing refused": "Emparejamiento rechazado",
+  "Turned off on this computer": "Desactivada en este ordenador",
+  "Waiting to reconnect": "Esperando para reconectar",
+  "Try now": "Intentar ahora",
+  "Your computer {p0} isn’t reachable right now": "No se puede acceder a tu equipo {p0} ahora mismo",
+  "Your computer {p0} isn’t available": "Tu equipo {p0} no está disponible"
 }

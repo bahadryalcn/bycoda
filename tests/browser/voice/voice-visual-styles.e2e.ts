@@ -104,6 +104,7 @@ for (const [theme, width] of workViewports)
     await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
     const panel = page.locator("section[data-voice-state]");
     await panel.getByRole("button", { name: "Full screen", exact: true }).click();
+    await panel.getByRole("button", { name: "Activity", exact: true }).click();
     const activity = panel.getByRole("region", { name: "Recent activity" });
     await expect(activity.getByRole("button", { name: /Verify the release/ })).toBeVisible();
     await expect(activity.getByRole("button", { name: /Quality crew/ })).toBeVisible();
@@ -137,6 +138,7 @@ for (const [theme, width] of workViewports) {
     await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
     const panel = page.locator("section[data-voice-state]");
     await panel.getByRole("button", { name: "Full screen", exact: true }).click();
+    await panel.getByRole("button", { name: "Activity", exact: true }).click();
     const activity = panel.getByRole("region", { name: "Recent activity" });
     await expect(
       panel
@@ -176,6 +178,7 @@ for (const [theme, width] of workViewports) {
     }
     await panel.getByRole("button", { name: "Exit full screen" }).click();
     await panel.getByRole("button", { name: "Full screen", exact: true }).click();
+    await panel.getByRole("button", { name: "Activity", exact: true }).click();
     await panel.getByRole("tab", { name: "Draft", exact: true }).click();
     await expect(panel.getByRole("textbox", { name: "Draft" })).toHaveValue(/Owner comment/);
   });
@@ -227,12 +230,30 @@ for (const theme of ["light", "dark"])
           .toContain("2 voice tests passed");
       }
       await page.keyboard.press("Escape");
+      await expect(panel).toHaveAttribute("data-full-screen", "true");
+      const workToggle = panel.getByRole("button", { name: "Activity", exact: true });
+      await expect(workToggle).toBeFocused();
+      await expect(workToggle).toHaveAttribute("aria-expanded", "false");
+      await page.keyboard.press("Escape");
       await expect(panel).not.toHaveAttribute("data-full-screen");
       await expect(suggestion).toHaveCount(0);
       const fullScreen = panel.getByRole("button", { name: "Full screen", exact: true });
       await expect(fullScreen).toBeFocused();
       await fullScreen.click();
       await expect(panel).toHaveAttribute("data-full-screen", "true");
+      await expect(workToggle).toHaveAttribute("aria-expanded", "false");
+      await expect(panel.getByRole("region", { name: "Recent activity" })).toHaveCount(0);
+      const alpha = await panel.evaluate((element: HTMLElement) => {
+        element.style.setProperty("--ui-workspace-canvas", "transparent");
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = getComputedStyle(element).backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return context.getImageData(0, 0, 1, 1).data[3];
+      });
+      expect(alpha).toBe(255);
+      await panel.screenshot({ path: join(captures, `${theme}-${width}-voice-full-screen.png`) });
+      await workToggle.click();
       await panel.getByRole("button", { name: "Workspace", exact: true }).click();
       const notes = page.getByRole("menuitem", { name: "Notes", exact: true });
       await expect(notes).toBeVisible();
@@ -802,12 +823,31 @@ for (const theme of ["light", "dark"]) {
       await expect(transcript.locator('[data-surface-tone="accent"]')).toBeVisible();
       await transcript.screenshot({ path: info.outputPath(`transcript-${theme}-${width}.png`) });
       await page.goto(
-        `/tests/browser/voice/voice-visual-styles.html?setup-step=provider&theme=${theme}&lang=en`,
+        `/tests/browser/voice/voice-visual-styles.html?setup-wizard&theme=${theme}&lang=en`,
       );
-      const details = page.locator('[data-surface-frame="pane"][data-surface-edge="block-start"]');
-      await expect(details).toBeVisible();
-      await expect(details).toHaveCSS("border-block-start-width", "1px");
-      await details.screenshot({ path: info.outputPath(`setup-${theme}-${width}.png`) });
+      const setup = page.getByRole("dialog", { name: "Voice setup" });
+      const next = setup.getByRole("button", { name: "Next", exact: true });
+      await expect(next).toBeDisabled();
+      await expect(setup.getByText("Enable dictation")).toHaveCount(0);
+      await expect(
+        setup.getByText("Start the microphone test, then say one sentence."),
+      ).toHaveCount(0);
+      await setup.getByRole("radio", { name: "On this computer" }).click();
+      await setup.getByRole("button", { name: "Check connection" }).click();
+      await expect(next).toBeEnabled();
+      await setup.screenshot({ path: join(captures, `${theme}-${width}-setup-provider.png`) });
+      await next.click();
+      await expect(setup.getByRole("button", { name: "Listen" })).toBeVisible();
+      await expect(next).toBeEnabled();
+      await setup.screenshot({ path: join(captures, `${theme}-${width}-setup-speaker.png`) });
+      await next.click();
+      await expect(setup.getByRole("button", { name: "Record test" })).toBeVisible();
+      await expect(setup.getByRole("button", { name: "Listen" })).toHaveCount(0);
+      await expect(next).toBeEnabled();
+      await setup.screenshot({ path: join(captures, `${theme}-${width}-setup-microphone.png`) });
+      await next.click();
+      await setup.getByRole("button", { name: "Start", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Voice is ready" })).toBeVisible();
     });
   }
 }

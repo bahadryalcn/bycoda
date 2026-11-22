@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createReactBitsSurface } from "./reactBitsSurface";
+import { createShaderSurface } from "./shaderSurface";
 
 const palette = { content: "content-token", accent: "accent-token", monoFont: "monospace" };
 function context() {
@@ -82,10 +82,10 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe.each(["threads", "silk", "dark-veil", "soft-aurora", "floating-lines"] as const)(
-  "React Bits %s direct surface",
+  "%s direct shader surface",
   (kind) => {
     it("caps GPU backing pixels and performs one native draw without CPU readback", () => {
-      const surface = createReactBitsSurface(kind, canvas, palette)!;
+      const surface = createShaderSurface(kind, canvas, palette)!;
       expect(surface).not.toBeNull();
       surface.resize(7680, 4320, 3);
       expect(canvas.width).toBeLessThanOrEqual(1920);
@@ -112,7 +112,7 @@ describe.each(["threads", "silk", "dark-veil", "soft-aurora", "floating-lines"] 
     });
 
     it("responds to eased streaming energy independently of busy presence", () => {
-      const surface = createReactBitsSurface(kind, canvas, palette)!;
+      const surface = createShaderSurface(kind, canvas, palette)!;
       surface.draw(20, 0.1, { presence: 1 });
       const firstTime = gl.uniform1f.mock.calls.filter(([name]) => name === "uTime").at(-1)![1];
       surface.draw(20, 0.1, { presence: 1, energy: 0.8 });
@@ -125,7 +125,7 @@ describe.each(["threads", "silk", "dark-veil", "soft-aurora", "floating-lines"] 
     });
 
     it("skips lost contexts and releases every resource once", () => {
-      const surface = createReactBitsSurface(kind, canvas, palette)!;
+      const surface = createShaderSurface(kind, canvas, palette)!;
       gl.isContextLost.mockReturnValue(true);
       surface.draw(1, 0.1, { presence: 1 });
       expect(gl.drawArrays).not.toHaveBeenCalled();
@@ -144,14 +144,14 @@ describe.each(["threads", "silk", "dark-veil", "soft-aurora", "floating-lines"] 
 
     it("returns a fallback signal and cleans shaders on compile failure", () => {
       gl.getShaderParameter.mockReturnValue(false);
-      expect(createReactBitsSurface(kind, canvas, palette)).toBeNull();
+      expect(createShaderSurface(kind, canvas, palette)).toBeNull();
       expect(gl.deleteShader).toHaveBeenCalledTimes(2);
       expect(gl.createBuffer).not.toHaveBeenCalled();
     });
 
     it("returns a fallback signal and cleans programs on link failure", () => {
       gl.getProgramParameter.mockReturnValue(false);
-      expect(createReactBitsSurface(kind, canvas, palette)).toBeNull();
+      expect(createShaderSurface(kind, canvas, palette)).toBeNull();
       expect(gl.deleteProgram).toHaveBeenCalledOnce();
       expect(gl.deleteShader).toHaveBeenCalledTimes(2);
     });
@@ -160,5 +160,5 @@ describe.each(["threads", "silk", "dark-veil", "soft-aurora", "floating-lines"] 
 
 it("returns a fallback signal when WebGL2 is unavailable", () => {
   vi.spyOn(canvas, "getContext").mockReturnValue(null);
-  expect(createReactBitsSurface("threads", canvas, palette)).toBeNull();
+  expect(createShaderSurface("threads", canvas, palette)).toBeNull();
 });

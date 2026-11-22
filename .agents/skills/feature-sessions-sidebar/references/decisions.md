@@ -40,8 +40,8 @@ historical behavior provenance, not permission to install or publish an update.
 
 Owner decision, 2026-11-05, confirming the 2026-11-04 Arif chat direction. Recorded decision: agent and coding sessions use the transcript layout. It has a full-width reading column, user prompts as distinct blocks, and tool and command steps as single-line summaries with details on demand. Active work and approvals stay visible. It has no bubbles and no alternating alignment. The messaging layout is recorded in feature-assistant decisions.
 
-Superseded in part, owner decision 2026-11-15 (UI common standard, D1, choosing the T3 Code
-reference): the user prompt is a borderless, quiet, right-aligned bubble (`--ui-message-bubble`,
+Superseded in part by the shared UI standard, owner decision 2026-11-15. The user prompt
+is a borderless, quiet, right-aligned bubble (`--ui-message-bubble`,
 popup radius, max ~80%); agent text stays full width without a bubble. The "chat" layout stays the
 default. Rule text: `src/features/sessions/ui/AgentTranscript.tsx` (user message block),
 `src/shared/ui/MessageTimeline.tsx`.

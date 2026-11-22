@@ -1585,6 +1585,33 @@ it("keeps cloud audio/transcript through project and scope changes without widen
   expect(mock.toolCall.mock.lastCall![0]).not.toHaveProperty("sessionId");
 });
 
+it("lets the voice provider reveal work only inside an open full-screen call", async () => {
+  await setupGlobal("a", "openai", "global");
+  await act(() => {
+    mock.realtime.captureTurn()();
+    mock.realtime.transcript("Show the work beside this call.");
+  });
+  const action = "workspace.live_work.open";
+  const list = () => mock.realtime.tool("app_tools_list", { family: "workspace" });
+  const reveal = (requestId: string) =>
+    mock.realtime.tool("app_tool_call", { family: "workspace", action, input: {}, requestId });
+  expect(JSON.stringify(await list())).not.toContain(action);
+  await click("Full screen");
+  expect(container.querySelector("[data-work-panel]")).toBeNull();
+  expect(JSON.stringify(await list())).toContain(action);
+  await act(async () => {
+    expect(await reveal("reveal-voice-work")).toMatchObject({ action, status: "completed" });
+  });
+  expect(container.querySelector("[data-work-panel]")).not.toBeNull();
+  await click("Exit full screen");
+  await act(async () => {
+    await expect(reveal("closed-voice-work")).rejects.toThrow(
+      "full-screen work panel is unavailable",
+    );
+  });
+  expect(container.querySelector("[data-full-screen]")).toBeNull();
+});
+
 it("waits for the original runtime registration before connecting the cloud provider", async () => {
   const original = assistantHost.request.getMockImplementation()!;
   const ack = Promise.withResolvers<{ ok: boolean }>();

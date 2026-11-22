@@ -163,7 +163,7 @@ test("the session composer renders all eight compact references in the editable 
       "bycoda-usage.csv",
       "bycoda-export.json",
       "PreviewTunnel.ts",
-      "github.com · t3code",
+      "github.com · project",
       "ui-ux-pro-max",
       "Design and polish interfaces",
     ]);
@@ -189,13 +189,13 @@ test("the session composer renders all eight compact references in the editable 
       "data-composer-opened-file",
       "/fixture/src/PreviewTunnel.ts",
     );
-    await editor.getByRole("link", { name: "https://github.com/pingdotgg/t3code" }).click();
+    await editor.getByRole("link", { name: "https://github.com/example/project" }).click();
     await expect(page.locator("html")).toHaveAttribute(
       "data-composer-opened-url",
-      "https://github.com/pingdotgg/t3code",
+      "https://github.com/example/project",
     );
-    await editor.getByRole("link", { name: "https://github.com/pingdotgg/t3code" }).press("F2");
-    await expect(editor).toContainText("https://github.com/pingdotgg/t3code");
+    await editor.getByRole("link", { name: "https://github.com/example/project" }).press("F2");
+    await expect(editor).toContainText("https://github.com/example/project");
     await page.keyboard.press("Control+End");
     await expect(references).toHaveCount(8);
 

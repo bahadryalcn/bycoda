@@ -307,7 +307,7 @@ export class DesktopLive {
       assertDedicated();
       return run(assertDedicated);
     }
-    // Unattended Host (policy, following T3 Code): no desktop is alive and none was seen within
+    // Unattended Host: no desktop is alive and none was seen within
     // the grace period, so nobody can hold native terminals here. Only a caller that proved a
     // non-forced, clean removal opts in; Git's own non-forced refusal stays the backstop. A
     // desktop that appears during the removal revokes it through the assert callback.

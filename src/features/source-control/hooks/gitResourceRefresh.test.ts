@@ -12,7 +12,10 @@ vi.mock("../../../platform/tauri/fs", () => ({
   subscribeGitChanged,
   isGitWatched: () => true,
 }));
-vi.mock("../../connections/model/remoteHealth", () => ({ reportRemoteLoad: vi.fn() }));
+vi.mock("../../connections/model/remoteHealth", () => ({
+  reportRemoteLoad: vi.fn(),
+  subscribeRemoteRecovered: () => () => undefined,
+}));
 vi.mock("../../projects/model/recents", () => ({ isRemoteProjectPath: () => false }));
 
 import { resetGitResourceCache, useGitResource } from "./useGitResource";

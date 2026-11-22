@@ -605,7 +605,7 @@ html.theme-light {
   );
   /* Role split: hover/selected/pressed are state roles and only ever fill the host row; chips, wells
      and tracks use --ui-fill-* or the tone subtle fills, never a state role. */
-  /* State ladder (T3 Code reference): soft translucent ink steps that stay visible over any host
+  /* Soft translucent state fills stay visible over any host
      (canvas, card, popup). Dark: hover 4%, selected 8%, pressed 10%; light overrides below with
      4 / 12 / 16 so selected clears hover by >= 1.15:1. Strength scales with Appearance > Interaction
      strength and Surface contrast (--appearance-layer-strength). Mirrored in
@@ -749,7 +749,7 @@ html.theme-light {
   /* Merge conflict sides are tinted regions, not edge stripes. */
   --ui-conflict-current-marker: color-mix(in oklab, var(--color-conflict-ours) 22%, transparent);
   --ui-conflict-incoming-marker: color-mix(in oklab, var(--color-conflict-theirs) 22%, transparent);
-  /* T3-like hairline: about 8% ink on the dark ground. */
+  /* Hairline uses about 8% ink on the dark ground. */
   --ui-pane-border: color-mix(
     in oklab,
     var(--color-content)

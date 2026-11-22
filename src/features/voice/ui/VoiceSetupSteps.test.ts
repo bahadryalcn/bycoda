@@ -3,25 +3,14 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 const runtime = vi.hoisted(() => ({
-  callbacks: null as any,
-  construct: vi.fn(),
-  close: vi.fn(),
   inspect: vi.fn(),
   secret: vi.fn(),
 }));
-vi.mock("../model/localVoice", () => ({
-  LocalVoice: class {
-    constructor(callbacks: unknown) {
-      runtime.callbacks = callbacks;
-      runtime.construct();
-    }
-    connect = async () => {};
-    close = runtime.close;
-  },
-}));
 vi.mock("../model/localVoiceClient", () => ({ localVoiceBackend: { inspect: runtime.inspect } }));
 vi.mock("../model/realtimeVoiceClient", () => ({ realtimeSecret: runtime.secret }));
-vi.mock("./VoiceSettings", () => ({ VoiceSettings: () => null }));
+vi.mock("./MicrophoneInputSettings", () => ({
+  MicrophoneInputSettings: () => "Local microphone test",
+}));
 import { VoiceSetupSteps } from "./VoiceSetupSteps";
 import { loadVoiceSettings, saveVoiceSettings } from "../model/voiceSettings";
 let root: Root | undefined, container: HTMLDivElement;
@@ -50,16 +39,11 @@ async function click(label: string) {
       .click(),
   );
 }
-it("requires an explicit microphone test and ignores a transcript delivered after Stop", async () => {
-  const valid = await render("microphone");
-  expect(runtime.construct).not.toHaveBeenCalled();
-  await click("Test microphone");
-  expect(runtime.construct).toHaveBeenCalledOnce();
-  await click("Stop");
-  valid.mockClear();
-  await act(async () => runtime.callbacks.transcript({ text: "stale sentence", language: "tr" }));
-  expect(valid).not.toHaveBeenCalledWith(true);
-  expect(runtime.close).toHaveBeenCalled();
+it("uses the local microphone test without making a provider connection", async () => {
+  await render("microphone");
+  expect(container.textContent).toBe("Local microphone test");
+  expect(runtime.inspect).not.toHaveBeenCalled();
+  expect(runtime.secret).not.toHaveBeenCalled();
 });
 it("does not verify a provider after its settings changed while the check was pending", async () => {
   let finish!: (value: unknown) => void;
@@ -101,7 +85,7 @@ it("keeps a failed provider check retryable without opening the microphone", asy
   await click("Check connection");
   expect(valid).toHaveBeenLastCalledWith(true);
   expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(runtime.construct).not.toHaveBeenCalled();
+  expect(runtime.secret).not.toHaveBeenCalled();
 });
 it("does not retain a successful indication when an explicit recheck fails", async () => {
   runtime.inspect

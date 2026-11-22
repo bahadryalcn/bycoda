@@ -1,8 +1,7 @@
 # bycoda product identity
 
-bycoda was originally built on an MIT-licensed open source project by Nick and is
-developed independently.
-The MIT license, copyright notices, and upstream contribution attribution are preserved.
+bycoda began as a fork of an MIT-licensed open source project and is developed independently.
+See [Credits](../../CREDITS.md) for original and imported contributions.
 
 | Setting                         | bycoda                     |
 | ------------------------------- | -------------------------- |

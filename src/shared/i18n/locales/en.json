@@ -12405,7 +12405,6 @@
   "Could not save note. ": "Could not save note. ",
   "Availability change was not confirmed.": "Availability change was not confirmed.",
   "Saving this question is unconfirmed. Retry to verify the original card.": "Saving this question is unconfirmed. Retry to verify the original card.",
-  "{p0} isn’t available": "{p0} isn’t available",
   "This project’s machine isn’t available": "This project’s machine isn’t available",
   "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.",
   "The machine no longer accepts this computer. Pair them again in Connections.": "The machine no longer accepts this computer. Pair them again in Connections.",
@@ -12475,5 +12474,14 @@
   "In a worktree": "In a worktree",
   "Checked out in {p0}. A started session stays in its worktree.": "Checked out in {p0}. A started session stays in its worktree.",
   "With changes": "With changes",
-  "Separate repository": "Separate repository"
+  "Separate repository": "Separate repository",
+  "This computer has no network connection. bycoda reconnects when it is back.": "This computer has no network connection. bycoda reconnects when it is back.",
+  "The machine doesn’t answer on its home-network address or through Tailscale. It may be asleep or off, or Tailscale may be disconnected. bycoda keeps trying.": "The machine doesn’t answer on its home-network address or through Tailscale. It may be asleep or off, or Tailscale may be disconnected. bycoda keeps trying.",
+  "Not added on this computer": "Not added on this computer",
+  "Pairing refused": "Pairing refused",
+  "Turned off on this computer": "Turned off on this computer",
+  "Waiting to reconnect": "Waiting to reconnect",
+  "Try now": "Try now",
+  "Your computer {p0} isn’t reachable right now": "Your computer {p0} isn’t reachable right now",
+  "Your computer {p0} isn’t available": "Your computer {p0} isn’t available"
 }

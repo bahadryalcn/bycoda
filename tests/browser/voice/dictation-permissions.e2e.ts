@@ -417,7 +417,7 @@ for (const platform of ["macOS", "Windows", "Linux"])
               `/tests/browser/voice/dictation-permissions.html?theme=${theme}&surface=${surface}&companion=1&voice-denied=1`,
             );
             if (surface === "setup")
-              await page.getByRole("button", { name: "Test microphone", exact: true }).click();
+              await page.getByRole("button", { name: "Record test", exact: true }).click();
             else {
               await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
               await page.getByRole("button", { name: "Start voice", exact: true }).click();

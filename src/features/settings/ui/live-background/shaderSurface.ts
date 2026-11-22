@@ -1,23 +1,12 @@
 import type { LiveBackgroundPalette, LiveSignal } from "./types";
 
-/** Adapted from David Haz / React Bits, copyright (c) 2026 David Haz.
- * https://github.com/DavidHDev/react-bits/tree/main/src/content/Backgrounds/Threads
- * https://github.com/DavidHDev/react-bits/tree/main/src/content/Backgrounds/Silk
- * https://github.com/DavidHDev/react-bits/tree/main/src/content/Backgrounds/DarkVeil
- * https://github.com/DavidHDev/react-bits/tree/main/src/content/Backgrounds/SoftAurora
- * https://github.com/DavidHDev/react-bits/tree/main/src/content/Backgrounds/FloatingLines
- * License: vendor/react-bits/LICENSE.md. Integrated product artwork only.
+/** Integrated product artwork. See CREDITS.md and vendor/background-artwork/LICENSE.md.
  * The Threads Perlin field and the trained DarkVeil CPPN are retained verbatim; the silk
  * folds, aurora curtains and floating ribbons are re-drawn for a calm ambient pane. React,
  * interaction listeners, framebuffer passes and bloom are intentionally absent. */
 
-export type ReactBitsSurfaceKind =
-  | "threads"
-  | "silk"
-  | "dark-veil"
-  | "soft-aurora"
-  | "floating-lines";
-export type ReactBitsSurface = {
+export type ShaderSurfaceKind = "threads" | "silk" | "dark-veil" | "soft-aurora" | "floating-lines";
+export type ShaderSurface = {
   resize(width: number, height: number, ratio: number): void;
   draw(time: number, delta: number, signal: LiveSignal): void;
   dispose(): void;
@@ -229,7 +218,7 @@ void main() {
   outColor = vec4(color * alpha, alpha);
 }`;
 
-// Original trained CPPN weights, retained verbatim from React Bits DarkVeil.
+// Original trained CPPN weights for Dark Veil.
 const DARK_VEIL_CPPN = `vec4 sigmoid(vec4 x) {
   return 1.0 / (1.0 + exp(-x));
 }
@@ -420,7 +409,7 @@ void main() {
   outColor = vec4(colorSum * mask, cover * mask);
 }`;
 
-const FRAGMENT_SHADERS: Record<ReactBitsSurfaceKind, string> = {
+const FRAGMENT_SHADERS: Record<ShaderSurfaceKind, string> = {
   threads: THREAD_FRAGMENT,
   silk: SILK_FRAGMENT,
   "dark-veil": DARK_VEIL_FRAGMENT,
@@ -448,11 +437,11 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string): WebG
   return null;
 }
 
-export function createReactBitsSurface(
-  kind: ReactBitsSurfaceKind,
+export function createShaderSurface(
+  kind: ShaderSurfaceKind,
   canvas: HTMLCanvasElement,
   palette: LiveBackgroundPalette,
-): ReactBitsSurface | null {
+): ShaderSurface | null {
   let gl: WebGL2RenderingContext | null;
   try {
     gl = canvas.getContext("webgl2", {

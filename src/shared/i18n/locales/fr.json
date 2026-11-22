@@ -12398,7 +12398,6 @@
   "Saved folder permissions could not be read, so folders need approval again.": "Les autorisations de dossiers enregistrées n’ont pas pu être lues ; les dossiers doivent être approuvés à nouveau.",
   "Unreadable copy kept at {p0}": "Copie illisible conservée dans {p0}",
   "Could not dismiss the notice. Try again.": "Impossible de fermer l’avis. Réessayez.",
-  "{p0} isn’t available": "{p0} n’est pas disponible",
   "This project’s machine isn’t available": "La machine de ce projet n’est pas disponible",
   "This computer doesn’t have this project’s machine yet. Add it in Connections to open the project.": "Cet ordinateur n’a pas encore la machine de ce projet. Ajoutez-la dans Machines pour ouvrir le projet.",
   "The machine no longer accepts this computer. Pair them again in Connections.": "La machine n’accepte plus cet ordinateur. Associez-les à nouveau dans Machines.",
@@ -12475,5 +12474,14 @@
   "All worktrees": "Tous les arbres de travail",
   "Clean · {p0}": "Propre · {p0}",
   "With changes": "Avec modifications",
-  "Separate repository": "Dépôt séparé"
+  "Separate repository": "Dépôt séparé",
+  "This computer has no network connection. bycoda reconnects when it is back.": "Cet ordinateur n’a pas de connexion réseau. bycoda se reconnecte dès qu’elle revient.",
+  "The machine doesn’t answer on its home-network address or through Tailscale. It may be asleep or off, or Tailscale may be disconnected. bycoda keeps trying.": "La machine ne répond ni sur son adresse du réseau local ni via Tailscale. Elle est peut-être en veille ou éteinte, ou Tailscale est déconnecté. bycoda continue d’essayer.",
+  "Not added on this computer": "Non ajoutée sur cet ordinateur",
+  "Pairing refused": "Association refusée",
+  "Turned off on this computer": "Désactivée sur cet ordinateur",
+  "Waiting to reconnect": "En attente de reconnexion",
+  "Try now": "Réessayer maintenant",
+  "Your computer {p0} isn’t reachable right now": "Votre ordinateur {p0} est injoignable pour le moment",
+  "Your computer {p0} isn’t available": "Votre ordinateur {p0} n’est pas disponible"
 }
