@@ -1638,6 +1638,7 @@ function SidebarComponent({
   const { changeStats, changeScope, changeScopeLabel } = useCheckoutChangeStats({
     gitRoot,
     repositoryPaths,
+    focus: focusedWorktree,
     active: panelOpen && sidebarAvailable,
   });
 

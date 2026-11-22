@@ -695,3 +695,22 @@ async function renameHostWorktreeBranchSerialized(
   if (!renamed) throw new Error("Branch renamed, but its worktree could not be found");
   return renamed;
 }
+
+/**
+ * Deletes a branch after its worktree is gone, with a safe delete (`-d`, never `-D`).
+ * Returns why Git kept the branch; a refusal never fails the removal.
+ */
+export async function deleteHostWorktreeBranch(
+  cwd: string,
+  branch: string,
+): Promise<string | undefined> {
+  try {
+    await hostGitExec.exec("git", ["branch", "-d", "--", branch], bufferedOptions(cwd, true));
+    return undefined;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message.trim().slice(0, 300) : "";
+    return reason ? `Branch ${branch} was kept: ${reason}` : `Branch ${branch} was kept.`;
+  } finally {
+    invalidateHostWorktrees();
+  }
+}

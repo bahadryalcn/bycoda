@@ -1,5 +1,3 @@
-import { readFile, writeFile, unlink } from "node:fs/promises";
-import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 import {
@@ -7,10 +5,8 @@ import {
   deliveryIdentity,
   deliverySha,
 } from "./native-delivery.test-support";
-import { durableWrite } from "../git/turn-git-history";
-import { createNativeBufferUploadService } from "../domains/native-workspaces/buffer-upload";
 import { createNativeServiceUploadService } from "../domains/native-services/upload";
-import { nativeBufferUploadPlatform } from "../ports/native-workspaces";
+import { nativeUploadPlatform } from "../ports/native-workspaces";
 import { nativeDeliveryConsumedResult } from "./native-delivery-store";
 import { monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { NATIVE_DELIVERY_ADMISSION_MS } from "../domains/native-delivery/service";
@@ -29,102 +25,9 @@ async function fixture() {
 const format = "native.services.workspace.format" as const;
 const finish = "native.services.conversation.desktop.finish" as const;
 
-it("retains exact original buffer proof across Host reopen, later projection archive and duplicate apply", async () => {
-  const f = await fixture(),
-    paramsJson = f.report(),
-    identity = deliveryIdentity(paramsJson);
-  const expected = { ...identity, state: "recorded", result: { acknowledged: true } };
-  expect(await f.call("native.buffers.delivery.apply", { ...identity, paramsJson })).toEqual(
-    expected,
-  );
-  expect(f.counts.buffers).toBe(1);
-  const row = await f.journal.read(f.principal, "buffer", identity);
-  expect(row?.proof?.reportVersion).toBeGreaterThan(0);
-  await f.reopen();
-  expect(await f.call("native.buffers.delivery.status", identity)).toEqual(expected);
-  expect(await f.call("native.buffers.delivery.apply", { ...identity, paramsJson })).toEqual(
-    expected,
-  );
-  expect(f.counts.buffers).toBe(1);
-  await f.call("native.buffers.delivery.apply", { ...deliveryIdentity(paramsJson), paramsJson });
-  await f.reopen();
-  expect(await f.call("native.buffers.delivery.status", identity)).toEqual(expected);
-  expect(f.counts.buffers).toBe(2);
-});
-
-it("does not trust a recorded DB result when exact current/archive proof is absent or corrupt", async () => {
-  const f = await fixture(),
-    paramsJson = f.report(),
-    identity = deliveryIdentity(paramsJson);
-  await f.call("native.buffers.delivery.apply", { ...identity, paramsJson });
-  const row = await f.journal.read(f.principal, "buffer", identity);
-  const path = join(f.root, "native-activity", "buffers", `${row!.proof!.reportId}.json`);
-  const original = await readFile(path);
-  await unlink(path);
-  await f.reopen();
-  expect(await f.call("native.buffers.delivery.status", identity)).toEqual({
-    ...identity,
-    state: "unknown",
-  });
-  expect(await f.call("native.buffers.delivery.apply", { ...identity, paramsJson })).toEqual({
-    ...identity,
-    state: "unknown",
-  });
-  expect(f.counts.buffers).toBe(1);
-  await writeFile(path, Buffer.concat([original, Buffer.from(" ")]));
-  expect(await f.call("native.buffers.delivery.status", identity)).toEqual({
-    ...identity,
-    state: "unknown",
-  });
-});
-
-it("recovers an FS commit whose acknowledgement was lost without dispatching a second buffer update", async () => {
-  const f = await fixture(),
-    paramsJson = f.report(),
-    identity = deliveryIdentity(paramsJson);
-  let written = false;
-  f.setWrite(async (path, bytes) => {
-    if (!written && path.includes("buffers")) {
-      written = true;
-      await durableWrite(path, bytes);
-      throw new Error("Lost after actual projection commit");
-    }
-  });
-  expect(await f.call("native.buffers.delivery.apply", { ...identity, paramsJson })).toMatchObject({
-    state: "recorded",
-  });
-  expect((await f.journal.read(f.principal, "buffer", identity))?.state).toBe("admitted");
-  f.setWrite(undefined);
-  await f.reopen();
-  expect(await f.call("native.buffers.delivery.status", identity)).toMatchObject({
-    state: "recorded",
-  });
-  expect(f.counts.buffers).toBe(1);
-});
-
-it("leaves a planned-but-unwritten projection unknown across restart and never retries it", async () => {
-  const f = await fixture(),
-    paramsJson = f.report(),
-    identity = deliveryIdentity(paramsJson);
-  f.setWrite(async (path) => {
-    if (path.includes("buffers")) throw new Error("Before projection write");
-  });
-  expect(await f.call("native.buffers.delivery.apply", { ...identity, paramsJson })).toMatchObject({
-    state: "unknown",
-  });
-  expect((await f.journal.read(f.principal, "buffer", identity))?.proof).toBeDefined();
-  f.setWrite(undefined);
-  await f.reopen();
-  expect(await f.call("native.buffers.delivery.apply", { ...identity, paramsJson })).toMatchObject({
-    state: "unknown",
-  });
-  expect(f.counts.buffers).toBe(1);
-});
-
 it("does not enter external effects if critical admission commit acknowledgement fails", async () => {
   const f = await fixture(),
-    paramsJson = f.report(),
-    identity = deliveryIdentity(paramsJson);
+    { apply } = formatRequest();
   const exec = f.store.db.exec.bind(f.store.db);
   let injected = false;
   vi.spyOn(f.store.db, "exec").mockImplementation(async (sql) => {
@@ -135,21 +38,16 @@ it("does not enter external effects if critical admission commit acknowledgement
     }
     return value;
   });
-  await expect(
-    f.call("native.buffers.delivery.apply", { ...identity, paramsJson }),
-  ).rejects.toThrow();
+  await expect(f.call("native.services.delivery.apply", apply)).rejects.toThrow();
   vi.restoreAllMocks();
-  expect(f.counts.buffers).toBe(0);
-  expect(await f.call("native.buffers.delivery.apply", { ...identity, paramsJson })).toMatchObject({
-    state: "unknown",
-  });
-  expect(f.counts.buffers).toBe(0);
+  expect(f.counts.format).toBe(0);
+  expect(await f.call("native.services.delivery.apply", apply)).toMatchObject({ state: "unknown" });
+  expect(f.counts.format).toBe(0);
 });
 
 it("uses FULL for critical journal commits, restores NORMAL and keeps status free of mutations", async () => {
   const f = await fixture(),
-    paramsJson = f.report(),
-    identity = deliveryIdentity(paramsJson),
+    { apply, status } = formatRequest(),
     modes: number[] = [];
   const exec = f.store.db.exec.bind(f.store.db);
   vi.spyOn(f.store.db, "exec").mockImplementation(async (sql) => {
@@ -159,13 +57,13 @@ it("uses FULL for critical journal commits, restores NORMAL and keeps status fre
     }
     return exec(sql);
   });
-  await f.call("native.buffers.delivery.apply", { ...identity, paramsJson });
-  expect(modes.length).toBeGreaterThanOrEqual(3);
+  await f.call("native.services.delivery.apply", apply);
+  expect(modes.length).toBeGreaterThanOrEqual(2);
   expect(modes.every((mode) => mode === 2)).toBe(true);
   expect((await f.store.db.prepare("PRAGMA synchronous").get())?.synchronous).toBe(1);
   const mutations = f.store.db.dataMutationVersion,
     commits = modes.length;
-  expect(await f.call("native.buffers.delivery.status", identity)).toMatchObject({
+  expect(await f.call("native.services.delivery.status", status)).toMatchObject({
     state: "recorded",
   });
   expect(f.store.db.dataMutationVersion).toBe(mutations);
@@ -210,16 +108,21 @@ it("single-flights a durable admitted original while its real formatter work is 
 
 it("binds ID to exact UTF8 bytes and target, while different physical originals remain separate", async () => {
   const f = await fixture(),
-    paramsJson = f.report(),
-    identity = deliveryIdentity(paramsJson);
-  await f.call("native.buffers.delivery.apply", { ...identity, paramsJson });
+    { identity, apply } = formatRequest(),
+    { paramsJson } = apply;
+  await f.call("native.services.delivery.apply", apply);
   await expect(
-    f.call("native.buffers.delivery.apply", { ...identity, paramsJson: paramsJson + " " }),
+    f.call("native.services.delivery.apply", {
+      ...identity,
+      target: format,
+      paramsJson: paramsJson + " ",
+    }),
   ).rejects.toThrow("bytes");
   const changed = paramsJson + " ";
   await expect(
-    f.call("native.buffers.delivery.apply", {
+    f.call("native.services.delivery.apply", {
       ...deliveryIdentity(changed, identity.originalId),
+      target: format,
       paramsJson: changed,
     }),
   ).rejects.toThrow("identity conflicts");
@@ -231,10 +134,18 @@ it("binds ID to exact UTF8 bytes and target, while different physical originals 
       paramsJson: targetJson,
     }),
   ).rejects.toThrow("target conflicts");
-  await f.call("native.buffers.delivery.apply", { ...deliveryIdentity(paramsJson), paramsJson });
-  expect(f.counts.buffers).toBe(2);
+  await f.call("native.services.delivery.apply", {
+    ...deliveryIdentity(paramsJson),
+    target: format,
+    paramsJson,
+  });
+  expect(f.counts.format).toBe(2);
   expect(
-    await f.call("native.buffers.delivery.status", identity, f.context("b".repeat(64))),
+    await f.call(
+      "native.services.delivery.status",
+      { ...identity, target: format },
+      f.context("b".repeat(64)),
+    ),
   ).toEqual({ state: "absent" });
 });
 
@@ -424,62 +335,60 @@ it("preserves the existing32MiB target result limit using source metadata rather
   expect(f.counts.format).toBe(0);
 });
 
-it("preserves delivery metadata and recorded result across staged buffer/service commits", async () => {
+it("preserves delivery metadata and recorded result across staged service commits", async () => {
   const f = await fixture(),
     ctx = f.context();
-  const bufferUpload = createNativeBufferUploadService({
-    environmentId: f.store.environmentId,
-    platform: nativeBufferUploadPlatform,
-    update: async () => {
-      throw new Error("Legacy owner must not receive a delivery-bound payload");
-    },
-    deliver: (identity, paramsJson, context) =>
-      f.call("native.buffers.delivery.apply", { ...identity, paramsJson }, context),
-  });
   const serviceUpload = createNativeServiceUploadService({
     environmentId: f.store.environmentId,
-    platform: nativeBufferUploadPlatform,
+    platform: nativeUploadPlatform,
     execute: async () => {
       throw new Error("Legacy formatter must not be replayed");
     },
     deliver: (target, identity, paramsJson, context) =>
       f.call("native.services.delivery.apply", { ...identity, target, paramsJson }, context),
   });
-  cleanups.push(bufferUpload.close, serviceUpload.close);
-  for (const service of [false, true]) {
-    const paramsJson = service
-      ? JSON.stringify({ id: "staged-relay", result: { text: "x".repeat(1_100_000) } })
-      : f.report();
-    const bytes = Buffer.from(paramsJson),
-      identity = deliveryIdentity(paramsJson),
-      uploadId = randomUUID();
-    const call = (action: string, params: Record<string, unknown>) =>
-      service
-        ? serviceUpload.call(`native.services.upload.${action}` as never, params, ctx)
-        : bufferUpload.call(`native.buffers.upload.${action}` as never, params, ctx);
-    await call(service ? "begin" : "start", {
+  cleanups.push(serviceUpload.close);
+  const paramsJson = JSON.stringify({
+    id: "staged-relay",
+    result: { text: "x".repeat(1_100_000) },
+  });
+  const bytes = Buffer.from(paramsJson);
+  const identity = deliveryIdentity(paramsJson);
+  const uploadId = randomUUID();
+  await serviceUpload.call(
+    "native.services.upload.begin",
+    {
       uploadId,
+      target: finish,
       byteLength: bytes.length,
       sha256: identity.sha256,
       delivery: identity,
-      ...(service ? { target: finish } : {}),
-    });
-    for (let offset = 0; offset < bytes.length; offset += 65_536)
-      await call(service ? "append" : "write", {
+    },
+    ctx,
+  );
+  for (let offset = 0; offset < bytes.length; offset += 65_536) {
+    await serviceUpload.call(
+      "native.services.upload.append",
+      {
         uploadId,
         offset,
         data: bytes.subarray(offset, offset + 65_536).toString("base64"),
-      });
-    const committed = await call("commit", { uploadId });
-    expect(committed).toMatchObject({
-      state: "completed",
-      delivery: identity,
-      result: { state: "recorded", ...identity },
-    });
-    expect(await call("status", { uploadId })).toEqual(committed);
-    expect(await call("commit", { uploadId })).toEqual(committed);
+      },
+      ctx,
+    );
   }
-  expect(f.counts).toEqual({ buffers: 1, finish: 1, format: 0 });
+  const commit = () => serviceUpload.call("native.services.upload.commit", { uploadId }, ctx);
+  const committed = await commit();
+  expect(committed).toMatchObject({
+    state: "completed",
+    delivery: identity,
+    result: { state: "recorded", target: finish, ...identity },
+  });
+  expect(await serviceUpload.call("native.services.upload.status", { uploadId }, ctx)).toEqual(
+    committed,
+  );
+  expect(await commit()).toEqual(committed);
+  expect(f.counts).toEqual({ finish: 1, format: 0 });
 });
 
 const formatRequest = (extra: Record<string, unknown> = {}) => {
@@ -671,14 +580,4 @@ it("does not raise a revoked requester's scope: accepted work cannot record or d
     ).toMatchObject({ state: "unknown" }),
   );
   expect(f.counts.format).toBe(1);
-});
-
-it("rejects the admission acknowledgement on buffer deliveries, which stay synchronous", async () => {
-  const f = await fixture();
-  const paramsJson = f.report();
-  const identity = deliveryIdentity(paramsJson);
-  await expect(
-    f.call("native.buffers.delivery.apply", { ...identity, paramsJson, acknowledge: "admission" }),
-  ).rejects.toThrow();
-  expect(f.counts.buffers).toBe(0);
 });

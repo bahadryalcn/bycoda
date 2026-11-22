@@ -3,6 +3,8 @@ import { SessionPreviewFixture } from "../support/session-preview";
 import { createRoot } from "react-dom/client";
 import { ProjectRail } from "../../../src/app/shell/ProjectRail";
 import { SourceControl } from "../../../src/features/source-control/ui/SourceControl";
+import { SidebarWorktreeSwitcher } from "../../../src/features/source-control/ui/SidebarWorktreeSwitcher";
+import { setWorktreeFocus } from "../../../src/features/source-control/model/worktreeFocus";
 import { UsageFooter } from "../../../src/app/shell/UsageFooter";
 import { SessionRecoveryControl } from "../../../src/app/shell/SessionRecoveryControl";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -175,6 +177,15 @@ function Fixture() {
         <output aria-label="Selected project" className="p-3">
           {cwd}
         </output>
+        {worktreesDemo ? (
+          // The sidebar header is the only worktree selector; the panel follows its focus.
+          <div className="shrink-0 px-2 py-1">
+            <SidebarWorktreeSwitcher
+              cwd={cwd}
+              onSelect={(next) => setWorktreeFocus(cwd, next)}
+            />
+          </div>
+        ) : null}
         <SourceControl
           cwd={cwd}
           enabled

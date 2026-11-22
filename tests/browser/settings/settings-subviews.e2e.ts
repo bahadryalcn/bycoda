@@ -2,6 +2,51 @@ import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`direct MCP Hub management: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=mcp&mcp=1&mcpRemote&managedMcp&theme=${theme}`,
+      );
+      const settings = page.locator("#setting-mcp-servers");
+      await settings.getByRole("radio", { name: "Project", exact: true }).click();
+      await expect(settings.getByText("Office PC", { exact: true })).toBeVisible();
+      await settings.getByRole("button", { name: "Add server", exact: true }).click();
+      const add = page.getByRole("dialog", { name: "Add MCP server" });
+      await expect(add.getByRole("button", { name: "Provider: bycoda Hub" })).toBeVisible();
+      await expect(add.getByRole("button", { name: "Scope: Project" })).toBeVisible();
+      await add.getByRole("textbox", { name: "Name", exact: true }).fill("catalog");
+      await add
+        .getByRole("textbox", { name: "Server URL", exact: true })
+        .fill("https://mcp.example.test/server");
+      const path = `temp/verification/mcp-hub-management/${theme}-${width}`;
+      await page.screenshot({ path: `${path}-add.png` });
+      await add.getByRole("button", { name: "Add server", exact: true }).click();
+      await settings.getByRole("button", { name: "Open catalog", exact: true }).click();
+      const detail = page.getByRole("dialog", { name: "catalog", exact: true });
+      await expect(detail.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+      await page.screenshot({ path: `${path}-detail.png` });
+      await detail.getByRole("button", { name: "Edit", exact: true }).click();
+      await expect(page.getByRole("textbox", { name: "Server URL" })).toHaveValue(
+        "https://mcp.example.test/server",
+      );
+      await page
+        .getByRole("textbox", { name: "Server URL" })
+        .fill("https://mcp.example.test/edited");
+      await page.getByRole("button", { name: "Save changes", exact: true }).click();
+      const enabled = detail.getByRole("switch", { name: "Enable catalog in Project" });
+      await expect(enabled).toBeChecked();
+      await enabled.click();
+      await expect(enabled).not.toBeChecked();
+      await detail.getByRole("button", { name: "Close" }).click();
+      await expect(settings.getByRole("button", { name: "Open catalog" })).toContainText("Off");
+      await settings.getByRole("radio", { name: "Global", exact: true }).click();
+      await expect(settings.getByRole("button", { name: "Open catalog" })).toHaveCount(0);
+    });
+  }
+
+for (const theme of ["light", "dark"])
   test(`provider Update all icon uses button text color in ${theme} mode`, async ({ page }) => {
     await page.goto(
       `/tests/browser/settings/settings.html?providersFixture&section=providers&theme=${theme}&lang=en`,
@@ -452,6 +497,52 @@ for (const theme of ["light", "dark"])
       await chat.getByRole("button", { name: "Add template", exact: true }).click();
       await expect(chat.getByRole("textbox", { name: "Template name", exact: true })).toBeVisible();
       await expect(chat.getByRole("button", { name: "Save templates", exact: true })).toBeEnabled();
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`MCP computer and project credentials: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=mcp&mcp=1&mcpRemote&theme=${theme}`,
+      );
+      const path = `temp/verification/mcp-machine-management/${theme}-${width}`;
+      const settings = page.locator("#setting-mcp-servers");
+      await expect(settings.getByRole("button", { name: "Open arc", exact: true })).toBeVisible();
+      await settings.getByRole("button", { name: "Computer: This computer" }).click();
+      await page.getByRole("option", { name: "Office PC", exact: true }).click();
+      await expect(settings.getByRole("button", { name: "Open hostinger" })).toBeVisible();
+      await expect(settings.getByRole("button", { name: "Open arc", exact: true })).toHaveCount(0);
+      await page.screenshot({ path: `${path}-global.png` });
+
+      await settings.getByRole("button", { name: "Add server", exact: true }).click();
+      const add = page.getByRole("dialog", { name: "Add MCP server" });
+      await expect(add.getByText("Save on Office PC")).toBeVisible();
+      await expect(add.getByRole("textbox", { name: "Server URL" })).toBeVisible();
+      await page.screenshot({ path: `${path}-add.png` });
+      await add.getByRole("button", { name: "Cancel", exact: true }).click();
+
+      await settings.getByRole("radio", { name: "Project", exact: true }).click();
+      await expect(settings.getByText("Office PC", { exact: true })).toBeVisible();
+      await page.screenshot({ path: `${path}-project.png` });
+      await settings.getByRole("button", { name: "Open hostinger" }).click();
+      const detail = page.getByRole("dialog", { name: "hostinger", exact: true });
+      await expect(detail.getByText(/Office PC · storefront/)).toBeVisible();
+      await expect(detail.getByText("Edit provider JSON")).toBeVisible();
+      await expect(detail.getByRole("button", { name: "Show in folder" })).toHaveCount(0);
+      await page.screenshot({ path: `${path}-detail.png` });
+
+      await detail.getByRole("button", { name: "Set credentials", exact: true }).click();
+      const credential = page.getByRole("dialog", { name: "Set project credentials" });
+      await expect(credential.getByLabel("Header name")).toHaveValue("Authorization");
+      await expect(credential.getByLabel("Secret value")).toHaveAttribute("type", "password");
+      await page.screenshot({ path: `${path}-credentials.png` });
+      await credential.getByLabel("Secret value").fill("Bearer synthetic-test-token");
+      await credential.getByRole("button", { name: "Save credentials", exact: true }).click();
+      await expect(credential).toHaveCount(0);
+      await expect(detail.getByRole("button", { name: "Manage credentials" })).toBeVisible();
     });
   }
 

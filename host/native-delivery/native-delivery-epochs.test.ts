@@ -163,14 +163,6 @@ it("compacts only a retired original, retains its irreversible fence and never r
   ).rejects.toThrow("FENCED");
   await expect(f.journal.record(f.principal, finish, id, result)).rejects.toThrow("FENCED");
   await expect(f.journal.retire(f.principal, finish, id, consumed)).rejects.toThrow("FENCED");
-  await expect(
-    f.journal.prepareProof(f.principal, id, {
-      reportId: "a".repeat(64),
-      reportVersion: 1,
-      snapshotDigest: "b".repeat(64),
-      byteLength: 1,
-    }),
-  ).rejects.toThrow();
   await expect(f.journal.readResult(f.principal, finish, id, consumed, 0, 1)).rejects.toThrow(
     "FENCED",
   );
@@ -282,52 +274,6 @@ it("bounds admission relative to the compacted floor without manufacturing holes
     highWater: 65536,
     closed: false,
   });
-});
-
-it("keeps all finite kinds in one sequence while actual buffer proof gates retirement", async () => {
-  const f = await nativeDeliveryFixture("2026-10-29-delivery-epochs-host");
-  cleanups.push(f.close);
-  const epoch = await f.journal.epochs.open(f.principal, randomUUID());
-  const payloads = [
-    JSON.stringify({ id: "actual-finish", result: null }),
-    JSON.stringify({
-      command: "format_text_file",
-      args: { path: "/fixture/file", source: "x", cursorOffset: 0 },
-    }),
-    f.report(),
-  ];
-  for (let index = 0; index < payloads.length; index++) {
-    const paramsJson = payloads[index],
-      id = {
-        ...identity(epoch, index + 1),
-        sha256: sha(paramsJson),
-        byteLength: Buffer.byteLength(paramsJson),
-      };
-    if (index < 2) {
-      const target = index === 0 ? finish : format;
-      expect(
-        await f.call("native.services.delivery.apply", { ...id, target, paramsJson }),
-      ).toMatchObject({ state: "recorded" });
-      const row = await f.journal.readMetadata(f.principal, target, id);
-      await f.call("native.services.delivery.ack", {
-        ...id,
-        target,
-        consumedResult: row!.consumedResult,
-      });
-    } else {
-      expect(await f.call("native.buffers.delivery.apply", { ...id, paramsJson })).toMatchObject({
-        state: "recorded",
-      });
-      await f.call("native.buffers.delivery.ack", {
-        ...id,
-        consumedResult: nativeDeliveryConsumedResult("buffer", { acknowledged: true }),
-      });
-    }
-  }
-  expect(
-    await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 3 }),
-  ).toMatchObject({ through: 3, highWater: 3 });
-  expect(f.counts).toEqual({ buffers: 1, finish: 1, format: 1 });
 });
 
 it("establishes irreversible min-v2 while keeping existing legacy result/status/ACK compatibility", async () => {
@@ -913,7 +859,7 @@ it("never abandons an original whose effect is still running in this process", a
   }
 });
 
-it.each([finish, "buffer"] as const)(
+it.each([finish] as const)(
   "abandons an admitted %s that ended without a result instead of holding the prefix",
   async (kind) => {
     const f = await fixture(),
@@ -940,22 +886,6 @@ it.each([finish, "buffer"] as const)(
     ).toMatchObject({ through: 2 });
   },
 );
-
-it("abandons a recorded buffer whose producer lost the reply, since a newer report supersedes it", async () => {
-  const f = await fixture(),
-    epoch = await f.journal.epochs.open(f.principal, randomUUID());
-  // Repro: the report was recorded but its proof aged out, so status and ACK refused it forever.
-  await f.journal.execute(f.principal, "buffer", identity(epoch, 1), async () => ({
-    acknowledged: true,
-  }));
-  await retire(f, epoch, 2);
-  expect(await f.journal.epochs.resolveGap(f.principal, gap(epoch, 1, "buffer"))).toMatchObject({
-    outcome: "abandoned",
-  });
-  expect(
-    await f.journal.epochs.compact(f.principal, { ...epoch, expectedThrough: 0, through: 2 }),
-  ).toMatchObject({ through: 2 });
-});
 
 it("compacts past one lost original followed by many settled ones", async () => {
   const f = await fixture(),

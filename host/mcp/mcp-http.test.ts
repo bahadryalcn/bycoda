@@ -108,6 +108,61 @@ async function setup(providers: Parameters<typeof createHostServer>[1] = []) {
   return { store, engine, project, foreign, server, tokens, grant, rpc, send, url, desktopPath };
 }
 
+it("requires owner authority and an exact Host project for native MCP configuration", async () => {
+  const s = await setup();
+  const grant = await s.grant({ conversation: ["read"] });
+  const discover = { command: "mcp_discover", args: {} };
+  expect((await s.rpc("mcp.config.call", discover, grant.token)).status).toBe(401);
+  expect(
+    (await s.rpc("mcp.config.call", { ...discover, projectId: "unknown" })).body.error,
+  ).toContain("Project is not registered on this machine");
+  expect(
+    (await s.rpc("mcp.config.call", { ...discover, args: { cwd: s.project.cwd } })).body.error,
+  ).toContain("Invalid MCP configuration operation");
+  expect(
+    (
+      await s.rpc("mcp.config.call", {
+        command: "mcp_add",
+        args: { provider: "cursor", scope: "project", name: "test", config: "{}" },
+      })
+    ).body.error,
+  ).toContain("This MCP scope requires a project");
+  vi.stubEnv("BYCODA_MCP_HELPER_EXECUTABLE", join(s.project.cwd, "missing-native-app"));
+  expect(
+    (await s.rpc("mcp.config.call", { ...discover, projectId: s.project.id })).body.result,
+  ).toEqual({ connections: [], warnings: [], nativeConfigAvailable: false });
+});
+
+it("manages a Headless Host Hub server with owner authority and a registered project", async () => {
+  const s = await setup();
+  const grant = await s.grant({ conversation: ["read"] });
+  const method = "mcp.hub.servers";
+  const add = { action: "add", name: "catalog", config: { url: "https://mcp.example.test" } };
+  expect((await s.rpc(method, add, grant.token)).status).toBe(401);
+  expect((await s.rpc(method, { ...add, projectId: "unknown" })).body.error).toBeDefined();
+  const projectId = s.project.id;
+  const { result } = (await s.rpc(method, { ...add, projectId })).body;
+  expect(result).toMatchObject({ name: add.name, enabled: true });
+  expect((await s.rpc(method, { action: "get", name: add.name })).body.error).toBeDefined();
+  const loading = (await s.rpc("mcp.hub.loading.get", { projectId })).body.result;
+  expect(loading.inventory).toContainEqual(
+    expect.objectContaining({
+      managed: expect.objectContaining({ name: add.name, scope: "project" }),
+    }),
+  );
+  expect(JSON.stringify(loading)).not.toContain(add.config.url);
+  expect(
+    (
+      await s.rpc(method, {
+        action: "remove",
+        name: add.name,
+        revision: result.revision,
+        projectId,
+      })
+    ).body.result,
+  ).toEqual({ removed: true });
+});
+
 it.each(["parent", "store child", "settings child", "settings grandchild", "advisor"])(
   "filters Host agents tools for %s across catalog, discovery and MCP",
   async (kind) => {

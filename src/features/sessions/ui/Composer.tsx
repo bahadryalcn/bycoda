@@ -4380,6 +4380,18 @@ export const Composer = memo(function Composer({
                               }
                             : undefined
                         }
+                        onSelectWorktree={
+                          onWorktreeChange
+                            ? async (...args) => {
+                                const result = mutateParentInput(parentChanged, () =>
+                                  onWorktreeChange(...args),
+                                );
+                                if (result === false)
+                                  throw new Error("Session input is temporarily closed.");
+                                await result;
+                              }
+                            : undefined
+                        }
                         onClose={() => ref.current?.focus()}
                       />
                     </div>
@@ -4427,6 +4439,7 @@ export const Composer = memo(function Composer({
                             }
                           : undefined
                       }
+                      worktreeLocked
                       onClose={() => ref.current?.focus()}
                     />
                   </div>

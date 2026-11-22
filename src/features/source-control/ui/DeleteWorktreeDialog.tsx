@@ -1,13 +1,14 @@
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { prettyCwd } from "../../../shared/lib/paths";
-import { type Worktree } from "../model/worktrees";
+import { branchDeleteBlock, type Worktree } from "../model/worktrees";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import {
   useConfirm,
   type ConfirmRequest,
   type ConfirmState,
 } from "../../../shared/ui/ConfirmDialog";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CircleAlert,
   CloudUpload,
@@ -32,7 +33,13 @@ export function DeleteWorktreeDialog({
   sessionCount?: number;
   ignoredEntryCount?: number;
   ignoredEntryPaths?: readonly string[];
-  onRemove: (cwd: string, path: string, force: boolean, deleteSessions: boolean) => Promise<void>;
+  onRemove: (
+    cwd: string,
+    path: string,
+    force: boolean,
+    deleteSessions: boolean,
+    deleteBranch?: boolean,
+  ) => Promise<void>;
   onClose: () => void;
   onDeleted: () => void;
 }) {
@@ -40,6 +47,11 @@ export function DeleteWorktreeDialog({
   const { confirmWith, renderDialog } = useConfirm();
   const callbacks = useRef({ onClose, onDeleted });
   const started = useRef(false);
+  const block = branchDeleteBlock(tree);
+  const [deleteBranch, setDeleteBranch] = useState(false);
+  const wantsBranchDelete = deleteBranch && !!tree.branch && !block;
+  const branchDeleteRef = useRef(false);
+  branchDeleteRef.current = wantsBranchDelete;
   callbacks.current = { onClose, onDeleted };
   const request: ConfirmRequest = {
     title: t("Delete worktree?"),
@@ -111,7 +123,9 @@ export function DeleteWorktreeDialog({
             <Text size="inherit" tone="primary" weight="medium">
               {tree.branch}
             </Text>
-            {t(" branch and its commits are kept.")}
+            {wantsBranchDelete
+              ? t(" branch is deleted if it is fully merged.")
+              : t(" branch and its commits are kept.")}
           </>
         ) : (
           t("The branch is kept.")
@@ -129,13 +143,32 @@ export function DeleteWorktreeDialog({
               }),
       },
     ],
+    body: tree.branch ? (
+      <Checkbox
+        size="caption"
+        label={t("Also delete branch {p0}", { p0: tree.branch })}
+        description={
+          block === "unpushed"
+            ? t("It has unpushed commits.")
+            : block === "default"
+              ? t("It is the default branch.")
+              : undefined
+        }
+        checked={wantsBranchDelete}
+        disabled={!!block}
+        onChange={(event) => setDeleteBranch(event.target.checked)}
+      />
+    ) : undefined,
     acknowledge:
       sessionCount > 0
         ? { label: t("Also delete associated sessions"), control: "switch" as const }
         : undefined,
     // Confirmation covers the complete destructive action, including changes
     // that appeared after the last status refresh.
-    onConfirm: ({ acknowledged }) => onRemove(cwd, tree.path, true, acknowledged),
+    onConfirm: ({ acknowledged }) =>
+      branchDeleteRef.current
+        ? onRemove(cwd, tree.path, true, acknowledged, true)
+        : onRemove(cwd, tree.path, true, acknowledged),
   };
   useEffect(() => {
     if (started.current) return;

@@ -3668,11 +3668,6 @@ function Workspace({
                   removeRecoveredSessions={removeRecoveredSessions}
                   editorDraftRecovery={editorDraftRecovery}
                   editorDraftRecords={visibleEditorDraftRecords}
-                  canInspectLegacyReports={() => {
-                    const view = getGroupLockView();
-                    return view.lock.lockedGroupIds.size === 0 && view.hiddenGroupIds.size === 0;
-                  }}
-                  getLegacyReportPrivacySnapshot={getGroupLockView}
                   sessionDeleteDialog={sessionDeleteDialog}
                   setSessionDeleteDialog={setSessionDeleteDialog}
                 />

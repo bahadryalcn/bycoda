@@ -1,10 +1,13 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { parseJsonc } from "../../usage/limits-opencode";
 import { parseTomlSubset } from "./toml";
 
 export type InventoryProvider = "claude" | "codex" | "opencode";
 export type InventorySourceLabel =
+  | "bycoda"
+  | "bycoda-project"
   | "claude"
   | "claude-plugin"
   | "claude-project"
@@ -12,7 +15,8 @@ export type InventorySourceLabel =
   | "codex"
   | "codex-project"
   | "codex-account"
-  | "opencode";
+  | "opencode"
+  | "opencode-project";
 export type RawDefinition = {
   /** Server key as the provider declares it; becomes the hub name unless it collides. */
   name: string;
@@ -32,6 +36,7 @@ export type InventoryFiles = {
   pluginsDir: string;
   codexConfig: string;
   opencodeConfig?: string;
+  additionalOpencodeConfigs?: string[];
 };
 
 const MAX_PLUGIN_FILES = 200;
@@ -49,11 +54,16 @@ export function inventoryFiles(
   const claudeDir = outsideAccounts(env.CLAUDE_CONFIG_DIR);
   const codexHome = outsideAccounts(env.CODEX_HOME);
   const claudeRoot = claudeDir ? resolve(claudeDir) : undefined;
+  const opencodeRoot = join(env.XDG_CONFIG_HOME || join(home, ".config"), "opencode");
   return {
     claudeConfig: claudeRoot ? join(claudeRoot, ".claude.json") : join(home, ".claude.json"),
     pluginsDir: join(claudeRoot ?? join(home, ".claude"), "plugins"),
     codexConfig: join(codexHome ? resolve(codexHome) : join(home, ".codex"), "config.toml"),
-    opencodeConfig: join(env.XDG_CONFIG_HOME || join(home, ".config"), "opencode", "opencode.json"),
+    opencodeConfig: join(opencodeRoot, "opencode.json"),
+    additionalOpencodeConfigs: [
+      join(opencodeRoot, "opencode.jsonc"),
+      ...(env.OPENCODE_CONFIG ? [resolve(env.OPENCODE_CONFIG)] : []),
+    ],
   };
 }
 
@@ -269,11 +279,21 @@ export async function readCodexServers(
     // The env var name is kept as a placeholder; the secret value is never read here.
     const bearer =
       typeof value.bearer_token_env_var === "string" ? value.bearer_token_env_var : undefined;
-    const headers = stringMap(value.http_headers) ?? {};
-    const withBearer = bearer
-      ? { ...value, http_headers: { ...headers, Authorization: `Bearer \${${bearer}}` } }
-      : value;
-    const def = normalize(name, "codex", source, withBearer, vars);
+    const envHeaders = stringMap(value.env_http_headers);
+    const headers = {
+      ...stringMap(value.http_headers),
+      ...Object.fromEntries(
+        Object.entries(envHeaders ?? {}).map(([header, env]) => [header, `\${${env}}`]),
+      ),
+      ...(bearer ? { Authorization: `Bearer \${${bearer}}` } : {}),
+    };
+    const def = normalize(
+      name,
+      "codex",
+      source,
+      Object.keys(headers).length ? { ...value, http_headers: headers } : value,
+      vars,
+    );
     return def ? [def] : [];
   });
 }
@@ -282,8 +302,11 @@ export async function readCodexServers(
 export async function readOpencodeServers(
   file: string,
   vars: Record<string, string | undefined>,
+  source: "opencode" | "opencode-project" = "opencode",
 ): Promise<RawDefinition[]> {
-  const root = await readJson(file);
+  const root = await readFile(file, "utf8")
+    .then(parseJsonc)
+    .catch(() => undefined);
   if (!isObject(root) || !isObject(root.mcp)) return [];
   const readTable = (table: Record<string, unknown>): RawDefinition[] =>
     Object.entries(table).flatMap(([name, value]) => {
@@ -302,7 +325,7 @@ export async function readOpencodeServers(
           : value.type === "remote"
             ? { ...value, type: "http" }
             : value;
-      const def = normalize(name, "opencode", "opencode", adapted, vars);
+      const def = normalize(name, "opencode", source, adapted, vars);
       return def ? [def] : [];
     });
   return readTable(root.mcp);
@@ -318,6 +341,15 @@ export function codexProjectConfig(cwd: string): string {
   return join(cwd, ".codex", "config.toml");
 }
 
+export function opencodeProjectConfigs(cwd: string): string[] {
+  return [
+    "opencode.json",
+    "opencode.jsonc",
+    ".opencode/opencode.json",
+    ".opencode/opencode.jsonc",
+  ].map((file) => join(cwd, file));
+}
+
 /** Files whose metadata decides whether an inventory must be rebuilt. */
 export async function inventorySourceFiles(
   files: InventoryFiles,
@@ -330,11 +362,14 @@ export async function inventorySourceFiles(
     files.claudeConfig,
     files.codexConfig,
     ...(files.opencodeConfig ? [files.opencodeConfig] : []),
+    ...(files.additionalOpencodeConfigs ?? []),
     ...accounts.claude.map((dir) => join(dir, ".claude.json")),
     ...accounts.codex.map((dir) => join(dir, "config.toml")),
     ...pluginDirs.map((dir) => join(dir, "installed_plugins.json")),
     ...manifests.map((manifest) => manifest.path),
-    ...(cwd ? [join(cwd, ".mcp.json"), codexProjectConfig(cwd)] : []),
+    ...(cwd
+      ? [join(cwd, ".mcp.json"), codexProjectConfig(cwd), ...opencodeProjectConfigs(cwd)]
+      : []),
   ];
 }
 

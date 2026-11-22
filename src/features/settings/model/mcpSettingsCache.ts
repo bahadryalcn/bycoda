@@ -1,6 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
 import { createStore } from "../../../shared/lib/store";
 import { parseClaudeMcpList, type McpConnection, type McpLoadingState } from "./mcp";
+import { invokeMcpConfig, type RemoteMcpConfigTarget } from "./mcpConfigTarget";
 
 export type McpServerRow = McpConnection & {
   status: string;
@@ -17,7 +17,11 @@ export type McpConfigWarning = {
   message: string;
 };
 
-type McpDiscoveryResult = { connections: McpConnection[]; warnings?: McpConfigWarning[] };
+type McpDiscoveryResult = {
+  connections: McpConnection[];
+  warnings?: McpConfigWarning[];
+  nativeConfigAvailable?: boolean;
+};
 
 export type McpSettingsSnapshot = {
   servers: McpServerRow[];
@@ -29,6 +33,7 @@ export type McpSettingsSnapshot = {
   claudeChecking?: boolean;
   /** Claude stopped before checking every server; unreached rows show their configured state. */
   claudePartial?: boolean;
+  nativeConfigAvailable?: boolean;
 };
 
 type ClaudeMcpListResult = string | { output: string; timedOut: boolean };
@@ -54,28 +59,41 @@ const healthRequests = new Map<string, Promise<void>>();
 const codexRequests = new Map<string, Promise<void>>();
 const listeners = new Map<string, ReturnType<typeof createStore<[McpSettingsSnapshot]>>>();
 
-const settingsKey = (cwd: string, globalOnly: boolean) =>
-  globalOnly ? JSON.stringify(["global", cwd]) : cwd;
+const settingsMachine = (remote?: RemoteMcpConfigTarget) =>
+  remote ? ["remote", remote.machineId, remote.environmentId ?? null] : ["local"];
+const settingsKey = (cwd: string, globalOnly: boolean, remote?: RemoteMcpConfigTarget) =>
+  JSON.stringify([
+    ...settingsMachine(remote),
+    globalOnly,
+    remote ? (remote.projectId ?? null) : cwd,
+  ]);
 
-/** Keep last-good rows, but reread both views after a configuration change. */
-export function invalidateMcpSettings(cwd: string) {
-  for (const key of [settingsKey(cwd, false), settingsKey(cwd, true)]) {
+/** Keep last-good rows. Global entries can be inherited by any project on this computer. */
+export function invalidateMcpSettings(_cwd: string, remote?: RemoteMcpConfigTarget) {
+  const prefix = `${JSON.stringify(settingsMachine(remote)).slice(0, -1)},`;
+  for (const key of requests.keys()) {
+    if (!key.startsWith(prefix)) continue;
     requests.delete(key);
     healthRequests.delete(key);
     codexRequests.delete(key);
   }
 }
 
-export function getCachedMcpSettings(cwd: string, globalOnly = false) {
-  return snapshots.get(settingsKey(cwd, globalOnly));
+export function getCachedMcpSettings(
+  cwd: string,
+  globalOnly = false,
+  remote?: RemoteMcpConfigTarget,
+) {
+  return snapshots.get(settingsKey(cwd, globalOnly, remote));
 }
 
 export function subscribeMcpSettings(
   cwd: string,
   listener: (snapshot: McpSettingsSnapshot) => void,
   globalOnly = false,
+  remote?: RemoteMcpConfigTarget,
 ) {
-  const key = settingsKey(cwd, globalOnly);
+  const key = settingsKey(cwd, globalOnly, remote);
   let subscribers = listeners.get(key);
   if (!subscribers) {
     subscribers = createStore<[McpSettingsSnapshot]>();
@@ -97,9 +115,10 @@ function publish(cwd: string, snapshot: McpSettingsSnapshot) {
 export function loadMcpSettings(
   cwd: string,
   force = false,
-  options: { claudeHealth?: boolean; globalOnly?: boolean } = {},
+  options: { claudeHealth?: boolean; globalOnly?: boolean; remote?: RemoteMcpConfigTarget } = {},
 ) {
-  if (cwd.startsWith("remote://")) {
+  const { remote } = options;
+  if (cwd.startsWith("remote://") && !remote) {
     return Promise.resolve<McpSettingsSnapshot>({
       servers: [],
       error: MCP_LOCAL_ONLY_ERROR,
@@ -107,10 +126,10 @@ export function loadMcpSettings(
     });
   }
   const globalOnly = options.globalOnly === true;
-  const key = settingsKey(cwd, globalOnly);
+  const key = settingsKey(cwd, globalOnly, remote);
   let request = requests.get(key);
   if (!request || force) {
-    const discovery = fetchMcpSettings(cwd, key, globalOnly).then((snapshot) => {
+    const discovery = fetchMcpSettings(cwd, key, globalOnly, remote, force).then((snapshot) => {
       if (requests.get(key) === discovery) {
         healthRequests.delete(key);
         codexRequests.delete(key);
@@ -125,10 +144,11 @@ export function loadMcpSettings(
   return discovery.then((snapshot) => {
     if (!snapshot.error && requests.get(key) === discovery) {
       // Claude CLI health is project-scoped and cannot describe a global-only view.
-      if (!globalOnly && options.claudeHealth !== false) loadClaudeHealth(cwd, discovery);
+      if (!globalOnly && !remote && options.claudeHealth !== false)
+        loadClaudeHealth(cwd, discovery, key);
       // Codex reads stored credentials without starting servers, so every open gets sign-in state.
       if (snapshot.servers.some((server) => server.provider === "codex"))
-        loadCodexAuth(cwd, discovery, key);
+        loadCodexAuth(cwd, discovery, key, remote);
     }
     return snapshots.get(key) ?? snapshot;
   });
@@ -138,14 +158,22 @@ async function fetchMcpSettings(
   cwd: string,
   key: string,
   globalOnly: boolean,
+  remote?: RemoteMcpConfigTarget,
+  force = false,
 ): Promise<McpSettingsSnapshot> {
   try {
-    const found = await invoke<McpConnection[] | McpDiscoveryResult>(
+    const found = await invokeMcpConfig<McpConnection[] | McpDiscoveryResult>(
       "mcp_discover",
       globalOnly ? { cwd, globalOnly: true } : { cwd },
+      remote,
+      force,
     );
     // A bare connection list carries no warnings.
-    const { connections, warnings = [] } = Array.isArray(found) ? { connections: found } : found;
+    const {
+      connections,
+      warnings = [],
+      nativeConfigAvailable,
+    } = Array.isArray(found) ? { connections: found } : found;
     const servers = connections
       .filter((server) => !globalOnly || server.scope === "user")
       .map((server) => ({
@@ -158,6 +186,7 @@ async function fetchMcpSettings(
       ...(configWarnings.length ? { configWarnings } : {}),
       error: "",
       claudeError: "",
+      nativeConfigAvailable,
     };
   } catch (cause) {
     const previous = snapshots.get(key);
@@ -170,20 +199,21 @@ async function fetchMcpSettings(
       ...(previous?.configWarnings ? { configWarnings: previous.configWarnings } : {}),
       error: String(cause),
       claudeError: "",
+      nativeConfigAvailable: previous?.nativeConfigAvailable,
     };
   }
 }
 
-function loadClaudeHealth(cwd: string, discovery: Promise<McpSettingsSnapshot>) {
-  if (healthRequests.has(cwd)) return;
-  const current = snapshots.get(cwd);
-  if (current) publish(cwd, { ...current, claudeChecking: true });
-  const request = invoke<ClaudeMcpListResult>("claude_mcp_list", { cwd })
+function loadClaudeHealth(cwd: string, discovery: Promise<McpSettingsSnapshot>, key: string) {
+  if (healthRequests.has(key)) return;
+  const current = snapshots.get(key);
+  if (current) publish(key, { ...current, claudeChecking: true });
+  const request = invokeMcpConfig<ClaudeMcpListResult>("claude_mcp_list", { cwd })
     .then((result) => {
-      if (requests.get(cwd) !== discovery) return;
+      if (requests.get(key) !== discovery) return;
       const { output, timedOut } =
         typeof result === "string" ? { output: result, timedOut: false } : result;
-      const snapshot = snapshots.get(cwd)!;
+      const snapshot = snapshots.get(key)!;
       const health = new Map(
         parseClaudeMcpList(output).map((server) => [server.name, server.status]),
       );
@@ -209,7 +239,7 @@ function loadClaudeHealth(cwd: string, discovery: Promise<McpSettingsSnapshot>) 
           status,
         });
       }
-      publish(cwd, {
+      publish(key, {
         ...snapshot,
         servers,
         claudeError: "",
@@ -218,9 +248,9 @@ function loadClaudeHealth(cwd: string, discovery: Promise<McpSettingsSnapshot>) 
       });
     })
     .catch((cause) => {
-      if (requests.get(cwd) !== discovery) return;
-      const snapshot = snapshots.get(cwd)!;
-      publish(cwd, {
+      if (requests.get(key) !== discovery) return;
+      const snapshot = snapshots.get(key)!;
+      publish(key, {
         ...snapshot,
         servers: snapshot.servers.map((server) =>
           server.provider === "claude"
@@ -232,13 +262,18 @@ function loadClaudeHealth(cwd: string, discovery: Promise<McpSettingsSnapshot>) 
         claudePartial: false,
       });
     });
-  healthRequests.set(cwd, request);
+  healthRequests.set(key, request);
 }
 
 /** Codex knows which of its servers hold OAuth credentials; other rows stay as configured. */
-function loadCodexAuth(cwd: string, discovery: Promise<McpSettingsSnapshot>, key: string) {
+function loadCodexAuth(
+  cwd: string,
+  discovery: Promise<McpSettingsSnapshot>,
+  key: string,
+  remote?: RemoteMcpConfigTarget,
+) {
   if (codexRequests.has(key)) return;
-  const request = invoke<CodexAuthStatus[]>("codex_mcp_list", { cwd })
+  const request = invokeMcpConfig<CodexAuthStatus[]>("codex_mcp_list", { cwd }, remote)
     .then((list) => {
       if (requests.get(key) !== discovery || !Array.isArray(list)) return;
       const auth = new Map(list.map((entry) => [entry.name, CODEX_AUTH[entry.authStatus]]));

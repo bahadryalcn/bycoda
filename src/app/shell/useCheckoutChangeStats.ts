@@ -6,95 +6,64 @@ import {
   useProjectsDiffStats,
 } from "../../features/source-control/hooks/useProjectDiffStats";
 import { useProjectWorktrees } from "../../features/source-control/hooks/useProjectWorktrees";
-import { useGitSubmodules } from "../../features/source-control/hooks/useGitSubmodules";
 import {
   checkoutTitleWith,
-  checkoutRepositoryPaths,
   folderName,
-  checkoutSelectionScope,
-  loadCheckoutSelection,
-  resolveCheckoutSelection,
   sessionCheckout,
 } from "../../features/source-control/model/checkoutSelection";
+import type { WorktreeFocus } from "../../features/source-control/model/worktreeFocus";
 import type { Worktree } from "../../features/source-control/model/worktrees";
 import { sameProjectPath } from "../../features/projects/model/recents";
-import { useRetainedState } from "../../shared/hooks/useRetainedState";
 import type { ChangeScope } from "./ChangesTabTooltip";
 
 /**
- * Changes tab totals. They follow the checkout the panel is showing: the stored
- * checkout choice, or every checkout when the user picked the overview.
+ * Changes tab totals. They follow the sidebar header: no focus is "All worktrees"
+ * (the sum of every worktree), a focused worktree is that worktree alone.
+ *
+ * Deliberately no repository discovery here: All worktrees is the default, and
+ * walking every worktree's tree for child repositories queued 20+ scans on the
+ * Host at startup. Totals are plain per-worktree diff stats; the Changes panel
+ * discovers child repositories only for a worktree that is opened.
  */
 export function useCheckoutChangeStats({
   gitRoot,
   repositoryPaths,
+  focus,
   active,
 }: {
   gitRoot: string;
-  /** Workspace repositories; the checkout scope only applies without them. */
+  /** Workspace repositories; the worktree scope only applies without them. */
   repositoryPaths: readonly string[] | undefined;
+  /** The sidebar header's worktree; undefined means All worktrees. */
+  focus: WorktreeFocus | undefined;
   /** The panel is visible and the sidebar available. */
   active: boolean;
 }) {
   const t = useT();
   const gitT = useGitT();
-  const checkoutScopeEnabled = active && !repositoryPaths?.length;
-  const { data: checkoutTrees } = useProjectWorktrees(gitRoot, checkoutScopeEnabled);
-  const checkoutScope = useMemo(() => {
+  const scopeEnabled = active && !repositoryPaths?.length;
+  const { data: worktreeData } = useProjectWorktrees(gitRoot, scopeEnabled);
+  const worktrees = useMemo(() => {
     const trees: Worktree[] = [];
-    for (const tree of checkoutTrees?.worktrees ?? []) {
+    for (const tree of worktreeData?.worktrees ?? []) {
       if (tree.missing || tree.prunable) continue;
       if (trees.some((entry) => sameProjectPath(entry.path, tree.path))) continue;
       trees.push(tree);
     }
     return trees.length > 1 ? trees : null;
-  }, [checkoutTrees]);
-  const checkoutPaths = useMemo(
-    () => checkoutScope?.map((tree) => tree.path) ?? [],
-    [checkoutScope],
-  );
-  const checkoutSelectionKey = checkoutSelectionScope(gitRoot, checkoutPaths);
-  const [storedCheckout] = useRetainedState<string | null>(
-    `source-control:checkouts:${checkoutSelectionKey}:selected`,
-    () => loadCheckoutSelection(checkoutSelectionKey),
-  );
-  // Only the overview totals every checkout's child repositories. One checkout needs discovery
-  // only when the stored choice is a child repository inside it: walking every worktree's tree
-  // whenever the sidebar opened queued 20+ scans on the Host at startup.
-  const discoveryRoot =
-    storedCheckout && !checkoutPaths.some((path) => sameProjectPath(path, storedCheckout))
-      ? sessionCheckout(storedCheckout, checkoutPaths)
+  }, [worktreeData]);
+  const paths = useMemo(() => worktrees?.map((tree) => tree.path) ?? [], [worktrees]);
+  const focusedTree =
+    worktrees && focus
+      ? worktrees.find((tree) => sameProjectPath(tree.path, focus.path))
       : undefined;
-  const discoveryPaths =
-    storedCheckout === "" ? checkoutPaths : discoveryRoot ? [discoveryRoot] : [];
-  const {
-    modules,
-    limits,
-    error: discoveryError,
-  } = useGitSubmodules(discoveryPaths, checkoutScopeEnabled, true);
-  const repositoryTargets = checkoutRepositoryPaths(checkoutPaths, modules);
-  const selectedCheckout = checkoutScope
-    ? resolveCheckoutSelection(
-        storedCheckout,
-        gitRoot,
-        checkoutPaths,
-        Object.fromEntries(checkoutScope.map((tree) => [tree.path, tree])),
-        modules,
-      )
-    : null;
-  const allCheckouts = selectedCheckout === "";
-  const statsRoot = selectedCheckout ? selectedCheckout : gitRoot;
-  const singleStats = useProjectDiffStats(statsRoot, active && !allCheckouts);
-  const allStats = useProjectsDiffStats(
-    allCheckouts ? repositoryTargets : [],
-    active && allCheckouts,
-  );
-  const changeStats = allCheckouts
-    ? discoveryError ||
-      Object.keys(limits).length > 0 ||
-      checkoutPaths.some((path) => modules[path] === undefined) ||
-      allStats.length !== repositoryTargets.length ||
-      allStats.some((stats) => !stats)
+  // A focus that is not listed (deleted, still loading) shows the overview.
+  const overview = !!worktrees && !focusedTree;
+  const statsRoot = focusedTree ? focusedTree.path : gitRoot;
+  const singleStats = useProjectDiffStats(statsRoot, active && !overview);
+  const allStats = useProjectsDiffStats(overview ? paths : [], active && overview);
+  const changeStats = overview
+    ? allStats.length !== paths.length || allStats.some((stats) => !stats)
       ? null
       : allStats.reduce<{ files: number; additions: number; deletions: number }>(
           (total, stats) =>
@@ -109,16 +78,15 @@ export function useCheckoutChangeStats({
         )
     : singleStats;
   const changeScope = ((): ChangeScope | null => {
-    if (!checkoutScope) return null;
-    if (allCheckouts) return { title: t("All checkouts") };
-    const tree = checkoutScope.find((entry) => sameProjectPath(entry.path, selectedCheckout ?? ""));
-    if (!tree) return selectedCheckout ? { title: folderName(selectedCheckout) } : null;
-    const own = sessionCheckout(gitRoot, checkoutPaths);
+    if (!worktrees) return null;
+    if (overview) return { title: t("All worktrees") };
+    if (!focusedTree) return null;
+    const own = sessionCheckout(gitRoot, paths);
     return {
-      title: checkoutTitleWith(tree, gitT),
-      folder: folderName(tree.path),
-      branch: !!tree.branch,
-      session: !!own && sameProjectPath(own, tree.path),
+      title: checkoutTitleWith(focusedTree, gitT),
+      folder: folderName(focusedTree.path),
+      branch: !!focusedTree.branch,
+      session: !!own && sameProjectPath(own, focusedTree.path),
     };
   })();
   const changeScopeLabel = changeScope

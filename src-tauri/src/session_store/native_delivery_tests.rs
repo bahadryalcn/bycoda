@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 const ROUTE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const OTHER_ROUTE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-const BUFFER: &str = "native.buffers.update";
+const FINISH: &str = "native.services.conversation.desktop.finish";
 const FORMAT: &str = "native.services.workspace.format";
 
 struct FileStore {
@@ -47,7 +47,7 @@ fn prepared(store: &SessionStore, key: &str) -> Original {
         store,
         key,
         ROUTE,
-        BUFFER,
+        FINISH,
         r#"{"owners":[],"instanceId":"native-original"}"#,
     )
     .unwrap()
@@ -82,7 +82,7 @@ fn preparation_preserves_exact_large_original_bytes_across_file_reopen() {
         &store,
         "buffer:owner:17:physical-nonce",
         ROUTE,
-        BUFFER,
+        FINISH,
         &raw,
     )
     .unwrap();
@@ -133,15 +133,15 @@ fn original_key_cannot_retarget_change_method_or_alias_different_exact_bytes() {
     let original = prepared(&store, "buffer:owner:17:nonce");
     let raw = params_json(&store, &original).unwrap();
     assert_eq!(
-        prepare(&store, original.semantic_key(), ROUTE, BUFFER, &raw)
+        prepare(&store, original.semantic_key(), ROUTE, FINISH, &raw)
             .unwrap()
             .id(),
         original.id()
     );
     for (route, method, bytes) in [
-        (OTHER_ROUTE, BUFFER, raw.clone()),
+        (OTHER_ROUTE, FINISH, raw.clone()),
         (ROUTE, FORMAT, raw.clone()),
-        (ROUTE, BUFFER, format!(" {raw}")),
+        (ROUTE, FINISH, format!(" {raw}")),
     ] {
         assert!(
             prepare(&store, original.semantic_key(), route, method, &bytes)
@@ -268,7 +268,7 @@ fn failed_source_ack_rolls_back_journal_consumption_and_success_releases_bytes_a
             acknowledge_tx(tx.connection(), &recorded)
         }))
         .unwrap();
-    let terminal = prepare(&store, original.semantic_key(), ROUTE, BUFFER, &before).unwrap();
+    let terminal = prepare(&store, original.semantic_key(), ROUTE, FINISH, &before).unwrap();
     assert_eq!(terminal.phase(), Phase::Acknowledged);
     assert!(!terminal.can_dispatch());
     assert!(params_json(&store, &terminal).is_err());
@@ -369,7 +369,7 @@ fn closed_process_admission_rejects_before_creating_journal_or_dispatch_state() 
     let barrier = super::super::window_barrier::WindowBarrier::new();
     let _closed = barrier.close_admission().unwrap();
     store.native_writer_barrier = Some(barrier);
-    assert!(prepare(&store, "buffer:owner:1:nonce", ROUTE, BUFFER, "{}")
+    assert!(prepare(&store, "buffer:owner:1:nonce", ROUTE, FINISH, "{}")
         .unwrap_err()
         .contains("AdmissionClosed"));
     assert_eq!(rows(&store), 0);
@@ -386,7 +386,7 @@ fn pending_is_metadata_only_bounded_paged_and_route_isolated() {
                 .to_owned(),
         );
     }
-    prepare(&store, "buffer:other:1:nonce", OTHER_ROUTE, BUFFER, "{}").unwrap();
+    prepare(&store, "buffer:other:1:nonce", OTHER_ROUTE, FINISH, "{}").unwrap();
     let mut found = HashSet::new();
     let mut after = None;
     loop {
@@ -409,7 +409,7 @@ fn pending_is_metadata_only_bounded_paged_and_route_isolated() {
 #[test]
 fn corrupt_same_length_params_or_result_stay_held_and_never_ack() {
     let store = SessionStore::open_in_memory().unwrap();
-    let original = prepare(&store, "buffer:owner:6:nonce", ROUTE, BUFFER, "{}").unwrap();
+    let original = prepare(&store, "buffer:owner:6:nonce", ROUTE, FINISH, "{}").unwrap();
     let possible = mark_possible(&store, &original).unwrap();
     {
         let conn = store.lock_conn().unwrap();
@@ -469,7 +469,7 @@ fn active_capacity_does_not_evict_originals_and_consumption_frees_reservation() 
         prepared(&store, &format!("buffer:owner:{i}:nonce"));
     }
     assert!(
-        prepare(&store, "buffer:overflow:nonce", ROUTE, BUFFER, "{}")
+        prepare(&store, "buffer:overflow:nonce", ROUTE, FINISH, "{}")
             .unwrap_err()
             .contains("CAPACITY")
     );
@@ -478,7 +478,7 @@ fn active_capacity_does_not_evict_originals_and_consumption_frees_reservation() 
     let possible = mark_possible(&store, &first).unwrap();
     let recorded = record_result(&store, &possible, "null").unwrap();
     acknowledge(&store, &recorded).unwrap();
-    assert!(prepare(&store, "buffer:overflow:nonce", ROUTE, BUFFER, "{}").is_ok());
+    assert!(prepare(&store, "buffer:overflow:nonce", ROUTE, FINISH, "{}").is_ok());
     assert_eq!(rows(&store), (MAX_ACTIVE_ROWS + 1) as i64);
 }
 
@@ -489,7 +489,7 @@ fn original_and_result_bounds_are_checked_before_state_changes() {
         &store,
         "buffer:owner:9:nonce",
         ROUTE,
-        BUFFER,
+        FINISH,
         &"x".repeat(MAX_PARAMS_BYTES + 1)
     )
     .is_err());
@@ -501,7 +501,7 @@ fn original_and_result_bounds_are_checked_before_state_changes() {
         "{}"
     )
     .is_err());
-    assert!(prepare(&store, "buffer:owner:9:nonce", "not-a-hash", BUFFER, "{}").is_err());
+    assert!(prepare(&store, "buffer:owner:9:nonce", "not-a-hash", FINISH, "{}").is_err());
     assert_eq!(rows(&store), 0);
     let original = prepared(&store, "buffer:owner:9:nonce");
     let possible = mark_possible(&store, &original).unwrap();
@@ -688,42 +688,6 @@ fn bounded_formatter_lane_stays_bounded_without_starving_control_delivery() {
 }
 
 #[test]
-fn unconfirmed_buffer_snapshots_do_not_starve_relay_finish_delivery() {
-    const FINISH: &str = "native.services.conversation.desktop.finish";
-    let store = SessionStore::open_in_memory().unwrap();
-    for i in 0..MAX_ACTIVE_ROWS {
-        mark_possible(
-            &store,
-            &prepared(&store, &format!("buffer:owner:{i}:nonce")),
-        )
-        .unwrap();
-    }
-    assert!(
-        prepare(&store, "buffer:overflow:nonce", ROUTE, BUFFER, "{}")
-            .unwrap_err()
-            .contains("CAPACITY")
-    );
-    let finish = prepare(
-        &store,
-        "finish:relay-1",
-        ROUTE,
-        FINISH,
-        r#"{"id":"relay-1"}"#,
-    )
-    .unwrap();
-    assert!(finish.can_dispatch());
-    for i in 2..=MAX_ACTIVE_ROWS {
-        prepare(&store, &format!("finish:relay-{i}"), ROUTE, FINISH, "{}").unwrap();
-    }
-    assert!(
-        prepare(&store, "finish:overflow", ROUTE, FINISH, "{}")
-            .unwrap_err()
-            .contains("CAPACITY"),
-        "the control lane stays bounded on its own"
-    );
-}
-
-#[test]
 fn schema_rejects_original_identity_rewrite_and_retained_metadata_delete() {
     let store = SessionStore::open_in_memory().unwrap();
     let original = prepared(&store, "buffer:owner:10:nonce");
@@ -845,7 +809,7 @@ fn remote_ack_metadata_reads_never_create_missing_schema_even_on_query_only_stor
         &store,
         "buffer:remote-ack:read-only",
         ROUTE,
-        BUFFER,
+        FINISH,
         "{}",
         "null",
     );
@@ -880,7 +844,7 @@ fn successful_remote_ack_is_full_durable_idempotent_and_keeps_original_tombstone
         &store,
         "buffer:remote-ack:success",
         ROUTE,
-        BUFFER,
+        FINISH,
         "{}",
         r#"{"acknowledged":true}"#,
     );
@@ -937,7 +901,7 @@ fn successful_remote_ack_is_full_durable_idempotent_and_keeps_original_tombstone
         .unwrap()
         .originals
         .is_empty());
-    let terminal = prepare(&reopened, original.semantic_key(), ROUTE, BUFFER, "{}").unwrap();
+    let terminal = prepare(&reopened, original.semantic_key(), ROUTE, FINISH, "{}").unwrap();
     assert_eq!(terminal.id(), original.id());
     assert_eq!(terminal.phase(), Phase::Acknowledged);
     assert_eq!(terminal.revision, revision);
@@ -956,14 +920,14 @@ fn remote_ack_rejects_every_unconsumed_phase_and_stale_pre_ack_handle() {
     let prepared = prepared(&store, "buffer:remote-ack:prepared");
     let possible = mark_possible(
         &store,
-        &prepare(&store, "buffer:remote-ack:possible", ROUTE, BUFFER, "{}").unwrap(),
+        &prepare(&store, "buffer:remote-ack:possible", ROUTE, FINISH, "{}").unwrap(),
     )
     .unwrap();
     let recorded = record_result(
         &store,
         &mark_possible(
             &store,
-            &prepare(&store, "buffer:remote-ack:recorded", ROUTE, BUFFER, "{}").unwrap(),
+            &prepare(&store, "buffer:remote-ack:recorded", ROUTE, FINISH, "{}").unwrap(),
         )
         .unwrap(),
         "null",
@@ -1013,7 +977,7 @@ fn remote_ack_requires_actual_store_route_full_transaction_and_open_admission() 
         &store,
         "buffer:remote-ack:bound",
         ROUTE,
-        BUFFER,
+        FINISH,
         "{}",
         "null",
     );
@@ -1070,7 +1034,7 @@ fn remote_ack_rollback_and_commit_uncertainty_keep_durable_outbox_retryable() {
         &store,
         "buffer:remote-ack:rollback",
         ROUTE,
-        BUFFER,
+        FINISH,
         "{}",
         "null",
     );
@@ -1121,11 +1085,7 @@ fn remote_ack_rollback_and_commit_uncertainty_keep_durable_outbox_retryable() {
 fn remote_ack_outbox_pages_all_methods_without_other_routes_or_one_held_origin_starving_them() {
     let file = FileStore::new();
     let store = file.open();
-    let methods = [
-        BUFFER,
-        "native.services.conversation.desktop.finish",
-        FORMAT,
-    ];
+    let methods = [FINISH, FORMAT];
     let mut expected = HashSet::new();
     for (m, method) in methods.iter().enumerate() {
         for i in 0..3 {
@@ -1199,9 +1159,9 @@ fn remote_ack_outbox_pages_all_methods_without_other_routes_or_one_held_origin_s
             .unwrap()
             .originals
             .len(),
-        3
+        2
     );
-    assert_eq!(rows(&store), 14);
+    assert_eq!(rows(&store), 10);
     assert!(pending_remote_acks(&store, ROUTE, None, 0).is_err());
     assert!(pending_remote_acks(&store, ROUTE, None, MAX_PAGE + 1).is_err());
     assert!(pending_remote_acks(&store, "not-a-route", None, 1).is_err());
@@ -1216,7 +1176,7 @@ fn corrupt_remote_ack_receipt_is_held_in_outbox_instead_of_falsely_retiring_orig
         &store,
         "buffer:remote-ack:corrupt-receipt",
         ROUTE,
-        BUFFER,
+        FINISH,
         "{}",
         "null",
     );
@@ -1274,7 +1234,7 @@ fn corrupt_consumed_original_metadata_cannot_create_remote_ack_receipt() {
         &store,
         "buffer:remote-ack:corrupt-original",
         ROUTE,
-        BUFFER,
+        FINISH,
         "{}",
         "null",
     );
@@ -1337,13 +1297,13 @@ fn corrupt_first_ack_metadata_does_not_starve_three_healthy_originals_after_reop
         &store,
         "remote-ack:corrupt-first",
         ROUTE,
-        BUFFER,
+        FINISH,
         "{}",
         "null",
     );
     let mut healthy = HashSet::new();
     for (i, method) in [
-        BUFFER,
+        FINISH,
         "native.services.conversation.desktop.finish",
         FORMAT,
     ]
@@ -1401,7 +1361,7 @@ fn invalid_and_oversized_original_ids_cannot_poison_ack_outbox_continuation() {
         let file = FileStore::new();
         let store = file.open();
         let damaged =
-            locally_consumed(&store, "remote-ack:invalid-id", ROUTE, BUFFER, "{}", "null");
+            locally_consumed(&store, "remote-ack:invalid-id", ROUTE, FINISH, "{}", "null");
         let mut healthy = HashSet::new();
         for i in 0..3 {
             healthy.insert(
@@ -1409,7 +1369,7 @@ fn invalid_and_oversized_original_ids_cannot_poison_ack_outbox_continuation() {
                     &store,
                     &format!("remote-ack:after-invalid-id:{i}"),
                     ROUTE,
-                    BUFFER,
+                    FINISH,
                     "{}",
                     "null",
                 )
@@ -1468,7 +1428,7 @@ fn corrupt_ack_lookahead_keeps_healthy_pages_usable_and_store_route_filters_inta
                 &store,
                 &format!("remote-ack:before-bad-lookahead:{i}"),
                 ROUTE,
-                BUFFER,
+                FINISH,
                 "{}",
                 "null",
             )
@@ -1480,7 +1440,7 @@ fn corrupt_ack_lookahead_keeps_healthy_pages_usable_and_store_route_filters_inta
         &store,
         "remote-ack:bad-lookahead",
         ROUTE,
-        BUFFER,
+        FINISH,
         "{}",
         "null",
     );
@@ -1502,7 +1462,7 @@ fn corrupt_ack_lookahead_keeps_healthy_pages_usable_and_store_route_filters_inta
         &store,
         "remote-ack:lookahead-other-route",
         OTHER_ROUTE,
-        BUFFER,
+        FINISH,
         "{}",
         "null",
     );
@@ -1510,7 +1470,7 @@ fn corrupt_ack_lookahead_keeps_healthy_pages_usable_and_store_route_filters_inta
         &store,
         "remote-ack:lookahead-foreign-store",
         ROUTE,
-        BUFFER,
+        FINISH,
         "{}",
         "null",
     );

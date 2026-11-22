@@ -2113,7 +2113,13 @@ pub async fn codex_mcp_list(
     host: State<'_, HarnessHost>,
     cwd: String,
 ) -> Result<Vec<McpAuthStatus>, String> {
-    let binary_path = host.runtime_binary_path("codex");
+    codex_mcp_list_in_directory(cwd, host.runtime_binary_path("codex")).await
+}
+
+pub(crate) async fn codex_mcp_list_in_directory(
+    cwd: String,
+    binary_path: Option<String>,
+) -> Result<Vec<McpAuthStatus>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         if !expand_home(&cwd).is_dir() {
             return Err("Project directory does not exist".into());
@@ -2384,13 +2390,21 @@ pub async fn claude_mcp_remove(
     name: String,
     scope: String,
 ) -> Result<(), String> {
+    claude_mcp_remove_in_directory(cwd, name, scope, host.runtime_binary_path("claude")).await
+}
+
+pub(crate) async fn claude_mcp_remove_in_directory(
+    cwd: String,
+    name: String,
+    scope: String,
+    binary_path: Option<String>,
+) -> Result<(), String> {
     if !valid_mcp_name(&name) {
         return Err("Invalid MCP server name".into());
     }
     if !matches!(scope.as_str(), "local" | "project" | "user") {
         return Err("Invalid MCP scope".into());
     }
-    let binary_path = host.runtime_binary_path("claude");
     tauri::async_runtime::spawn_blocking(move || {
         claude_mcp_command(
             vec!["mcp".into(), "remove".into(), name, "--scope".into(), scope],

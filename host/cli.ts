@@ -127,7 +127,6 @@ async function main() {
   service install       Install/start the persistent user service
   service uninstall     Stop the host and remove its service; keeps data
   connection-info       Print the running host's port (JSON)
-  native-buffer legacy-release --data-dir <dir> [--yes]   Drop legacy SQL buffer content (Host stopped)
   build-info            Print packaged source identity (no service access)
   status                Check the running host
   stop                  Stop the host and interrupt its running turns
@@ -229,20 +228,6 @@ Connect another computer using an SSH forward to the loopback port.`);
       // Parsing/IO failures must not echo private native profile input.
       throw new Error("Native helper deployment unavailable");
     }
-  }
-  if (command === "native-buffer") {
-    if (args[1] !== "legacy-release")
-      throw new Error("Usage: native-buffer legacy-release --data-dir <dir> [--yes]");
-    if (readRunning()) throw new Error("Stop the Host before running legacy-release.");
-    await verifyHostStopped(directory);
-    const { releaseNativeBufferLegacy, formatNativeBufferLegacyRelease } =
-      await import("./native-buffer/native-buffer-legacy-release");
-    console.log(
-      formatNativeBufferLegacyRelease(
-        releaseNativeBufferLegacy(directory, { apply: args.includes("--yes") }),
-      ),
-    );
-    return;
   }
   if (command === "connection-info") {
     console.log(JSON.stringify(await connectionInfo(directory, entryPath)));

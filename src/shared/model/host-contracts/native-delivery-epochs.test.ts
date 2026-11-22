@@ -77,12 +77,9 @@ it("reports only matching covered originals as fenced and never fabricates resul
     byteLength: 2,
   };
   const fenced = { ...identity, state: "fenced", epoch: { ...ref, through: 2, closed: false } };
-  const buffer = NATIVE_DELIVERY_RPC_SCHEMAS["native.buffers.delivery.status"].result;
   const service = NATIVE_DELIVERY_RPC_SCHEMAS["native.services.delivery.status"].result;
-  expect(buffer.parse(fenced)).toEqual(fenced);
-  expect(service.parse({ ...fenced, target: "native.services.workspace.format" })).toMatchObject(
-    fenced,
-  );
+  const target = "native.services.workspace.format";
+  expect(service.parse({ ...fenced, target })).toMatchObject(fenced);
   for (const invalid of [
     { ...fenced, originalId: "legacy-original" },
     { ...fenced, epoch: { ...fenced.epoch, generation: 2 } },
@@ -93,13 +90,10 @@ it("reports only matching covered originals as fenced and never fabricates resul
     { ...fenced, result: { acknowledged: true } },
     { ...fenced, consumedResult: { sha256: "b".repeat(64), byteLength: 21 } },
   ])
-    expect(buffer.safeParse(invalid).success).toBe(false);
+    expect(service.safeParse({ ...invalid, target }).success).toBe(false);
   expect(
-    buffer.parse({ ...fenced, epoch: { ...fenced.epoch, through: 0, closed: true } }),
+    service.parse({ ...fenced, target, epoch: { ...fenced.epoch, through: 0, closed: true } }),
   ).toMatchObject({ state: "fenced" });
-  expect(
-    NATIVE_DELIVERY_RPC_SCHEMAS["native.buffers.delivery.ack"].result.safeParse(fenced).success,
-  ).toBe(false);
   expect(
     NATIVE_DELIVERY_RPC_SCHEMAS["native.services.delivery.ack"].result.safeParse({
       ...fenced,

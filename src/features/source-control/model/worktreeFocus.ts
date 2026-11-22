@@ -2,9 +2,10 @@ import { useSyncExternalStore } from "react";
 import { pathKey } from "../../../shared/lib/paths";
 import { createStore } from "../../../shared/lib/store";
 
-/** The working copy a project's sidebar is narrowed to. New sessions in that
- * project start there too. Kept for this run only: the app reopens on each
- * project's default workspace. */
+/** The worktree a project's sidebar is narrowed to; the project folder is one
+ * too. No focus means "All worktrees": every session, the Changes overview, and
+ * new sessions start in the project folder. Kept for this run only: the app
+ * reopens on All worktrees. */
 export type WorktreeFocus = { path: string; branch: string | null };
 
 const listeners = createStore();

@@ -351,16 +351,18 @@ export function WorktreesPage({
           sessionCount={remoteReview.review.sessionIds.length}
           ignoredEntryCount={remoteReview.review.ignoredEntryCount}
           ignoredEntryPaths={remoteReview.review.ignoredEntryPaths}
-          onRemove={async (cwd, path, force, deleteSessions) => {
+          onRemove={async (cwd, path, force, deleteSessions, deleteBranch) => {
             checkRemoteWorktreeRemoval(remoteReview.review);
             try {
-              await removeRemoteWorktree(
+              const removed = await removeRemoteWorktree(
                 cwd,
                 path,
                 remoteReview.review,
                 force && !!(remoteReview.review.status || remoteReview.review.ignoredEntryCount),
                 !deleteSessions,
+                deleteBranch,
               );
+              if (removed.branchNotice) setError(removed.branchNotice);
             } finally {
               await refresh();
             }
@@ -380,7 +382,7 @@ export function WorktreesPage({
           cwd={project}
           tree={deleting}
           sessionCount={worktreeSessionIds(deleting, liveSessions).length}
-          onRemove={async (cwd, path, force, deleteSessions) => {
+          onRemove={async (cwd, path, force, deleteSessions, deleteBranch) => {
             // Check predictable blockers before the dialog closes; nothing is destroyed yet.
             await onCheckRemove(cwd, path, force);
             const tree = deleting;
@@ -401,7 +403,10 @@ export function WorktreesPage({
                   }
                   sessionsDeleted = true;
                 }
-                await onRemove(cwd, path, force, !deleteSessions);
+                const removed = deleteBranch
+                  ? await onRemove(cwd, path, force, !deleteSessions, undefined, true)
+                  : await onRemove(cwd, path, force, !deleteSessions);
+                if (removed?.branchNotice) setError(removed.branchNotice);
                 if (isEqualOrInside(project, path)) {
                   const main = data?.worktrees.find((item) => item.isMain);
                   if (main) setProject(main.path);

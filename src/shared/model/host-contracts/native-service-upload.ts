@@ -5,10 +5,20 @@ import {
   SafeCounterSchema,
   WIRE_SHA256_PATTERN,
 } from "./schemas";
-import { NATIVE_BUFFER_UPLOAD_LIMITS } from "./native-buffer-upload";
 import { NativeDeliveryIdentitySchema } from "./native-delivery-identity";
 
-export const NATIVE_SERVICE_UPLOAD_LIMITS = NATIVE_BUFFER_UPLOAD_LIMITS;
+export const NATIVE_SERVICE_UPLOAD_LIMITS = Object.freeze({
+  maxBytes: 16 * 1024 * 1024,
+  chunkBytes: 65_536,
+  maxActive: 8,
+  maxActivePerPrincipal: 2,
+  maxResidentBytes: 64 * 1024 * 1024,
+  maxResidentBytesPerPrincipal: 32 * 1024 * 1024,
+  maxRetained: 256,
+  maxRetainedPerPrincipal: 64,
+  maxChunks: 1024,
+  ttlMs: 120_000,
+});
 export const NativeServiceUploadTargetSchema = z.enum([
   "native.services.conversation.desktop.finish",
   "native.services.workspace.format",

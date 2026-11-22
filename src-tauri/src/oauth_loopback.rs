@@ -213,6 +213,17 @@ pub(crate) fn wait_for_callback(
     cancel: &AtomicBool,
     deadline: Instant,
 ) -> Waited {
+    wait_for_checked_callback(listener, cancel, deadline, |line, _| {
+        parse_callback(line, expected_state)
+    })
+}
+
+pub(crate) fn wait_for_checked_callback(
+    listener: &TcpListener,
+    cancel: &AtomicBool,
+    deadline: Instant,
+    check: impl Fn(&str, &str) -> Callback,
+) -> Waited {
     if listener.set_nonblocking(true).is_err() {
         return Waited::Failed;
     }
@@ -238,7 +249,13 @@ pub(crate) fn wait_for_callback(
         let Some((line, head)) = read_request_line(&stream, deadline) else {
             continue;
         };
-        match parse_callback(&line, expected_state) {
+        if cancel.load(Ordering::Relaxed) {
+            return Waited::Cancelled;
+        }
+        if Instant::now() >= deadline {
+            return Waited::TimedOut;
+        }
+        match check(&line, &head) {
             Callback::Ignore => crate::oauth_loopback_page::respond_page(
                 &mut stream,
                 crate::oauth_loopback_page::Kind::Invalid,

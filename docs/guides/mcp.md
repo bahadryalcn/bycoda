@@ -10,34 +10,61 @@ health can confirm readiness; a failed refresh clears the old health observation
 Activity stays unknown where the provider does not expose a live operation feed.
 Opening this page only reads configuration and status; it does not enable a server.
 
-Settings > MCP shows one list of every server: provider config files plus the Claude
-plugins and accounts the bycoda Host finds. Each row has a status dot and, when the
-server needs it, a **Sign in** quick action. Clicking a row opens its detail panel with
-bycoda sign-in, **Start with every session**, and, per provider file, **Enabled**, the
-file path, the editable JSON configuration, the provider CLI sign-in and **Remove**
-(Claude Code only). The configuration saves back to the same file. The save is refused
-if the file changed on disk meanwhile; reload it and apply the change again.
+Settings > MCP lists provider configurations and the servers the selected bycoda Host
+finds, including Claude plugins and account connections. Open a row and look under
+**Use in bycoda** to manage sign-in, project credentials where supported, and session
+startup for that server.
+Provider controls include **Enabled**, the file path, **Edit provider JSON**, and
+**Remove** for Claude Code. Edits save to the same provider file. If the file changes
+after you open it, reload it and apply your edits again.
 
 **Session startup** below the list chooses **When needed** (a server starts the first
 time a session uses one of its tools) or **With every session** (all servers start when
 a session opens).
 
-Settings > MCP opens in **Global** view. Use the **Global / Project** buttons to switch;
-Project reveals the local project picker and includes its inherited global entries.
-Global reads only machine-wide provider configuration, independently of project-path
-errors. Claude Code permissions are project-specific: select Project to change them.
+Settings > MCP opens in **Global** view. Choose a **Computer** to see its machine-wide
+provider configuration. The list starts on **This computer**. Switch to **Project**
+and select a project to see its configuration and inherited global entries. The
+project determines which computer and Host bycoda uses in this view. Select a project
+to change Claude Code permissions.
+
+If the selected computer has a reachable Host but lacks the updated bycoda desktop
+app, you can still view servers the Host knows about and manage their bycoda credentials.
+Install the updated desktop app on that computer to edit provider configuration.
 Global refresh does not run Claude's project-based health check. Each row belongs to a specific
 provider and scope, shown as a tag next to its name: **Global** applies to every
 project for that provider, **Project** is saved in the selected project's provider
 configuration, and **Local project** applies only to the selected project in your
 personal Claude configuration. Filters can narrow the list by provider and scope.
-**Add MCP server** starts with the Global scope. Choose provider and scope, then paste
-an `mcpServers` block or a named server object. The project path appears only for
-project scopes. Saving adds configuration; Refresh checks available status. If saving
+**Add server** defaults to **bycoda Hub** on the selected computer. Add a Global
+server for that computer or a Project server for the selected project. The Hub
+publishes the entry to bycoda-managed Claude Code, Codex and OpenCode sessions.
+The Hub runs managed HTTP servers on demand through conversation tools.
+Open a Hub server to edit, disable or remove its definition. A project definition
+with the same name takes precedence over a Global definition for that project.
+Global Hub credentials apply on that computer. Project credentials can override
+them. Choose a provider in the add form when you need its own configuration file.
+In Project view you
+can also choose the scope. Claude Code starts with **Local project** in this view.
+For HTTP or HTTPS servers, enter the **Server URL** where
+supported. Choose **JSON configuration**
+to paste an `mcpServers` block or a server object, including stdio configurations.
+The project path appears for project scopes. If saving
 succeeds but refreshing fails, the dialog keeps the saved fields locked. **Retry**
 only refreshes discovery; it does not add the server again. **Done** closes the dialog.
 Credentials saved by one provider are not evidence that another
 provider is signed in; complete that provider's authorization when needed.
+
+For a server that needs an API token, select **Project**, open the server and choose
+**Set credentials**. Enter HTTP header names and values for an HTTP server, or
+environment variable names and values for a stdio server. The project's Host stores
+these values in its encrypted vault. Keep tokens out of provider JSON, which may be
+shared with the project. These credentials apply to bycoda sessions for the selected
+project on that computer. Start a new session after setting, replacing or removing
+credentials. Saving replaces all previously saved values for that server in the
+project. Removing them restores the server's default authentication for new sessions.
+bycoda uses its conversation tools to start HTTP servers with project credentials on
+demand. This keeps their credentials in the Host.
 
 Use a file's **Enabled** switch in the detail panel to enable or disable a server for
 Codex, OpenCode or Claude Code. Codex and OpenCode changes apply
@@ -51,8 +78,20 @@ tool configuration; an existing running conversation can retain its current tool
 If saving fails, the row retains its last confirmed state. Refresh and inspect the
 configuration before retrying an uncertain write.
 
-For enabled HTTP/SSE connections managed by Claude Code, Codex, Cursor or OpenCode, choose
-**Sign in** on the row and complete the authorization in your browser. bycoda runs
+For a remote computer, use **bycoda sign-in** for supported HTTP OAuth connections.
+The selected bycoda Host handles authorization and stores the login for its sessions.
+Manage provider CLI sign-in on the computer that runs that provider.
+
+In **Global**, bycoda sign-in sets the computer's default account for that server.
+In **Project**, bycoda uses that account until you sign in or disconnect for the
+project. **Uses global sign-in** identifies an inherited account. Choose **Use a
+different account** to sign in for this project, or **Disconnect for this project**
+to stop using the server's OAuth login in this project. After either action, the
+project uses its own sign-in state and stops falling back to the global account.
+
+For local enabled HTTP/SSE connections managed by Claude Code, Codex, Cursor or
+OpenCode, choose the provider's **Sign in** action and complete authorization in your
+browser. bycoda runs
 the provider's own CLI and refreshes the list after it finishes. Keep the app open
 while authorization is pending. For a connection already reported as Connected or
 Signed in, the row's action menu offers **Sign in again**. If the provider's CLI is
@@ -77,8 +116,6 @@ probe for them.
 Disabled connections, local/stdio tools and clients without a supported CLI login
 do not offer this browser action. Manage Claude Desktop authentication
 in that client. Cursor uses its [CLI MCP login](https://cursor.com/docs/cli/mcp).
-Some MCP services use API keys or environment variables instead
-of OAuth; follow the service's setup instructions in the owning provider's config.
 The detail panel shows each file's path, with **Show in folder** and **Copy config
 path**.
 

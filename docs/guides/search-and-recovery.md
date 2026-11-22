@@ -59,9 +59,8 @@ Older histories containing an owner Stop immediately followed by the app's quit
 warning are also treated as stopped. Both history notes remain readable; real Host
 interruptions and interruptions after newer work retain their warning.
 
-The dialog is one compact list. Tabs for File drafts and Earlier file reports
-appear only when there are file copies to show; with conversations alone there is
-no tab strip. The Needs attention / All filter appears only while it separates
+The dialog is one compact list. A File drafts tab appears only when there are
+file copies to show; with conversations alone there is no tab strip. The Needs attention / All filter appears only while it separates
 something, the search field only for a longer list, and the list menu only for
 more than one entry. The Help button beside the actions explains what Open all
 and Restore chat layout do.

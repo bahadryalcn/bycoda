@@ -1088,16 +1088,7 @@ fn acknowledge_remote(
     compact_epoch(channel, original, deadline)
 }
 
-/// Retry only already consumed local receipts, never effects or old consumers.
-/// A separate cursor keeps buffer and service outboxes independently fair.
-pub(super) fn reconcile_remote_acks(
-    channel: &Arc<NativeServiceChannel>,
-    deadline: Instant,
-) -> Result<usize, String> {
-    reconcile_remote_acks_noting(channel, deadline, &mut None)
-}
-
-/// `reconcile_remote_acks` that keeps the first refused ACK, for maintenance diagnostics.
+/// Retry consumed local service receipts and keep the first refused ACK for diagnostics.
 fn reconcile_remote_acks_noting(
     channel: &Arc<NativeServiceChannel>,
     deadline: Instant,

@@ -1642,15 +1642,6 @@ fn changed_or_unsaved_native_editor_barrier_prevents_source_fence() {
 fn live_editor_registry_allows_authority_with_stale_unconfirmed_report() {
     let store = store();
     seed(&store, "native");
-    store
-        .lock_conn()
-        .unwrap()
-        .execute(
-            "INSERT INTO native_workspace_buffers(owner_id,snapshot_json,updated_at,confirmed)
-         VALUES('retired-window','[]',1,0)",
-            [],
-        )
-        .unwrap();
     let source = fence(&store, "native", "m");
     assert_eq!(store.authority_snapshot("m").unwrap().fence, source.fence);
 }

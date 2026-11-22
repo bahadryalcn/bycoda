@@ -1,7 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { nativeDeliveryFixture, deliveryIdentity } from "./native-delivery.test-support";
 import { nativeDeliveryConsumedResult } from "./native-delivery-store";
-import { durableWrite } from "../git/turn-git-history";
 
 const format = "native.services.workspace.format" as const;
 const finish = "native.services.conversation.desktop.finish" as const;
@@ -374,62 +373,6 @@ it("releases only already-owned failure bookkeeping after authority loss without
   });
   expect(f.counts.format).toBe(2);
 });
-
-it.each([false, true])(
-  "preserves planned buffer proof through disposition and requires actual commit for ACK, committed=%s",
-  async (committed) => {
-    const f = await fixture(),
-      paramsJson = f.report(),
-      originalId = deliveryIdentity(paramsJson),
-      request = { ...originalId, paramsJson };
-    let entered = false;
-    f.setWrite(async (path, bytes) => {
-      if (!entered && path.includes("buffers")) {
-        entered = true;
-        if (committed) await durableWrite(path, bytes);
-        throw new Error(committed ? "Projection COMMIT ACK lost" : "Projection never committed");
-      }
-    });
-    expect(await f.call("native.buffers.delivery.apply", request)).toMatchObject({
-      state: committed ? "recorded" : "unknown",
-    });
-    f.setWrite(undefined);
-    const saved = await f.journal.readMetadata(f.principal, "buffer", originalId);
-    expect(saved?.state).toBe("admitted");
-    expect(saved?.proof).toBeDefined();
-    expect(await row(f, originalId.originalId)).toMatchObject({
-      state: "admitted",
-      reserved_bytes: 0,
-    });
-    await f.reopen();
-    expect((await f.journal.readMetadata(f.principal, "buffer", originalId))?.proof).toEqual(
-      saved!.proof,
-    );
-    expect(await f.call("native.buffers.delivery.apply", request)).toMatchObject({
-      state: committed ? "recorded" : "unknown",
-    });
-    const ack = {
-      ...originalId,
-      consumedResult: nativeDeliveryConsumedResult("buffer", {
-        acknowledged: true,
-      }),
-    };
-    if (committed) {
-      expect(await f.call("native.buffers.delivery.ack", ack)).toMatchObject({
-        state: "retired",
-      });
-      expect(await f.call("native.buffers.delivery.status", originalId)).toMatchObject({
-        state: "retired",
-      });
-    } else {
-      await expect(f.call("native.buffers.delivery.ack", ack)).rejects.toThrow(/proof/i);
-      expect(await f.call("native.buffers.delivery.status", originalId)).toMatchObject({
-        state: "unknown",
-      });
-    }
-    expect(f.counts.buffers).toBe(1);
-  },
-);
 
 it("disposes the exact admitted clone when an exited handler mutates its input identity", async () => {
   const f = await fixture(),

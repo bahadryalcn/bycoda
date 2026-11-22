@@ -2637,3 +2637,68 @@ it.each(["Keep my new draft", "  "])(
     expect(gitCommit).not.toHaveBeenCalled();
   },
 );
+
+it("shows one header row for a worktree: its branch picker alone, with no worktree tabs", async () => {
+  vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "feature/row" }));
+  vi.mocked(gitBranches).mockResolvedValue({
+    current: "feature/row",
+    detached: false,
+    branches: [{ name: "feature/row", current: true, remote: null }],
+  });
+  await act(async () =>
+    root.render(
+      createElement(GitChangesPanel, {
+        cwd: "/single-worktree",
+        enabled: true,
+        checkout: { onRefresh: vi.fn() },
+        onOpenFile: vi.fn(),
+        onOpenAllChanges: vi.fn(),
+        onOpenCommit: vi.fn(),
+      }),
+    ),
+  );
+  const trigger = container.querySelector<HTMLButtonElement>(
+    'header button[aria-label="Branch feature/row"]',
+  )!;
+  expect(trigger).not.toBeNull();
+  await act(async () => trigger.click());
+  const picker = document.querySelector("[data-branch-picker]")!;
+  expect(picker.querySelector('[role="tab"]')).toBeNull();
+  expect(picker.textContent).not.toContain("Worktrees");
+});
+
+it("titles an open worktree row once: the branch picker, with the title for assistive tech", async () => {
+  vi.mocked(gitDiffIndex).mockResolvedValue(index({ branch: "feature/row" }));
+  await act(async () =>
+    root.render(
+      createElement(GitChangesPanel, {
+        cwd: "/open-worktree",
+        enabled: true,
+        checkout: { onRefresh: vi.fn() },
+        repository: {
+          name: "feature/row",
+          checkout: {
+            path: "/open-worktree",
+            branch: "feature/row",
+            head: "abcdef0",
+            isMain: false,
+            locked: false,
+            prunable: false,
+            missing: false,
+            dirty: false,
+            unpushed: 0,
+            sessionIds: [],
+          },
+          expanded: true,
+          onToggle: vi.fn(),
+        },
+        onOpenFile: vi.fn(),
+        onOpenAllChanges: vi.fn(),
+        onOpenCommit: vi.fn(),
+      }),
+    ),
+  );
+  const header = container.querySelector("header")!;
+  expect(header.querySelector(".sr-only")?.textContent).toBe("feature/row");
+  expect(header.querySelector('button[aria-label="Branch feature/row"]')).not.toBeNull();
+});

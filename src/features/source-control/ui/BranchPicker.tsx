@@ -3,8 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { withGitOperation, useGitPanelState } from "../model/gitPanelState";
-import { FolderTree, GitBranch, Plus, RefreshCw } from "../../../shared/ui/icons";
-import { TabStrip } from "../../../shared/ui/Tabs";
+import { GitBranch, Plus, RefreshCw } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +19,11 @@ import {
   type GitBranchInfo,
 } from "../../../platform/tauri/fs";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
+import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
+import { branchWorktrees, partitionByWorktree } from "../model/branchWorktrees";
+import { setWorktreeFocus } from "../model/worktreeFocus";
+import type { Worktree } from "../model/worktrees";
+import { prettyCwd } from "../../../shared/lib/paths";
 import { CreateBranchDialog } from "./CreateBranchDialog";
 import { GitPickerTrigger } from "./GitPickerTrigger";
 import { Badge } from "../../../shared/ui/Badge";
@@ -28,7 +32,6 @@ import {
   PickerList,
   PickerPopover,
   PopoverSearchHeader,
-  filterPickerOptions,
   usePickerList,
   type PickerOption,
 } from "../../../shared/ui/picker";
@@ -46,24 +49,17 @@ type Props = {
   onClose?: () => void;
   onOpenChange?: (open: boolean) => void;
   popoverSide?: "top" | "bottom";
-  /** Working copies in a second tab, so one control chooses the checkout and its branch. */
-  checkouts?: CheckoutChoice;
+  /** Opens the worktree that holds a chosen branch (a draft session binds to it). Without it the
+   * sidebar focus moves there, like the header picker. Never runs git checkout. */
+  onSelectWorktree?: (tree: Worktree) => void | Promise<void>;
+  /** Started sessions stay in their worktree: branches held by another worktree are disabled. */
+  worktreeLocked?: boolean;
 };
-
-export type CheckoutChoice = {
-  /** Name of the shown checkout; leads the trigger label. */
-  label: string;
-  value: string;
-  options: PickerOption[];
-  onChange: (value: string) => void;
-};
-
-type Tab = "branches" | "checkouts";
 
 const MENU_WIDTH = 280;
 
 type CreateRow = { kind: "create"; name: string };
-type BranchRow = { kind: "branch"; branch: GitBranchInfo };
+type BranchRow = { kind: "branch"; branch: GitBranchInfo; tree?: Worktree };
 type Row = CreateRow | BranchRow;
 
 type PendingSwitch =
@@ -75,7 +71,8 @@ const MENU_MAX_HEIGHT = 280;
 
 const branchKey = (entry: GitBranchInfo) => `${entry.remote ?? "local"}:${entry.name}`;
 
-function branchOption(entry: GitBranchInfo): PickerOption {
+function branchOption(entry: GitBranchInfo, tree?: Worktree, locked = false): PickerOption {
+  const where = tree ? prettyCwd(tree.path) : undefined;
   return {
     value: branchKey(entry),
     title: (
@@ -93,11 +90,25 @@ function branchOption(entry: GitBranchInfo): PickerOption {
     ),
     textValue: entry.name,
     icon: <GitBranch className="icon-sm" strokeWidth={1.75} />,
-    meta: entry.remote ? (
+    meta: tree ? (
+      <Badge size="xs" appearance="subtle">
+        {t("worktree")}
+      </Badge>
+    ) : entry.remote ? (
       <Badge size="xs" appearance="subtle">
         {entry.remote}
       </Badge>
     ) : undefined,
+    ...(tree
+      ? {
+          group: t("In a worktree"),
+          description: where,
+          disabled: locked || undefined,
+          disabledReason: locked
+            ? t("Checked out in {p0}. A started session stays in its worktree.", { p0: where })
+            : undefined,
+        }
+      : {}),
   };
 }
 
@@ -112,11 +123,11 @@ export function BranchPicker({
   onClose,
   onOpenChange,
   popoverSide = "top",
-  checkouts,
+  onSelectWorktree,
+  worktreeLocked = false,
 }: Props) {
   useLocale();
   const [open, setOpen] = useState(initialOpen);
-  const [tab, setTab] = useState<Tab>("branches");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -144,6 +155,12 @@ export function BranchPicker({
   const { branches: projectBranches, settled: branchesSettled } = useProjectBranchesState(
     cwd,
     inProject,
+  );
+
+  const { data: worktreeData } = useProjectWorktrees(cwd, inProject && open);
+  const byBranch = useMemo(
+    () => branchWorktrees(worktreeData?.worktrees, cwd),
+    [worktreeData, cwd],
   );
 
   const current = branch || projectBranches?.current || null;
@@ -196,18 +213,21 @@ export function BranchPicker({
   // have thousands of remote refs); a keystroke only filters them and PickerList windows what it mounts.
   const indexed = useMemo(() => {
     const selected = branch || projectBranches?.current;
-    return (projectBranches?.branches ?? []).map((entry) => {
+    const { free, inWorktree } = partitionByWorktree(projectBranches?.branches ?? [], byBranch);
+    return [...free, ...inWorktree].map((entry) => {
+      const tree = entry.remote ? undefined : byBranch.get(entry.name);
       const row: BranchRow = {
         kind: "branch",
         branch: { ...entry, current: entry.name === selected && !entry.remote },
+        tree,
       };
       return {
         row,
-        option: branchOption(row.branch),
+        option: branchOption(row.branch, tree, worktreeLocked),
         hay: (entry.remote ? `${entry.name} ${entry.remote}` : entry.name).toLowerCase(),
       };
     });
-  }, [branch, projectBranches]);
+  }, [branch, projectBranches, byBranch, worktreeLocked]);
   const needle = query.trim().toLowerCase();
   const visible = useMemo(
     () => (needle ? indexed.filter((entry) => entry.hay.includes(needle)) : indexed),
@@ -289,6 +309,15 @@ export function BranchPicker({
       dismiss(true);
       return;
     }
+    if (row.tree) {
+      if (worktreeLocked) return;
+      const tree = row.tree;
+      const main = worktreeData?.worktrees.find((entry) => entry.isMain);
+      dismiss(true);
+      if (onSelectWorktree) void Promise.resolve(onSelectWorktree(tree)).catch(() => {});
+      else if (main) setWorktreeFocus(main.path, { path: tree.path, branch: tree.branch });
+      return;
+    }
     void run({
       kind: "checkout",
       name: row.branch.name,
@@ -309,17 +338,6 @@ export function BranchPicker({
     },
     resetKey: `${open}:${query}`,
   });
-  const checkoutTab = Boolean(checkouts) && tab === "checkouts";
-  const checkoutPicker = usePickerList({
-    options: checkouts ? filterPickerOptions(checkouts.options, query) : [],
-    value: checkouts?.value ?? null,
-    onChange: (value) => {
-      dismiss(false);
-      if (value !== checkouts?.value) checkouts?.onChange(value);
-    },
-    resetKey: `${open}:${tab}:${query}`,
-  });
-  const list = checkoutTab ? checkoutPicker : picker;
 
   // Always keep the control mounted so the composer's toolbar does not resize
   // when a folder isn't a git repo. The loading skeleton, "No repo" label, and
@@ -331,37 +349,27 @@ export function BranchPicker({
       ? t("detached {p0}", { p0: current })
       : current
     : t("No repo");
-  const label = checkouts
-    ? current
-      ? `${checkouts.label} · ${branchLabel}`
-      : checkouts.label
-    : branchLabel;
+  const label = branchLabel;
   const title = awaitingBranch
     ? t("Loading branch")
-    : missingGit && !checkouts
+    : missingGit
       ? t("No git repository")
-      : checkouts
-        ? `${t("Worktree")} · ${checkouts.value}`
-        : `${t("Switch branch in this worktree…")} · ${label}`;
-  // With checkouts the control still switches worktree while a branch is unknown.
-  const interactive =
-    enabled && !checkoutBusy && (checkouts ? true : !awaitingBranch && !missingGit);
+      : `${t("Switch branch in this worktree…")} · ${label}`;
+  const interactive = enabled && !checkoutBusy && !awaitingBranch && !missingGit;
 
   return (
     <div ref={root} className="relative flex min-w-0 shrink">
       <GitPickerTrigger
         title={title}
         aria-label={
-          checkouts
-            ? `${t("Worktree")} ${label}`
-            : awaitingBranch
-              ? t("Loading branch")
-              : missingGit
-                ? t("No git repository")
-                : t("Branch {p0}", { p0: label })
+          awaitingBranch
+            ? t("Loading branch")
+            : missingGit
+              ? t("No git repository")
+              : t("Branch {p0}", { p0: label })
         }
-        aria-expanded={missingGit && !checkouts ? undefined : open}
-        aria-haspopup={missingGit && !checkouts ? undefined : "dialog"}
+        aria-expanded={missingGit ? undefined : open}
+        aria-haspopup={missingGit ? undefined : "dialog"}
         disabled={!interactive}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
@@ -372,11 +380,10 @@ export function BranchPicker({
           }
           setQuery("");
           setError(null);
-          setTab(current ? "branches" : "checkouts");
           setOpen(true);
         }}
         label={label}
-        loading={awaitingBranch && !checkouts}
+        loading={awaitingBranch}
         worktree={worktree}
       />
       {blocked ? (
@@ -432,43 +439,14 @@ export function BranchPicker({
           minHeight={MENU_MIN_HEIGHT}
           maxHeight={MENU_MAX_HEIGHT}
           onDismiss={(reason) => dismiss(reason === "escape")}
-          label={checkouts ? t("Worktree") : t("Branch picker")}
+          label={t("Branch picker")}
           data-branch-picker=""
           header={
             <>
-              {checkouts ? (
-                <TabStrip<Tab>
-                  label={t("Worktree")}
-                  size="sm"
-                  fill
-                  className="shrink-0"
-                  value={tab}
-                  onValueChange={(value) => {
-                    setTab(value);
-                    setQuery("");
-                    setError(null);
-                    search.current?.focus();
-                  }}
-                  items={[
-                    {
-                      value: "checkouts",
-                      label: t("Worktrees"),
-                      icon: <FolderTree aria-hidden className="icon-sm" />,
-                      count: checkouts.options.filter((option) => option.value).length,
-                    },
-                    {
-                      value: "branches",
-                      label: t("Branches"),
-                      icon: <GitBranch aria-hidden className="icon-sm" />,
-                      count: projectBranches?.branches.length ?? null,
-                    },
-                  ]}
-                />
-              ) : null}
               <PopoverSearchHeader
                 ref={search}
-                label={checkoutTab ? t("Search worktrees") : t("Search or create a branch")}
-                placeholder={checkoutTab ? t("Search worktrees") : t("Search or create a branch…")}
+                label={t("Search or create a branch")}
+                placeholder={t("Search or create a branch…")}
                 value={query}
                 onValueChange={(value) => {
                   setQuery(value);
@@ -477,12 +455,8 @@ export function BranchPicker({
                 autoCorrect="off"
                 autoCapitalize="off"
                 disabled={busy}
-                {...list.searchProps}
+                {...picker.searchProps}
                 onSubmit={() => {
-                  if (checkoutTab) {
-                    checkoutPicker.commit();
-                    return;
-                  }
                   if (rows.length > 0) {
                     picker.commit();
                     return;
@@ -490,100 +464,88 @@ export function BranchPicker({
                   if (createName && createRow) pick(createRow);
                 }}
                 trailing={
-                  checkoutTab ? undefined : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      iconOnly
-                      label={t("Fetch")}
-                      loading={fetching}
-                      loadingLabel={t("Fetching…")}
-                      disabled={busy || !!checkoutBusy || !enabled}
-                      onClick={async () => {
-                        if (busy || checkoutBusy || !enabled) return;
-                        setBusy(true);
-                        setFetching(true);
-                        setError(null);
-                        try {
-                          await withGitOperation(cwd, "Fetching…", () => gitFetch(cwd));
-                          notifyGitChanged(cwd, "refs");
-                        } catch (err) {
-                          setError(failMessage(err));
-                        } finally {
-                          setBusy(false);
-                          setFetching(false);
-                        }
-                      }}
-                    >
-                      <RefreshCw aria-hidden className="icon-sm" />
-                    </Button>
-                  )
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    label={t("Fetch")}
+                    loading={fetching}
+                    loadingLabel={t("Fetching…")}
+                    disabled={busy || !!checkoutBusy || !enabled}
+                    onClick={async () => {
+                      if (busy || checkoutBusy || !enabled) return;
+                      setBusy(true);
+                      setFetching(true);
+                      setError(null);
+                      try {
+                        await withGitOperation(cwd, "Fetching…", () => gitFetch(cwd));
+                        notifyGitChanged(cwd, "refs");
+                      } catch (err) {
+                        setError(failMessage(err));
+                      } finally {
+                        setBusy(false);
+                        setFetching(false);
+                      }
+                    }}
+                  >
+                    <RefreshCw aria-hidden className="icon-sm" />
+                  </Button>
                 }
               />
             </>
           }
           footer={
-            checkoutTab ? undefined : (
-              <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 p-1 px-1.5")}>
-                {createRow ? (
-                  <Button
-                    variant="item"
-                    motion="none"
-                    type="button"
-                    fullWidth
-                    align="start"
-                    startIcon={<Plus className="icon-md" strokeWidth={1.75} />}
-                    disabled={busy}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => pick(createRow)}
-                  >
-                    <Text size="inherit" tone="inherit" className="flex min-w-0">
-                      <MiddleTruncate className="min-w-0">
-                        {createRow.name
-                          ? t("Create and checkout {p0}", { p0: createRow.name })
-                          : t("New branch")}
-                      </MiddleTruncate>
-                    </Text>
-                  </Button>
-                ) : null}
+            <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 p-1 px-1.5")}>
+              {createRow ? (
                 <Button
                   variant="item"
                   motion="none"
                   type="button"
                   fullWidth
                   align="start"
-                  startIcon={<GitBranch className="icon-md" strokeWidth={1.75} />}
-                  disabled={busy || !projectBranches?.branches.length}
+                  startIcon={<Plus className="icon-md" strokeWidth={1.75} />}
+                  disabled={busy}
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    setOpen(false);
-                    setError(null);
-                    setCreatingFrom(true);
-                    setCreating(true);
-                  }}
+                  onClick={() => pick(createRow)}
                 >
-                  <Text size="inherit" tone="inherit" truncate className="min-w-0">
-                    {t("New branch from…")}
+                  <Text size="inherit" tone="inherit" className="flex min-w-0">
+                    <MiddleTruncate className="min-w-0">
+                      {createRow.name
+                        ? t("Create and checkout {p0}", { p0: createRow.name })
+                        : t("New branch")}
+                    </MiddleTruncate>
                   </Text>
                 </Button>
-              </div>
-            )
+              ) : null}
+              <Button
+                variant="item"
+                motion="none"
+                type="button"
+                fullWidth
+                align="start"
+                startIcon={<GitBranch className="icon-md" strokeWidth={1.75} />}
+                disabled={busy || !projectBranches?.branches.length}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setOpen(false);
+                  setError(null);
+                  setCreatingFrom(true);
+                  setCreating(true);
+                }}
+              >
+                <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                  {t("New branch from…")}
+                </Text>
+              </Button>
+            </div>
           }
         >
-          {checkoutTab ? (
-            <PickerList
-              label={t("Worktrees")}
-              controller={checkoutPicker}
-              emptyLabel={t("No matches")}
-            />
-          ) : (
-            <PickerList
-              label={t("Branches")}
-              controller={picker}
-              disabled={busy}
-              emptyLabel={query.trim() ? t("No matching branches") : t("No branches")}
-            />
-          )}
+          <PickerList
+            label={t("Branches")}
+            controller={picker}
+            disabled={busy}
+            emptyLabel={query.trim() ? t("No matching branches") : t("No branches")}
+          />
           {error ? (
             <InlineError
               {...surfaceAttributes(

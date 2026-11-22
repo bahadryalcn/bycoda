@@ -177,11 +177,11 @@ Their dependents can
 then start without a host commit or merge. Hosts must advertise
 `goals.direct-checkout`; older hosts are rejected before creation.
 
-The Changes panel lists the main working copy and available worktrees together in
-**All checkouts**. Expand a checkout to review its own changes, or select it in the
-checkout picker for its full Git panel and history. Diff, stage and commit targets
-remain tied to that checkout; selecting one does not move running sessions or
-switch a branch. A worktree isolates edits, but delivery to the base still requires
+With **All worktrees** selected in the sidebar header, the Changes panel lists the
+project folder and available worktrees together. Expand a worktree to review its own
+changes, or select it in the header for its full Git panel and history. Diff, stage
+and commit targets remain tied to that worktree; selecting one does not move running
+sessions or switch a branch. A worktree isolates edits, but delivery to the base still requires
 passing configured checks and a clean target checkout. Work already committed on
 the task branch appears in that checkout's history rather than its dirty-file list.
 

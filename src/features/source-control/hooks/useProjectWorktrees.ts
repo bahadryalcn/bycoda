@@ -6,6 +6,7 @@ import { createStore } from "../../../shared/lib/store";
 import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { pathKey } from "../../../shared/lib/paths";
 import { listWorktrees, type Worktrees } from "../model/worktrees";
+import { missingPathNamedIn } from "../model/checkoutSelection";
 
 type Snapshot = { data?: Worktrees; error?: string; loading?: boolean };
 type Entry = {
@@ -74,6 +75,27 @@ function load(
       loaded = true;
     } catch (error) {
       if (entry.generation !== generation) return false;
+      // One listed worktree deleted from elsewhere fails the whole listing with a
+      // "cannot change to" naming it: keep the list and mark that checkout missing.
+      const listed = entry.snapshot.data;
+      const vanished = missingPathNamedIn(
+        presentRemoteError(error),
+        listed?.worktrees.map((tree) => tree.path) ?? [],
+      );
+      if (listed && vanished) {
+        publish(entry, {
+          data: {
+            ...listed,
+            worktrees: listed.worktrees.map((tree) =>
+              pathKey(tree.path) === pathKey(vanished) ? { ...tree, missing: true } : tree,
+            ),
+          },
+          loading: false,
+        });
+        entry.inFlight = undefined;
+        entries.prune();
+        return true;
+      }
       // A background failure must not replace a usable list with a loading or
       // error screen. The caller can still surface the error beside the list.
       publish(entry, { ...entry.snapshot, error: presentRemoteError(error), loading: false });

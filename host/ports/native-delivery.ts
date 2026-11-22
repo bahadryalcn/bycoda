@@ -1,14 +1,7 @@
 import { createHash } from "node:crypto";
 import type { HostStore } from "../store";
-import {
-  createNativeDeliveryStore,
-  type NativeDeliveryKind,
-} from "../native-delivery/native-delivery-store";
-import type {
-  NativeDeliveryOwnerPorts,
-  NativeBufferDeliveryBinding,
-} from "../domains/native-delivery/ports";
-import type { NativeWorkspaceOwnerScope } from "../domains/native-workspaces/ports";
+import type { createNativeDeliveryStore } from "../native-delivery/native-delivery-store";
+import type { NativeDeliveryOwnerPorts } from "../domains/native-delivery/ports";
 import type { NativeServiceOwnerPorts } from "../domains/native-services/ports";
 import {
   HostDomainAuthorizationError,
@@ -21,7 +14,6 @@ import {
   NativeDeliveryResultSourceSchema,
   NativeDeliveryConsumedResultSchema,
 } from "../../src/shared/model/host-contracts/native-delivery-identity";
-import { NativeBufferUpdateParamsSchema } from "../../src/shared/model/host-contracts/native-workspaces";
 import { NativeServiceUploadTargetSchema } from "../../src/shared/model/host-contracts/native-service-upload";
 import { NATIVE_SERVICES_RPC_SCHEMAS } from "../../src/shared/model/host-contracts/native-services";
 import {
@@ -50,7 +42,6 @@ export function bindNativeDeliveryOwner(
   adapters: {
     store: HostStore;
     journal: ReturnType<typeof createNativeDeliveryStore>;
-    workspaceOwner: NativeWorkspaceOwnerScope;
     services: NativeServiceOwnerPorts;
   },
   principal: string,
@@ -109,16 +100,8 @@ export function bindNativeDeliveryOwner(
           sha256: params.sha256,
           byteLength: params.byteLength,
         });
-        const buffer = method.startsWith("native.buffers."),
-          applying = method.endsWith(".apply"),
-          kind: NativeDeliveryKind = buffer
-            ? "buffer"
-            : NativeServiceUploadTargetSchema.parse(params.target);
-        const binding: NativeBufferDeliveryBinding = {
-          ...identity,
-          principalId: principal,
-          environmentId: store.environmentId,
-        };
+        const applying = method === "native.services.delivery.apply";
+        const kind = NativeServiceUploadTargetSchema.parse(params.target);
         retain(authorized);
         if (parseNativeDeliveryEpochOriginalId(identity.originalId)) {
           const existing = await journal.readMetadata(principal, kind, identity);
@@ -138,7 +121,8 @@ export function bindNativeDeliveryOwner(
             });
             await authorize();
             const result = {
-              ...(buffer ? identity : { ...identity, target: kind }),
+              ...identity,
+              target: kind,
               state: "fenced" as const,
               epoch,
             };
@@ -148,7 +132,6 @@ export function bindNativeDeliveryOwner(
           }
         }
         if (method === "native.services.delivery.result.read") {
-          if (kind === "buffer") throw new Error("Invalid native service delivery target");
           const resultSource = NativeDeliveryResultSourceSchema.parse(params.resultSource),
             offset = Number(params.offset);
           const data = await journal.readResult(
@@ -181,32 +164,13 @@ export function bindNativeDeliveryOwner(
             bytes.toString("utf8") !== params.paramsJson
           )
             throw new Error("Native delivery original bytes do not match identity");
-          const request: Record<string, unknown> = (
-            buffer
-              ? NativeBufferUpdateParamsSchema
-              : NATIVE_SERVICES_RPC_SCHEMAS[kind as Exclude<NativeDeliveryKind, "buffer">].params
-          ).parse(JSON.parse(params.paramsJson));
+          const request: Record<string, unknown> = NATIVE_SERVICES_RPC_SCHEMAS[kind].params.parse(
+            JSON.parse(params.paramsJson),
+          );
           await authorize();
           const effect = async () => {
             let result: unknown;
-            if (kind === "buffer") {
-              result = await adapters.workspaceOwner(async (owner) => {
-                if (!owner.nativeActivity.updateBuffersWithDelivery)
-                  throw new Error("Native buffer delivery owner is unavailable");
-                return owner.nativeActivity.updateBuffersWithDelivery!(request as never, {
-                  binding,
-                  prepared: (proof) => journal.prepareProof(principal, identity, proof),
-                });
-              });
-              if (
-                !result ||
-                typeof result !== "object" ||
-                !("acknowledged" in result) ||
-                result.acknowledged !== true
-              )
-                throw new Error("Native buffer acknowledgement is unavailable");
-              result = { acknowledged: true };
-            } else if (kind === "native.services.conversation.desktop.finish") {
+            if (kind === "native.services.conversation.desktop.finish") {
               result = await adapters.services.desktop.finish(
                 String(request.id),
                 request.result,
@@ -221,8 +185,7 @@ export function bindNativeDeliveryOwner(
             await authorize();
             return result;
           };
-          // Fast acknowledgement exists only for the service targets (see the contract).
-          const acknowledge = !buffer && params.acknowledge === "admission";
+          const acknowledge = params.acknowledge === "admission";
           // The Host's own continuation owns the effect; the request's ingress deadline
           // bounds only its admission. A request that waited out that deadline in the queue
           // is refused here with nothing admitted, never run late for a caller that left.
@@ -257,32 +220,12 @@ export function bindNativeDeliveryOwner(
         await authorize();
         if (method.endsWith(".ack")) {
           const consumed = NativeDeliveryConsumedResultSchema.parse(params.consumedResult);
-          let verifiedProof;
-          if (kind === "buffer" && row?.state !== "retired") {
-            verifiedProof = row?.proof;
-            // A recorded buffer was verified when Host recorded it and the producer consumed
-            // that answer, so it never resends this report. Its proof may since have aged out
-            // of the snapshot archive; refusing the ACK then would hold the epoch prefix forever.
-            if (
-              !verifiedProof ||
-              (row?.state !== "recorded" &&
-                !(await adapters.workspaceOwner(
-                  async (owner) =>
-                    !!owner.nativeActivity.verifyBufferDelivery &&
-                    owner.nativeActivity.verifyBufferDelivery(binding, verifiedProof!),
-                )))
-            )
-              throw new Error(
-                "Native buffer delivery ACK requires exact current or archived proof",
-              );
-          }
-          await authorize();
-          await journal.retire(principal, kind, identity, consumed, verifiedProof);
+          await journal.retire(principal, kind, identity, consumed);
           row = await journal.readMetadata(principal, kind, identity);
           await authorize();
         }
         if (!row) return { state: "absent" as const };
-        const scope = buffer ? identity : { ...identity, target: kind };
+        const scope = { ...identity, target: kind };
         if (row.state === "retired") {
           const consumedResult = row.consumedResult!;
           retain(async () => {
@@ -297,26 +240,7 @@ export function bindNativeDeliveryOwner(
           await authorize();
           return { ...scope, state: "retired" as const, consumedResult };
         }
-        if (kind === "buffer") {
-          const proof = row.proof;
-          const verify = async () => {
-            await authorize();
-            if (!proof) return false;
-            return adapters.workspaceOwner(async (owner) => {
-              if (!owner.nativeActivity.verifyBufferDelivery) return false;
-              return owner.nativeActivity.verifyBufferDelivery(binding, proof);
-            });
-          };
-          if (proof && (await verify())) {
-            retain(async () => (await authorized()) && (await verify()));
-            await authorize();
-            return {
-              ...identity,
-              state: "recorded" as const,
-              result: { acknowledged: true as const },
-            };
-          }
-        } else if (row.state === "recorded") {
+        if (row.state === "recorded") {
           const resultSource = row.resultSource;
           if (!resultSource) throw new Error("Native delivery recorded result is corrupt");
           retain(async () => {

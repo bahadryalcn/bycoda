@@ -805,18 +805,15 @@ async function choose(panel: Locator, label: string, option: string | RegExp) {
     .click();
 }
 
-// With one checkout selected, the checkout choice is merged into the branch control, which
-// opens a picker with a Worktrees tab; "All checkouts" is its first row.
-async function chooseMergedCheckout(panel: Locator, option: string | RegExp) {
-  const page = panel.page();
-  await panel.getByRole("button", { name: /^Worktree [^:]/ }).click();
-  const picker = page.getByRole("dialog", { name: "Worktree", exact: true });
-  await picker.getByRole("tab", { name: /^Worktrees/ }).click();
-  await picker
-    .getByRole(
-      "option",
-      typeof option === "string" ? { name: option, exact: true } : { name: option },
-    )
+// The sidebar header is the only worktree selector: "All worktrees" first, then every worktree.
+async function chooseHeaderWorktree(page: Page, option: string) {
+  await page.getByRole("button", { name: "Switch worktree", exact: true }).click();
+  const list = page.getByRole("dialog", { name: "Worktrees", exact: true });
+  await (option === "All worktrees"
+    ? list.getByRole("option", { name: "All worktrees", exact: true })
+    : list.getByRole("option").filter({ hasText: option })
+  )
+    .first()
     .click();
 }
 
@@ -826,42 +823,38 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
   await page.goto("/tests/browser/workspace/project-workspace-navigation.html?worktrees=1");
   const panel = page.locator('[data-workspace-source-control="G:/wallet/api"]');
   await expect(panel).toBeVisible();
-  // The control opens on the session's own checkout, named by its folder and branch; the
-  // overview lists every checkout.
-  await expect(
-    panel.getByRole("button", { name: "Worktree api · main", exact: true }),
-  ).toBeVisible();
-  await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
-  await chooseMergedCheckout(panel, "All checkouts");
-  const checkouts = panel.locator("[data-checkout-overview] [data-git-repository]");
-  await expect(checkouts).toHaveCount(2);
+  // The default scope is All worktrees: the session's worktree is open, the other one is a
+  // collapsed row that mounts its panel only when expanded.
+  await expect(page.getByRole("button", { name: "Switch worktree", exact: true })).toContainText(
+    "All worktrees",
+  );
+  const overview = panel.locator("[data-checkout-overview]");
+  await expect(overview.locator("[data-git-repository]")).toHaveCount(1);
+  await expect(overview.locator('[data-git-repository="G:/wallet/api"]')).toBeVisible();
+  const taskRow = overview.locator('[data-worktree-row="G:/wallet-worktrees/task"]');
+  await expect(taskRow).toBeVisible();
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 800 });
-    // Poll: the picker's value roll briefly overflows while the old label exits.
     await expect
       .poll(() => panel.evaluate((node) => node.scrollWidth <= node.clientWidth))
       .toBe(true);
   }
-  const task = panel.locator(
-    '[data-checkout-overview] [data-git-repository="G:/wallet-worktrees/task"]',
-  );
-  const taskToggle = task.locator("header button[aria-expanded]").first();
-  await expect(taskToggle).toHaveAttribute("aria-expanded", "false");
-  await taskToggle.focus();
+  const task = overview.locator('[data-git-repository="G:/wallet-worktrees/task"]');
+  await taskRow.getByRole("button").first().focus();
   await page.keyboard.press("Enter");
+  await expect(taskRow).toHaveCount(0);
+  const taskToggle = task.locator("header button[aria-expanded]").first();
   await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
   await task.getByText("same.ts", { exact: true }).click();
   await expect(page.getByRole("status", { name: "Selected review" })).toHaveText(
     "diff:G:/wallet-worktrees/task:G:/wallet-worktrees/task/same.ts",
   );
-  await expect(
-    panel.getByRole("button", { name: "Worktree: All checkouts", exact: true }),
-  ).toBeVisible();
-  await choose(panel, "Worktree", /^task\b/);
-  await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
-  await expect(panel.getByRole("button", { name: /^Worktree task\b/ })).toBeVisible();
-  await chooseMergedCheckout(panel, "All checkouts");
-  await expect(checkouts).toHaveCount(2);
+  // Focusing the worktree in the header leaves one panel with its own branch picker.
+  await chooseHeaderWorktree(page, "G:/wallet-worktrees/task".replace("G:", "").replace(/^\//, ""));
+  await expect(overview).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: "Branch mc/task", exact: true })).toBeVisible();
+  await chooseHeaderWorktree(page, "All worktrees");
+  await expect(overview.locator("[data-git-repository]")).toHaveCount(2);
   await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
   await expect(task.getByText("same.ts", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 800 });

@@ -1,13 +1,15 @@
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Text } from "../../../shared/ui/Text";
 import { usePendingSource } from "../../../shared/ui/settings";
 import type { McpServerRow } from "../model/mcpSettingsCache";
 import { errorText } from "../../../shared/lib/errors";
+import { invokeMcpConfig, type RemoteMcpConfigTarget } from "../model/mcpConfigTarget";
 
 type ServerConfig = { config: string; revision: string };
 
@@ -37,19 +39,36 @@ function jsonError(text: string): string {
  * Edits one server entry in its provider file. Saving sends the revision it loaded, so a
  * change made elsewhere is refused instead of overwritten; the draft stays until saved or reverted.
  */
-export function McpServerConfigEditor({
-  server,
-  cwd,
-  globalOnly,
-  disabled,
-  onSaved,
-}: {
+type EditorProps = {
   server: McpServerRow;
   cwd: string;
   globalOnly: boolean;
+  remote?: RemoteMcpConfigTarget;
   disabled: boolean;
   onSaved: () => Promise<void>;
-}) {
+};
+
+export function McpServerConfigEditor(props: EditorProps) {
+  const [opened, setOpened] = useState(false);
+  return (
+    <Disclosure
+      summary={t("Edit provider JSON")}
+      size="sm"
+      onOpenChange={(open) => {
+        if (open) setOpened(true);
+      }}
+    >
+      {props.server.scope === "project" ? (
+        <Text as="p" size="caption" tone="secondary">
+          {t("This file can be shared with the project. Store tokens in Project credentials.")}
+        </Text>
+      ) : null}
+      {opened ? <ServerConfigForm {...props} /> : null}
+    </Disclosure>
+  );
+}
+
+function ServerConfigForm({ server, cwd, globalOnly, remote, disabled, onSaved }: EditorProps) {
   const [loaded, setLoaded] = useState<ServerConfig>();
   const [draft, setDraft] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -62,9 +81,10 @@ export function McpServerConfigEditor({
     const version = ++epoch.current;
     setLoadError("");
     try {
-      const result = await invoke<ServerConfig>(
+      const result = await invokeMcpConfig<ServerConfig>(
         "mcp_server_config_read",
         target(server, cwd, globalOnly),
+        remote,
       );
       if (version !== epoch.current) return;
       setLoaded(result);
@@ -97,11 +117,15 @@ export function McpServerConfigEditor({
     setSaveError("");
     let written = false;
     try {
-      const result = await invoke<ServerConfig>("mcp_server_config_write", {
-        ...target(server, cwd, globalOnly),
-        config: draft,
-        expectedRevision: loaded.revision,
-      });
+      const result = await invokeMcpConfig<ServerConfig>(
+        "mcp_server_config_write",
+        {
+          ...target(server, cwd, globalOnly),
+          config: draft,
+          expectedRevision: loaded.revision,
+        },
+        remote,
+      );
       written = true;
       setLoaded(result);
       setDraft(result.config);

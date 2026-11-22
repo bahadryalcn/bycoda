@@ -1115,3 +1115,116 @@ fn live_editor_registry_allows_cleanup_before_the_first_report() {
     buffers.clear("secondary");
     assert!(check().is_ok());
 }
+
+#[test]
+fn local_removal_refuses_unsaved_editors_of_any_window() {
+    use crate::native_workspace::editor_buffers::EditorBuffers;
+    use crate::native_workspace::BufferState;
+    let editors = EditorBuffers::default();
+    let tree = std::path::Path::new("/repo-trees/feature");
+    assert!(refuse_unsaved_editors(&editors, tree).is_ok());
+    editors.report(
+        "second-window",
+        &[serde_json::from_value::<BufferState>(
+            serde_json::json!({"path": "/repo-trees/feature/README.md", "dirty": true}),
+        )
+        .unwrap()],
+    );
+    assert!(refuse_unsaved_editors(&editors, tree)
+        .unwrap_err()
+        .contains("unsaved files"));
+    assert!(
+        refuse_unsaved_editors(&editors, std::path::Path::new("/repo-trees/feature-2")).is_ok()
+    );
+    editors.clear("second-window");
+    assert!(refuse_unsaved_editors(&editors, tree).is_ok());
+}
+
+fn branch_exists(root: &Path, branch: &str) -> bool {
+    git(
+        root,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ],
+    )
+    .is_ok()
+}
+
+#[test]
+fn delete_branch_removes_a_merged_branch_after_removal() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let tree = create(&root, "merged-branch", "main", false).unwrap();
+    let store = SessionStore::open_in_memory().unwrap();
+    let conn = store.lock_conn().unwrap();
+    let removed = remove_with_branch(
+        || Ok(&**conn),
+        &root,
+        Path::new(&tree.path),
+        true,
+        true,
+        true,
+    )
+    .unwrap();
+    assert!(!Path::new(&tree.path).exists());
+    assert!(!branch_exists(&root, "merged-branch"));
+    assert!(removed.branch_notice.is_none());
+}
+
+#[test]
+fn delete_branch_keeps_an_unmerged_branch_and_reports() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let tree = create(&root, "unmerged-branch", "main", false).unwrap();
+    git_checked(
+        Path::new(&tree.path),
+        &[
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "unmerged work",
+        ],
+    )
+    .unwrap();
+    let store = SessionStore::open_in_memory().unwrap();
+    let conn = store.lock_conn().unwrap();
+    let removed = remove_with_branch(
+        || Ok(&**conn),
+        &root,
+        Path::new(&tree.path),
+        true,
+        true,
+        true,
+    )
+    .unwrap();
+    assert!(!Path::new(&tree.path).exists());
+    assert!(branch_exists(&root, "unmerged-branch"));
+    assert!(removed.branch_notice.is_some());
+}
+
+#[test]
+fn removal_keeps_the_branch_by_default() {
+    let repo = repo();
+    let root = repo.0.join("repo");
+    let tree = create(&root, "kept-branch", "main", false).unwrap();
+    let store = SessionStore::open_in_memory().unwrap();
+    let conn = store.lock_conn().unwrap();
+    let removed = remove_with_branch(
+        || Ok(&**conn),
+        &root,
+        Path::new(&tree.path),
+        true,
+        true,
+        false,
+    )
+    .unwrap();
+    assert!(branch_exists(&root, "kept-branch"));
+    assert!(removed.branch_notice.is_none());
+}

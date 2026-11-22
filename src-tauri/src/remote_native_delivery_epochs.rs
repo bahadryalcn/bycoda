@@ -376,7 +376,7 @@ mod tests {
             ),
         ] {
             assert!(
-                NativeProfileBroker::supports_workspace_params(method, &params),
+                !NativeProfileBroker::supports_workspace_params(method, &params),
                 "{method}"
             );
             assert!(
@@ -384,10 +384,6 @@ mod tests {
                 "{method}"
             );
             assert!(!HostWsBroker::supports_method(method), "{method}");
-            assert!(
-                !NativeProfileBroker::supports_params(method, &params),
-                "{method}"
-            );
             assert!(
                 !NativeProfileBroker::supports_gateway_params(method, &params),
                 "{method}"

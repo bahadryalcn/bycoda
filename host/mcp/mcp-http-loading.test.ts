@@ -3,20 +3,27 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { McpHttp } from "./mcp-http";
+import { McpHub } from "./hub/hub";
 
 const dirs: string[] = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function setup() {
+function setup(withProjectCredentials = false) {
   const dir = mkdtempSync(join(tmpdir(), "bycoda-mcp-loading-"));
   dirs.push(dir);
   const resetPublications = vi.fn();
   const hub = {
     dataDir: dir,
     resetPublications,
-    oauthSignedIn: async () => false,
+    oauthSignedIn: async () => withProjectCredentials,
+    oauthServerRef: McpHub.prototype.oauthServerRef,
+    oauthProjectScoped: async () => false,
+    projectCredentialsFor: async (cwd: string | undefined, { name }: { name: string }) =>
+      cwd && withProjectCredentials && (name === "alpha" || name === "remote")
+        ? { values: { TOKEN: "SECRET" } }
+        : undefined,
     inventory: async () => [
       {
         name: "zeta",
@@ -84,6 +91,7 @@ describe("mcp.hub.loading owner RPCs", () => {
     expect(result).toEqual({
       policy: { version: 1, mode: "onDemand", direct: [] },
       corrupt: false,
+      managedServers: true,
       servers: ["alpha", "zeta"],
       inventory: [
         {
@@ -121,6 +129,18 @@ describe("mcp.hub.loading owner RPCs", () => {
     for (const key of ["command", "args", "env", "url", "headers"])
       expect(text).not.toContain(`"${key}"`);
     expect(text).not.toContain("SECRET");
+  });
+
+  it("reports project credentials without publishing private HTTP directly", async () => {
+    const s = setup(true);
+    const { result } = await s.call("mcp.hub.loading.get", { cwd: s.dir });
+    expect(result.servers).toEqual(["alpha", "zeta"]);
+    expect(result.inventory).toEqual([
+      expect.objectContaining({ name: "alpha", projectCredentialsConfigured: true }),
+      expect.objectContaining({ name: "remote", projectCredentialsConfigured: true }),
+      expect.objectContaining({ name: "zeta", projectCredentialsConfigured: false }),
+    ]);
+    expect(JSON.stringify(result)).not.toContain("SECRET");
   });
 
   it("validates, persists atomically and resets publications", async () => {
@@ -167,6 +187,7 @@ describe("mcp.oauth owner RPCs", () => {
         { name: "local", kind: "stdio" },
       ],
       oauthSignedIn: async () => false,
+      oauthServerRef: McpHub.prototype.oauthServerRef,
       oauth: {
         start,
         signOut,
@@ -211,7 +232,10 @@ describe("mcp.oauth owner RPCs", () => {
     expect((await s.call("mcp.oauth.start", { name: "remote" })).authorizationUrl).toContain(
       "https://auth.example",
     );
-    expect(s.start).toHaveBeenCalledWith({ name: "remote", url: "https://remote.example/mcp" });
+    expect(s.start).toHaveBeenCalledWith(
+      { name: "remote", url: "https://remote.example/mcp" },
+      undefined,
+    );
     expect(await s.call("mcp.oauth.signOut", { name: "remote" })).toEqual({ signedOut: true });
   });
 });

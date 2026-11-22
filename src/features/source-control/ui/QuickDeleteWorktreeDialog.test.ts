@@ -6,7 +6,10 @@ import { QuickDeleteWorktreeDialog } from "./QuickDeleteWorktreeDialog";
 import { listWorktrees, type Worktree } from "../model/worktrees";
 import { gitDiffIndex, type GitDiffIndex } from "../../../platform/tauri/fs";
 
-vi.mock("../model/worktrees", () => ({ listWorktrees: vi.fn() }));
+vi.mock("../model/worktrees", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../model/worktrees")>()),
+  listWorktrees: vi.fn(),
+}));
 vi.mock("../../../platform/tauri/fs", () => ({ gitDiffIndex: vi.fn() }));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyText: vi.fn() }));
 const tree: Worktree = {

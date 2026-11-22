@@ -25,4 +25,13 @@ describe("worktree focus", () => {
     setWorktreeFocus("/repo", undefined);
     expect(worktreeFocus("/repo")).toBeUndefined();
   });
+
+  it("treats the project folder as a real focus, not as All worktrees", () => {
+    const main = { path: "/repo", branch: "main" };
+    setWorktreeFocus("/repo", main);
+    expect(worktreeFocus("/repo")).toEqual(main);
+    expect(inWorktreeFocus({ cwd: "/repo", worktreeCwd: "/trees/a" }, worktreeFocus("/repo"))).toBe(false);
+    setWorktreeFocus("/repo", undefined);
+    expect(inWorktreeFocus({ cwd: "/repo", worktreeCwd: "/trees/a" }, worktreeFocus("/repo"))).toBe(true);
+  });
 });

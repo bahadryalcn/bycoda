@@ -225,8 +225,7 @@ describe("HubExternalMcpTools", () => {
       url: "https://mcp.example.test/mcp",
     };
     const fakeFetch = (async (_url: string, init: RequestInit) => {
-      const headers = init.headers as Record<string, string>;
-      if (!headers.Authorization) return new Response("", { status: 401 });
+      if (!new Headers(init.headers).has("Authorization")) return new Response("", { status: 401 });
       const body = JSON.parse(init.body as string);
       if (body.id === undefined) return new Response("", { status: 202 });
       const result =
@@ -252,5 +251,88 @@ describe("HubExternalMcpTools", () => {
       state: "cached",
       toolCount: 1,
     });
+  });
+
+  it("keeps project HTTP headers private, case-insensitive, and isolated by project", async () => {
+    const http: InventoryDefinition = {
+      name: "cloudflare",
+      source: "claude",
+      sources: ["claude"],
+      aliases: [
+        { provider: "claude", name: "cloudflare" },
+        { provider: "codex", name: "cloudflare" },
+      ],
+      kind: "http",
+      url: "https://example.test/mcp",
+      headers: { Authorization: "Bearer provider-config" },
+    };
+    const calls: (string | null)[] = [];
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      expect(init.redirect).toBe("error");
+      calls.push(new Headers(init.headers).get("authorization"));
+      const body = JSON.parse(init.body as string);
+      if (body.id === undefined) return new Response("", { status: 202 });
+      return Response.json({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: body.method === "tools/list" ? { tools: [{ name: "list" }] } : {},
+      });
+    }) as typeof fetch;
+    const first = tempDir();
+    const second = tempDir();
+    const values = new Map<string, string>();
+    const hub = new McpHub({
+      dataDir: first,
+      inventory: async () => [
+        http,
+        { ...http, name: "cloudflare-project", url: "https://second.example.test/mcp" },
+      ],
+      files: {
+        claudeConfig: join(first, "none.json"),
+        pluginsDir: join(first, "none"),
+        codexConfig: join(first, "none.toml"),
+      },
+      accountDirs: async () => ({ claude: [], codex: [] }),
+      policy: async () => ({ version: 1, mode: "always", direct: [] }),
+      projectCredentialValues: {
+        get: async (ref) => values.get(ref),
+        set: async (ref, value) => {
+          values.set(ref, value);
+        },
+        delete: async (ref) => {
+          values.delete(ref);
+        },
+      },
+    });
+    hubs.push(hub);
+    const tools = new HubExternalMcpTools({ hub, fetch: fakeFetch });
+    expect(
+      await hub.setProjectCredentials(first, http.name, { authorization: "Bearer first" }),
+    ).toEqual({ kind: "http", configured: true });
+    expect(
+      await hub.setProjectCredentials(second, http.name, { Authorization: "Bearer second" }),
+    ).toEqual({ kind: "http", configured: true });
+    expect(await hub.publication("http://127.0.0.1:4000", first)).toEqual({
+      servers: [],
+      disable: { claude: ["cloudflare"], codex: ["cloudflare"], opencode: [] },
+    });
+    for (const [cwd, token] of [
+      [first, "first"],
+      [second, "second"],
+    ]) {
+      calls.length = 0;
+      await tools.describe(ctx({ cwd }), { server: http.name });
+      expect(calls).toHaveLength(3);
+      expect(calls).toEqual(Array(3).fill(`Bearer ${token}`));
+    }
+    expect(await hub.clearProjectCredentials(first, http.name)).toEqual({
+      kind: "http",
+      configured: false,
+    });
+    expect(await hub.projectCredentialStatus(second, http.name)).toEqual({
+      kind: "http",
+      configured: true,
+    });
+    expect((await hub.publication("http://127.0.0.1:4000", first)).servers).toHaveLength(2);
   });
 });

@@ -108,3 +108,28 @@ it("starts manual refresh during a focus load and ignores the older response", a
   expect(shown?.data?.defaultRoot).toBe("new");
   expect(shown?.loading).toBe(false);
 });
+
+it("marks a listed worktree that vanished mid-listing as missing instead of failing the list", async () => {
+  let shown: ReturnType<typeof useProjectWorktrees> | undefined;
+  const Probe = () => {
+    shown = useProjectWorktrees(CWD);
+    return null;
+  };
+  const tree = (path: string) => ({ path, missing: false, prunable: false });
+  invokeWorkspace.mockReset().mockResolvedValueOnce({
+    worktrees: [tree("G:/trees/main"), tree("G:/trees/gone")],
+    defaultRoot: "G:/trees",
+  });
+  await act(async () => root.render(createElement(Probe)));
+  invokeWorkspace.mockRejectedValue(
+    "fatal: cannot change to 'G:/trees/gone': No such file or directory",
+  );
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+  });
+  expect(shown?.error).toBeUndefined();
+  expect(shown?.data?.worktrees.map((entry) => [entry.path, entry.missing])).toEqual([
+    ["G:/trees/main", false],
+    ["G:/trees/gone", true],
+  ]);
+});

@@ -130,15 +130,21 @@ export async function removeWorktree(
   force = false,
   keepSessions = false,
   expectedReview?: WorktreeRemovalReview,
+  /** Safe-deletes the branch after removal; Git keeping it is reported in `branchNotice`. */
+  deleteBranch = false,
 ) {
   assertLocalRemoval(cwd, path);
-  const result = await invoke<{ sessionIds: string[]; projectCwd: string }>("git_worktree_remove", {
-    cwd,
-    path,
-    force,
-    keepSessions,
-    ...(expectedReview ? { expectedReview } : {}),
-  });
+  const result = await invoke<{ sessionIds: string[]; projectCwd: string; branchNotice?: string }>(
+    "git_worktree_remove",
+    {
+      cwd,
+      path,
+      force,
+      keepSessions,
+      ...(expectedReview ? { expectedReview } : {}),
+      ...(deleteBranch ? { deleteBranch } : {}),
+    },
+  );
   notifyGitChanged();
   return result;
 }
@@ -252,4 +258,17 @@ export type RemoveWorktree = (
   path: string,
   force: boolean,
   keepSessions?: boolean,
-) => Promise<void | { sessionIds: string[]; projectCwd: string }>;
+  expectedReview?: WorktreeRemovalReview,
+  deleteBranch?: boolean,
+) => Promise<void | { sessionIds: string[]; projectCwd: string; branchNotice?: string }>;
+
+/** Git refuses to delete these as a convenience; the dialog disables the option instead. */
+const KEPT_BRANCHES = new Set(["main", "master"]);
+
+/** Why "Also delete branch" is unavailable for this worktree, or undefined when it is offered. */
+export function branchDeleteBlock(tree: Pick<Worktree, "branch" | "unpushed">) {
+  if (!tree.branch) return undefined;
+  if (tree.unpushed) return "unpushed" as const;
+  if (KEPT_BRANCHES.has(tree.branch)) return "default" as const;
+  return undefined;
+}

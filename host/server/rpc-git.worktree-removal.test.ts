@@ -88,7 +88,9 @@ async function fixture(headless?: (path: string, project: string) => Promise<voi
           expect(job).toBeDefined();
           live.removalLeaseBeat({
             ...beat,
-            removalLeaseReplies: [{ id: job!.id, granted: true, release: false }],
+            removalLeaseReplies: [
+              { id: job!.id, granted: true, release: false, checks: ["editors"] },
+            ],
           });
         },
         { timeout: 10_000 },
@@ -214,7 +216,7 @@ it("waits for the execution desktop lease and requests release after removal", a
       { timeout: 10_000 },
     );
     if (!job) throw new Error("Missing desktop removal job");
-    const reply = { id: job.id, granted: true, release: false };
+    const reply = { id: job.id, granted: true, release: false, checks: ["editors"] };
     expect(
       f.live.removalLeaseBeat({ ...beat, clientId: "other", removalLeaseReplies: [reply] }).acked,
     ).toEqual([]);
@@ -353,23 +355,30 @@ it("lists ignored local data and requires force even when Git status is clean", 
   }
 }, 60_000);
 
-it("keeps the worktree and names unsaved files when the desktop refuses for editors", async () => {
+it.each([
+  {
+    reply: { granted: false, reason: "editors", checks: ["editors"] },
+    message: "Save or close unsaved files",
+  },
+  {
+    reply: { granted: true },
+    message: "Update the desktop app to remove worktrees from this Host.",
+  },
+])("keeps the worktree when the lease returns $message", async ({ reply, message }) => {
   const f = await fixture();
   try {
     const { token } = await f.review();
     const beat = { clientId: "desktop", sessions: [] };
     f.live.beat(beat);
     const removal = f.remove(token);
-    const refused = expect(removal).rejects.toThrow("Save or close unsaved files");
+    const refused = expect(removal).rejects.toThrow(message);
     await vi.waitFor(
       () => {
         const job = f.live.removalLeaseBeat(beat).jobs.find((entry) => entry.path);
         expect(job).toBeDefined();
         f.live.removalLeaseBeat({
           ...beat,
-          removalLeaseReplies: [
-            { id: job!.id, granted: false, release: false, reason: "editors", checks: ["editors"] },
-          ],
+          removalLeaseReplies: [{ id: job!.id, release: false, ...reply }],
         });
       },
       { timeout: 10_000 },
@@ -380,3 +389,53 @@ it("keeps the worktree and names unsaved files when the desktop refuses for edit
     await f.close();
   }
 });
+
+const branchExists = async (f: Awaited<ReturnType<typeof fixture>>, branch: string) =>
+  (await f.git("branch", "--list", branch)).stdout.trim() !== "";
+
+it("keeps the branch by default and deletes a merged branch only on request", async () => {
+  const kept = await fixture();
+  try {
+    kept.expireHeartbeat(3 * 60_000);
+    const { token } = await kept.review();
+    const result = await kept.remove(token);
+    expect(result).not.toHaveProperty("branchNotice");
+    expect(await branchExists(kept, "linked")).toBe(true);
+  } finally {
+    await kept.close();
+  }
+  const deleted = await fixture();
+  try {
+    deleted.expireHeartbeat(3 * 60_000);
+    const { token } = await deleted.review();
+    const result = await deleted.remove(token, { deleteBranch: true });
+    expect(result).not.toHaveProperty("branchNotice");
+    expect(await worktreeListed(deleted)).toBe(false);
+    expect(await branchExists(deleted, "linked")).toBe(false);
+  } finally {
+    await deleted.close();
+  }
+}, 60_000);
+
+it("keeps an unmerged branch, reports it and still removes the worktree", async () => {
+  const f = await fixture();
+  try {
+    f.expireHeartbeat(3 * 60_000);
+    await writeFile(join(f.path, "work"), "unmerged");
+    await hostGitExec.exec("git", ["add", "."], { cwd: f.path, timeout: 10_000 });
+    await hostGitExec.exec(
+      "git",
+      ["-c", "user.name=Fixture", "-c", "user.email=f@example.com", "commit", "-qm", "work"],
+      { cwd: f.path, timeout: 10_000 },
+    );
+    // Publish the commit so the review allows removal, yet it stays unmerged into HEAD.
+    await f.git("update-ref", "refs/remotes/origin/linked", "linked");
+    const { token } = await f.review();
+    const result = await f.remove(token, { deleteBranch: true });
+    expect(result).toMatchObject({ branchNotice: expect.stringContaining("linked") });
+    expect(await worktreeListed(f)).toBe(false);
+    expect(await branchExists(f, "linked")).toBe(true);
+  } finally {
+    await f.close();
+  }
+}, 60_000);

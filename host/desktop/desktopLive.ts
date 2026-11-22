@@ -55,13 +55,10 @@ export const DESKTOP_WRITER_STALE_MS = 60_000;
 export const DESKTOP_STORED_RUNNING_MS = 75_000;
 /** A window silent after reporting a session busy still runs it this long: its run lease's life. */
 export const DESKTOP_SILENT_BUSY_MS = RUN_LEASE_TTL_MS;
-/**
- * Whether a removal-lease grant must say it checked open editors (`checks` includes "editors").
- * Off until the desktop that sends the field ships (step B1 of the buffer-ownership removal):
- * an older desktop's grant carries no `checks`.
- */
-export const REQUIRE_DESKTOP_EDITOR_CHECK = false;
-const EDITORS_REFUSED = "Save or close unsaved files under this worktree in the desktop before removing it.";
+/** Attended removal requires every desktop grant to confirm it checked open editors. */
+export const REQUIRE_DESKTOP_EDITOR_CHECK = true;
+const EDITORS_REFUSED =
+  "Save or close unsaved files under this worktree in the desktop before removing it.";
 const DESKTOP_UPDATE_REQUIRED = "Update the desktop app to remove worktrees from this Host.";
 
 /** What one desktop answered to a removal-lease request. */
@@ -390,11 +387,11 @@ export class DesktopLive {
     return (
       this.awake() - this.startedAwake > DESKTOP_UNATTENDED_GRACE_MS &&
       clients.every(
-      (client) =>
-        !this.clientAlive(client) &&
-        this.awake() - (this.removalSeen.get(client) ?? Number.NEGATIVE_INFINITY) >
-          DESKTOP_UNATTENDED_GRACE_MS,
-    )
+        (client) =>
+          !this.clientAlive(client) &&
+          this.awake() - (this.removalSeen.get(client) ?? Number.NEGATIVE_INFINITY) >
+            DESKTOP_UNATTENDED_GRACE_MS,
+      )
     );
   }
   private sessions = new Map<string, LiveSession>();

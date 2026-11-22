@@ -2,24 +2,17 @@ import { createHash } from "node:crypto";
 import { TextDecoder } from "node:util";
 import type { createManagedWorkspaceRuntime } from "../managed/managed-workspace-runtime";
 import type { WorkspaceOwnerAuthorization } from "../workspaces/workspace-service-contracts";
-import type {
-  NativeBufferUploadPlatform,
-  NativeWorkspaceOwnerActions,
-} from "../domains/native-workspaces/ports";
+import type { NativeUploadPlatform } from "../domains/native-services/ports";
+import type { NativeWorkspaceOwnerActions } from "../domains/native-workspaces/ports";
 
 /** Only composition invokes this inside managed.withOwner. Every operation
  * receives the exact issued object; no copied fields or replacement authority. */
 export function bindNativeWorkspaceOwner(
   managed: ReturnType<typeof createManagedWorkspaceRuntime>,
   owner: WorkspaceOwnerAuthorization,
-  beforeBufferEffect: () => Promise<void>,
+  // The existing workspace composition still passes its retired buffer fence until cleanup.
+  _legacyBufferFence?: () => Promise<void>,
 ): NativeWorkspaceOwnerActions {
-  const updateBuffers: NonNullable<
-    NativeWorkspaceOwnerActions["nativeActivity"]["updateBuffersWithDelivery"]
-  > = async (request, delivery) => {
-    await beforeBufferEffect();
-    return managed.nativeActivity.updateBuffers(request, owner, delivery);
-  };
   return {
     nativeTurns: {
       begin: (request) => managed.nativeTurns.begin(request, owner),
@@ -28,22 +21,6 @@ export function bindNativeWorkspaceOwner(
     nativeActivity: {
       start: (request) => managed.nativeActivity.start(request, owner),
       end: (request) => managed.nativeActivity.end(request, owner),
-      updateBuffers: async (request) => {
-        await beforeBufferEffect();
-        return managed.nativeActivity.updateBuffers(request, owner);
-      },
-      updateBuffersWithDelivery: updateBuffers,
-      verifyBufferDelivery: (binding, proof) =>
-        managed.nativeActivity.verifyBufferDelivery({ binding, proof }, owner),
-      // A heartbeat only extends in-memory freshness and has no delivery original, so the
-      // delivery-effect fence would refuse every keepalive and force a new full report.
-      heartbeatBuffers: (request) => managed.nativeActivity.heartbeatBuffers(request, owner),
-      retireBuffers: (request) => managed.nativeActivity.retireBuffers(request, owner),
-      reconcileBuffers: (request) => managed.nativeActivity.reconcileBuffers(request, owner),
-      listBufferRecovery: (request) => managed.nativeActivity.listBufferRecovery(request, owner),
-      readBufferRecovery: (request) => managed.nativeActivity.readBufferRecovery(request, owner),
-      bufferRecoveryStatus: (request) =>
-        managed.nativeActivity.bufferRecoveryStatus(request, owner),
     },
     nativeRewind: {
       bindTurn: (request) => managed.nativeRewind.bindTurn(request, owner),
@@ -59,7 +36,7 @@ export function bindNativeWorkspaceOwner(
   };
 }
 
-export const nativeBufferUploadPlatform: NativeBufferUploadPlatform = Object.freeze({
+export const nativeUploadPlatform: NativeUploadPlatform = Object.freeze({
   sha256: (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex"),
   decodeBase64: (text: string) => Buffer.from(text, "base64"),
   encodeBase64: (bytes: Uint8Array) => Buffer.from(bytes).toString("base64"),
