@@ -65,6 +65,8 @@ The project picker keeps **All projects** above the scrolling results, including
 
 Task and epic deletion wait for Host confirmation. A rejected deletion keeps its confirmation open with the Host's reason and a retry action; the item stays on the board. Cancelling leaves it unchanged. Unmerged work still requires explicit discard confirmation. A cancelled epic never presents an unfinished final acceptance as queued or offers to restart that acceptance.
 
+On mobile, task, epic, and crew-run confirmations show the record, the computer, and the effect of the action in one panel. Cancel returns to the current screen. If the paired connection changes, open the action again to review it for the current connection.
+
 Automatic correction allows one repair, after a configured read-only advisor has
 returned advice. A second failed review keeps its findings for owner review.
 Transient worker failures retry once. Missing advisor access or incomplete advice

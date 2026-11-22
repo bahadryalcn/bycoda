@@ -65,8 +65,11 @@ The Worktrees view keeps the selected project and create/refresh actions togethe
 For worktree rows on connected machines, **Delete worktree** opens a fresh review
 from the owning Host when it supports remote removal. The Host checks the same
 checkout again before deleting. Close active agents and terminals before retrying.
-If the Host cannot verify usage, it stops the removal. Older Hosts show the
-existing remote removal notice.
+If the Host cannot verify usage, it stops the removal. When no desktop has
+been connected to that Host for two minutes, a clean worktree (no changes, no
+untracked or ignored files) is removed without that check, and Git still
+refuses anything it would have to force. Older Hosts show the existing remote
+removal notice.
 
 On a dedicated Linux server, the system administrator can set
 `BYCODA_HEADLESS_WORKSPACE_ROOT=/var/lib/bycoda/workspaces` in the execution
@@ -177,15 +180,10 @@ or branch. Unknown directories and main are never automatic cleanup targets.
 On Windows, dependency links must be detached without following their targets;
 unsafe links and blocked handles leave a recoverable blocked operation.
 
-Unsaved or unknown native editor reports also block removal and rewind. Fresh
-reports settle only that app profile, process instance and window; reconnecting
-one app cannot silently clear another app's buffers. Uncertain prior process
-leases require explicit reconciliation, even after their process appears old.
-Stale closed windows and earlier app instances can remain blocked until their
-state is explicitly reconciled. Clean app exit retires an authenticated empty
-buffer report. After restart, only empty predecessor reports from the same device
-and client can be reconciled when the Host proves their process has exited.
-Dirty or unknown reports continue to require explicit owner recovery.
+Unsaved files open in a connected desktop block removal: save or close them
+first. Uncertain prior process leases require explicit reconciliation, even after
+their process appears old. Unsaved editor text is kept as a local draft copy, so
+removing a worktree never discards it.
 
 Finished sessions expose Delete directory directly. The same guarded removal
 preview and activity checks apply; the conversation, unmerged branch and recovery
@@ -259,7 +257,7 @@ The exact-rewind workflow below applies only when the experimental setting is on
 Managed Git rewind restores the selected accepted user boundary's conversation,
 branch HEAD, index and working copy together. Preview shows affected commits and
 paths and capture blockers. Unsupported or incomplete capture cannot promise an
-exact rewind. Settle provider execution, shells and editor buffers first.
+exact rewind. Settle provider execution and shells first.
 
 Apply uses a short-lived reviewed plan, revalidates state, and preserves rescue
 HEAD/index/worktree and transcript state before restoring anything. Changed

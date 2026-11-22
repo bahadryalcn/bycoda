@@ -25,6 +25,7 @@ import { ActivityDock } from "../../../src/features/sessions/ui/ActivityDock";
 import { registerHarness } from "../../../src/integrations/harness/core/registry";
 import { applyHarnessEvent } from "../../../src/integrations/harness/core/apply";
 import { EmptySession } from "../../../src/features/sessions/ui/EmptySession";
+import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import { WorkingIndicator } from "../../../src/shared/ui/WorkingIndicator";
 import { WorkspaceFooter } from "../../../src/app/workspace/layout/WorkspaceFooter";
 import { UsageFooter } from "../../../src/app/shell/UsageFooter";
@@ -115,6 +116,7 @@ const accountPicker = new URLSearchParams(location.search).has("accounts");
 if (new URLSearchParams(location.search).has("no-attachments"))
   setHarnessAttachmentsSupported("claude", false);
 const welcome = new URLSearchParams(location.search).has("welcome");
+const projectless = welcome && new URLSearchParams(location.search).has("no-project");
 const withCrew = new URLSearchParams(location.search).has("crew");
 const withFooter = new URLSearchParams(location.search).has("footer");
 const chatLayout = new URLSearchParams(location.search).has("chat-layout");
@@ -196,9 +198,11 @@ if (chatLayout || translationSelection) {
       runTextPrompt: async () => "Translated fixture text",
     });
 }
-const fixtureCwd = welcome
-  ? "/fixture/a-long-project-name-for-checking-narrow-workspace-panels"
-  : "/fixture";
+const fixtureCwd = projectless
+  ? "~"
+  : welcome
+    ? "/fixture/a-long-project-name-for-checking-narrow-workspace-panels"
+    : "/fixture";
 if (accountPicker) {
   renameProviderAccount(
     "claude",
@@ -267,7 +271,7 @@ function Fixture() {
   );
   useEffect(() => {
     const theme = new URLSearchParams(location.search).get("theme");
-    if (theme) document.documentElement.classList.toggle("theme-light", theme === "light");
+    if (theme === "light" || theme === "dark") applyThemePreference(theme);
   }, []);
   const queueFeedback = new URLSearchParams(location.search).has("queue-feedback");
   const deliveryProgress = new URLSearchParams(location.search).has("delivery-progress");
@@ -346,26 +350,28 @@ function Fixture() {
   }));
   const composer = (
     <>
-      <div
-        data-session-header
-        className="session-header-title flex min-w-0 items-center gap-2 border-b border-stroke p-2"
-      >
-        <span className="min-w-0 flex-1 truncate text-xs">Chat layout fixture</span>
+      {!projectless ? (
         <div
-          {...surfaceAttributes(
-            { frame: "pane", edge: "inline-start" },
-            "min-w-0 max-w-[48%] flex-[0_1_auto] ps-2.5",
-          )}
+          data-session-header
+          className="session-header-title flex min-w-0 items-center gap-2 border-b border-stroke p-2"
         >
-          <SessionAgentIdentity
-            harness={harness}
-            model={model}
-            accountId={accountId}
-            running={busy}
-            showAccount={accountPicker}
-          />
+          <span className="min-w-0 flex-1 truncate text-xs">Chat layout fixture</span>
+          <div
+            {...surfaceAttributes(
+              { frame: "pane", edge: "inline-start" },
+              "min-w-0 max-w-[48%] flex-[0_1_auto] ps-2.5",
+            )}
+          >
+            <SessionAgentIdentity
+              harness={harness}
+              model={model}
+              accountId={accountId}
+              running={busy}
+              showAccount={accountPicker}
+            />
+          </div>
         </div>
-      </div>
+      ) : null}
       {deliveryProgress ? (
         // The notice is an in-flow banner owned by SessionPane; mirror that mount here.
         <div data-session-body className="relative flex flex-col">
@@ -517,7 +523,7 @@ function Fixture() {
           }
           return true;
         }}
-        initialDraft={quotaStress ? stressDraft : "Keep this chat draft"}
+        initialDraft={projectless ? undefined : quotaStress ? stressDraft : "Keep this chat draft"}
         usageLimit={quotaLimit}
         onUsageLimitResume={() => {
           setQuotaResumes((count) => count + 1);

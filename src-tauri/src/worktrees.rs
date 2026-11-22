@@ -1198,6 +1198,9 @@ fn remove_remnants_below(root: &Path, path: &Path) -> Result<(), String> {
 pub struct WorktreeRemoval {
     session_ids: Vec<String>,
     project_cwd: String,
+    /// Set when "delete the branch too" was asked and Git kept the branch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    branch_notice: Option<String>,
 }
 
 struct StoreConn<'a>(std::sync::MutexGuard<'a, crate::session_store::cohort::RegisteredConnection>);
@@ -1519,6 +1522,7 @@ fn remove_with_sessions<G: std::ops::Deref<Target = rusqlite::Connection>>(
                 .ok_or("No main working copy found")?;
             return Ok(WorktreeRemoval {
                 session_ids: Vec::new(),
+                branch_notice: None,
                 project_cwd: main.path,
             });
         }
@@ -1568,21 +1572,57 @@ fn remove_with_sessions<G: std::ops::Deref<Target = rusqlite::Connection>>(
     }
     Ok(WorktreeRemoval {
         session_ids: ids,
+        branch_notice: None,
         project_cwd: main.path.clone(),
     })
+}
+
+/// Removes the worktree, then optionally deletes its branch with a safe delete (`-d`, never `-D`).
+/// A refused delete leaves the branch and reports why; it never fails the removal.
+fn remove_with_branch<G: std::ops::Deref<Target = rusqlite::Connection>>(
+    db: impl Fn() -> Result<G, String>,
+    root: &Path,
+    path: &Path,
+    force: bool,
+    keep_sessions: bool,
+    delete_branch: bool,
+) -> Result<WorktreeRemoval, String> {
+    let branch = if delete_branch {
+        list(root)?
+            .into_iter()
+            .find(|entry| same_path(Path::new(&entry.path), path) && !entry.is_main)
+            .and_then(|entry| entry.branch)
+    } else {
+        None
+    };
+    let mut removed = remove_with_sessions(db, root, path, force, keep_sessions)?;
+    if let Some(branch) = branch {
+        let main = Path::new(&removed.project_cwd);
+        if let Err(error) = git(main, &["branch", "-d", "--", &branch]) {
+            removed.branch_notice = Some(if error.is_empty() {
+                format!("Branch {branch} was kept.")
+            } else {
+                format!("Branch {branch} was kept: {error}")
+            });
+        }
+    }
+    Ok(removed)
 }
 
 fn managed_cleanup_local_check(
     store: &SessionStore,
     terminals: &crate::pty::PtyHost,
     agents: &crate::harness::HarnessHost,
+    buffers: &crate::native_workspace::editor_buffers::EditorBuffers,
     workspace_id: &str,
     path: &Path,
 ) -> Result<(), String> {
     if terminals.has_working_dir(path) || agents.has_working_dir(path) {
         return Err("Close the terminals and agent processes using this worktree first.".into());
     }
-    crate::native_workspace::assert_buffers_settled(store, path)?;
+    if !buffers.dirty_under(&path_to_js(path)).is_empty() {
+        return Err("Save or close unsaved workspace files before removing this worktree.".into());
+    }
     let sessions = {
         let conn = store.lock_conn()?;
         let mut statement = conn
@@ -1609,6 +1649,7 @@ pub async fn managed_worktree_removal_plan(
         let store = app.state::<SessionStore>();
         let terminals = app.state::<crate::pty::PtyHost>();
         let agents = app.state::<crate::harness::HarnessHost>();
+        let buffers = app.state::<crate::native_workspace::editor_buffers::EditorBuffers>();
         let workspace_id = request["workspaceId"]
             .as_str()
             .ok_or("Workspace ID is required")?;
@@ -1628,7 +1669,7 @@ pub async fn managed_worktree_removal_plan(
             {
                 return Err("Workspace cleanup identity or revision changed; preview again".into());
             }
-            managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
+            managed_cleanup_local_check(&store, &terminals, &agents, &buffers, workspace_id, path)?;
             let raw = serde_json::to_string(plan).map_err(|e| e.to_string())?;
             crate::remote::NativeProjection::commit(&[projection], || {
                 store.lock_conn()?.execute("INSERT INTO native_cleanup_plans(token,workspace_id,plan_json) VALUES(?1,?2,?3)
@@ -1651,6 +1692,7 @@ pub async fn managed_worktree_removal_apply(
         let store = app.state::<SessionStore>();
         let terminals = app.state::<crate::pty::PtyHost>();
         let agents = app.state::<crate::harness::HarnessHost>();
+        let buffers = app.state::<crate::native_workspace::editor_buffers::EditorBuffers>();
         let workspace_id = request["workspaceId"]
             .as_str()
             .ok_or("Workspace ID is required")?;
@@ -1675,7 +1717,7 @@ pub async fn managed_worktree_removal_apply(
                 .ok_or("Host returned no cleanup path")?,
         );
         let _reservation = crate::worktree_lifecycle::reserve_removal(path)?;
-        managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
+        managed_cleanup_local_check(&store, &terminals, &agents, &buffers, workspace_id, path)?;
         let host = crate::remote::NativeWorkspaceTransport::connect(&app, "workspaces.lifecycle.v1")?;
         // No native force-removal fallback. An unknown response remains the same Host operation.
         host.project("workspaces.cleanup.apply", request.clone(), |receipt, projection| {
@@ -1717,11 +1759,13 @@ pub async fn git_worktree_remove(
     force: bool,
     keep_sessions: Option<bool>,
     expected_review: Option<WorktreeRemovalReview>,
+    delete_branch: Option<bool>,
 ) -> Result<WorktreeRemoval, String> {
     crate::harness::run_blocking("git_worktree_remove", move || {
         let store = app.state::<SessionStore>();
         let terminals = app.state::<crate::pty::PtyHost>();
         let agents = app.state::<crate::harness::HarnessHost>();
+        let editors = app.state::<crate::native_workspace::editor_buffers::EditorBuffers>();
         let root = expand_home(&cwd);
         crate::fs::with_git_mutation(&root, || {
             let path = expand_home(&path);
@@ -1731,6 +1775,7 @@ pub async fn git_worktree_remove(
                     "Close the terminals and agent processes using this worktree first.".into(),
                 );
             }
+            refuse_unsaved_editors(&editors, &path)?;
             if let Some(expected) = expected_review.as_ref() {
                 if force {
                     return Err("Reviewed removal cannot use force".into());
@@ -1744,16 +1789,29 @@ pub async fn git_worktree_remove(
                 )?;
                 assert_removal_review(expected, &current)?;
             }
-            remove_with_sessions(
+            remove_with_branch(
                 || store.lock_conn().map(StoreConn),
                 &root,
                 &path,
                 force,
                 keep_sessions.unwrap_or(false),
+                delete_branch.unwrap_or(false),
             )
         })
     })
     .await
+}
+
+/// A window of this desktop may hold unsaved edits under the worktree; its own tab check only
+/// covers the window that asked, so the app-wide registry decides for every window.
+pub(crate) fn refuse_unsaved_editors(
+    editors: &crate::native_workspace::editor_buffers::EditorBuffers,
+    path: &std::path::Path,
+) -> Result<(), String> {
+    if editors.dirty_under(&path.to_string_lossy()).is_empty() {
+        return Ok(());
+    }
+    Err("Save or close unsaved files under this worktree before removing it.".into())
 }
 
 #[tauri::command]
@@ -1766,6 +1824,7 @@ pub async fn git_orchestration_worktree_remove(
         let store = app.state::<SessionStore>();
         let terminals = app.state::<crate::pty::PtyHost>();
         let agents = app.state::<crate::harness::HarnessHost>();
+        let editors = app.state::<crate::native_workspace::editor_buffers::EditorBuffers>();
         let root = expand_home(&cwd);
         crate::fs::with_git_mutation(&root, || {
             let path = expand_home(&path);
@@ -1775,6 +1834,7 @@ pub async fn git_orchestration_worktree_remove(
                     "Close the terminals and agent processes using this worktree first.".into(),
                 );
             }
+            refuse_unsaved_editors(&editors, &path)?;
             // Directory retirement must retain the local branch and rescue refs.
             remove_with_sessions(
                 || store.lock_conn().map(StoreConn),

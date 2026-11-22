@@ -3,10 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetRetainedState } from "../../shared/hooks/useRetainedState";
-import {
-  checkoutSelectionScope,
-  saveCheckoutSelection,
-} from "../../features/source-control/model/checkoutSelection";
+import type { WorktreeFocus } from "../../features/source-control/model/worktreeFocus";
 import type { Worktree } from "../../features/source-control/model/worktrees";
 import { useCheckoutChangeStats } from "./useCheckoutChangeStats";
 
@@ -35,18 +32,21 @@ vi.mock("../../features/projects/model/recents", () => ({
   sameProjectPath: (left: string, right: string) => left === right,
 }));
 
+let focus: WorktreeFocus | undefined;
 let root: Root;
 let host: HTMLDivElement;
 function View() {
   const result = useCheckoutChangeStats({
     gitRoot: "/repo",
     repositoryPaths: undefined,
+    focus,
     active: true,
   });
   return createElement("output", null, JSON.stringify(result));
 }
 beforeEach(() => {
   resetRetainedState();
+  focus = undefined;
   localStorage.clear();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   data.discovery.mockClear();
@@ -72,76 +72,50 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("counts discovered independent repositories in All checkouts without duplicate roots", async () => {
-  saveCheckoutSelection(
-    checkoutSelectionScope(
-      "/repo",
-      data.trees.map((tree) => tree.path),
-    ),
-    "",
-  );
+it("totals every worktree by default with plain diff stats and no repository discovery", async () => {
   await act(async () => root.render(createElement(View)));
-  expect(data.discovery).toHaveBeenCalledWith(["/repo", "/trees/worker"], true, true);
-  expect(data.multiple).toHaveBeenCalledWith(["/repo", "/repo/mobile", "/trees/worker"], true);
-  expect(JSON.parse(host.textContent!).changeStats).toEqual({
-    files: 3,
-    additions: 6,
-    deletions: 3,
-  });
+  expect(data.discovery).not.toHaveBeenCalled();
+  expect(data.multiple).toHaveBeenLastCalledWith(["/repo", "/trees/worker"], true);
+  expect(data.single).toHaveBeenLastCalledWith("/repo", false);
+  const result = JSON.parse(host.textContent!);
+  expect(result.changeStats).toEqual({ files: 2, additions: 4, deletions: 2 });
+  expect(result.changeScope.title).toBe("All worktrees");
 });
 
-it("keeps a selected child repository as the Changes tab target", async () => {
-  saveCheckoutSelection(
-    checkoutSelectionScope(
-      "/repo",
-      data.trees.map((tree) => tree.path),
-    ),
-    "/repo/mobile",
-  );
+it("follows a focused worktree, including the project folder", async () => {
+  focus = { path: "/trees/worker", branch: "feature/worker" };
   await act(async () => root.render(createElement(View)));
-  expect(data.single).toHaveBeenCalledWith("/repo/mobile", true);
-  expect(JSON.parse(host.textContent!).changeScopeLabel).toContain("mobile");
+  expect(data.single).toHaveBeenLastCalledWith("/trees/worker", true);
+  expect(data.multiple).toHaveBeenLastCalledWith([], false);
+  expect(JSON.parse(host.textContent!).changeScopeLabel).toContain("worker");
+
+  focus = { path: "/repo", branch: "main" };
+  await act(async () => root.render(createElement(View)));
+  expect(data.single).toHaveBeenLastCalledWith("/repo", true);
+  expect(data.discovery).not.toHaveBeenCalled();
 });
 
-it("keeps All totals unknown until every repository has a reading", async () => {
-  saveCheckoutSelection(
-    checkoutSelectionScope(
-      "/repo",
-      data.trees.map((tree) => tree.path),
-    ),
-    "",
-  );
-  data.multiple.mockReturnValue([
-    { files: 1, additions: 2, deletions: 1 },
-    null,
-    { files: 1, additions: 2, deletions: 1 },
-  ]);
+it("ignores the legacy stored Changes selection", async () => {
+  localStorage.setItem("bycoda.sourceControl.checkout.v1:/repo", "/trees/worker");
+  await act(async () => root.render(createElement(View)));
+  expect(JSON.parse(host.textContent!).changeScope.title).toBe("All worktrees");
+});
+
+it("shows the overview when the focused worktree is no longer listed", async () => {
+  focus = { path: "/trees/gone", branch: "gone" };
+  await act(async () => root.render(createElement(View)));
+  expect(JSON.parse(host.textContent!).changeScope.title).toBe("All worktrees");
+});
+
+it("keeps totals unknown until every worktree has a reading", async () => {
+  data.multiple.mockReturnValue([{ files: 1, additions: 2, deletions: 1 }, null]);
   await act(async () => root.render(createElement(View)));
   expect(JSON.parse(host.textContent!).changeStats).toBeNull();
 });
 
-it("does not label root-only totals as complete before child discovery finishes", async () => {
-  saveCheckoutSelection(
-    checkoutSelectionScope(
-      "/repo",
-      data.trees.map((tree) => tree.path),
-    ),
-    "",
-  );
-  data.modules = {};
+it("uses the project root alone when only one worktree exists", async () => {
+  data.trees = [data.trees[0]!];
   await act(async () => root.render(createElement(View)));
-  expect(JSON.parse(host.textContent!).changeStats).toBeNull();
-});
-
-it("keeps All totals unknown when repository discovery stopped at a size limit", async () => {
-  saveCheckoutSelection(
-    checkoutSelectionScope(
-      "/repo",
-      data.trees.map((tree) => tree.path),
-    ),
-    "",
-  );
-  data.limits = { "/repo": "entries" };
-  await act(async () => root.render(createElement(View)));
-  expect(JSON.parse(host.textContent!).changeStats).toBeNull();
+  expect(data.single).toHaveBeenLastCalledWith("/repo", true);
+  expect(JSON.parse(host.textContent!).changeScope).toBeNull();
 });

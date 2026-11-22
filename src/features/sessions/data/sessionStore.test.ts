@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import { mapCodexNotification } from "../../../integrations/harness/providers/codex/codexProtocol";
 import { toolCallLabel } from "../model/transcriptActivity";
 import { conversationReplayPrompt } from "../model/conversationRewind";
-import { newSession, type Block, type BtwThread, type Session } from "../model/session";
+import {
+  newSession,
+  sessionWorkCwd,
+  type Block,
+  type BtwThread,
+  type Session,
+} from "../model/session";
 import { clearConversation } from "../model/clearConversation";
 it("retains failed physical shell retirement through desktop persistence sanitization", () => {
   const session = newSession("codex", "G:/repo", "model");
@@ -47,6 +53,17 @@ it("keeps host-owned transcripts out of local session storage", () => {
   const session = newSession("codex", "remote://env/home/me/repo");
   session.blocks = [{ id: "turn", role: "user", text: "Continue" }];
   expect(shouldPersistSession(session)).toBe(false);
+});
+
+it("persists new projectless chats with distinct scratch directories", () => {
+  const session = newSession("codex", "~");
+  const second = newSession("codex", "~");
+  session.blocks = [{ id: "turn", role: "user", text: "Keep this" }];
+  expect(shouldPersistSession(session)).toBe(true);
+  expect(sanitizeSessionForPersist(session)).toMatchObject({ cwd: "~", workspaceMode: "scratch" });
+  expect(sessionWorkCwd(session)).toBe(`~/.bycoda-host/scratch/session-${session.id}`);
+  expect(sessionWorkCwd(second)).not.toBe(sessionWorkCwd(session));
+  expect(sessionWorkCwd({ ...session, scratchWorkspace: undefined })).toBe("~");
 });
 
 it("persists an empty active transcript when rewound history remains", () => {

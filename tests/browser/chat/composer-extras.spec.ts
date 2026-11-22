@@ -1530,6 +1530,34 @@ test("welcome and working labels stay readable in narrow panels and both themes"
   });
 });
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`projectless session entry ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 720 });
+      await page.goto(`/tests/browser/chat/composer-extras.html?welcome&no-project&theme=${theme}`);
+      const project = page.getByRole("button", { name: "Open a project", exact: true });
+      const guide = page.getByRole("button", { name: "Guide", exact: true });
+      await expect(project).toBeInViewport();
+      await expect(guide).toBeInViewport();
+      await expect(page.getByRole("textbox", { name: "Message", exact: true })).toBeInViewport();
+      await page.screenshot({ path: `temp/verification/new-window-entry/${theme}-${width}.png` });
+
+      await page.evaluate(() => {
+        window.addEventListener("bycoda:guide-action", (event) => {
+          document.body.dataset.guideAction = (event as CustomEvent<string>).detail;
+        });
+        window.addEventListener("bycoda:open-usage-guide", () => {
+          document.body.dataset.guideOpened = "true";
+        });
+      });
+      await project.press("Enter");
+      await expect(page.locator("body")).toHaveAttribute("data-guide-action", "open-project");
+      await guide.press("Enter");
+      await expect(page.locator("body")).toHaveAttribute("data-guide-opened", "true");
+    });
+  }
+}
+
 test("composer shows the account name when it fits and keeps narrow controls aligned", async ({
   page,
 }) => {

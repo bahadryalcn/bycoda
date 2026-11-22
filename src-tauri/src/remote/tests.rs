@@ -897,9 +897,15 @@ fn crew_work_operations_are_forwarded() {
 #[test]
 fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
     for method in [
+        "mcp.config.call",
+        "mcp.projectCredentials.status",
+        "mcp.projectCredentials.set",
+        "mcp.projectCredentials.clear",
         "mcp.hub.loading.get",
+        "mcp.hub.servers",
         "mcp.hub.loading.set",
         "mcp.oauth.start",
+        "mcp.oauth.complete",
         "mcp.oauth.status",
         "mcp.oauth.signOut",
         "mcp.tokens.create",
@@ -1750,7 +1756,7 @@ fn reads_the_port_from_connection_info() {
 }
 
 #[test]
-fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
+fn native_workspace_rejects_identical_repair_and_saved_route_replacement() {
     let temporary = std::env::temp_dir().canonicalize().unwrap();
     let root = temporary.join(format!("bycoda-recovery-route-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&root).unwrap();
@@ -1766,41 +1772,45 @@ fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
         local_host: true,
     };
     write(&path, std::slice::from_ref(&machine)).unwrap();
-    let transport = NativeWorkspaceTransport {
-        workspace: None,
+    let transport = NativeRecoverySelection {
+        store: state.store.clone(),
+        routes: state.recovery_routes.clone(),
+        path: path.clone(),
         machine: machine.clone(),
-        recovery: Some(RecoveryRoute {
+        pin: RecoveryRoute {
             revision: state.recovery_routes.capture(&machine.id).unwrap(),
             selected_endpoint: machine.endpoint.clone(),
-        }),
+        },
     };
-    transport.assert_recovery_saved(&state, &path).unwrap();
+    transport.with_current(|| Ok(())).unwrap();
     // Another machine's reconnect or reroute never retires this selection.
     state.invalidate_ws("unrelated-machine");
-    transport.assert_recovery_saved(&state, &path).unwrap();
+    transport.with_current(|| Ok(())).unwrap();
     let mut changed = machine.clone();
     changed.token = "replaced-fixture-owner".into();
     write(&path, &[changed]).unwrap();
-    assert!(transport.assert_recovery_saved(&state, &path).is_err());
+    assert!(transport.with_current(|| Ok(())).is_err());
     write(&path, std::slice::from_ref(&machine)).unwrap();
-    transport.assert_recovery_saved(&state, &path).unwrap();
+    transport.with_current(|| Ok(())).unwrap();
     {
         let _guard = state.store.lock().unwrap();
         disconnect_saved_machine(&state, &path, &machine.id).unwrap();
         write(&path, std::slice::from_ref(&machine)).unwrap();
     }
-    assert!(transport.assert_recovery_saved(&state, &path).is_err());
-    let fresh = NativeWorkspaceTransport {
-        workspace: None,
+    assert!(transport.with_current(|| Ok(())).is_err());
+    let fresh = NativeRecoverySelection {
+        store: state.store.clone(),
+        routes: state.recovery_routes.clone(),
+        path: path.clone(),
         machine: machine.clone(),
-        recovery: Some(RecoveryRoute {
+        pin: RecoveryRoute {
             revision: state.recovery_routes.capture(&machine.id).unwrap(),
             selected_endpoint: machine.endpoint.clone(),
-        }),
+        },
     };
-    fresh.assert_recovery_saved(&state, &path).unwrap();
+    fresh.with_current(|| Ok(())).unwrap();
     state.recovery_routes.close();
-    assert!(fresh.assert_recovery_saved(&state, &path).is_err());
+    assert!(fresh.with_current(|| Ok(())).is_err());
     assert_eq!(
         root.canonicalize().unwrap().parent(),
         Some(temporary.as_path())
@@ -1829,110 +1839,6 @@ fn recovery_routes_retire_one_machine_and_close_retires_all() {
     routes.close();
     assert!(routes.capture("a").is_err() && routes.capture("b").is_err());
     assert!(!routes.current("b", second));
-}
-
-#[test]
-fn native_recovery_retires_an_actual_in_flight_http_read_before_disclosure() {
-    use std::io::{BufRead, BufReader};
-    use std::{net::TcpListener, sync::mpsc, thread, time::Duration};
-    let temporary = std::env::temp_dir().canonicalize().unwrap();
-    let root = temporary.join(format!("bycoda-recovery-inflight-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir(&root).unwrap();
-    let path = root.join("connections.json");
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let state = Arc::new(RemoteConnections::default());
-    let machine = StoredMachine {
-        id: "local-recovery".into(),
-        name: "Local".into(),
-        endpoint: format!("http://{}", listener.local_addr().unwrap()),
-        environment_id: "env".into(),
-        token: "fixture-owner".into(),
-        ssh: None,
-        local_host: true,
-    };
-    write(&path, std::slice::from_ref(&machine)).unwrap();
-    let transport = NativeWorkspaceTransport {
-        workspace: None,
-        machine: machine.clone(),
-        recovery: Some(RecoveryRoute {
-            revision: state.recovery_routes.capture(&machine.id).unwrap(),
-            selected_endpoint: machine.endpoint.clone(),
-        }),
-    };
-    let (seen_tx, seen_rx) = mpsc::sync_channel(1);
-    let (release_tx, release_rx) = mpsc::sync_channel(1);
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        let mut reader = BufReader::new(stream.try_clone().unwrap());
-        let mut size = 0;
-        loop {
-            let mut line = String::new();
-            assert!(reader.read_line(&mut line).unwrap() > 0);
-            if line == "\r\n" {
-                break;
-            }
-            if line.to_ascii_lowercase().starts_with("content-length:") {
-                size = line
-                    .split(':')
-                    .nth(1)
-                    .unwrap()
-                    .trim()
-                    .parse::<usize>()
-                    .unwrap();
-            }
-        }
-        let mut body = vec![0; size];
-        reader.read_exact(&mut body).unwrap();
-        assert_eq!(
-            serde_json::from_slice::<Value>(&body).unwrap()["method"],
-            "native.buffers.recovery.read"
-        );
-        seen_tx.send(()).unwrap();
-        release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        let body = r#"{"result":{"oldRouteSecret":"must-not-return"}}"#;
-        write!(
-            stream,
-            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        )
-        .unwrap();
-        stream.flush().unwrap();
-    });
-    let calling = {
-        let state = state.clone();
-        let path = path.clone();
-        thread::spawn(move || {
-            transport.call_recovery_saved(
-                &state,
-                &path,
-                "native.buffers.recovery.read",
-                json!({"reportId":"fixture"}),
-            )
-        })
-    };
-    seen_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    {
-        let _guard = state.store.lock().unwrap();
-        disconnect_saved_machine(&state, &path, &machine.id).unwrap();
-        write(&path, std::slice::from_ref(&machine)).unwrap();
-    }
-    release_tx.send(()).unwrap();
-    let error = calling.join().unwrap().unwrap_err();
-    assert!(!error.contains("must-not-return"));
-    assert!(error.contains("retired"));
-    server.join().unwrap();
-    assert_eq!(
-        root.canonicalize().unwrap().parent(),
-        Some(temporary.as_path())
-    );
-    assert!(!std::fs::symlink_metadata(&root)
-        .unwrap()
-        .file_type()
-        .is_symlink());
-    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

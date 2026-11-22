@@ -50,7 +50,9 @@ import { GitOperationBanner } from "./GitOperationBanner";
 import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
 import { AheadBehindCount } from "./AheadBehindCount";
-import { BranchPicker, type CheckoutChoice } from "./BranchPicker";
+import { isMissingPathError } from "../model/checkoutSelection";
+import { worktreeRowDetail } from "../model/worktreeRows";
+import { BranchPicker } from "./BranchPicker";
 import { applyCommit, applyIndexAction, applySync } from "../model/optimisticIndex";
 import { ACTION_LABEL, busyLabel } from "../model/gitBusyLabel";
 import {
@@ -182,8 +184,8 @@ type Props = {
   refreshInTarget?: boolean;
   /** The target header above already offers worktree management. */
   worktreesInTarget?: boolean;
-  /** Puts the working-copy choice in the branch control, so target and branch share one row. */
-  checkout?: CheckoutChoice & { onRefresh: () => void };
+  /** The panel is one worktree's own view: its branch picker leads the single header row. */
+  checkout?: { onRefresh: () => void; onMissing?: () => Promise<boolean> };
 };
 
 export function GitChangesPanel({
@@ -211,10 +213,21 @@ export function GitChangesPanel({
     index,
     reload,
     showOptimistic,
-    error: loadError,
+    error: reportedError,
     loading,
     checking,
   } = useDiffIndex(cwd, enabled, !repository || repository.expanded === true, paneRef);
+  // A checkout deleted from elsewhere fails every read with not-found: the owner confirms it is
+  // gone and falls back to the default checkout, so no error is shown for the vanished path.
+  // A not-found read of a folder that still exists is a genuine failure and stays visible.
+  const onMissing = checkout?.onMissing;
+  const [stillThere, setStillThere] = useState(false);
+  const vanished = !!onMissing && !stillThere && isMissingPathError(reportedError);
+  const loadError = vanished ? null : reportedError;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- asks the filesystem whether the read folder still exists after a not-found Git read
+  useEffect(() => {
+    if (vanished) void onMissing().then((deleted) => setStillThere(!deleted));
+  }, [vanished, onMissing]);
   // Fetch, and the merge status of a host that predates conflict info, need
   // this computer or a host with `git.actions`.
   const gitActions = useRemoteSupports(cwd, GIT_ACTIONS) === true;
@@ -337,7 +350,6 @@ export function GitChangesPanel({
           branch={index?.branch ?? undefined}
           enabled={enabled && !busy && !loading}
           popoverSide="bottom"
-          checkouts={checkout}
           onChange={() => {
             onMutated();
             changesRef.current?.refreshPr?.();
@@ -455,12 +467,31 @@ export function GitChangesPanel({
             tooltipDetails={identityBranch ? [identityBranch] : undefined}
             className={styles.disclosure}
           >
-            <CheckoutIdentity
-              name={repository.name}
-              checkout={repository.checkout}
-              index={index}
-              showReference={!branchControl}
-            />
+            {repository.checkout && branchControl ? (
+              // The branch picker beside the chevron already shows the branch, so the visible
+              // title is the folder (as in the collapsed row); the branch name is assistive-only.
+              <span className={styles.identity}>
+                <FolderTree aria-hidden className="icon-xs shrink-0" tone="secondary" />
+                <span className="sr-only">{repository.name}</span>
+                <Text
+                  size="caption"
+                  leading="inherit"
+                  tone="primary"
+                  weight="medium"
+                  truncate
+                  className={styles.name}
+                >
+                  {worktreeRowDetail(repository.checkout)}
+                </Text>
+              </span>
+            ) : (
+              <CheckoutIdentity
+                name={repository.name}
+                checkout={repository.checkout}
+                index={index}
+                showReference={!branchControl}
+              />
+            )}
             {repository.current ? (
               <Text size="caption" leading="inherit" tone="accent" className={styles.current}>
                 {t("Current")}

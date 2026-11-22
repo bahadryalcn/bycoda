@@ -72,7 +72,7 @@ it("applies removal lease jobs for this desktop and replies through the heartbea
     ["desktop_worktree_removal_lease", { clientId, leaseId: id, path: null }],
   ]);
   expect(request.mock.calls[1]?.[0].removalLeaseReplies).toEqual([
-    { id, granted: true, release: false },
+    { id, granted: true, release: false, checks: ["editors"] },
   ]);
   expect(request.mock.calls[2]?.[0].removalLeaseReplies).toEqual([
     { id, granted: true, release: true },
@@ -1504,4 +1504,37 @@ describe("phone group unlock relay", () => {
       expect(groupLock.results.get("g2")).toEqual({ id: "g2", error: "failed" }),
     );
   });
+});
+
+it("forwards the editors refusal reason and checks, and a plain refusal without a reason", async () => {
+  native.invoke
+    .mockRejectedValueOnce("editors: Save or close unsaved files.")
+    .mockRejectedValueOnce("Stop active terminals and agents before removing the worktree.");
+  const clientId = "desktop";
+  const request = vi
+    .fn<Parameters<typeof runDesktopLiveTick>[0]["request"]>()
+    .mockResolvedValueOnce({
+      removalLease: {
+        jobs: [
+          { id: "a", clientId, path: "/a" },
+          { id: "b", clientId, path: "/b" },
+        ],
+        acked: [],
+      },
+    })
+    .mockResolvedValueOnce({ removalLease: { jobs: [], acked: ["a", "b"] } });
+  const deps = {
+    clientId,
+    request,
+    sessions: () => [],
+    handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+    handled: new Set<string>(),
+    unacked: new Set<string>(),
+  };
+  await runDesktopLiveTick(deps);
+  await runDesktopLiveTick(deps);
+  expect(request.mock.calls[1]?.[0].removalLeaseReplies).toEqual([
+    { id: "a", granted: false, release: false, checks: ["editors"], reason: "editors" },
+    { id: "b", granted: false, release: false, checks: ["editors"] },
+  ]);
 });

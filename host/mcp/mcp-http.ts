@@ -1,6 +1,8 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { agentToolAllowed, type AgentRole } from "../delegation/tools";
 import { createHash } from "node:crypto";
+import { realpath, stat } from "node:fs/promises";
+import { isAbsolute } from "node:path";
 import { Readable, Writable } from "node:stream";
 import {
   createManagedToolCatalog,
@@ -43,6 +45,11 @@ import { readLoadingPolicy, writeLoadingPolicy } from "./hub/load-policy";
 import { EXT_ROUTE_PREFIX, ExternalMcpRoute } from "./hub/http";
 import type { McpHub } from "./hub/hub";
 import { isOAuthMethod, oauthRpc } from "./hub/oauth/rpc";
+import {
+  nativeMcpConfig,
+  nativeMcpConfigInput,
+  NativeMcpConfigUnavailableError,
+} from "./native-config";
 import type { HostStore } from "../store";
 import { RequestAuthorizationError } from "../store-db";
 import type { SocialService } from "../social/social";
@@ -69,6 +76,18 @@ type Options = {
 };
 const VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
 const MAX_BYTES = 1024 * 1024;
+const PROJECT_CREDENTIAL_INPUT = z.strictObject({
+  global: z.literal(true).optional(),
+  projectId: z.string().min(1).max(256).optional(),
+  cwd: z.string().min(1).max(4096).optional(),
+  name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/),
+  values: z.record(z.string(), z.string()).optional(),
+});
+const PROJECT_CREDENTIAL_METHODS = new Set([
+  "mcp.projectCredentials.status",
+  "mcp.projectCredentials.set",
+  "mcp.projectCredentials.clear",
+]);
 /** Deadline chain, innermost first: logs.wait 240 s < this Host relay < the Rust relay
  * (session_tools_bridge.rs, 250 s) and the stdio proxy (mcp-proxy.ts, 250 s) < the provider's
  * MCP tool deadline (300 s, conversationToolsBridge.ts). */
@@ -225,12 +244,16 @@ export class McpHttp {
     input: Record<string, unknown>,
     token: string,
     response: ServerResponse,
+    peerAddress?: string,
   ): Promise<Awaited<boolean>> {
     if (
       typeof method !== "string" ||
       !(
         method.startsWith("mcp.tokens.") ||
         method.startsWith("mcp.hub.loading.") ||
+        method === "mcp.hub.servers" ||
+        method === "mcp.config.call" ||
+        PROJECT_CREDENTIAL_METHODS.has(method) ||
         isOAuthMethod(method)
       )
     )
@@ -240,9 +263,75 @@ export class McpHttp {
     const result = await this.options.store.db.withAuthorization(
       () => this.options.store.authenticated(token),
       async () => {
-        if (method === "mcp.hub.loading.get") return await this.loadingGet(input);
+        if (method === "mcp.hub.loading.get")
+          return await this.loadingGet(await this.projectScopedInput(input));
         if (method === "mcp.hub.loading.set") return await this.loadingSet(input);
-        if (isOAuthMethod(method)) return await oauthRpc(this.hub, method, input);
+        if (method === "mcp.hub.servers") {
+          if (
+            input.cwd !== undefined &&
+            !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(peerAddress ?? "")
+          )
+            throw new Error("A remote Hub server request requires a Host project ID.");
+          const { projectId: _projectId, cwd, ...change } = await this.projectScopedInput(input);
+          if (
+            cwd !== undefined &&
+            (typeof cwd !== "string" ||
+              !isAbsolute(cwd) ||
+              !(await stat(cwd).catch(() => undefined))?.isDirectory())
+          )
+            throw new Error("Choose an existing project directory.");
+          const authorize = async () => {
+            if (!(await this.options.store.authenticated(token)))
+              throw new Error("Owner device credential required.");
+          };
+          await authorize();
+          const result = await this.hub.manageServer(
+            change,
+            typeof cwd === "string" ? cwd : undefined,
+            authorize,
+          );
+          await authorize();
+          return result;
+        }
+        if (method === "mcp.config.call") {
+          const parsed = nativeMcpConfigInput.safeParse(input);
+          if (!parsed.success) throw new Error("Invalid MCP configuration operation.");
+          const { projectId, command, args } = parsed.data;
+          const cwd = projectId ? await this.projectDirectory(projectId) : undefined;
+          const result = await nativeMcpConfig(command, args, cwd, () =>
+            this.options.store.authenticated(token),
+          ).catch((error: unknown) => {
+            if (!(error instanceof NativeMcpConfigUnavailableError)) throw error;
+            // The Host hub still publishes its secret-free inventory by alias.
+            // Never manufacture provider rows with paths, scopes, or health.
+            if (command === "mcp_discover")
+              return { connections: [], warnings: [], nativeConfigAvailable: false };
+            if (command === "codex_mcp_list") return [];
+            throw error;
+          });
+          if (
+            command === "mcp_add" ||
+            command === "mcp_set_enabled" ||
+            command === "mcp_server_config_write" ||
+            command === "claude_mcp_remove"
+          )
+            this.hub.refreshConfiguration();
+          if (!(await this.options.store.authenticated(token)))
+            throw new Error("Owner device credential required.");
+          return result;
+        }
+        if (PROJECT_CREDENTIAL_METHODS.has(method)) {
+          const result = await this.projectCredentials(method, input, peerAddress, token);
+          if (!(await this.options.store.authenticated(token)))
+            throw new Error("Owner device credential required.");
+          return result;
+        }
+        if (isOAuthMethod(method)) {
+          const scoped = await this.projectScopedInput(input);
+          if (!(await this.options.store.authenticated(token)))
+            throw new Error("Owner device credential required.");
+          return await oauthRpc(this.hub, method, scoped);
+        }
         if (method === "mcp.tokens.create") return await this.tokens.create(input);
         if (method === "mcp.tokens.list") return { tokens: await this.tokens.list() };
         if (method === "mcp.tokens.revoke") return await this.tokens.revoke(input.id);
@@ -253,20 +342,99 @@ export class McpHttp {
     return true;
   }
 
+  private async projectDirectory(projectId: string) {
+    const project = await this.options.store.project(projectId);
+    if (!project || !isAbsolute(project.cwd)) throw new Error("Unknown Host project.");
+    if (!(await stat(project.cwd).catch(() => undefined))?.isDirectory())
+      throw new Error("Project directory does not exist on this machine.");
+    return project.cwd;
+  }
+
+  private async projectScopedInput(input: Record<string, unknown>) {
+    const { projectId, ...rest } = input;
+    if (projectId === undefined) {
+      const cwd = rest.cwd;
+      return typeof cwd === "string" && isAbsolute(cwd)
+        ? { ...rest, cwd: await realpath(cwd).catch(() => cwd) }
+        : rest;
+    }
+    if (
+      typeof projectId !== "string" ||
+      !projectId ||
+      projectId.length > 256 ||
+      rest.cwd !== undefined
+    )
+      throw new Error("Choose one project for this MCP request.");
+    return { ...rest, cwd: await this.projectDirectory(projectId) };
+  }
+
+  private async projectCredentials(
+    method: string,
+    input: Record<string, unknown>,
+    peer: string | undefined,
+    token: string,
+  ) {
+    const parsed = PROJECT_CREDENTIAL_INPUT.safeParse(input);
+    if (!parsed.success) throw new Error("Invalid project MCP credentials request.");
+    const { projectId, cwd: localCwd, global, name, values } = parsed.data;
+    if ([projectId, localCwd, global].filter(Boolean).length !== 1)
+      throw new Error("Choose a project for MCP credentials.");
+    let cwd: string | undefined;
+    if (projectId) cwd = await this.projectDirectory(projectId);
+    else if (!global) {
+      if (
+        !localCwd ||
+        !isAbsolute(localCwd) ||
+        !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(peer ?? "")
+      )
+        throw new Error("A remote MCP credential request requires a Host project ID.");
+      const canonical = await realpath(localCwd).catch(() => undefined);
+      if (!canonical || !(await stat(canonical).catch(() => undefined))?.isDirectory())
+        throw new Error("Project directory does not exist.");
+      cwd = canonical;
+    }
+    if (!(await this.options.store.authenticated(token)))
+      throw new Error("Owner device credential required.");
+    if (method === "mcp.projectCredentials.clear")
+      return await this.hub.clearProjectCredentials(cwd, name);
+    if (method === "mcp.projectCredentials.status")
+      return await this.hub.projectCredentialStatus(cwd, name);
+    if (!values) throw new Error("Provide project MCP credential values.");
+    return await this.hub.setProjectCredentials(cwd, name, values);
+  }
+
   /** Policy, corrupt flag and the hub-hosted names that may be listed under `direct`. */
   private async loadingGet(input: Record<string, unknown>) {
     const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : undefined;
     const { corrupt, ...policy } = await readLoadingPolicy(this.hub.dataDir);
-    const inventory = await this.hub.inventory(cwd);
+    const inventory = await this.hub.inventory(cwd, true);
     // Signed-in http servers load on demand like hub-hosted ones, so `direct` may name them.
     const hostedHttp = new Set<string>();
-    for (const def of inventory)
-      if (def.kind === "http" && (await this.hub.oauthSignedIn({ name: def.name, url: def.url! })))
+    const projectCredentials = new Set<string>();
+    const customCredentials = new Set<string>();
+    for (const def of inventory) {
+      if (def.managed?.enabled === false) continue;
+      if (await this.hub.projectCredentialsFor(cwd, def)) {
+        customCredentials.add(def.name);
+        if (!cwd || !def.managed || (await this.hub.ownCredentialsFor(cwd, def)))
+          projectCredentials.add(def.name);
+      }
+      if (def.kind === "http" && (await this.hub.oauthSignedIn(this.hub.oauthServerRef(def, cwd))))
         hostedHttp.add(def.name);
-    const servers = inventory
-      .filter((def) => def.kind === "stdio" || hostedHttp.has(def.name))
-      .map((def) => def.name)
-      .sort((a, b) => a.localeCompare(b));
+    }
+    const servers: string[] = [];
+    for (const def of inventory) {
+      if (def.managed?.enabled === false) continue;
+      if (
+        def.kind === "stdio" ||
+        (!def.managed &&
+          hostedHttp.has(def.name) &&
+          !customCredentials.has(def.name) &&
+          !(await this.hub.oauthProjectScoped(def, cwd)))
+      )
+        servers.push(def.name);
+    }
+    servers.sort((a, b) => a.localeCompare(b));
     // Secret-free view: command, args, env, url and headers are never copied.
     const hub = inventory
       .map((def) => ({
@@ -276,9 +444,14 @@ export class McpHttp {
         sources: [...def.sources],
         aliases: def.aliases.map((alias) => ({ provider: alias.provider, name: alias.name })),
         signedIn: def.kind === "http" && hostedHttp.has(def.name),
+        ...(def.managed ? { managed: def.managed } : {}),
+        ...(cwd || def.managed
+          ? { projectCredentialsConfigured: projectCredentials.has(def.name) }
+          : {}),
+        ...(customCredentials.has(def.name) ? { credentialsConfigured: true } : {}),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    return { policy, corrupt: corrupt === true, servers, inventory: hub };
+    return { policy, corrupt: corrupt === true, servers, inventory: hub, managedServers: true };
   }
 
   private async loadingSet(input: Record<string, unknown>) {

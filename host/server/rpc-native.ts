@@ -1,4 +1,3 @@
-import { type NativeBufferUploadMethod } from "../../src/shared/model/host-contracts/native-buffer-upload";
 import { type NativeDeliveryMethod } from "../../src/shared/model/host-contracts/native-delivery";
 import { type NativeServiceUploadMethod } from "../../src/shared/model/host-contracts/native-service-upload";
 import { type NativeServiceMethod } from "../../src/shared/model/host-contracts/native-services";
@@ -11,7 +10,6 @@ export async function handleNativeRpc(
     ServerBindings,
     | "nativeWorkspacesService"
     | "nativeDeliveryService"
-    | "nativeBufferUploads"
     | "nativeServiceUploads"
     | "nativeServicesService"
     | "engine"
@@ -36,12 +34,6 @@ export async function handleNativeRpc(
     case "native.buffers.retire":
 
     case "native.buffers.reconcile":
-
-    case "native.buffers.recovery.list":
-
-    case "native.buffers.recovery.read":
-
-    case "native.buffers.recovery.status":
 
     case "native.rewind.plan":
 
@@ -72,9 +64,7 @@ export async function handleNativeRpc(
         request.input.method as NativeWorkspaceMethod,
         request.params,
         request.domainContext,
-        {
-          legacy: !request.input.method.startsWith("native.buffers.recovery."),
-        },
+        { legacy: true },
       );
       if (request.input.method === "workspaces.cleanup.apply")
         await recordRemoteActivity(dependencies, request, "worktreeChanged", {
@@ -82,8 +72,6 @@ export async function handleNativeRpc(
         });
       break;
     }
-
-    case "native.buffers.delivery.apply":
 
     case "native.delivery.epochs.open":
 
@@ -94,10 +82,6 @@ export async function handleNativeRpc(
     case "native.delivery.epochs.close":
 
     case "native.delivery.epochs.gap.resolve":
-
-    case "native.buffers.delivery.status":
-
-    case "native.buffers.delivery.ack":
 
     case "native.services.delivery.apply":
 
@@ -112,23 +96,6 @@ export async function handleNativeRpc(
         request.domainContext,
       );
       break;
-
-    case "native.buffers.upload.start":
-
-    case "native.buffers.upload.write":
-
-    case "native.buffers.upload.commit":
-
-    case "native.buffers.upload.status":
-
-    case "native.buffers.upload.abort": {
-      request.result = await dependencies.nativeBufferUploads.call(
-        request.input.method as NativeBufferUploadMethod,
-        request.params,
-        request.domainContext,
-      );
-      break;
-    }
 
     case "native.services.upload.begin":
 

@@ -8,7 +8,8 @@ import type { RepositoryReviewRequest } from "../model/workspaceRepositories";
 import { useProjectWorktrees } from "../hooks/useProjectWorktrees";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { pathKey } from "../../../shared/lib/paths";
-import { checkoutOptionLabel, sessionCheckout } from "../model/checkoutSelection";
+import { useWorktreeFocus } from "../model/worktreeFocus";
+import { isListedWorktree } from "../model/worktreeRows";
 import type { Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
@@ -63,6 +64,8 @@ function SourceControlContent({
   worktrees: { data, error, loading, refresh },
 }: Props & { worktrees: ReturnType<typeof useProjectWorktrees> }) {
   useLocale();
+  // The sidebar header is the only worktree selector; its focus is keyed by the project folder.
+  const focus = useWorktreeFocus(data?.worktrees.find((tree) => tree.isMain)?.path ?? cwd);
   // A plain folder has no worktrees to list; the panel below says so once.
   const connectionShownCentrally = useConnectionErrorShownCentrally(error);
   const discoveryNotice =
@@ -96,21 +99,14 @@ function SourceControlContent({
     ) : null;
   const checkouts = (() => {
     const paths: string[] = [];
-    const labels: Record<string, string> = {};
-    const worktrees: Record<string, Worktree> = {};
+    const byPath: Record<string, Worktree> = {};
     for (const tree of data?.worktrees ?? []) {
-      if (tree.missing || tree.prunable) continue;
+      if (!isListedWorktree(tree)) continue;
       if (paths.some((path) => pathKey(path) === pathKey(tree.path))) continue;
       paths.push(tree.path);
-      worktrees[tree.path] = tree;
+      byPath[tree.path] = tree;
     }
-    const current = sessionCheckout(cwd, paths);
-    for (const path of paths)
-      labels[path] = checkoutOptionLabel(
-        worktrees[path],
-        !!current && pathKey(path) === pathKey(current),
-      );
-    return { paths, labels, worktrees };
+    return { paths, worktrees: byPath };
   })();
   if (!repositoryPaths?.length && onOpenRepository && checkouts.paths.length > 1)
     return (
@@ -120,9 +116,9 @@ function SourceControlContent({
           key={cwd}
           cwd={cwd}
           paths={checkouts.paths}
-          labels={checkouts.labels}
           worktrees={checkouts.worktrees}
           checkouts
+          focusPath={focus?.path}
           enabled={enabled}
           textHarness={textHarness}
           selectedPath={selectedPath}

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 const ROUTE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const OTHER: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-const METHOD: &str = "native.buffers.update";
+const METHOD: &str = "native.services.conversation.desktop.finish";
 const RAW: &str = r#"{"owners":[],"instanceId":"exact-original"}"#;
 struct FileDb {
     directory: PathBuf,
@@ -785,7 +785,7 @@ fn maintenance_rechecks_quota_totals_after_the_audit_interval() {
         .lock_conn()
         .unwrap()
         .execute(
-            "UPDATE native_delivery_usage SET retained=0,active=0,bytes=0 WHERE lane=1",
+            "UPDATE native_delivery_usage SET retained=0,active=0,bytes=0 WHERE lane=4",
             [],
         )
         .unwrap();

@@ -263,17 +263,23 @@ fn namespace(conn: &Connection) -> Result<(String, String), String> {
     Ok(ids)
 }
 
+pub(super) fn has_gap_table(conn: &Connection) -> Result<bool, String> {
+    table(conn, gaps::TABLE)
+}
+
 fn initialize(conn: &Connection, runtime: uuid::Uuid) -> Result<(), String> {
     require_full(conn)?;
     check_structure(conn)?;
     if table(conn, TABLES[0])? {
         // Existing epoch Stores gain the gap-proof table in this FULL write.
         gaps::migrate(conn)?;
+        retire_legacy_buffers(conn)?;
         install_allocation_index(conn)?;
         check_integrity(conn, runtime, true)?;
         return Ok(());
     }
     schema(conn)?;
+    retire_legacy_buffers(conn)?;
     remote_ack_schema(conn)?;
     conn.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
     let ids = identity(conn)?;
@@ -694,6 +700,7 @@ pub(crate) fn current(store: &SessionStore, expected: &EpochHandle) -> Result<Ep
     Ok(handle(&conn, store, pinned(&conn, expected)?))
 }
 
+#[cfg(test)]
 pub(crate) fn prepare(
     store: &SessionStore,
     semantic_key: &str,
@@ -723,6 +730,37 @@ pub(crate) fn prepare_with_budget(
     budget: usize,
 ) -> Result<Original, String> {
     prepare_inputs(semantic_key, route, method, raw)?;
+    prepare_epoch(store, semantic_key, route, method, raw, epoch, budget)
+}
+
+#[cfg(test)]
+pub(crate) fn prepare_legacy_buffer(
+    store: &SessionStore,
+    semantic_key: &str,
+    route: &str,
+    raw: &str,
+    epoch: &EpochHandle,
+) -> Result<Original, String> {
+    prepare_epoch(
+        store,
+        semantic_key,
+        route,
+        LEGACY_BUFFER,
+        raw,
+        epoch,
+        LEGACY_BUFFER_BUDGET,
+    )
+}
+
+fn prepare_epoch(
+    store: &SessionStore,
+    semantic_key: &str,
+    route: &str,
+    method: &str,
+    raw: &str,
+    epoch: &EpochHandle,
+    budget: usize,
+) -> Result<Original, String> {
     runtime(store, epoch)?;
     write(store, |conn| {
         let mut value = pinned(conn, epoch)?;

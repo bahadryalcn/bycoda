@@ -10,10 +10,14 @@ export type McpHubEntry = {
   sources: string[];
   /** Http servers only: Host-held sign-in state; absent until `mcp.oauth.status` answers. */
   oauth?: McpOAuthState;
+  oauthInherited?: boolean;
   /** The name is listed in the loading policy's `direct` list. */
   direct: boolean;
   /** The Host may start it with every session (stdio, or a signed-in http server). */
   directEligible: boolean;
+  projectCredentialsConfigured?: boolean;
+  credentialsConfigured?: boolean;
+  managed?: McpHubServer["managed"];
 };
 
 /** One server as the owner thinks of it: one name, every provider file that declares it and its Host state. */
@@ -40,7 +44,7 @@ export function buildMcpCatalog(
     if (entry) entry.configs.push(server);
     else entries.set(server.name, { name: server.name, configs: [server] });
   }
-  const oauthState = new Map(oauth?.map((server) => [server.name, server.state]));
+  const oauthState = new Map(oauth?.map((server) => [server.name, server]));
   const direct = new Set(loading?.policy.direct);
   const eligible = new Set(loading?.servers);
   for (const hub of loading?.inventory ?? []) {
@@ -49,10 +53,16 @@ export function buildMcpCatalog(
       kind: hub.kind,
       sources: hub.sources,
       ...(hub.kind === "http"
-        ? { oauth: oauthState.get(hub.name) ?? (hub.signedIn ? "signed-in" : undefined) }
+        ? {
+            oauth: oauthState.get(hub.name)?.state ?? (hub.signedIn ? "signed-in" : undefined),
+            oauthInherited: oauthState.get(hub.name)?.inherited,
+          }
         : {}),
       direct: direct.has(hub.name),
       directEligible: eligible.has(hub.name),
+      projectCredentialsConfigured: hub.projectCredentialsConfigured,
+      credentialsConfigured: hub.credentialsConfigured,
+      managed: hub.managed,
     };
     // A provider row matches when the Host names it under that provider's alias.
     const match = [...entries.values()].find(
@@ -79,6 +89,12 @@ export function buildMcpCatalog(
 
 export type McpEntryStatus = "off" | "sign-in" | "expired" | "ready" | "configured";
 
+export function mcpEntryLabel(entry: McpCatalogEntry): string {
+  if (entry.hub?.managed) return entry.hub.managed.name;
+  if (entry.configs.length || !entry.hub?.sources.includes("claude-plugin")) return entry.name;
+  return /^plugin:[^:]+:(.+)$/.exec(entry.name)?.[1] ?? entry.name;
+}
+
 /**
  * One summary state per server. Sign-in is only asked when nothing already proves access:
  * a Host sign-in or a provider-confirmed connection both count.
@@ -89,7 +105,10 @@ export function mcpEntryStatus(
   needsSignIn: (row: McpServerRow) => boolean,
 ): McpEntryStatus {
   const configs = entry.configs;
+  if (entry.hub?.managed?.enabled === false) return "off";
   if (configs.length > 0 && configs.every((config) => config.enabled === false)) return "off";
+  if (entry.hub?.credentialsConfigured || entry.hub?.projectCredentialsConfigured)
+    return "configured";
   const live = configs.filter((config) => config.enabled !== false);
   const oauth = entry.hub?.oauth;
   if (

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { assertDomainAuthority } from "../domains/context";
 import { withHostGitMutation } from "../git/git-mutations";
 import {
+  deleteHostWorktreeBranch,
   inspectHostWorktreeRemoval,
   invalidateHostWorktrees,
   removeHostWorktreeDirectory,
@@ -35,11 +36,12 @@ const reviews = new Map<
 >();
 
 async function worktreeRemoval(deps: GitRemovalBindings, request: OwnerRpcRequest) {
-  const { projectId, path, token, force, keepSessions } = request.params;
+  const { projectId, path, token, force, keepSessions, deleteBranch } = request.params;
   if (
     typeof projectId !== "string" ||
     typeof path !== "string" ||
     (force !== undefined && typeof force !== "boolean") ||
+    (deleteBranch !== undefined && typeof deleteBranch !== "boolean") ||
     (keepSessions !== undefined && typeof keepSessions !== "boolean")
   )
     throw new Error("Invalid worktree removal request.");
@@ -215,6 +217,14 @@ async function worktreeRemoval(deps: GitRemovalBindings, request: OwnerRpcReques
             await mutate(assertLease);
           },
           async () => current.projectCwd,
+          // Clean proof (checked above, re-bound by `leased.state`): nothing for force to delete,
+          // so an unattended Host may remove it without a desktop; Git refuses anything dirty.
+          {
+            unattended:
+              !current.status &&
+              current.ignoredEntryCount === 0 &&
+              !expected.managedPreservationRequired,
+          },
         );
         if (keepSessions === false) {
           try {
@@ -233,9 +243,15 @@ async function worktreeRemoval(deps: GitRemovalBindings, request: OwnerRpcReques
             );
           }
         }
+        // Managed workspaces own their branch lifecycle; only plain worktrees offer the choice.
+        const branchNotice =
+          deleteBranch === true && current.branch && !expected.managed
+            ? await deleteHostWorktreeBranch(current.projectCwd, current.branch)
+            : undefined;
         return {
           sessionIds: current.sessionIds,
           projectCwd: current.projectCwd,
+          ...(branchNotice ? { branchNotice } : {}),
         };
       });
     }),

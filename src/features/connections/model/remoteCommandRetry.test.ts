@@ -10,6 +10,14 @@ const native = (code: string, message = "Host request failed", uncertain = false
   Object.assign(new Error(`${code}: ${message}`), { code, uncertain });
 
 describe("classifyCommandFailure", () => {
+  it("recognizes queue expiration before Git launches as undelivered", () => {
+    expect(classifyCommandFailure(native("GIT_START_TIMEOUT"))).toBe("not-sent");
+    expect(classifyCommandFailure("Host rejected request: Command timed out before launch")).toBe(
+      "not-sent",
+    );
+    expect(classifyCommandFailure("Command timed out while running")).toBe("uncertain");
+  });
+
   it("preserves an unknown delivery through a legacy HTTP rejection envelope", () => {
     expect(classifyCommandFailure("Host rejected request: The operation outcome is unknown.")).toBe(
       "uncertain",

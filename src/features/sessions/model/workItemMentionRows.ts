@@ -26,6 +26,8 @@ export type WorkItemMentionTarget =
 
 export type WorkItemMentionRow = RankedFile & { workItem: WorkItemMentionTarget };
 
+const PROVIDER_HINT_PRIORITY: readonly InboxProvider[] = ["jira", "github"];
+
 export function workItemMentionOf(file: { path: string }): WorkItemMentionTarget | undefined {
   return (file as Partial<WorkItemMentionRow>).workItem;
 }
@@ -40,7 +42,10 @@ export function workItemMentionRows(
   if (parsed && !connected.includes(parsed.provider)) return [];
   const hints: WorkItemMentionRow[] = parsed
     ? []
-    : workItemAliasHints(query, connected).map((hint) => ({
+    : workItemAliasHints(query, [
+        ...PROVIDER_HINT_PRIORITY.filter((provider) => connected.includes(provider)),
+        ...connected,
+      ]).map((hint) => ({
         name: WORK_ITEM_PROVIDER_NAMES[hint.provider],
         path: `${WORK_ITEM_HINT_PREFIX}${hint.provider}`,
         relative: `${hint.aliases[0]}:`,

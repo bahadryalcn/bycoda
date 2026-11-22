@@ -298,7 +298,6 @@ export interface ServerBindings {
   nativeServiceUploads: ReturnType<typeof createNativeRuntime>["nativeServiceUploads"];
   nativeServicesService: ReturnType<typeof createNativeRuntime>["nativeServicesService"];
   modelsService: ReturnType<typeof createNativeRuntime>["modelsService"];
-  nativeBufferUploads: ReturnType<typeof createNativeRuntime>["nativeBufferUploads"];
   nativeWorkspacesService: ReturnType<typeof createNativeRuntime>["nativeWorkspacesService"];
   crewOperation: ReturnType<typeof createNativeRuntime>["crewOperation"];
   sessionService: ReturnType<typeof createSessionServicesRuntime>["sessionService"];

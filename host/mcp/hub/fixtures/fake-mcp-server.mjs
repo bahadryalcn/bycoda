@@ -26,6 +26,10 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       return reply({ prompts: [] });
     case "tools/call":
       if (message.params.name === "crash") process.exit(3);
+      if (message.params.name === "project-env")
+        return reply({
+          content: [{ type: "text", text: process.env.FAKE_MCP_PROJECT_TOKEN ?? "" }],
+        });
       // "hold" never answers; "slow" answers after arguments.ms.
       if (message.params.name === "hold") return;
       if (message.params.name === "slow") {

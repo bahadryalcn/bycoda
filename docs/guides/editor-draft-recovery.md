@@ -28,9 +28,9 @@ Edits made while a save is in progress remain unsaved after the older write
 finishes. A late report for the older write cannot mark a newer recovery copy as
 saved. The native save report retains the text; it is not a filesystem receipt.
 
-The **Recovered work** control opens **Conversations**, **File drafts** and
-**Earlier file reports** views. When the sidebar entry is hidden, use **Recovered
-work** in the desktop command palette to check earlier reports. File copies from
+The **Recovered work** control opens **Conversations** and **File drafts** views.
+When the sidebar entry is hidden, use **Recovered work** in the desktop command
+palette. File copies from
 earlier window incarnations remain discoverable in the same local desktop profile.
 The list starts with changed, unsaved copies. **All
 copies** also includes reported saves and copies that match their captured disk
@@ -56,33 +56,7 @@ Standalone files use their own parent folder rather than the selected project's
 Host or execution directory. Clearing the session recovery list does not
 delete file copies.
 
-In **Earlier file reports**, choose **This computer** for this desktop profile's
-local reports or **Host reports** for reports retained by its Host. The Host source
-belongs to this desktop profile; selecting another project or server does not
-redirect it. Choose **Check reports** to inspect earlier path and edit-status
-reports. The list is read on demand, one
-page at a time; search and filters apply to that page. An unreadable report stays
-listed with inspection disabled. A failed inspection can be retried without
-changing the file or removing its protection.
-
-A Host page can be empty while **Next** is available because unrelated reports
-were concealed. Continue with **Next** to inspect the next page. A partial-result
-message means some reports remain unavailable; available reports can still be
-inspected. Refreshing or changing sources never removes their protection.
-
-These older reports do not contain the edited text. **Find file recovery copies**
-shows new-format copies matching their file names. Check those copies' contents;
-a matching name or reported clean status does not resolve the earlier report.
-**Show all file copies** removes this name filter. If no copy exists, check the
-original window for the edited text. This view does not discard or settle reports.
-
-Earlier reports have no reliable project origin, so inspection is concealed while
-any project group is locked or hidden. A privacy change also rejects pending
-list and inspection results, even if the groups were immediately unlocked again.
-Check the reports again after unlocking.
-
-This remains a local desktop source increment. Remote/web persistence, rich
-merge-region decisions, reviewed legacy Host/native
-buffer reconciliation, native
-filesystem receipts and installed desktop acceptance remain separate work.
-No migration fence or supported-client requirement is retired by an editor copy.
+Unsaved edits are tracked only in memory by the open desktop. When a worktree
+removal reaches a desktop that has unsaved files under it, the removal is refused
+until they are saved or closed; when no desktop is connected, these draft copies
+are the safety net. The Host keeps no record of editor buffers.

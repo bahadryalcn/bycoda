@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,16 +10,15 @@ import type { SendTurnInput } from "../../../src/integrations/harness/core/types
 import { HostEngine } from "../../engine";
 import { HostStore } from "../../store";
 import { createHostServer } from "../../server";
+import { DesktopLive } from "../../desktop/desktopLive";
+import { DesktopSessions } from "../../desktop/desktopSessions";
 import {
   HOST_SCHEMA_VERSION,
   WS_SUBPROTOCOL,
   WS_WIRE_VERSION,
-  WS_LIMITS,
   RPC_ERROR_CODES,
 } from "../../../src/shared/model/host-contracts";
-import { reportIdentity } from "../../native-buffer/native-buffer-heartbeat";
 import { NATIVE_WORKSPACE_METHODS } from "../../../src/shared/model/host-contracts/native-workspaces";
-import { NATIVE_BUFFER_UPLOAD_LIMITS as uploadLimits } from "../../../src/shared/model/host-contracts/native-buffer-upload";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -58,7 +57,19 @@ async function fixture() {
     },
   });
   const project = await engine.openProject(cwd);
-  const server = await createHostServer(engine, ["codex"]);
+  const desktop = new DesktopSessions(
+    () => [],
+    process.platform,
+    new DesktopLive(Date.now, false, async () => {}),
+  );
+  const server = await createHostServer(
+    engine,
+    ["codex"],
+    undefined,
+    undefined,
+    undefined,
+    desktop,
+  );
   const clients: WebSocket[] = [];
   cleanups.push(async () => {
     for (const client of clients) client.terminate();
@@ -144,11 +155,7 @@ async function fixture() {
       clientKind: "desktop",
     });
     expect(hello.result.capabilities).toEqual(
-      expect.arrayContaining([
-        "native.workspaces.v1",
-        "native.buffers.upload.v1",
-        "transport.ws.workspaces.cleanup.v1",
-      ]),
+      expect.arrayContaining(["native.workspaces.v1", "transport.ws.workspaces.cleanup.v1"]),
     );
     const call = async (method: string, params: unknown = {}) => {
       const value = await request(method, params);
@@ -317,7 +324,7 @@ it.each(["http", "ws"])(
 );
 
 it.each(["http", "ws"])(
-  "executes all 21 real Native workspace RPCs through %s with shared durable owners",
+  "executes supported Native workspace RPCs through %s and acknowledges legacy buffer calls",
   async (transport) => {
     const f = await fixture(),
       ws = await f.connect();
@@ -337,6 +344,20 @@ it.each(["http", "ws"])(
     expect((await call("native.turn.begin", turn)).before.status).toBe("complete");
     writeFileSync(join(f.workspace.path, "source.txt"), "native change\n");
     expect((await call("native.turn.end", turn)).after.status).toBe("complete");
+    const report = {
+      clientId: "client-a",
+      instanceId: "instance-a",
+      processId: process.pid,
+      owners: [
+        {
+          ownerId: "window-a",
+          updatedAt: Date.now(),
+          unknown: false,
+          buffers: [{ path: join(f.workspace.path, "source.txt"), dirty: true }],
+        },
+      ],
+    };
+    expect(await call("native.buffers.update", report)).toEqual({ acknowledged: true });
     const current = await f.httpCall("workspaces.get", { workspaceId });
     const conversation = { revision: 2, userBlockIds: [turn.userBlockId] };
     const plan = await call("native.rewind.plan", {
@@ -402,26 +423,19 @@ it.each(["http", "ws"])(
     expect(await call("native.activity.end", { activityId: "activity-a" })).toEqual({
       acknowledged: true,
     });
-    const report = {
-      clientId: "client-a",
-      instanceId: "instance-a",
-      processId: process.pid,
-      owners: [{ ownerId: "window-a", updatedAt: Date.now(), unknown: false, buffers: [] }],
-    };
-    expect(await call("native.buffers.update", report)).toEqual({ acknowledged: true });
     expect(
       await call("native.buffers.heartbeat", {
         clientId: report.clientId,
         instanceId: report.instanceId,
         processId: process.pid,
-        reportIdentity: reportIdentity(report.owners),
+        reportIdentity: "legacy-report-identity",
       }),
     ).toEqual({ acknowledged: true });
-    const page = await call("native.buffers.recovery.list", { limit: 100 });
-    expect(page.records).toHaveLength(1);
-    const source = page.records[0].source;
-    expect((await call("native.buffers.recovery.read", source)).owner.ownerId).toBe("window-a");
-    expect((await call("native.buffers.recovery.status", source)).qualified).toBe(false);
+    expect(
+      await f.store.db
+        .prepare("SELECT name FROM sqlite_master WHERE name='native_buffer_clocks'")
+        .get(),
+    ).toBeUndefined();
     expect(
       await call("native.buffers.retire", {
         clientId: report.clientId,
@@ -466,55 +480,6 @@ it.each(["http", "ws"])(
   },
   180_000,
 );
-
-it("stages a real >1MiB Native report through WS chunks and commits once through the unchanged buffer owner", async () => {
-  const f = await fixture(),
-    ws = await f.connect(),
-    uploadId = randomUUID();
-  const path = join(f.workspace.path, "source.txt"),
-    longPath = join(f.workspace.path, "x".repeat(180));
-  const report = {
-    clientId: "large-client",
-    instanceId: "large-instance",
-    processId: process.pid,
-    owners: [
-      {
-        ownerId: "large-window",
-        updatedAt: Date.now(),
-        unknown: true,
-        buffers: Array.from({ length: 6000 }, (_, i) => ({
-          path: i ? `${longPath}${i}` : path,
-          dirty: false,
-        })),
-      },
-    ],
-  };
-  const bytes = Buffer.from(JSON.stringify(report));
-  expect(bytes.length).toBeGreaterThan(WS_LIMITS.maxMessageBytes);
-  const input = {
-    uploadId,
-    byteLength: bytes.length,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
-  };
-  await ws.call("native.buffers.upload.start", input);
-  for (let offset = 0; offset < bytes.length; offset += uploadLimits.chunkBytes) {
-    const params = {
-      uploadId,
-      offset,
-      data: bytes.subarray(offset, offset + uploadLimits.chunkBytes).toString("base64"),
-    };
-    expect(Buffer.byteLength(JSON.stringify(params))).toBeLessThan(WS_LIMITS.maxMessageBytes);
-    await ws.call("native.buffers.upload.write", params);
-  }
-  const committed = await ws.call("native.buffers.upload.commit", { uploadId });
-  expect(committed).toMatchObject({ state: "completed", result: { acknowledged: true } });
-  expect(await ws.call("native.buffers.upload.commit", { uploadId })).toEqual(committed);
-  expect(await f.httpCall("native.buffers.upload.status", { uploadId })).toEqual(committed);
-  const page = await f.httpCall("native.buffers.recovery.list", { limit: 100 });
-  expect(page.records).toHaveLength(1);
-  expect(page.records[0]).toMatchObject({ bufferCount: 6000, unknown: true, qualified: false });
-  expect(page.records[0].source.reportVersion).toBe(1);
-}, 180_000);
 
 it("rejects malformed and scoped/foreign/revoked requests and reports post-effect conflicts as unknown", async () => {
   const f = await fixture(),
@@ -561,8 +526,8 @@ it("rejects malformed and scoped/foreign/revoked requests and reports post-effec
   expect(
     (
       await f.http(
-        "native.buffers.upload.start",
-        { uploadId: "scoped", byteLength: 1, sha256: "a".repeat(64) },
+        "native.buffers.update",
+        { clientId: "scoped", instanceId: "scoped", processId: 1, owners: [] },
         grant.token,
       )
     ).status,
@@ -572,7 +537,7 @@ it("rejects malformed and scoped/foreign/revoked requests and reports post-effec
       .status,
   ).toBe(401);
   await f.store.revokeDevice(f.device.id);
-  expect(
-    (await ws.request("native.buffers.upload.status", { uploadId: "absent" })).error.code,
-  ).toBe(RPC_ERROR_CODES.unauthorized);
+  expect((await ws.request("native.activity.end", { activityId: "absent" })).error.code).toBe(
+    RPC_ERROR_CODES.unauthorized,
+  );
 }, 180_000);

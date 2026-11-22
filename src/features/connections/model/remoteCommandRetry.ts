@@ -1,4 +1,5 @@
 import {
+  isGitStartTimeout,
   isHostRestartFailure,
   nativeConnectionFailureCode,
   remoteErrorText,
@@ -60,7 +61,7 @@ export function classifyCommandFailure(error: unknown): CommandFailureClass {
     (delivery !== "not-sent" && isHostRestartFailure(error))
   )
     return "uncertain";
-  if (delivery === "not-sent") return "not-sent";
+  if (delivery === "not-sent" || isGitStartTimeout(error)) return "not-sent";
   if (DEFINITIVE_TEXT.test(text) || (code !== undefined && DEFINITIVE_CODES.has(code)))
     return "definitive";
   // The native connection preserved the Host's pre-execution refusal.

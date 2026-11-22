@@ -51,7 +51,7 @@ async function fixture() {
   const other = await store.addProject("/other-crews", "Other crews");
   const models = vi.fn(async (): Promise<HostModelCatalog> => structuredClone(catalog));
   const engine = { command: vi.fn(), updateSession: vi.fn() };
-  const tasks = { list: () => [], tick: vi.fn() };
+  const tasks = { list: () => [], listCrewRun: () => [], tick: vi.fn() };
   let now = 1000;
   const restart = () =>
     new HostCrews(

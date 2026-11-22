@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 import { createNativeServiceUploadService } from "./upload";
-import { NATIVE_UPLOAD_COMMIT_LIMITS } from "../native-workspaces/upload-commit";
+import { NATIVE_UPLOAD_COMMIT_LIMITS } from "./upload-commit";
 import { NATIVE_SERVICE_UPLOAD_LIMITS as limits } from "../../../src/shared/model/host-contracts/native-service-upload";
-import { nativeBufferUploadPlatform } from "../../ports/native-workspaces";
+import { nativeUploadPlatform } from "../../ports/native-workspaces";
 import type { HostDomainContext } from "../context";
 import type { NativeServiceOwnerPorts } from "./ports";
 import type { NativeServiceUploadTarget } from "../../../src/shared/model/host-contracts/native-service-upload";
@@ -39,7 +39,7 @@ function fixture(
   let clock = 1000;
   const service = createNativeServiceUploadService({
     environmentId: "env",
-    platform: nativeBufferUploadPlatform,
+    platform: nativeUploadPlatform,
     execute,
     now: () => clock,
     ...options,

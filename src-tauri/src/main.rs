@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    if let Some(code) = bycoda_lib::maybe_run_mcp_config_helper() {
+        std::process::exit(code);
+    }
     if let Some(code) = bycoda_lib::maybe_run_native_authority_helper() {
         std::process::exit(code);
     }

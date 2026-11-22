@@ -164,6 +164,10 @@ export async function execFilesOffThread(
     const { file, args, cwd, env } = command;
     try {
       const { stdout } = await hostGitExec.exec(file, args, {
+        lane: "background",
+        // The budget measures the scan, not its wait behind other background scans (a project
+        // with many worktrees queues one discovery per checkout at once).
+        nativeTimeout: true,
         cwd,
         env,
         timeout: remaining,

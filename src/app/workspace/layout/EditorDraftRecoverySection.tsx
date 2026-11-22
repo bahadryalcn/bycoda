@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -16,31 +16,19 @@ import {
   type useEditorDraftRecovery,
 } from "../files/useEditorDraftRecovery";
 import type { EditorDraftRecoveryMetadata } from "../../../features/files/data/editorDraftRecovery";
-import { pathKey } from "../../../shared/lib/paths";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 
 export type EditorDraftRecoverySectionProps = {
   recovery: ReturnType<typeof useEditorDraftRecovery>;
   records: readonly EditorDraftRecoveryMetadata[];
-  reportPaths?: readonly string[];
-  onClearReportPaths?(): void;
 };
-export function EditorDraftRecoverySection({
-  recovery,
-  records,
-  reportPaths,
-  onClearReportPaths,
-}: EditorDraftRecoverySectionProps) {
+export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRecoverySectionProps) {
   const t = useT();
   const now = useMinuteNow();
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<"unsaved" | "all">("unsaved");
-  const reported = useMemo(
-    () => (reportPaths?.length ? new Set(reportPaths.map(pathKey)) : null),
-    [reportPaths],
-  );
-  const candidates = reported ? records.filter((row) => reported.has(pathKey(row.path))) : records;
+  const candidates = records;
   const unsaved = candidates.filter(
     (row) => row.state === "retained" && row.serializedTextDigest !== row.baselineDigest,
   );
@@ -81,23 +69,9 @@ export function EditorDraftRecoverySection({
           <RefreshCw className="icon-sm" strokeWidth={1.75} />
         </Button>
       </div>
-      {rows.length !== scoped.length || reported ? (
+      {rows.length !== scoped.length ? (
         <Text as="div" size="caption" tone="secondary" className="recovery-status">
-          {rows.length !== scoped.length ? (
-            <LiveText text={t("Showing {p0} of {p1}", { p0: rows.length, p1: scoped.length })} />
-          ) : null}
-          {reported ? (
-            <>
-              <span>
-                {t(
-                  "These copies match reported file names. Check their content; the earlier report remains protected.",
-                )}
-              </span>
-              <Button size="sm" variant="ghost" onClick={onClearReportPaths}>
-                {t("Show all file copies")}
-              </Button>
-            </>
-          ) : null}
+          <LiveText text={t("Showing {p0} of {p1}", { p0: rows.length, p1: scoped.length })} />
         </Text>
       ) : null}
       {recovery.error ? (

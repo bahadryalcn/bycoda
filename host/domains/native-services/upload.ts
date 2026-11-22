@@ -1,8 +1,5 @@
-import type { NativeBufferUploadPlatform } from "../native-workspaces/ports";
-import {
-  commitDeadlineElapsed,
-  NATIVE_UPLOAD_COMMIT_LIMITS,
-} from "../native-workspaces/upload-commit";
+import type { NativeUploadPlatform } from "./ports";
+import { commitDeadlineElapsed, NATIVE_UPLOAD_COMMIT_LIMITS } from "./upload-commit";
 import {
   NATIVE_SERVICE_UPLOAD_LIMITS as limits,
   NATIVE_SERVICE_UPLOAD_RPC_SCHEMAS,
@@ -38,7 +35,7 @@ type Entry = {
  * No generic forwarded method, caller-supplied owner, or disk credential. */
 export function createNativeServiceUploadService(ports: {
   environmentId: string;
-  platform: NativeBufferUploadPlatform;
+  platform: NativeUploadPlatform;
   execute(
     target: NativeServiceUploadTarget,
     params: Record<string, unknown>,

@@ -4,6 +4,28 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MenuBar } from "./MenuBar";
 
+const windowActions = vi.hoisted(() => ({
+  windows: false,
+  close: vi.fn().mockResolvedValue(undefined),
+  hide: vi.fn().mockResolvedValue(undefined),
+  invoke: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../platform/tauri/platform", async (original) => ({
+  ...(await original<typeof import("../../platform/tauri/platform")>()),
+  get IS_WIN() {
+    return windowActions.windows;
+  },
+}));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ close: windowActions.close }),
+}));
+vi.mock("@tauri-apps/api/core", async (original) => ({
+  ...(await original<typeof import("@tauri-apps/api/core")>()),
+  invoke: windowActions.invoke,
+}));
+vi.mock("../model/appLifecycle", () => ({ hideCurrentWindow: windowActions.hide }));
+
 let container: HTMLDivElement;
 let root: Root;
 let input: HTMLInputElement;
@@ -57,6 +79,29 @@ afterEach(() => {
   input.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  windowActions.windows = false;
+  vi.clearAllMocks();
+});
+
+it("offers separate Windows actions for close, minimize to tray, and quit", () => {
+  windowActions.windows = true;
+  const pick = (label: string) => {
+    tapAlt();
+    keyOn(button("file"), "keydown", "ArrowDown");
+    const item = [...menu()!.querySelectorAll("button")].find((button) =>
+      button.textContent?.startsWith(label),
+    );
+    expect(item).toBeDefined();
+    act(() => item?.click());
+  };
+
+  pick("Minimize to tray");
+  expect(windowActions.hide).toHaveBeenCalledOnce();
+  expect(windowActions.close).not.toHaveBeenCalled();
+  pick("Close window");
+  expect(windowActions.close).toHaveBeenCalledOnce();
+  pick("Quit");
+  expect(windowActions.invoke).toHaveBeenCalledWith("request_app_quit");
 });
 
 describe("application menu bar keyboard model", () => {

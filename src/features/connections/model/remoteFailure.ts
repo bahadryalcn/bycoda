@@ -43,9 +43,9 @@ const TEMPORARY =
 const HOST_RESTART_CODE = /^(?:HOST_STOPPING|HOST_DB_CLOSING)$/;
 const HOST_RESTART_TEXT = /^(?:Host is stopping|Host database is (?:closing|closed))\.?$/i;
 const TRANSIENT_CODE =
-  /^(?:ABORT_ERR|REQUEST_CANCELLED|RPC_CANCELLED|GIT_START_TIMEOUT|HOST_RPC_DEADLINE|RPC_TIMEOUT|RPC_PROTOCOL|RPC_WS_(?:DEADLINE|OVERLOAD|DETACHED|CANCELLED|RETRYABLE))$/;
+  /^(?:ABORT_ERR|REQUEST_CANCELLED|RPC_CANCELLED|HOST_RPC_DEADLINE|RPC_TIMEOUT|RPC_PROTOCOL|RPC_WS_(?:DEADLINE|OVERLOAD|DETACHED|CANCELLED|RETRYABLE))$/;
 const TRANSIENT_TEXT =
-  /^(?:Request cancell?ed|Command timed out before launch|AbortError(?::.*)?|Host did not answer .+ within \d+ s)\.?$/i;
+  /^(?:Request cancell?ed|AbortError(?::.*)?|Host did not answer .+ within \d+ s)\.?$/i;
 const PERMANENT_CODE =
   /^(?:EACCES|EPERM|ENOENT|FILE_CHANGED|FORBIDDEN|NOT_FOUND|INVALID_(?:INPUT|PARAMS|ARGUMENT)|RPC_(?:AUTHORIZATION|VALIDATION|NOT_FOUND)|RPC_WS_(?:VALIDATION|RESOURCE_RETIRED))$/;
 const PERMANENT_TEXT =
@@ -144,6 +144,7 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
     return { kind: "unreachable", message };
   if (
     isHostRestartFailure(error) ||
+    isGitStartTimeout(error) ||
     TRANSIENT_CODE.test(operationCode) ||
     TRANSIENT_TEXT.test(operationText) ||
     error instanceof TimeoutError ||
@@ -163,6 +164,18 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
   if (UNREACHABLE.test(text)) return { kind: "unreachable", message };
   if (TEMPORARY.test(text)) return { kind: "temporary", message };
   return { kind: "other", message };
+}
+
+/** The queue's deadline expired before a Git child process could run. */
+export function isGitStartTimeout(error: unknown): boolean {
+  const message = remoteErrorText(error).replace(
+    /^(?:Error: )?(?:Host rejected request:\s*)?/i,
+    "",
+  );
+  return (
+    failureCode(error, message) === "GIT_START_TIMEOUT" ||
+    /^(?:(?:RPC_WS_REMOTE|ETIMEDOUT):\s*)?Command timed out before launch\.?$/i.test(message)
+  );
 }
 
 /** A request ended because its deadline passed, as opposed to a busy or replaced

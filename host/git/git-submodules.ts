@@ -15,6 +15,7 @@ const GIT_ENV = { GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" };
 async function git(cwd: string, args: string[], timeout = 15_000): Promise<string> {
   if (timeout <= 0) throw new Error("Repository discovery timed out");
   const { stdout } = await hostGitExec.exec("git", ["--no-pager", ...args], {
+    lane: "background",
     cwd,
     windowsHide: true,
     timeout,
@@ -79,6 +80,9 @@ export async function hostGitSubmodules(
   let limit: RepositoryDiscoveryLimit | null = null;
   gitlinks: for (let index = 0; index < queue.length; index++) {
     const parent = queue[index];
+    // Listing the whole index only to find gitlinks is slow on large checkouts; a checkout
+    // without `.gitmodules` registers no submodules (source repositories are found below).
+    if (!(await stat(join(parent, ".gitmodules")).catch(() => null))) continue;
     const entries = await git(parent, ["ls-files", "--stage", "-z", "--", "."], remaining()).catch(
       (error: { stderr?: unknown }) => {
         // A plain folder has no gitlinks, but may still hold source repositories.

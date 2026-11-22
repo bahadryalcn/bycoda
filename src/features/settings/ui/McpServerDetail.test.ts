@@ -91,6 +91,11 @@ beforeEach(async () => {
       }),
     );
   });
+  const details = document.querySelector<HTMLDetailsElement>("details")!;
+  await act(async () => {
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
 });
 
 afterEach(async () => {

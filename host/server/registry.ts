@@ -1,4 +1,3 @@
-import { NATIVE_BUFFER_UPLOAD_METHODS } from "../../src/shared/model/host-contracts/native-buffer-upload";
 import { NATIVE_DELIVERY_METHODS } from "../../src/shared/model/host-contracts/native-delivery";
 import {
   DEVICE_LIFECYCLE_METHODS,
@@ -48,7 +47,6 @@ export function createRegistryRuntime(
     | "nativeServiceUploads"
     | "nativeServicesService"
     | "modelsService"
-    | "nativeBufferUploads"
     | "nativeWorkspacesService"
     | "crewOperation"
     | "sessionService"
@@ -133,13 +131,6 @@ export function createRegistryRuntime(
       "modelRouting.status": modelRoutingService.status,
       "modelRouting.resolve": modelRoutingService.resolve,
       "modelRouting.catalogFacts": catalogFactsService.catalogFacts,
-      ...Object.fromEntries(
-        NATIVE_BUFFER_UPLOAD_METHODS.map((method) => [
-          method,
-          (params: Record<string, unknown>, context: HostDomainContext) =>
-            dependencies.nativeBufferUploads.call(method, params, context),
-        ]),
-      ),
       ...Object.fromEntries(
         NATIVE_WORKSPACE_METHODS.map((method) => [
           method,

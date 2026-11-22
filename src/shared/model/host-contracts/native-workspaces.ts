@@ -1,18 +1,37 @@
 import { z } from "zod";
-import { JsonObjectSchema, SafeCounterSchema } from "./schemas";
 import {
-  NativeBufferOwnerSnapshotSchema,
-  NativeBufferRecoveryListParamsSchema,
-  NativeBufferRecoverySourceSchema,
-  NativeBufferRecoveryPageSchema,
-  NativeBufferRecoveryReadSchema,
-  NativeBufferRecoveryStatusSchema,
-} from "./native-buffer-recovery";
+  IdentifierSchema,
+  JsonObjectSchema,
+  SafeCounterSchema,
+  WIRE_SHA256_PATTERN,
+} from "./schemas";
 
 // Identity, canonical path, byte, unique-boundary and durable-owner checks remain
 // in the existing Host services. These DTOs confer no Native execution authority.
 const identity = z.string();
 const counter = SafeCounterSchema;
+// The four `native.buffers.*` report methods below are a stateless compatibility shim
+// for older desktops: the Host validates and acknowledges them and stores nothing.
+// Remove them one release after the Host stopped persisting reports.
+const digest = z.string().regex(WIRE_SHA256_PATTERN);
+const bufferProvenance = z.strictObject({
+  version: z.literal(2),
+  sourceStoreId: identity,
+  sourceProfileId: identity,
+  storeInstance: IdentifierSchema.nullable(),
+  windowIncarnation: IdentifierSchema.nullable(),
+  kind: z.enum(["physical", "unattributed", "legacy", "retained"]),
+  reportVersion: SafeCounterSchema.min(1),
+  reportNonce: IdentifierSchema.nullable(),
+  snapshotDigest: digest,
+});
+export const NativeBufferOwnerSnapshotSchema = z.strictObject({
+  ownerId: identity,
+  updatedAt: SafeCounterSchema,
+  unknown: z.boolean(),
+  buffers: z.array(z.strictObject({ path: z.string(), dirty: z.boolean() })).max(10_000),
+  source: bufferProvenance.optional(),
+});
 const direction = z.enum(["rewind", "undo"]);
 const mutation = {
   workspaceId: identity,
@@ -297,18 +316,6 @@ export const NATIVE_WORKSPACE_RPC_SCHEMAS = {
     params: NativeBufferReconcileParamsSchema,
     result: bufferReconcileResult,
   },
-  "native.buffers.recovery.list": {
-    params: NativeBufferRecoveryListParamsSchema,
-    result: NativeBufferRecoveryPageSchema,
-  },
-  "native.buffers.recovery.read": {
-    params: NativeBufferRecoverySourceSchema,
-    result: NativeBufferRecoveryReadSchema,
-  },
-  "native.buffers.recovery.status": {
-    params: NativeBufferRecoverySourceSchema,
-    result: NativeBufferRecoveryStatusSchema,
-  },
   "native.rewind.plan": { params: NativeRewindPlanParamsSchema, result: NativeRewindPlanSchema },
   "native.rewind.prepare": { params: NativeRewindPrepareParamsSchema, result: prepared },
   "native.rewind.apply": {
@@ -368,7 +375,6 @@ export function nativeWorkspaceMethod(method: string): method is NativeWorkspace
 /** Retry names never override effect ownership or authorize Native ingress. */
 export function nativeWorkspaceReadOnly(method: NativeWorkspaceMethod): boolean {
   return (
-    method.startsWith("native.buffers.recovery.") ||
     method === "native.rewind.lookup" ||
     method === "workspaces.cleanup.plan" ||
     method === "workspaces.cleanup.status"

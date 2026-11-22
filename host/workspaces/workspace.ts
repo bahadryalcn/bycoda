@@ -134,6 +134,9 @@ async function git(
           env: gitEnv,
           // Long transports must not occupy the slots that short probes need.
           lane: NETWORK_COMMANDS.has(args[0]) ? "network" : "default",
+          // The timeout measures the command, not its wait for a slot: a burst of reads at
+          // Host start must answer late, not fail as "timed out" while still queued.
+          nativeTimeout: true,
         },
       )
     ).stdout;

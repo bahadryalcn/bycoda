@@ -130,12 +130,12 @@ it("names each startup recovery step so a stalled boot shows which one holds it"
   };
   await f.runtime.recover(undefined, step);
   expect(steps).toEqual([
-    "buffer-retention",
     "startup-turns",
     "activities",
     "rewind",
     "operations",
     "orphan-reservations",
+    "retired-native-buffer-files",
     "startup-turns-final",
   ]);
 });

@@ -4,6 +4,7 @@
 //! acknowledges the durable native receipt. These are internal adapter methods,
 //! deliberately not renderer commands accepting an untrusted Git-restored flag.
 use super::*;
+use crate::native_workspace::editor_buffers::EditorBuffers;
 use crate::remote::NativeProjection;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -611,6 +612,7 @@ fn reconcile_for_session(
 fn reconcile_pending_transport(
     store: &SessionStore,
     host: &crate::remote::NativeWorkspaceTransport,
+    buffers: &EditorBuffers,
     session_id: Option<&str>,
 ) -> Result<Vec<String>, String> {
     // Preparation intents exist before either local operation table. Recover
@@ -631,7 +633,7 @@ fn reconcile_pending_transport(
         let input: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
         let direction: RewindDirection =
             serde_json::from_value(input["direction"].clone()).map_err(|e| e.to_string())?;
-        if native_apply(store, host, input["request"].clone(), direction).is_err() {
+        if native_apply(store, host, buffers, input["request"].clone(), direction).is_err() {
             let pending: bool = store
                 .lock_conn()?
                 .query_row(
@@ -803,10 +805,7 @@ pub(crate) fn reconcile_pending_native(
         return Ok(vec![]);
     }
     let host = crate::remote::NativeWorkspaceTransport::connect(app, "sessions.native-rewind.v1")?;
-    match session_id {
-        Some(id) => reconcile_pending_transport(store, &host, Some(id)),
-        None => reconcile_pending_transport(store, &host, None),
-    }
+    reconcile_pending_transport(store, &host, &app.state::<EditorBuffers>(), session_id)
 }
 
 #[tauri::command]
@@ -907,6 +906,7 @@ pub async fn managed_turn_end(
 
 fn validate_rewind_input(
     store: &SessionStore,
+    buffers: &EditorBuffers,
     request: &Value,
 ) -> Result<ConversationBoundary, String> {
     let session_id = request["sessionId"]
@@ -918,8 +918,12 @@ fn validate_rewind_input(
     {
         return Err("Managed workspace identity or revision changed; preview again".into());
     }
-    if let Some(path) = record.worktree_cwd.as_deref() {
-        crate::native_workspace::assert_buffers_settled(store, std::path::Path::new(path))?;
+    if record
+        .worktree_cwd
+        .as_deref()
+        .is_some_and(|path| !buffers.dirty_under(path).is_empty())
+    {
+        return Err("Save or close unsaved workspace files before rewinding this worktree.".into());
     }
     let boundary = read(store, session_id)?;
     if request["expectedConversationRevision"].as_i64() != Some(boundary.revision) {
@@ -936,7 +940,7 @@ pub async fn managed_rewind_plan(app: AppHandle, request: Value) -> Result<Value
         if let Some(session_id) = request["sessionId"].as_str() {
             reconcile_pending_native(&app, &store, Some(session_id))?;
         }
-        let boundary = validate_rewind_input(&store, &request)?;
+        let boundary = validate_rewind_input(&store, &app.state::<EditorBuffers>(), &request)?;
         assert_writable(&store, request["sessionId"].as_str().unwrap())?;
         let host =
             crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
@@ -1008,6 +1012,7 @@ fn cancel_native_preparation<T>(
 fn native_apply(
     store: &SessionStore,
     host: &crate::remote::NativeWorkspaceTransport,
+    buffers: &EditorBuffers,
     request: Value,
     direction: RewindDirection,
 ) -> Result<Value, String> {
@@ -1018,13 +1023,14 @@ fn native_apply(
     store
         .authority_execution_gate()
         .guarded(&session_id, "native-rewind", || {
-            native_apply_inner(store, host, request, direction)
+            native_apply_inner(store, host, buffers, request, direction)
         })
 }
 
 fn native_apply_inner(
     store: &SessionStore,
     host: &crate::remote::NativeWorkspaceTransport,
+    buffers: &EditorBuffers,
     request: Value,
     direction: RewindDirection,
 ) -> Result<Value, String> {
@@ -1066,7 +1072,7 @@ fn native_apply_inner(
             serde_json::from_str::<ConversationBoundary>(&raw_boundary)
                 .map_err(|e| e.to_string())?
         } else {
-            let boundary = validate_rewind_input(store, &request)?;
+            let boundary = validate_rewind_input(store, buffers, &request)?;
             assert_writable(store, session_id)?;
             let admitted = store.lock_conn()?.execute("INSERT INTO native_rewind_intents
                 (workspace_id,idempotency_key,session_id,mutation_json,boundary_json)
@@ -1260,7 +1266,13 @@ pub async fn managed_rewind_apply(app: AppHandle, request: Value) -> Result<Valu
         require_exact_git_rewind(&app)?;
         let host =
             crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
-        native_apply(&store, &host, request, RewindDirection::Rewind)
+        native_apply(
+            &store,
+            &host,
+            &app.state::<EditorBuffers>(),
+            request,
+            RewindDirection::Rewind,
+        )
     })
     .await
 }
@@ -1272,7 +1284,13 @@ pub async fn managed_rewind_undo(app: AppHandle, request: Value) -> Result<Value
         require_exact_git_rewind(&app)?;
         let host =
             crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
-        native_apply(&store, &host, request, RewindDirection::Undo)
+        native_apply(
+            &store,
+            &host,
+            &app.state::<EditorBuffers>(),
+            request,
+            RewindDirection::Undo,
+        )
     })
     .await
 }
@@ -1403,6 +1421,15 @@ fn build_replay(blocks: &[Value]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn apply_without_editors(
+        store: &SessionStore,
+        host: &crate::remote::NativeWorkspaceTransport,
+        request: Value,
+        direction: RewindDirection,
+    ) -> Result<Value, String> {
+        native_apply(store, host, &EditorBuffers::default(), request, direction)
+    }
 
     fn seed(store: &SessionStore) -> i64 {
         let session: SessionUpsert = serde_json::from_value(json!({
@@ -1901,6 +1928,42 @@ mod tests {
     }
 
     #[test]
+    fn live_editor_registry_allows_local_rewind_before_the_first_report() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let (_, request) = managed_seed(&store);
+        store
+            .lock_conn()
+            .unwrap()
+            .execute(
+                "UPDATE sessions SET worktree_cwd='/fixture' WHERE id='native'",
+                [],
+            )
+            .unwrap();
+        let buffers = EditorBuffers::default();
+        let validate = || validate_rewind_input(&store, &buffers, &request);
+        assert!(validate().is_ok());
+        buffers.report(
+            "main",
+            &serde_json::from_value::<Vec<_>>(json!([
+                {"path":"/fixture-sibling/dirty.txt","dirty":true},
+                {"path":"/fixture/clean.txt","dirty":false}
+            ]))
+            .unwrap(),
+        );
+        assert!(validate().is_ok());
+        buffers.report(
+            "secondary",
+            &serde_json::from_value::<Vec<_>>(json!([
+                {"path":"/fixture/dirty.txt","dirty":true}
+            ]))
+            .unwrap(),
+        );
+        assert!(validate().unwrap_err().contains("unsaved workspace files"));
+        buffers.clear("secondary");
+        assert!(validate().is_ok());
+    }
+
+    #[test]
     #[ignore = "helper invoked in a separately terminated process"]
     fn checkpoint_native_rewind_crash_child() {
         let path = std::env::var("BYCODA_TEST_REWIND_DB").unwrap();
@@ -1913,7 +1976,7 @@ mod tests {
                 "direction":"rewind","expectedConversationRevision":revision}),
             ),
         )]);
-        native_apply(&store, &host, request, RewindDirection::Rewind).unwrap();
+        apply_without_editors(&store, &host, request, RewindDirection::Rewind).unwrap();
         panic!("Native crash boundary was not reached");
     }
 
@@ -2012,9 +2075,11 @@ mod tests {
                 ("native.rewind.status", Some(json!({"operationId":"operation-1","phase":"complete","finalized":true,"receipt":receipt}))),
             ]);
             let (host, server) = fake_native_host(replies);
-            assert!(reconcile_pending_transport(&store, &host, None)
-                .unwrap()
-                .is_empty());
+            assert!(
+                reconcile_pending_transport(&store, &host, &EditorBuffers::default(), None)
+                    .unwrap()
+                    .is_empty()
+            );
             assert!(assert_writable(&store, "native").is_ok());
             assert_eq!(read(&store, "native").unwrap().user_block_ids, ["u1"]);
             assert_eq!(
@@ -2058,10 +2123,12 @@ mod tests {
                 Some(json!({"operationId":"operation-1","phase":"prepared"})),
             ),
         ]);
-        assert!(native_apply(&store, &host, request.clone(), RewindDirection::Rewind).is_err());
+        assert!(
+            apply_without_editors(&store, &host, request.clone(), RewindDirection::Rewind).is_err()
+        );
         assert!(assert_writable(&store, "native").is_err());
         assert!(
-            native_apply(&store, &host, request, RewindDirection::Rewind)
+            apply_without_editors(&store, &host, request, RewindDirection::Rewind)
                 .unwrap_err()
                 .contains("unknown")
         );
@@ -2090,11 +2157,15 @@ mod tests {
                 "idempotencyKey":"operation-key","cancelled":true})),
             ),
         ]);
-        assert!(native_apply(&store, &host, request.clone(), RewindDirection::Rewind).is_err());
+        assert!(
+            apply_without_editors(&store, &host, request.clone(), RewindDirection::Rewind).is_err()
+        );
         assert!(assert_writable(&store, "native").is_err());
-        assert!(reconcile_pending_transport(&store, &host, None)
-            .unwrap()
-            .is_empty());
+        assert!(
+            reconcile_pending_transport(&store, &host, &EditorBuffers::default(), None)
+                .unwrap()
+                .is_empty()
+        );
         assert!(assert_writable(&store, "native").is_ok());
         assert_eq!(read(&store, "native").unwrap().user_block_ids, ["u1", "u2"]);
         assert_eq!(
@@ -2108,7 +2179,7 @@ mod tests {
         );
         // A cancelled key remains consumed; it cannot silently submit a fresh preparation.
         assert!(
-            native_apply(&store, &host, request, RewindDirection::Rewind)
+            apply_without_editors(&store, &host, request, RewindDirection::Rewind)
                 .unwrap_err()
                 .contains("cancelled")
         );
@@ -2129,7 +2200,9 @@ mod tests {
                 ("native.rewind.prepare", None),
                 ("native.rewind.cancelPreparation", acknowledgement),
             ]);
-            assert!(native_apply(&store, &host, request, RewindDirection::Rewind).is_err());
+            assert!(
+                apply_without_editors(&store, &host, request, RewindDirection::Rewind).is_err()
+            );
             assert!(assert_writable(&store, "native").is_err());
             assert_eq!(read(&store, "native").unwrap().user_block_ids, ["u1", "u2"]);
             assert_eq!(server.join().unwrap().len(), 2);
@@ -2153,12 +2226,12 @@ mod tests {
                 ),
             ]);
             assert!(
-                native_apply(&store, &host, request.clone(), RewindDirection::Rewind)
+                apply_without_editors(&store, &host, request.clone(), RewindDirection::Rewind)
                     .unwrap_err()
                     .contains(rejection)
             );
             assert!(assert_writable(&store, "native").is_ok());
-            assert!(validate_rewind_input(&store, &request).is_ok());
+            assert!(validate_rewind_input(&store, &EditorBuffers::default(), &request).is_ok());
             store
                 .lock_conn()
                 .unwrap()
@@ -2169,7 +2242,7 @@ mod tests {
                 .unwrap();
             assert_eq!(read(&store, "native").unwrap().user_block_ids, ["u1", "u2"]);
             assert!(
-                native_apply(&store, &host, request, RewindDirection::Rewind)
+                apply_without_editors(&store, &host, request, RewindDirection::Rewind)
                     .unwrap_err()
                     .contains("cancelled")
             );
@@ -2217,7 +2290,7 @@ mod tests {
             ),
         ]);
         assert_eq!(
-            native_apply(&store, &host, request, RewindDirection::Rewind).unwrap(),
+            apply_without_editors(&store, &host, request, RewindDirection::Rewind).unwrap(),
             receipt
         );
         assert!(assert_writable(&store, "native").is_ok());

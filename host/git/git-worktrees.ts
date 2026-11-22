@@ -240,6 +240,7 @@ const LIST_CACHE_LIMIT = 32;
 const LIST_ARGS = ["worktree", "list", "--porcelain", "-z"];
 
 type CachedList = {
+  lane: "default" | "background";
   at: number;
   generation: number;
   promise: Promise<HostWorktrees>;
@@ -287,18 +288,26 @@ function fresh(cwd: string): CachedList | undefined {
     : undefined;
 }
 
-/** One `git worktree list` at a time per project, reused for a few seconds. */
-function listCached(cwd: string, force = false): Promise<HostWorktrees> {
+/** Share fresh lists and compatible in-flight reads for a few seconds. */
+function listCached(
+  cwd: string,
+  force = false,
+  lane: CachedList["lane"] = "default",
+): Promise<HostWorktrees> {
   const hit = force ? undefined : fresh(cwd);
-  if (hit) return hit.promise;
+  // Interactive callers can reuse completed inventory without waiting behind its lane.
+  if (hit && (hit.value || hit.lane === "default" || lane === "background")) return hit.promise;
   const entry: CachedList = {
+    lane,
     at: Date.now(),
     generation: listGeneration,
-    promise: hostGitExec.exec("git", LIST_ARGS, bufferedOptions(cwd)).then(({ stdout }) => {
-      const value = build(stdout);
-      entry.value = value;
-      return value;
-    }),
+    promise: hostGitExec
+      .exec("git", LIST_ARGS, { ...bufferedOptions(cwd), lane })
+      .then(({ stdout }) => {
+        const value = build(stdout);
+        entry.value = value;
+        return value;
+      }),
   };
   remember(cwd, entry);
   // Failures are not cached.
@@ -379,8 +388,8 @@ export async function resolveHostWorktreeAsync(
   throw new Error("Choose an available worktree of this project");
 }
 
-export function hostWorktrees(cwd: string): Promise<HostWorktrees> {
-  return listCached(cwd);
+export function hostWorktrees(cwd: string, background = false): Promise<HostWorktrees> {
+  return listCached(cwd, false, background ? "background" : "default");
 }
 
 type RemovalUsage = Pick<WorktreeRemovalReview, "sessionIds" | "hasTerminals" | "hasAgents">;
@@ -685,4 +694,23 @@ async function renameHostWorktreeBranchSerialized(
   const renamed = (await listCached(cwd, true)).worktrees.find((entry) => entry.path === path);
   if (!renamed) throw new Error("Branch renamed, but its worktree could not be found");
   return renamed;
+}
+
+/**
+ * Deletes a branch after its worktree is gone, with a safe delete (`-d`, never `-D`).
+ * Returns why Git kept the branch; a refusal never fails the removal.
+ */
+export async function deleteHostWorktreeBranch(
+  cwd: string,
+  branch: string,
+): Promise<string | undefined> {
+  try {
+    await hostGitExec.exec("git", ["branch", "-d", "--", branch], bufferedOptions(cwd, true));
+    return undefined;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message.trim().slice(0, 300) : "";
+    return reason ? `Branch ${branch} was kept: ${reason}` : `Branch ${branch} was kept.`;
+  } finally {
+    invalidateHostWorktrees();
+  }
 }

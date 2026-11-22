@@ -99,7 +99,13 @@ export type DesktopLiveResult = {
   runLeases?: Record<string, { holder: string; epoch: number; expiresAt: number } | null>;
 };
 
-type DesktopRemovalLeaseReply = { id: string; granted: boolean; release: boolean };
+type DesktopRemovalLeaseReply = {
+  id: string;
+  granted: boolean;
+  release: boolean;
+  checks?: string[];
+  reason?: string;
+};
 const removalLeaseReplies = new Map<string, DesktopRemovalLeaseReply>();
 export type DesktopLiveCommand = {
   id: string;
@@ -613,15 +619,23 @@ export async function runDesktopLiveTick(deps: {
     if (!deps.clientId || job.clientId !== deps.clientId || typeof job.id !== "string") continue;
     const release = job.path === undefined;
     if (!release && typeof job.path !== "string") continue;
-    const granted = await invoke<void>("desktop_worktree_removal_lease", {
+    // The native command refuses with a stable "<code>: message" error; "editors" is the only
+    // code the Host acts on, and `checks` tells it this desktop ran the editor check.
+    const refusal = await invoke<void>("desktop_worktree_removal_lease", {
       clientId: deps.clientId,
       leaseId: job.id,
       path: job.path ?? null,
     }).then(
-      () => true,
-      () => false,
+      () => undefined,
+      (error: unknown) => String(error),
     );
-    removalLeaseReplies.set(job.id, { id: job.id, granted, release });
+    removalLeaseReplies.set(job.id, {
+      id: job.id,
+      granted: refusal === undefined,
+      release,
+      ...(release ? {} : { checks: ["editors"] }),
+      ...(refusal?.startsWith("editors:") ? { reason: "editors" } : {}),
+    });
   }
   if (deps.groupLock) {
     const runner = deps.groupLock;

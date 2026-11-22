@@ -77,7 +77,6 @@ export async function createLifecycleRuntime(
     | "social"
     | "controls"
     | "websocket"
-    | "nativeBufferUploads"
     | "nativeServiceUploads"
     | "unsubscribeChanges"
     | "unsubscribeAuthorization"
@@ -242,7 +241,6 @@ export async function createLifecycleRuntime(
         dependencies.controls?.nativeAuthorityBootstrap?.close(),
       );
       drain("websocket", async () => await dependencies.websocket.close());
-      drain("nativeBufferUploads", () => dependencies.nativeBufferUploads.close());
       drain("nativeServiceUploads", () => dependencies.nativeServiceUploads.close());
       drain("listeners", () => {
         dependencies.unsubscribeChanges();
@@ -266,9 +264,6 @@ export async function createLifecycleRuntime(
         dependencies.bulkTransfers.close();
       });
       drain("retention", () => dependencies.managed.retention.stop());
-      drain("nativeActivity", () =>
-        dependencies.managed.nativeActivity.closeBufferRecoveryCatalog(),
-      );
       drain("queueDrainer", async () => await dependencies.queueDrainer.close());
       drain("localVoice", () => dependencies.localVoice.close());
       drain("decisionModels", () => dependencies.decisionModels.close());

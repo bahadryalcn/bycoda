@@ -588,6 +588,8 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
   const tasks = {
     ready: Promise.resolve(),
     list: async () => rows,
+    listCrewRun: async (runId: string, projectId: string) =>
+      rows.filter((row) => row.crewRunId === runId && row.projectId === projectId),
     taskIndex: async (ids?: readonly string[]) =>
       new Map(rows.filter((row) => !ids || ids.includes(row.id)).map((row) => [row.id, row])),
     tick: vi.fn(),

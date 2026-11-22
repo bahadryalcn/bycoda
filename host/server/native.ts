@@ -17,14 +17,13 @@ import { createNativeDeliveryService } from "../domains/native-delivery/service"
 import { createNativeDevicesService } from "../domains/native-devices/service";
 import { createNativeServicesService } from "../domains/native-services/service";
 import { createNativeServiceUploadService } from "../domains/native-services/upload";
-import { createNativeBufferUploadService } from "../domains/native-workspaces/buffer-upload";
 import { createNativeWorkspacesService } from "../domains/native-workspaces/service";
 import { createHostStewardsService } from "../domains/stewards/service";
 import { createNativeDeliveryStore } from "../native-delivery/native-delivery-store";
 import { bindNativeDeliveryOwner } from "../ports/native-delivery";
 import { bindNativeDevicesOwner } from "../ports/native-devices";
 import { bindNativeServicesOwner } from "../ports/native-services";
-import { nativeBufferUploadPlatform } from "../ports/native-workspaces";
+import { nativeUploadPlatform } from "../ports/native-workspaces";
 import { hostProviderAccounts } from "../providers/provider-accounts";
 import {
   applyProviderAccountStyles,
@@ -91,7 +90,6 @@ export function createNativeRuntime(
     | "inHost"
     | "desktop"
     | "mcpBridgeMetadata"
-    | "requestWorkspaceOwner"
   >,
 ) {
   const automationsService = createHostAutomationsService({
@@ -151,7 +149,7 @@ export function createNativeRuntime(
   const nativeDeliveryJournal = createNativeDeliveryStore(dependencies.engine.store);
   const nativeServiceUploads = createNativeServiceUploadService({
     environmentId: dependencies.engine.store.environmentId,
-    platform: nativeBufferUploadPlatform,
+    platform: nativeUploadPlatform,
     execute: (target, params, context) => nativeServicesService.call(target, params, context),
     deliver: (target, identity, paramsJson, context) =>
       nativeDeliveryService.call(
@@ -395,24 +393,11 @@ export function createNativeRuntime(
       {
         store: dependencies.engine.store,
         journal: nativeDeliveryJournal,
-        workspaceOwner: dependencies.requestWorkspaceOwner(token),
         services: nativeServicesOwner(token),
       },
       createHash("sha256").update(token).digest("hex"),
       () => dependencies.engine.store.authenticated(token),
     );
-  const nativeBufferUploads = createNativeBufferUploadService({
-    environmentId: dependencies.engine.store.environmentId,
-    platform: nativeBufferUploadPlatform,
-    update: (params, context) =>
-      nativeWorkspacesService.call("native.buffers.update", params, context),
-    deliver: (identity, paramsJson, context) =>
-      nativeDeliveryService.call(
-        "native.buffers.delivery.apply",
-        { ...identity, paramsJson },
-        context,
-      ),
-  });
   return {
     automationsService,
     stewardsService,
@@ -429,6 +414,5 @@ export function createNativeRuntime(
     nativeServiceUploads,
     nativeServicesOwner,
     nativeDeliveryOwner,
-    nativeBufferUploads,
   };
 }

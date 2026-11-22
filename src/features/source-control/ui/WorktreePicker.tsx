@@ -1,6 +1,8 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { PickerList, usePickerList } from "../../../shared/ui/picker";
+import { WorktreeList, useWorktreeList } from "./WorktreeList";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { worktreeRows } from "../model/worktreeRows";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -14,9 +16,8 @@ import { NO_BRANCH_LABEL, type Worktree } from "../model/worktrees";
 import { BranchPicker } from "./BranchPicker";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { GitPickerTrigger } from "./GitPickerTrigger";
-import { shortSha } from "../../../shared/lib/shortSha";
 import { Popover } from "../../../shared/ui/Popover";
-import { FolderTree, GitBranch, Plus, Settings } from "../../../shared/ui/icons";
+import { GitBranch, Plus, Settings } from "../../../shared/ui/icons";
 
 export function WorktreePicker({
   cwd,
@@ -84,37 +85,21 @@ export function WorktreePicker({
       setBusy(false);
     }
   };
-  const rows =
-    data?.worktrees.filter((tree) =>
-      `${tree.branch ?? "detached"} ${tree.path}`.toLowerCase().includes(query.toLowerCase()),
-    ) ?? [];
+  const rows = worktreeRows(data?.worktrees, cwd, query);
   // Default to the current working copy, including when rows arrive after open.
   // Track navigation by path so background refreshes cannot move the highlight.
   const active = Math.max(
     0,
-    rows.findIndex((tree) => pathKey(tree.path) === pathKey(activePath ?? executionCwd)),
+    rows.findIndex((row) => pathKey(row.path) === pathKey(activePath ?? executionCwd)),
   );
-  const list = usePickerList({
-    options: rows.map((tree) => ({
-      value: pathKey(tree.path),
-      title: tree.branch ?? t("Detached {p0}", { p0: shortSha(tree.head) }),
-      description: `${tree.isMain ? `${t("Project folder")} · ` : ""}${prettyCwd(tree.path)}${tree.missing ? t(" · Missing") : ""}`,
-      icon: tree.isMain ? (
-        <GitBranch className="icon-sm shrink-0" tone="secondary" />
-      ) : (
-        <FolderTree className="icon-sm shrink-0" tone="secondary" />
-      ),
-      disabled: busy || tree.missing,
-    })),
-    value: worktreeRemoved ? null : pathKey(executionCwd),
-    activeValue: rows[active] ? pathKey(rows[active]!.path) : null,
-    onActiveValueChange: (value) =>
-      setActivePath(rows.find((tree) => pathKey(tree.path) === value)?.path),
+  const list = useWorktreeList({
+    rows,
+    value: worktreeRemoved ? null : executionCwd,
+    activePath: rows[active]?.path,
+    onActivePathChange: setActivePath,
     inputRef: search,
-    onChange: (value) => {
-      const tree = rows.find((tree) => pathKey(tree.path) === value);
-      if (tree) void select(tree);
-    },
+    disabled: busy,
+    onPick: (row) => void select(row.tree),
   });
   if (branchPicker)
     return (
@@ -188,31 +173,27 @@ export function WorktreePicker({
               setQuery(value);
               setActivePath(undefined);
             }}
+            trailing={
+              worktreeRemoved || opensNewSession ? (
+                <InfoPopover width={240}>
+                  {worktreeRemoved
+                    ? t("This session’s worktree was deleted. Select a worktree to continue.")
+                    : t("Another worktree opens a new session.")}
+                </InfoPopover>
+              ) : undefined
+            }
           />
-          {worktreeRemoved && (
-            <Text as="p" size="micro" tone="secondary" className="shrink-0 px-3 pt-2 pb-1">
-              {t("This session’s worktree was deleted. Select a worktree to continue.")}
-            </Text>
-          )}
-          {opensNewSession && !worktreeRemoved && (
-            <Text as="p" size="micro" tone="secondary" className="shrink-0 px-3 pt-2 pb-1">
-              {t("Another worktree opens a new session.")}
-            </Text>
-          )}
-          <PickerList
-            label={t("Worktrees")}
-            controller={list}
-            loading={!data && !loadError}
-            loadingLabel={t("Loading worktrees…")}
-            emptyLabel={t("No matching worktrees")}
-            className="min-h-0 overflow-y-auto"
-          />
+          <WorktreeList controller={list} loading={!data && !loadError} />
           {(error || loadError) && (
             <InlineError
               className="shrink-0 px-2 py-2"
               retry={
                 loadError
-                  ? { onRetry: () => void refresh(), pending: loading, disabled: busy }
+                  ? {
+                      onRetry: () => void refresh(),
+                      pending: loading,
+                      disabled: busy,
+                    }
                   : undefined
               }
             >

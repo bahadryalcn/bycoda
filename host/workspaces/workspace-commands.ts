@@ -385,9 +385,17 @@ export class WorkspaceCommands {
     const key = await hostGitRepositoryKey(cwd);
     const projects = await this.store.projects();
     const matching = await Promise.all(
-      projects.map(async (project) =>
-        (await hostGitRepositoryKey(project.cwd)) === key ? project : null,
-      ),
+      projects.map(async (project) => {
+        try {
+          return (await hostGitRepositoryKey(project.cwd)) === key ? project : null;
+        } catch (failure) {
+          const error = failure as NodeJS.ErrnoException;
+          // A removed project has no checkout to match. Keep Git metadata and other IO errors fatal.
+          if (error.code === "ENOENT" && error.syscall === "realpath" && error.path === project.cwd)
+            return null;
+          throw failure;
+        }
+      }),
     );
     const owners = matching.filter((project) => project !== null);
     if (!owners.length) throw new Error("Project is unavailable");
@@ -622,7 +630,7 @@ export class WorkspaceCommands {
       case "git_create_branch":
         return await this.gitCreateBranch(input.cwd, input.name);
       case "git_worktrees":
-        return await this.gitWorktrees(input.cwd);
+        return await this.gitWorktrees(input.cwd, input.background === true);
       case "git_submodules": {
         const found = await sharedHostGitSubmodules(
           await this.gitRoot(input.cwd),
@@ -1813,8 +1821,8 @@ export class WorkspaceCommands {
       : await run();
   }
 
-  private async gitWorktrees(cwd: unknown) {
-    const listed = await hostWorktrees(await this.gitRoot(cwd));
+  private async gitWorktrees(cwd: unknown, background: boolean) {
+    const listed = await hostWorktrees(await this.gitRoot(cwd), background);
     return {
       defaultRoot: listed.defaultRoot,
       worktrees: listed.worktrees.map((tree) => ({

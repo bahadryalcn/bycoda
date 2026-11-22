@@ -1,10 +1,5 @@
 import type { z } from "zod";
 import type {
-  NativeBufferDeliveryBinding,
-  NativeBufferDeliveryOptions,
-  NativeBufferDeliveryProof,
-} from "../native-delivery/ports";
-import type {
   NATIVE_WORKSPACE_RPC_SCHEMAS,
   NativeWorkspaceMethod,
 } from "../../../src/shared/model/host-contracts/native-workspaces";
@@ -26,21 +21,6 @@ export interface NativeWorkspaceOwnerActions {
   nativeActivity: {
     start: Operation<"native.activity.start">;
     end: Operation<"native.activity.end">;
-    updateBuffers: Operation<"native.buffers.update">;
-    updateBuffersWithDelivery?(
-      request: Params<"native.buffers.update">,
-      delivery: NativeBufferDeliveryOptions,
-    ): Promise<unknown>;
-    verifyBufferDelivery?(
-      binding: NativeBufferDeliveryBinding,
-      proof: NativeBufferDeliveryProof,
-    ): Promise<boolean>;
-    heartbeatBuffers: Operation<"native.buffers.heartbeat">;
-    retireBuffers: Operation<"native.buffers.retire">;
-    reconcileBuffers: Operation<"native.buffers.reconcile">;
-    listBufferRecovery: Operation<"native.buffers.recovery.list">;
-    readBufferRecovery: Operation<"native.buffers.recovery.read">;
-    bufferRecoveryStatus: Operation<"native.buffers.recovery.status">;
   };
   nativeRewind: {
     bindTurn(
@@ -81,14 +61,4 @@ export interface NativeWorkspacesPorts {
   };
   workspace(id: unknown): Promise<{ id: string; owner: { kind: string; id: string } } | null>;
   touchActivity(id: string): Promise<unknown>;
-}
-
-/** Platform codecs are injected by composition. Fatal UTF8 and canonical base64
- * are explicit contracts; no Node globals or permissive text decoding in domain. */
-export interface NativeBufferUploadPlatform {
-  sha256(bytes: Uint8Array): string;
-  decodeBase64(text: string): Uint8Array;
-  encodeBase64(bytes: Uint8Array): string;
-  decodeUtf8Fatal(bytes: Uint8Array): string;
-  scheduleSweep(action: () => void, intervalMs: number): () => void;
 }

@@ -64,8 +64,6 @@ export interface WorkspaceRecoveryDialogsProps {
   removeRecoveredSessions: RecoveryPanelProps["onRemove"];
   editorDraftRecovery?: EditorDraftRecoverySectionProps["recovery"];
   editorDraftRecords?: EditorDraftRecoverySectionProps["records"];
-  canInspectLegacyReports?: () => boolean;
-  getLegacyReportPrivacySnapshot?: () => unknown;
   sessionDeleteDialog: SessionDeleteDialogState | undefined;
   setSessionDeleteDialog: Dispatch<SetStateAction<SessionDeleteDialogState | undefined>>;
 }
@@ -80,8 +78,6 @@ function WorkspaceRecoveryDialogsComponent({
   removeRecoveredSessions,
   editorDraftRecovery,
   editorDraftRecords,
-  canInspectLegacyReports,
-  getLegacyReportPrivacySnapshot,
   sessionDeleteDialog,
   setSessionDeleteDialog,
 }: WorkspaceRecoveryDialogsProps) {
@@ -99,8 +95,6 @@ function WorkspaceRecoveryDialogsComponent({
           recovery={sessionRecovery}
           editorDraftRecovery={editorDraftRecovery}
           editorDraftRecords={editorDraftRecords}
-          canInspectLegacyReports={canInspectLegacyReports}
-          getLegacyReportPrivacySnapshot={getLegacyReportPrivacySnapshot}
           sessions={sessions}
           remoteSessions={remoteSessions}
           onClose={closeRecovery}

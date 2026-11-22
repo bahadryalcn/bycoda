@@ -349,6 +349,8 @@ with run-delete support and after active work is stopped. It removes the work
 from the list while keeping the crew, tasks and conversations. Decisions are
 answered in the coordinator conversation through **Answer**.
 
+On mobile, **Pause**, **Resume**, and **Stop work** appear beside the run status and above its expanded details. **Delete work** is in the work menu.
+
 When more than one connected machine runs crews, a **Machine** selector chooses
 whose crews and work the dialog shows and where **New work** runs. Next to it,
 **Project** chooses which project's work is listed, including **New project…**. It opens on
