@@ -1661,7 +1661,7 @@ export const Composer = memo(function Composer({
     }
     setSessionFolders(loadSessionFolders(cwd));
     setSessionFolderOpen(true);
-  }, [cwd, latestCwd]);
+  }, [cwd, latestCwd, t]);
 
   useEffect(() => {
     if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !sessionFolderOpen) return;
