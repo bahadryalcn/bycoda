@@ -165,11 +165,12 @@ it.each(["unsupported", "exception"])(
     // No project formatter is not a failure; only formatter errors are reported.
     if (kind === "unsupported") expect(host.querySelector('[role="alert"]')).toBeNull();
     else {
-      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      // The raw formatter text sits behind Details, never in the headline.
+      expect(host.querySelector('[role="alert"]')?.textContent).not.toContain(
         "Invalid project formatter",
       );
       expect(host.querySelector('[role="alert"]')?.textContent).toContain(
-        "Saved, but formatting failed: ",
+        "Saved, but formatting failed.",
       );
     }
   },
@@ -209,13 +210,13 @@ it("only reports saved with a format warning after disk save succeeds, and clear
   await act(async () => {
     pending = save();
   });
-  expect(host.textContent).toContain("Formatting failed: NATIVE_DELIVERY_CAPACITY");
+  expect(host.textContent).toContain("Formatting failed.");
   expect(host.textContent).not.toContain("Saved, but formatting failed");
   await act(async () => {
     finish();
     expect(await pending).toBe(true);
   });
-  expect(host.textContent).toContain("Saved, but formatting failed: NATIVE_DELIVERY_CAPACITY");
+  expect(host.textContent).toContain("Saved, but formatting failed.");
   act(() => view.dispatch({ changes: { from: 0, insert: "unsaved " } }));
   expect(host.textContent).not.toContain("Saved, but formatting failed");
 });
@@ -225,7 +226,7 @@ it("does not claim a saved file when the disk save fails after a formatter failu
   format.mockRejectedValue(new Error("NATIVE_DELIVERY_CAPACITY"));
   const save = await formatOnSaveEditor();
   await act(async () => expect(await save()).toBe(false));
-  expect(host.textContent).toContain("Formatting failed: NATIVE_DELIVERY_CAPACITY");
+  expect(host.textContent).toContain("Formatting failed.");
   expect(host.textContent).not.toContain("Saved, but formatting failed");
 });
 
@@ -254,7 +255,7 @@ it("keeps manual formatter failures separate from an earlier successful save", a
   await act(async () => expect(await save()).toBe(true));
   expect(host.textContent).toContain("Saved, but formatting failed");
   await shortcut();
-  expect(host.textContent).toContain("Formatting failed: NATIVE_DELIVERY_CAPACITY");
+  expect(host.textContent).toContain("Formatting failed.");
   expect(host.textContent).not.toContain("Saved, but formatting failed");
   expect(onSave).toHaveBeenCalledTimes(1);
 });
@@ -275,7 +276,7 @@ it("does not let a superseded save overwrite a newer failed save outcome", async
     finish();
     expect(await older).toBe(true);
   });
-  expect(host.textContent).toContain("Formatting failed: NATIVE_DELIVERY_CAPACITY");
+  expect(host.textContent).toContain("Formatting failed.");
   expect(host.textContent).not.toContain("Saved, but formatting failed");
 });
 
@@ -318,7 +319,9 @@ it("shows formatter errors and leaves the document intact", async () => {
   const original = view.state.doc.toString();
   format.mockRejectedValue(new Error("Invalid project formatter configuration"));
   await shortcut();
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+  // The raw formatter text sits behind Details; the headline says what happened.
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Formatting failed.");
+  expect(host.querySelector('[role="alert"]')?.textContent).not.toContain(
     "Invalid project formatter configuration",
   );
   expect(view.state.doc.toString()).toBe(original);

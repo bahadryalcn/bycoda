@@ -20,6 +20,7 @@ export {
   notificationKey,
   type NotificationHistoryEntry,
 } from "./model/notificationHistory";
+export { groupHistoryByDay, historyTone, isHistoryUnread } from "./model/notificationRows";
 export { useNotificationSeenAt } from "./hooks/useNotificationSeen";
 export { markNotificationsSeen, countUnseenNotifications } from "./model/notificationSeen";
 export {

@@ -935,3 +935,32 @@ test("transcript-base-ink flags content-base text color in transcript CSS only",
     !ink(styles, `${indexCss}\n:root { --x: var(--color-content); color: var(--color-content); }`),
   );
 });
+
+test("role-status-banner flags tone-styled status regions only", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-ui-status-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = "src/features/demo/A.tsx";
+  mkdirSync(dirname(join(root, file)), { recursive: true });
+  mkdirSync(join(root, "src/styles"), { recursive: true });
+  writeFileSync(join(root, "src/styles/arc.css"), arcCss);
+  writeFileSync(
+    join(root, file),
+    [
+      '<div role="status" className="rounded text-(--ui-tone-danger-fg)" />',
+      '<p role="status" className={styles.notice} />',
+      '<span role="status" className="sr-only" />',
+      '<div role="status" aria-live="polite" />',
+      '<div className="text-(--ui-tone-danger-fg)" />',
+      "",
+    ].join("\n"),
+  );
+  mkdirSync(dirname(join(root, baselineFile)), { recursive: true });
+  writeFileSync(join(root, baselineFile), JSON.stringify({ schemaVersion: 1, counts: {} }));
+  const result = checkUiDrift({ root });
+  assert.deepEqual(
+    result.regressions
+      .filter(({ rule }) => rule === "role-status-banner")
+      .map(({ baseline, count }) => [baseline, count]),
+    [[0, 2]],
+  );
+});

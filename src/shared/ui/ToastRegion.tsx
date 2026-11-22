@@ -22,7 +22,7 @@ import { ToastCard, type ToastContentProps, type ToastTone } from "./ToastCard";
 /**
  * Toast card re-export for consumers of the shared toast queue.
  * @group feedback
- * @use Render toast content through Toast or TransientNotice.
+ * @use Render toast content through Toast or the `toast` queue.
  * @avoid Placement and expiry queue: Toast. Inline feedback: InlineMessage.
  * @status internal
  */
@@ -42,7 +42,7 @@ export type ToastPlacement = "top-center" | "bottom-end" | "top-end" | "bottom-s
 
 /** Routine feedback stays beside the work, under the title bar. */
 export const DEFAULT_TOAST_PLACEMENT: ToastPlacement = "top-end";
-const defaultPlacement = (tone?: ToastTone): ToastPlacement =>
+const defaultPlacement = (tone: ToastTone): ToastPlacement =>
   tone === "warning" || tone === "danger" ? "top-center" : DEFAULT_TOAST_PLACEMENT;
 
 export type ToastAnnouncement = {
@@ -51,6 +51,10 @@ export type ToastAnnouncement = {
   message: string;
   tone: ToastTone;
   occurredAt: number;
+  /** The toast asked to stay until dismissed (`durationMs={null}`). */
+  persist?: boolean;
+  /** The toast carries an action, so it is worth keeping after it leaves. */
+  hasAction?: boolean;
 };
 const announcementListeners = new Set<(entry: ToastAnnouncement) => void>();
 const PLACEMENTS: readonly ToastPlacement[] = [
@@ -408,11 +412,12 @@ export type ToastProps = ToastContentProps & {
  * ```tsx
  * {saved ? <Toast tone="success" message={t("Saved")} onDismiss={() => setSaved(false)} /> : null}
  * ```
- * The newest toast sits in front and up to three show at once; hovering or focusing the stack
- * fans it out. All tones expire after ten seconds by default; expiry pauses on hover, focus
- * inside, an open stack, while waiting behind the visible three, and in a hidden or unfocused
- * window. Pass `durationMs={null}` for an
- * explicitly persistent notice.
+ * `tone` is required. The newest toast sits in front and up to three show at once; hovering or
+ * focusing the stack fans it out. Info and success expire after five seconds, warnings after
+ * eight, errors after ten, and an error with an action stays until dismissed; expiry pauses on
+ * hover, focus inside, an open stack, while waiting behind the visible three, and in a hidden or
+ * unfocused window. The dismiss control shows on hover and focus (always on a persistent error).
+ * Pass `durationMs={null}` for an explicitly persistent notice.
  * @group feedback
  * @use Background or nonblocking event owned by a component: result, undo, retry, progress.
  * @avoid Save feedback next to its control: InlineMessage. Page or panel notice: Alert. Code with no component: useToast. A feature's own card: ToastSlot.
@@ -424,7 +429,9 @@ export function Toast({ placement, historyMessage, ...props }: ToastProps) {
   const occurrence = useRef(0);
   const title = props.title ?? "";
   const message = historyMessage ?? (typeof props.message === "string" ? props.message : "");
-  const tone = props.tone ?? "info";
+  const tone = props.tone;
+  const persist = props.durationMs === null;
+  const hasAction = Boolean(props.action || props.actions?.length);
   // Record only announced plain text; rendered children and action payloads stay out of history.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- synchronizes the mounted notice's announced text with external notification history
   useEffect(() => {
@@ -437,9 +444,11 @@ export function Toast({ placement, historyMessage, ...props }: ToastProps) {
       message,
       tone,
       occurredAt: Date.now(),
+      persist: persist || undefined,
+      hasAction: hasAction || undefined,
     };
     for (const listener of announcementListeners) listener(entry);
-  }, [id, title, message, tone]);
+  }, [id, title, message, tone, persist, hasAction]);
   return (
     <StackedToast placement={placement ?? defaultPlacement(tone)}>
       <ToastCard {...props} />
@@ -451,7 +460,7 @@ export function Toast({ placement, historyMessage, ...props }: ToastProps) {
  * Imperative queue: useToast() / toast
  * ------------------------------------------------------------------------------------------- */
 
-export type ToastOptions = Omit<ToastProps, "onDismiss"> & {
+export type ToastOptions = Omit<ToastProps, "onDismiss" | "count"> & {
   /** Reusing an id replaces that toast in place (a retry updates its own failure). */
   id?: string;
   placement?: ToastPlacement;
@@ -461,7 +470,7 @@ export type ToastOptions = Omit<ToastProps, "onDismiss"> & {
   onDismiss?: () => void;
 };
 
-type Entry = ToastOptions & { id: string };
+type Entry = ToastOptions & { id: string; count?: number; fixedId?: boolean };
 let queue: readonly Entry[] = [];
 const listeners = new Set<() => void>();
 let counter = 0;
@@ -478,9 +487,29 @@ function subscribe(listener: () => void) {
   };
 }
 
+/** Plain toasts compare by what the owner sees; one with rows, progress or a bound id is its own. */
+function repeatKey(options: ToastOptions, fixedId: boolean): string | null {
+  if (fixedId || options.children || options.progress || options.actions || options.extra)
+    return null;
+  if (options.message !== undefined && typeof options.message !== "string") return null;
+  return JSON.stringify([options.tone, options.title ?? "", options.message ?? ""]);
+}
+
 function show(options: ToastOptions): string {
+  const key = repeatKey(options, options.id !== undefined);
+  const same =
+    key === null
+      ? undefined
+      : queue.find((item) => !item.fixedId && repeatKey(item, false) === key);
+  if (same) {
+    // The same toast again: one card counts the repeats and restarts its time.
+    publish(
+      queue.map((item) => (item === same ? { ...item, count: (item.count ?? 1) + 1 } : item)),
+    );
+    return same.id;
+  }
   const id = options.id ?? `toast-${++counter}`;
-  const entry = { ...options, id };
+  const entry = { ...options, id, fixedId: options.id !== undefined };
   const index = queue.findIndex((item) => item.id === id);
   publish(index < 0 ? [...queue, entry] : queue.map((item, i) => (i === index ? entry : item)));
   return id;
@@ -508,7 +537,9 @@ function dismissAll(placement?: ToastPlacement) {
 
 /**
  * Imperative toasts for code that has no component to own one (a background result). Shown by
- * the mounted `<ToastRegion />`; component-owned notices render `<Toast>` instead.
+ * the mounted `<ToastRegion />`; component-owned notices render `<Toast>` instead. `tone` is
+ * required. Showing the same tone, title and message while it is visible adds to its "×N" count
+ * and restarts its time instead of opening another toast.
  */
 export const toast = { show, update, dismiss, dismissAll } as const;
 
@@ -563,14 +594,16 @@ export function ToastRegion({ insets: next, onRecord }: ToastRegionProps) {
   }, [key]);
   return (
     <>
-      {entries.map(({ id, placement, dismissible = true, onDismiss: _onDismiss, ...props }) => (
-        <Toast
-          key={id}
-          {...props}
-          placement={placement}
-          onDismiss={dismissible ? () => handleDismiss(id) : undefined}
-        />
-      ))}
+      {entries.map(
+        ({ id, placement, dismissible = true, onDismiss: _onDismiss, fixedId: _fixedId, ...props }) => (
+          <Toast
+            key={id}
+            {...props}
+            placement={placement}
+            onDismiss={dismissible ? () => handleDismiss(id) : undefined}
+          />
+        ),
+      )}
     </>
   );
 }

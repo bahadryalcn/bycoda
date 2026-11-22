@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { TransientNotice } from "../../../shared/ui/TransientNotice";
+import { Toast } from "../../../shared/ui/ToastRegion";
 import {
   dismissWindowTransferNotice,
   getWindowTransferNotice,
@@ -20,7 +20,7 @@ export function WindowTransferNotice() {
   );
   if (!notice) return null;
   return (
-    <TransientNotice
+    <Toast
       // A new publication restarts the notice and its timer.
       key={notice.id}
       tone={notice.tone}

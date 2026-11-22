@@ -60,7 +60,7 @@ it("stacks the newest toast in front and keeps the fourth out of reach", () => {
   try {
     act(() => {
       for (const message of ["First", "Second", "Third", "Fourth"])
-        toast.show({ message, durationMs: null });
+        toast.show({ tone: "info", message, durationMs: null });
     });
     const stack = document.querySelector<HTMLElement>("[data-toast-region] [data-toast-stack]")!;
     expect(stack.hasAttribute("data-empty")).toBe(false);
@@ -121,8 +121,8 @@ it("holds every toast's expiry while the stack is open and resumes the remaining
   const onDismiss = vi.fn();
   try {
     act(() => {
-      toast.show({ message: "Saved", onDismiss });
-      toast.show({ message: "Archived", onDismiss });
+      toast.show({ tone: "info", durationMs: 10_000, message: "Saved", onDismiss });
+      toast.show({ tone: "info", durationMs: 10_000, message: "Archived", onDismiss });
     });
     const stack = document.querySelector<HTMLElement>(
       '[data-toast-region="top-end"] [data-toast-stack]',
@@ -162,7 +162,7 @@ it("keeps the time of a toast that waits behind the visible three", async () => 
   try {
     act(() => {
       for (const message of ["First", "Second", "Third", "Fourth"])
-        toast.show({ message, onDismiss: () => dismissed.push(message) });
+        toast.show({ tone: "danger", message, onDismiss: () => dismissed.push(message) });
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
@@ -247,11 +247,11 @@ it("keeps routine notices at top-end, warnings and errors centered, and explicit
   const unmount = mount();
   try {
     act(() => {
-      toast.show({ message: "Default", durationMs: null });
+      toast.show({ tone: "info", message: "Default", durationMs: null });
       toast.show({ message: "Saved", tone: "success", durationMs: null });
       toast.show({ message: "Warning", tone: "warning", durationMs: null });
       toast.show({ message: "Error", tone: "danger", durationMs: null });
-      toast.show({ message: "Corner", durationMs: null, placement: "bottom-end" });
+      toast.show({ tone: "info", message: "Corner", durationMs: null, placement: "bottom-end" });
     });
     const center = document.querySelector<HTMLElement>('[data-toast-region="top-center"]')!;
     expect(DEFAULT_TOAST_PLACEMENT).toBe("top-end");

@@ -72,7 +72,7 @@ fall. Suppress one line only, always with a reason.
   - Icon-only Button has no accessible name. Pass `iconOnly` with a translated `label` (it names the button and fills the tooltip), or give the Button text children (src/shared/ui/Button.tsx).
 - `bycoda/menu-uses-dropdown` (`src/app/**/*.tsx, src/features/**/*.tsx`)
   - Menus are not built by hand: a Popover holding MenuRow items, or a literal role=menu/menuitem, has no menu role wiring and no arrow-key navigation. Use DropdownMenu from src/shared/ui (items/content) or ContextMenu, which own the role, focus and keyboard behavior.
-- `bycoda/no-raw-error-text` (`src/**/*.tsx`)
+- `bycoda/no-raw-error-text` (`src/**/*.ts, src/**/*.tsx`)
   - Show what happened in a translated title and put raw error text in the shared ErrorDetails, or use the existing describe/present error helpers. See K1.
 - `bycoda/safe-timestamp-render` (`src/**, host/**`)
   - `new Date(value).toISOString()` throws a RangeError on an invalid date and takes the whole React tree down. Use `isoTimestamp(value)` from src/shared/lib/time/timestamps.ts, which returns undefined for invalid input.
@@ -84,6 +84,8 @@ fall. Suppress one line only, always with a reason.
   - Every `new ResizeObserver` adds its own observer and callback; a list of measuring rows then runs one per row on each layout. Use `observeResize(element, listener)` from src/shared/lib/observeResize.ts, which shares one observer per window and returns the unsubscribe function for the effect cleanup. If this caller needs observer options the helper lacks, keep it with `// oxlint-disable-next-line bycoda/shared-resize-observer -- <which option and why>` on the line above.
 - `bycoda/suppression-has-reason` (`src/**, host/**, packages/**`)
   - A suppression comment needs a reason so the next reader can tell a justified exception from a silenced defect. Append ` -- <why this line is safe>` in the same comment, for example `// oxlint-disable-next-line no-restricted-imports -- scratch file, not read at startup`.
+- `bycoda/toast-needs-tone` (`src/**/*.ts, src/**/*.tsx`)
+  - Toast has no tone, so it falls back to "info" and a failure shows as a neutral notice. Pass tone="danger", "warning", "success" or "info" explicitly (src/shared/ui/ToastRegion.tsx).
 - `bycoda/transcript-ink-roles` (`src/features/sessions/ui/**/*.tsx`)
   - Transcript text ink must come from the transcript ink roles, not full or global text tokens: `--color-content` flattens the hierarchy (commands, chips and icons read as loud as the emphasis they support), and `--ui-text-secondary` / `--ui-text-muted` do not follow the reading surface. Use `text-(--transcript-ink-emphasis)` for emphasis, `text-(--transcript-ink-body)` for body text, and `text-(--transcript-ink-chrome)` / `text-(--transcript-ink-chrome-active)` for chrome at rest and active. If a full-ink use is real emphasis, keep it with `// oxlint-disable-next-line bycoda/transcript-ink-roles -- <what is emphasized>` on the line above.
 - `bycoda/transcript-row-trigger` (`src/features/sessions/ui/**/*.tsx`)
@@ -287,6 +289,8 @@ fall. Suppress one line only, always with a reason.
   - \<div>/\<small>/\<li>/\<section> role=alert (use the shared inline error)
 - `role-alert-text` (`src/app, src/features, shared stylesheets`)
   - \<p role=alert> / \<span role=alert> (use the shared inline error)
+- `role-status-banner` (`src/app, src/features, shared stylesheets`)
+  - tone-styled \<div>/\<p>/\<span>/\<section>/\<li>/\<small> role="status" (a hand-built banner: use Alert, InlineMessage, Toast or FailureState)
 - `scrollbar-style` (`src/app, src/features, shared stylesheets`)
   - scrollbar styled in feature code: scrollbar-* properties, ::-webkit-scrollbar or scrollbar-* classes (use ScrollArea)
 - `shared-internal-selector` (`src/app, src/features, shared stylesheets`)

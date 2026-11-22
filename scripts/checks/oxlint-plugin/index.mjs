@@ -22,6 +22,7 @@ import disabledNeedsReason from "./rules/disabled-needs-reason.mjs";
 import dialogSingleTranslator from "./rules/dialog-single-translator.mjs";
 import iconButtonNeedsLabel from "./rules/icon-button-needs-label.mjs";
 import menuUsesDropdown from "./rules/menu-uses-dropdown.mjs";
+import toastNeedsTone from "./rules/toast-needs-tone.mjs";
 import noRawErrorText from "./rules/no-raw-error-text.mjs";
 import translationSlotNames from "./rules/translation-slot-names.mjs";
 import utf8ChildLocale from "./rules/utf8-child-locale.mjs";
@@ -46,6 +47,7 @@ export const rules = {
   "dialog-single-translator": dialogSingleTranslator,
   "icon-button-needs-label": iconButtonNeedsLabel,
   "menu-uses-dropdown": menuUsesDropdown,
+  "toast-needs-tone": toastNeedsTone,
   "no-raw-error-text": noRawErrorText,
   "translation-slot-names": translationSlotNames,
   "utf8-child-locale": utf8ChildLocale,

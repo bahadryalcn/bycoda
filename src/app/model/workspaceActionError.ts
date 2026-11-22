@@ -51,6 +51,14 @@ export function workspaceActionErrorSentence(error: unknown): string | undefined
 }
 
 /**
+ * The secondary line under a failure toast's translated title: the typed failure's sentence, else
+ * the original text redacted and bounded. `undefined` when nothing readable is left.
+ */
+export function workspaceFailureDetail(error: unknown): string | undefined {
+  return workspaceActionErrorSentence(error) ?? safeErrorDetail(errorText(error ?? ""));
+}
+
+/**
  * The line a screen shows for a failed workspace action, in the current language. A typed failure
  * gets its translated sentence; anything else gets the translated `fallback` followed by the
  * original text as redacted, bounded detail so the cause stays visible without leaking secrets.

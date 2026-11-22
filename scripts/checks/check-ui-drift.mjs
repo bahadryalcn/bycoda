@@ -89,6 +89,8 @@ export const rules = {
   "native-title": "title= tooltip (use tooltip=, Tooltip or OverflowTooltip)",
   "role-alert-text": "<p role=alert> / <span role=alert> (use the shared inline error)",
   "role-alert-container": "<div>/<small>/<li>/<section> role=alert (use the shared inline error)",
+  "role-status-banner":
+    'tone-styled <div>/<p>/<span>/<section>/<li>/<small> role="status" (a hand-built banner: use Alert, InlineMessage, Toast or FailureState)',
   "portal-outside-shared":
     "floating surface outside canonical shared overlay owners (use Popover, Modal, Sheet or Tooltip)",
   "ui-wrapper-import":
@@ -871,6 +873,15 @@ export function scanFile(file, text, definitions) {
       /\srole=\{?["']alert["']/.test(tag.span)
     )
       add("role-alert-container", tag.start);
+    // A neutral live region (counter, loading text, sr-only) stays legitimate; only tone words
+    // in its class or style make it a hand-built banner.
+    if (
+      ["div", "p", "span", "section", "li", "small"].includes(tag.name) &&
+      /\srole=\{?["']status["']/.test(tag.span) &&
+      /(?:danger|warning|success|error|banner|notice|callout|tone)/i.test(tag.span) &&
+      !/\bsr-only\b/.test(tag.span)
+    )
+      add("role-status-banner", tag.start);
     if (["button", "input", "select", "textarea"].includes(tag.name))
       add("raw-native-control", tag.start);
     if (

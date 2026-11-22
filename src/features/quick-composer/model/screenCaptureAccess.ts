@@ -9,7 +9,12 @@ import {
 const SCREEN_RECORDING_DENIED = "screen-recording-permission-required";
 
 /** A failure shown in the composer: its copy, and the recovery UI the failure calls for. */
-export type QuickNotice = { message: string; recovery?: "screen-recording" };
+export type QuickNotice = {
+  message: string;
+  /** What could not be done (translated). With it, `message` is the reason; a long reason waits behind Details. */
+  title?: string;
+  recovery?: "screen-recording";
+};
 
 function attachmentFailureMessage(failure: AttachmentFailure): string {
   switch (failure) {

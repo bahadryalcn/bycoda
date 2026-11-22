@@ -16,7 +16,7 @@ import {
 } from "../model/linkedWorkItemActivity";
 import { InboxRelativeTime } from "./InboxRelativeTime";
 import { announceLinkedActivity } from "../../settings/model/sounds";
-import { TransientNotice } from "../../../shared/ui/TransientNotice";
+import { Toast } from "../../../shared/ui/ToastRegion";
 import {
   Archive,
   Check,
@@ -135,7 +135,7 @@ export function LinkedWorkItemUpdateNotice({
   };
 
   return (
-    <TransientNotice
+    <Toast
       tone="info"
       width="lg"
       durationMs={null}
@@ -307,6 +307,6 @@ export function LinkedWorkItemUpdateNotice({
           </Button>
         </Text>
       </div>
-    </TransientNotice>
+    </Toast>
   );
 }

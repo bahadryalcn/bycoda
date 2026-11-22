@@ -1,3 +1,4 @@
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
@@ -28,12 +29,13 @@ export function useSessionLinkActivation(navigation: LocalSessionReferenceNaviga
         if (active)
           toast.show({
             tone: "danger",
+            title: t("Could not open this local conversation"),
             message:
               cause instanceof Error
-                ? cause.message
+                ? workspaceFailureDetail(cause)
                 : t("This local conversation is unavailable or inaccessible."),
             action: {
-              label: t("Retry"),
+              label: t("Open again"),
               onClick: () => {
                 void open(href).catch(console.error);
               },
@@ -55,7 +57,12 @@ export function useSessionLinkActivation(navigation: LocalSessionReferenceNaviga
           for (const href of links ?? []) await open(href);
         } while (active && again);
       } catch (cause) {
-        if (active) toast.show({ tone: "danger", message: String(cause) });
+        if (active)
+          toast.show({
+            tone: "danger",
+            title: t("Could not open the pending conversation links"),
+            message: workspaceFailureDetail(cause),
+          });
       } finally {
         busy = false;
       }
@@ -72,7 +79,12 @@ export function useSessionLinkActivation(navigation: LocalSessionReferenceNaviga
         return drain();
       })
       .catch((cause) => {
-        if (active) toast.show({ tone: "danger", message: String(cause) });
+        if (active)
+          toast.show({
+            tone: "danger",
+            title: t("Could not open the pending conversation links"),
+            message: workspaceFailureDetail(cause),
+          });
       });
     return () => {
       active = false;

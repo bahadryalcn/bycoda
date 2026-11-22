@@ -24,7 +24,7 @@ export function remoteQueueReadNotice(
     action: {
       kind: "retry" as const,
       get label() {
-        return t("Retry");
+        return t("Reload queue");
       },
       run: retry,
     },

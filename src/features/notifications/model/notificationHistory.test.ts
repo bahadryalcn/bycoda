@@ -11,6 +11,7 @@ import {
   writeNotificationHistory,
   appendNotificationHistory,
   clearNotificationHistory,
+  markNotificationHistoryRead,
   type NotificationHistoryEntry,
 } from "./notificationHistory";
 
@@ -185,12 +186,64 @@ it("records an entry once per key and time and announces the change in this wind
   const logged = { ...entry, key: "done", kind: "finished" as const };
   expect(await recordNotificationHistory(logged)).toBe(true);
   expect(await recordNotificationHistory(logged)).toBe(false);
-  expect(await recordNotificationHistory({ ...logged, occurredAt: logged.occurredAt + 1 })).toBe(
-    true,
-  );
+  expect(
+    await recordNotificationHistory({ ...logged, label: "Other", occurredAt: logged.occurredAt + 1 }),
+  ).toBe(true);
   expect(readNotificationHistory()).toHaveLength(2);
   expect(changed).toHaveBeenCalledTimes(2);
   window.removeEventListener(NOTIFICATION_HISTORY_EVENT, changed);
   localStorage.setItem(NOTIFICATION_HISTORY_KEY, "bad json");
   expect(await recordNotificationHistory({ ...logged, key: "other" })).toBe(false);
+});
+
+it("folds an arrival with the same content into one row with a count and the latest time", async () => {
+  const failure = { ...entry, key: "t1", kind: "failed" as const, sessionId: "", cwd: "" };
+  for (let at = 0; at < 5; at += 1) {
+    await recordNotificationHistory({
+      ...failure,
+      key: `t${at}`,
+      occurredAt: failure.occurredAt + at * 1000,
+    });
+  }
+  const [row, ...rest] = readNotificationHistory();
+  expect(rest).toEqual([]);
+  expect(row).toMatchObject({ key: "t4", count: 5, occurredAt: failure.occurredAt + 4000 });
+  expect(row.earlier).toEqual([3000, 2000, 1000, 0].map((offset) => failure.occurredAt + offset));
+});
+
+it("turns a folded row unread again by dropping its read mark", async () => {
+  const failure = { ...entry, key: "a", kind: "failed" as const, read: true };
+  writeNotificationHistory([failure]);
+  await recordNotificationHistory({ ...failure, key: "b", occurredAt: failure.occurredAt + 5 });
+  expect(readNotificationHistory()[0].read).toBeUndefined();
+});
+
+it("applies the cap after folding, so repeats never push other rows out", async () => {
+  writeNotificationHistory(
+    Array.from({ length: MAX_NOTIFICATION_HISTORY }, (_, i) => ({
+      ...entry,
+      key: `k${i}`,
+      label: `row ${i}`,
+      occurredAt: entry.occurredAt - i,
+    })),
+  );
+  const at = entry.occurredAt + 10_000;
+  const repeat = { ...entry, key: "r", kind: "failed" as const, label: "same", occurredAt: at };
+  await recordNotificationHistory(repeat);
+  await recordNotificationHistory({ ...repeat, key: "r2", occurredAt: at + 1 });
+  await recordNotificationHistory({ ...repeat, key: "r3", occurredAt: at + 2 });
+  const saved = readNotificationHistory();
+  expect(saved).toHaveLength(MAX_NOTIFICATION_HISTORY);
+  expect(saved.filter((row) => row.label === "same")).toHaveLength(1);
+  expect(saved[0].count).toBe(3);
+  // Three arrivals cost one slot: only the single oldest row left.
+  expect(saved.at(-1)?.label).toBe(`row ${MAX_NOTIFICATION_HISTORY - 2}`);
+});
+
+it("marks one row read without touching the others", async () => {
+  const other = { ...entry, key: "o", label: "Other", occurredAt: entry.occurredAt + 1 };
+  writeNotificationHistory([other, entry]);
+  const next = await markNotificationHistoryRead(entry);
+  expect(next?.map((row) => row.read)).toEqual([undefined, true]);
+  expect(readNotificationHistory().map((row) => row.read)).toEqual([undefined, true]);
 });

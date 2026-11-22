@@ -1,3 +1,4 @@
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
@@ -135,7 +136,11 @@ export function useSessionPlacement({
       try {
         release = await reserveSessionWindow(remoteKey ? [session.id, remoteKey] : [session.id]);
       } catch (error) {
-        toast.show({ tone: "warning", message: String(error) });
+        toast.show({
+          tone: "warning",
+          title: t("Could not move this conversation"),
+          message: workspaceFailureDetail(error),
+        });
         return;
       }
       if (!release) return;

@@ -68,12 +68,9 @@
   inset-block-start: 4px;
   inset-inline-end: 4px;
 }
-.notification-history-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px 8px;
+.notification-empty {
+  margin: 0;
+  padding: 12px 10px;
 }
 .notification-history-status {
   display: flex;
@@ -95,46 +92,43 @@
   overflow: clip;
 }
 .notification-history-item {
+  position: relative;
   flex-direction: column;
   align-items: stretch;
   gap: 0;
 }
-/* A quiet status glyph leaves the full content width for the title and preview. */
+/* Leading slot (severity icon or unread dot), text, then the tabular time. */
 .notification-row-toggle {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-columns: 14px minmax(0, 1fr) auto;
   align-items: start;
   justify-content: stretch;
-  gap: 12px;
+  gap: 8px;
   block-size: auto;
-  padding: 12px;
+  padding: 8px;
   text-align: start;
   white-space: normal;
 }
 .notification-history-icon {
-  justify-self: center;
-  margin-block-start: 2px;
+  display: grid;
+  place-items: center;
+  block-size: 18px;
 }
 .notification-history-text {
   display: flex;
   flex-direction: column;
   min-inline-size: 0;
-  gap: 4px;
-}
-.notification-history-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-inline-size: 0;
+  gap: 2px;
 }
 .notification-history-title {
   min-inline-size: 0;
   overflow-wrap: anywhere;
 }
-.notification-new-dot {
-  flex: none;
-  align-self: start;
-  margin-block-start: 6px;
+.notification-history-count {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: 4px;
+  vertical-align: middle;
 }
 .notification-history-preview[data-lines][data-size],
 .notification-history-label {
@@ -142,33 +136,39 @@
   white-space: pre-wrap;
 }
 .notification-history-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   min-inline-size: 0;
 }
-.notification-history-meta .notification-project {
-  flex: 0 1 auto;
-}
-.notification-history-kind {
-  flex: none;
-  white-space: nowrap;
-}
 .notification-history-time {
-  flex: none;
-  margin-inline-start: auto;
+  min-inline-size: 44px;
+  text-align: end;
   white-space: nowrap;
 }
-/* Same columns as the row, so the details line up under the text, past the icon. */
+/* The row's own actions take the time's place while the row is hovered or focused. */
+.notification-history-actions-inline {
+  position: absolute;
+  inset-block-start: 5px;
+  inset-inline-end: 6px;
+  display: flex;
+  align-items: center;
+}
+/* Same columns as the row, so the details line up under the text. */
 .notification-history-details {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 8px 12px;
-  padding: 0 12px 12px;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 6px 8px;
+  padding: 0 8px 8px;
 }
 .notification-history-details > * {
   grid-column: 2;
   margin: 0;
+}
+.notification-history-arrivals {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .notification-history-path {
   overflow-wrap: anywhere;

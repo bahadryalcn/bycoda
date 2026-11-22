@@ -231,9 +231,14 @@ export function MessageThreadView({
             {earlierError ? (
               <InlineError
                 className="mx-4 mt-2"
-                retry={{ onRetry: onLoadEarlier, pending: loadingEarlier }}
+                details={earlierError}
+                retry={{
+                  onRetry: onLoadEarlier,
+                  label: t("Load earlier messages again"),
+                  pending: loadingEarlier,
+                }}
               >
-                {`${t("Could not load messages.")} ${earlierError}`}
+                {t("Could not load earlier messages.")}
               </InlineError>
             ) : null}
             {messages.length === 0 ? (

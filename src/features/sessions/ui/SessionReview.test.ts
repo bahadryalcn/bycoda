@@ -99,7 +99,7 @@ it("shows a retryable status failure even when no file list has arrived", async 
     root.render(createElement(SessionReview, { sessionId: "other", cwd: "/repo", onOpenDiff })),
   );
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Status unavailable");
-  expect(container.textContent).toContain("Retry");
+  expect(container.textContent).toContain("Load changes again");
 });
 
 it("explains a saved checkpoint failure and refreshes without claiming to recreate it", async () => {
@@ -110,7 +110,7 @@ it("explains a saved checkpoint failure and refreshes without claiming to recrea
     root.render(createElement(SessionReview, { sessionId: "failed", cwd: "/repo", onOpenDiff })),
   );
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("not fully recorded");
-  expect(container.textContent).not.toContain("Retry");
+  expect(container.textContent).not.toContain("Load changes again");
   const refresh = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Refresh",
   )!;
@@ -145,7 +145,7 @@ it("retains the saved change list after a failed refresh and requires recovery b
   )!;
   expect(keep.disabled).toBe(true);
   const retry = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Retry",
+    (button) => button.textContent === "Load changes again",
   )!;
   await act(async () => retry.click());
   expect(container.querySelector('[role="alert"]')).toBeNull();

@@ -246,13 +246,59 @@ it("treats a Host summary failure and the opened session's error block as one ev
   expect(await logged(1)).toHaveLength(1);
 });
 
+it("records only warnings, errors and notices that ask for it, never a transient confirmation", async () => {
+  const { logToastAnnouncement } = await import("./notificationLog");
+  const toast = (id: string, tone: "info" | "success" | "warning" | "danger" | "neutral") => ({
+    id,
+    title: "",
+    message: `Message ${id}`,
+    tone,
+    occurredAt: Date.now(),
+  });
+  logToastAnnouncement(toast("saved", "success"));
+  logToastAnnouncement(toast("copied", "info"));
+  logToastAnnouncement(toast("plain", "neutral"));
+  logToastAnnouncement({ ...toast("kept", "info"), persist: true });
+  logToastAnnouncement({ ...toast("action", "success"), hasAction: true });
+  logToastAnnouncement(toast("warn", "warning"));
+  logToastAnnouncement(toast("fail", "danger"));
+  const entries = await logged(4);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(
+    readNotificationHistory()
+      .map((entry) => [entry.key, entry.kind, entry.tone])
+      .sort(),
+  ).toEqual([
+    ["action", "notice", undefined],
+    ["fail", "failed", "danger"],
+    ["kept", "notice", undefined],
+    ["warn", "notice", "warning"],
+  ]);
+  expect(entries.some((entry) => entry.kind === "background")).toBe(false);
+});
+
+it("folds the same toast repeated five times into one counted row", async () => {
+  const { logToastAnnouncement } = await import("./notificationLog");
+  for (let i = 0; i < 5; i += 1) {
+    logToastAnnouncement({
+      id: `queue-${i}`,
+      title: "Could not load queued messages",
+      message: "Reload the queue",
+      tone: "danger",
+      occurredAt: 1_800_000_000_000 + i * 1000,
+    });
+  }
+  await vi.waitFor(() => expect(readNotificationHistory()[0]?.count).toBe(5));
+  expect(readNotificationHistory()).toHaveLength(1);
+});
+
 it("never shows the same sentence as title and description", async () => {
   const { logToastAnnouncement, logNotification } = await import("./notificationLog");
   logToastAnnouncement({
     id: "t1",
     title: "",
     message: "Saved offline",
-    tone: "info",
+    tone: "warning",
     occurredAt: 5,
   });
   logNotification({ kind: "background", key: "b", title: "Same", label: "Same", occurredAt: 6 });

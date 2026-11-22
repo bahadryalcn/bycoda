@@ -6,6 +6,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { IS_MAC, MOD } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
@@ -220,6 +221,8 @@ export function QuickComposer({
     skills.filter((skill) => skill.kind !== "template").map((skill) => skill.invocation),
   );
   const [error, setError] = useState<QuickNotice | null>(null);
+  const notice = error?.message;
+  const longReason = Boolean(error?.title && notice && !fitsOneLine(notice));
   const [uiBusy, setBusy] = useState(false);
   const busy = uiBusy || owner.launching;
   const submitting = useRef(false);
@@ -384,7 +387,9 @@ export function QuickComposer({
   };
 
   const dismiss = () =>
-    void invoke("quick_composer_dismiss").catch((reason) => setError({ message: String(reason) }));
+    void invoke("quick_composer_dismiss").catch((reason) =>
+      setError({ title: t("Could not close the quick composer."), message: errorText(reason) }),
+    );
 
   const submit = async (reveal: boolean) => {
     if (!owner.canMutate() || owner.pending) return;
@@ -490,7 +495,7 @@ export function QuickComposer({
         });
       }, "launch");
     } catch (reason) {
-      setError({ message: errorText(reason) });
+      setError({ title: t("Could not start the session."), message: errorText(reason) });
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -812,14 +817,20 @@ export function QuickComposer({
       {error ? (
         <Alert
           tone="danger"
+          title={error.title}
           className="mx-3 mb-2 min-w-0 break-words"
           extra={
-            error.recovery === "screen-recording" ? (
-              <PermissionRecoveryAction id="screen-recording" />
-            ) : undefined
+            <>
+              {longReason && notice ? (
+                <ErrorDetails title={error.title} detail={notice} />
+              ) : null}
+              {error.recovery === "screen-recording" ? (
+                <PermissionRecoveryAction id="screen-recording" />
+              ) : null}
+            </>
           }
         >
-          {error.message}
+          {longReason ? null : notice}
         </Alert>
       ) : null}
       <div className="flex shrink-0 items-center gap-1.5 border-t border-stroke px-3 py-2">

@@ -1,3 +1,4 @@
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { type LinkedWorkItem, type Session } from "../../../features/sessions/model/session";
 import {
@@ -171,10 +172,11 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
         } catch (error) {
           toast.show({
             tone: "danger",
-            message:
+            title:
               confirmed?.state === "applied"
-                ? t("Pin was applied, but refresh failed: {p0}", { p0: String(error) })
-                : String(error),
+                ? t("Pin was applied, but refreshing the list failed")
+                : t("Could not change the pin"),
+            message: workspaceFailureDetail(error),
           });
           if (confirmed?.state === "applied") return confirmed;
           return sagaId
@@ -192,7 +194,7 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
         toast.show({
           tone: "danger",
           title: t("Could not save changes"),
-          message: String(error),
+          message: workspaceFailureDetail(error),
         });
         return;
       }
@@ -277,7 +279,7 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
         toast.show({
           tone: "danger",
           title: t("Could not update this conversation's GitHub link."),
-          message: String(error),
+          message: workspaceFailureDetail(error),
         });
       });
     },

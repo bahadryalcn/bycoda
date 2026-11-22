@@ -3,30 +3,24 @@ import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
-import { ActionHost } from "../../../shared/ui/ActionHost";
+import {
+  ActionHost,
+  InlineAction,
+  actionContentAttributes,
+} from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
-import type { BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { Heading } from "../../../shared/ui/Heading";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Text } from "../../../shared/ui/Text";
 import {
   Check,
-  CheckList,
-  CircleX,
-  Clock,
   ExternalLink,
-  MessageSquare,
-  Shield,
-  Sparkles,
-  UserRound,
   X,
 } from "../../../shared/ui/icons";
+import { NoticeGlyph } from "../../../shared/ui/Notice";
 import { useNotificationProjects } from "../../notifications/hooks/useNotificationProjects";
-import type {
-  NotificationHistoryEntry,
-  NotificationHistoryKind,
-} from "../../notifications/model/notificationHistory";
+import type { NotificationHistoryEntry } from "../../notifications/model/notificationHistory";
+import { historyTone } from "../../notifications/model/notificationRows";
 import { HARNESS_LABEL, sessionDisplayTitle, type HarnessId } from "../model/session";
 
 /** Date and time of a pending request; log rows show a relative time instead. */
@@ -51,54 +45,56 @@ function historyTitle(entry: NotificationHistoryEntry): string {
   return entry.title;
 }
 
-/** The kind label and icon shown on every row of the notification log. */
-export function historyKindMeta(
-  kind: NotificationHistoryKind,
-  t: (text: string) => string,
-): { label: string; Icon: typeof Shield; tone: BadgeTone } {
-  switch (kind) {
-    case "question":
-      return { label: t("Question"), Icon: MessageSquare, tone: "warning" };
-    case "finished":
-      return { label: t("Finished"), Icon: Check, tone: "success" };
-    case "failed":
-      return { label: t("Failed"), Icon: CircleX, tone: "danger" };
-    case "reminder":
-      return { label: t("Reminder"), Icon: Clock, tone: "warning" };
-    case "assistant":
-      return { label: t("Assistant"), Icon: Sparkles, tone: "accent" };
-    case "background":
-      return { label: t("Background"), Icon: CheckList, tone: "info" };
-    case "account":
-      return { label: t("Account"), Icon: UserRound, tone: "neutral" };
-    case "owner":
-      return { label: t("Request"), Icon: Shield, tone: "neutral" };
+/** The feature a `background:*` entry points at, or nothing when the row names no feature. */
+function featureLabel(target: string | undefined, t: (text: string) => string): string {
+  switch (target) {
+    case "background:tasks":
+      return t("Tasks");
+    case "background:automations":
+      return t("Automations");
+    case "background:summary":
+      return t("Daily summary");
+    case "background:account":
+      return t("Account");
+    case "background:assistant":
+      return t("Assistant");
     default:
-      return { label: t("Approval"), Icon: Shield, tone: "warning" };
+      return "";
   }
+}
+
+/** The registered project name of a path, or its folder name. Empty without a path. */
+function useNotificationProjectName(cwd: string): string {
+  const project = useNotificationProjects(cwd ? [cwd] : []).projects.find((item) =>
+    item.paths.some((path) => pathKey(path) === pathKey(cwd)),
+  );
+  return cwd ? project?.name || projectName(cwd) : "";
 }
 
 type HistoryActionContext = {
   onOpen: (entry: NotificationHistoryEntry) => Promise<void>;
   onRemove: (entry: NotificationHistoryEntry) => Promise<boolean>;
+  onMarkRead: (entry: NotificationHistoryEntry) => Promise<boolean>;
   inFlight: { current: boolean };
-  setBusy: (busy: "open" | "remove" | null) => void;
+  setBusy: (busy: "open" | null) => void;
   setError: (error: string | null) => void;
   t: (key: string) => string;
 };
 
 async function runHistoryAction(
-  action: "open" | "remove",
+  action: "open" | "remove" | "read",
   entry: NotificationHistoryEntry,
-  { onOpen, onRemove, inFlight, setBusy, setError, t }: HistoryActionContext,
+  { onOpen, onRemove, onMarkRead, inFlight, setBusy, setError, t }: HistoryActionContext,
 ) {
   if (inFlight.current) return;
   inFlight.current = true;
-  setBusy(action);
+  setBusy(action === "open" ? "open" : null);
   setError(null);
   try {
     if (action === "open") await onOpen(entry);
-    else if (!(await onRemove(entry))) setError(t("This notification could not be removed."));
+    else if (action === "read") {
+      if (!(await onMarkRead(entry))) setError(t("This notification could not be updated."));
+    } else if (!(await onRemove(entry))) setError(t("This notification could not be removed."));
   } catch (failure) {
     setError(
       failure instanceof Error && failure.message
@@ -113,37 +109,64 @@ async function runHistoryAction(
 
 /**
  * A recorded arrival. It is never a live approval: the row expands to open its
- * conversation, and can be removed from the list on its own. `isNew` marks an
- * arrival the owner has not looked at yet.
+ * conversation, and can be marked read or dismissed on its own. A repeated arrival
+ * is one row with a count whose expansion lists each time.
  */
 export function HistoryItem({
   entry,
-  isNew = false,
+  unread = false,
   canOpen,
   onOpen,
   onRemove,
+  onMarkRead,
 }: {
   entry: NotificationHistoryEntry;
-  isNew?: boolean;
+  unread?: boolean;
   canOpen: boolean;
   onOpen: (entry: NotificationHistoryEntry) => Promise<void>;
   /** Resolves `false` when the entry could not be removed. */
   onRemove: (entry: NotificationHistoryEntry) => Promise<boolean>;
+  /** Resolves `false` when the entry could not be marked read. */
+  onMarkRead: (entry: NotificationHistoryEntry) => Promise<boolean>;
 }) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
-  const [busy, setBusy] = useState<"open" | "remove" | null>(null);
+  const [busy, setBusy] = useState<"open" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
-  const run = (action: "open" | "remove") =>
-    runHistoryAction(action, entry, { onOpen, onRemove, inFlight, setBusy, setError, t });
-  const kind = historyKindMeta(entry.kind, t);
+  const project = useNotificationProjectName(entry.cwd);
+  const run = (action: "open" | "remove" | "read") =>
+    runHistoryAction(action, entry, {
+      onOpen,
+      onRemove,
+      onMarkRead,
+      inFlight,
+      setBusy,
+      setError,
+      t,
+    });
+  const tone = historyTone(entry);
+  const count = entry.count ?? 1;
+  const arrivals = [entry.occurredAt, ...(entry.earlier ?? [])];
+  // A conversation row reads as its event, with "project · session" beneath; any other row is its own title.
+  const isSession = Boolean(entry.sessionId);
+  const title = isSession
+    ? entry.label || historyTitle(entry) || t("Untitled")
+    : entry.title || entry.label || t("Untitled");
+  const detail = isSession ? "" : entry.title ? entry.label : "";
+  const context = [
+    isSession ? project : featureLabel(entry.target, t),
+    isSession && entry.label ? historyTitle(entry) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <ActionHost
       as="article"
       variant="row"
       className="notification-history-item"
-      data-new={isNew || undefined}
+      data-unread={unread || undefined}
+      data-tone={tone}
     >
       <Button
         fullWidth
@@ -153,49 +176,92 @@ export function HistoryItem({
         className="notification-row-toggle"
         onClick={() => setExpanded((value) => !value)}
       >
-        <kind.Icon className="notification-history-icon icon-md" tone={kind.tone} aria-hidden />
-        <span className="notification-history-text">
-          <span className="notification-history-head">
-            <Heading
-              as="div"
-              className="notification-history-title"
-              size="item"
-              tone="primary"
-              lines={expanded ? undefined : 2}
-            >
-              {historyTitle(entry) || t("Untitled")}
-            </Heading>
-            {isNew ? (
-              <>
-                <StatusDot className="notification-new-dot" tone="accent" />
-                <span className="sr-only">{t("New")}</span>
-              </>
-            ) : null}
-          </span>
-          {/* Expanded, the same line shows the whole text instead of repeating it below. */}
-          <Text
-            className={expanded ? "notification-history-label" : "notification-history-preview"}
-            lines={expanded ? undefined : 2}
-            size="caption"
-            tone="secondary"
-            weight="regular"
-            leading="normal"
-          >
-            {entry.label}
-          </Text>
-          <Text className="notification-history-meta" size="caption" weight="regular">
-            {entry.cwd ? <NotificationProjectLabel cwd={entry.cwd} /> : null}
-            <span className="notification-history-kind" data-tone={kind.tone}>
-              {kind.label}
-            </span>
-            <Text className="notification-history-time" tone="muted" weight="regular">
-              <Timestamp value={entry.occurredAt} format="relative" relativeStyle="narrow" />
-            </Text>
-          </Text>
+        <span className="notification-history-icon" data-tone={tone ?? "none"}>
+          {tone === "danger" || tone === "warning" ? (
+            <NoticeGlyph tone={tone} size="inline" />
+          ) : unread ? (
+            <StatusDot tone="neutral" />
+          ) : null}
         </span>
+        <span className="notification-history-text">
+          <Text
+            as="span"
+            className="notification-history-title"
+            size="secondary"
+            tone={unread ? "primary" : "secondary"}
+            weight={unread ? "medium" : "regular"}
+            lines={expanded ? undefined : 2}
+          >
+            {title}
+            {count > 1 ? (
+              <span className="notification-history-count">
+                <Text as="span" size="caption" tone="muted" weight="regular">
+                  {t("×{p0}", { p0: count })}
+                </Text>
+              </span>
+            ) : null}
+            {unread ? <span className="sr-only">{`, ${t("Unread")}`}</span> : null}
+          </Text>
+          {detail ? (
+            <Text
+              className={expanded ? "notification-history-label" : "notification-history-preview"}
+              lines={expanded ? undefined : 2}
+              size="caption"
+              tone="muted"
+              weight="regular"
+              leading="normal"
+            >
+              {detail}
+            </Text>
+          ) : null}
+          {context ? (
+            <Text
+              className="notification-history-meta"
+              size="caption"
+              tone="muted"
+              weight="regular"
+              truncate
+            >
+              {context}
+            </Text>
+          ) : null}
+        </span>
+        <Text
+          as="span"
+          size="micro"
+          tone="muted"
+          weight="regular"
+          {...actionContentAttributes(
+            { phase: "rest", hide: "opacity", display: "block" },
+            "notification-history-time",
+          )}
+        >
+          <Timestamp value={entry.occurredAt} format="relative" relativeStyle="narrow" />
+        </Text>
       </Button>
+      <span className="notification-history-actions-inline" data-no-drag="">
+        {unread ? (
+          <InlineAction label={t("Mark read")} onClick={() => void run("read")}>
+            <Check className="icon-sm" strokeWidth={1.75} aria-hidden />
+          </InlineAction>
+        ) : null}
+        <InlineAction label={t("Dismiss")} onClick={() => void run("remove")}>
+          <X className="icon-sm" strokeWidth={1.75} aria-hidden />
+        </InlineAction>
+      </span>
       {expanded ? (
         <div className="notification-history-details" data-no-drag="">
+          {count > 1 ? (
+            <ul className="notification-history-arrivals">
+              {arrivals.map((at, index) => (
+                <li key={`${at}:${index}`}>
+                  <Text size="caption" tone="muted" weight="regular">
+                    <Timestamp value={at} format="relative" relativeStyle="narrow" />
+                  </Text>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {entry.cwd ? (
             <Tooltip label={entry.cwd} asChild>
               <Text as="p" className="notification-history-path" leading="normal">
@@ -203,8 +269,8 @@ export function HistoryItem({
               </Text>
             </Tooltip>
           ) : null}
-          <div className="notification-history-actions">
-            {canOpen ? (
+          {canOpen ? (
+            <div className="notification-history-actions">
               <Button
                 variant="secondary"
                 size="sm"
@@ -215,19 +281,14 @@ export function HistoryItem({
               >
                 {entry.target ? t("Open") : t("Open session")}
               </Button>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              startIcon={<X className="icon-sm" strokeWidth={1.75} aria-hidden />}
-              loading={busy === "remove"}
-              onClick={() => void run("remove")}
-            >
-              {t("Remove")}
-            </Button>
-          </div>
+            </div>
+          ) : null}
           {error ? <Alert tone="warning">{error}</Alert> : null}
+        </div>
+      ) : null}
+      {!expanded && error ? (
+        <div className="notification-history-details" data-no-drag="">
+          <Alert tone="warning">{error}</Alert>
         </div>
       ) : null}
     </ActionHost>
@@ -235,9 +296,7 @@ export function HistoryItem({
 }
 
 export function NotificationProjectLabel({ cwd }: { cwd: string }) {
-  const project = useNotificationProjects([cwd]).projects.find((project) =>
-    project.paths.some((path) => pathKey(path) === pathKey(cwd)),
-  );
+  const name = useNotificationProjectName(cwd);
   return (
     <Tooltip label={cwd} asChild>
       <Text
@@ -255,7 +314,7 @@ export function NotificationProjectLabel({ cwd }: { cwd: string }) {
           truncate
           className="notification-project-name"
         >
-          {project?.name || projectName(cwd)}
+          {name}
         </Text>
         <span className="notification-project-path sr-only">{prettyCwd(cwd)}</span>
       </Text>

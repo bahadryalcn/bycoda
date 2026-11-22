@@ -1,3 +1,5 @@
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
+import { t } from "../../../shared/i18n";
 import {
   reserveSessionWindow,
   remoteSessionOwnershipKey,
@@ -275,7 +277,11 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
       try {
         release = await reserveSessionWindow([requestedKey]);
       } catch (error) {
-        toast.show({ tone: "warning", message: String(error) });
+        toast.show({
+          tone: "warning",
+          title: t("Could not open this conversation"),
+          message: workspaceFailureDetail(error),
+        });
         return false;
       }
       if (!release) return false;

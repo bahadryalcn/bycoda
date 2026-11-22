@@ -247,9 +247,14 @@ function SessionReviewContent({
     );
   }
 
+  // `message` is already the localized presentRemoteError sentence, not raw error text.
+  const presentedReason = error?.message;
   const errorNotice = error ? (
-    <Alert tone="danger">
-      {error.message}{" "}
+    <Alert
+      tone="danger"
+      title={error.saved ? t("Could not record this turn's changes.") : t("Could not load the changes.")}
+    >
+      {presentedReason}{" "}
       {error.saved && (
         <p>
           {t(
@@ -264,7 +269,7 @@ function SessionReviewContent({
         loading={refreshing}
         disabled={refreshing}
       >
-        {t(error.saved ? "Refresh" : "Retry")}
+        {t(error.saved ? "Refresh" : "Load changes again")}
       </Button>
     </Alert>
   ) : null;

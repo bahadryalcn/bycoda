@@ -23,10 +23,10 @@ export function RemoteActionError({
   action?: NoticeAction;
   className?: string;
 }) {
-  const raw = error.details && error.details !== error.message;
-  const rawOnly = Boolean(
-    title && error.details && error.details === error.message && !fitsOneLine(error.details),
-  );
+  // RemoteErrorView.message is already the localized sentence from describeRemoteError.
+  const { message: sentence, details } = error;
+  const raw = details && details !== sentence;
+  const rawOnly = Boolean(title && details && details === sentence && !fitsOneLine(details));
   return (
     <Alert
       tone="danger"
@@ -35,11 +35,11 @@ export function RemoteActionError({
       action={action}
       extra={
         raw || rawOnly ? (
-          <ErrorDetails title={title ?? error.message} detail={error.details} />
+          <ErrorDetails title={title ?? sentence} detail={details ?? sentence} />
         ) : undefined
       }
     >
-      {rawOnly ? null : error.message}
+      {rawOnly ? null : sentence}
     </Alert>
   );
 }

@@ -6,7 +6,7 @@ import {
   type EmptyStateProps as ArcEmptyStateProps,
 } from "./arc/empty-state/empty-state";
 import { InlineError } from "./InlineError";
-import { NoticeButton, type NoticeAction } from "./Notice";
+import { NoticeButton, NoticeGlyph, type NoticeAction } from "./Notice";
 import { CircleAlert } from "./icons";
 import { Button } from "./Button";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
@@ -223,9 +223,12 @@ export function FailureState({
       <div className={styles.content}>
         {brand}
         <div className={styles.message} role="alert">
-          <Heading id={titleId} className={styles.title}>
-            {title}
-          </Heading>
+          <div className={styles.heading}>
+            <NoticeGlyph tone="danger" size="box" />
+            <Heading id={titleId} className={styles.title}>
+              {title}
+            </Heading>
+          </div>
           <p className={styles.description}>{description}</p>
         </div>
         <div className={styles.actions}>

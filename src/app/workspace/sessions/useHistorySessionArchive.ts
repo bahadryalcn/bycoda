@@ -1,3 +1,4 @@
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { archiveFocusedSession } from "../../../features/sessions/model/archiveShortcut";
 import { type Session } from "../../../features/sessions/model/session";
@@ -62,7 +63,7 @@ export function useHistorySessionArchive(deps: HistorySessionArchiveDeps) {
         toast.show({
           tone: "danger",
           title: t("Could not unarchive this conversation."),
-          message: String(error),
+          message: workspaceFailureDetail(error),
         });
         return false;
       } finally {

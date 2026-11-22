@@ -1264,9 +1264,8 @@ function StandardCodeMirrorEditor({
           onMarkResolved={() => void markResolved()}
         />
         {formatError ? (
-          <InlineError inset="row" className="shrink-0">
-            {t(formatError.saved ? "Saved, but formatting failed: " : "Formatting failed: ")}
-            {formatError.message}
+          <InlineError inset="row" className="shrink-0" details={formatError.message}>
+            {t(formatError.saved ? "Saved, but formatting failed." : "Formatting failed.")}
           </InlineError>
         ) : null}
         {contextError ? (

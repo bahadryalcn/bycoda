@@ -30,33 +30,25 @@
     /* The root is user-select: none; the message must stay copyable into a bug report. */
     user-select: text;
   }
-  /* A small control is taller than the first line; the negative margin centres it on that line. */
+  /* Text actions sit at the end of the strip, centred on the first line of copy. */
   .actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-2);
-    margin-block: calc((var(--ui-leading-secondary) - var(--ui-control-height-sm)) / 2);
-    margin-inline-start: auto;
-  }
-  .actions:has(> [data-button-layout="text"]:only-child) {
-    /* A details link follows the last line of copy; its popover starts below the alert. */
-    align-self: flex-end;
+    gap: var(--space-3);
     min-block-size: var(--ui-leading-secondary);
-    margin-block: 0;
+    margin-inline-start: auto;
   }
   .centerActions .actions {
     align-self: center;
-    margin-block: 0;
   }
   .centerDismiss {
     align-self: center;
   }
 }
-/* A tone is a pairing of border and subtle surface; the glyph carries the ink, the text stays neutral. */
+/* A thin tinted strip: a very light tone surface, no border; the glyph carries the ink, the text stays neutral. */
 .alert {
-  border: 1px solid var(--alert-border, var(--border));
-  background: var(--alert-surface, var(--ui-surface));
+  background: var(--alert-surface, var(--ui-surface-muted));
   color: var(--foreground);
 }
 .title {
@@ -79,18 +71,14 @@
   line-height: var(--ui-leading-secondary);
 }
 .info {
-  --alert-border: var(--ui-tone-info-border);
   --alert-surface: var(--ui-tone-info-subtle);
 }
 .success {
-  --alert-border: var(--ui-tone-success-border);
   --alert-surface: var(--ui-tone-success-subtle);
 }
 .warning {
-  --alert-border: var(--ui-tone-warning-border);
   --alert-surface: var(--ui-tone-warning-subtle);
 }
 .danger {
-  --alert-border: var(--ui-tone-danger-border);
   --alert-surface: var(--ui-tone-danger-subtle);
 }

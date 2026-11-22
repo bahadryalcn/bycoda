@@ -2,7 +2,7 @@ import { createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useT } from "../../shared/i18n";
 import { useConfirm } from "../../shared/ui/ConfirmDialog";
-import { TransientNotice } from "../../shared/ui/TransientNotice";
+import { Toast } from "../../shared/ui/ToastRegion";
 
 interface BootRestoreActions {
   /** One more read of the saved layout; true when it can be read now. */
@@ -54,7 +54,7 @@ function BootRestoreNotice({
   };
   return (
     <>
-      <TransientNotice
+      <Toast
         tone="warning"
         title={t("Could not restore your tabs")}
         message={

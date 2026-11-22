@@ -10,8 +10,18 @@ import { Progress } from "./Progress";
 
 export type ToastTone = "neutral" | "info" | "success" | "warning" | "danger";
 
-/** Ten seconds of focused window time to read a sentence and reach its action. */
+/** The longest finite toast time: ten seconds of focused window time for an error without an action. */
 export const TOAST_VISIBLE_MS = 10_000;
+
+/**
+ * Default visible time by tone: confirmations are short, a warning needs a longer read, an error
+ * stays long enough to act on, and an error that offers an action never expires on its own.
+ */
+export function toastDurationMs(tone: ToastTone, hasAction: boolean): number | null {
+  if (tone === "danger") return hasAction ? null : TOAST_VISIBLE_MS;
+  if (tone === "warning") return 8_000;
+  return 5_000;
+}
 
 /**
  * Expires after `durationMs` of visible, unattended time: hover, focus inside, `paused` and a
@@ -133,8 +143,10 @@ export type ToastContentProps = {
   /** Primary text. With `title`, it is the body under the heading. */
   message?: ReactNode;
   title?: string;
-  /** Tone drives the glyph and role (danger announces assertively); never colour alone. */
-  tone?: ToastTone;
+  /** Tone drives the glyph, role and default duration (danger announces assertively); never colour alone. Required: choose it from the event, an error path is `danger`. */
+  tone: ToastTone;
+  /** How many times the same toast was shown while this one was visible; shown as "×N" from 2. */
+  count?: number;
   /** Extra body, such as a list of rows. Rendered below the message. */
   children?: ReactNode;
   /** One secondary action (Undo, Retry, Open), at the end of the row. */
@@ -155,8 +167,8 @@ export type ToastContentProps = {
   /** Disables the dismiss control (and pauses expiry) while an operation cannot be interrupted. */
   dismissDisabled?: boolean;
   /**
-   * Auto-dismiss delay; defaults to ten seconds for every tone, including errors.
-   * `null` explicitly keeps the toast until dismissed.
+   * Auto-dismiss delay; defaults by tone (info and success 5 s, warning 8 s, error 10 s, an
+   * error with an action never expires). `null` explicitly keeps the toast until dismissed.
    */
   durationMs?: number | null;
   /** Width of a self-positioned card. A corner stack has one width for every toast. */
@@ -187,7 +199,8 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
 export function ToastCard({
   message,
   title,
-  tone = "info",
+  tone,
+  count,
   children,
   action,
   actions,
@@ -212,17 +225,21 @@ export function ToastCard({
 }) {
   const t = useT();
   const stack = useToastStackItem();
-  const durationMs = durationOption === undefined ? TOAST_VISIBLE_MS : durationOption;
+  const hasActions = Boolean(actions?.length || extra);
+  const durationMs =
+    durationOption === undefined
+      ? toastDurationMs(tone, Boolean(action) || hasActions)
+      : durationOption;
   const surface = useRef<HTMLDivElement>(null);
   useAutoDismiss(surface, {
     durationMs: onDismiss ? durationMs : null,
     paused: dismissDisabled || stack?.paused,
     onExpire: () => onDismiss?.(),
-    resetKey: `${title ?? ""}\n${typeof message === "string" ? message : ""}`,
+    // A repeat of the same toast raises `count` and so restarts the countdown.
+    resetKey: `${title ?? ""}\n${typeof message === "string" ? message : ""}\n${count ?? 1}`,
   });
   const actionButton = action ? <NoticeButton action={action} /> : null;
-  const hasActions = Boolean(actions?.length || extra);
-  const actionRow = (placement: "header" | "footer") =>
+  const actionRow =(placement: "header" | "footer") =>
     hasActions && actionsPlacement === placement ? (
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {actions?.map((item) => (
@@ -241,6 +258,9 @@ export function ToastCard({
         assignRef(frameRef, node);
       }}
       tone={tone}
+      count={count}
+      // The dismiss control stays visible on an error that does not expire by itself.
+      closeAlways={tone === "danger" && durationMs === null}
       title={title}
       description={message}
       action={hasActions ? null : actionButton}

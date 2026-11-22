@@ -10,7 +10,7 @@ import {
 } from "../../features/settings/model/settings";
 import { useT } from "../../shared/i18n";
 import { Maximize2, Minimize2 } from "../../shared/ui/icons";
-import { TransientNotice } from "../../shared/ui/TransientNotice";
+import { Toast } from "../../shared/ui/ToastRegion";
 import { ErrorDetails, errorHeadline, fitsOneLine } from "../../shared/ui/ErrorDetails";
 
 const shortcutLabel = () => keybindingShortcutLabel("App: Toggle Full Screen", FULLSCREEN_SHORTCUT);
@@ -41,7 +41,7 @@ export function useFullscreenToggle() {
     pending.current = false;
   };
   const notice = error ? (
-    <TransientNotice
+    <Toast
       tone="danger"
       durationMs={null}
       message={errorHeadline(error)}

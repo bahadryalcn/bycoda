@@ -4,7 +4,6 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Motion } from "../../../shared/ui/Motion";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
-import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Surface } from "../../../shared/ui/Surface";
 import { Divider } from "../../../shared/ui/Divider";
 import { Switch } from "../../../shared/ui/Switch";
@@ -51,7 +50,8 @@ import { useOwnerNotifications, type OwnerRequestRow as OwnerRow } from "./useOw
 import {
   historyOccurrenceIds,
   MAX_NOTIFICATION_HISTORY,
-  countUnseenNotifications,
+  groupHistoryByDay,
+  isHistoryUnread,
   markNotificationsSeen,
   notificationKey,
   useNotificationHistory,
@@ -151,8 +151,6 @@ export function ApprovalToasts({
   const ownerRequests = useOwnerNotifications();
   const [expanded, setExpanded] = useState(false);
   const seenAt = useNotificationSeenAt();
-  // The marker from before the sheet opened: rows newer than it show "New" while the sheet stays open.
-  const [newSince, setNewSince] = useState<number | null>(null);
   const {
     history,
     unavailable: historyUnavailable,
@@ -161,6 +159,7 @@ export function ApprovalToasts({
     reload: reloadHistory,
     clear,
     remove: removeHistoryEntry,
+    markRead: markHistoryRead,
   } = useNotificationHistory(notices);
   const [popupsEnabled, setPopupsEnabled] = useState(readPopupsEnabled);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
@@ -204,15 +203,10 @@ export function ApprovalToasts({
   const recent = visibleHistory
     .map((entry, index) => ({ entry, id: historyIds[index] }))
     .filter(({ entry }) => !liveRequests.has(entry.key));
-  const unseen = expanded
-    ? 0
-    : countUnseenNotifications(
-        recent.map(({ entry }) => entry),
-        seenAt,
-      );
-  const badgeCount = count + unseen;
-  const newCount =
-    newSince === null ? 0 : recent.filter(({ entry }) => entry.occurredAt > newSince).length;
+  // Rows stay unread until the owner marks them read; looking at the sheet does not.
+  const unreadCount = recent.filter(({ entry }) => isHistoryUnread(entry, seenAt)).length;
+  const badgeCount = count + unreadCount;
+  const { today, earlier } = groupHistoryByDay(recent, ({ entry }) => entry.occurredAt);
   // Project preferences and the project catalog live in browser storage, so React reads them
   // through their stores.
   const eligibleKeys: string[] = JSON.parse(
@@ -226,14 +220,8 @@ export function ApprovalToasts({
   const dismiss = (key: string) => setDismissed((previous) => new Set([...previous, key]));
   const dismissAll = () =>
     setDismissed(new Set([...dismissed, ...notices.map(noticeKey), "locked"]));
-  const openPanel = () => {
-    setNewSince(seenAt);
-    markNotificationsSeen();
-    setExpanded(true);
-  };
-  // Arrivals watched while the sheet was open must not badge once it closes.
+  const openPanel = () => setExpanded(true);
   const hidePanel = () => {
-    markNotificationsSeen();
     setOptionsAnchor(null);
     setExpanded(false);
   };
@@ -367,40 +355,31 @@ export function ApprovalToasts({
           scroll="none"
           onClose={closePanel}
           headerActions={
-            <Button
-              iconOnly
-              size="sm"
-              label={t("Notification options")}
-              variant="ghost"
-              aria-expanded={Boolean(optionsAnchor)}
-              aria-controls={optionsAnchor ? `${panelId}-options` : undefined}
-              onClick={(event) => setOptionsAnchor(optionsAnchor ? null : event.currentTarget)}
-            >
-              {popupsEnabled ? <Settings className="icon-sm" /> : <BellOff className="icon-sm" />}
-            </Button>
-          }
-          headerBelow={
-            <div className="notification-history-toolbar">
-              <Text className="notification-summary" truncate>
-                <LiveText
-                  text={
-                    count > 0
-                      ? t("{p0} waiting for your answer", { p0: count })
-                      : newCount > 0
-                        ? t("{p0} new", { p0: newCount })
-                        : ""
-                  }
-                />
+            <>
+              <Text size="caption" tone="muted" truncate className="tabular-nums">
+                <LiveText text={unreadCount > 0 ? t("{p0} unread", { p0: unreadCount }) : ""} />
               </Text>
-              {history.length > 0 ? (
-                <ConfirmMorph
-                  label={t("Clear all")}
-                  prompt={t("Clear history?")}
-                  confirmLabel={t("Clear")}
-                  onConfirm={clearHistory}
-                />
+              {unreadCount > 0 ? (
+                <Button variant="ghost" size="sm" type="button" onClick={() => markNotificationsSeen()}>
+                  {t("Mark all read")}
+                </Button>
               ) : null}
-            </div>
+              <Button
+                iconOnly
+                size="sm"
+                label={t("Notification options")}
+                variant="ghost"
+                aria-expanded={Boolean(optionsAnchor)}
+                aria-controls={optionsAnchor ? `${panelId}-options` : undefined}
+                onClick={(event) => setOptionsAnchor(optionsAnchor ? null : event.currentTarget)}
+              >
+                {popupsEnabled ? (
+                  <Settings className="icon-sm" />
+                ) : (
+                  <BellOff className="icon-sm" />
+                )}
+              </Button>
+            </>
           }
         >
           {optionsAnchor ? (
@@ -444,6 +423,14 @@ export function ApprovalToasts({
                 >
                   {t("All notification settings…")}
                 </Button>
+              ) : null}
+              {history.length > 0 ? (
+                <ConfirmMorph
+                  label={t("Clear all")}
+                  prompt={t("Clear history?")}
+                  confirmLabel={t("Clear")}
+                  onConfirm={clearHistory}
+                />
               ) : null}
               <InfoPopover>
                 {t("Only the latest {p0} notifications are kept on this device.", {
@@ -506,28 +493,34 @@ export function ApprovalToasts({
                 </Surface>
               </>
             ) : null}
-            {count > 0 && recent.length > 0 ? (
-              <SectionLabel className="notification-section-label">{t("Recent")}</SectionLabel>
-            ) : null}
-            <div className="notification-sheet-items">
-              {recent.map(({ entry, id }) => (
-                <HistoryItem
-                  key={id}
-                  entry={entry}
-                  isNew={newSince !== null && entry.occurredAt > newSince}
-                  canOpen={canOpenHistory(entry)}
-                  onOpen={openHistorySession}
-                  onRemove={removeHistoryEntry}
-                />
-              ))}
-              {visibleHistory.length < history.length ? <LockedNotice /> : null}
-            </div>
+            {[
+              { key: "today", label: t("Today"), rows: today },
+              { key: "earlier", label: t("Earlier"), rows: earlier },
+            ].map((group) =>
+              group.rows.length > 0 ? (
+                <Fragment key={group.key}>
+                  <SectionLabel className="notification-section-label">{group.label}</SectionLabel>
+                  <div className="notification-sheet-items">
+                    {group.rows.map(({ entry, id }) => (
+                      <HistoryItem
+                        key={id}
+                        entry={entry}
+                        unread={isHistoryUnread(entry, seenAt)}
+                        canOpen={canOpenHistory(entry)}
+                        onOpen={openHistorySession}
+                        onRemove={removeHistoryEntry}
+                        onMarkRead={markHistoryRead}
+                      />
+                    ))}
+                  </div>
+                </Fragment>
+              ) : null,
+            )}
+            {visibleHistory.length < history.length ? <LockedNotice /> : null}
             {count === 0 && recent.length === 0 && !historyUnavailable ? (
-              <EmptyState
-                context="list"
-                icon={<Bell className="size-6" aria-hidden />}
-                title={t("All clear")}
-              />
+              <Text as="p" size="caption" tone="muted" className="notification-empty">
+                {t("All clear")}
+              </Text>
             ) : null}
           </ScrollArea>
         </Sheet>

@@ -147,12 +147,12 @@ it("updates project names in open popups and history when the rail label changes
   act(() => button("Notifications").click());
   act(() => render([]));
   expect(
-    document.querySelector(".notification-sheet-list .notification-project-name")?.textContent,
-  ).toBe("bycoda");
+    document.querySelector(".notification-sheet-list .notification-history-meta")?.textContent,
+  ).toBe("bycoda · work");
   act(() => saveTabGroupLabel(pathKey("/projects/work"), "New name"));
   expect(
-    document.querySelector(".notification-sheet-list .notification-project-name")?.textContent,
-  ).toBe("New name");
+    document.querySelector(".notification-sheet-list .notification-history-meta")?.textContent,
+  ).toBe("New name · work");
 });
 function visibleRequests() {
   return [...document.querySelectorAll(".approval-toast")].map((item) => item.textContent);
@@ -275,13 +275,11 @@ it("keeps expired requests in history without approval controls and can clear th
   expect(document.querySelector(".notification-sheet-list")?.textContent).toContain("Request work");
   expect(button("Allow")).toBeUndefined();
   expect(button("Deny")).toBeUndefined();
-  expect(
-    button("Clear all")
-      .closest(".notification-history-toolbar")
-      ?.querySelector(".notification-summary")?.textContent,
-  ).toBe("");
   expect(document.body.textContent).not.toContain("What this app announced");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toHaveLength(1);
+  // Clear all lives in the options menu, not in the header.
+  expect(button("Clear all")).toBeUndefined();
+  act(() => button("Notification options").click());
   let now = 1000;
   vi.spyOn(performance, "now").mockImplementation(() => now);
   const morph = (label: string) =>
@@ -306,7 +304,7 @@ const logEntry = (patch: Partial<NotificationHistoryEntry>): NotificationHistory
   ...patch,
 });
 
-it("distinguishes every history kind with a semantic tone marker and label", () => {
+it("marks errors and warnings with an icon and leaves calm rows unmarked", () => {
   const kinds = [
     "failed",
     "finished",
@@ -329,19 +327,9 @@ it("distinguishes every history kind with a semantic tone marker and label", () 
     historyRows().map((row) =>
       row.querySelector(".notification-history-icon")?.getAttribute("data-tone"),
     ),
-  ).toEqual(["danger", "success", "warning", "warning", "warning", "accent", "info", "neutral"]);
-  expect(
-    historyRows().map((row) => row.querySelector(".notification-history-kind")?.textContent),
-  ).toEqual([
-    "Failed",
-    "Finished",
-    "Question",
-    "Approval",
-    "Reminder",
-    "Assistant",
-    "Background",
-    "Account",
-  ]);
+  ).toEqual(["danger", "none", "warning", "warning", "warning", "none", "none", "none"]);
+  // No kind or source label such as "Background" is shown.
+  expect(document.querySelector(".notification-history-kind")).toBeNull();
 });
 
 it("lists every kind of the common log with its label and opens a background target", async () => {
@@ -365,9 +353,10 @@ it("lists every kind of the common log with its label and opens a background tar
   act(() => renderWith([], { onOpenBackground, onOpenHistorySession }));
   openHistory();
   const rows = historyRows();
-  expect(rows.map((row) => row.querySelector(".notification-history-kind")?.textContent)).toEqual([
-    "Background",
-    "Finished",
+  // The context line is the feature, or "project · session"; never a kind label.
+  expect(rows.map((row) => row.querySelector(".notification-history-meta")?.textContent)).toEqual([
+    "Automations",
+    "work · Fix tests",
     "Account",
   ]);
   expandRow(rows[0]);
@@ -386,7 +375,7 @@ it("shows a background row without an open action when nothing can open it", () 
   openHistory();
   expandRow(historyRows()[0]);
   expect(rowButton(historyRows()[0], "Open")).toBeUndefined();
-  expect(rowButton(historyRows()[0], "Remove")).toBeDefined();
+  expect(rowButton(historyRows()[0], "Dismiss")).toBeDefined();
 });
 
 it("shows the registered project and distinguishing path in popups, pending requests and restored history", () => {
@@ -404,20 +393,14 @@ it("shows the registered project and distinguishing path in popups, pending requ
   expect(document.querySelector(".notification-project-name")?.textContent).toBe("Acme / Work");
   expect(document.querySelector(".notification-project-path")?.textContent).toBe("/projects/work");
   act(() => button("Notifications").click());
-  expect(
-    document.querySelector(".notification-sheet-list .notification-project-name")?.textContent,
-  ).toBe("Acme / Work");
   act(() => render([]));
   act(() => root.unmount());
   root = createRoot(container);
   act(() => render([]));
   act(() => button("Notifications").click());
-  expect(
-    document.querySelector(".notification-sheet-list .notification-project-name")?.textContent,
-  ).toBe("Acme / Work");
   const row = document.querySelector<HTMLElement>(".notification-history-item")!;
-  expect(row.querySelector(".notification-history-title")?.textContent).toBe("work");
-  expect(row.querySelector(".notification-history-preview")?.textContent).toBe("Request work");
+  expect(row.querySelector(".notification-history-title")?.textContent).toContain("Request work");
+  expect(row.querySelector(".notification-history-meta")?.textContent).toBe("Acme / Work · work");
   expect(onApproval).not.toHaveBeenCalled();
 });
 
@@ -448,26 +431,23 @@ it("uses the folder name for old history without a registered project, including
   act(() => render([]));
   act(() => button("Notifications").click());
   expect(
-    [...document.querySelectorAll(".notification-project-name")].map((node) => node.textContent),
-  ).toEqual(["demo", "demo"]);
+    [...document.querySelectorAll(".notification-history-meta")].map((node) => node.textContent),
+  ).toEqual(["demo · Old", "demo · Remote"]);
+  // The full path is one expansion away, with the exact value on hover.
   const expectedPaths = ["G:\\Projects\\demo", "remote://mac/home/dev/demo"];
-  const projects = [...document.querySelectorAll(".notification-project")];
-  for (const [index, project] of projects.entries()) {
-    expect(project.hasAttribute("title")).toBe(false);
+  for (const [index, row] of historyRows().entries()) {
+    expandRow(row);
+    const path = row.querySelector(".notification-history-path")!;
     await act(async () => {
-      project.dispatchEvent(
-        new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }),
-      );
+      path.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
       await new Promise((resolve) => setTimeout(resolve, 500));
     });
-    const descriptions = (project.getAttribute("aria-describedby") ?? "")
+    const descriptions = (path.getAttribute("aria-describedby") ?? "")
       .split(/\s+/)
       .map((id) => document.getElementById(id)?.textContent);
     expect(descriptions).toContain(expectedPaths[index]);
     act(() =>
-      project.dispatchEvent(
-        new PointerEvent("pointerout", { bubbles: true, pointerType: "mouse" }),
-      ),
+      path.dispatchEvent(new PointerEvent("pointerout", { bubbles: true, pointerType: "mouse" })),
     );
   }
 });
@@ -634,6 +614,7 @@ it("keeps history when the durable clear fails and offers a retry", async () => 
   act(() => button("Notifications").click());
   let now = 1000;
   vi.spyOn(performance, "now").mockImplementation(() => now);
+  act(() => button("Notification options").click());
   const morph = (label: string) =>
     [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (item) => !item.closest("[inert]") && item.textContent?.includes(label),
@@ -687,7 +668,7 @@ it("keeps an expanded history entry open when newer arrivals are added", () => {
   openHistory();
   const first = historyRows()[0];
   expandRow(first);
-  expect(first.querySelector(".notification-history-label")?.textContent).toContain(
+  expect(first.querySelector(".notification-history-title")?.textContent).toContain(
     "long explanation",
   );
   expect(first.querySelector(".notification-history-path")?.textContent).toBe("/projects/first");
@@ -712,8 +693,7 @@ it("removes one history entry and keeps the others", async () => {
   openHistory();
   expect(historyRows()).toHaveLength(2);
   const target = historyRows().find((row) => row.textContent?.includes("Request first"))!;
-  expandRow(target);
-  await act(async () => rowButton(target, "Remove").click());
+  await act(async () => rowButton(target, "Dismiss").click());
   expect(historyRows()).toHaveLength(1);
   expect(historyRows()[0].textContent).toContain("Request second");
   const stored = JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!);
@@ -729,8 +709,7 @@ it("keeps a history entry and says so when its removal cannot be saved", async (
     if (key === NOTIFICATION_HISTORY_KEY) throw new Error("quota");
     realSetItem(key, value);
   });
-  expandRow(historyRows()[0]);
-  await act(async () => rowButton(historyRows()[0], "Remove").click());
+  await act(async () => rowButton(historyRows()[0], "Dismiss").click());
   expect(historyRows()).toHaveLength(1);
   expect(document.body.textContent).toContain("This notification could not be removed.");
   setItem.mockRestore();
@@ -758,7 +737,7 @@ it("shows pending requests in their own card above the recent rows", () => {
   const list = document.querySelector<HTMLElement>(".notification-sheet-list")!;
   const card = list.querySelector<HTMLElement>(".notification-pending-card")!;
   expect(list.textContent).toContain("Waiting for you");
-  expect(list.textContent).toContain("Recent");
+  expect(list.textContent).toContain("Today");
   expect(
     card.compareDocumentPosition(historyRows()[0]) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
@@ -766,7 +745,7 @@ it("shows pending requests in their own card above the recent rows", () => {
   expect(document.querySelector('[role="tab"]')).toBeNull();
 });
 
-it("badges new log entries on the trigger and resets once the sheet was opened", () => {
+it("badges unread log entries on the trigger until they are marked read", () => {
   localStorage.setItem(NOTIFICATION_SEEN_KEY, "1000");
   localStorage.setItem(
     NOTIFICATION_HISTORY_KEY,
@@ -780,11 +759,77 @@ it("badges new log entries on the trigger and resets once the sheet was opened",
   const badge = () => button("Notifications").querySelector(".notification-trigger-count");
   expect(badge()?.textContent).toBe("2");
   expect(badge()?.getAttribute("data-tone")).toBe("accent");
+  // Looking at the sheet does not mark anything read.
   act(() => button("Notifications").click());
+  expect(badge()?.textContent).toBe("2");
+  expect(document.body.textContent).toContain("2 unread");
+  act(() => button("Mark all read").click());
   expect(badge()).toBeNull();
-  act(() => button("Close").click());
-  expect(badge()).toBeNull();
+  expect(button("Mark all read")).toBeUndefined();
   expect(Number(localStorage.getItem(NOTIFICATION_SEEN_KEY))).toBeGreaterThan(2001);
+});
+
+it("marks one row read from its hover action and keeps the others unread", async () => {
+  localStorage.setItem(NOTIFICATION_SEEN_KEY, "1000");
+  localStorage.setItem(
+    NOTIFICATION_HISTORY_KEY,
+    JSON.stringify([
+      logEntry({ key: "a", title: "First", occurredAt: 2001 }),
+      logEntry({ key: "b", title: "Second", occurredAt: 2000 }),
+    ]),
+  );
+  act(() => render([]));
+  openHistory();
+  const first = historyRows()[0];
+  expect(first.getAttribute("data-unread")).toBe("true");
+  await act(async () => rowButton(first, "Mark read").click());
+  expect(historyRows()[0].getAttribute("data-unread")).toBeNull();
+  expect(historyRows()[1].getAttribute("data-unread")).toBe("true");
+  expect(document.body.textContent).toContain("1 unread");
+  expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)[0].read).toBe(true);
+});
+
+it("shows a repeated notification as one counted row whose expansion lists each time", () => {
+  localStorage.setItem(NOTIFICATION_SEEN_KEY, "1000");
+  localStorage.setItem(
+    NOTIFICATION_HISTORY_KEY,
+    JSON.stringify([
+      logEntry({
+        key: "q5",
+        kind: "failed",
+        title: "Could not load queued messages",
+        label: "",
+        count: 5,
+        occurredAt: 5000,
+        earlier: [4000, 3000, 2000, 1500],
+      }),
+    ]),
+  );
+  act(() => render([]));
+  openHistory();
+  expect(historyRows()).toHaveLength(1);
+  expect(historyRows()[0].querySelector(".notification-history-count")?.textContent).toBe("×5");
+  expect(historyRows()[0].querySelector(".notification-history-arrivals")).toBeNull();
+  expandRow(historyRows()[0]);
+  expect(historyRows()[0].querySelectorAll(".notification-history-arrivals li")).toHaveLength(5);
+});
+
+it("groups rows under Today and Earlier and shows one calm line when empty", () => {
+  const dayMs = 24 * 60 * 60 * 1000;
+  localStorage.setItem(NOTIFICATION_SEEN_KEY, String(Date.now()));
+  localStorage.setItem(
+    NOTIFICATION_HISTORY_KEY,
+    JSON.stringify([
+      logEntry({ key: "now", title: "Now", occurredAt: Date.now() }),
+      logEntry({ key: "old", title: "Old", occurredAt: Date.now() - 3 * dayMs }),
+    ]),
+  );
+  act(() => render([]));
+  openHistory();
+  const text = document.querySelector(".notification-sheet-list")!.textContent!;
+  expect(text.indexOf("Today")).toBeLessThan(text.indexOf("Now"));
+  expect(text.indexOf("Now")).toBeLessThan(text.indexOf("Earlier"));
+  expect(text.indexOf("Earlier")).toBeLessThan(text.indexOf("Old"));
 });
 
 it("adds waiting requests to the new count and uses the warning tone", () => {
@@ -808,10 +853,10 @@ it("marks a row that arrived after the last look as new while the sheet is open"
   act(() => render([]));
   openHistory();
   const row = (title: string) => historyRows().find((item) => item.textContent?.includes(title))!;
-  expect(row("Fresh").querySelector(".notification-new-dot")).not.toBeNull();
-  expect(row("Fresh").textContent).toContain("New");
-  expect(row("Stale").querySelector(".notification-new-dot")).toBeNull();
-  expect(document.querySelector(".notification-summary")?.textContent).toBe("1 new");
+  expect(row("Fresh").getAttribute("data-unread")).toBe("true");
+  expect(row("Fresh").textContent).toContain("Unread");
+  expect(row("Stale").getAttribute("data-unread")).toBeNull();
+  expect(document.body.textContent).toContain("1 unread");
 });
 
 it("opens a history conversation from its row and reports an unavailable one", async () => {
@@ -883,7 +928,7 @@ it("lists a live owner approval in the pending card with its time left and count
   expect(card.textContent).toContain("Approve p1");
   expect(card.textContent).toContain("1:30 left");
   expect(card.textContent).not.toContain("Private details");
-  expect(document.querySelector(".notification-summary")?.textContent).toContain("1 waiting");
+  expect(document.querySelector(".notification-section-label")?.textContent).toContain("1");
 });
 
 it("opens the owner request's conversation, or only closes the sheet without one", () => {

@@ -29,6 +29,7 @@ export function VoiceSetupRow({
   const [moreOpen, setMoreOpen] = useState(false);
   const moreAnchor = useRef<HTMLButtonElement>(null);
   const { installing, busy, ready, visibleError, pythonMissing, message, detail } = setup;
+  const failure = setup.locateError ?? visibleError;
   const paths: [PathKey, string, string][] = [
     ["python", "Python", "voice-python"],
     ["whisperPath", "Speech recognition model", "voice-whisper"],
@@ -228,7 +229,8 @@ export function VoiceSetupRow({
                   ) : undefined
                 }
               >
-                {setup.locateError?.message ?? visibleError?.message}
+                {/* Failure.message is the translated sentence; the raw text is Failure.detail above. */}
+                {failure?.message}
               </SettingsFeedback>
             ) : null}
           </div>

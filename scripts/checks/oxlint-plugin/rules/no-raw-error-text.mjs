@@ -42,13 +42,38 @@ function rendersError(node, interpolated = false) {
   }
 }
 
+/** `toast.show(...)` or `<anything>.toast.show(...)`, the imperative path used from .ts hooks. */
+function isToastShow(node) {
+  const callee = node.callee;
+  if (callee.type !== "MemberExpression" || callee.computed || callee.property.name !== "show")
+    return false;
+  const target = callee.object;
+  return (
+    (target.type === "Identifier" && target.name === "toast") ||
+    (target.type === "MemberExpression" && !target.computed && target.property.name === "toast")
+  );
+}
+
 export default defineRule({
-  files: ["src/**/*.tsx"],
-  ignores: [...TESTS, "**/*.spec.tsx", "src/shared/ui/ErrorDetails*"],
+  files: ["src/**/*.ts", "src/**/*.tsx"],
+  ignores: [...TESTS, "**/*.spec.ts", "**/*.spec.tsx", "src/shared/ui/ErrorDetails*"],
   message:
     "Show what happened in a translated title and put raw error text in the shared ErrorDetails, or use the existing describe/present error helpers. See K1.",
   create(_context, report) {
     return {
+      CallExpression(node) {
+        if (!isToastShow(node) || node.arguments[0]?.type !== "ObjectExpression") return;
+        for (const property of node.arguments[0].properties) {
+          if (
+            property.type === "Property" &&
+            !property.computed &&
+            textProps.has(property.key.name) &&
+            rendersError(property.value)
+          ) {
+            report(property.value);
+          }
+        }
+      },
       JSXExpressionContainer(node) {
         const parent = node.parent;
         if (

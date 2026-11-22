@@ -8,7 +8,7 @@ import {
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { AudioLines, VolumeX } from "../../../shared/ui/icons";
-import { TransientNotice } from "../../../shared/ui/TransientNotice";
+import { Toast } from "../../../shared/ui/ToastRegion";
 
 /** The application sound preference used by Settings, with a retry notice for failed saves. */
 export function useSoundsToggle() {
@@ -26,7 +26,7 @@ export function useSoundsToggle() {
   const toggle = useStableCallback(() => save(!loadSoundsEnabled()));
   const notice =
     failedValue !== null ? (
-      <TransientNotice
+      <Toast
         tone="danger"
         message={t("Could not save changes")}
         action={{ label: t("Retry"), onClick: () => save(failedValue) }}

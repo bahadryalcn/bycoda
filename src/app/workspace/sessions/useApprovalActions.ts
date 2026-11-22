@@ -1,3 +1,4 @@
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
 import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 import { useCallback, type MutableRefObject } from "react";
 import {
@@ -154,8 +155,8 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
           } catch (error) {
             toast.show({
               tone: "warning",
-              title: t("Open conversation window"),
-              message: String(error),
+              title: t("Could not switch to the window that has this conversation"),
+              message: workspaceFailureDetail(error),
             });
             return false;
           }

@@ -1,4 +1,4 @@
-import { errorText } from "../../../shared/lib/errors";
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
 import { remoteSessionOwnershipKey } from "../../model/sessionWindowOwnership";
 import { remoteSessionFor } from "../../../features/connections/model/connections";
 import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
@@ -152,7 +152,7 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           toast.show({
             tone: "danger",
             title: t("Could not move this window. Your workspace is still here."),
-            message: String(error),
+            message: workspaceFailureDetail(error),
           });
           return "failed" as const;
         } finally {
@@ -276,7 +276,7 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           toast.show({
             tone: "danger",
             title: t("Could not move the conversation to a new window. Your tab is still here."),
-            message: errorText(error),
+            message: workspaceFailureDetail(error),
           });
           return "failed" as const;
         }

@@ -1,3 +1,4 @@
+import { workspaceFailureDetail } from "../../model/workspaceActionError";
 import { reserveSessionWindow } from "../../model/sessionWindowOwnership";
 import {
   useCallback,
@@ -235,7 +236,11 @@ export function useOpenSessionActions({
         release = await reserveSessionWindow([session.id], inspectedWorkerId);
       } catch (error) {
         if (options?.privacyToken) throw error;
-        toast.show({ tone: "warning", message: String(error) });
+        toast.show({
+          tone: "warning",
+          title: t("Could not open this conversation"),
+          message: workspaceFailureDetail(error),
+        });
         return false;
       }
       if (!release) {
@@ -354,7 +359,11 @@ export function useOpenSessionActions({
       try {
         release = await reserveSessionWindow(opened.map((session) => session.id));
       } catch (error) {
-        toast.show({ tone: "warning", message: String(error) });
+        toast.show({
+          tone: "warning",
+          title: t("Could not open these conversations side by side"),
+          message: workspaceFailureDetail(error),
+        });
         return false;
       }
       if (!release) return false;

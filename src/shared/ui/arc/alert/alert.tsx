@@ -14,8 +14,8 @@ import {
 import { X } from "../../icons";
 import { Button } from "../../Button";
 import {
-  NoticeButton,
   NoticeGlyph,
+  NoticeLink,
   NoticeSlot,
   noticeEnterClass,
   type NoticeAction,
@@ -88,8 +88,8 @@ function AlertBox({
         </div>
         {hasActions ? (
           <div className={styles.actions}>
-            {action ? <NoticeButton action={action} /> : null}
-            {secondaryAction ? <NoticeButton action={secondaryAction} /> : null}
+            {action ? <NoticeLink action={action} /> : null}
+            {secondaryAction ? <NoticeLink action={secondaryAction} /> : null}
             {extra}
           </div>
         ) : null}

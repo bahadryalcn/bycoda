@@ -4,7 +4,7 @@ import { Button } from "../../shared/ui/Button";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "../../shared/ui/icons";
 import { createContext, useContext, useState } from "react";
-import { TransientNotice } from "../../shared/ui/TransientNotice";
+import { Toast } from "../../shared/ui/ToastRegion";
 import { ErrorDetails, errorHeadline, fitsOneLine } from "../../shared/ui/ErrorDetails";
 import { setNativeFullscreen } from "../../platform/tauri/fullscreen";
 import { refreshWindowState, useNativeWindowState } from "../../platform/tauri/windowState";
@@ -61,7 +61,7 @@ function NativeWindowControls() {
       data-tauri-drag-region="false"
     >
       {error ? (
-        <TransientNotice
+        <Toast
           tone="danger"
           durationMs={null}
           message={errorHeadline(error)}

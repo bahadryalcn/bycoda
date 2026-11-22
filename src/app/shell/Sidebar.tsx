@@ -177,8 +177,7 @@ import {
   type SessionOrder,
   type SessionOrderList,
 } from "../../features/sessions/model/sessionOrder";
-import { TransientNotice } from "../../shared/ui/TransientNotice";
-import { toast } from "../../shared/ui/ToastRegion";
+import { Toast, toast } from "../../shared/ui/ToastRegion";
 import { reportFailure } from "../../shared/ui/reportFailure";
 import "./sessionList.css";
 import type { OpenFileFn } from "../../features/search/model/search";
@@ -4352,7 +4351,8 @@ function SidebarComponent({
         />
       ) : null}
       {organizationNotice ? (
-        <TransientNotice
+        <Toast
+          tone="warning"
           message={organizationNotice}
           action={
             organizationUnresolved.current
@@ -4459,7 +4459,7 @@ function SidebarComponent({
                 </div>
               )),
           )}
-        </TransientNotice>
+        </Toast>
       ) : null}
       {filterMenu ? (
         <SessionFiltersMenu

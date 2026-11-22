@@ -4023,7 +4023,7 @@ function ConnectedRemoteSession({
             ? t(
                 "Waiting for the bycoda Host to coordinate the queued messages. They send as soon as it answers.",
               )
-            : t("Could not load queued messages. Retry loading the saved queue above.")
+            : t("Could not load queued messages. Use Reload queue above.")
           : snapshot?.historyLoading
             ? t("Loading earlier messages…")
             : outboxIssues.length

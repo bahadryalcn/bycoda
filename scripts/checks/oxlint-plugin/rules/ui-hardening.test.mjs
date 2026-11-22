@@ -127,3 +127,26 @@ test("disabled-needs-reason flags dynamic disabled on imported shared Buttons", 
     ],
   );
 });
+
+test("no-raw-error-text flags raw error text passed to toast.show", (t) => {
+  const file = "src/hooks/useSave.ts";
+  const rejected = [
+    "toast.show({ tone: 'danger', message: String(error) });",
+    "toast.show({ tone: 'danger', message: err.message });",
+    "api.toast.show({ title: `Failed: ${cause}` });",
+  ];
+  const accepted = [
+    "toast.show({ tone: 'danger', title: t('Save failed') });",
+    "toast.show({ tone: 'danger', message: presentError(error) });",
+    "toast.show({ tone: 'info', message: item.message });",
+    "dialog.show({ message: String(error) });",
+    "console.warn(String(error));",
+  ];
+  assert.deepEqual(
+    scanRule(t, "no-raw-error-text", {
+      [file]: [...rejected, ...accepted],
+      "src/hooks/useSave.test.ts": rejected,
+    }),
+    rejected.map((_, index) => [file, index + 1]),
+  );
+});

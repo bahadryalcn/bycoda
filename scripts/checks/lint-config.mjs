@@ -126,6 +126,7 @@ export const lint = {
         "bycoda/dialog-single-translator": "error",
         "bycoda/icon-button-needs-label": "error",
         "bycoda/menu-uses-dropdown": "error",
+        "bycoda/toast-needs-tone": "error",
         "no-restricted-imports": [
           "error",
           {
@@ -343,6 +344,7 @@ export const lint = {
         "bycoda/dialog-single-translator": "off",
         "bycoda/icon-button-needs-label": "off",
         "bycoda/menu-uses-dropdown": "off",
+        "bycoda/toast-needs-tone": "off",
         "bycoda/grapheme-safe-truncate": "off",
         "bycoda/handled-background-promise": "off",
         "no-restricted-imports": "off",

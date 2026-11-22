@@ -279,7 +279,11 @@ export function ToastStackItem({
 export interface ToastStackCardProps extends Omit<HTMLAttributes<HTMLDivElement>, "title"> {
   ref?: Ref<HTMLDivElement>;
   /** Drives the glyph and the role: danger announces assertively, the others politely. */
-  tone?: ToastStackTone;
+  tone: ToastStackTone;
+  /** Repeat count; "×N" shows beside the title (or the one line) from 2. */
+  count?: number;
+  /** Keep the dismiss control visible; otherwise it shows on hover and keyboard focus only. */
+  closeAlways?: boolean;
   title?: string;
   /** Under the title; on its own it is the toast's one line. */
   description?: ReactNode;
@@ -299,7 +303,9 @@ export interface ToastStackCardProps extends Omit<HTMLAttributes<HTMLDivElement>
  */
 export function ToastStackCard({
   ref,
-  tone = "info",
+  tone,
+  count,
+  closeAlways,
   title,
   description,
   action,
@@ -313,6 +319,14 @@ export function ToastStackCard({
   const item = useContext(ToastStackItemContext);
   const content = useRef<HTMLDivElement>(null);
   const measure = item?.measure;
+  const repeat =
+    count && count > 1 ? (
+      <span className={styles.count}>
+        {" "}
+        {"×"}
+        {count}
+      </span>
+    ) : null;
 
   // Measured before the first paint, so the toast enters from exactly its own height beyond the edge.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- reports the content height to the stack and follows its resizes
@@ -332,6 +346,7 @@ export function ToastStackCard({
         .join(" ")}
       role={role ?? (tone === "danger" ? "alert" : "status")}
       data-toast-tone={tone}
+      data-close-always={closeAlways ? "" : undefined}
     >
       <motion.div
         ref={content}
@@ -340,8 +355,18 @@ export function ToastStackCard({
       >
         <NoticeGlyph tone={tone} size="box" />
         <div className={styles.copy}>
-          {title ? <strong className={styles.title}>{title}</strong> : null}
-          {description ? <div className={styles.description}>{description}</div> : null}
+          {title ? (
+            <strong className={styles.title}>
+              {title}
+              {repeat}
+            </strong>
+          ) : null}
+          {description ? (
+            <div className={styles.description}>
+              {description}
+              {title ? null : repeat}
+            </div>
+          ) : null}
           {children ? <div className={styles.body}>{children}</div> : null}
         </div>
         {action ? (
@@ -349,7 +374,11 @@ export function ToastStackCard({
             {action}
           </NoticeSlot>
         ) : null}
-        {close ? <NoticeSlot size="box">{close}</NoticeSlot> : null}
+        {close ? (
+          <NoticeSlot size="box" className={styles.close}>
+            {close}
+          </NoticeSlot>
+        ) : null}
         {footer ? <div className={styles.footer}>{footer}</div> : null}
       </motion.div>
     </div>

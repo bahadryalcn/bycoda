@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { normalizeProjectPath } from "../../projects/public/recents";
 import {
   addSessionToFolder,
@@ -123,7 +124,7 @@ export type OrganizationOperation =
 function keyFor(store: Record<string, unknown>, cwd: string): string {
   const key = normalizeProjectPath(cwd);
   if (!cwd || cwd === "~" || !key)
-    throw new Error("A project is required for organization changes.");
+    throw new Error(t("Open a project before organizing its sessions into folders."));
   const aliases = Object.keys(store).filter((entry) => normalizeProjectPath(entry) === key);
   if (aliases.length > 1)
     throw new Error("Project paths have conflicting aliases; recovery is required.");

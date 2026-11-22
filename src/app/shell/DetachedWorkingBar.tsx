@@ -11,7 +11,7 @@ import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
 import { IS_MAC } from "../../platform/tauri/platform";
 import { WindowControls, toggleWindowMaximize } from "./WindowControls";
-import { TransientNotice } from "../../shared/ui/TransientNotice";
+import { Toast } from "../../shared/ui/ToastRegion";
 
 type Props = { agents: LiveAgent[]; onSelectAgent: (id: string) => void };
 
@@ -198,7 +198,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
       <div className="min-w-4 flex-1 self-stretch" aria-hidden="true" />
       {!IS_MAC ? <WindowControls /> : null}
       {windowError ? (
-        <TransientNotice
+        <Toast
           tone="danger"
           durationMs={null}
           message={windowError}

@@ -3503,7 +3503,7 @@ it("uses one connection recovery for blocked conversation and queue reads withou
   );
   expect(
     [...document.body.querySelectorAll("button")].filter(
-      (button) => button.textContent === "Retry",
+      (button) => button.textContent === "Reload queue",
     ),
   ).toHaveLength(0);
   const reconnect = [...document.body.querySelectorAll("button")].filter(
@@ -3530,7 +3530,9 @@ it("keeps an independent queue-storage retry available beside a connection probl
     notice.textContent?.includes("queue storage unavailable"),
   );
   expect(
-    [...queueNotice!.querySelectorAll("button")].filter((button) => button.textContent === "Retry"),
+    [...queueNotice!.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Reload queue",
+    ),
   ).toHaveLength(1);
   expect(
     [...document.body.querySelectorAll("button")].filter(
@@ -4253,7 +4255,7 @@ slow(
     expect(commands).toEqual([]);
     queueReadFailed = false;
     const retry = [...document.body.querySelectorAll("button")].find(
-      (button) => button.textContent === "Retry",
+      (button) => button.textContent === "Reload queue",
     )!;
     await act(async () => retry.click());
     await settle();

@@ -18,15 +18,27 @@ function record(entry: NotificationHistoryEntry) {
   void recordNotificationHistory(entry).catch(() => undefined);
 }
 
-/** Keep expired and dismissed toast text in the existing capped device-local log. */
-export function logToastAnnouncement(entry: ToastAnnouncement) {
+/**
+ * A toast announcement as the log reads it. `persist` (a notice that asks to be kept) and
+ * `hasAction` (it carries an action) are optional extras of the announcing region.
+ */
+export type LoggedToastAnnouncement = ToastAnnouncement & { persist?: boolean; hasAction?: boolean };
+
+/**
+ * Keeps a toast in the capped device-local log only when it is a warning, an error, or asks to be
+ * kept (`persist`, or an action). A transient "Saved" or "Copied" never reaches the center.
+ */
+export function logToastAnnouncement(entry: LoggedToastAnnouncement) {
+  const tone = entry.tone === "danger" || entry.tone === "warning" ? entry.tone : undefined;
+  if (!tone && !entry.persist && !entry.hasAction) return;
   record({
     key: entry.id,
     sessionId: "",
     cwd: "",
     title: truncateGraphemes(entry.title || entry.message, 200),
     label: truncateGraphemes(entry.title ? distinctLabel(entry.title, entry.message) : "", 2000),
-    kind: entry.tone === "danger" ? "failed" : "background",
+    kind: tone === "danger" ? "failed" : "notice",
+    ...(tone ? { tone } : {}),
     occurredAt: entry.occurredAt,
   });
 }

@@ -24,31 +24,34 @@ it("retains expired and dismissed notices in the existing persistent history", a
     act(() => root.render(createElement(ToastRegion, { onRecord: logToastAnnouncement })));
     let failed = "";
     act(() => {
-      toast.show({ message: "Saved" });
+      toast.show({ tone: "info", message: "Saved" });
       failed = toast.show({ title: "Update failed", message: "Access denied", tone: "danger" });
     });
     await act(async () => {
       await Promise.resolve();
     });
-    expect(readNotificationHistory()).toHaveLength(2);
+    // A transient "Saved" never reaches the center; the failure does.
+    expect(readNotificationHistory()).toHaveLength(1);
     act(() => toast.dismiss(failed));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(TOAST_VISIBLE_MS + 500);
     });
     expect(document.querySelector("[data-toast-tone]")).toBeNull();
-    expect(readNotificationHistory()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ title: "Saved", kind: "background" }),
-        expect.objectContaining({ title: "Update failed", label: "Access denied", kind: "failed" }),
-      ]),
-    );
+    expect(readNotificationHistory()).toEqual([
+      expect.objectContaining({
+        title: "Update failed",
+        label: "Access denied",
+        kind: "failed",
+        tone: "danger",
+      }),
+    ]);
   } finally {
     act(() => {
       toast.dismissAll();
       root.unmount();
     });
   }
-  expect(readNotificationHistory()).toHaveLength(2);
+  expect(readNotificationHistory()).toHaveLength(1);
 });
 
 it("records declarative initial content once in StrictMode, without action or child payloads", async () => {
@@ -59,6 +62,7 @@ it("records declarative initial content once in StrictMode, without action or ch
       null,
       createElement(Toast, {
         title: "Harness updates available",
+        tone: "warning",
         historyMessage: summary,
         children: createElement("span", null, "private child payload"),
         action: { label: "Update", onClick: () => undefined },

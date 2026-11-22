@@ -99,6 +99,29 @@
     font-size: var(--ui-font-caption);
     line-height: var(--ui-leading-caption);
   }
+  .count {
+    margin-inline-start: 0.25rem;
+    color: var(--text-secondary);
+    font-weight: 400;
+    font-size: var(--ui-font-caption);
+    font-variant-numeric: tabular-nums;
+  }
+  /* The dismiss control shows on hover and keyboard focus (layout stays put); an error that
+     never expires keeps it, and touch has no hover so it stays too. */
+  .close {
+    opacity: 0;
+    transition: opacity var(--duration-standard) var(--ease-standard);
+  }
+  .card:hover .close,
+  .card:focus-within .close,
+  .card[data-close-always] .close {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .close {
+      opacity: 1;
+    }
+  }
   /* Without a title the description is the toast's one line, so it reads at full strength. */
   .description:first-child {
     margin-block-start: 0;
@@ -132,7 +155,8 @@
 
   @media (prefers-reduced-motion: reduce) {
     .stack,
-    .card {
+    .card,
+    .close {
       transition: none;
     }
   }

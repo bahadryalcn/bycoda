@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { TransientNotice } from "../../../shared/ui/TransientNotice";
+import { Toast } from "../../../shared/ui/ToastRegion";
 
 const LOCK_REDIRECT_NOTICE_MS = 12_000;
 
@@ -16,7 +16,7 @@ export function showLockRedirectNotice(message: string): void {
       host.remove();
     });
   root.render(
-    createElement(TransientNotice, {
+    createElement(Toast, {
       tone: "warning",
       message,
       durationMs: LOCK_REDIRECT_NOTICE_MS,
