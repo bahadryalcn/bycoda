@@ -7,7 +7,7 @@ import { formatDate, t } from "../../../../shared/i18n";
 import { truncateGraphemes } from "../../../../shared/lib/text/truncate";
 import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
-import { ActivityRow } from "../common/ActivityRow";
+import { ActivityRow, type ActivityKind } from "../common/ActivityRow";
 import { TechnicalDetails } from "../common/TechnicalDetails";
 import type { StatusTextStatus } from "../common/StatusText";
 import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
@@ -40,6 +40,20 @@ function jobKindText(kind: SocialJob["kind"]): string {
       return t("Direct messages");
     case "comment":
       return t("Comments");
+  }
+}
+
+/** Glyph kind for a job; comments have no dedicated glyph and fall back to "other". */
+function jobActivityKind(kind: SocialJob["kind"]): ActivityKind {
+  switch (kind) {
+    case "publish":
+      return "publish";
+    case "reply":
+      return "reply";
+    case "message":
+      return "message";
+    case "comment":
+      return "other";
   }
 }
 
@@ -191,6 +205,7 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
                 title={`${jobKindText(job.kind)} · ${nameOf(job.accountId)}`}
                 time={formatDate(job.createdAt, { dateStyle: "medium", timeStyle: "short" })}
                 status={job.status}
+                kind={jobActivityKind(job.kind)}
                 details={
                   <>
                     <p>{truncateGraphemes(job.payload.text, 160)}</p>
@@ -217,6 +232,7 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
             title={action.summary}
             time={formatDate(action.at, { dateStyle: "medium", timeStyle: "short" })}
             status={aiStatus(action.status)}
+            kind="other"
             details={
               <>
                 {action.undo ? null : <p>{t("This action cannot be undone.")}</p>}

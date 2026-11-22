@@ -476,7 +476,8 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                   align="end"
                   width={320}
                   onDismiss={() => setFiltersOpen(false)}
-                  className="flex flex-col gap-1 p-2"
+                  variant="compact"
+                  className="flex flex-col gap-1"
                 >
                   <ToggleRow
                     label={t("Show automation runs")}

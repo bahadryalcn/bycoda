@@ -35,8 +35,8 @@ export const detailTooltipFrame = {
   gap: 6,
   size: "sm",
   passive: true,
-  frosted: true,
-  className: "pointer-events-none overflow-hidden p-2.5",
+  variant: "preview",
+  className: "pointer-events-none overflow-hidden",
 } satisfies Partial<ComponentProps<typeof Popover>>;
 
 /** Last close per hint family, for the warm handoff between neighbouring triggers. */

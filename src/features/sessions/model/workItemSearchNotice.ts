@@ -13,12 +13,12 @@ export function workItemSearchNotice(
   const name = machine ?? t("this computer");
   switch (error.failure) {
     case "missing-tool":
-      return t("GitHub CLI missing on {name}", { name });
+      return t("GitHub CLI missing on {p0}", { p0: name });
     case "unauthenticated":
-      return t("Sign in to GitHub on {name}", { name });
+      return t("Sign in to GitHub on {p0}", { p0: name });
     case "rate-limited": {
       const seconds = error.retryAt ? Math.ceil((error.retryAt - now) / 1000) : 0;
-      return seconds > 0 ? t("Rate limited, retry in {seconds} s", { seconds }) : t("Rate limited");
+      return seconds > 0 ? t("Rate limited, retry in {p0} s", { p0: seconds }) : t("Rate limited");
     }
     case "not-found":
     case "repository-unresolved":

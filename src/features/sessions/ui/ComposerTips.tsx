@@ -124,7 +124,7 @@ export const ComposerTips = memo(function ComposerTips({ active }: { active: boo
           width={320}
           restoreFocus={false}
           onDismiss={() => setOpen(false)}
-          className="p-3"
+          variant="panel"
         >
           <Text as="div" tone="secondary" leading="relaxed" className="composer-tips-copy">
             <TipText

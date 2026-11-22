@@ -591,9 +591,9 @@ export function GitChangesPanel({
           onClick={async () => {
             if (
               !(await confirmNative(
-                t(
-                  "Trust Git repository at {path}? This adds only this path to Git safe.directory.",
-                ).replace("{path}", cwd),
+                t("Trust Git repository at {p0}? This adds only this path to Git safe.directory.", {
+                  p0: cwd,
+                }),
                 t("Trust this repository"),
               ))
             )
@@ -1022,10 +1022,13 @@ function ChangedFiles({
   const runAll = async (action: "stage" | "unstage" | "discard") => {
     return withGitPanelRuntime(cwd, async () => {
       if (gitPanelRuntime(cwd).state.busy) return;
+      // A filter limits every bulk action to the rows on screen.
+      const targets = action === "unstage" ? visibleStaged : visibleUnstaged;
+      if (deferredFileQuery && targets.length === 0) return;
       if (action === "discard") {
-        const n = unstaged.length;
+        const n = targets.length;
         if (n === 0) return;
-        const only = unstaged[0];
+        const only = targets[0];
         const untrackedOnly = n === 1 && only?.status === "untracked";
         const ok = await confirmNative(
           ...discardUnstagedCopy(n, only && basename(only.relative), untrackedOnly),
@@ -1035,11 +1038,16 @@ function ChangedFiles({
       if (gitPanelRuntime(cwd).state.busy) return;
       setGitFeedback(cwd, null);
       setBusy(action);
-      const discarded = action === "discard" ? unstaged.map((file) => file.path) : undefined;
+      const discarded = action === "discard" ? targets.map((file) => file.path) : undefined;
+      const shown = deferredFileQuery ? targets.map((file) => file.relative) : undefined;
       generationMutation.version++;
-      if (index) showOptimistic(applyIndexAction(index, action));
+      if (index) showOptimistic(applyIndexAction(index, action, shown && new Set(shown)));
       try {
-        if (action === "stage") await gitStageAll(cwd);
+        if (shown) {
+          if (action === "stage") await gitStageFiles(cwd, shown);
+          else if (action === "unstage") await gitUnstageFiles(cwd, shown);
+          else await gitDiscardFiles(cwd, shown);
+        } else if (action === "stage") await gitStageAll(cwd);
         else if (action === "unstage") await gitUnstageAll(cwd);
         else await gitDiscardAll(cwd);
         onMutated(discarded, "index");
@@ -1138,14 +1146,23 @@ function ChangedFiles({
       let committed = false;
       let pushed = false;
       try {
-        if (stageAll) await gitStageAll(cwd);
+        // A filter keeps the hidden files out of the commit.
+        const shown = deferredFileQuery ? visibleUnstaged.map((file) => file.relative) : undefined;
+        if (stageAll) {
+          if (!shown) await gitStageAll(cwd);
+          else if (shown.length > 0) await gitStageFiles(cwd, shown);
+        }
         // Amending with an empty box keeps the message the commit already has.
         const text = message.trim() || (await gitHeadMessage(cwd));
         await gitCommit(cwd, text, amending, options?.signoff ?? false);
         committed = true;
         // The commit is made: its files leave the list now, not after the push
         // and the reload that follow.
-        const committedIndex = index && applyCommit(index, stageAll, amending);
+        const committedIndex =
+          index &&
+          (shown && stageAll
+            ? applyCommit(applyIndexAction(index, "stage", new Set(shown)), false, amending)
+            : applyCommit(index, stageAll, amending));
         if (committedIndex) showOptimistic(committedIndex);
         clearDraft();
         if (push || createPr) {
@@ -1614,7 +1631,9 @@ function ChangedFiles({
                   },
                   {
                     get title() {
-                      return t("Unstage All Changes");
+                      return deferredFileQuery
+                        ? t("Unstage {p0} shown", { p0: visibleStaged.length })
+                        : t("Unstage All Changes");
                     },
                     icon: <Minus className="icon-sm" strokeWidth={1.75} />,
                     onClick: () => void runAll("unstage"),
@@ -1663,7 +1682,9 @@ function ChangedFiles({
                   },
                   {
                     get title() {
-                      return t("Discard All Changes");
+                      return deferredFileQuery
+                        ? t("Discard {p0} shown", { p0: visibleUnstaged.length })
+                        : t("Discard All Changes");
                     },
                     icon: <Undo2 className="icon-sm" strokeWidth={1.75} />,
                     overflow: true,
@@ -1672,7 +1693,9 @@ function ChangedFiles({
                   },
                   {
                     get title() {
-                      return t("Stage all changes");
+                      return deferredFileQuery
+                        ? t("Stage {p0} shown", { p0: visibleUnstaged.length })
+                        : t("Stage all changes");
                     },
                     icon: <Plus className="icon-sm" strokeWidth={1.75} />,
                     onClick: () => void runAll("stage"),
@@ -1706,9 +1729,6 @@ function ChangedFiles({
               <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-1">
                 {visibleStaged.length + visibleUnstaged.length} / {staged.length + unstaged.length}{" "}
                 {t("staged and unstaged entries")}
-                <span className="block">
-                  {t("All actions affect the entire repository, including hidden entries.")}
-                </span>
               </Text>
             ) : null}
           </>

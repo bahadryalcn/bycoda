@@ -228,7 +228,7 @@ export function TerminalProfileDiscovery({
           side="bottom"
           align="end"
           width={360}
-          className="p-3"
+          variant="panel"
           onDismiss={(reason) => closePopover(reason === "escape")}
         >
           <div

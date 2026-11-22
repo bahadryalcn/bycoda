@@ -4,7 +4,6 @@
 .host-browser-viewport-popover {
   display: grid;
   gap: var(--space-3);
-  padding: var(--space-3);
 }
 
 .host-browser-control-section,

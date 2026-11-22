@@ -911,7 +911,7 @@ export function NotesView({
             // return focus to the current trigger instead of the one that opened this.
             if (reason === "escape") filtersButton.current?.focus();
           }}
-          className="note-filters-popover"
+          variant="panel"
         >
           <div className="note-library-controls">
             <SearchableSelect
@@ -2100,6 +2100,7 @@ function NoteEditor({
                   kind="dialog"
                   aria-label={t("Details")}
                   onDismiss={() => setActionsOpen(false)}
+                  variant="panel"
                   className="note-details-popover"
                 >
                   <Text

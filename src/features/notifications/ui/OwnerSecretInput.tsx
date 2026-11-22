@@ -109,11 +109,17 @@ export function OwnerSecretForm({ request }: { request: OwnerSecretInput }) {
   );
 }
 
-/** Off-screen conversations use this dialog; closing it cancels the request. */
-export function OwnerSecretDialog({ request }: { request: OwnerSecretInput }) {
+/** Off-screen conversations use this dialog; closing it only defers the request, the Cancel button rejects it. */
+export function OwnerSecretDialog({
+  request,
+  onClose,
+}: {
+  request: OwnerSecretInput;
+  onClose: () => void;
+}) {
   const t = useT();
   return (
-    <Modal onClose={() => cancelOwnerSecretInput(request.id)} title={t("Secret request")} size="sm">
+    <Modal onClose={onClose} title={t("Secret request")} size="sm">
       <div className="flex flex-col gap-3">
         <OwnerSecretHeader request={request} />
         <OwnerSecretForm request={request} />

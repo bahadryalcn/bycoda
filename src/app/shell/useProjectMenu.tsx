@@ -1163,7 +1163,8 @@ export function useProjectMenu({
           kind="dialog"
           aria-label={t("Mute project notifications")}
           onDismiss={closeNotificationMenu}
-          className="space-y-1 overflow-y-auto p-3"
+          variant="panel"
+          className="space-y-1"
         >
           <OverflowTooltip label={notificationMenu.project.name}>
             <Text as="p" truncate size="caption" tone="primary" weight="medium" className="px-1">

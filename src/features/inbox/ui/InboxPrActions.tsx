@@ -380,7 +380,7 @@ function GithubPrActionsForItem({
           onDismiss={busy ? undefined : dismissConfirmation}
           kind="dialog"
           aria-label={confirmCopy.title}
-          className="p-3"
+          variant="panel"
         >
           <div className="flex flex-col gap-1">
             <Heading size="item" level={2}>

@@ -103,8 +103,28 @@ function focusDialog(surface: HTMLElement | null, initialFocus?: string) {
   (first ?? surface).focus({ preventScroll: true });
 }
 
+/**
+ * Content inset and look by purpose; `className` then carries layout only.
+ *
+ * - `"panel"`: filter panel, small form, details or tool panel (0.75rem, the Surface `md` inset).
+ * - `"compact"`: colour or icon grid and small picker (0.5rem, the Surface `sm` inset).
+ * - `"preview"`: hover preview or row detail (10px, frosted), the frame of `detailTooltipFrame`.
+ * - Omitted: no inset; the content owns it (list bodies use {@link popupListClassName}).
+ *
+ * `padding` is the viewport edge gap, not this inset.
+ */
+export type PopoverVariant = "panel" | "compact" | "preview";
+
+const VARIANT_CLASS: Record<PopoverVariant, string> = {
+  panel: styles.panel,
+  compact: styles.compact,
+  preview: styles.preview,
+};
+
 type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   anchor: PopoverAnchor;
+  /** Content inset by purpose; see {@link PopoverVariant}. */
+  variant?: PopoverVariant;
   side?: PopoverSide;
   align?: PopoverAlign;
   gap?: number;
@@ -246,6 +266,7 @@ function samePosition(a: PopoverPosition | null, b: PopoverPosition): boolean {
  * Anchored secondary surface portalled to the body: placed against a trigger, rect or point with viewport flipping,
  * animated from the anchored edge, with outside-press and Escape dismissal via `onDismiss`.
  * `kind="dialog"` makes it a small non-modal form or details panel (role, focus in, focus return); `flow="scroll"` owns one scroll region.
+ * `variant` ("panel", "compact", "preview") sets the content inset by purpose; pass `className` for layout only (grid, gap, max width), never `p-*` or a local padding rule.
  * @group overlay
  * @use Anchored custom content: filter panel, small form, details card, picker or list body.
  * @avoid Command menus and searchable or nested pickers of commands: DropdownMenu or ContextMenu. Hover hints: Tooltip. Blocking tasks: Modal. Side panels: Sheet. Never a hand-set role="menu"/"listbox" or role="dialog": use DropdownMenu or kind="dialog".
@@ -271,6 +292,7 @@ function NativePopover({
   passive = false,
   flow = "auto",
   kind,
+  variant,
   ...props
 }: Props & { host: HTMLElement }) {
   const surface = useRef<HTMLDivElement | null>(null);
@@ -342,7 +364,7 @@ function NativePopover({
         ...(flow === "scroll" ? SCROLL_STYLE : null),
         ...style,
       }}
-      className={`${minWidth != null ? `${styles.list} ` : ""}${flow === "auto" ? `${styles.bounded} ` : ""}relative w-full outline-none ${className ?? ""}`}
+      className={`${minWidth != null ? `${styles.list} ` : ""}${flow === "auto" ? `${styles.bounded} ` : ""}${variant ? `${VARIANT_CLASS[variant]} ` : ""}relative w-full outline-none ${className ?? ""}`}
     >
       <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
     </div>,
@@ -367,7 +389,8 @@ function WebPopover({
   bare = false,
   appearance,
   solid = false,
-  frosted = false,
+  variant,
+  frosted = variant === "preview",
   className,
   style,
   autoFocus,
@@ -618,7 +641,7 @@ function WebPopover({
           transformOrigin: origin(position?.side ?? side, align),
           ...style,
         }}
-        className={`${position && motion !== "none" ? "popover-open " : ""}${bounded ? `${styles.bounded} ` : ""}relative z-[1] outline-none ${className ?? ""}`}
+        className={`${position && motion !== "none" ? "popover-open " : ""}${bounded ? `${styles.bounded} ` : ""}${variant ? `${VARIANT_CLASS[variant]} ` : ""}relative z-[1] outline-none ${className ?? ""}`}
       >
         {/* Menus and tooltips opened from inside this popover stack above it. */}
         <OverlayMenuLayer.Provider value={effectiveLayer + 1}>

@@ -25,7 +25,7 @@ import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 /** Names a block's edit action after its first words so repeated actions stay distinguishable. */
 function blockEditLabel(t: ReturnType<typeof useT>, text: string) {
   const excerpt = truncateGraphemes(text.replace(/\s+/g, " ").trim(), 40);
-  return excerpt ? t("Edit block: {text}", { text: excerpt }) : t("Edit note block");
+  return excerpt ? t("Edit block: {p0}", { p0: excerpt }) : t("Edit note block");
 }
 
 export function NoteEditablePreview({

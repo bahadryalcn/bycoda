@@ -60,6 +60,7 @@ export function BrowserViewportMenu({
           aria-label={t("Browser viewport")}
           data-dialog-popover
           solid
+          variant="panel"
           className="host-browser-viewport-popover"
           onDismiss={dismiss}
         >

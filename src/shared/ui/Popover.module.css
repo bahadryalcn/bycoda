@@ -11,6 +11,20 @@
   }
 }
 
+/* Content inset by purpose, on the Surface padding scale (sm 0.5rem, md 0.75rem). Components layer,
+   so a deliberate utility on the content still wins. */
+@layer components {
+  .panel {
+    padding: 0.75rem;
+  }
+  .compact {
+    padding: 0.5rem;
+  }
+  .preview {
+    padding: var(--space-3);
+  }
+}
+
 /* One frame for portalled surfaces and OS-window popup roots. */
 .frame {
   isolation: isolate;

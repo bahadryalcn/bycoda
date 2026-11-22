@@ -168,7 +168,8 @@ export function TaskToolbar(props: TaskToolbarProps) {
           aria-label={t("Scope")}
           flow="scroll"
           onDismiss={() => setScopeAnchor(null)}
-          className="grid gap-2 p-3"
+          variant="panel"
+          className="grid gap-2"
         >
           <div className="task-project-scope">
             <SearchableSelect

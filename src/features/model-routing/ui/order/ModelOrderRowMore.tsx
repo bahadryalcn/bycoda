@@ -66,7 +66,8 @@ export function ModelOrderRowMore({
           autoFocus
           flow="scroll"
           onDismiss={() => setOpen(false)}
-          className="flex flex-col gap-3 p-3"
+          variant="panel"
+          className="flex flex-col gap-3"
         >
           {account.supported ? (
             <Select

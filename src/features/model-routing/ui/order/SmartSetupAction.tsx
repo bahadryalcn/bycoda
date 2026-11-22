@@ -163,7 +163,8 @@ export function SmartSetupAction({
           aria-label={t("Setup options")}
           width={320}
           onDismiss={() => setOptionsOpen(false)}
-          className="flex flex-col items-start gap-2 p-3"
+          variant="panel"
+          className="flex flex-col items-start gap-2"
         >
           <Button
             size="sm"

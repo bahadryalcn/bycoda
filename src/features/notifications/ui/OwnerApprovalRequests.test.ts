@@ -8,6 +8,11 @@ import {
   requestOwnerApproval,
   settleOwnerApproval,
 } from "../model/ownerApprovals";
+import {
+  ownerSecretInputsSnapshot,
+  requestOwnerSecretInput,
+  cancelOwnerSecretInput,
+} from "../model/ownerSecretInputs";
 
 it("shows a source request inside its chat and moves it into the shared dialog when hidden", async () => {
   const element = document.createElement("div");
@@ -185,3 +190,90 @@ it("approves an Inbox request from the chat directly, with Review opening the fu
     element.remove();
   }
 });
+
+const closers = {
+  Escape: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  backdrop: () =>
+    document
+      .querySelector("[data-modal-layer]")!
+      .dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })),
+};
+
+for (const [name, close] of Object.entries(closers)) {
+  it(`defers an off-screen approval on ${name} and lets the owner reopen it`, async () => {
+    const element = document.createElement("div");
+    document.body.append(element);
+    const root = createRoot(element);
+    let answer!: Promise<boolean>;
+    let settled = false;
+    try {
+      await act(async () => root.render(createElement(OwnerApprovalInbox)));
+      await act(async () => {
+        answer = requestOwnerApproval({
+          id: `defer-${name}`,
+          input: {
+            title: "File access",
+            message: "Exact global consent",
+            confirmLabel: "Allow",
+            cancelLabel: "Cancel",
+            deadline: Date.now() + 60_000,
+          },
+        });
+        void answer.then(() => (settled = true));
+      });
+      await act(async () => close());
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      expect(settled).toBe(false);
+      expect(ownerApprovalsSnapshot()).toHaveLength(1);
+      const reopen = element.querySelector<HTMLButtonElement>("[data-owner-request-reopen]");
+      expect(reopen).not.toBeNull();
+      await act(async () => reopen!.click());
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Exact global consent");
+      await act(async () => {
+        [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+          .find((button) => button.textContent?.trim() === "Cancel")!
+          .click();
+      });
+      expect(await answer).toBe(false);
+    } finally {
+      for (const request of ownerApprovalsSnapshot()) settleOwnerApproval(request.id, false);
+      await act(async () => root.unmount());
+      element.remove();
+    }
+  });
+
+  it(`defers an off-screen secret request on ${name} instead of cancelling it`, async () => {
+    const element = document.createElement("div");
+    document.body.append(element);
+    const root = createRoot(element);
+    let settled = false;
+    try {
+      await act(async () => root.render(createElement(OwnerApprovalInbox)));
+      await act(async () => {
+        void requestOwnerSecretInput({
+          id: `secret-${name}`,
+          input: {
+            title: "Secret request",
+            message: "Synthetic request",
+            fieldLabel: "Credential",
+            confirmLabel: "Save",
+            cancelLabel: "Cancel",
+            deadline: Date.now() + 60_000,
+          },
+        }).then(() => (settled = true));
+      });
+      await act(async () => close());
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+      expect(settled).toBe(false);
+      expect(ownerSecretInputsSnapshot()).toHaveLength(1);
+      await act(async () =>
+        element.querySelector<HTMLButtonElement>("[data-owner-request-reopen]")!.click(),
+      );
+      expect(document.querySelector('[role="dialog"] input')).not.toBeNull();
+    } finally {
+      for (const request of ownerSecretInputsSnapshot()) cancelOwnerSecretInput(request.id);
+      await act(async () => root.unmount());
+      element.remove();
+    }
+  });
+}

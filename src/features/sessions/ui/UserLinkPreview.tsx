@@ -258,7 +258,7 @@ function GithubWorkItemPreview({
     side: "top",
     align: "start",
     width: 360,
-    className: "p-3.5 font-sans",
+    className: "font-sans",
     "aria-label": t("Work item preview"),
     onOpenChange: (open) => {
       if (open) load();

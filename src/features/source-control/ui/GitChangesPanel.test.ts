@@ -1003,6 +1003,78 @@ describe("GitChangesPanel action feedback", () => {
     expect(gitCommit).toHaveBeenCalledWith(cwd, "Commit everything", false, false);
   });
 
+  describe("with a file filter", () => {
+    async function filterFiles(query: string) {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('button[aria-label="Filter changed files"]')!.click();
+      });
+      const input = document.querySelector<HTMLInputElement>('input[type="search"]')!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          query,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
+    }
+
+    beforeEach(() => {
+      vi.mocked(gitStageAll).mockClear();
+      vi.mocked(gitStageFiles).mockClear();
+      vi.mocked(gitUnstageFiles).mockClear();
+      vi.mocked(gitCommit).mockClear().mockResolvedValue(undefined);
+    });
+
+    it("stages only the shown files", async () => {
+      const cwd = "/repo-filter-stage";
+      vi.mocked(gitDiffIndex).mockResolvedValue(
+        index({ files: [changedFile("a.ts"), changedFile("b.ts")] }),
+      );
+      await renderPanel(cwd);
+      await filterFiles("a.ts");
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('button[aria-label="Stage 1 shown"]')!.click(),
+      );
+      expect(gitStageFiles).toHaveBeenCalledWith(cwd, ["a.ts"]);
+      expect(gitStageAll).not.toHaveBeenCalled();
+    });
+
+    it("unstages only the shown files", async () => {
+      const cwd = "/repo-filter-unstage";
+      vi.mocked(gitDiffIndex).mockResolvedValue(
+        index({
+          files: [
+            changedFile("a.ts", { staged: true, unstaged: false }),
+            changedFile("b.ts", { staged: true, unstaged: false }),
+          ],
+        }),
+      );
+      await renderPanel(cwd);
+      await filterFiles("b.ts");
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('button[aria-label="Unstage 1 shown"]')!.click(),
+      );
+      expect(gitUnstageFiles).toHaveBeenCalledWith(cwd, ["b.ts"]);
+    });
+
+    it("commits without staging the hidden files", async () => {
+      const cwd = "/repo-filter-commit";
+      vi.mocked(gitDiffIndex).mockResolvedValue(
+        index({ files: [changedFile("a.ts"), changedFile("b.ts")] }),
+      );
+      await renderPanel(cwd);
+      await filterFiles("a.ts");
+      await fillCommitMessage("Commit shown");
+      await act(async () => primaryAction().click());
+      expect(gitStageAll).not.toHaveBeenCalled();
+      expect(gitStageFiles).toHaveBeenCalledWith(cwd, ["a.ts"]);
+      expect(gitCommit).toHaveBeenCalledWith(cwd, "Commit shown", false, false);
+    });
+  });
+
   it("removes committed files without showing a success notification", async () => {
     const cwd = "/repo-silent-commit";
     vi.mocked(gitDiffIndex).mockResolvedValue(

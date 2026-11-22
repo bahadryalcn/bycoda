@@ -179,7 +179,8 @@ export function InboxFiltersMenu({
       kind="dialog"
       aria-label={t("Filter inbox")}
       onContextMenu={(event) => event.preventDefault()}
-      className="overflow-y-auto overscroll-none p-3"
+      variant="panel"
+      flow="scroll"
     >
       <div className="mbs-2 flex items-center justify-between gap-2">
         <Text size="caption" tone="secondary" weight="medium">

@@ -142,6 +142,7 @@ export default function OnboardingDialog({
 
   return (
     <Modal
+      scroll="none"
       padding="none"
       title={t("Welcome to {p0}", { p0: PRODUCT_IDENTITY.displayName })}
       size="lg"

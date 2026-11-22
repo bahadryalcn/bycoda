@@ -457,7 +457,8 @@ export const PromptOutline = memo(function PromptOutline({
             solid
             onDismiss={close}
             aria-label={t("Prompt preview")}
-            className="pointer-events-none flex flex-col gap-1 p-3 font-sans"
+            variant="panel"
+            className="pointer-events-none flex flex-col gap-1 font-sans"
           >
             <Text as="p" size="body" tone="primary" weight="medium" leading="snug" truncate>
               {preview.title}

@@ -355,7 +355,7 @@ function UsageProviderDetails({
       onDismiss={dismiss}
       kind="dialog"
       aria-label={t("{p0} usage details", { p0: providerLabel })}
-      className="overflow-y-auto p-2.5"
+      variant="panel"
     >
       <Text as="div" size="inherit" tone="primary">
         {canBrowseUsage || (!showUsageHeader && refreshButton) ? (

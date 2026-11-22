@@ -2,6 +2,8 @@ import { Surface } from "../../../shared/ui/Surface";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
+import { Button } from "../../../shared/ui/Button";
+import { LAYER } from "../../../shared/lib/layers";
 import { Modal } from "../../../shared/ui/Modal";
 import { InboxApprovalPreview } from "./InboxApprovalPreview";
 import {
@@ -131,20 +133,55 @@ export function OwnerApprovalChat({
   );
 }
 
-/** Off-screen conversations and non-conversation consent use the existing shared dialog. */
+/**
+ * Off-screen conversations and non-conversation consent use the existing shared dialog.
+ * Closing it (Escape, backdrop, close button) defers the request: it stays pending behind a
+ * reopen button and only the explicit Deny/Cancel action rejects it.
+ */
 export function OwnerApprovalInbox() {
+  const t = useT();
   const requests = useSyncExternalStore(subscribeOwnerApprovals, ownerApprovalsSnapshot);
   const secrets = useSyncExternalStore(subscribeOwnerSecretInputs, ownerSecretInputsSnapshot);
-  const secret = secrets.find((request) => !hasOwnerApprovalChat(request.sessionId));
-  if (secret) return <OwnerSecretDialog key={secret.id} request={secret} />;
-  const request = requests.find((request) => !hasOwnerApprovalChat(request.sessionId));
-  return request ? (
-    <InboxApprovalDialog
-      key={request.id}
-      request={request}
-      onClose={() => settleOwnerApproval(request.id, false)}
-    />
-  ) : null;
+  const [deferred, setDeferred] = useState<ReadonlySet<string>>(new Set());
+  const defer = (id: string) => setDeferred((current) => new Set(current).add(id));
+  const reopen = (id: string) =>
+    setDeferred((current) => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+  const waiting = [
+    ...secrets.filter((request) => !hasOwnerApprovalChat(request.sessionId)),
+    ...requests.filter((request) => !hasOwnerApprovalChat(request.sessionId)),
+  ];
+  const secret = secrets.find(
+    (request) => !hasOwnerApprovalChat(request.sessionId) && !deferred.has(request.id),
+  );
+  const request = requests.find(
+    (request) => !hasOwnerApprovalChat(request.sessionId) && !deferred.has(request.id),
+  );
+  const parked = waiting.filter((item) => deferred.has(item.id));
+  return (
+    <>
+      {secret ? (
+        <OwnerSecretDialog key={secret.id} request={secret} onClose={() => defer(secret.id)} />
+      ) : request ? (
+        <InboxApprovalDialog key={request.id} request={request} onClose={() => defer(request.id)} />
+      ) : null}
+      {!secret && !request && parked.length > 0 ? (
+        <div className="fixed bottom-3 end-3" style={{ zIndex: LAYER.toast }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            data-owner-request-reopen=""
+            onClick={() => reopen(parked[0].id)}
+          >
+            {t("Review pending request ({p0})", { p0: parked.length })}
+          </Button>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 /** Full-size Inbox approval; closing it from the chat only returns to the inline request. */

@@ -61,25 +61,48 @@ it("keeps one direct model-settings action without instructional copy", async ()
   expect(openModelsSettings).toHaveBeenCalledExactlyOnceWith("roles");
   expect(autoGroupSkills).not.toHaveBeenCalled();
 });
-it.each(["Cancel", "Replace my groups", "Add as new groups"])(
-  "previews before explicit %s",
-  async (action) => {
-    await render();
-    const existingId = listSkillGroups()[0].id;
-    await click("Group with AI");
-    expect(document.body.textContent).toContain("Proposed");
-    expect(listSkillGroups().map((group) => group.name)).toEqual(["Existing"]);
-    await click(action);
-    if (action !== "Replace my groups") expect(listSkillGroups()[0].id).toBe(existingId);
-    expect(listSkillGroups().map((group) => group.name)).toEqual(
-      action === "Cancel"
-        ? ["Existing"]
-        : action === "Replace my groups"
-          ? ["Proposed"]
-          : ["Existing", "Proposed"],
-    );
-  },
-);
+it.each(["Cancel", "Add as new groups"])("previews before explicit %s", async (action) => {
+  await render();
+  const existingId = listSkillGroups()[0].id;
+  await click("Group with AI");
+  expect(document.body.textContent).toContain("Proposed");
+  expect(listSkillGroups().map((group) => group.name)).toEqual(["Existing"]);
+  await click(action);
+  if (action !== "Cancel") expect(listSkillGroups()[0].id).toBe(existingId);
+  expect(listSkillGroups().map((group) => group.name)).toEqual(
+    action === "Cancel" ? ["Existing"] : ["Existing", "Proposed"],
+  );
+});
+it("makes adding the proposal primary and replace a secondary danger action", async () => {
+  await render();
+  await click("Group with AI");
+  const buttonNamed = (label: string) =>
+    [...document.querySelectorAll("button")].find((item) => item.textContent === label)!;
+  expect(buttonNamed("Add as new groups").getAttribute("data-button-variant")).toBe("primary");
+  const replace = buttonNamed("Replace my groups");
+  expect(replace.getAttribute("data-button-variant")).toBe("secondary");
+  expect(replace.getAttribute("data-button-tone")).toBe("danger");
+});
+it("does not replace existing groups until the danger confirmation is approved", async () => {
+  await render();
+  await click("Group with AI");
+  await click("Replace my groups");
+  expect(document.body.textContent).toContain("Replace skill groups?");
+  expect(listSkillGroups().map((group) => group.name)).toEqual(["Existing"]);
+  await click("Replace groups");
+  expect(listSkillGroups().map((group) => group.name)).toEqual(["Proposed"]);
+});
+it("keeps existing groups when the replace confirmation is cancelled", async () => {
+  await render();
+  await click("Group with AI");
+  await click("Replace my groups");
+  const cancels = [...document.querySelectorAll("button")].filter(
+    (item) => item.textContent === "Cancel",
+  );
+  await act(async () => cancels[cancels.length - 1].click());
+  expect(listSkillGroups().map((group) => group.name)).toEqual(["Existing"]);
+  expect(document.body.textContent).toContain("Review skill groups");
+});
 it("aborts generation and ignores its late proposal", async () => {
   await render();
   let resolve!: (value: []) => void;

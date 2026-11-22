@@ -84,6 +84,7 @@ export function TaskToolbarFilters({
           anchor={trigger}
           align="end"
           width={288}
+          variant="panel"
           onDismiss={(reason) => {
             setOpen(false);
             // The trigger re-renders with its count while a filter changes.

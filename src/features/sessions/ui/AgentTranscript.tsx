@@ -1812,7 +1812,8 @@ function TurnMetricsBadge({
                 }
               : undefined
           }
-          className="w-max px-2.5 py-1.5"
+          variant="preview"
+          className="w-max"
         >
           <div className="text-ui-caption leading-4 text-(--ui-tone-neutral-fg)">{headline}</div>
           {detail ? (

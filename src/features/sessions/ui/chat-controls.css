@@ -122,11 +122,6 @@
   min-block-size: 2rem;
 }
 
-.context-meter-popover {
-  padding: 1rem;
-  font-variant-numeric: tabular-nums;
-}
-
 .context-meter-summary {
   position: relative;
   display: inline-flex;

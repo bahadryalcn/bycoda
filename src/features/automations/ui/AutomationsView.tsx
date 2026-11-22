@@ -540,7 +540,8 @@ function AutomationsContent({
                   aria-label={t("Filter automations")}
                   onDismiss={() => setFilterOpen(false)}
                   size="md"
-                  className="space-y-2 p-3"
+                  variant="panel"
+                  className="space-y-2"
                 >
                   <TextField
                     label={t("Filter automations")}

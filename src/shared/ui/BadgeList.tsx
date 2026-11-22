@@ -116,7 +116,8 @@ export function BadgeList({
     side: "bottom",
     align: "start",
     disabled: pinned,
-    className: "max-w-80 p-0",
+    variant: null,
+    className: "max-w-80",
     "aria-label": label,
   });
 

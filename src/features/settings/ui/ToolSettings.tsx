@@ -410,13 +410,14 @@ export function BrowserSettingsPage() {
         <DraftPreference
           id="browser-search-template"
           label={t("Search URL template")}
-          description={t("{query} is replaced with your encoded search terms.")}
+          description={t("{p0} is replaced with your encoded search terms.", { p0: "{query}" })}
           dependency={t("Used with Custom search.")}
           preference={toolPreferences.browserSearchTemplate}
           parse={(draft) => draft}
           valid={validBrowserSearchTemplate}
           invalidMessage={t(
-            "Enter an HTTP or HTTPS URL with exactly one {query} placeholder and no credentials.",
+            "Enter an HTTP or HTTPS URL with exactly one {p0} placeholder and no credentials.",
+            { p0: "{query}" },
           )}
         />
       </div>

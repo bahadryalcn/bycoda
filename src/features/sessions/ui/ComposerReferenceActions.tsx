@@ -246,7 +246,8 @@ export function ComposerSkillReference({
       appearance="composer"
       aria-label={label}
       onDismiss={close}
-      className="flex flex-col gap-3 p-3"
+      variant="panel"
+      className="flex flex-col gap-3"
     >
       <div className="flex shrink-0 items-center gap-2">
         <SkillIcon className="icon-sm shrink-0" aria-hidden />
@@ -357,7 +358,8 @@ export function UnavailableReference({
       align="start"
       aria-label={name}
       onDismiss={close}
-      className="max-w-80 space-y-1 p-3"
+      variant="panel"
+      className="max-w-80 space-y-1"
     >
       <Text as="p" size="secondary" weight="medium">
         {name}

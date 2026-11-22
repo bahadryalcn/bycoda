@@ -65,7 +65,7 @@ export function ContextMeter({
     width: 280,
     solid: true,
     disabled: open,
-    className: "context-meter-popover",
+    className: "tabular-nums",
     "aria-label": t("Context usage"),
   });
   function closeActions() {
@@ -251,7 +251,8 @@ export function ContextMeter({
             closeActions();
             if (reason === "escape") root.current?.querySelector("button")?.focus();
           }}
-          className="context-meter-popover"
+          variant="panel"
+          className="tabular-nums"
         >
           {renderPanel()}
         </Popover>

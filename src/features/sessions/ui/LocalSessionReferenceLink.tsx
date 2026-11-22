@@ -223,7 +223,7 @@ export function LocalSessionReferenceLink({
           solid
           aria-label={t("Session details")}
           onDismiss={() => setDetails(false)}
-          className="p-3"
+          variant="panel"
           onClick={(event) => event.stopPropagation()}
         >
           <Text as="div" size="body" tone="inherit" className="grid min-w-0 gap-3">

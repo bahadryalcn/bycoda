@@ -133,7 +133,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
           kind="dialog"
           aria-label={t("Mute project notifications")}
           onDismiss={(reason) => close(reason === "escape")}
-          className="overflow-y-auto p-3"
+          variant="panel"
         >
           <NotificationMuteDatePicker
             projectIds={projectIds}

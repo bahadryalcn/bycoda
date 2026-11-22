@@ -208,7 +208,8 @@ function WorkerHelp() {
           align="start"
           width={250}
           onDismiss={() => setOpen(false)}
-          className={`px-2.5 py-2 ${open ? "" : "pointer-events-none"}`}
+          variant="preview"
+          className={open ? "" : "pointer-events-none"}
         >
           <Text as="div" size="caption" tone="neutral">
             {t("How many workers run at once")}

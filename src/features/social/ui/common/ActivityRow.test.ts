@@ -66,6 +66,12 @@ it("shows the plain status word and the detail, including an error, without expa
   expect(buttonWithText("Details")).toBeUndefined();
 });
 
+it("never draws the check glyph on a failed row, even without a kind", () => {
+  render({ status: "failed", details: "Provider said no." });
+  expect(element.querySelector(".lucide-check")).toBeNull();
+  expect(element.querySelector('[data-shape="icon"][data-tone="danger"] svg')).not.toBeNull();
+});
+
 it("draws the status circle for the operation kind and keeps the meta line before the time", () => {
   render({ kind: "reply", meta: "Acme" });
   expect(element.querySelector('[data-shape="icon"][data-tone="success"] svg')).not.toBeNull();

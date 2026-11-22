@@ -1,8 +1,3 @@
-.app-search-modal .modal-panel > div:last-child {
-  display: flex;
-  overflow: clip;
-}
-
 .app-search-dialog {
   block-size: min(560px, calc(100dvh - 110px));
 }

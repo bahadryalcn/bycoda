@@ -369,7 +369,7 @@ function useRowHoverCard({ side, suspendHover }: RowProps) {
     width: 320,
     disabled: suspendHover,
     "aria-label": t("Commit details"),
-    className: "space-y-2 p-3",
+    className: "space-y-2",
   });
 }
 

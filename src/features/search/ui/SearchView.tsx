@@ -552,6 +552,36 @@ export function SearchView({
       </Text>
     ) : null;
 
+  const searchField = (
+    <SearchInputGroup appearance="field" className="w-full">
+      <Search className="icon-sm shrink-0" strokeWidth={1.75} aria-hidden="true" />
+      <SearchInput
+        type="search"
+        focusOwner="group"
+        ref={inputRef}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={onQueryKeyDown}
+        placeholder={t("Search files, conversations, and projects")}
+        aria-label={t("Search")}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={!empty && rowCount > 0}
+        aria-controls={!empty && rowCount > 0 ? listId : undefined}
+        aria-activedescendant={
+          resultsCurrent && !empty && rowCount > 0 ? optionId(active) : undefined
+        }
+        spellCheck={false}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        data-tauri-drag-region="false"
+        className="min-w-0 flex-1 select-text"
+      />
+      {loading ? <Spinner size="sm" className="shrink-0" tone="secondary" /> : null}
+    </SearchInputGroup>
+  );
+
   const content = (
     <Text
       as="div"
@@ -565,60 +595,24 @@ export function SearchView({
       className={`app-search @container/search flex min-h-0 min-w-0 flex-1 flex-col ${presentation === "dialog" ? "app-search-dialog" : ""}`}
     >
       <div className="flex shrink-0 flex-col">
-        <PaneHeader
-          dragRegion={presentation === "page"}
-          chromeInset={
-            presentation === "page" ? (!besideRail ? true : compactRail ? "compact" : false) : false
-          }
-          className="select-none"
-          leading={
-            presentation === "page" && !besideRail ? (
-              <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
-            ) : null
-          }
-          actions={
-            presentation === "dialog" ? (
-              <Button variant="ghost" iconOnly label={t("Full screen")} onClick={onExpand}>
-                <Maximize2 className="icon-sm" />
-              </Button>
-            ) : onCompact ? (
-              <Button variant="ghost" iconOnly label={t("Restore")} onClick={onCompact}>
-                <Minimize2 className="icon-sm" />
-              </Button>
-            ) : null
-          }
-          trailing={presentation === "page" && !IS_MAC ? <WindowControls /> : null}
-        >
-          <div className="min-w-0 flex-1 px-2">
-            <SearchInputGroup appearance="field" className="w-full">
-              <Search className="icon-sm shrink-0" strokeWidth={1.75} aria-hidden="true" />
-              <SearchInput
-                type="search"
-                focusOwner="group"
-                ref={inputRef}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={onQueryKeyDown}
-                placeholder={t("Search files, conversations, and projects")}
-                aria-label={t("Search")}
-                role="combobox"
-                aria-autocomplete="list"
-                aria-expanded={!empty && rowCount > 0}
-                aria-controls={!empty && rowCount > 0 ? listId : undefined}
-                aria-activedescendant={
-                  resultsCurrent && !empty && rowCount > 0 ? optionId(active) : undefined
-                }
-                spellCheck={false}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                data-tauri-drag-region="false"
-                className="min-w-0 flex-1 select-text"
-              />
-              {loading ? <Spinner size="sm" className="shrink-0" tone="secondary" /> : null}
-            </SearchInputGroup>
-          </div>
-        </PaneHeader>
+        {presentation === "page" ? (
+          <PaneHeader
+            dragRegion
+            chromeInset={!besideRail ? true : compactRail ? "compact" : false}
+            className="select-none"
+            leading={!besideRail ? <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} /> : null}
+            actions={
+              onCompact ? (
+                <Button variant="ghost" iconOnly label={t("Restore")} onClick={onCompact}>
+                  <Minimize2 className="icon-sm" />
+                </Button>
+              ) : null
+            }
+            trailing={!IS_MAC ? <WindowControls /> : null}
+          >
+            <div className="min-w-0 flex-1 px-2">{searchField}</div>
+          </PaneHeader>
+        ) : null}
 
         <div className="app-search-mode-band">
           <div className="min-w-0 flex-1 overflow-x-auto">
@@ -770,11 +764,19 @@ export function SearchView({
   );
   return presentation === "dialog" ? (
     <Modal
+      scroll="none"
       padding="none"
       title={t("Search")}
       size="lg"
       onClose={onClose}
-      className="app-search-modal"
+      toolbar={
+        <>
+          <div className="min-w-0 flex-[0_1_18rem]">{searchField}</div>
+          <Button variant="ghost" iconOnly label={t("Full screen")} onClick={onExpand}>
+            <Maximize2 className="icon-sm" />
+          </Button>
+        </>
+      }
     >
       {content}
     </Modal>

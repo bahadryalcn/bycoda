@@ -127,7 +127,8 @@ export function ComposerSkillGroupHover({
       onDismiss={() => intent.close()}
       onPointerEnter={() => intent.cancel()}
       onPointerLeave={() => intent.scheduleClose()}
-      className="max-w-80 p-3"
+      variant="panel"
+      className="max-w-80"
     >
       <Text as="p" size="secondary" weight="medium" truncate>
         {group.name}

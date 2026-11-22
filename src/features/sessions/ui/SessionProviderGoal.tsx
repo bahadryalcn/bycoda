@@ -99,7 +99,8 @@ export function SessionProviderGoal({
           aria-label={t("Goal")}
           initialFocus="[data-goal-toggle]"
           onDismiss={() => setOpen(false)}
-          className="flex min-w-0 flex-col gap-3 p-3"
+          variant="panel"
+          className="flex min-w-0 flex-col gap-3"
         >
           <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
             <CircleDot className="icon-sm" aria-hidden />

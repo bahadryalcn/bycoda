@@ -119,19 +119,19 @@ export function PhoneAccountConnect() {
           message:
             request.requesterKind === "desktop"
               ? t(
-                  "{computer} ({platform}, your account) wants to connect. Check that the code on that computer is {code}.",
+                  "{p0} ({p1}, your account) wants to connect. Check that the code on that computer is {p2}.",
                   {
-                    computer: request.phoneName,
-                    platform: PLATFORM[request.phonePlatform],
-                    code: pairRequestCode(request),
+                    p0: request.phoneName,
+                    p1: PLATFORM[request.phonePlatform],
+                    p2: pairRequestCode(request),
                   },
                 )
               : t(
-                  "{phone} ({platform}, your account) wants to connect. Check that the code on the phone is {code}.",
+                  "{p0} ({p1}, your account) wants to connect. Check that the code on the phone is {p2}.",
                   {
-                    phone: request.phoneName,
-                    platform: PLATFORM[request.phonePlatform],
-                    code: pairRequestCode(request),
+                    p0: request.phoneName,
+                    p1: PLATFORM[request.phonePlatform],
+                    p2: pairRequestCode(request),
                   },
                 ),
           confirmLabel: t("Allow"),

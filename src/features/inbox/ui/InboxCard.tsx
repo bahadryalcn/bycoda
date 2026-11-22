@@ -120,7 +120,7 @@ export const InboxCard = memo(function InboxCard({
     align: "start",
     width: 300,
     "aria-label": item.title,
-    className: "grid gap-2 p-3",
+    className: "grid gap-2",
   });
 
   return (

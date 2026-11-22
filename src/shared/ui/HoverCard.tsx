@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useStableCallback } from "../hooks/useStableCallback";
 import type { PopoverAlign, PopoverSide, PopoverSize } from "../lib/popover";
-import { Popover, type PopoverFlow } from "./Popover";
+import { Popover, type PopoverFlow, type PopoverVariant } from "./Popover";
 import {
   HOVER_CARD_CLOSE_MS,
   HOVER_CARD_OPEN_MS,
@@ -38,7 +38,9 @@ export type HoverCardOptions = {
   disabled?: boolean;
   /** Fires when the card opens or closes. */
   onOpenChange?: (open: boolean) => void;
-  /** Classes for the card content. Default `max-w-80 p-3`. */
+  /** Content inset by purpose (see Popover `variant`). Default `"panel"`; `null` for a card whose content owns its inset. */
+  variant?: PopoverVariant | null;
+  /** Layout classes for the card content (grid, gap, max width), never padding or a frame. */
   className?: string;
   /** Accessible name for the card surface. */
   "aria-label"?: string;
@@ -81,7 +83,8 @@ export function useHoverCard({
   closeDelay = HOVER_CARD_CLOSE_MS,
   disabled = false,
   onOpenChange,
-  className = "max-w-80 p-3",
+  variant = "panel",
+  className = "max-w-80",
   "aria-label": ariaLabel,
 }: HoverCardOptions = {}) {
   const intent = useHoverIntent({
@@ -144,6 +147,7 @@ export function useHoverCard({
         maxHeight={maxHeight}
         flow={flow}
         solid={solid}
+        variant={variant ?? undefined}
         restoreFocus={false}
         aria-label={ariaLabel}
         data-hover-card=""

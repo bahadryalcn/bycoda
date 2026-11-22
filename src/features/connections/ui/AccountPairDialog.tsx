@@ -26,18 +26,18 @@ function failureText(step: "denied" | "expired" | "unavailable" | "ticket" | "co
 function Body({ view, name }: { view: AccountPairView; name: string }) {
   if (view.step === "starting") return <LoadingText>{t("Sending the request…")}</LoadingText>;
   if (view.step === "connected") {
-    return <Alert tone="success">{t("Connected to {name}.", { name })}</Alert>;
+    return <Alert tone="success">{t("Connected to {p0}.", { p0: name })}</Alert>;
   }
   if (view.step === "waiting") {
     return (
       <div className="flex flex-col gap-3">
         <Text as="p" tone="primary">
-          {t("Allow it on {name}. It should show this code:", { name })}
+          {t("Allow it on {p0}. It should show this code:", { p0: name })}
         </Text>
         <Text as="p" size="heading" weight="medium" tone="primary" tracking="wider">
           {view.code}
         </Text>
-        <LoadingText>{t("Waiting for approval on {name}…", { name })}</LoadingText>
+        <LoadingText>{t("Waiting for approval on {p0}…", { p0: name })}</LoadingText>
       </div>
     );
   }
@@ -63,7 +63,7 @@ export function AccountPairDialog({
   const failed = view.step !== "starting" && view.step !== "waiting" && !done;
   return (
     <Modal
-      title={t("Add {name}", { name: plan.name })}
+      title={t("Add {p0}", { p0: plan.name })}
       size="sm"
       onClose={done ? () => onPaired(view.machine) : onClose}
       footer={

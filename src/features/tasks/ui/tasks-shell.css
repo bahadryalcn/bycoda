@@ -61,7 +61,6 @@
 .task-filter-popover {
   display: grid;
   gap: 0.75rem;
-  padding: 0.75rem;
 }
 .task-filter-header {
   display: flex;

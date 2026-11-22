@@ -48,20 +48,18 @@ export function RemoteConnectionDetails({ environmentId }: { environmentId: stri
           <span className="tabular-nums">
             {" "}
             ·{" "}
-            {t("{seconds}s elapsed").replace(
-              "{seconds}",
-              formatNumber(Math.max(0, Math.floor((now - lifecycle.startedAt) / 1_000))),
-            )}
+            {t("{p0}s elapsed", {
+              p0: formatNumber(Math.max(0, Math.floor((now - lifecycle.startedAt) / 1_000))),
+            })}
           </span>
         ) : null}
         {lifecycle.nextRetryAt != null && now != null ? (
           <span className="tabular-nums">
             {" "}
             ·{" "}
-            {t("Retry in {seconds}s").replace(
-              "{seconds}",
-              formatNumber(Math.max(0, Math.ceil((lifecycle.nextRetryAt - now) / 1_000))),
-            )}
+            {t("Retry in {p0}s", {
+              p0: formatNumber(Math.max(0, Math.ceil((lifecycle.nextRetryAt - now) / 1_000))),
+            })}
           </span>
         ) : null}
       </Text>

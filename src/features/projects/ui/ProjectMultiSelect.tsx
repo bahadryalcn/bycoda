@@ -226,7 +226,7 @@ export function ProjectMultiSelect({
         <Popover
           anchor={newGroupAnchor}
           width={240}
-          className="p-2"
+          variant="compact"
           kind="dialog"
           aria-label={t("New group name")}
           onDismiss={() => {

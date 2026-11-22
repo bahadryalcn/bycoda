@@ -114,7 +114,8 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
         kind="dialog"
         aria-label={t("Mute project notifications")}
         onDismiss={onClose}
-        className="space-y-1 overflow-y-auto p-3"
+        variant="panel"
+        className="space-y-1"
       >
         <div className="space-y-1">
           <Text as="p" size="caption" tone="secondary" weight="medium" className="px-1">

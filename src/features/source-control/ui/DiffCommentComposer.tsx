@@ -73,7 +73,7 @@ function DiffCommentComposerBody({ path, target, onDismiss }: DiffCommentCompose
       }}
       kind="dialog"
       aria-label={t("Comment on {p0}", { p0: location })}
-      className="p-2"
+      variant="compact"
     >
       <form
         onSubmit={(event) => {

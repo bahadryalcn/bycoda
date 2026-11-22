@@ -45,7 +45,7 @@ export function AccountColorPopover({
       onDismiss={onDismiss}
       kind="dialog"
       aria-label={t("Color for {p0}", { p0: account.label })}
-      className="p-2"
+      variant="compact"
     >
       <ColorSwatchRow
         colors={PROVIDER_ACCOUNT_COLORS.map((color) => color.value)}

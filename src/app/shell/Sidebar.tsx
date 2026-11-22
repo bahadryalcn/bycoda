@@ -5732,7 +5732,7 @@ const SessionCard = memo(function SessionCard({
     size: "sm",
     maxHeight: 320,
     flow: "scroll",
-    className: "p-2.5",
+    variant: "preview",
     "aria-label": t("Subagents"),
   });
   const orchestration = session.orchestration;

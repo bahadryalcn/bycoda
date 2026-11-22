@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { ActionHost, InlineTextAction } from "../../../../shared/ui/ActionHost";
 import {
-  Check,
   MessageMultiple,
   MessageSquare,
   Share,
@@ -25,7 +24,7 @@ export type ActivityRowProps = {
   /** Already formatted time, for example from the shared Timestamp helpers. */
   time: string;
   status: StatusTextStatus;
-  /** Operation kind for the leading icon; omit for the neutral glyph. */
+  /** Operation kind for the leading icon; omit for the generic "other" glyph. Status never picks the glyph. */
   kind?: ActivityKind;
   /** Caption content before the time, for example a platform glyph and account name. */
   meta?: ReactNode;
@@ -80,9 +79,8 @@ function KindIcon({ kind, neutral }: { kind?: ActivityKind; neutral: boolean }) 
     case "audience":
       return <UserRound {...props} />;
     case "other":
-      return <Zap {...props} />;
     default:
-      return <Check {...props} />;
+      return <Zap {...props} />;
   }
 }
 
