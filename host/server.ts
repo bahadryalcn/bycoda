@@ -225,7 +225,6 @@ export async function createHostServer(
       nativeServiceUploads: () => nativeRuntime.nativeServiceUploads,
       nativeServicesService: () => nativeRuntime.nativeServicesService,
       modelsService: () => nativeRuntime.modelsService,
-      nativeBufferUploads: () => nativeRuntime.nativeBufferUploads,
       nativeWorkspacesService: () => nativeRuntime.nativeWorkspacesService,
       crewOperation: () => nativeRuntime.crewOperation,
       sessionService: () => sessionServicesRuntime.sessionService,

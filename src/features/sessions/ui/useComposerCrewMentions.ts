@@ -15,13 +15,13 @@ const NO_ROWS: CrewMentionRow[] = [];
  * the mention menu is open; a read for another project, or one that finishes after the menu
  * closed or the project changed, is dropped. The last list stays for the same project.
  */
-export function useComposerCrewMentions(input: {
-  cwd: string;
-  active: boolean;
-  query: string;
-}): CrewMentionRow[] {
+export function useComposerCrewMentions(input: { cwd: string; active: boolean; query: string }): {
+  rows: CrewMentionRow[];
+  available: boolean;
+  loading: boolean;
+} {
   const { cwd, active, query } = input;
-  const [state, setState] = useState<ScopedSource>({ cwd, source: null });
+  const [state, setState] = useState<ScopedSource | null>(null);
 
   useEffect(() => {
     if (!active || !cwd) return;
@@ -30,15 +30,24 @@ export function useComposerCrewMentions(input: {
       .then((source) => {
         if (!cancelled) setState({ cwd, source });
       })
-      .catch((error) => console.warn("Loading composer crews failed", error));
+      .catch((error) => {
+        console.warn("Loading composer crews failed", error);
+        if (!cancelled)
+          setState((current) => (current?.cwd === cwd ? current : { cwd, source: null }));
+      });
     return () => {
       cancelled = true;
     };
   }, [active, cwd]);
 
-  const source = state.cwd === cwd ? state.source : null;
-  return useMemo(
+  const source = state?.cwd === cwd ? state.source : null;
+  const rows = useMemo(
     () => (active && source ? rankCrewMentions(source, query) : NO_ROWS),
     [active, source, query],
   );
+  return {
+    rows,
+    available: Boolean(source),
+    loading: Boolean(active && cwd && state?.cwd !== cwd),
+  };
 }

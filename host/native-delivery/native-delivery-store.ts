@@ -5,7 +5,6 @@ import type { NativeDeliveryIdentity } from "../../src/shared/model/host-contrac
 import type { NativeDeliveryResultSource } from "../../src/shared/model/host-contracts/native-delivery-identity";
 import type { NativeDeliveryConsumedResult } from "../../src/shared/model/host-contracts/native-delivery-identity";
 import { WS_LIMITS } from "../../src/shared/model/host-contracts/policy";
-import type { NativeBufferDeliveryProof } from "../domains/native-delivery/ports";
 import {
   NATIVE_SERVICES_RPC_SCHEMAS,
   NATIVE_FORMAT_MAX_RESULT_BYTES,
@@ -35,15 +34,15 @@ const ABANDONED_FORMAT = (() => {
   };
 })();
 
-export type NativeDeliveryKind =
-  | "buffer"
+type NativeServiceDeliveryKind =
   | "native.services.conversation.desktop.finish"
   | "native.services.workspace.format";
+// Epoch repair still recognizes identities created by older desktops.
+export type NativeDeliveryKind = NativeServiceDeliveryKind | "buffer";
 export type NativeDeliveryRow = NativeDeliveryIdentity & {
-  kind: NativeDeliveryKind;
+  kind: NativeServiceDeliveryKind;
   result?: unknown;
   resultSource?: NativeDeliveryResultSource;
-  proof?: NativeBufferDeliveryProof;
   consumedResult?: NativeDeliveryConsumedResult;
   resultUnavailable?: true;
 } & (
@@ -57,7 +56,7 @@ const MAX_TOTAL_RESULT_BYTES = 64 * 1024 * 1024;
 const MAX_PRINCIPAL_RESULT_BYTES = 32 * 1024 * 1024;
 const MAX_ROWS = 1_000_000;
 const MAX_PRINCIPAL_ROWS = 250_000;
-// Fixed21/17-byte results live under the metadata row budget (<=21M global /5.25M per principal).
+// Fixed-size finish results live under the metadata row budget.
 // The existing64MiB/32MiB bulk pool belongs to formatter results and their pre-effect reservations.
 const INLINE_RESULT_BYTES = 1_048_576;
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -71,15 +70,12 @@ function warnExecutionFailure(kind: string, error: unknown) {
   console.warn(`Native delivery execution failed and remains unknown (${message})`);
 }
 const maximumResult = (kind: string) =>
-  kind === "buffer"
-    ? 21
-    : kind === "native.services.conversation.desktop.finish"
-      ? 17
-      : MAX_RESULT_BYTES;
+  kind === "native.services.conversation.desktop.finish" ? 17 : MAX_RESULT_BYTES;
 const digest = (raw: string): NativeDeliveryConsumedResult => ({
   sha256: sha(raw),
   byteLength: Buffer.byteLength(raw),
 });
+const RETIRED_BUFFER = digest('{"acknowledged":true}');
 const sameDigest = (a: NativeDeliveryConsumedResult | undefined, b: NativeDeliveryConsumedResult) =>
   a?.sha256 === b.sha256 && a.byteLength === b.byteLength;
 function storedDigest(hash: unknown, bytes: unknown): NativeDeliveryConsumedResult | undefined {
@@ -93,18 +89,9 @@ function storedDigest(hash: unknown, bytes: unknown): NativeDeliveryConsumedResu
 }
 
 /** Only these finite results cross Native's serde_json::Value boundary. Its map keys sort. */
-export function nativeDeliveryConsumedResult(kind: NativeDeliveryKind, value: unknown) {
+export function nativeDeliveryConsumedResult(kind: NativeServiceDeliveryKind, value: unknown) {
   let raw: string;
-  if (kind === "buffer") {
-    if (
-      !value ||
-      typeof value !== "object" ||
-      !("acknowledged" in value) ||
-      value.acknowledged !== true
-    )
-      throw new Error("Invalid native buffer consumed result");
-    raw = '{"acknowledged":true}';
-  } else if (kind === "native.services.conversation.desktop.finish") {
+  if (kind === "native.services.conversation.desktop.finish") {
     NATIVE_SERVICES_RPC_SCHEMAS[kind].result.parse(value);
     raw = '{"accepted":true}';
   } else {
@@ -152,7 +139,7 @@ export async function initializeNativeDeliveryStore(db: StoreDatabase) {
           .prepare(`SELECT rowid AS migration_id, kind, state, result_sha256, result_bytes,
           length(CAST(result_json AS BLOB)) AS actual_bytes,
           CASE WHEN length(CAST(result_json AS BLOB))<=? THEN result_json ELSE NULL END AS bounded_result
-          FROM native_delivery_receipts WHERE rowid>? AND reserved_bytes IS NULL ORDER BY rowid LIMIT 1`)
+           FROM native_delivery_receipts WHERE rowid>? AND reserved_bytes IS NULL AND kind<>'buffer' ORDER BY rowid LIMIT 1`)
           .get(MAX_RESULT_BYTES, cursor);
         if (!row) break;
         cursor = Number(row.migration_id);
@@ -167,7 +154,7 @@ export async function initializeNativeDeliveryStore(db: StoreDatabase) {
             )
               throw new Error("Existing native delivery result identity changed");
             consumed = nativeDeliveryConsumedResult(
-              row.kind as NativeDeliveryKind,
+              row.kind as NativeServiceDeliveryKind,
               JSON.parse(row.bounded_result),
             );
           } catch {
@@ -194,6 +181,20 @@ export async function initializeNativeDeliveryStore(db: StoreDatabase) {
       }
       await initializeNativeDeliveryEpochs(db);
       await initializeNativeDeliveryQuota(db);
+      // Keep shared epoch identities until the producer compacts them. The receipt
+      // triggers maintain quota counters and reject changes to existing digests.
+      await db
+        .prepare(`UPDATE native_delivery_receipts SET state='retired',
+        reserved_bytes=0,result_json=NULL,proof_json=NULL,consumed_sha256=?,consumed_bytes=?
+        WHERE kind='buffer' AND state IN ('admitted','recorded')
+        AND (consumed_sha256 IS NULL OR consumed_sha256=?)
+        AND (consumed_bytes IS NULL OR consumed_bytes=?)`)
+        .run(
+          RETIRED_BUFFER.sha256,
+          RETIRED_BUFFER.byteLength,
+          RETIRED_BUFFER.sha256,
+          RETIRED_BUFFER.byteLength,
+        );
       await db.exec("COMMIT");
     } catch (error) {
       await db.exec("ROLLBACK").catch(() => undefined);
@@ -206,15 +207,18 @@ export async function initializeNativeDeliveryStore(db: StoreDatabase) {
  * No TTL, active eviction, credential persistence or dispatch on lookup. */
 export function createNativeDeliveryStore(store: HostStore) {
   const epochs = createNativeDeliveryEpochs(store);
-  const key = (principal: string, kind: NativeDeliveryKind, identity: NativeDeliveryIdentity) =>
-    [store.environmentId, principal, kind, identity.originalId] as const;
+  const key = (
+    principal: string,
+    kind: NativeServiceDeliveryKind,
+    identity: NativeDeliveryIdentity,
+  ) => [store.environmentId, principal, kind, identity.originalId] as const;
   const match = (row: Record<string, unknown>, identity: NativeDeliveryIdentity) => {
     if (row.sha256 !== identity.sha256 || row.byte_length !== identity.byteLength)
       throw new Error("Native delivery original identity conflicts with retained bytes");
   };
   async function read(
     principal: string,
-    kind: NativeDeliveryKind,
+    kind: NativeServiceDeliveryKind,
     identity: NativeDeliveryIdentity,
   ): Promise<NativeDeliveryRow | null> {
     return store.db.scope(async () => {
@@ -224,9 +228,8 @@ export function createNativeDeliveryStore(store: HostStore) {
         .prepare(`SELECT kind, sha256, byte_length, state, result_sha256, result_bytes,
         epoch_owner_id,epoch_generation,epoch_sequence,
         consumed_sha256, consumed_bytes, reserved_bytes,
-        length(CAST(result_json AS BLOB)) AS actual_result_bytes, length(CAST(proof_json AS BLOB)) AS proof_bytes
+         length(CAST(result_json AS BLOB)) AS actual_result_bytes
         ,CASE WHEN length(CAST(result_json AS BLOB))<=? THEN result_json ELSE NULL END AS inline_result
-        ,CASE WHEN length(CAST(proof_json AS BLOB))<=2048 THEN proof_json ELSE NULL END AS bounded_proof
         FROM native_delivery_receipts WHERE environment_id=? AND principal_id=? AND original_id=?`)
         .get(INLINE_RESULT_BYTES, store.environmentId, principal, identity.originalId);
       if (!meta) return null;
@@ -236,18 +239,12 @@ export function createNativeDeliveryStore(store: HostStore) {
       match(meta, identity);
       if (
         !["admitted", "recorded", "retired"].includes(String(meta.state)) ||
-        Number(meta.actual_result_bytes ?? 0) > MAX_RESULT_BYTES ||
-        Number(meta.proof_bytes ?? 0) > 2048
+        Number(meta.actual_result_bytes ?? 0) > MAX_RESULT_BYTES
       )
         throw new Error("Native delivery receipt is corrupt and remains held");
       const consumedResult = storedDigest(meta.consumed_sha256, meta.consumed_bytes);
       if (meta.state === "retired") {
-        if (
-          !consumedResult ||
-          meta.actual_result_bytes !== null ||
-          meta.proof_bytes !== null ||
-          meta.reserved_bytes !== 0
-        )
+        if (!consumedResult || meta.actual_result_bytes !== null || meta.reserved_bytes !== 0)
           throw new Error("Native delivery retirement is corrupt and remains held");
         return { ...identity, kind, state: "retired", consumedResult };
       }
@@ -281,7 +278,6 @@ export function createNativeDeliveryStore(store: HostStore) {
         meta.state === "admitted" &&
         meta.reserved_bytes === 0 &&
         meta.actual_result_bytes === null &&
-        meta.proof_bytes === null &&
         meta.result_sha256 === null &&
         meta.result_bytes === null &&
         meta.consumed_sha256 === null &&
@@ -289,15 +285,12 @@ export function createNativeDeliveryStore(store: HostStore) {
           ? { resultUnavailable: true as const }
           : {}),
         ...(consumedResult ? { consumedResult } : {}),
-        ...(meta.bounded_proof === null
-          ? {}
-          : { proof: JSON.parse(String(meta.bounded_proof)) as NativeBufferDeliveryProof }),
       };
     });
   }
   async function readMetadata(
     principal: string,
-    kind: NativeDeliveryKind,
+    kind: NativeServiceDeliveryKind,
     identity: NativeDeliveryIdentity,
   ): Promise<NativeDeliveryRow | null> {
     return store.db.scope(async () => {
@@ -307,8 +300,7 @@ export function createNativeDeliveryStore(store: HostStore) {
       const meta = await store.db
         .prepare(`SELECT kind,sha256,byte_length,state,result_sha256,result_bytes,
         epoch_owner_id,epoch_generation,epoch_sequence,
-        consumed_sha256,consumed_bytes,reserved_bytes,
-        CASE WHEN kind='buffer' AND length(CAST(proof_json AS BLOB))<=2048 THEN proof_json ELSE NULL END AS proof
+        consumed_sha256,consumed_bytes,reserved_bytes
         FROM native_delivery_receipts WHERE environment_id=? AND principal_id=? AND original_id=?`)
         .get(store.environmentId, principal, identity.originalId);
       if (!meta) return null;
@@ -318,7 +310,7 @@ export function createNativeDeliveryStore(store: HostStore) {
       match(meta, identity);
       const consumedResult = storedDigest(meta.consumed_sha256, meta.consumed_bytes);
       if (meta.state === "retired") {
-        if (!consumedResult || meta.reserved_bytes !== 0 || meta.proof !== null)
+        if (!consumedResult || meta.reserved_bytes !== 0)
           throw new Error("Native delivery retirement is corrupt and remains held");
         return { ...identity, kind, state: "retired", consumedResult };
       }
@@ -336,9 +328,6 @@ export function createNativeDeliveryStore(store: HostStore) {
         state: meta.state,
         ...(consumedResult ? { consumedResult } : {}),
         ...(resultSource ? { resultSource } : {}),
-        ...(meta.proof === null
-          ? {}
-          : { proof: JSON.parse(String(meta.proof)) as NativeBufferDeliveryProof }),
       };
     });
   }
@@ -347,14 +336,14 @@ export function createNativeDeliveryStore(store: HostStore) {
    * or its unknown outcome. Zero reservation fences every later record. */
   async function releaseFailedReservation(
     principal: string,
-    kind: NativeDeliveryKind,
+    kind: NativeServiceDeliveryKind,
     identity: NativeDeliveryIdentity,
   ): Promise<void> {
     await store.db.runRecoveryBookkeeping(() =>
       store.transaction(async () => {
         const row = await store.db
           .prepare(`SELECT kind,sha256,byte_length,state,reserved_bytes,
-          result_json IS NULL AS no_result,proof_json IS NULL AS no_proof,
+          result_json IS NULL AS no_result,
           result_sha256,result_bytes,consumed_sha256,consumed_bytes
           FROM native_delivery_receipts WHERE environment_id=? AND principal_id=? AND original_id=?`)
           .get(store.environmentId, principal, identity.originalId);
@@ -373,7 +362,6 @@ export function createNativeDeliveryStore(store: HostStore) {
               row.reserved_bytes === NATIVE_FORMAT_MAX_RESULT_BYTES
             )) ||
           row.no_result !== 1 ||
-          (kind !== "buffer" && row.no_proof !== 1) ||
           row.result_sha256 !== null ||
           row.result_bytes !== null ||
           row.consumed_sha256 !== null ||
@@ -414,7 +402,7 @@ export function createNativeDeliveryStore(store: HostStore) {
     readMetadata,
     readResult(
       principal: string,
-      kind: Exclude<NativeDeliveryKind, "buffer">,
+      kind: NativeServiceDeliveryKind,
       identity: NativeDeliveryIdentity,
       source: NativeDeliveryResultSource,
       offset: number,
@@ -482,7 +470,7 @@ export function createNativeDeliveryStore(store: HostStore) {
     },
     admit(
       principal: string,
-      kind: NativeDeliveryKind,
+      kind: NativeServiceDeliveryKind,
       identity: NativeDeliveryIdentity,
       options?: { admitBefore?: number },
     ) {
@@ -538,33 +526,9 @@ export function createNativeDeliveryStore(store: HostStore) {
         { admitBefore: options?.admitBefore },
       );
     },
-    prepareProof(
-      principal: string,
-      identity: NativeDeliveryIdentity,
-      proof: NativeBufferDeliveryProof,
-    ) {
-      return store.transaction(async () => {
-        const row = await read(principal, "buffer", identity);
-        if (!row) throw new Error("Native delivery admission is unavailable");
-        if (row.state !== "admitted")
-          throw new Error("Native delivery no longer accepts a planned proof");
-        if (row.proof && JSON.stringify(row.proof) !== JSON.stringify(proof))
-          throw new Error("Native delivery planned proof changed");
-        if (!row.proof)
-          await store.db
-            .prepare(`UPDATE native_delivery_receipts SET proof_json=?
-          WHERE environment_id=? AND principal_id=? AND kind=? AND original_id=? AND sha256=? AND byte_length=? AND proof_json IS NULL`)
-            .run(
-              JSON.stringify(proof),
-              ...key(principal, "buffer", identity),
-              identity.sha256,
-              identity.byteLength,
-            );
-      }, "critical");
-    },
     record(
       principal: string,
-      kind: NativeDeliveryKind,
+      kind: NativeServiceDeliveryKind,
       identity: NativeDeliveryIdentity,
       result: unknown,
     ) {
@@ -614,38 +578,27 @@ export function createNativeDeliveryStore(store: HostStore) {
     },
     retire(
       principal: string,
-      kind: NativeDeliveryKind,
+      kind: NativeServiceDeliveryKind,
       identity: NativeDeliveryIdentity,
       consumed: NativeDeliveryConsumedResult,
-      verifiedProof?: NativeBufferDeliveryProof,
     ) {
       return store.transaction(async () => {
         await epochs.assertNotFenced(principal, identity);
-        // Metadata and a bounded buffer proof only: never deserialize a retained 32MiB service result on ACK.
+        // Never materialize a retained 32MiB service result on ACK.
         const row = await store.db
-          .prepare(`SELECT kind,sha256,byte_length,state,consumed_sha256,consumed_bytes,epoch_owner_id,epoch_generation,epoch_sequence,
-          CASE WHEN length(CAST(proof_json AS BLOB))<=2048 THEN proof_json ELSE NULL END AS proof
+          .prepare(`SELECT kind,sha256,byte_length,state,consumed_sha256,consumed_bytes,epoch_owner_id,epoch_generation,epoch_sequence
           FROM native_delivery_receipts WHERE environment_id=? AND principal_id=? AND original_id=?`)
           .get(store.environmentId, principal, identity.originalId);
         if (!row || row.kind !== kind)
           throw new Error("Native delivery ACK original is unavailable");
         match(row, identity);
         epochs.validateRow(row, identity);
-        const expected =
-          row.state === "admitted" && kind === "buffer"
-            ? nativeDeliveryConsumedResult("buffer", { acknowledged: true })
-            : { sha256: String(row.consumed_sha256), byteLength: Number(row.consumed_bytes) };
+        const expected = storedDigest(row.consumed_sha256, row.consumed_bytes);
         if (!sameDigest(expected, consumed))
           throw new Error("Native delivery ACK consumed result conflicts");
         if (row.state === "retired") return;
-        if (kind === "buffer") {
-          if (!verifiedProof || row.proof !== JSON.stringify(verifiedProof))
-            throw new Error("Native delivery ACK requires the same verified planned buffer proof");
-        } else if (row.state !== "recorded") {
+        if (row.state !== "recorded")
           throw new Error("Native delivery unknown service cannot retire");
-        }
-        if (row.state !== "recorded" && row.state !== "admitted")
-          throw new Error("Native delivery ACK state is corrupt and remains held");
         await store.db
           .prepare(`UPDATE native_delivery_receipts SET state='retired',result_json=NULL,proof_json=NULL,
           reserved_bytes=0,consumed_sha256=?,consumed_bytes=?
@@ -683,22 +636,20 @@ export function createNativeDeliveryStore(store: HostStore) {
    * Retire an original the producer lost (it asks only for a slot it never consumed) whose
    * continuation has ended: its effect failed, or a restart lost it, so nothing is in flight.
    * Nothing is undone or replayed: format only computes edits, a finish only resolved an
-   * in-memory Host waiter that is gone, and a buffer report is versioned state that the next
-   * full report supersedes, so a buffer is retired even when recorded (its proof may no longer
-   * verify). The producer then fences the slot instead of holding the epoch prefix forever.
+   * in-memory Host waiter that is gone. The producer can then fence the slot.
    * True also when an earlier call already abandoned it.
    */
   async function abandon(principal: string, input: NativeDeliveryEpochGapParams) {
     const kind = input.kind;
     const originalId = nativeDeliveryEpochOriginalId(input);
-    if (inflight.has(inflightKey(principal, kind, { originalId }))) return false;
+    if (kind !== "buffer" && inflight.has(inflightKey(principal, kind, { originalId })))
+      return false;
     const consumed =
-      kind === "native.services.workspace.format"
-        ? ABANDONED_FORMAT
-        : nativeDeliveryConsumedResult(
-            kind,
-            kind === "buffer" ? { acknowledged: true } : { accepted: true },
-          );
+      kind === "buffer"
+        ? RETIRED_BUFFER
+        : kind === "native.services.workspace.format"
+          ? ABANDONED_FORMAT
+          : nativeDeliveryConsumedResult(kind, { accepted: true });
     return store.transaction(async () => {
       const row = await store.db
         .prepare(`SELECT state,result_sha256,result_bytes,consumed_sha256,consumed_bytes,
@@ -718,22 +669,23 @@ export function createNativeDeliveryStore(store: HostStore) {
         );
       if (!row) return false;
       // An ordinary retirement follows the producer's consumption, and the producer never asks
-      // about a consumed slot, so a retired finish/buffer was abandoned. A format keeps its own
+      // about a consumed slot, so a retired finish was abandoned. A format keeps its own
       // marker because the trigger accepts any consumed digest for it.
       if (row.state === "retired")
         return (
-          kind !== "native.services.workspace.format" ||
+          kind === "native.services.conversation.desktop.finish" ||
           (row.consumed_sha256 === consumed.sha256 && row.consumed_bytes === consumed.byteLength)
         );
+      // Legacy buffers retire in the startup transaction. Gap repair may attest
+      // that outcome, but only service receipts can still transition here.
+      if (kind === "buffer") return false;
       const ended =
-        kind === "buffer"
-          ? row.state === "admitted" || row.state === "recorded"
-          : row.state === "admitted" &&
-            row.result_sha256 === null &&
-            row.result_bytes === null &&
-            row.consumed_sha256 === null &&
-            row.consumed_bytes === null &&
-            row.no_result === 1;
+        row.state === "admitted" &&
+        row.result_sha256 === null &&
+        row.result_bytes === null &&
+        row.consumed_sha256 === null &&
+        row.consumed_bytes === null &&
+        row.no_result === 1;
       if (!ended) return false;
       await store.db.checkAuthorization();
       const changed = await store.db
@@ -754,14 +706,14 @@ export function createNativeDeliveryStore(store: HostStore) {
   }
   const inflightKey = (
     principal: string,
-    kind: NativeDeliveryKind,
+    kind: NativeServiceDeliveryKind,
     original: { originalId: string },
   ) => JSON.stringify([store.environmentId, principal, kind, original.originalId]);
   const execution = {
     /** True while this process's winning invocation is still running the original's effect. */
     isInflight: (
       principal: string,
-      kind: NativeDeliveryKind,
+      kind: NativeServiceDeliveryKind,
       identity: { originalId: string },
     ): boolean => inflight.has(inflightKey(principal, kind, identity)),
     /**
@@ -778,7 +730,7 @@ export function createNativeDeliveryStore(store: HostStore) {
      */
     async begin(
       principal: string,
-      kind: NativeDeliveryKind,
+      kind: NativeServiceDeliveryKind,
       identity: NativeDeliveryIdentity,
       effect: () => Promise<unknown>,
       options?: { admitBefore?: number; acknowledgeAdmission?: boolean },
@@ -827,7 +779,7 @@ export function createNativeDeliveryStore(store: HostStore) {
     ...execution,
     async execute(
       principal: string,
-      kind: NativeDeliveryKind,
+      kind: NativeServiceDeliveryKind,
       identity: NativeDeliveryIdentity,
       effect: () => Promise<unknown>,
       options?: { admitBefore?: number },

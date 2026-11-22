@@ -154,7 +154,13 @@ fn send_relaunch(name: &[u16], link: Option<&str>) -> io::Result<()> {
 struct Relaunch {
     show: bool,
     link: Option<String>,
+    /// The local installer asks the app to quit through the normal save-and-confirm run, so a
+    /// replaced build never leaves native buffers dirty the way a forced kill does.
+    quit: bool,
 }
+
+/// Signal byte of a quit request. Older builds read it as an unknown signal and ignore it.
+const QUIT_SIGNAL: u8 = 3;
 
 /// Serves one relaunch client. The connect waits for the next client without a
 /// limit; everything after it is bounded by `CLIENT_BUDGET`.
@@ -169,10 +175,18 @@ fn serve_client(raw: HANDLE) -> io::Result<Relaunch> {
     let deadline = Instant::now() + CLIENT_BUDGET;
     let mut signal = [0u8; 1];
     read_exact_by(raw, &mut signal, deadline)?;
+    if signal[0] == QUIT_SIGNAL {
+        return Ok(Relaunch {
+            show: false,
+            link: None,
+            quit: true,
+        });
+    }
     if !matches!(signal[0], 1 | 2) {
         return Ok(Relaunch {
             show: false,
             link: None,
+            quit: false,
         });
     }
     let link = if signal[0] == 2 {
@@ -187,7 +201,11 @@ fn serve_client(raw: HANDLE) -> io::Result<Relaunch> {
     } else {
         None
     };
-    Ok(Relaunch { show: true, link })
+    Ok(Relaunch {
+        show: true,
+        link,
+        quit: false,
+    })
 }
 
 fn read_link(raw: HANDLE, deadline: Instant) -> io::Result<Option<String>> {
@@ -329,7 +347,15 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 // Always release the client, even after an error, so the next launch can connect.
                 unsafe { DisconnectNamedPipe(raw) };
                 match result {
-                    Ok(Relaunch { show, link }) => {
+                    Ok(Relaunch { quit: true, .. }) => {
+                        let target = app.clone();
+                        if let Err(error) =
+                            app.run_on_main_thread(move || crate::window::request_quit(&target))
+                        {
+                            log::warn!("Could not dispatch bycoda quit request: {error}");
+                        }
+                    }
+                    Ok(Relaunch { show, link, .. }) => {
                         if let Some(link) = link {
                             crate::session_links::enqueue(&app, [link]);
                         }

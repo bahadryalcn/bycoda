@@ -18,10 +18,9 @@ Linked workspace repository lists include every declared folder, including `.`
 when the containing folder is itself a repository. Root and nested repositories
 keep separate changes, commit drafts and action targets.
 
-The Git panel reviews the repository or checkout selected in its target picker.
-Its folder name, branch and full-path tooltip identify that target. Workspace/session focus, the Git
-review target and the checkout where an agent executes are separate choices.
-When checkout discovery fails, the current panel remains available with local
+The Git panel reviews the worktree or repository selected in the sidebar header,
+the only worktree selector. Its folder name, branch and full-path tooltip identify
+that target. When checkout discovery fails, the current panel remains available with local
 **Retry** and diagnostic details; a failed read does not establish an empty list.
 
 A folder that is not a Git repository shows no failure: the panel offers
@@ -30,24 +29,29 @@ existing repository. A project opened on an empty folder outside any repository,
 including one created by the assistant, a crew or a remote machine, is
 initialized automatically.
 
-**All checkouts** shows the current checkout, other worktrees and discovered child
-repositories as expandable changes panels. Folder names lead with the branch on
-the same line; when the panel narrows the branch label shortens before the name.
-Child repositories are indented beneath their checkout. A workspace with only one
-repository shows its full panel, named in the picker, instead of a single row. The current
-session's checkout starts expanded; each panel keeps its own expanded state and
-commit draft when collapsed or when you review another target. Selecting a review
-target does not change where the agent executes.
+**All worktrees** (the default when a project has several worktrees) shows the project
+folder and every worktree as expandable changes panels. The session's worktree and the
+project folder open first, worktrees with changes come next, and clean ones collapse
+into a **Clean · N** row. A row's changes load when you expand it. Folder names lead
+with the branch on the same line; when the panel narrows the branch label shortens
+before the name. Child repositories are indented beneath their checkout. A workspace
+with only one repository shows its full panel, named in the header, instead of a single
+row. Each panel keeps its own expanded state and commit draft when collapsed or when you
+review another target.
 
-With one checkout selected, its header is a single row: the `folder · branch` picker
-leads, with refresh, worktree management and the Git menu at the end. The picker has
-**Worktrees** and **Branches** tabs, so switching checkout (or back to All checkouts)
-and switching branch happen in one place.
+With one worktree selected, the Changes header is a single row: a `folder · branch`
+picker leads, with refresh, worktree management and the Git menu at the end. The panel
+has no Worktrees or Branches tabs. A branch checked out in another worktree appears under
+**In a worktree** with a worktree badge; selecting it opens that worktree.
+
+Deleting a worktree offers **Also delete branch**, off by default. It is available only
+when the branch is fully merged; it is unavailable with unpushed commits or for the
+default branch.
 
 Each panel's staging, unstaging, commit and sync actions apply only to that exact
 repository. A file with the same relative name in another checkout is a separate
 target. A single review target shows its Stashes and Graph sections below its changes.
-All repositories and All checkouts show one Stashes and Graph below the rows instead
+All repositories and All worktrees show one Stashes and Graph below the rows instead
 of one per row: Auto follows the repository you last used in the list, and the
 selector in the Graph header shows the active repository even when collapsed and
 switches to another repository. The full Commit graph offers the same selector;
@@ -120,6 +124,11 @@ updated outgoing commit count while Git refreshes the full status.
 Pending outgoing or incoming commits keep their own **Push**, **Pull**, **Sync
 Changes** or **Publish Branch** button beside it. With nothing to commit, that sync,
 Create PR or View PR action leads instead.
+
+On mobile, **Changes** shows a short status when the working folder is clean.
+Search and filters appear with changed files. An existing commit message is still
+editable, and **Git actions > Commit message** opens the field to start a draft. **Push**
+stays available when the branch has local commits to send to its remote.
 
 Remote actions distinguish incoming and outgoing commits and display their upstream
 destination. Existing publication, amend, conflict and destructive-operation gates

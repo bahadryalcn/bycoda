@@ -1,14 +1,8 @@
 import { perfMetrics } from "../diagnostics/perf-metrics";
-import {
-  collectOrphanNativeBufferBlobs,
-  countOrphanNativeBufferBlobs,
-  type NativeBufferBlobGcResult,
-} from "../native-buffer/native-buffer-blob-gc";
-import { releaseNativeBufferLegacyBatches } from "../native-buffer/native-buffer-legacy-release";
-import { nativeBufferGitStoreFor } from "../native-buffer/native-buffer-git-registry";
 import type { HostStore } from "../store";
 import { capEventsGlobally, EVENT_BYTES_TOTAL, type EventRetentionResult } from "./event-retention";
 import { compactHostDatabase } from "./host-db-compaction";
+import { releaseRetiredNativeBufferTables } from "./retired-native-buffer-cleanup";
 import { withShortBusyTimeout } from "./short-busy-timeout";
 
 export const HOST_DB_MAINTENANCE_FIRST_DELAY_MS = 10 * 60 * 1000;
@@ -17,28 +11,18 @@ export const HOST_DB_MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000;
  * auto_vacuum=INCREMENTAL; the VACUUM in host-db-compaction.ts switches a file to it. */
 const INCREMENTAL_VACUUM_PAGES = 16_384;
 const METRIC = "storage.maintenance";
-const GIT_GC_METRIC = "storage.nativeBufferGitGc";
 perfMetrics.register(METRIC);
-perfMetrics.register(GIT_GC_METRIC);
 
 export type HostDbMaintenanceResult = {
-  blobs: NativeBufferBlobGcResult;
   events: EventRetentionResult;
   /** `PRAGMA wal_checkpoint(TRUNCATE)` result; absent when nothing was deleted. */
   checkpoint?: { busy: number; log: number; checkpointed: number };
   incrementalVacuum: boolean;
-  /** Legacy SQL native buffer rows removed by this pass (git store only). */
-  legacyRowsDeleted?: number;
+  /** Rows of the retired native buffer tables removed by this pass. */
+  retiredRowsDeleted?: number;
   /** File sizes around the VACUUM this pass ran (host-db-compaction.ts). */
   vacuum?: { before: number; after: number };
 };
-
-// Native buffer history (`native-activity/buffer-history/...`) is deliberately not
-// bounded here: every archived version stays a recovery source. listRecovery() pages
-// all history manifests, readRecovery()/recoveryStatus() and verifyDelivery() read any
-// exact older (reportId, reportVersion, snapshotDigest) through readCertificate(), and
-// no method resolves dirty/unknown sources. Bounding it needs an owner-approved
-// release rule, not a storage cap. Only unreferenced blobs are collected.
 
 async function reclaim(store: HostStore) {
   return store.db.storeScope(() =>
@@ -60,56 +44,46 @@ async function reclaim(store: HostStore) {
   );
 }
 
-/** One bounded pass: orphan blob GC, global event cap, a VACUUM when the file is mostly
- * free and the Host is idle, then WAL truncation when the pass deleted rows. See
- * docs/reference/host-runtime.md. */
+/** One bounded pass: retired native buffer table release, global event cap, a VACUUM when
+ * the file is mostly free and the Host is idle, then WAL truncation when the pass deleted
+ * rows. See docs/reference/host-runtime.md. */
 export function runHostDbMaintenance(
   store: HostStore,
   stopped: () => boolean = () => false,
-  gitStore: { gc(): Promise<unknown> } | undefined = nativeBufferGitStoreFor(store),
-  testing: { uptimeMs?: () => number; now?: () => number } = {},
+  testing: { uptimeMs?: () => number; now?: () => number; batchRows?: number } = {},
 ): Promise<HostDbMaintenanceResult> {
   return perfMetrics.measure(METRIC, async () => {
-    const blobs = await collectOrphanNativeBufferBlobs(store, { stopped });
     const events = await capEventsGlobally(
       store.db,
       (work) => store.transaction(work, "checkpoint"),
       { stopped },
     );
-    if (gitStore && !stopped())
-      await perfMetrics
-        .measure(GIT_GC_METRIC, () => gitStore.gc())
-        .catch((error: unknown) => console.warn("Native buffer git gc failed:", error));
-    // Legacy SQL content is worthless once the Host runs on the git store: release it in
-    // bounded batches over the first passes. Compaction waits for the last batch.
-    const legacy = gitStore
-      ? await releaseNativeBufferLegacyBatches(store, { stopped })
+    // The retired tables can be large: release them in bounded batches over the first
+    // passes (then DROP TABLE). Compaction waits for the last batch.
+    const retired = await releaseRetiredNativeBufferTables(store, {
+      stopped,
+      ...(testing.batchRows ? { batchRows: testing.batchRows } : {}),
+    });
+    const vacuum = retired.done
+      ? await compactHostDatabase(store, { ...testing, stopped })
       : undefined;
-    const vacuum =
-      legacy?.done !== false
-        ? await compactHostDatabase(store, { ...testing, stopped })
-        : undefined;
     const extra = {
-      ...(legacy ? { legacyRowsDeleted: legacy.deletedRows } : {}),
+      ...(retired.deletedRows ? { retiredRowsDeleted: retired.deletedRows } : {}),
       ...(vacuum ? { vacuum } : {}),
     };
-    if ((!blobs.deletedBlobs && !events.deletedRows && !legacy?.deletedRows) || stopped())
-      return { blobs, events, incrementalVacuum: false, ...extra };
-    return { blobs, events, ...extra, ...(await reclaim(store)) };
+    if ((!events.deletedRows && !retired.deletedRows) || stopped())
+      return { events, incrementalVacuum: false, ...extra };
+    return { events, ...extra, ...(await reclaim(store)) };
   });
 }
 
 /** Read-only diagnostics: what a pass would delete, without deleting it. */
 export async function dryRunHostDbMaintenance(store: HostStore) {
-  const blobs = await countOrphanNativeBufferBlobs(store);
   const row = await store.db.storeScope(() =>
     store.db.prepare("SELECT COALESCE(SUM(octet_length(payload)),0) AS bytes FROM events").get(),
   );
   const eventBytes = Number(row?.bytes ?? 0);
   return {
-    orphanBlobs: blobs.orphanBlobs,
-    orphanBlobBytes: blobs.orphanBytes,
-    ...(blobs.skipped ? { blobsSkipped: blobs.skipped } : {}),
     eventBytes,
     eventBytesOverCap: Math.max(0, eventBytes - EVENT_BYTES_TOTAL),
   };
@@ -131,12 +105,11 @@ export function scheduleHostDbMaintenance(
             console.info(
               `Host database VACUUM: ${result.vacuum.before} -> ${result.vacuum.after} bytes.`,
             );
-          if (result.legacyRowsDeleted)
-            console.info(`Released ${result.legacyRowsDeleted} legacy native buffer rows.`);
-          if (!result.blobs.deletedBlobs && !result.events.deletedRows) return;
+          if (result.retiredRowsDeleted)
+            console.info(`Released ${result.retiredRowsDeleted} retired native buffer rows.`);
+          if (!result.events.deletedRows) return;
           console.info(
-            `Host database maintenance removed ${result.blobs.deletedBlobs} native buffer blobs ` +
-              `(${result.blobs.deletedBytes} bytes) and ${result.events.deletedRows} event rows ` +
+            `Host database maintenance removed ${result.events.deletedRows} event rows ` +
               `from ${result.events.sessions} sessions.`,
           );
         })

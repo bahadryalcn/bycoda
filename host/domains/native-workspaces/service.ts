@@ -21,9 +21,18 @@ export function createNativeWorkspacesService(ports: NativeWorkspacesPorts) {
     options: { legacy?: boolean } = {},
   ): Promise<unknown> {
     await assertDomainAuthority(context);
-    const params = options.legacy ? raw : NATIVE_WORKSPACE_RPC_SCHEMAS[method].params.parse(raw);
     const owner = context.workspaceOwner;
     if (!owner) throw new HostDomainAuthorizationError();
+    switch (method) {
+      case "native.buffers.update":
+      case "native.buffers.heartbeat":
+      case "native.buffers.retire":
+      case "native.buffers.reconcile":
+        // Older desktops need a successful receipt to settle their local editor state.
+        NATIVE_WORKSPACE_RPC_SCHEMAS[method].params.parse(raw);
+        return { acknowledged: true };
+    }
+    const params = options.legacy ? raw : NATIVE_WORKSPACE_RPC_SCHEMAS[method].params.parse(raw);
     const { managed } = ports;
     let result: unknown;
     if (method.startsWith("native.rewind.") || method.startsWith("native.turn.")) {
@@ -59,27 +68,8 @@ export function createNativeWorkspacesService(ports: NativeWorkspacesPorts) {
         | "cancelPreparation"
         | "ack";
       result = await owner<unknown>((owned) => owned.nativeRewind[action](params as never));
-    } else if (method.startsWith("native.buffers.recovery.")) {
-      const action =
-        method === "native.buffers.recovery.list"
-          ? "listBufferRecovery"
-          : method === "native.buffers.recovery.read"
-            ? "readBufferRecovery"
-            : "bufferRecoveryStatus";
-      result = await owner<unknown>((owned) => owned.nativeActivity[action](params as never));
-    } else if (method.startsWith("native.")) {
-      const action =
-        method === "native.activity.start"
-          ? "start"
-          : method === "native.activity.end"
-            ? "end"
-            : method === "native.buffers.update"
-              ? "updateBuffers"
-              : method === "native.buffers.heartbeat"
-                ? "heartbeatBuffers"
-                : method === "native.buffers.retire"
-                  ? "retireBuffers"
-                  : "reconcileBuffers";
+    } else if (method === "native.activity.start" || method === "native.activity.end") {
+      const action = method === "native.activity.start" ? "start" : "end";
       result = await owner<unknown>((owned) => owned.nativeActivity[action](params as never));
     } else {
       const request = params as {

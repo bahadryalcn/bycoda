@@ -426,7 +426,12 @@ afterEach(async () => {
 });
 const a = { id: "a", title: "Alpha", cwd: "/a", blocks: [], busy: true } as unknown as Session;
 const b = { id: "b", title: "Beta", cwd: "/b", blocks: [] } as unknown as Session;
-async function setup(initial = a, initialSessions = [a, b], start = true) {
+async function setup(
+  initial = a,
+  initialSessions = [a, b],
+  start = true,
+  registerWorkspaceOpener?: Parameters<typeof VoiceCompanion>[0]["registerWorkspaceOpener"],
+) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -435,7 +440,15 @@ async function setup(initial = a, initialSessions = [a, b], start = true) {
     onStop = vi.fn();
   const render = async (activeId: string, sessions = [a, b]) =>
     act(async () =>
-      root.render(createElement(VoiceCompanion, { activeId, sessions, onSubmit, onStop })),
+      root.render(
+        createElement(VoiceCompanion, {
+          activeId,
+          sessions,
+          onSubmit,
+          onStop,
+          registerWorkspaceOpener,
+        }),
+      ),
     );
   await render(initial.id, initialSessions);
   if (start) {
@@ -444,6 +457,24 @@ async function setup(initial = a, initialSessions = [a, b], start = true) {
   }
   return { render, onSubmit, onStop };
 }
+
+it("opens the exact chat session fullscreen without reconnecting voice", async () => {
+  let opener: ((target: Pick<Session, "id" | "cwd">) => void) | undefined;
+  const other = { ...b, cwd: a.cwd };
+  await setup(a, [a, other], true, (open) => {
+    opener = open;
+  });
+  await act(async () => opener?.({ id: other.id, cwd: "/missing" }));
+  expect(container.querySelector("[data-full-screen]")).toBeNull();
+  await act(async () => opener?.(other));
+  expect(container.querySelector('section[aria-label="Activity"] h2')?.textContent).toBe(
+    other.title,
+  );
+  await click("Exit full screen");
+  expect(container.querySelector("[data-full-screen]")).toBeNull();
+  expect(mock.connect).toHaveBeenCalledTimes(1);
+  expect(mock.close).not.toHaveBeenCalled();
+});
 
 it("opens the companion and starts Talk when the wake phrase is heard during keyboard idle", async () => {
   presence.value = "idle";

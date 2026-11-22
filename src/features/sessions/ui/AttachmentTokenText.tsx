@@ -9,7 +9,7 @@ import { Fragment, useState } from "react";
 import { splitAttachmentTokens } from "../model/attachmentTokens";
 import { splitCitationTokens } from "../model/citationTokens";
 import type { ChatCitation } from "../model/chatCitation";
-import { CitationTokenPill, WorkItemMentionText } from "./ChatCitationText";
+import { CitationTokenPill, ScopedMentionText } from "./ChatCitationText";
 import type { Attachment } from "../model/session";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { useAttachmentPreview } from "./useAttachmentPreview";
@@ -139,12 +139,12 @@ function CitationTokenText({
   text: string;
   citations?: readonly ChatCitation[];
 }) {
-  if (!citations.length) return <WorkItemMentionText text={text} />;
+  if (!citations.length) return <ScopedMentionText text={text} />;
   return splitCitationTokens(text, citations.length).map((part, index) =>
     "token" in part ? (
       <CitationTokenPill key={index} token={part.token} citation={citations[part.index]} />
     ) : (
-      <WorkItemMentionText key={index} text={part.text} />
+      <ScopedMentionText key={index} text={part.text} />
     ),
   );
 }

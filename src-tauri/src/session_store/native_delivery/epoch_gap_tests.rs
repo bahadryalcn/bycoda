@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 const ROUTE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const OTHER: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-const BUFFER: &str = "native.buffers.update";
+const FINISH: &str = "native.services.conversation.desktop.finish";
 const FORMAT: &str = "native.services.workspace.format";
 const RAW: &str = r#"{"owners":[],"instanceId":"exact-original"}"#;
 
@@ -100,6 +100,61 @@ fn record(store: &SessionStore, original: &Original) -> Result<(), String> {
 }
 
 #[test]
+fn legacy_buffer_retirement_releases_quota_but_preserves_the_host_floor_fence() {
+    let file = FileDb::new();
+    let old = file.open();
+    let (description, epoch) = first_bind(&old);
+    let prepared = prepare_legacy_buffer(&old, "buffer-prepared", ROUTE, RAW, &epoch).unwrap();
+    let possible = prepare_legacy_buffer(&old, "buffer-possible", ROUTE, RAW, &epoch).unwrap();
+    mark_possible(&old, &possible).unwrap();
+    let recorded = prepare_legacy_buffer(&old, "buffer-recorded", ROUTE, RAW, &epoch).unwrap();
+    let recorded = mark_possible(&old, &recorded).unwrap();
+    record_result(&old, &recorded, "true").unwrap();
+    let service = prepare(&old, "service", ROUTE, FINISH, RAW, &epoch).unwrap();
+    drop(old);
+
+    let store = file.open();
+    assert_eq!(open_id(&store, ROUTE).unwrap(), description.open_id);
+    assert_eq!(open_id(&store, ROUTE).unwrap(), description.open_id);
+    let epoch = rebind(&store, &description, 0, 4);
+    assert_eq!(
+        pending(&store, ROUTE, None, 4).unwrap().originals[0].id(),
+        service.id()
+    );
+    assert!(pending_remote_acks(&store, ROUTE, None, 4)
+        .unwrap()
+        .originals
+        .is_empty());
+    assert!(compact(&store, &epoch, &floor(&store, &epoch, 1)).is_err());
+    for original in [prepared, possible, recorded] {
+        let candidate = gap_candidate(&store, &epoch).unwrap().unwrap();
+        assert_eq!(candidate.id(), original.id());
+        assert_eq!(candidate.payload_sha256(), original.payload_sha256());
+        assert_eq!(candidate.phase(), Phase::Acknowledged);
+        record(&store, &candidate).unwrap();
+        let through = current(&store, &epoch).unwrap().local_through() + 1;
+        assert_eq!(
+            compact(&store, &epoch, &floor(&store, &epoch, through)).unwrap(),
+            1
+        );
+    }
+    let conn = store.lock_conn().unwrap();
+    assert_eq!(
+        usage::read(&conn, FINISH, LEGACY_BUFFER_BUDGET).unwrap(),
+        (1, 1, LEGACY_BUFFER_BUDGET as i64 + RAW.len() as i64)
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT bytes FROM native_delivery_usage WHERE lane=1",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0
+    );
+}
+
+#[test]
 fn stalled_prefix_validates_the_full_epoch_once() {
     use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
     use std::sync::{
@@ -139,7 +194,7 @@ fn stalled_prefix_validates_the_full_epoch_once() {
 
 #[test]
 fn older_runtime_unadmitted_original_is_proven_compacted_and_fenced_permanently() {
-    for (method, possible) in [(BUFFER, false), (BUFFER, true), (FORMAT, true)] {
+    for (method, possible) in [(FINISH, false), (FINISH, true), (FORMAT, true)] {
         let db = FileDb::new();
         let old = db.open();
         let (description, handle) = first_bind(&old);
@@ -155,7 +210,7 @@ fn older_runtime_unadmitted_original_is_proven_compacted_and_fenced_permanently(
         let store = db.open();
         let epoch = rebind(&store, &description, 0, 1);
         assert_eq!(eligible_through(&store, &epoch).unwrap(), 0);
-        let later = prepare(&store, "later", ROUTE, BUFFER, RAW, &epoch).unwrap();
+        let later = prepare(&store, "later", ROUTE, FINISH, RAW, &epoch).unwrap();
         assert_eq!(parse_id(later.id()).unwrap().sequence, 2);
         consumed(&store, &later);
         // A later retired entry never moves the prefix past the unresolved slot.
@@ -172,7 +227,7 @@ fn older_runtime_unadmitted_original_is_proven_compacted_and_fenced_permanently(
         assert!(gap_candidate(&store, &epoch).unwrap().is_none());
         // The proof is not success and the original keeps its exact retained bytes.
         assert_eq!(params_json(&store, &candidate).unwrap(), RAW);
-        if possible && method == BUFFER {
+        if possible && method == FINISH {
             assert!(
                 write(&store, |conn| record_result_tx(conn, &candidate, "{}"))
                     .unwrap_err()
@@ -212,7 +267,7 @@ fn older_runtime_unadmitted_original_is_proven_compacted_and_fenced_permanently(
                 .contains("CONFLICT")
         );
         assert!(super::super::super::prepare(&last, "lost", OTHER, method, RAW).is_err());
-        let next = prepare(&last, "next", ROUTE, BUFFER, RAW, &epoch).unwrap();
+        let next = prepare(&last, "next", ROUTE, FINISH, RAW, &epoch).unwrap();
         assert_eq!(parse_id(next.id()).unwrap().sequence, 3);
         // Erasing the permanent proof makes the covered prefix incomplete.
         last.lock_conn()
@@ -230,7 +285,7 @@ fn current_runtime_and_already_admitted_originals_are_never_gap_eligible() {
     let db = FileDb::new();
     let store = db.open();
     let (description, epoch) = first_bind(&store);
-    let mine = prepare(&store, "mine", ROUTE, BUFFER, RAW, &epoch).unwrap();
+    let mine = prepare(&store, "mine", ROUTE, FINISH, RAW, &epoch).unwrap();
     assert!(gap_candidate(&store, &epoch).unwrap().is_none());
     assert!(record(&store, &mine).unwrap_err().contains("GAP_INVALID"));
     let mine = mark_possible(&store, &mine).unwrap();
@@ -265,12 +320,12 @@ fn pre_upgrade_epoch_store_migrates_on_first_full_write_and_partial_install_fail
     let db = FileDb::new();
     let old = db.open();
     let (description, handle) = first_bind(&old);
-    prepare(&old, "lost", ROUTE, BUFFER, RAW, &handle).unwrap();
+    prepare(&old, "lost", ROUTE, FINISH, RAW, &handle).unwrap();
     // Shape of an epoch Store written before gap proofs existed.
     old.lock_conn()
         .unwrap()
         .execute_batch(&format!(
-            "DROP TRIGGER native_delivery_epoch_gap_valid; DROP TRIGGER native_delivery_epoch_gap_phase_fence; DROP TABLE {TABLE};"
+            "DROP TRIGGER {VALID_GAP}; DROP TRIGGER native_delivery_epoch_gap_phase_fence; DROP TABLE {TABLE};"
         ))
         .unwrap();
     // Reads accept the pre-upgrade shape without migrating it.
@@ -291,5 +346,5 @@ fn pre_upgrade_epoch_store_migrates_on_first_full_write_and_partial_install_fail
         .execute_batch("DROP TRIGGER native_delivery_epoch_gap_phase_fence")
         .unwrap();
     assert!(current(&store, &epoch).is_err());
-    assert!(super::super::super::prepare(&store, "new", OTHER, BUFFER, RAW).is_err());
+    assert!(super::super::super::prepare(&store, "new", OTHER, FINISH, RAW).is_err());
 }

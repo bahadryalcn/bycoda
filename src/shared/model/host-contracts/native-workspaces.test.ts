@@ -11,12 +11,6 @@ import {
   NATIVE_WORKSPACE_RPC_SCHEMAS,
   nativeWorkspaceReadOnly,
 } from "./native-workspaces";
-import {
-  NATIVE_BUFFER_UPLOAD_METHODS,
-  NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS,
-  NATIVE_BUFFER_UPLOAD_LIMITS,
-} from "./native-buffer-upload";
-import { nativeProfileRecoveryMethod } from "./native-buffer-recovery";
 
 it("classifies private development-server gateway ingress independently of generic cleanup and recovery", () => {
   for (const method of [
@@ -28,7 +22,6 @@ it("classifies private development-server gateway ingress independently of gener
     "devServers.bridgeFuture",
   ]) {
     expect(nativeDesktopMethod(method), method).toBe(true);
-    expect(nativeProfileRecoveryMethod(method), method).toBe(false);
   }
   for (const method of [
     "workspaces.cleanup.plan",
@@ -43,8 +36,16 @@ it("classifies private development-server gateway ingress independently of gener
   expect(nativeDesktopMethod("native.future.method")).toBe(true);
 });
 
-it("declares exactly the 21 Native workspace methods and preserves separate private ingress predicates", () => {
-  expect(NATIVE_WORKSPACE_METHODS).toHaveLength(21);
+it("declares exactly the 18 Native workspace methods (four report methods are a stateless shim) and private ingress predicates", () => {
+  expect(NATIVE_WORKSPACE_METHODS).toHaveLength(18);
+  for (const retired of [
+    "native.buffers.recovery.list",
+    "native.buffers.recovery.read",
+    "native.buffers.recovery.status",
+    "native.buffers.upload.start",
+    "native.buffers.delivery.apply",
+  ])
+    expect(getHostRpcMethod(retired), retired).toBeUndefined();
   for (const method of NATIVE_WORKSPACE_METHODS) {
     const definition = getHostRpcMethod(method)!;
     expect(definition.scope).toBe("device");
@@ -52,15 +53,10 @@ it("declares exactly the 21 Native workspace methods and preserves separate priv
     expect(hostRpcHasEffect(method, definition.kind)).toBe(!nativeWorkspaceReadOnly(method));
     expect(definition.retry).toBe(nativeWorkspaceReadOnly(method) ? "safe-query" : "never");
     expect(nativeDesktopMethod(method)).toBe(method.startsWith("native."));
-    expect(nativeProfileRecoveryMethod(method)).toBe(method.startsWith("native.buffers.recovery."));
     expect(exportWireSchema(NATIVE_WORKSPACE_RPC_SCHEMAS[method].params)).toBeTruthy();
     expect(exportWireSchema(NATIVE_WORKSPACE_RPC_SCHEMAS[method].result)).toBeTruthy();
   }
-  for (const method of [
-    "native.future.method",
-    "native.turn.begin",
-    ...NATIVE_BUFFER_UPLOAD_METHODS,
-  ])
+  for (const method of ["native.future.method", "native.turn.begin"])
     expect(nativeDesktopMethod(method)).toBe(true);
   for (const method of [
     "workspaces.cleanup.apply",
@@ -72,10 +68,9 @@ it("declares exactly the 21 Native workspace methods and preserves separate priv
 });
 
 it("keeps all Native effects on wait-only never-replay policy and the existing30s operation budget", () => {
-  for (const method of [...NATIVE_WORKSPACE_METHODS, ...NATIVE_BUFFER_UPLOAD_METHODS]) {
+  for (const method of NATIVE_WORKSPACE_METHODS) {
     const definition = getHostRpcMethod(method)!;
-    if (!method.startsWith("native.buffers.recovery."))
-      expect(definition.responseTimeoutMs).toBe(30_000);
+    expect(definition.responseTimeoutMs).toBe(30_000);
     expect(definition.cost).toBe("read");
   }
   expect(getHostRpcMethod("native.rewind.status")).toMatchObject({
@@ -94,28 +89,7 @@ it("keeps all Native effects on wait-only never-replay policy and the existing30
   );
 });
 
-it("validates closed upload envelopes and exports portable bounded byte counters", () => {
-  for (const method of NATIVE_BUFFER_UPLOAD_METHODS) {
-    expect(getHostRpcMethod(method)!.requiredCapability).toBe("native.buffers.upload.v1");
-    expect(getHostRpcMethod(method)!.resultSchema.safeParse(null).success).toBe(
-      method === "native.buffers.upload.status",
-    );
-    expect(exportWireSchema(NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].params)).toBeTruthy();
-    expect(exportWireSchema(NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].result)).toBeTruthy();
-  }
-  const input = {
-    uploadId: "upload-a",
-    byteLength: NATIVE_BUFFER_UPLOAD_LIMITS.maxBytes,
-    sha256: "a".repeat(64),
-  };
-  expect(parseHostRpcParams("native.buffers.upload.start", input)).toEqual(input);
-  for (const invalid of [
-    { ...input, byteLength: input.byteLength + 1 },
-    { ...input, byteLength: 0 },
-    { ...input, ownerId: "forged" },
-    { ...input, method: "files.write" },
-  ])
-    expect(() => parseHostRpcParams("native.buffers.upload.start", invalid)).toThrow();
+it("rejects a malformed native activity start", () => {
   expect(() =>
     parseHostRpcParams("native.activity.start", {
       activityId: "a",

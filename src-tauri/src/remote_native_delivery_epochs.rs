@@ -148,6 +148,12 @@ pub(super) fn compact_params(
     Ok(compact_request(epoch, &plan))
 }
 
+/// A compaction refused for a stale floor: an earlier one applied on the Host but its reply was
+/// lost, so the retry still expects the old floor. The Host status is then the answer to commit.
+pub(super) fn stale_floor(error: &str) -> bool {
+    error.contains("NATIVE_DELIVERY_EPOCH_CAS")
+}
+
 fn compact_request(
     epoch: &journal::epochs::EpochHandle,
     plan: &journal::epochs::MaintenancePlan,
@@ -244,6 +250,15 @@ mod tests {
             assert_eq!(gap_outcome(&other, &reply(&other, "abandoned")), Ok(true));
         }
         assert!(gap_outcome(&format, &reply(&format, "retired")).is_err());
+    }
+
+    #[test]
+    fn only_a_floor_conflict_reads_as_a_stale_floor() {
+        assert!(stale_floor(
+            "NATIVE_DELIVERY_EPOCH_CAS: retained delivery namespace is unavailable or fenced"
+        ));
+        assert!(!stale_floor("NATIVE_DELIVERY_EPOCH_HOLE: x"));
+        assert!(!stale_floor("request timed out after 3s"));
     }
 
     #[test]
@@ -361,7 +376,7 @@ mod tests {
             ),
         ] {
             assert!(
-                NativeProfileBroker::supports_workspace_params(method, &params),
+                !NativeProfileBroker::supports_workspace_params(method, &params),
                 "{method}"
             );
             assert!(
@@ -369,10 +384,6 @@ mod tests {
                 "{method}"
             );
             assert!(!HostWsBroker::supports_method(method), "{method}");
-            assert!(
-                !NativeProfileBroker::supports_params(method, &params),
-                "{method}"
-            );
             assert!(
                 !NativeProfileBroker::supports_gateway_params(method, &params),
                 "{method}"

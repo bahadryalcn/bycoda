@@ -1,5 +1,11 @@
 import { memo, useEffect, useRef, type ComponentProps, type RefObject } from "react";
-import { Server, SkillGroupIcon, SkillIcon, StickyNote } from "../../../shared/ui/icons";
+import {
+  Server,
+  SkillGroupIcon,
+  SkillIcon,
+  StickyNote,
+  UsersRound,
+} from "../../../shared/ui/icons";
 import { DraftToken } from "../../../shared/ui/DraftToken";
 import { useLocale } from "../../../shared/i18n";
 import type { ProjectFile } from "../../../platform/tauri/fs";
@@ -11,7 +17,7 @@ import { mcpTagParts, type McpTag } from "../model/mcpPicker";
 import { ComposerAttachmentHighlight } from "./ComposerAttachmentHighlight";
 import { LinkRuns, useEditedLink, useLinkWrap } from "./ComposerLinkRuns";
 import { ModeCommandText, type ModeCommandToken } from "./modeCommands";
-import { workItemMentionParts } from "./ChatCitationText";
+import { scopedMentionParts } from "../model/composerMentionScopes";
 import { ComposerWorkItemToken } from "./WorkItemMentionChip";
 import { ComposerMarkdown, mayHaveComposerMarkdown } from "./ComposerMarkdown";
 import {
@@ -203,9 +209,19 @@ function MentionRuns({
             {part.text.slice(1)}
           </DraftToken>
         ) : (
-          workItemMentionParts(part.text).map((run, runIndex) =>
-            run.workItem ? (
+          scopedMentionParts(part.text).map((run, runIndex) =>
+            run.kind === "work-item" ? (
               <ComposerWorkItemToken key={`${index}:${runIndex}`} token={run.text} />
+            ) : run.kind && !mentions.has(run.text.slice(1)) ? (
+              <DraftToken
+                key={`${index}:${runIndex}`}
+                prefix="@"
+                className="text-mention"
+                icon={run.kind === "crew" ? <UsersRound /> : <StickyNote />}
+                data-scoped-mention={run.kind}
+              >
+                {run.text.slice(1)}
+              </DraftToken>
             ) : (
               <FileMentionRuns key={`${index}:${runIndex}`} text={run.text} mentions={mentions} />
             ),

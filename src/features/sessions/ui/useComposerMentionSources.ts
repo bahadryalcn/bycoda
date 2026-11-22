@@ -11,6 +11,7 @@ import { looksLikeProject } from "../../projects/public/recents";
 import {
   loadNoteSummaries,
   notesAsProjectFiles,
+  NOTES_MENTION_SCOPE,
   peekNoteSummaries,
   rankNoteFiles,
   type NoteSummary,
@@ -23,6 +24,12 @@ import {
   serverMentionOf,
   serverMentionRows,
 } from "../model/serverMentions";
+import { CREWS_MENTION_SCOPE } from "../model/crewMentions";
+import {
+  composerMentionScope,
+  composerMentionScopeHint,
+  scopedNoteMentionLabel,
+} from "../model/composerMentionScopes";
 
 type ScopedProjectFiles = { cwd: string; files: ProjectFile[] };
 
@@ -100,8 +107,8 @@ export function useComposerProjectFiles(input: {
  * Read-only Notes summaries for `@` mentions. They load only while the mention
  * menu can show them, and a read that finishes after that stops is dropped.
  */
-export function useComposerNotes(active: boolean): NoteSummary[] {
-  const [notes, setNotes] = useState<NoteSummary[]>(() => peekNoteSummaries() ?? NO_NOTES);
+function useComposerNotes(active: boolean): NoteSummary[] | null {
+  const [notes, setNotes] = useState<NoteSummary[] | null>(() => peekNoteSummaries() ?? null);
 
   useEffect(() => {
     if (!active) return;
@@ -110,7 +117,10 @@ export function useComposerNotes(active: boolean): NoteSummary[] {
       .then((next) => {
         if (!cancelled) setNotes(next);
       })
-      .catch((error) => console.warn("Loading composer notes failed", error));
+      .catch((error) => {
+        console.warn("Loading composer notes failed", error);
+        if (!cancelled) setNotes((current) => current ?? NO_NOTES);
+      });
     return () => {
       cancelled = true;
     };
@@ -133,7 +143,10 @@ export function useComposerMentionSources(input: {
     failed: filesFailed,
     retry: retryFiles,
   } = useComposerProjectFiles({ cwd: executionCwd, remote, mentionOpen });
-  const notes = useComposerNotes(!remote && mentionOpen && notesEnabled);
+  const notesAvailable = !remote && notesEnabled;
+  const loadedNotes = useComposerNotes(notesAvailable && mentionOpen);
+  const notes = loadedNotes ?? NO_NOTES;
+  const scope = composerMentionScope(mentionQuery);
   const serversScoped = parseServerMentionQuery(mentionQuery) !== null;
   const [servers, setServers] = useState<Awaited<
     ReturnType<typeof loadServerMentionInventory>
@@ -162,59 +175,81 @@ export function useComposerMentionSources(input: {
   const serversFailed = serverFailedAt === serverAttempt;
   const workItems = useComposerWorkItemMentions({
     cwd: executionCwd,
-    active: mentionOpen && !serversScoped,
+    active: mentionOpen && !serversScoped && !scope,
     query: mentionQuery,
   });
-  const crewHits = useComposerCrewMentions({
+  const {
+    rows: crewHits,
+    available: crewsAvailable,
+    loading: crewsLoading,
+  } = useComposerCrewMentions({
     cwd: executionCwd,
-    active: mentionOpen && !serversScoped,
-    query: mentionQuery,
+    active: mentionOpen && !serversScoped && !workItems.scoped && scope !== NOTES_MENTION_SCOPE,
+    query: scope === CREWS_MENTION_SCOPE ? mentionQuery.slice(scope.length) : mentionQuery,
   });
-  const mentionFiles = !remote && notesEnabled ? [...files, ...notesAsProjectFiles(notes)] : files;
-  const mentionIndex = buildMentionIndex(mentionFiles);
+  const noteFiles = notesAvailable ? notesAsProjectFiles(notes) : [];
+  const mentionIndex = buildMentionIndex([...files, ...noteFiles]);
+  for (const note of noteFiles) {
+    mentionIndex.labels.set(scopedNoteMentionLabel(note.relative), note);
+  }
   const deferredMentionQuery = useDeferredValue(mentionQuery);
   const rankedFiles = useMemo(() => {
     if (!mentionOpen) return [];
+    const crews = crewHits.filter((row) => row.crew.kind === "crew");
+    const members = crewHits.filter((row) => row.crew.kind === "member");
+    if (scope === CREWS_MENTION_SCOPE) return [...crews, ...members];
+    if (scope === NOTES_MENTION_SCOPE) {
+      return notesAvailable ? rankNoteFiles(notes, mentionQuery.slice(scope.length)) : [];
+    }
     const serverHits = remote || !servers ? [] : serverMentionRows(mentionQuery, servers);
     if (serversScoped) return serverHits;
     if (workItems.scoped) return workItems.rows;
     const fileHits = looksLikeProject(executionCwd)
       ? rankMentionFiles(files, deferredMentionQuery, recentOpenedFiles(executionCwd))
       : [];
-    const noteHits = !remote && notesEnabled ? rankNoteFiles(notes, deferredMentionQuery) : [];
-    const seen = new Set(noteHits.map((file) => file.path));
+    const noteHits = notesAvailable ? rankNoteFiles(notes, deferredMentionQuery) : [];
     return [
-      ...crewHits,
-      ...serverHits,
       ...workItems.rows,
+      ...composerMentionScopeHint(CREWS_MENTION_SCOPE, mentionQuery, crewsAvailable),
+      ...crews,
+      ...composerMentionScopeHint(NOTES_MENTION_SCOPE, mentionQuery, notesAvailable),
       ...noteHits,
-      ...fileHits.filter((file) => !seen.has(file.path)),
+      ...members,
+      ...serverHits,
+      ...fileHits.filter((file) => file.isDir),
+      ...fileHits.filter((file) => !file.isDir),
     ];
   }, [
     crewHits,
+    crewsAvailable,
     executionCwd,
     files,
     deferredMentionQuery,
     mentionOpen,
     mentionQuery,
     notes,
-    notesEnabled,
+    notesAvailable,
     remote,
+    scope,
     servers,
     serversScoped,
     workItems.rows,
     workItems.scoped,
   ]);
+  const filesScopedOut = Boolean(scope || workItems.scoped || serversScoped);
   return {
     mentionIndex,
     rankedFiles,
-    filesFailed: !workItems.scoped && !serversScoped && filesFailed,
+    filesFailed: !filesScopedOut && filesFailed,
     // Work-item and crew rows do not come from the file index.
     filesIndexNotice:
-      !workItems.scoped && !serversScoped && looksLikeProject(executionCwd)
-        ? projectIndexNotice(files)
-        : undefined,
+      !filesScopedOut && looksLikeProject(executionCwd) ? projectIndexNotice(files) : undefined,
     retryFiles,
+    scope,
+    scopeLoading:
+      scope === CREWS_MENTION_SCOPE
+        ? crewsLoading
+        : scope === NOTES_MENTION_SCOPE && notesAvailable && loadedNotes === null,
     workItemsLoading: workItems.loading,
     workItemsScoped: workItems.scoped,
     workItemsAvailable: workItems.available,

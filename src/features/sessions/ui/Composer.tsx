@@ -297,6 +297,8 @@ import {
 import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
 import { useComposerMentionSources } from "./useComposerMentionSources";
 import { workItemMentionOf } from "../model/workItemMentionRows";
+import { CREWS_MENTION_SCOPE, crewMentionOf } from "../model/crewMentions";
+import { composerMentionScopeHintOf, scopedNoteMentionLabel } from "../model/composerMentionScopes";
 import {
   parseServerMentionQuery,
   serverMentionAliasHint,
@@ -1173,6 +1175,8 @@ export const Composer = memo(function Composer({
   const {
     mentionIndex,
     rankedFiles,
+    scope: mentionScope,
+    scopeLoading: mentionScopeLoading,
     filesFailed,
     filesIndexNotice,
     retryFiles,
@@ -1864,14 +1868,20 @@ export const Composer = memo(function Composer({
       }
       const workItem = workItemMentionOf(file);
       const server = serverMentionOf(file);
-      const hint = workItem?.kind === "hint" || server?.hint === true;
+      const scopeHint = composerMentionScopeHintOf(file);
+      const crew = crewMentionOf(file);
+      const hint = Boolean(scopeHint || workItem?.kind === "hint" || server?.hint);
       if (workItem?.kind === "item") rememberWorkItemMention(workItem.item);
       const label =
         workItem?.token ??
         server?.token ??
-        (remote || isNoteMentionPath(file.path)
-          ? file.relative
-          : mentionLabel(file, mentionIndexRef.current));
+        scopeHint ??
+        (crew ? `${CREWS_MENTION_SCOPE}${crew.token}` : undefined) ??
+        (isNoteMentionPath(file.path)
+          ? scopedNoteMentionLabel(file.relative)
+          : remote
+            ? file.relative
+            : mentionLabel(file, mentionIndexRef.current));
       const next = replaceMentionToken(el.value, token, label, !hint);
       el.value = next;
       resizeComposer(el);
@@ -3667,7 +3677,7 @@ export const Composer = memo(function Composer({
           </ComposerSuggestions>
         ) : null}
         {mentionOpen && !pickerOpen ? (
-          <ComposerSuggestions anchor={boxRef} below={shell}>
+          <ComposerSuggestions anchor={boxRef} below={shell} solid matchComposer>
             <FileMentionPicker
               files={rankedFiles}
               query={mention?.query ?? ""}
@@ -3675,12 +3685,15 @@ export const Composer = memo(function Composer({
               loading={
                 serversLoading ||
                 workItemsLoading ||
+                mentionScopeLoading ||
                 (!serversScoped &&
                   !workItemsScoped &&
+                  !mentionScope &&
                   looksLikeProject(executionCwd) &&
                   peekProjectFiles(executionCwd) == null)
               }
               workItemsScoped={workItemsScoped}
+              scope={mentionScope}
               serversScoped={serversScoped}
               includeServers={serversAvailable}
               includeWorkItems={workItemsAvailable}
@@ -4380,6 +4393,18 @@ export const Composer = memo(function Composer({
                               }
                             : undefined
                         }
+                        onSelectWorktree={
+                          onWorktreeChange
+                            ? async (...args) => {
+                                const result = mutateParentInput(parentChanged, () =>
+                                  onWorktreeChange(...args),
+                                );
+                                if (result === false)
+                                  throw new Error("Session input is temporarily closed.");
+                                await result;
+                              }
+                            : undefined
+                        }
                         onClose={() => ref.current?.focus()}
                       />
                     </div>
@@ -4427,6 +4452,7 @@ export const Composer = memo(function Composer({
                             }
                           : undefined
                       }
+                      worktreeLocked
                       onClose={() => ref.current?.focus()}
                     />
                   </div>

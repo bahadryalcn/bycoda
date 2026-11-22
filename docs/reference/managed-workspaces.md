@@ -25,7 +25,7 @@ preserves workspace identity through full and incremental reloads. Native turn,
 activity and rewind adapters use native-kept paired Host credentials and durable
 SQLite fences; missing capabilities keep these operations unavailable.
 The integrated Host implements and advertises managed creation, native turn
-capture, native process/buffer admission and native rewind coordination through
+capture, native process admission and native rewind coordination through
 the trusted transports below. Isolated native acceptance is described below;
 live provider and installed/released acceptance remain separate.
 
@@ -43,12 +43,13 @@ manual synthetic writers. Live providers, simultaneous native applications in
 separate worktrees, and installed/released behavior still require acceptance.
 
 Native process leases are released by the same authenticated device only after
-confirmed settlement. Complete buffer reports are scoped to device, app profile,
-process instance and window; another client cannot clear them. Restart, stale,
-missing or uncertain reports remain blocking until fresh reconciliation. There
-is no blind timeout that declares a dead or unreachable app clean. Stale windows
-or earlier process instances can therefore remain blocked until explicitly
-reconciled; a fresh report from a different instance does not erase them. Mobile
+confirmed settlement. The Host stores no editor buffers: a worktree-removal lease
+from a connected desktop refuses with reason `editors` while unsaved files are
+under the path, and every grant carries `checks: ["editors"]`. A grant without it
+(older desktop) is refused. With no desktop connected for 2 minutes (and the Host
+up 2 minutes), a clean, non-forced removal proceeds and Git's own refusal is the
+backstop. There is no blind timeout that declares a dead or unreachable app
+clean for any other lease. Mobile
 source is maintained in the separate `mobile/` repository; inspect its current
 contracts when changing a mobile-facing operation. Installed/released inclusion remains unknown
 until compared with the actual running build identity.
@@ -208,7 +209,7 @@ HEAD refs retain commits; index/worktree snapshots may wrap trees in internal
 commits. Preserve separate index metadata for exact staging restoration. These
 are turn/recovery records, with no periodic WIP ring or nightly job.
 
-Rewind previews use short-lived plan tokens. Apply settles writers and buffers,
+Rewind previews use short-lived plan tokens. Apply settles writers,
 acquires execution/session/Git gates, revalidates revisions and fingerprints,
 and journals rescue transcript/HEAD/index/worktree state before mutation.
 Recovery phases are `prepared`, `git-restored`, `conversation-restored`,
@@ -257,7 +258,7 @@ Additional integration transports retain the frozen owner contract:
 - `sessions.rewind.status` exposes durable operation/Undo discovery for
   Host-executed sessions; persisted browser IDs are discovery hints only.
 - Trusted `native.turn.begin/end`, `native.activity.start/end`,
-  `native.buffers.update` and `native.rewind.plan/prepare/apply/status/ack` use
+  and `native.rewind.plan/prepare/apply/status/ack` use
   native execution/activity/rewind capabilities. Native transcript rescue is
   persisted before Git restore; Host completion waits for native receipt
   acknowledgement. Capability absence must never trigger opaque provider revert

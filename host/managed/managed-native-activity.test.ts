@@ -1,14 +1,10 @@
-import { spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
-import { once } from "node:events";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { turnGit } from "../git/turn-git-history";
 import { createExecutionActivityReservations } from "../workspace-cleanup";
 import { createManagedNativeActivity } from "./managed-native-activity";
-import type { NativeBufferSnapshot } from "./managed-native-activity";
 import type { ManagedWorkspace } from "../workspaces/workspace-contracts";
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -54,7 +50,6 @@ async function fixture(linkedAncestor = false, exactGitRewind = true) {
     pinned: false,
   };
   const workspaces = [workspace];
-  let clock = 1_000_000;
   const get = async (id: string) => {
     if (id !== workspace.id) throw new Error("Unknown workspace");
     return workspace;
@@ -62,7 +57,7 @@ async function fixture(linkedAncestor = false, exactGitRewind = true) {
   let service: ReturnType<typeof createManagedNativeActivity>;
   const activity = createExecutionActivityReservations({
     get,
-    probe: (id) => service.probe(id),
+    probe: async () => [],
     pending: async () => false,
   });
   const compose = () =>
@@ -79,45 +74,8 @@ async function fixture(linkedAncestor = false, exactGitRewind = true) {
       activity,
       assertWritable: async () => {},
       authorize: async (value) => value.authorizationId === "trusted",
-      now: () => clock,
     });
   service = compose();
-  const storeInstance = randomUUID(),
-    windowIncarnation = randomUUID();
-  const ownerKey = createHash("sha256")
-    .update(`${storeInstance}:${windowIncarnation}`)
-    .digest("hex");
-  let reportVersion = 0;
-  const report = (
-    dirty: boolean,
-    clientId = "client",
-    instanceId = "instance",
-  ): NativeBufferSnapshot => ({
-    clientId,
-    instanceId,
-    processId: 1234,
-    owners: [
-      {
-        ownerId: `physical:v2:${ownerKey}`,
-        updatedAt: clock,
-        unknown: false,
-        buffers: [{ path: join(path, "source.txt"), dirty }],
-        source: {
-          version: 2,
-          sourceStoreId: "test-source-store",
-          sourceProfileId: "test-source-profile",
-          storeInstance,
-          windowIncarnation,
-          kind: "physical",
-          reportVersion: ++reportVersion,
-          reportNonce: randomUUID(),
-          snapshotDigest: createHash("sha256")
-            .update(JSON.stringify([{ path: join(path, "source.txt"), dirty }]))
-            .digest("hex"),
-        },
-      },
-    ],
-  });
   return {
     root,
     main,
@@ -128,16 +86,12 @@ async function fixture(linkedAncestor = false, exactGitRewind = true) {
     get service() {
       return service;
     },
-    report,
     restart() {
       service = compose();
     },
-    advance(ms: number) {
-      clock += ms;
-    },
   };
 }
-it("admits lightweight processes despite dirty buffers and stale activity without a managed lease", async () => {
+it("admits lightweight processes despite stale activity without a managed lease", async () => {
   const f = await fixture(false, false);
   // An old unknown turn must remain a destructive-operation guard, not a turn admission fence.
   await f.activity.start({
@@ -145,7 +99,6 @@ it("admits lightweight processes despite dirty buffers and stale activity withou
     kind: "provider",
     ownerId: "native-turn:stuck",
   });
-  await f.service.updateBuffers(f.report(true), owner);
   for (let turn = 0; turn < 3; turn++) {
     expect(
       await f.service.start(
@@ -166,11 +119,8 @@ it("admits lightweight processes despite dirty buffers and stale activity withou
   expect(entries.filter((entry) => entry.ownerId.startsWith("native-process:"))).toEqual([]);
 });
 
-it("admits canonical native processes and buffers beneath an aliased workspace ancestor", async () => {
+it("admits canonical native processes beneath an aliased workspace ancestor", async () => {
   const f = await fixture(true);
-  await f.service.updateBuffers(f.report(true), owner);
-  expect(await f.service.probe("workspace")).toHaveLength(1);
-  await f.service.updateBuffers(f.report(false), owner);
   const broken = join(f.root, "linked-workspace");
   await symlink(f.main, broken, process.platform === "win32" ? "junction" : "dir");
   f.workspaces.push({ ...f.workspace, id: "broken-sibling", path: broken });
@@ -254,74 +204,11 @@ it("shares reservations and permits the process belonging to a captured native s
   await f.service.end({ activityId: "nested-shell" }, owner);
   await f.activity.stop(turn.id);
 });
-it("retains dirty and unknown windows and other clients until their own fresh reports settle", async () => {
-  const f = await fixture();
-  await f.service.updateBuffers(f.report(true), owner);
-  await f.service.updateBuffers(f.report(false, "other-client"), owner);
-  await expect(
-    f.activity.reserve({
-      workspaceId: "workspace",
-      operationId: "remove",
-      purpose: "removal",
-      expectedRevision: 1,
-    }),
-  ).rejects.toThrow("in use");
-  await f.service.updateBuffers({ ...f.report(false), owners: [] }, owner);
-  expect(await f.service.probe("workspace")).toHaveLength(1);
-  await f.service.updateBuffers(f.report(false), other);
-  expect(await f.service.probe("workspace")).toHaveLength(1);
-  await f.service.updateBuffers(f.report(false), owner);
-  expect(await f.service.probe("workspace")).toHaveLength(0);
-  f.advance(46_000);
-  expect(await f.service.probe("workspace")).toHaveLength(3);
-  f.restart();
-  await f.service.updateBuffers(f.report(false), owner);
-  expect(await f.service.probe("workspace")).toHaveLength(2);
-});
-it("requires fresh reports after Host restart and canonicalizes new files through dependency aliases", async () => {
-  const f = await fixture();
-  await f.service.updateBuffers(f.report(false), owner);
-  f.restart();
-  expect(await f.service.probe("workspace")).toHaveLength(1);
-  await f.service.updateBuffers(f.report(false), owner);
-  const alias = join(f.root, "alias");
-  await symlink(f.path, alias, process.platform === "win32" ? "junction" : "dir");
-  try {
-    const report = f.report(true);
-    report.owners[0].buffers[0].path = join(alias, "new-file.txt");
-    report.owners[0].source!.snapshotDigest = createHash("sha256")
-      .update(JSON.stringify(report.owners[0].buffers))
-      .digest("hex");
-    await f.service.updateBuffers(report, owner);
-    expect(await f.service.probe("workspace")).toHaveLength(1);
-    await expect(
-      f.service.start({ activityId: "blocked", cwd: f.path, kind: "shell" }, owner),
-    ).rejects.toThrow("unsettled");
-  } finally {
-    // Remove only this link entry before recursive test-root cleanup.
-    await rm(alias);
-  }
-});
-it("rejects malformed and reused instance reports without clearing a dirty snapshot", async () => {
-  const f = await fixture();
-  await f.service.updateBuffers(f.report(true), owner);
-  await expect(
-    f.service.updateBuffers({ ...f.report(false), processId: 999 }, owner),
-  ).rejects.toThrow("process identity changed");
-  const invalid = f.report(false);
-  invalid.owners[0].buffers[0].path = "relative";
-  await expect(f.service.updateBuffers(invalid, owner)).rejects.toThrow("buffer path");
-  expect(await f.service.probe("workspace")).toHaveLength(1);
-});
 
-it("keeps lifecycle activity probes available while a directory is pending removal or retired", async () => {
+it("refuses process admission while the workspace directory is being retired", async () => {
   const f = await fixture();
-  await f.service.updateBuffers(f.report(true), owner);
   for (const directoryState of ["pendingRemoval", "removing", "removed"] as const) {
     f.workspace.directoryState = directoryState;
-    await expect(f.service.probe("workspace")).resolves.toMatchObject([
-      { workspaceId: "workspace", kind: "editor", dirtyBuffer: true },
-    ]);
     await expect(
       f.service.start(
         { activityId: `blocked-${directoryState}`, cwd: f.path, kind: "shell" },
@@ -329,117 +216,4 @@ it("keeps lifecycle activity probes available while a directory is pending remov
       ),
     ).rejects.toThrow("unavailable");
   }
-});
-
-it("retires a clean closed instance and reconciles a clean dead predecessor without releasing dirty or foreign reports", async () => {
-  const f = await fixture();
-  const old = {
-    ...f.report(false),
-    processId: process.pid,
-    owners: [{ ownerId: "main", updatedAt: 1_000_000, unknown: false, buffers: [] }],
-  };
-  await f.service.updateBuffers(old, owner);
-  await f.service.retireBuffers(
-    { clientId: old.clientId, instanceId: old.instanceId, processId: old.processId },
-    owner,
-  );
-  f.advance(46_000);
-  f.restart();
-  expect(await f.service.probe("workspace")).toHaveLength(0);
-  const prior = { ...old, instanceId: "prior" };
-  await f.service.updateBuffers(prior, owner);
-  await f.service.updateBuffers({ ...old, instanceId: "replacement" }, owner);
-  await expect(
-    f.service.reconcileBuffers(
-      {
-        clientId: old.clientId,
-        instanceId: "replacement",
-        predecessors: [{ instanceId: "prior", processId: old.processId }],
-      },
-      other,
-    ),
-  ).rejects.toThrow();
-  await expect(
-    f.service.reconcileBuffers(
-      {
-        clientId: old.clientId,
-        instanceId: "replacement",
-        predecessors: [{ instanceId: "prior", processId: old.processId }],
-      },
-      owner,
-    ),
-  ).rejects.toThrow("not proven dead");
-  expect(await f.service.probe("workspace")).toHaveLength(2);
-});
-
-it("reconciles a terminated local native process but retains dirty and unknown crash reports", async () => {
-  const f = await fixture();
-  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-    windowsHide: true,
-    stdio: "ignore",
-  });
-  await once(child, "spawn");
-  cleanups.push(async () => {
-    if (child.exitCode === null) child.kill();
-  });
-  const old = {
-    ...f.report(false),
-    processId: child.pid!,
-    owners: [{ ownerId: "main", updatedAt: 1_000_000, unknown: false, buffers: [] }],
-  };
-  await f.service.updateBuffers(old, owner);
-  const dirty = { ...f.report(true, "dirty-client", "dirty-crash"), processId: child.pid! };
-  await f.service.updateBuffers(dirty, owner);
-  await f.service.updateBuffers(
-    {
-      ...old,
-      clientId: "unknown-client",
-      instanceId: "unknown-crash",
-      owners: [{ ...old.owners[0], unknown: true }],
-    },
-    owner,
-  );
-  const exited = once(child, "exit");
-  child.kill("SIGKILL");
-  await exited;
-  f.advance(46_000);
-  f.restart();
-  await f.service.updateBuffers(
-    {
-      ...old,
-      instanceId: "replacement",
-      processId: process.pid,
-      owners: [{ ...old.owners[0], updatedAt: 1_046_000 }],
-    },
-    owner,
-  );
-  expect(await f.service.probe("workspace")).toHaveLength(3);
-  await f.service.reconcileBuffers(
-    { clientId: old.clientId, instanceId: "replacement", predecessors: [] },
-    owner,
-  );
-  expect(await f.service.probe("workspace")).toHaveLength(2);
-  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  let warned = 0;
-  for (const report of [dirty, { ...old, clientId: "unknown-client" }]) {
-    await f.service.updateBuffers(
-      {
-        ...f.report(false),
-        clientId: report.clientId,
-        instanceId: "replacement",
-        processId: process.pid,
-      },
-      owner,
-    );
-    const request = { clientId: report.clientId, instanceId: "replacement", predecessors: [] };
-    const answer = await f.service.reconcileBuffers(request, owner);
-    expect(answer).toMatchObject({ state: "recovery-required", total: 1 });
-    // Same blocking set: same answer, and the Host warns only on the first call.
-    expect(await f.service.reconcileBuffers(request, owner)).toEqual(answer);
-    expect(warn.mock.calls.filter(([line]) => /owner recovery/.test(String(line)))).toHaveLength(
-      ++warned,
-    );
-  }
-  warn.mockRestore();
-  expect(await f.service.probe("workspace")).toHaveLength(2);
 });

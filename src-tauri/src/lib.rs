@@ -64,6 +64,7 @@ mod macos;
 #[cfg(target_os = "macos")]
 mod macos_background;
 mod mcp;
+pub use mcp::remote_config::maybe_run as maybe_run_mcp_config_helper;
 mod menu;
 mod messaging;
 mod mobile_pty;
@@ -487,6 +488,7 @@ pub fn run() {
         .manage(ssh_execution::SshExecutionReviews::default())
         .manage(std::sync::Arc::new(ssh_execution::SshExecutions::default()))
         .manage(window_transfer::WindowTransferState::new())
+        .manage(native_workspace::editor_buffers::EditorBuffers::default())
         .manage(session_store::window_barrier::WindowBarrier::new())
         .on_page_load(|webview, payload| {
             native_window_lifecycle::on_page_load(webview, payload);
@@ -580,12 +582,6 @@ pub fn run() {
             worktrees::managed_worktree_removal_plan,
             worktrees::managed_worktree_removal_apply,
             native_workspace::managed_workspace_buffers,
-            native_workspace::managed_workspace_buffer_recovery_list,
-            native_workspace::managed_workspace_buffer_recovery_read,
-            native_workspace::managed_workspace_buffer_recovery_status,
-            native_workspace::managed_workspace_host_buffer_recovery_list,
-            native_workspace::managed_workspace_host_buffer_recovery_read,
-            native_workspace::managed_workspace_host_buffer_recovery_status,
             native_editor_drafts::native_editor_draft_put,
             native_editor_drafts::native_editor_draft_open,
             native_editor_drafts::native_editor_draft_read_current,
@@ -1015,6 +1011,9 @@ pub fn run() {
             harness::claude_mcp_list,
             harness::codex_mcp_list,
             mcp::mcp_discover,
+            mcp::oauth_callback::mcp_oauth_callback_bind,
+            mcp::oauth_callback::mcp_oauth_callback_wait,
+            mcp::oauth_callback::mcp_oauth_callback_cancel,
             mcp::enablement::mcp_set_enabled,
             mcp::mcp_add,
             mcp::server_config::mcp_server_config_read,
@@ -1221,6 +1220,7 @@ pub fn run() {
             window::quit_commit_dialog,
             window::quit_ready,
             window::quit_finalization::request_app_restart,
+            window::quit_finalization::request_app_quit,
             window_glass_state::set_window_glass_enabled,
             window_fullscreen::set_window_fullscreen,
             voice_overlay::voice_overlay_open,
@@ -1321,6 +1321,10 @@ pub fn run() {
                 .into_iter()
                 .find(|window| window.label() == label)
             {
+                #[cfg(windows)]
+                if workspace.is_visible().unwrap_or(false) {
+                    tray::windows::revealed(handle, &label);
+                }
                 let _ = window::ensure_window_reachable(&workspace);
             }
         }
@@ -1454,7 +1458,6 @@ fn teardown_on_exit(handle: &tauri::AppHandle) {
         host.shutdown_provider_output();
     }
     native_authority_runtime::shutdown(handle);
-    let _ = native_workspace::retire_buffers(handle);
     ssh_window_lifecycle::shutdown();
     if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {
         state.shutdown();

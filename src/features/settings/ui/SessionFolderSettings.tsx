@@ -15,7 +15,7 @@ export const restoreSessionFolderDefault = async () => {
   changes.dispatchEvent(new Event("change"));
 };
 
-/** The folder sessions started with "No project" run in; empty means the home folder. */
+/** Older projectless sessions use the selected folder, or home when unset. */
 export function SessionFolderGroup() {
   useLocale();
   const [folder, setFolder] = useState<SessionFolder | null>(null);
@@ -95,7 +95,7 @@ export function SessionFolderGroup() {
         id="session-folder"
         label={t("Folder for sessions without a project")}
         description={t(
-          "Sessions started with No project run here. The folder is created if it is missing.",
+          "Older projectless sessions use this folder. New sessions get their own folder.",
         )}
         feedback={
           error ? (

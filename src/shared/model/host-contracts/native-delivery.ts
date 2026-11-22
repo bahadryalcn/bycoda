@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   NativeDeliveryIdentitySchema,
-  NativeBufferDeliveryRecordedSchema,
   NativeDeliveryResultSourceSchema,
   NativeDeliveryConsumedResultSchema,
 } from "./native-delivery-identity";
@@ -14,9 +13,6 @@ import {
   parseNativeDeliveryEpochOriginalId,
 } from "./native-delivery-epochs";
 
-export const NativeBufferDeliveryApplyParamsSchema = NativeDeliveryIdentitySchema.extend({
-  paramsJson: z.string(),
-});
 const serviceIdentity = NativeDeliveryIdentitySchema.extend({
   target: NativeServiceUploadTargetSchema,
 });
@@ -35,7 +31,6 @@ const serviceStatusParams = serviceIdentity.extend({
   acknowledge: NativeServiceDeliveryAcknowledgeSchema.optional(),
 });
 const absent = z.strictObject({ state: z.literal("absent") });
-const unknown = NativeDeliveryIdentitySchema.extend({ state: z.literal("unknown") });
 const fenced = NativeDeliveryIdentitySchema.extend({
   state: z.literal("fenced"),
   epoch: NativeDeliveryEpochFenceSchema,
@@ -53,25 +48,12 @@ export const nativeDeliveryMatchesEpochFence = (value: z.infer<typeof fenced>) =
     return false;
   }
 };
-export const NativeBufferDeliveryAckParamsSchema = NativeDeliveryIdentitySchema.extend({
-  consumedResult: NativeDeliveryConsumedResultSchema,
-});
 export const NativeServiceDeliveryAckParamsSchema = serviceIdentity.extend({
   consumedResult: NativeDeliveryConsumedResultSchema,
-});
-export const NativeBufferDeliveryRetiredSchema = NativeBufferDeliveryAckParamsSchema.extend({
-  state: z.literal("retired"),
 });
 export const NativeServiceDeliveryRetiredSchema = NativeServiceDeliveryAckParamsSchema.extend({
   state: z.literal("retired"),
 });
-export const NativeBufferDeliveryStatusSchema = z.union([
-  absent,
-  unknown,
-  fenced,
-  NativeBufferDeliveryRecordedSchema,
-  NativeBufferDeliveryRetiredSchema,
-]);
 export const NativeServiceDeliveryStatusSchema = z.union([
   absent,
   fenced.extend({ target: NativeServiceUploadTargetSchema }),
@@ -102,21 +84,9 @@ export const NativeServiceDeliveryStatusSchema = z.union([
 ]);
 export const NATIVE_DELIVERY_RPC_SCHEMAS = {
   ...NATIVE_DELIVERY_EPOCH_RPC_SCHEMAS,
-  "native.buffers.delivery.ack": {
-    params: NativeBufferDeliveryAckParamsSchema,
-    result: NativeBufferDeliveryRetiredSchema,
-  },
   "native.services.delivery.ack": {
     params: NativeServiceDeliveryAckParamsSchema,
     result: NativeServiceDeliveryRetiredSchema,
-  },
-  "native.buffers.delivery.apply": {
-    params: NativeBufferDeliveryApplyParamsSchema,
-    result: NativeBufferDeliveryStatusSchema,
-  },
-  "native.buffers.delivery.status": {
-    params: NativeDeliveryIdentitySchema,
-    result: NativeBufferDeliveryStatusSchema,
   },
   "native.services.delivery.apply": {
     params: NativeServiceDeliveryApplyParamsSchema,
@@ -140,7 +110,6 @@ export const NATIVE_DELIVERY_RPC_SCHEMAS = {
   },
 } as const;
 export type NativeDeliveryMethod = keyof typeof NATIVE_DELIVERY_RPC_SCHEMAS;
-export type NativeBufferDeliveryStatus = z.infer<typeof NativeBufferDeliveryStatusSchema>;
 export type NativeServiceDeliveryStatus = z.infer<typeof NativeServiceDeliveryStatusSchema>;
 export const NATIVE_DELIVERY_METHODS = Object.freeze(
   Object.keys(NATIVE_DELIVERY_RPC_SCHEMAS) as NativeDeliveryMethod[],

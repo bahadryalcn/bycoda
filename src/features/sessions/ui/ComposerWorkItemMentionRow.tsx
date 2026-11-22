@@ -1,8 +1,7 @@
 import { MatchText } from "../../../shared/ui/MatchText";
-import { Text } from "../../../shared/ui/Text";
 import { WORK_ITEM_PROVIDER_NAMES, type WorkItemMentionTarget } from "../model/workItemMentionRows";
 
-/** Provider name and aliases, or identifier and title, within the shared picker row. */
+/** Provider name, or identifier and title, within the shared picker row. */
 export function WorkItemMentionText({
   target,
   name,
@@ -13,10 +12,7 @@ export function WorkItemMentionText({
   positions: number[];
 }) {
   return target.kind === "hint" ? (
-    <Text size="inherit" tone="inherit" truncate>
-      {WORK_ITEM_PROVIDER_NAMES[target.provider]} —{" "}
-      {target.aliases.map((alias) => `${alias}:`).join(" · ")}
-    </Text>
+    WORK_ITEM_PROVIDER_NAMES[target.provider]
   ) : (
     <MatchText text={name} positions={positions} active={positions.length > 0} />
   );

@@ -388,10 +388,10 @@ describe("settings pages", () => {
     },
     {
       section: "general",
-      key: "bycoda.closeToTray",
+      key: "bycoda.minimizeToTray",
       initial: "1",
       next: "0",
-      selector: '[data-setting-id="close-to-tray"] [role="switch"]',
+      selector: '[data-setting-id="minimize-to-tray"] [role="switch"]',
     },
   ])(
     "refreshes mounted $section controls after sibling storage changes to $key",

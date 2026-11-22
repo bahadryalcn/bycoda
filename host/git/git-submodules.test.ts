@@ -110,11 +110,26 @@ it("opts into ignored independent repositories and worktree gitfiles without fol
   symlinkSync(outside, join(parent, "external"), process.platform === "win32" ? "junction" : "dir");
   const before = [f.git(parent, "status", "--porcelain"), f.git(mobile, "diff", "--cached")];
   expect(await paths(parent)).toEqual([]);
-  expect(await paths(parent, true)).toEqual(["Türkçe proje", "mobile", "review-copy"]);
+  // `review-copy` is a linked worktree of another repository, so it is not a repository here.
+  expect(await paths(parent, true)).toEqual(["Türkçe proje", "mobile"]);
   expect([f.git(parent, "status", "--porcelain"), f.git(mobile, "diff", "--cached")]).toEqual(
     before,
   );
   expect(readFileSync(join(mobile, "file.txt"), "utf8")).toBe("independent unsaved change\n");
+});
+
+it("skips nested linked worktrees of the scanned repository but keeps independent repositories and submodules", async () => {
+  const f = fixture();
+  const source = f.repo("source");
+  const parent = f.repo("parent");
+  f.add(parent, source, "vendor");
+  f.repo("parent/mobile");
+  writeFileSync(join(parent, ".gitignore"), "mobile/\n.claude/\n");
+  const worktree = join(parent, ".claude", "worktrees", "x");
+  f.git(parent, "worktree", "add", "-qb", "x", worktree);
+  // A repository nested inside the worktree belongs to that worktree, not to this checkout.
+  f.repo("parent/.claude/worktrees/x/inner");
+  expect((await hostGitSubmodules(parent, true)).paths).toEqual(["mobile", "vendor"]);
 });
 
 it("keeps repositories found before the physical folder depth limit and reports the scan as limited", async () => {

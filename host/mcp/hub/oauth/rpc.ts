@@ -6,6 +6,14 @@ const INPUT = z.object({
   cwd: z.string().max(4096).optional(),
 });
 const STATUS_INPUT = z.object({ cwd: z.string().max(4096).optional() });
+const START_INPUT = z.object({ callbackPort: z.number().int().min(1024).max(65535).optional() });
+const COMPLETE_INPUT = z
+  .object({
+    state: z.string().regex(/^[A-Za-z0-9_-]{16,256}$/),
+    code: z.string().min(1).max(8192).optional(),
+    error: z.string().min(1).max(128).optional(),
+  })
+  .refine(({ code, error }) => Boolean(code) !== Boolean(error));
 
 export const isOAuthMethod = (method: string) => method.startsWith("mcp.oauth.");
 
@@ -15,7 +23,9 @@ export async function oauthRpc(hub: McpHub, method: string, input: Record<string
     const parsed = STATUS_INPUT.safeParse(input);
     if (!parsed.success) throw new Error("Invalid MCP sign-in request.");
     const http = (await hub.inventory(parsed.data.cwd)).filter((def) => def.kind === "http");
-    const states = await hub.oauth.status(http.map((def) => ({ name: def.name, url: def.url! })));
+    const states = await hub.oauth.status(
+      http.map((def) => hub.oauthServerRef(def, parsed.data.cwd)),
+    );
     return { servers: states };
   }
   const parsed = INPUT.safeParse(input);
@@ -24,8 +34,17 @@ export async function oauthRpc(hub: McpHub, method: string, input: Record<string
     (item) => item.kind === "http" && item.name === parsed.data.name,
   );
   if (!def) throw new Error("Unknown MCP server.");
-  const server = { name: def.name, url: def.url! };
-  if (method === "mcp.oauth.start") return await hub.oauth.start(server);
+  const server = hub.oauthServerRef(def, parsed.data.cwd);
+  if (method === "mcp.oauth.start") {
+    const start = START_INPUT.safeParse(input);
+    if (!start.success) throw new Error("Invalid MCP callback port.");
+    return await hub.oauth.start(server, start.data.callbackPort);
+  }
+  if (method === "mcp.oauth.complete") {
+    const completion = COMPLETE_INPUT.safeParse(input);
+    if (!completion.success) throw new Error("Invalid MCP sign-in callback.");
+    return { status: await hub.oauth.completeRelay(server, completion.data) };
+  }
   if (method === "mcp.oauth.signOut") {
     await hub.oauth.signOut(server);
     return { signedOut: true };

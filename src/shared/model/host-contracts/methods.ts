@@ -49,17 +49,6 @@ import {
   type NativeServiceUploadMethod,
 } from "./native-service-upload";
 import { NATIVE_WORKSPACE_RPC_SCHEMAS, type NativeWorkspaceMethod } from "./native-workspaces";
-import {
-  NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS,
-  type NativeBufferUploadMethod,
-} from "./native-buffer-upload";
-import {
-  NativeBufferRecoveryListParamsSchema,
-  NativeBufferRecoverySourceSchema,
-  NativeBufferRecoveryPageSchema,
-  NativeBufferRecoveryReadSchema,
-  NativeBufferRecoveryStatusSchema,
-} from "./native-buffer-recovery";
 import { WS_LIMITS } from "./policy";
 import * as gitDto from "./git";
 import * as notesDto from "./notes";
@@ -303,23 +292,6 @@ const nativeWorkspaceOperation = (method: NativeWorkspaceMethod): HostRpcMethodD
   };
 };
 
-const nativeBufferUploadOperation = (
-  method: NativeBufferUploadMethod,
-): HostRpcMethodDefinition => ({
-  ...(method === "native.buffers.upload.status"
-    ? read(
-        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].params,
-        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].result,
-      )
-    : control(
-        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].params,
-        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].result,
-      )),
-  cost: "read",
-  requiredCapability: "native.buffers.upload.v1",
-  responseTimeoutMs: 30_000,
-});
-
 const nativeServiceOperation = (method: NativeServiceMethod): HostRpcMethodDefinition => ({
   ...(nativeServiceReadOnly(method)
     ? read(NATIVE_SERVICES_RPC_SCHEMAS[method].params, NATIVE_SERVICES_RPC_SCHEMAS[method].result)
@@ -403,12 +375,8 @@ const nativeDeliveryOperation = (method: NativeDeliveryMethod): HostRpcMethodDef
       : method.startsWith("native.delivery.epochs.")
         ? "native.delivery.epochs.v2"
         : method.endsWith(".ack")
-          ? method.startsWith("native.buffers.")
-            ? "native.buffers.delivery.ack.v1"
-            : "native.services.delivery.ack.v1"
-          : method.startsWith("native.buffers.")
-            ? "native.buffers.delivery.v1"
-            : "native.services.delivery.v1",
+          ? "native.services.delivery.ack.v1"
+          : "native.services.delivery.v1",
   responseTimeoutMs: 30_000,
 });
 /** A voice call owns its own socket; recognizer start and transcription may load a model first. */
@@ -450,10 +418,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   "native.delivery.epochs.compact": nativeDeliveryOperation("native.delivery.epochs.compact"),
   "native.delivery.epochs.close": nativeDeliveryOperation("native.delivery.epochs.close"),
   [NATIVE_DELIVERY_EPOCH_GAP_METHOD]: nativeDeliveryOperation(NATIVE_DELIVERY_EPOCH_GAP_METHOD),
-  "native.buffers.delivery.ack": nativeDeliveryOperation("native.buffers.delivery.ack"),
   "native.services.delivery.ack": nativeDeliveryOperation("native.services.delivery.ack"),
-  "native.buffers.delivery.apply": nativeDeliveryOperation("native.buffers.delivery.apply"),
-  "native.buffers.delivery.status": nativeDeliveryOperation("native.buffers.delivery.status"),
   "native.services.delivery.apply": nativeDeliveryOperation("native.services.delivery.apply"),
   "native.services.delivery.status": nativeDeliveryOperation("native.services.delivery.status"),
   "native.services.delivery.result.read": nativeDeliveryOperation(
@@ -569,11 +534,6 @@ export const HOST_RPC_METHODS = Object.freeze({
     requiredCapability: "transport.ws.models.v1",
     responseTimeoutMs: 60_000,
   },
-  "native.buffers.upload.start": nativeBufferUploadOperation("native.buffers.upload.start"),
-  "native.buffers.upload.write": nativeBufferUploadOperation("native.buffers.upload.write"),
-  "native.buffers.upload.commit": nativeBufferUploadOperation("native.buffers.upload.commit"),
-  "native.buffers.upload.status": nativeBufferUploadOperation("native.buffers.upload.status"),
-  "native.buffers.upload.abort": nativeBufferUploadOperation("native.buffers.upload.abort"),
   "native.turn.begin": nativeWorkspaceOperation("native.turn.begin"),
   "native.turn.end": nativeWorkspaceOperation("native.turn.end"),
   "native.activity.start": nativeWorkspaceOperation("native.activity.start"),
@@ -592,18 +552,6 @@ export const HOST_RPC_METHODS = Object.freeze({
   "workspaces.cleanup.plan": nativeWorkspaceOperation("workspaces.cleanup.plan"),
   "workspaces.cleanup.apply": nativeWorkspaceOperation("workspaces.cleanup.apply"),
   "workspaces.cleanup.status": nativeWorkspaceOperation("workspaces.cleanup.status"),
-  "native.buffers.recovery.list": {
-    ...read(NativeBufferRecoveryListParamsSchema, NativeBufferRecoveryPageSchema),
-    requiredCapability: "native.buffers.recovery.v1",
-  },
-  "native.buffers.recovery.read": {
-    ...read(NativeBufferRecoverySourceSchema, NativeBufferRecoveryReadSchema),
-    requiredCapability: "native.buffers.recovery.v1",
-  },
-  "native.buffers.recovery.status": {
-    ...read(NativeBufferRecoverySourceSchema, NativeBufferRecoveryStatusSchema),
-    requiredCapability: "native.buffers.recovery.v1",
-  },
   "crews.active.list": crewOperation("crews.active.list"),
   "crews.member.ask": crewOperation("crews.member.ask"),
   "crews.list": crewOperation("crews.list"),

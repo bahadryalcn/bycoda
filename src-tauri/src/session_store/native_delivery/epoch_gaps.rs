@@ -6,30 +6,23 @@
 use super::*;
 
 pub(super) const TABLE: &str = "native_delivery_epoch_gaps";
-const ANCHORS: [&str; 2] = [
-    "native_delivery_epoch_gap_valid",
-    "native_delivery_epoch_gap_phase_fence",
-];
+const VALID_GAP: &str = "native_delivery_epoch_gap_valid_v2";
 /// Permanent rows; bounded like the Host's global fence catalog.
 const MAX_GAPS: i64 = 65_536;
 const COLUMNS: &str = "original_id,owner_id,generation,sequence,source_store_id,source_profile_id,semantic_key,route_fingerprint,method,payload_sha256,payload_bytes,created_instance,resolved_instance";
 
 fn gap_invalid() -> String {
-    "NATIVE_DELIVERY_EPOCH_GAP_INVALID: only an older runtime's unadmitted prepared/possible original can be fenced".into()
+    "NATIVE_DELIVERY_EPOCH_GAP_INVALID: only an older runtime's unresolved original can be fenced"
+        .into()
 }
 
 pub(super) fn installed(conn: &Connection) -> Result<(bool, bool), String> {
-    let mut anchored = true;
-    for name in ANCHORS {
-        let present: bool = conn
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='trigger' AND name=?1)",
-                [name],
-                |r| r.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-        anchored &= present;
-    }
+    let anchored: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='trigger' AND name IN ('native_delivery_epoch_gap_valid',?1))
+          AND EXISTS(SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='native_delivery_epoch_gap_phase_fence')",
+        [VALID_GAP],
+        |r| r.get(0),
+    ).map_err(|e| e.to_string())?;
     Ok((table(conn, TABLE)?, anchored))
 }
 
@@ -38,7 +31,20 @@ pub(super) fn installed(conn: &Connection) -> Result<(bool, bool), String> {
 pub(super) fn migrate(conn: &Connection) -> Result<(), String> {
     require_full(conn)?;
     match installed(conn)? {
-        (true, true) => return Ok(()),
+        (true, true) => {
+            let current: bool = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='trigger' AND name=?1)",
+                    [VALID_GAP],
+                    |r| r.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if !current {
+                conn.execute_batch(&slot_guards())
+                    .map_err(|e| e.to_string())?;
+            }
+            return Ok(());
+        }
         (false, _) => {}
         _ => return Err(invalid()),
     }
@@ -68,10 +74,42 @@ fn same(a: &str, b: &str) -> String {
     .join(" AND ")
 }
 
-fn guards() -> String {
-    let og = same("o", "g");
+fn slot_guards() -> String {
     let og_new = same("o", "NEW");
     let a_new = same("a", "NEW");
+    let g_old = same("g", "OLD");
+    format!(
+        r#"
+DROP TRIGGER IF EXISTS native_delivery_epoch_gap_valid;
+CREATE TRIGGER {VALID_GAP} BEFORE INSERT ON {TABLE} WHEN NOT EXISTS(
+ SELECT 1 FROM native_delivery_originals o JOIN native_delivery_epoch_allocations a ON a.original_id=o.original_id
+ JOIN native_delivery_epochs e ON e.owner_id=a.owner_id AND e.generation=a.generation {WITNESSED}
+ WHERE o.original_id=NEW.original_id AND NEW.original_id='nd2:'||NEW.owner_id||':'||NEW.generation||':'||NEW.sequence
+ AND a.owner_id=NEW.owner_id AND a.generation=NEW.generation AND a.sequence=NEW.sequence AND {og_new} AND {a_new}
+ AND ((o.phase IN('prepared','possible') AND o.result_sha256 IS NULL)
+   OR (o.phase='acknowledged' AND o.method='{LEGACY_BUFFER}')) AND o.created_instance=NEW.created_instance
+ AND length(CAST(NEW.resolved_instance AS BLOB))=36 AND NEW.resolved_instance!=NEW.created_instance
+ AND e.source_store_id=NEW.source_store_id AND e.source_profile_id=NEW.source_profile_id AND e.route_fingerprint=NEW.route_fingerprint
+ AND NEW.sequence>e.local_through AND NEW.sequence<=e.high_water)
+ OR EXISTS(SELECT 1 FROM native_delivery_remote_acks r WHERE r.original_id=NEW.original_id)
+ OR EXISTS(SELECT 1 FROM native_delivery_semantic_retirements m WHERE m.original_id=NEW.original_id OR (m.owner_id=NEW.owner_id AND m.generation=NEW.generation AND m.sequence=NEW.sequence))
+BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_GAP_INVALID'); END;
+DROP TRIGGER IF EXISTS native_delivery_no_delete;
+CREATE TRIGGER native_delivery_no_delete BEFORE DELETE ON native_delivery_originals WHEN NOT((OLD.phase='acknowledged' AND EXISTS(
+ SELECT 1 FROM native_delivery_semantic_retirements m JOIN native_delivery_epochs e ON e.owner_id=m.owner_id AND e.generation=m.generation {WITNESSED}
+ WHERE OLD.original_id='nd2:'||m.owner_id||':'||m.generation||':'||m.sequence AND m.original_id=OLD.original_id AND m.source_store_id=OLD.source_store_id AND m.source_profile_id=OLD.source_profile_id AND m.semantic_key=OLD.semantic_key AND m.route_fingerprint=OLD.route_fingerprint AND m.method=OLD.method AND m.payload_sha256=OLD.payload_sha256 AND m.payload_bytes=OLD.payload_bytes AND m.result_sha256=OLD.result_sha256 AND m.result_bytes=OLD.result_bytes AND m.sequence<=e.local_through AND e.local_through<=e.host_through))
+ OR ((OLD.phase IN('prepared','possible') OR (OLD.phase='acknowledged' AND OLD.method='{LEGACY_BUFFER}')) AND EXISTS(
+ SELECT 1 FROM {TABLE} g JOIN native_delivery_epochs e ON e.owner_id=g.owner_id AND e.generation=g.generation {WITNESSED}
+ WHERE g.original_id=OLD.original_id AND OLD.original_id='nd2:'||g.owner_id||':'||g.generation||':'||g.sequence AND {g_old} AND g.created_instance=OLD.created_instance
+ AND e.source_store_id=g.source_store_id AND e.source_profile_id=g.source_profile_id AND e.route_fingerprint=g.route_fingerprint AND g.sequence<=e.local_through AND e.local_through<=e.host_through)))
+BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;
+"#
+    )
+}
+
+fn guards() -> String {
+    let slot_guards = slot_guards();
+    let og = same("o", "g");
     let g_old = same("g", "OLD");
     format!(
         r#"
@@ -80,18 +118,7 @@ CREATE TRIGGER {TABLE}_no_replace BEFORE INSERT ON {TABLE} WHEN EXISTS(SELECT 1 
 BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_IMMUTABLE'); END;
 CREATE TRIGGER {TABLE}_immutable BEFORE UPDATE ON {TABLE} BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_IMMUTABLE'); END;
 CREATE TRIGGER {TABLE}_retained BEFORE DELETE ON {TABLE} BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;
-CREATE TRIGGER native_delivery_epoch_gap_valid BEFORE INSERT ON {TABLE} WHEN NOT EXISTS(
- SELECT 1 FROM native_delivery_originals o JOIN native_delivery_epoch_allocations a ON a.original_id=o.original_id
- JOIN native_delivery_epochs e ON e.owner_id=a.owner_id AND e.generation=a.generation {WITNESSED}
- WHERE o.original_id=NEW.original_id AND NEW.original_id='nd2:'||NEW.owner_id||':'||NEW.generation||':'||NEW.sequence
- AND a.owner_id=NEW.owner_id AND a.generation=NEW.generation AND a.sequence=NEW.sequence AND {og_new} AND {a_new}
- AND o.phase IN('prepared','possible') AND o.result_sha256 IS NULL AND o.created_instance=NEW.created_instance
- AND length(CAST(NEW.resolved_instance AS BLOB))=36 AND NEW.resolved_instance!=NEW.created_instance
- AND e.source_store_id=NEW.source_store_id AND e.source_profile_id=NEW.source_profile_id AND e.route_fingerprint=NEW.route_fingerprint
- AND NEW.sequence>e.local_through AND NEW.sequence<=e.high_water)
- OR EXISTS(SELECT 1 FROM native_delivery_remote_acks r WHERE r.original_id=NEW.original_id)
- OR EXISTS(SELECT 1 FROM native_delivery_semantic_retirements m WHERE m.original_id=NEW.original_id OR (m.owner_id=NEW.owner_id AND m.generation=NEW.generation AND m.sequence=NEW.sequence))
-BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_GAP_INVALID'); END;
+{slot_guards}
 CREATE TRIGGER native_delivery_epoch_gap_phase_fence BEFORE UPDATE OF phase,revision,result_json,result_sha256,result_bytes ON native_delivery_originals
 WHEN EXISTS(SELECT 1 FROM {TABLE} g WHERE g.original_id=OLD.original_id)
 BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_EPOCH_GAP_FENCED'); END;
@@ -101,15 +128,6 @@ WHEN EXISTS(SELECT 1 FROM native_delivery_semantic_retirements m WHERE m.source_
  OR EXISTS(SELECT 1 FROM {TABLE} g WHERE g.source_store_id=NEW.source_store_id AND g.source_profile_id=NEW.source_profile_id AND g.semantic_key=NEW.semantic_key)
  OR EXISTS(SELECT 1 FROM native_delivery_epoch_allocations a WHERE a.source_store_id=NEW.source_store_id AND a.source_profile_id=NEW.source_profile_id AND a.semantic_key=NEW.semantic_key AND a.original_id!=NEW.original_id)
 BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETIRED'); END;
-DROP TRIGGER IF EXISTS native_delivery_no_delete;
-CREATE TRIGGER native_delivery_no_delete BEFORE DELETE ON native_delivery_originals WHEN NOT((OLD.phase='acknowledged' AND EXISTS(
- SELECT 1 FROM native_delivery_semantic_retirements m JOIN native_delivery_epochs e ON e.owner_id=m.owner_id AND e.generation=m.generation {WITNESSED}
- WHERE OLD.original_id='nd2:'||m.owner_id||':'||m.generation||':'||m.sequence AND m.original_id=OLD.original_id AND m.source_store_id=OLD.source_store_id AND m.source_profile_id=OLD.source_profile_id AND m.semantic_key=OLD.semantic_key AND m.route_fingerprint=OLD.route_fingerprint AND m.method=OLD.method AND m.payload_sha256=OLD.payload_sha256 AND m.payload_bytes=OLD.payload_bytes AND m.result_sha256=OLD.result_sha256 AND m.result_bytes=OLD.result_bytes AND m.sequence<=e.local_through AND e.local_through<=e.host_through))
- OR (OLD.phase IN('prepared','possible') AND EXISTS(
- SELECT 1 FROM {TABLE} g JOIN native_delivery_epochs e ON e.owner_id=g.owner_id AND e.generation=g.generation {WITNESSED}
- WHERE g.original_id=OLD.original_id AND OLD.original_id='nd2:'||g.owner_id||':'||g.generation||':'||g.sequence AND {g_old} AND g.created_instance=OLD.created_instance
- AND e.source_store_id=g.source_store_id AND e.source_profile_id=g.source_profile_id AND e.route_fingerprint=g.route_fingerprint AND g.sequence<=e.local_through AND e.local_through<=e.host_through)))
-BEGIN SELECT RAISE(ABORT,'NATIVE_DELIVERY_RETAINED'); END;
 DROP TRIGGER IF EXISTS native_delivery_epoch_allocation_retained;
 CREATE TRIGGER native_delivery_epoch_allocation_retained BEFORE DELETE ON native_delivery_epoch_allocations WHEN EXISTS(SELECT 1 FROM native_delivery_originals o WHERE o.original_id=OLD.original_id) OR (NOT EXISTS(
  SELECT 1 FROM native_delivery_semantic_retirements m JOIN native_delivery_epochs e ON e.owner_id=m.owner_id AND e.generation=m.generation {WITNESSED}
@@ -215,11 +233,7 @@ pub(super) fn proven(conn: &Connection, original: &Original) -> Result<bool, Str
         return Ok(false);
     };
     let (_, wanted) = expected(original)?;
-    if stored != wanted
-        || !uuid(&resolved)
-        || resolved == stored.11
-        || !matches!(original.phase, Phase::Prepared | Phase::Possible)
-    {
+    if stored != wanted || !uuid(&resolved) || resolved == stored.11 || !has_gap_phase(original) {
         return Err(invalid());
     }
     Ok(true)
@@ -278,10 +292,14 @@ pub(super) fn check_semantic(
     Ok(())
 }
 
+fn has_gap_phase(original: &Original) -> bool {
+    (matches!(original.phase, Phase::Prepared | Phase::Possible)
+        && original.result_sha256.is_none())
+        || (original.phase == Phase::Acknowledged && original.method() == LEGACY_BUFFER)
+}
+
 pub(super) fn eligible(original: &Original) -> bool {
-    matches!(original.phase, Phase::Prepared | Phase::Possible)
-        && original.result_sha256.is_none()
-        && original.created_instance != original.runtime.to_string()
+    has_gap_phase(original) && original.created_instance != original.runtime.to_string()
 }
 
 /// Write the Host's exact never-admitted fence for `original` inside the
@@ -312,7 +330,9 @@ pub(crate) fn record_gap_tx(conn: &Connection, original: &Original) -> Result<()
         return Err(gap_invalid());
     }
     // Verify the full immutable request bytes behind the fenced identity.
-    let _ = load_bytes(conn, &record, false)?;
+    if record.phase != Phase::Acknowledged {
+        let _ = load_bytes(conn, &record, false)?;
+    }
     migrate(conn)?;
     if proven(conn, &record)? {
         return Ok(());

@@ -31,9 +31,6 @@ mod native_workspace_transport;
 mod native_commit;
 pub(crate) use native_commit::NativeProjection;
 
-#[path = "remote_native_upload.rs"]
-mod native_upload;
-
 #[path = "assistant/assistant_native_signer.rs"]
 pub(crate) mod assistant_native_signer;
 #[path = "assistant/assistant_room_delegation.rs"]
@@ -48,9 +45,6 @@ mod native_gateway;
 #[path = "remote_native_devices.rs"]
 mod native_devices;
 pub(crate) use native_devices::NativeDeviceReply;
-#[path = "remote_native_buffer_delivery.rs"]
-mod native_buffer_delivery;
-
 #[path = "remote_native_delivery_epochs.rs"]
 mod native_delivery_epochs;
 
@@ -82,9 +76,6 @@ pub struct RemoteConnections {
     native_service_channel: Mutex<Option<Arc<NativeServiceChannel>>>,
     native_gateway_ws: crate::host_ws::native_profile::NativeProfileBroker,
     native_device_ws: crate::host_ws::native_profile::NativeProfileBroker,
-    native_workspace_uploads: Arc<native_upload::NativeUploads>,
-    native_buffer_delivery_cursors: Arc<native_buffer_delivery::RecoveryCursors>,
-    native_buffer_delivery_ack_cursors: Arc<native_buffer_delivery::RecoveryCursors>,
     ws_capabilities: Mutex<HashMap<String, WsCapability>>,
     /// Local Host `environment.describe` per machine, reused by the managed
     /// send chain instead of one fresh describe per native check.
@@ -194,14 +185,6 @@ impl RemoteConnections {
         self.native_service_ws.invalidate_machine(machine_id);
         self.native_gateway_ws.invalidate_machine(machine_id);
         self.native_device_ws.invalidate_machine(machine_id);
-        self.native_buffer_delivery_cursors
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(machine_id);
-        self.native_buffer_delivery_ack_cursors
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .remove(machine_id);
         self.ws_capabilities
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -560,6 +543,7 @@ const CONNECTION_REFUSED: &str =
 fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
     const GIT_MUTATION: std::time::Duration = std::time::Duration::from_secs(450);
     match method {
+        "mcp.config.call" => std::time::Duration::from_secs(45),
         // A reviewed page can publish 500 files, including Windows permission-preserving replacements.
         "workspace.run"
             if params.get("command").and_then(Value::as_str) == Some("replace_project") =>
@@ -2757,7 +2741,6 @@ pub(crate) fn local_editor_format_rpc(app: &AppHandle, params: Value) -> Result<
 /// Reconnects and retries are explicit; an uncertain mutation is not replayed here.
 pub(crate) struct NativeWorkspaceTransport {
     machine: StoredMachine,
-    recovery: Option<RecoveryRoute>,
     workspace: Option<Arc<native_workspace_transport::NativeWorkspaceChannel>>,
 }
 
@@ -2844,12 +2827,6 @@ pub(crate) struct NativeRecoveryReply {
     selection: NativeRecoverySelection,
 }
 impl NativeRecoveryReply {
-    pub(crate) fn project<T>(
-        self,
-        project: impl FnOnce(&Value) -> Result<T, String>,
-    ) -> Result<T, String> {
-        self.inspect(project)
-    }
     fn inspect<T>(&self, project: impl FnOnce(&Value) -> Result<T, String>) -> Result<T, String> {
         let check = || {
             if let Some(guard) = &self.guard {
@@ -2864,10 +2841,6 @@ impl NativeRecoveryReply {
             Ok(projected)
         })
     }
-    #[cfg(test)]
-    pub(crate) fn disclose(self) -> Result<Value, String> {
-        self.project(|value| Ok(value.clone()))
-    }
 }
 
 #[derive(Clone)]
@@ -2877,203 +2850,6 @@ struct RecoveryRoute {
 }
 
 impl NativeWorkspaceTransport {
-    /// Recovery pins the actual Native-selected bootstrap, not the selected project machine.
-    pub(crate) fn connect_recovery(
-        app: &AppHandle,
-        selected_endpoint: &str,
-        environment_id: &str,
-    ) -> Result<Self, String> {
-        let state = app
-            .try_state::<RemoteConnections>()
-            .ok_or("The Native local Host connection state is unavailable")?;
-        let (machine, recovery) = {
-            let _guard = state
-                .store
-                .lock()
-                .map_err(|_| "Connection store is locked")?;
-            let machine = read_uncached(&store_path(app)?)?
-                .into_iter()
-                .find(|machine| {
-                    recovery_machine_matches(machine, selected_endpoint, environment_id)
-                })
-                .ok_or("The Native-selected local Host is not paired for report recovery")?;
-            let revision = state.recovery_routes.capture(&machine.id)?;
-            (
-                machine,
-                RecoveryRoute {
-                    revision,
-                    selected_endpoint: selected_endpoint.into(),
-                },
-            )
-        };
-        let transport = Self {
-            machine,
-            recovery: Some(recovery),
-            workspace: None,
-        };
-        transport.assert_recovery_current(app)?;
-        let descriptor = rpc(
-            &transport.machine.endpoint,
-            &transport.machine.token,
-            Some(environment_id),
-            "environment.describe",
-            json!({}),
-        )?;
-        if let Some(message) = protocol::protocol_mismatch(&descriptor) {
-            return Err(message.into());
-        }
-        if descriptor["environmentId"] != environment_id
-            || !descriptor["capabilities"].as_array().is_some_and(|items| {
-                items
-                    .iter()
-                    .any(|item| item == "native.buffers.recovery.v1")
-            })
-        {
-            return Err("The Native-selected local Host cannot inspect retained reports".into());
-        }
-        transport.assert_recovery_current(app)?;
-        state.observe_ws_capability(&transport.machine, &descriptor);
-        Ok(transport)
-    }
-    pub(crate) fn assert_recovery_current(&self, app: &AppHandle) -> Result<(), String> {
-        let state = app
-            .try_state::<RemoteConnections>()
-            .ok_or("Native recovery connection unavailable")?;
-        self.assert_recovery_saved(&state, &store_path(app)?)
-    }
-    pub(crate) fn call_recovery(
-        &self,
-        app: &AppHandle,
-        method: &str,
-        params: Value,
-    ) -> Result<NativeRecoveryReply, String> {
-        let state = app
-            .try_state::<RemoteConnections>()
-            .ok_or("Native recovery connection unavailable")?;
-        self.call_recovery_guarded_saved(&state, &store_path(app)?, method, params)
-    }
-    #[cfg(test)]
-    fn call_recovery_saved(
-        &self,
-        state: &RemoteConnections,
-        path: &Path,
-        method: &str,
-        params: Value,
-    ) -> Result<Value, String> {
-        self.call_recovery_guarded_saved(state, path, method, params)?
-            .disclose()
-    }
-    fn call_recovery_guarded_saved(
-        &self,
-        state: &RemoteConnections,
-        path: &Path,
-        method: &str,
-        params: Value,
-    ) -> Result<NativeRecoveryReply, String> {
-        use crate::host_ws::native_profile::NativeProfileBroker;
-        if !matches!(
-            method,
-            "native.buffers.recovery.list"
-                | "native.buffers.recovery.read"
-                | "native.buffers.recovery.status"
-        ) {
-            return Err("Unsupported Native profile recovery operation".into());
-        }
-        let selection = self.with_recovery_saved(state, path, || {
-            Ok(NativeRecoverySelection {
-                store: state.store.clone(),
-                routes: state.recovery_routes.clone(),
-                path: path.to_owned(),
-                machine: self.machine.clone(),
-                pin: self
-                    .recovery
-                    .as_ref()
-                    .ok_or("Native recovery connection unavailable")?
-                    .clone(),
-            })
-        })?;
-        let pending = self.with_recovery_saved(state, path, || {
-            if !state.ws_enabled(&self.machine)
-                || !NativeProfileBroker::supports_params(method, &params)
-            {
-                return Ok(None);
-            }
-            let route = account_routes::native_route(
-                &self.machine.id,
-                &self.machine.environment_id,
-                &self.machine.endpoint,
-                &self.machine.token,
-                &ws_fingerprint(&self.machine),
-            )
-            .map_err(native_ws_failure)?;
-            let caller = state
-                .native_profile_ws
-                .capture(route)
-                .map_err(native_ws_failure)?;
-            caller
-                .begin(method, params.clone(), RequestOptions::default())
-                .map(Some)
-                .map_err(native_ws_failure)
-        })?;
-        let result = match pending {
-            Some(pending) => match pending.wait() {
-                Ok(reply) => {
-                    let (value, guard) = reply.into_guarded();
-                    NativeRecoveryReply {
-                        value,
-                        guard: Some(guard),
-                        selection,
-                    }
-                }
-                // Unsupported is reported only before domain dispatch. Old Host
-                // compatibility must never resend a dispatched/uncertain call.
-                Err(error) if error.unsupported => {
-                    self.assert_recovery_saved(state, path)?;
-                    NativeRecoveryReply {
-                        value: self.rpc_compat(method, params)?,
-                        guard: None,
-                        selection,
-                    }
-                }
-                Err(error) => return Err(native_ws_failure(error)),
-            },
-            None => {
-                self.assert_recovery_saved(state, path)?;
-                NativeRecoveryReply {
-                    value: self.rpc_compat(method, params)?,
-                    guard: None,
-                    selection,
-                }
-            }
-        };
-        self.with_recovery_saved(state, path, || {
-            if let Some(guard) = &result.guard {
-                guard.check().map_err(native_ws_failure)?;
-            }
-            Ok(())
-        })?;
-        Ok(result)
-    }
-    fn assert_recovery_saved(&self, state: &RemoteConnections, path: &Path) -> Result<(), String> {
-        self.with_recovery_saved(state, path, || Ok(()))
-    }
-    fn with_recovery_saved<T>(
-        &self,
-        state: &RemoteConnections,
-        path: &Path,
-        consume: impl FnOnce() -> Result<T, String>,
-    ) -> Result<T, String> {
-        let _guard = state
-            .store
-            .lock()
-            .map_err(|_| "Connection store is locked")?;
-        let pin = self
-            .recovery
-            .as_ref()
-            .ok_or("Native recovery connection unavailable")?;
-        validate_recovery_saved(&self.machine, pin, &state.recovery_routes, path)?;
-        consume()
-    }
     #[cfg(test)]
     pub(crate) fn for_test(endpoint: String) -> Self {
         Self {
@@ -3086,7 +2862,6 @@ impl NativeWorkspaceTransport {
                 ssh: None,
                 local_host: true,
             },
-            recovery: None,
             workspace: None,
         }
     }
@@ -3101,13 +2876,6 @@ impl NativeWorkspaceTransport {
                 | "native.turn.end"
                 | "native.activity.start"
                 | "native.activity.end"
-                | "native.buffers.update"
-                | "native.buffers.heartbeat"
-                | "native.buffers.retire"
-                | "native.buffers.reconcile"
-                | "native.buffers.recovery.list"
-                | "native.buffers.recovery.read"
-                | "native.buffers.recovery.status"
                 | "native.rewind.plan"
                 | "native.rewind.prepare"
                 | "native.rewind.apply"
@@ -3513,10 +3281,6 @@ pub fn remote_ssh_cancel(
     state.job(&job_id)?.cancel();
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "remote_recovery_ws_tests.rs"]
-mod recovery_ws_tests;
 
 #[cfg(test)]
 mod tests;

@@ -342,6 +342,10 @@ export async function readAttachmentChunk(
     }
   });
 }
+function pruneAttachmentTouches(now: number, graceMs: number): void {
+  for (const [key, touched] of attachmentTouches)
+    if (touched < now - graceMs && !attachmentOperations.has(key)) attachmentTouches.delete(key);
+}
 /** Progress of one reference pass that runs in short slices, so other database
  * requests run between them instead of waiting behind (or cancelling) a full-database
  * read. The caller keeps this object and calls again while `pending` is true. */
@@ -450,6 +454,11 @@ export async function collectAttachmentGarbage(
       // In slices this guards only the slice that completes the pass and deletes.
       startedStamp = await stamp();
       const { candidates, referenced } = scan;
+      // Candidates no reference has been seen for yet. When none is left nothing can be deleted, so the
+      // pass ends there instead of reading the rest of the database to confirm it (every sweep used to
+      // read every table while all its candidates were still in use).
+      let unresolved = 0;
+      for (const id of candidates) if (!referenced.has(id)) unresolved++;
       const scanStarted = performance.now();
       let sliceStarted = scanStarted;
       let sliceCharacters = 0;
@@ -473,7 +482,10 @@ export async function collectAttachmentGarbage(
             const chunk = value.slice(Math.max(0, at - 35), at + 256 * 1024);
             for (const match of chunk.matchAll(UUID_PATTERN)) {
               const id = match[0].toLowerCase();
-              if (candidates.has(id)) referenced.add(id);
+              if (candidates.has(id) && !referenced.has(id)) {
+                referenced.add(id);
+                unresolved--;
+              }
             }
             sliceCharacters += chunk.length;
             if (sliceCharacters >= 256 * 1024 || performance.now() - sliceStarted >= 8)
@@ -483,6 +495,10 @@ export async function collectAttachmentGarbage(
         return true;
       };
       while (scan.table < scan.tables.length) {
+        if (unresolved === 0) {
+          pruneAttachmentTouches(now, graceMs);
+          return abandon();
+        }
         const name = scan.tables[scan.table]!;
         let rows: Record<string, unknown>[] | undefined;
         if (resume) {
@@ -569,9 +585,7 @@ export async function collectAttachmentGarbage(
           removed.push(id);
           await onRemoved?.(id.toLowerCase());
         }
-        for (const [key, touched] of attachmentTouches)
-          if (touched < now - graceMs && !attachmentOperations.has(key))
-            attachmentTouches.delete(key);
+        pruneAttachmentTouches(now, graceMs);
         return removed;
       });
     })

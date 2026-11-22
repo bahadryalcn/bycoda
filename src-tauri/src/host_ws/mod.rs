@@ -17,6 +17,7 @@ mod native_status;
 mod permits;
 mod schema;
 
+use schema::Contracts;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -31,7 +32,6 @@ use std::{
 use tokio::sync::{mpsc as channel, Notify};
 use url::Url;
 use zeroize::Zeroizing;
-use {native_profile::native_profile_recovery, schema::Contracts};
 
 pub type EventSink = Arc<dyn Fn(NativeEvent) + Send + Sync>;
 
@@ -190,13 +190,6 @@ fn native_workspace_method(method: &str) -> bool {
             | "native.turn.end"
             | "native.activity.start"
             | "native.activity.end"
-            | "native.buffers.update"
-            | "native.buffers.heartbeat"
-            | "native.buffers.retire"
-            | "native.buffers.reconcile"
-            | "native.buffers.recovery.list"
-            | "native.buffers.recovery.read"
-            | "native.buffers.recovery.status"
             | "native.rewind.plan"
             | "native.rewind.prepare"
             | "native.rewind.apply"
@@ -207,15 +200,7 @@ fn native_workspace_method(method: &str) -> bool {
             | "workspaces.cleanup.plan"
             | "workspaces.cleanup.apply"
             | "workspaces.cleanup.status"
-            | "native.buffers.upload.start"
-            | "native.buffers.upload.write"
-            | "native.buffers.upload.commit"
-            | "native.buffers.upload.status"
-            | "native.buffers.upload.abort"
-            | "native.buffers.delivery.apply"
-            | "native.buffers.delivery.status"
-            | "native.buffers.delivery.ack"
-    ) || native_delivery_epoch_method(method)
+    )
 }
 
 #[derive(Serialize)]
@@ -988,7 +973,6 @@ pub struct HostWsBroker {
 #[derive(Clone, Copy)]
 enum RequestScope {
     Window,
-    NativeProfile,
     NativeWorkspace,
     NativeGateway,
     NativeService,
@@ -1273,7 +1257,6 @@ impl HostWsBroker {
         let method = contracts.wire_method(method);
         if match scope {
             RequestScope::Window => private_native_method(method),
-            RequestScope::NativeProfile => !native_profile_recovery(method),
             RequestScope::NativeWorkspace => !native_workspace_method(method),
             RequestScope::NativeGateway => !native_gateway_method(method),
             RequestScope::NativeService => !native_service_method(method),

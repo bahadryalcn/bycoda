@@ -67,6 +67,18 @@ it("reuses a quiet accounts snapshot and skips the project read while nothing wa
   expect(mocks.projects).not.toHaveBeenCalled();
 });
 
+it("asks for an accounts page the Host accepts (limit 1–100)", async () => {
+  const machine = nextMachine();
+  const client = fakeClient(machine.id, []);
+  await readSocialWaiting(machine);
+  const [query] = client.sectionSnapshot.mock.calls[0] as unknown as [
+    { section: string; limit: number },
+  ];
+  expect(query.section).toBe("accounts");
+  expect(query.limit).toBeGreaterThanOrEqual(1);
+  expect(query.limit).toBeLessThanOrEqual(100);
+});
+
 it("reads the accounts snapshot again once it is older than the TTL", async () => {
   const machine = nextMachine();
   const client = fakeClient(machine.id, []);

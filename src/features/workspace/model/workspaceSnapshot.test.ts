@@ -18,7 +18,7 @@ import {
   splitPane,
 } from "./layout";
 import { createProjectTerminal, splitTerminalInDock } from "../../projects/model/projectTerminal";
-import { newSession, type Session } from "../../sessions/model/session";
+import { newSession, sessionWorkCwd, type Session } from "../../sessions/model/session";
 import {
   collectWorkspaceSnapshot,
   hydrateWorkspaceSnapshot,
@@ -32,6 +32,29 @@ function chat(id: string, cwd: string): Session {
   session.providerSessionId = "p1";
   return session;
 }
+
+it("restores the scratch directory without upgrading old projectless tabs", () => {
+  const scratch = newSession("codex", "~");
+  const legacy = { ...newSession("codex", "~"), scratchWorkspace: undefined };
+  const tab = newTab(scratch.id);
+  const snapshot = collectWorkspaceSnapshot(
+    [tab, newTab(legacy.id)],
+    [scratch, legacy],
+    tab.id,
+    "~",
+    new Map(),
+  );
+  const parsed = parseWorkspaceSnapshot(JSON.parse(JSON.stringify(snapshot)));
+  expect(parsed).not.toBeNull();
+  const restored = hydrateWorkspaceSnapshot(parsed!, new Map());
+  expect(restored?.sessions.find((session) => session.id === scratch.id)).toMatchObject({
+    scratchWorkspace: true,
+  });
+  expect(
+    restored?.sessions.find((session) => session.id === legacy.id)?.scratchWorkspace,
+  ).toBeUndefined();
+  expect(restored?.sessions.map(sessionWorkCwd)).toContain(sessionWorkCwd(scratch));
+});
 
 describe("remote conversation identity across a restart", () => {
   beforeEach(() => localStorage.clear());

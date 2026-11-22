@@ -2,6 +2,7 @@ import {
   codexProjectConfig,
   inventoryFiles,
   inventorySourceFiles,
+  opencodeProjectConfigs,
   readClaudeProjectServers,
   readClaudeUserServers,
   readCodexServers,
@@ -32,15 +33,17 @@ export type InventoryDefinition = {
   env?: Record<string, string>;
   url?: string;
   headers?: Record<string, string>;
+  managed?: { name: string; scope: "user" | "project"; revision: string; enabled: boolean };
 };
 
 const REFRESH_MS = 30_000;
 const MAX_PROJECT_SNAPSHOTS = 32;
 
-/** Identical launch or endpoint from several sources becomes one entry. Otherwise the
+/** Compatible launch or endpoint from several sources becomes one entry. Otherwise the
  * first claim keeps the plain name. Project servers that collide get a `-project` suffix. */
 export function mergeDefinitions(raw: RawDefinition[]): InventoryDefinition[] {
-  const byIdentity = new Map<string, InventoryDefinition>();
+  const byIdentity = new Map<string, InventoryDefinition[]>();
+  const definitions: InventoryDefinition[] = [];
   const names = new Set<string>();
   for (const def of raw) {
     const identity =
@@ -48,7 +51,8 @@ export function mergeDefinitions(raw: RawDefinition[]): InventoryDefinition[] {
         ? `stdio\0${def.command}\0${JSON.stringify(def.args ?? [])}`
         : `http\0${def.url}`;
     const alias = { provider: def.provider, name: def.alias };
-    const existing = byIdentity.get(identity);
+    const candidates = byIdentity.get(identity) ?? [];
+    const existing = candidates.find((candidate) => sameSettings(candidate, def));
     if (existing) {
       if (!existing.sources.includes(def.source)) existing.sources.push(def.source);
       // The same launch may carry its env in only one config (dokploy: Codex sets
@@ -85,9 +89,25 @@ export function mergeDefinitions(raw: RawDefinition[]): InventoryDefinition[] {
         ? { command: def.command, args: def.args ?? [], env: def.env ?? {} }
         : { url: def.url, ...(def.headers ? { headers: def.headers } : {}) }),
     };
-    byIdentity.set(identity, entry);
+    candidates.push(entry);
+    byIdentity.set(identity, candidates);
+    definitions.push(entry);
   }
-  return [...byIdentity.values()];
+  return definitions;
+}
+
+function sameSettings(existing: InventoryDefinition, next: RawDefinition): boolean {
+  if (!next.source.endsWith("-project") && !existing.source.endsWith("-project")) return true;
+  const currentSettings = existing.kind === "stdio" ? existing.env : existing.headers;
+  const nextSettings = next.kind === "stdio" ? next.env : next.headers;
+  const caseInsensitive = next.kind === "http" || process.platform === "win32";
+  const keyOf = (key: string) => (caseInsensitive ? key.toLowerCase() : key);
+  const current = new Map(
+    Object.entries(currentSettings ?? {}).map(([key, value]) => [keyOf(key), value]),
+  );
+  return Object.entries(nextSettings ?? {}).every(
+    ([key, value]) => !current.has(keyOf(key)) || current.get(keyOf(key)) === value,
+  );
 }
 
 type Snapshot = { signature: string; definitions: InventoryDefinition[]; checkedAt: number };
@@ -98,6 +118,7 @@ type Snapshot = { signature: string; definitions: InventoryDefinition[]; checked
 export class McpInventory {
   private readonly snapshots = new Map<string, Snapshot>();
   private readonly pending = new Map<string, Promise<InventoryDefinition[]>>();
+  private generation = 0;
 
   constructor(
     private readonly files: InventoryFiles = inventoryFiles(),
@@ -113,10 +134,19 @@ export class McpInventory {
     // Concurrent sessions share one scan; callers never wait on each other's stat calls.
     let pending = this.pending.get(key);
     if (!pending) {
-      pending = this.refresh(cwd).finally(() => this.pending.delete(key));
+      const generation = this.generation;
+      pending = this.refresh(cwd, generation).finally(() => {
+        if (generation === this.generation) this.pending.delete(key);
+      });
       this.pending.set(key, pending);
     }
     return pending;
+  }
+
+  invalidate(): void {
+    this.generation++;
+    this.pending.clear();
+    this.snapshots.clear();
   }
 
   /** One codex table-name set per config a session may load: the default config and each
@@ -137,7 +167,10 @@ export class McpInventory {
     return this.accountDirs().catch(() => ({ claude: [], codex: [] }));
   }
 
-  private async refresh(cwd: string | undefined): Promise<InventoryDefinition[]> {
+  private async refresh(
+    cwd: string | undefined,
+    generation: number,
+  ): Promise<InventoryDefinition[]> {
     const key = cwd ?? "";
     const accounts = await this.accounts();
     const signature = await statSignature(await inventorySourceFiles(this.files, cwd, accounts));
@@ -155,6 +188,8 @@ export class McpInventory {
         ? await readOpencodeServers(this.files.opencodeConfig, vars)
         : []),
     ];
+    for (const file of this.files.additionalOpencodeConfigs ?? [])
+      raw.push(...(await readOpencodeServers(file, vars)));
     for (const dir of accounts.claude) {
       raw.push(
         ...(await readClaudeUserServers(join(dir, ".claude.json"), vars, "claude-account")),
@@ -169,8 +204,15 @@ export class McpInventory {
         ...(await readProjectMcpJson(cwd, vars)),
         ...(await readCodexServers(codexProjectConfig(cwd), vars, "codex-project")),
       );
+      const opencode = await Promise.all(
+        opencodeProjectConfigs(cwd).map((file) =>
+          readOpencodeServers(file, vars, "opencode-project"),
+        ),
+      );
+      raw.push(...opencode.flat());
     }
     const definitions = mergeDefinitions(raw);
+    if (generation !== this.generation) return definitions;
     if (!previous && this.snapshots.size >= MAX_PROJECT_SNAPSHOTS && cwd)
       this.snapshots.delete(this.snapshots.keys().next().value!);
     this.snapshots.set(key, { signature, definitions, checkedAt: this.now() });

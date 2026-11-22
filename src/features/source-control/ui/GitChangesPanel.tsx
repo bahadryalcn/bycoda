@@ -49,8 +49,10 @@ import { GitConflictRows } from "./GitConflictRows";
 import { GitOperationBanner } from "./GitOperationBanner";
 import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
-import { AheadBehindCount } from "./AheadBehindCount";
-import { BranchPicker, type CheckoutChoice } from "./BranchPicker";
+import { actionHostAttributes } from "../../../shared/ui/ActionHost";
+import { folderName, isMissingPathError } from "../model/checkoutSelection";
+import { worktreeRowFolder } from "../model/worktreeRows";
+import { BranchPicker } from "./BranchPicker";
 import { applyCommit, applyIndexAction, applySync } from "../model/optimisticIndex";
 import { ACTION_LABEL, busyLabel } from "../model/gitBusyLabel";
 import {
@@ -134,7 +136,7 @@ import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
-import { CheckoutIdentity, checkoutBranch } from "./CheckoutIdentity";
+import { CheckoutIdentity, CheckoutStatus, checkoutBranch } from "./CheckoutIdentity";
 import { UpstreamLabel } from "./UpstreamLabel";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { GitCommitGenerationActions } from "./GitGenerationSettings";
@@ -160,6 +162,8 @@ type Props = {
     name: string;
     checkout?: Worktree;
     current?: boolean;
+    /** A separate repository found inside the listed worktree, not a worktree itself. */
+    nested?: boolean;
     expanded?: boolean;
     onToggle: (expanded: boolean) => void;
     /** This repository's gitlink change in its parent, shown beside its name. */
@@ -182,8 +186,8 @@ type Props = {
   refreshInTarget?: boolean;
   /** The target header above already offers worktree management. */
   worktreesInTarget?: boolean;
-  /** Puts the working-copy choice in the branch control, so target and branch share one row. */
-  checkout?: CheckoutChoice & { onRefresh: () => void };
+  /** The panel is one worktree's own view: its branch picker leads the single header row. */
+  checkout?: { onRefresh: () => void; onMissing?: () => Promise<boolean> };
 };
 
 export function GitChangesPanel({
@@ -211,10 +215,21 @@ export function GitChangesPanel({
     index,
     reload,
     showOptimistic,
-    error: loadError,
+    error: reportedError,
     loading,
     checking,
   } = useDiffIndex(cwd, enabled, !repository || repository.expanded === true, paneRef);
+  // A checkout deleted from elsewhere fails every read with not-found: the owner confirms it is
+  // gone and falls back to the default checkout, so no error is shown for the vanished path.
+  // A not-found read of a folder that still exists is a genuine failure and stays visible.
+  const onMissing = checkout?.onMissing;
+  const [stillThere, setStillThere] = useState(false);
+  const vanished = !!onMissing && !stillThere && isMissingPathError(reportedError);
+  const loadError = vanished ? null : reportedError;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- asks the filesystem whether the read folder still exists after a not-found Git read
+  useEffect(() => {
+    if (vanished) void onMissing().then((deleted) => setStillThere(!deleted));
+  }, [vanished, onMissing]);
   // Fetch, and the merge status of a host that predates conflict info, need
   // this computer or a host with `git.actions`.
   const gitActions = useRemoteSupports(cwd, GIT_ACTIONS) === true;
@@ -337,7 +352,6 @@ export function GitChangesPanel({
           branch={index?.branch ?? undefined}
           enabled={enabled && !busy && !loading}
           popoverSide="bottom"
-          checkouts={checkout}
           onChange={() => {
             onMutated();
             changesRef.current?.refreshPr?.();
@@ -425,9 +439,31 @@ export function GitChangesPanel({
       ) : null}
     </>
   );
-  // The checkout button owns its hint, so a clipped branch shows its full name as a detail line there.
-  const identityBranch =
-    repository && !branchControl ? checkoutBranch({ index, checkout: repository.checkout }) : null;
+  // One row format: a worktree reads "branch · folder · This session"; a repository reads
+  // "name · branch". The branch picker beside an open header already shows the branch.
+  const liveBranch = checkoutBranch({ index, checkout: repository?.checkout });
+  const branchLabel =
+    liveBranch ??
+    ((index ? index.head : repository?.checkout?.head)
+      ? `${t("Detached HEAD")} · ${shortSha((index ? index.head : repository?.checkout?.head) ?? "")}`
+      : undefined);
+  const identity = repository ? (
+    repository.checkout ? (
+      <CheckoutIdentity
+        icon={!branchControl}
+        title={branchControl ? folderName(cwd) : (branchLabel ?? repository.name)}
+        detail={branchControl ? undefined : worktreeRowFolder(repository.checkout)}
+        marker={repository.current ? t("This session") : undefined}
+      />
+    ) : (
+      <CheckoutIdentity
+        repository
+        title={repository.name}
+        detail={branchControl ? undefined : branchLabel}
+        marker={repository.nested ? t("Separate repository") : undefined}
+      />
+    )
+  ) : null;
   return (
     <div
       ref={paneRef}
@@ -442,6 +478,7 @@ export function GitChangesPanel({
         tone={repository ? "primary" : "inherit"}
         className={repository ? styles.header : styles.branchHeader}
         data-current-checkout={repository?.current || undefined}
+        {...(repository ? actionHostAttributes({ hoverReveal: true }, styles.header) : {})}
       >
         {repository ? (
           <Button
@@ -451,21 +488,11 @@ export function GitChangesPanel({
             expanded={detailsOpen}
             chevron="start"
             onClick={() => repository.onToggle(!detailsOpen)}
-            tooltip={`${repository.name} · ${cwd}`}
-            tooltipDetails={identityBranch ? [identityBranch] : undefined}
+            // The row shows names; the hint adds where the folder is.
+            tooltip={cwd}
             className={styles.disclosure}
           >
-            <CheckoutIdentity
-              name={repository.name}
-              checkout={repository.checkout}
-              index={index}
-              showReference={!branchControl}
-            />
-            {repository.current ? (
-              <Text size="caption" leading="inherit" tone="accent" className={styles.current}>
-                {t("Current")}
-              </Text>
-            ) : null}
+            {identity}
           </Button>
         ) : (
           <>
@@ -498,27 +525,30 @@ export function GitChangesPanel({
           </Text>
         ) : null}
         <div className={repository ? styles.actions : "ms-auto flex min-w-0 items-center gap-1"}>
-          {repository && index ? (
-            <Text size="caption" leading="inherit" tone="secondary" className={styles.summary}>
-              <FileDiff aria-hidden className="icon-xs" />
-              <span role="img" aria-label={`${t("Changes")}: ${files.length + conflicts.length}`}>
-                {files.length + conflicts.length}
-              </span>
+          {repository ? (
+            <>
+              <CheckoutStatus
+                changes={index ? files.length + conflicts.length : undefined}
+                dirty={repository.checkout?.dirty}
+                ahead={detailsOpen ? 0 : (index?.ahead ?? 0)}
+                behind={detailsOpen ? 0 : (index?.behind ?? 0)}
+              />
               {conflicts.length > 0 ? (
-                <Text size="inherit" tone="warning" className={styles.conflicts}>
+                <Text size="caption" tone="warning" className={styles.conflicts}>
                   {t("Merge conflicts")}: {conflicts.length}
                 </Text>
               ) : null}
-              {!detailsOpen ? (
-                <AheadBehindCount ahead={index.ahead ?? 0} behind={index.behind ?? 0} hideZero />
-              ) : null}
-            </Text>
+            </>
           ) : null}
           {repository ? branchControl : null}
           {/* Fixed icon columns keep these actions aligned with the section
               actions below; controls owned by the header above leave their
               column empty so the menu stays at the trailing edge. */}
-          <div className={styles.branchSlots}>
+          <div
+            className={styles.branchSlots}
+            // A section header offers its actions on hover or keyboard focus only.
+            data-action-slot={repository ? "collapse" : undefined}
+          >
             <span className={styles.branchSlot}>
               {detailsOpen && !refreshInTarget ? (
                 <Button

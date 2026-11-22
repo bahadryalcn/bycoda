@@ -7,9 +7,14 @@ import {
 } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 import { openExternal } from "../../../platform/tauri/openExternal";
-import type { InlineReference, InlineReferenceContext } from "./composerInlineReferences";
+import {
+  isInlineMentionMark,
+  type InlineReference,
+  type InlineReferenceContext,
+} from "./composerInlineReferences";
 import { createInlineScan, updateInlineScan, type InlineScan } from "./composerInlineScan";
 import styles from "../../../shared/ui/DraftToken.module.css";
+import { textAttributes } from "../../../shared/ui/Text";
 
 const namespace = "http://www.w3.org/2000/svg";
 const iconPaths = {
@@ -55,6 +60,17 @@ function referenceIcon(ref: InlineReference): keyof typeof iconPaths {
   }
   return "file";
 }
+
+function atomicDecorations(decorations: DecorationSet, references: readonly InlineReference[]) {
+  return references.some(isInlineMentionMark)
+    ? decorations.update({ filter: (_from, _to, value) => Boolean(value.spec.widget) })
+    : decorations;
+}
+
+const { className: mentionClassName, "data-tone": mentionTone } = textAttributes(
+  { tone: "accent" },
+  styles.token,
+);
 
 type WidgetActions = {
   open(reference: InlineReference, anchor: HTMLElement): void;
@@ -176,12 +192,15 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
     Decoration.set(
       references
         .filter((reference) => reference !== edited)
-        .map((reference) =>
-          Decoration.replace({ widget: new ReferenceWidget(reference, actions) }).range(
-            reference.start,
-            reference.end,
-          ),
-        ),
+        .map((reference) => {
+          const decoration = isInlineMentionMark(reference)
+            ? Decoration.mark({
+                class: mentionClassName,
+                attributes: { "data-scoped-mention": reference.kind, "data-tone": mentionTone },
+              })
+            : Decoration.replace({ widget: new ReferenceWidget(reference, actions) });
+          return decoration.range(reference.start, reference.end);
+        }),
     );
   const ranges = StateField.define<{
     context: InlineReferenceContext;
@@ -189,14 +208,17 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
     references: InlineReference[];
     edited?: InlineReference;
     decorations: DecorationSet;
+    atomic: DecorationSet;
   }>({
     create(state) {
       const scan = createInlineScan(state, initial);
+      const decorations = decorate(scan.references);
       return {
         context: initial,
         scan,
         references: scan.references,
-        decorations: decorate(scan.references),
+        decorations,
+        atomic: atomicDecorations(decorations, scan.references),
       };
     },
     update(value, transaction) {
@@ -225,13 +247,20 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
         sameReferences(value.references, references, transaction.changes)
           ? value.decorations.map(transaction.changes)
           : decorate(references, edited);
-      return { context, scan, references, edited, decorations };
+      return {
+        context,
+        scan,
+        references,
+        edited,
+        decorations,
+        atomic: atomicDecorations(decorations, references),
+      };
     },
     provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
   });
   const extension: Extension = [
     ranges,
-    EditorView.atomicRanges.of((view) => view.state.field(ranges).decorations),
+    EditorView.atomicRanges.of((view) => view.state.field(ranges).atomic),
     EditorState.transactionFilter.of((transaction) => {
       if (
         !transaction.isUserEvent("input.type") ||

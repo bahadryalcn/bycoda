@@ -76,6 +76,9 @@ The page uses the canonical bycoda logo in both themes and states when mobile
 distribution is not ready.
 
 On another device, the owning computer must already be paired and reachable.
+If a paired computer is unreachable, open **Manage connections** from the link
+screen. Go back to return to the same link. You can open **Manage connections**
+again while the computer is still unreachable.
 The authenticated Host must advertise `sessions.references.v1` and validate the
 complete environment or Native store/profile/session locator before disclosure
 and after history loading. A Native address follows an existing verified

@@ -129,7 +129,6 @@ export function createHttpRuntime(
     | "managed"
     | "nativeWorkspacesService"
     | "nativeDeliveryService"
-    | "nativeBufferUploads"
     | "workspaceOwnerDeviceId"
     | "workspacePolicy"
     | "featureClaims"
@@ -548,7 +547,16 @@ export function createHttpRuntime(
               },
             });
           }
-          if (await dependencies.mcpHttp.rpc(input.method, params, token, response)) return;
+          if (
+            await dependencies.mcpHttp.rpc(
+              input.method,
+              params,
+              token,
+              response,
+              request.socket.remoteAddress,
+            )
+          )
+            return;
           if (peerIdentity) {
             result = await dependencies.engine.store.db.withAuthorization(
               async () => !!(await dependencies.socialPeers.authenticated(transportToken)),
@@ -880,7 +888,8 @@ export function createHttpRuntime(
                       ? { code: error.code, delivery: error.delivery }
                       : error instanceof HostDomainOutcomeError
                         ? { delivery: error.delivery }
-                        : error instanceof OwnerRpcCancelledError || error instanceof HostDbClosingError
+                        : error instanceof OwnerRpcCancelledError ||
+                            error instanceof HostDbClosingError
                           ? { code: error.code }
                           : {}),
                   ...(error instanceof HostIdentityMismatchError ? { code: error.code } : {}),

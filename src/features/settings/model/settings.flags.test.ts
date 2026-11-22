@@ -40,7 +40,7 @@ afterEach(() => {
 });
 
 /** Change events that carry no detail payload. */
-const NO_DETAIL = new Set(["bycoda.closeToTray", "bycoda.tabAnimationsEnabled"]);
+const NO_DETAIL = new Set(["bycoda.minimizeToTray", "bycoda.tabAnimationsEnabled"]);
 /** Appearance flags keep the applied value for this window when the write fails. */
 const APPLIED_ON_FAILURE = new Set(["bycoda.bodyGlass"]);
 /** Stored flags publish only after the change is persisted. */
@@ -81,11 +81,11 @@ describe.each([
     settings.KEEP_AWAKE_SCREEN_CHANGE_EVENT,
   ],
   [
-    "bycoda.closeToTray",
-    settings.loadCloseToTray,
-    settings.saveCloseToTray,
-    true,
-    "bycoda:close-to-tray-change",
+    "bycoda.minimizeToTray",
+    settings.loadMinimizeToTray,
+    settings.saveMinimizeToTray,
+    false,
+    "bycoda:minimize-to-tray-change",
   ],
   [
     "bycoda.crewSceneEnabled",
@@ -217,12 +217,12 @@ describe.each([
   });
 });
 
-it("disables close-to-tray outside Windows without consulting storage", () => {
+it("disables minimize-to-tray outside Windows without consulting storage", () => {
   platform.isWindows = false;
-  settings.saveCloseToTray(true);
+  settings.saveMinimizeToTray(true);
   const read = vi.spyOn(localStorage, "getItem");
 
-  expect(settings.loadCloseToTray()).toBe(false);
+  expect(settings.loadMinimizeToTray()).toBe(false);
   expect(read).not.toHaveBeenCalled();
 });
 

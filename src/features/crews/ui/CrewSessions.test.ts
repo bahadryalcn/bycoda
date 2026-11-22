@@ -162,7 +162,7 @@ it("keeps recovery inside Crew management's modal even when a shared notice prov
   const { RemoteConnectionFeedbackProvider } = await vi.importActual<
     typeof import("../../connections/ui/RemoteConnectionFeedback")
   >("../../connections/ui/RemoteConnectionFeedback");
-  const refetch = vi.fn();
+  const refetch = vi.fn<CrewState["refetch"]>();
   const renderDialog = async (error: Error | null) =>
     act(async () =>
       root.render(
@@ -172,7 +172,10 @@ it("keeps recovery inside Crew management's modal even when a shared notice prov
             createElement(CrewManagementDialog, {
               key: "dialog",
               cwd,
-              state: { ...(error ? visibleFailure(error) : { error }), refetch } as CrewState,
+              state: {
+                ...(error ? visibleFailure(error) : { error }),
+                refetch,
+              } as unknown as CrewState,
               onClose: vi.fn(),
             }),
           ],

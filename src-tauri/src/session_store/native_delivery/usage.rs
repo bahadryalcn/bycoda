@@ -60,15 +60,18 @@ pub(super) fn read(
     method: &str,
     budget: usize,
 ) -> Result<(i64, i64, i64), String> {
-    // Separate lanes keep buffer/format work from taking relay finish capacity.
+    // Keep relay finishes and formatter reservations independent.
     let lane = match (method, budget) {
-        (BUFFER_UPDATE, _) => 1,
+        #[cfg(test)]
+        (LEGACY_BUFFER, _) => 1,
         ("native.services.workspace.format", FORMAT_RESULT_BYTES) => 2,
         ("native.services.workspace.format", _) => 3,
         _ => 4,
     };
+    // Obsolete buffer tombstones still account for their storage in lane 1.
+    // They no longer take admission capacity from either service.
     conn.query_row(
-        "SELECT (SELECT SUM(retained) FROM native_delivery_usage), active, bytes
+        "SELECT (SELECT SUM(retained) FROM native_delivery_usage WHERE lane!=1), active, bytes
          FROM native_delivery_usage WHERE lane=?1
          AND EXISTS(SELECT 1 FROM native_delivery_usage WHERE lane=1)
          AND EXISTS(SELECT 1 FROM native_delivery_usage WHERE lane=2)

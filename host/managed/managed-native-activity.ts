@@ -8,9 +8,6 @@ import {
 } from "../workspaces/workspace-paths";
 import { withHostGitMutation } from "../git/git-mutations";
 import { durableWrite } from "../git/turn-git-history";
-import { createNativeBufferReports } from "../native-buffer/native-buffer-reports";
-import type { NativeBufferPersistence } from "../ports/native-buffer-persistence";
-export type { NativeBufferSnapshot } from "../native-buffer/native-buffer-reports";
 import type { ManagedWorkspace } from "../workspaces/workspace-contracts";
 import type {
   ExecutionActivityReservations,
@@ -39,8 +36,7 @@ const identity = (value: unknown, label: string) => {
   return value;
 };
 
-/** Native process reports are device-bound durable leases. Time alone never releases them.
- * Buffer probes are evaluated freshly by the shared reservation gate, including after restart. */
+/** Native process reports are device-bound durable leases. Time alone never releases them. */
 export function createManagedNativeActivity(deps: {
   exactGitRewindEnabled?(): Promise<boolean>;
   root: string;
@@ -49,8 +45,6 @@ export function createManagedNativeActivity(deps: {
   activity: ExecutionActivityReservations;
   assertWritable(id: string): Promise<void>;
   authorize(owner: WorkspaceOwnerAuthorization): Promise<boolean>;
-  now?(): number;
-  bufferPersistence?: NativeBufferPersistence;
 }) {
   let tail: Promise<unknown> = Promise.resolve();
   const serial = <T>(action: () => Promise<T>): Promise<T> => {
@@ -98,18 +92,7 @@ export function createManagedNativeActivity(deps: {
       throw new Error("Native workspace canonical identity changed");
     return { workspace, canonical };
   };
-  const buffers = createNativeBufferReports({
-    root: deps.root,
-    listWorkspaces: () => deps.listWorkspaces(),
-    serial,
-    authenticate,
-    now: deps.now,
-    persistence: deps.bufferPersistence,
-  });
-  const probe = buffers.probe;
   return {
-    initializeBufferRetention: buffers.initializeRetention,
-    probe,
     start(request: NativeActivityStart, owner: WorkspaceOwnerAuthorization) {
       return serial(async () => {
         const device = await authenticate(owner);
@@ -160,7 +143,6 @@ export function createManagedNativeActivity(deps: {
             throw new Error("Duplicate native activity requires reconciliation");
           if (!existing.length) {
             if (
-              (await probe(workspace.id)).length ||
               active.some((entry) => {
                 if (entry.kind === "readLease") return false;
                 if (
@@ -175,7 +157,7 @@ export function createManagedNativeActivity(deps: {
                 return entry.ownerId !== lease.activityOwnerId;
               })
             )
-              throw new Error("Workspace has another writer or unsettled native buffers");
+              throw new Error("Workspace has another writer");
             if (lease.phase === "active")
               throw new Error("Native activity disappeared; reconcile before restarting");
             const entry = await deps.activity.start({
@@ -213,14 +195,5 @@ export function createManagedNativeActivity(deps: {
         return { acknowledged: true as const };
       });
     },
-    heartbeatBuffers: buffers.heartbeatBuffers,
-    retireBuffers: buffers.retireBuffers,
-    reconcileBuffers: buffers.reconcileBuffers,
-    updateBuffers: buffers.updateBuffers,
-    verifyBufferDelivery: buffers.verifyDelivery,
-    listBufferRecovery: buffers.listRecovery,
-    readBufferRecovery: buffers.readRecovery,
-    bufferRecoveryStatus: buffers.recoveryStatus,
-    closeBufferRecoveryCatalog: buffers.closeRecoveryCatalog,
   };
 }

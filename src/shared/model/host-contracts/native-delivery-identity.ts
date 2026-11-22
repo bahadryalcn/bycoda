@@ -18,7 +18,3 @@ export const NativeDeliveryIdentitySchema = z.strictObject({
   sha256: z.string().regex(WIRE_SHA256_PATTERN),
 });
 export type NativeDeliveryIdentity = z.infer<typeof NativeDeliveryIdentitySchema>;
-export const NativeBufferDeliveryRecordedSchema = NativeDeliveryIdentitySchema.extend({
-  state: z.literal("recorded"),
-  result: z.strictObject({ acknowledged: z.literal(true) }),
-});

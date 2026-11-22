@@ -510,7 +510,7 @@ pub fn pty_spawn(
         }
         path
     } else {
-        working_dir(&cwd)
+        working_dir(&cwd)?
     };
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     crate::mobile_pty::reserve_native_spawn(&app, &id)?;
@@ -566,6 +566,7 @@ pub fn pty_spawn(
 pub fn desktop_worktree_removal_lease(
     host: State<'_, PtyHost>,
     agents: State<'_, crate::harness::HarnessHost>,
+    editors: State<'_, crate::native_workspace::editor_buffers::EditorBuffers>,
     client_id: String,
     lease_id: String,
     path: Option<String>,
@@ -580,6 +581,7 @@ pub fn desktop_worktree_removal_lease(
     acquire_desktop_removal_lease(
         &host,
         &agents,
+        &editors,
         std::path::Path::new(&path),
         client_id,
         lease_id,
@@ -590,6 +592,7 @@ pub fn desktop_worktree_removal_lease(
 fn acquire_desktop_removal_lease(
     host: &PtyHost,
     agents: &crate::harness::HarnessHost,
+    editors: &crate::native_workspace::editor_buffers::EditorBuffers,
     path: &std::path::Path,
     client_id: String,
     lease_id: String,
@@ -605,6 +608,12 @@ fn acquire_desktop_removal_lease(
         .any(|live| crate::worktrees::contains_working_dir(&path, &live.cwd))
     {
         return Err("Stop active terminals and agents before removing the worktree.".into());
+    }
+    // The Host trusts a grant only because this check ran; terminals above keep their own refusal.
+    if !editors.dirty_under(&path.to_string_lossy()).is_empty() {
+        return Err(
+            "editors: Save or close unsaved files under this worktree before removing it.".into(),
+        );
     }
     crate::worktree_lifecycle::install_desktop_removal_lease(
         &path,
@@ -1602,12 +1611,12 @@ fn spawn_windows(
     Ok(())
 }
 
-fn working_dir(cwd: &str) -> std::path::PathBuf {
-    let path = resolve_session_cwd(cwd);
+fn working_dir(cwd: &str) -> Result<std::path::PathBuf, String> {
+    let path = resolve_session_cwd(cwd)?;
     if path.is_dir() {
-        return path;
+        return Ok(path);
     }
-    dirs_home().map(std::path::PathBuf::from).unwrap_or(path)
+    Ok(dirs_home().map(std::path::PathBuf::from).unwrap_or(path))
 }
 
 /// A shell to start: its path, its arguments, and environment it needs.

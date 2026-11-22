@@ -257,7 +257,6 @@ type Dependencies = Pick<
   | "featureClaims"
   | "nativeWorkspacesService"
   | "nativeDeliveryService"
-  | "nativeBufferUploads"
   | "nativeServiceUploads"
   | "nativeServicesService"
   | "inHost"
@@ -388,9 +387,6 @@ const handlers: Record<
   "native.buffers.heartbeat": handleNativeRpc,
   "native.buffers.retire": handleNativeRpc,
   "native.buffers.reconcile": handleNativeRpc,
-  "native.buffers.recovery.list": handleNativeRpc,
-  "native.buffers.recovery.read": handleNativeRpc,
-  "native.buffers.recovery.status": handleNativeRpc,
   "native.rewind.plan": handleNativeRpc,
   "native.rewind.prepare": handleNativeRpc,
   "native.rewind.apply": handleNativeRpc,
@@ -401,23 +397,15 @@ const handlers: Record<
   "workspaces.cleanup.plan": handleNativeRpc,
   "workspaces.cleanup.apply": handleNativeRpc,
   "workspaces.cleanup.status": handleNativeRpc,
-  "native.buffers.delivery.apply": handleNativeRpc,
   "native.delivery.epochs.open": handleNativeRpc,
   "native.delivery.epochs.status": handleNativeRpc,
   "native.delivery.epochs.compact": handleNativeRpc,
   "native.delivery.epochs.close": handleNativeRpc,
   "native.delivery.epochs.gap.resolve": handleNativeRpc,
-  "native.buffers.delivery.status": handleNativeRpc,
-  "native.buffers.delivery.ack": handleNativeRpc,
   "native.services.delivery.apply": handleNativeRpc,
   "native.services.delivery.status": handleNativeRpc,
   "native.services.delivery.ack": handleNativeRpc,
   "native.services.delivery.result.read": handleNativeRpc,
-  "native.buffers.upload.start": handleNativeRpc,
-  "native.buffers.upload.write": handleNativeRpc,
-  "native.buffers.upload.commit": handleNativeRpc,
-  "native.buffers.upload.status": handleNativeRpc,
-  "native.buffers.upload.abort": handleNativeRpc,
   "native.services.upload.begin": handleNativeRpc,
   "native.services.upload.append": handleNativeRpc,
   "native.services.upload.commit": handleNativeRpc,

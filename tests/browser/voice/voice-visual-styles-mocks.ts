@@ -244,6 +244,7 @@ export const fixtureAssistant = {
   },
   memory: fixtureVoice.memories,
   notes: [],
+  jobs: fixtureVoice.jobs,
   presence: { state: "present" },
   briefing: null,
 };
@@ -254,6 +255,7 @@ if (new URLSearchParams(location.search).has("confirm-jobs"))
   Object.assign(fixtureAssistant.profile, { confirmJobs: true });
 export const useAssistantSnapshot = () => ({
   snapshot: fixtureAssistant,
+  environmentId: "fixture-host",
   error: "",
   loading: false,
   refresh: async () => {},

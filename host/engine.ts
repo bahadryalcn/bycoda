@@ -2666,7 +2666,8 @@ export class HostEngine {
                 model: command.model,
                 runtimeMode: command.runtimeMode,
                 modelSettings: command.modelSettings ?? {},
-                title: "New remote session",
+                // Clients supply the localized title until the session is named.
+                title: "",
                 ...(!managed && command.autoWorktreeBranch
                   ? { branch: command.autoWorktreeBranch, worktreeCwd: cwd }
                   : {}),
@@ -2790,9 +2791,9 @@ export class HostEngine {
                 ...value,
                 session: {
                   ...value.session,
-                  title: value.session.blocks.length
-                    ? value.session.title
-                    : titleFromPrompt(command.text, value.session.harness, attachments),
+                  title: !value.session.title && !value.session.blocks.length
+                    ? titleFromPrompt(command.text, value.session.harness, attachments)
+                    : value.session.title,
                   blocks: [
                     ...value.session.blocks,
                     {
@@ -3074,7 +3075,7 @@ export class HostEngine {
               const firstTurn =
                 command.type === "send" && !value.session.blocks.some((block) => !block.draft);
               const placeholderTitle =
-                value.session.title === "New remote session" ||
+                !value.session.title ||
                 canReplaceSessionTitle(
                   value.session.title,
                   value.session.harness,

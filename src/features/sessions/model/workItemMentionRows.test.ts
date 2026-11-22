@@ -29,7 +29,7 @@ function item(overrides: Partial<InboxItem> = {}): InboxItem {
 
 describe("work-item mention rows", () => {
   it("offers canonical hints only for connected providers", () => {
-    const rows = workItemMentionRows([item()], "", ["jira", "github"]);
+    const rows = workItemMentionRows([item()], "", ["github", "jira"]);
     expect(rows.map((row) => row.relative)).toEqual(["jira:", "github:"]);
     expect(rows.every((row) => row.path.startsWith(WORK_ITEM_HINT_PREFIX))).toBe(true);
     expect(workItemMentionOf(rows[0])).toMatchObject({

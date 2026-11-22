@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
@@ -10,13 +10,23 @@ import { Group, Row, Toggle, useLeaveGuard } from "../../../shared/ui/settings";
 import { FolderOpen } from "../../../shared/ui/icons";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { revealPath } from "../../../platform/tauri/fs";
-import { canSignInMcp, MCP_PROVIDER_LABELS, scopeLabel } from "../model/mcp";
-import type { McpCatalogEntry, McpEntryStatus } from "../model/mcpCatalog";
+import {
+  canSignInMcp,
+  MCP_PROVIDER_LABELS,
+  scopeLabel,
+  type ManagedMcpIdentity,
+  type ManagedMcpConfig,
+} from "../model/mcp";
+import { confirmInApp } from "../../../shared/model/appConfirm";
+import { mcpEntryLabel, type McpCatalogEntry, type McpEntryStatus } from "../model/mcpCatalog";
 import type { McpServerRow } from "../model/mcpSettingsCache";
 import type { McpHub } from "../hooks/useMcpHub";
+import type { RemoteMcpConfigTarget } from "../model/mcpConfigTarget";
+import { projectName } from "../../../shared/lib/paths";
 import { errorText } from "../../../shared/lib/errors";
-import { ProviderIcon } from "./McpAddServer";
+import { AddServerModal, ProviderIcon } from "./McpAddServer";
 import { McpServerConfigEditor } from "./McpServerConfigEditor";
+import { McpProjectCredentials } from "./McpProjectCredentials";
 
 export const STATUS_TONE: Record<McpEntryStatus, BadgeTone> = {
   ready: "success",
@@ -40,6 +50,8 @@ export function statusLabel(status: McpEntryStatus): string {
 
 /** Where the Host found a server, in the owner's words. */
 export function sourceLabel(source: string): string {
+  if (source === "bycoda" || source === "bycoda-project")
+    return `bycoda Hub · ${scopeLabel(source === "bycoda" ? "user" : "project")}`;
   if (source === "claude-plugin") return t("Claude plugin");
   if (source === "claude-account") return t("Claude account");
   if (source === "codex-account") return t("Codex account");
@@ -69,6 +81,8 @@ export function McpServerDetail({
   status,
   cwd,
   globalOnly,
+  remote,
+  machineName,
   hub,
   actions,
   stale = false,
@@ -78,29 +92,92 @@ export function McpServerDetail({
   status: McpEntryStatus;
   cwd: string;
   globalOnly: boolean;
+  remote?: RemoteMcpConfigTarget;
+  machineName?: string;
   hub: McpHub;
   actions: McpRowActions;
   stale?: boolean;
   onClose: () => void;
 }) {
   const hubEntry = entry.hub;
+  const managed = hubEntry?.managed;
+  const hostHttp = !!managed && hubEntry?.kind === "http";
   const policy = hub.loading?.policy;
   const transport = hubEntry?.kind ?? entry.configs[0]?.transport ?? "";
-  const hubLocked = stale || hub.saving || !!hub.busy || !!hub.loading?.corrupt;
+  const hubLocked =
+    stale || hub.saving || !!hub.busy || !!hub.loading?.corrupt || managed?.enabled === false;
   const configLocked = stale || actions.locked;
   const [fileError, setFileError] = useState("");
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [managedEditor, setManagedEditor] = useState<
+    ManagedMcpIdentity & { config: ManagedMcpConfig }
+  >();
+  const [managedBusy, setManagedBusy] = useState<"edit" | "remove" | "toggle" | "">("");
+  const changingManaged = useRef(false);
+  const manageServer = hub.manageServer;
+  const credentialRequest = hub.projectCredentials;
+  const credentialConfigured = hubEntry?.projectCredentialsConfigured === true;
   // Close button, Escape and backdrop all reach `onClose`; Remove can end the entry the draft belongs to.
   const leave = useLeaveGuard();
+
+  async function changeManaged(action: "edit" | "remove" | "toggle") {
+    if (!managed || !manageServer || changingManaged.current) return;
+    changingManaged.current = true;
+    setManagedBusy(action);
+    setFileError("");
+    try {
+      if (action === "toggle") {
+        await manageServer(managed.scope, {
+          action: "setEnabled",
+          name: managed.name,
+          revision: managed.revision,
+          enabled: !managed.enabled,
+        });
+      } else if (action === "edit") {
+        const result = await manageServer(managed.scope, { action: "get", name: managed.name });
+        if ("config" in result) setManagedEditor({ ...managed, ...result });
+      } else if (
+        await confirmInApp({
+          title: t("Remove MCP server?"),
+          message: t(
+            "“{p0}” is removed from the {p1} scope. Conversations that use it lose its tools; you can add it again later.",
+            { p0: managed.name, p1: scopeLabel(managed.scope) },
+          ),
+          confirmLabel: t("Remove server"),
+          tone: "danger",
+        })
+      ) {
+        await manageServer(managed.scope, {
+          action: "remove",
+          name: managed.name,
+          revision: managed.revision,
+        });
+        onClose();
+      }
+    } catch (cause) {
+      setFileError(errorText(cause));
+    } finally {
+      changingManaged.current = false;
+      setManagedBusy("");
+    }
+  }
   return (
     <>
       <Sheet
         side="end"
         size="40rem"
-        title={entry.name}
-        description={[transport.toUpperCase(), stale ? t("Unavailable") : statusLabel(status)]
+        title={mcpEntryLabel(entry)}
+        description={[
+          machineName,
+          globalOnly ? t("Global") : projectName(cwd),
+          transport.toUpperCase(),
+          stale ? t("Unavailable") : statusLabel(status),
+        ]
           .filter(Boolean)
           .join(" · ")}
-        onClose={() => leave.guard(onClose)}
+        onClose={() => {
+          if (!changingManaged.current) leave.guard(onClose);
+        }}
       >
         <div className="grid gap-6">
           {hub.error ? (
@@ -116,13 +193,37 @@ export function McpServerDetail({
             />
           ) : null}
           {hubEntry ? (
-            <Group title={t("Sessions")}>
-              {hubEntry.kind === "http" ? (
+            <Group title={t("Use in bycoda")}>
+              {credentialRequest && (!globalOnly || managed?.scope === "user") ? (
+                <Row
+                  label={globalOnly ? t("Credentials") : t("Project credentials")}
+                  descriptionVisible
+                  description={
+                    globalOnly
+                      ? undefined
+                      : credentialConfigured
+                        ? t("Saved on this project’s Host.")
+                        : t("Use a token or environment variables for this project.")
+                  }
+                >
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={configLocked || managed?.enabled === false}
+                    onClick={() => setCredentialsOpen(true)}
+                  >
+                    {credentialConfigured ? t("Manage credentials") : t("Set credentials")}
+                  </Button>
+                </Row>
+              ) : null}
+              {hubEntry.kind === "http" &&
+              !credentialConfigured &&
+              !hubEntry.credentialsConfigured ? (
                 <Row
                   label={t("bycoda sign-in")}
                   info={t("bycoda keeps this login so every session can use the server.")}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <Badge
                       size="sm"
                       tone={
@@ -136,7 +237,9 @@ export function McpServerDetail({
                       }
                     >
                       {hubEntry.oauth === "signed-in"
-                        ? t("Signed in")
+                        ? hubEntry.oauthInherited
+                          ? t("Uses global sign-in")
+                          : t("Signed in")
                         : hubEntry.oauth === "expired"
                           ? t("Expired")
                           : hubEntry.oauth === "error"
@@ -150,10 +253,10 @@ export function McpServerDetail({
                         disabled={hubLocked}
                         onClick={() => void hub.signOut(hubEntry.name)}
                       >
-                        {t("Sign out")}
+                        {hubEntry.oauthInherited ? t("Disconnect for this project") : t("Sign out")}
                       </Button>
                     ) : null}
-                    {hubEntry.oauth !== "signed-in" ? (
+                    {hubEntry.oauth !== "signed-in" || hubEntry.oauthInherited ? (
                       <Button
                         size="sm"
                         variant="secondary"
@@ -161,13 +264,20 @@ export function McpServerDetail({
                         disabled={hubLocked || hub.waiting === hubEntry.name}
                         onClick={() => void hub.signIn(hubEntry.name)}
                       >
-                        {t("Sign in")}
+                        {hubEntry.oauthInherited ? t("Use a different account") : t("Sign in")}
+                      </Button>
+                    ) : null}
+                    {hub.waiting === hubEntry.name && hub.cancelSignIn ? (
+                      <Button size="sm" variant="ghost" onClick={hub.cancelSignIn}>
+                        {t("Cancel")}
                       </Button>
                     ) : null}
                   </div>
                 </Row>
               ) : null}
-              {policy ? (
+              {hostHttp ? (
+                <Row label={t("Start MCP servers")}>{t("When needed")}</Row>
+              ) : policy ? (
                 <Row
                   label={t("Start with every session")}
                   info={t("Off: the server starts the first time a session uses it.")}
@@ -188,15 +298,17 @@ export function McpServerDetail({
                   />
                 </Row>
               ) : null}
-              <Row label={t("Found in")}>
-                <span className="flex flex-wrap justify-end gap-1">
-                  {hubEntry.sources.map((source) => (
-                    <Badge key={source} size="sm" tone="neutral">
-                      {sourceLabel(source)}
-                    </Badge>
-                  ))}
-                </span>
-              </Row>
+              {!managed ? (
+                <Row label={t("Found in")}>
+                  <span className="flex flex-wrap justify-end gap-1">
+                    {hubEntry.sources.map((source) => (
+                      <Badge key={source} size="sm" tone="neutral">
+                        {sourceLabel(source)}
+                      </Badge>
+                    ))}
+                  </span>
+                </Row>
+              ) : null}
             </Group>
           ) : null}
           {entry.configs.map((server) => {
@@ -229,19 +341,21 @@ export function McpServerDetail({
                       <MiddleTruncate size="caption" tone="secondary">
                         {server.configPath}
                       </MiddleTruncate>
-                      <Button
-                        variant="ghost"
-                        iconOnly
-                        size="sm"
-                        label={t("Show in folder")}
-                        onClick={() =>
-                          void revealPath(server.configPath).catch((cause) =>
-                            setFileError(errorText(cause)),
-                          )
-                        }
-                      >
-                        <FolderOpen className="icon-sm" />
-                      </Button>
+                      {!remote ? (
+                        <Button
+                          variant="ghost"
+                          iconOnly
+                          size="sm"
+                          label={t("Show in folder")}
+                          onClick={() =>
+                            void revealPath(server.configPath).catch((cause) =>
+                              setFileError(errorText(cause)),
+                            )
+                          }
+                        >
+                          <FolderOpen className="icon-sm" />
+                        </Button>
+                      ) : null}
                       <CopyButton
                         iconOnly
                         size="sm"
@@ -259,12 +373,13 @@ export function McpServerDetail({
                       server={server}
                       cwd={cwd}
                       globalOnly={globalOnly}
+                      remote={remote}
                       disabled={configLocked}
                       onSaved={actions.refresh}
                     />
                   </Row>
                 ) : null}
-                {canSignInMcp(server) ? (
+                {!remote && canSignInMcp(server) ? (
                   <Row
                     label={t("{p0} sign-in", { p0: MCP_PROVIDER_LABELS[server.provider] })}
                     info={t("Signs in through the provider's own CLI, for use outside bycoda.")}
@@ -280,7 +395,7 @@ export function McpServerDetail({
                     </Button>
                   </Row>
                 ) : null}
-                {server.provider === "claude" ? (
+                {server.provider === "claude" && (!remote || !!server.configPath) ? (
                   <Row label={t("Remove from {p0}", { p0: scopeLabel(server.scope) })}>
                     <Button
                       size="sm"
@@ -296,7 +411,43 @@ export function McpServerDetail({
               </Group>
             );
           })}
-          {entry.configs.length === 0 && hubEntry ? (
+          {managed && manageServer ? (
+            <Group title={sourceLabel(managed.scope === "project" ? "bycoda-project" : "bycoda")}>
+              <Row label={t("Enabled")}>
+                <Toggle
+                  label={t("Enable {p0} in {p1}", {
+                    p0: managed.name,
+                    p1: scopeLabel(managed.scope),
+                  })}
+                  on={managed.enabled}
+                  disabled={configLocked || !!managedBusy}
+                  onChange={() => void changeManaged("toggle")}
+                />
+              </Row>
+              <Row label={t("Configuration")}>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={managedBusy === "edit"}
+                    disabled={configLocked || !!managedBusy}
+                    onClick={() => void changeManaged("edit")}
+                  >
+                    {t("Edit")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    tone="danger"
+                    loading={managedBusy === "remove"}
+                    disabled={configLocked || !!managedBusy}
+                    onClick={() => void changeManaged("remove")}
+                  >
+                    {t("Remove")}
+                  </Button>
+                </div>
+              </Row>
+            </Group>
+          ) : entry.configs.length === 0 && hubEntry ? (
             <DescriptionList size="sm">
               <DescriptionItem term={t("Configuration")}>
                 {t("Managed by {p0}. Edit it there.", {
@@ -307,6 +458,30 @@ export function McpServerDetail({
           ) : null}
         </div>
       </Sheet>
+      {managedEditor && manageServer ? (
+        <AddServerModal
+          cwd={cwd}
+          globalOnly={globalOnly}
+          machineName={machineName}
+          initialProvider="claude"
+          manageServer={manageServer}
+          editing={managedEditor}
+          onClose={() => setManagedEditor(undefined)}
+          onAdded={async () => {}}
+        />
+      ) : null}
+      {credentialsOpen && hubEntry && credentialRequest ? (
+        <McpProjectCredentials
+          name={hubEntry.name}
+          displayName={mcpEntryLabel(entry)}
+          machineName={machineName ?? t("This computer")}
+          projectName={globalOnly ? undefined : projectName(cwd)}
+          kind={hubEntry.kind}
+          configured={credentialConfigured}
+          request={credentialRequest}
+          onClose={() => setCredentialsOpen(false)}
+        />
+      ) : null}
       {leave.dialog}
     </>
   );

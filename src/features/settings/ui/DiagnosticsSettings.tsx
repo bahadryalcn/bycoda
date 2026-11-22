@@ -39,9 +39,7 @@ function HostStallProfilesRow() {
     setSaving(true);
     setError(undefined);
     saveHostStallProfiles(next)
-      .then(setEnabled, (reason: unknown) =>
-        setError(errorText(reason)),
-      )
+      .then(setEnabled, (reason: unknown) => setError(errorText(reason)))
       .finally(() => setSaving(false));
   };
   return (

@@ -21,6 +21,29 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it("highlights scoped crews, members and notes in the textarea overlay without rewriting the draft", () => {
+  const text =
+    "Ask @crews:audit-source-fixes and @crews:backend-engineer about @notes:plan. @crews:";
+  act(() =>
+    root.render(
+      createElement(ComposerHighlight, {
+        text,
+        mode: null,
+        names: new Set<string>(),
+        skillParts: (text) => [{ text }],
+        mentions: new Map(),
+        mcpTags: [],
+        attachments: [],
+        citations: 0,
+      }),
+    ),
+  );
+  expect(host.textContent).toBe(text);
+  expect(
+    [...host.querySelectorAll("[data-scoped-mention]")].map((node) => node.textContent),
+  ).toEqual(["@crews:audit-source-fixes", "@crews:backend-engineer", "@notes:plan"]);
+});
+
 it("highlights known tracker aliases, repeated refs and more than five tokens without changing draft text", () => {
   const tokens = [
     "@jira:PROJ-123",

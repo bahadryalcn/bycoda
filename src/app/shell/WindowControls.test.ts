@@ -2,12 +2,15 @@
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
+import { saveMinimizeToTray } from "../../features/settings/model/settings";
 
 const native = vi.hoisted(() => {
   let maximized = false;
   let fullscreen = false;
   let resized: (() => void) | undefined;
   return {
+    isWindows: false,
+    park: vi.fn(async () => {}),
     reset() {
       maximized = false;
       fullscreen = false;
@@ -40,6 +43,13 @@ const native = vi.hoisted(() => {
   };
 });
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => native.window }));
+vi.mock("../../platform/tauri/platform", async (original) => ({
+  ...(await original<typeof import("../../platform/tauri/platform")>()),
+  get IS_WIN() {
+    return native.isWindows;
+  },
+}));
+vi.mock("../model/appLifecycle", () => ({ hideCurrentWindow: native.park }));
 vi.mock("../../shared/i18n", () => ({
   t: (text: string) => text,
   useT: () => (text: string) => text,
@@ -65,6 +75,8 @@ async function tooltipText(element: HTMLElement): Promise<string> {
 beforeEach(() => {
   vi.clearAllMocks();
   native.reset();
+  native.isWindows = false;
+  localStorage.removeItem("bycoda.minimizeToTray");
 });
 
 async function mounted(test: (host: HTMLDivElement) => Promise<void>, component = WindowControls) {
@@ -213,6 +225,22 @@ it("routes minimize and close through native controls so lifecycle guards run", 
       host.querySelector<HTMLButtonElement>('[aria-label="Close window"]')!.click(),
     );
     expect(native.window.minimize).toHaveBeenCalledOnce();
+    expect(native.window.close).toHaveBeenCalledOnce();
+  });
+});
+
+it("routes only Minimize to the tray after the preference changes", async () => {
+  native.isWindows = true;
+  await mounted(async (host) => {
+    act(() => saveMinimizeToTray(true));
+    const minimize = host.querySelector<HTMLButtonElement>('button[aria-label="Minimize to tray"]');
+    const close = host.querySelector<HTMLButtonElement>('button[aria-label="Close window"]');
+    expect(minimize).not.toBeNull();
+    expect(close).not.toBeNull();
+    await act(async () => minimize?.click());
+    await act(async () => close?.click());
+    expect(native.park).toHaveBeenCalledOnce();
+    expect(native.window.minimize).not.toHaveBeenCalled();
     expect(native.window.close).toHaveBeenCalledOnce();
   });
 });

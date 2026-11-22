@@ -46,6 +46,7 @@ import {
   type ProjectStreamState,
 } from "./projectSessionDelta";
 import { z } from "zod";
+import { cancelQueuedSessionSyncs, setFocusedSyncSessions } from "./coldSyncGate";
 
 export type MachineChannelDemand = {
   active?: { projectId: string; sessionId: string; lastActiveAt: number };
@@ -564,6 +565,10 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
       if (!sessions.has(id)) subscriber.streamEpochs.delete(id);
   }
   const demand = mergedDemand(channel);
+  setFocusedSyncSessions(
+    machineId,
+    demand.activeSessions?.map((session) => session.sessionId) ?? [],
+  );
   const environmentId = environmentForMachine(machineId);
   const enabled =
     !channel.wsFailed &&
@@ -1069,6 +1074,7 @@ export function subscribeRemoteMachineChannel(
       return;
     }
     channel!.stopped = true;
+    cancelQueuedSessionSyncs(machineId);
     releaseWs(channel!);
     clearWsRetry(channel!);
     if (channel!.timer) clearTimeout(channel!.timer);

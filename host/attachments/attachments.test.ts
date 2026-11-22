@@ -455,3 +455,38 @@ it("resolves send references asynchronously and keeps the size and ID authority"
     "Invalid attachment ID",
   );
 });
+
+it("ends a reference pass without reading tables once every candidate is in use", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "attachment-gc-used-"));
+  const store = new HostStore(join(directory, "host.db"));
+  cleanups.push(async () => {
+    await store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const ids = ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"];
+  for (const id of ids)
+    await writeAttachmentChunk(store, {
+      id,
+      offset: 0,
+      size: 6,
+      data: Buffer.from("abc").toString("base64"),
+    });
+  const prepare = vi.spyOn(store.db, "prepare");
+  const future = Date.now() + 8 * 24 * 60 * 60 * 1000;
+  const resume = {};
+  expect(
+    await collectAttachmentGarbage(
+      store,
+      () => new Set(ids),
+      future,
+      undefined,
+      new Set(ids),
+      undefined,
+      undefined,
+      resume,
+    ),
+  ).toEqual([]);
+  expect(prepare.mock.calls.some(([sql]) => /SELECT .*\* FROM "/.test(String(sql)))).toBe(false);
+  expect(resume).toEqual({ pending: false, scan: undefined });
+  for (const id of ids) expect(readFileSync(attachmentPath(store, id), "utf8")).toBe("abc");
+});

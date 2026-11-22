@@ -105,10 +105,10 @@ describe("incremental inline reference scan", () => {
   it("rescans when a code fence opens and closes far above later references", () => {
     const context = inlineFixtureContext();
     const draft =
-      "intro\n\nsee [image1] and https://example.com/a\n\n[docs](https://example.org/d)\n";
+      "intro\n\nsee [image1] and https://example.com/a\n\n[docs](https://example.org/d) @crews:backend-engineer\n";
     let state = EditorState.create({ doc: draft });
     let scan = createInlineScan(state, context);
-    expect(scan.references.map((ref) => ref.kind)).toEqual(["attachment", "url", "url"]);
+    expect(scan.references.map((ref) => ref.kind)).toEqual(["attachment", "url", "url", "crew"]);
     for (const change of [
       { from: 0, insert: "```\n" },
       { from: 0, to: 4, insert: "" },
@@ -118,7 +118,7 @@ describe("incremental inline reference scan", () => {
       scan = updateInlineScan(scan, state.doc.toString(), transaction.changes, context);
       expectSame(scan.references, state.doc.toString(), context, JSON.stringify(change));
     }
-    expect(scan.references).toHaveLength(3);
+    expect(scan.references).toHaveLength(4);
   });
 
   it("reuses an unchanged scan and follows a context change", () => {

@@ -1,4 +1,5 @@
 """Idle-only host/app installation. Spawned headlessly by local_update.py."""
+import hashlib
 import json
 import contextlib
 import os
@@ -38,6 +39,30 @@ def windows_app_process_filter(app):
     allowed = '@(' + ','.join(ps_quote(path) for path in paths) + ')'
     return (f'Get-Process | Where-Object {{ $_.ProcessName -eq "{PRODUCT_IDENTITY["binaryName"]}" '
             f'-and {allowed} -contains $_.Path }}')
+
+def windows_instance_pipe(app):
+    """The running app's single-instance pipe, as src-tauri/src/windows_instance.rs `pipe_name`
+    derives it for a release launch without arguments."""
+    identifier = PRODUCT_IDENTITY['bundleIdentifier']
+    name = hashlib.sha256()
+    for value in (identifier, os.path.join(os.environ.get('APPDATA', ''), identifier), str(app), 'release'):
+        name.update(value.lower().encode('utf-8') + b'\0')
+    return '\\\\.\\pipe\\bycoda-relaunch-' + name.hexdigest()
+
+def request_windows_app_quit(app, process_filter, seconds=20):
+    """Ask the running app to quit through its own save run, which leaves its native buffers
+    clean; a forced stop left one dirty predecessor per update. A build without the quit signal
+    ignores it, and False sends the caller to its forced stop as before."""
+    if os.name != 'nt':
+        return False
+    try:
+        with open(windows_instance_pipe(app), 'wb', buffering=0) as pipe:
+            pipe.write(b'\x03')
+    except OSError:
+        return False
+    return ps(f'$running = @({process_filter}); '
+              f'if ($running.Count) {{ $running | Wait-Process -Timeout {seconds} -ErrorAction SilentlyContinue }}; '
+              f'@({process_filter}).Count') == '0'
 
 def windows_app_snapshot(app, rollback, manifest):
     """Reuse only an intact previous installation, never overwrite recovery data."""
@@ -416,8 +441,9 @@ def app_install(release, manifest, report):
         was_running = ps('@(' + process_filter + ').Count') != '0'
         wait_idle(active, report)
         report('installing')
-        ps(process_filter + ' | ForEach-Object { [void]$_.CloseMainWindow() }')
-        time.sleep(5)
+        if not request_windows_app_quit(app, process_filter):
+            ps(process_filter + ' | ForEach-Object { [void]$_.CloseMainWindow() }')
+            time.sleep(5)
         if active() != 0:
             raise RuntimeError('A new turn started; app installation canceled')
         # Close-to-tray retains an idle process; only terminate the known app path.

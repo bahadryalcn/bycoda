@@ -3,14 +3,12 @@ import { beforeEach, expect, it } from "vitest";
 import {
   checkoutTitle,
   checkoutTitleWith,
-  checkoutOptionLabel,
   checkoutRepositoryPaths,
   checkoutRowLabels,
-  defaultCheckout,
+  dropLegacyCheckoutSelections,
+  isMissingPathError,
+  missingPathNamedIn,
   groupCheckouts,
-  loadCheckoutSelection,
-  resolveCheckoutSelection,
-  saveCheckoutSelection,
   sessionCheckout,
 } from "./checkoutSelection";
 import type { Worktree } from "./worktrees";
@@ -30,7 +28,6 @@ const tree = (path: string, extra: Partial<Worktree> = {}): Worktree => ({
   ...extra,
 });
 const main = tree("/repo", { isMain: true });
-const byPath = (...trees: Worktree[]) => Object.fromEntries(trees.map((item) => [item.path, item]));
 
 beforeEach(() => localStorage.clear());
 
@@ -51,39 +48,10 @@ it("keeps checkout children distinct, deduplicates paths and excludes outside ta
   ).toEqual(["/repo", "/repo/mobile", "/t/a", "/t/a/mobile"]);
 });
 
-it("retains child selection through discovery and falls back only after confirmed absence", () => {
-  const paths = ["/repo", "/t/a"];
-  const trees = byPath(main, tree("/t/a"));
-  expect(resolveCheckoutSelection("/repo/mobile", "/repo", paths, trees, {})).toBe("/repo/mobile");
-  expect(
-    resolveCheckoutSelection("/repo/mobile", "/repo", paths, trees, { "/repo": ["/repo/mobile"] }),
-  ).toBe("/repo/mobile");
-  expect(resolveCheckoutSelection("/repo/mobile", "/repo", paths, trees, { "/repo": [] })).toBe(
-    "/repo",
-  );
-  expect(resolveCheckoutSelection("/elsewhere", "/repo", paths, trees, {})).toBe("/repo");
-  expect(resolveCheckoutSelection("", "/repo", paths, trees, {})).toBe("");
-});
-
-it("resolves the deepest checkout containing the session cwd, else the main folder", () => {
+it("resolves the deepest checkout containing the session cwd", () => {
   const paths = ["/repo", "/repo/.trees/a"];
   expect(sessionCheckout("/repo/.trees/a/src", paths)).toBe("/repo/.trees/a");
   expect(sessionCheckout("/elsewhere", paths)).toBeUndefined();
-  const trees = byPath(main, tree("/repo/.trees/a"));
-  expect(defaultCheckout("/elsewhere", paths, trees)).toBe("/repo");
-  expect(defaultCheckout("/repo/.trees/a/src", paths, trees)).toBe("/repo/.trees/a");
-});
-
-it("persists explicit choices including all checkouts, and falls back when the path vanished", () => {
-  const trees = byPath(main, tree("/t/a"));
-  const paths = ["/repo", "/t/a"];
-  expect(loadCheckoutSelection("k")).toBeNull();
-  saveCheckoutSelection("k", "/t/a");
-  expect(resolveCheckoutSelection(loadCheckoutSelection("k"), "/repo", paths, trees)).toBe("/t/a");
-  saveCheckoutSelection("k", "");
-  expect(resolveCheckoutSelection(loadCheckoutSelection("k"), "/repo", paths, trees)).toBe("");
-  saveCheckoutSelection("k", "/t/gone");
-  expect(resolveCheckoutSelection(loadCheckoutSelection("k"), "/t/a", paths, trees)).toBe("/t/a");
 });
 
 it("orders session, main, active, then idle checkouts", () => {
@@ -101,11 +69,6 @@ it("orders session, main, active, then idle checkouts", () => {
   expect(groups.idle.map((item) => item.path)).toEqual(["/t/idle"]);
 });
 
-it("labels options by folder without repeating the branch shown below, never the full path", () => {
-  expect(checkoutOptionLabel(tree("/t/a", { branch: "mc/x" }), true)).toBe("a · This session");
-  expect(checkoutOptionLabel(tree("/t/a", { branch: null }), false)).toBe("a");
-});
-
 it("drops folder names that only repeat the branch and leads detached rows with the folder", () => {
   expect(checkoutRowLabels(tree("/w/harness", { branch: "audit/2026-10-09-harness" }))).toEqual({
     title: "audit/2026-10-09-harness",
@@ -121,4 +84,30 @@ it("drops folder names that only repeat the branch and leads detached rows with 
     title: "public",
     detail: "Detached abcdef1",
   });
+});
+
+it("recognises not-found failures of a vanished working directory", () => {
+  for (const message of [
+    "fatal: cannot change to 'G:/trees/x': No such file or directory",
+    "Sistem belirtilen dosyayı bulamıyor. (os error 2)",
+    "G:/trees/x: Not a directory",
+  ])
+    expect(isMissingPathError(message)).toBe(true);
+  expect(isMissingPathError("fatal: unable to access remote: timed out")).toBe(false);
+  expect(
+    missingPathNamedIn("fatal: cannot change to 'G:/trees/x': No such file", [
+      "G:/trees/x",
+      "G:/repo",
+    ]),
+  ).toBe("G:/trees/x");
+  expect(missingPathNamedIn("fatal: cannot change to '/other': x", ["/repo"])).toBeUndefined();
+});
+
+it("drops only the retired per-session checkout choices, once", () => {
+  localStorage.setItem("bycoda.sourceControl.checkout.v1:/repo", "/t/a");
+  localStorage.setItem("bycoda.sourceControl.checkout.v1:/t/a", "*");
+  localStorage.setItem("bycoda.other", "kept");
+  dropLegacyCheckoutSelections();
+  expect(localStorage.length).toBe(1);
+  expect(localStorage.getItem("bycoda.other")).toBe("kept");
 });

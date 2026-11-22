@@ -5,6 +5,7 @@ import { attachmentPresentation, formatAttachmentSize } from "../model/attachmen
 import { cachedUserLinkRanges } from "../model/linkPreview";
 import { mcpTagParts } from "../model/mcpPicker";
 import { splitCitationTokens } from "../model/citationTokens";
+import { scopedMentionRanges } from "../model/composerMentionScopes";
 import type { InlineReference, InlineReferenceContext } from "./composerInlineReferences";
 
 /** The pre-incremental implementation, frozen as the reference the incremental scan must equal. */
@@ -117,6 +118,10 @@ export function fullReparseInlineReferences(
       found.push({ start, end, kind: "quote", value: part.token, label: part.token.slice(1, -1) });
       start = end;
     } else start += part.text.length;
+  }
+  for (const { start, end, kind } of scopedMentionRanges(text, { markdownTree: true })) {
+    const token = text.slice(start, end);
+    found.push({ start, end, kind, value: token, label: token });
   }
   const ranges: InlineReference[] = [];
   for (const item of found.sort((a, b) => a.start - b.start || b.end - a.end)) {

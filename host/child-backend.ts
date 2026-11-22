@@ -1443,7 +1443,7 @@ export class HostChildBackend implements ChildBackend {
           await exec(
             join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"),
             ["/PID", String(child.pid), "/T", "/F"],
-            { windowsHide: true, timeout: 10_000 },
+            { lane: "control", windowsHide: true, timeout: 10_000 },
           );
         } catch {
           child.kill();

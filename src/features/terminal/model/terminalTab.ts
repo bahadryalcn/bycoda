@@ -1,5 +1,6 @@
 import { basename } from "../../../platform/tauri/fs";
 import type { FilePaneTab } from "../../workspace/model/layout";
+import { sessionWorkCwd, type Session } from "../../sessions/public/session";
 
 export type TerminalMetaPatch = {
   title?: string;
@@ -29,11 +30,15 @@ export function newTerminalCwd({
   fallback,
 }: {
   activeFile?: Pick<FilePaneTab, "cwd">;
-  session?: { cwd: string; worktreeCwd?: string; worktreeRemoved?: boolean };
+  session?: Parameters<typeof sessionWorkCwd>[0] & Pick<Session, "worktreeRemoved">;
   fallback: string;
 }): string {
   if (session?.worktreeCwd && !session.worktreeRemoved) return session.worktreeCwd;
-  return activeFile?.cwd ?? session?.cwd ?? fallback;
+  return (
+    activeFile?.cwd ??
+    (session && sessionWorkCwd({ ...session, worktreeCwd: undefined })) ??
+    fallback
+  );
 }
 
 /** Tab label: dynamic title (process or directory) stored on `path`. */

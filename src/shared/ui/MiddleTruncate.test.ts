@@ -116,7 +116,7 @@ it("keeps a visible ellipsis and a shrinkable tail for long branch names", async
   }
 });
 
-it("does not reserve ellipsis room for a one or two character head", async () => {
+it("does not reserve ellipsis room for a head of up to four characters", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
   document.body.append(host);
@@ -131,6 +131,15 @@ it("does not reserve ellipsis room for a one or two character head", async () =>
     expect(head.textContent).toBe("ab");
     expect(head.classList.length).toBe(1);
     expect(tail.textContent).toBe("1234567890");
+    // "fea" + "ture/graph" rendered as "fea ture/graph" when the short head reserved ellipsis room.
+    await act(async () =>
+      root.render(createElement(MiddleTruncate, { mode: "text" }, "feature/graph")),
+    );
+    const [, shortHead] = Array.from(
+      (host.firstElementChild as HTMLElement).children,
+    ) as HTMLElement[];
+    expect(shortHead.textContent).toBe("fea");
+    expect(shortHead.classList.length).toBe(1);
   } finally {
     await act(async () => root.unmount());
     host.remove();

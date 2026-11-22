@@ -23,7 +23,13 @@ vi.mock("../../../platform/tauri/fs", () => ({
   notifyGitChanged: vi.fn(),
 }));
 
+const worktreeState = vi.hoisted(() => ({ data: undefined as unknown }));
+vi.mock("../hooks/useProjectWorktrees", () => ({
+  useProjectWorktrees: () => ({ data: worktreeState.data, refresh: async () => true }),
+}));
+
 import { BranchPicker } from "./BranchPicker";
+import { setWorktreeFocus, worktreeFocus } from "../model/worktreeFocus";
 import {
   gitBranches,
   gitCheckout,
@@ -303,41 +309,17 @@ it("checks out the highlighted matching branch when Enter is pressed", async () 
   expect(gitCreateBranch).not.toHaveBeenCalledWith("/repo-enter-existing", "picker");
 });
 
-it("combines the working copy and branch in one trigger with Worktrees and Branches tabs", async () => {
-  const onChange = vi.fn();
-  const checkouts = {
-    label: "task",
-    value: "/t/task",
-    options: [
-      { value: "/t/task", title: "task" },
-      { value: "/t/other", title: "other" },
-    ],
-    onChange,
-  };
+it("is a branches-only picker: no worktree tabs or worktree choice", async () => {
   await act(async () =>
-    root.render(createElement(BranchPicker, { cwd: "/t/task", branch: "main", checkouts })),
+    root.render(createElement(BranchPicker, { cwd: "/t/task", branch: "main" })),
   );
   const trigger = container.querySelector("button")!;
-  expect(trigger.textContent).toContain("task · main");
-  expect(trigger.getAttribute("aria-label")).toBe("Worktree task · main");
+  expect(trigger.textContent).toContain("main");
+  expect(trigger.getAttribute("aria-label")).toBe("Branch main");
   await act(async () => trigger.click());
   const picker = document.querySelector<HTMLElement>("[data-branch-picker]")!;
-  const tabs = [...picker.querySelectorAll<HTMLElement>('[role="tab"]')].map(
-    (tab) => tab.textContent,
-  );
-  expect(tabs).toEqual(["Worktrees2", "Branches1"]);
-  // A known branch opens on Branches; switch to Worktrees and pick another checkout.
-  await act(async () =>
-    [...picker.querySelectorAll<HTMLElement>('[role="tab"]')]
-      .find((tab) => tab.textContent?.startsWith("Worktrees"))!
-      .click(),
-  );
-  const other = [...picker.querySelectorAll<HTMLElement>('[role="option"]')].find((option) =>
-    option.textContent?.includes("other"),
-  )!;
-  await act(async () => other.click());
-  expect(onChange).toHaveBeenCalledWith("/t/other");
-  expect(document.querySelector("[data-branch-picker]")).toBeNull();
+  expect(picker.querySelector('[role="tab"]')).toBeNull();
+  expect(picker.querySelector('[role="listbox"]')?.getAttribute("aria-label")).toBe("Branches");
 });
 
 it("windows a repository with thousands of branches and still searches all of them", async () => {
@@ -402,4 +384,92 @@ it("windows a repository with thousands of branches and still searches all of th
   });
   expect(rows()).toHaveLength(1);
   expect(rows()[0]!.textContent).toContain("feature-2999");
+});
+
+const liveTree = (path: string, branch: string, isMain = false) => ({
+  path,
+  branch,
+  head: "abc",
+  isMain,
+  locked: false,
+  prunable: false,
+  missing: false,
+  dirty: false,
+  unpushed: 0,
+  sessionIds: [],
+});
+
+async function openWithWorktreeBranch(props: Record<string, unknown>) {
+  worktreeState.data = {
+    defaultRoot: "/wt",
+    worktrees: [liveTree("/repo-wt", "main", true), liveTree("/wt/feat", "feat/x")],
+  };
+  vi.mocked(gitBranches).mockResolvedValueOnce({
+    current: "main",
+    detached: false,
+    branches: [
+      { name: "feat/x", current: false, remote: null },
+      { name: "free", current: false, remote: null },
+      { name: "main", current: true, remote: null },
+    ],
+  });
+  vi.mocked(gitCheckout).mockClear();
+  await act(async () =>
+    root.render(createElement(BranchPicker, { cwd: "/repo-wt", branch: "main", ...props })),
+  );
+  await act(async () => container.querySelector("button")!.click());
+  await act(async () => {});
+  const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  return options.find((option) => option.textContent?.includes("feat/x"))!;
+}
+
+it("badges a worktree branch, groups it last and goes to the worktree instead of checking out", async () => {
+  const onSelectWorktree = vi.fn();
+  const row = await openWithWorktreeBranch({ onSelectWorktree });
+  expect(row.textContent).toContain("worktree");
+  expect(document.querySelector("[data-branch-picker]")?.textContent).toContain("In a worktree");
+  await act(async () => row.click());
+  expect(onSelectWorktree).toHaveBeenCalledWith(expect.objectContaining({ path: "/wt/feat" }));
+  expect(gitCheckout).not.toHaveBeenCalled();
+  worktreeState.data = undefined;
+});
+
+it("disables a worktree branch on a started session and states why", async () => {
+  const onSelectWorktree = vi.fn();
+  const row = await openWithWorktreeBranch({ onSelectWorktree, worktreeLocked: true });
+  expect(row.textContent).toContain("A started session stays in its worktree");
+  await act(async () => row.click());
+  expect(onSelectWorktree).not.toHaveBeenCalled();
+  expect(gitCheckout).not.toHaveBeenCalled();
+  worktreeState.data = undefined;
+});
+
+it("keeps the project folder as the focus when its branch is chosen from another worktree", async () => {
+  worktreeState.data = {
+    defaultRoot: "/wt",
+    worktrees: [liveTree("/repo-wt", "main", true), liveTree("/wt/feat", "feat/x")],
+  };
+  vi.mocked(gitBranches).mockResolvedValueOnce({
+    current: "feat/x",
+    detached: false,
+    branches: [
+      { name: "feat/x", current: true, remote: null },
+      { name: "main", current: false, remote: null },
+    ],
+  });
+  vi.mocked(gitCheckout).mockClear();
+  setWorktreeFocus("/repo-wt", { path: "/wt/feat", branch: "feat/x" });
+  await act(async () =>
+    root.render(createElement(BranchPicker, { cwd: "/wt/feat", branch: "feat/x" })),
+  );
+  await act(async () => container.querySelector("button")!.click());
+  await act(async () => {});
+  const row = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) =>
+    option.textContent?.includes("main"),
+  )!;
+  await act(async () => row.click());
+  expect(worktreeFocus("/repo-wt")).toEqual({ path: "/repo-wt", branch: "main" });
+  expect(gitCheckout).not.toHaveBeenCalled();
+  setWorktreeFocus("/repo-wt", undefined);
+  worktreeState.data = undefined;
 });
