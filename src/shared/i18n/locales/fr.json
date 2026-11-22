@@ -12640,7 +12640,6 @@
   "Could not move this conversation": "Impossible de déplacer cette conversation",
   "Could not open this local conversation": "Impossible d'ouvrir cette conversation locale",
   "Could not open the pending conversation links": "Impossible d'ouvrir les liens de conversation en attente",
-  "Open a project before organizing its sessions into folders.": "Ouvrez un projet avant d'organiser ses sessions en dossiers.",
   "Could not record this turn's changes.": "Les modifications de ce tour n'ont pas pu être enregistrées.",
   "Could not load the changes.": "Impossible de charger les modifications.",
   "Load changes again": "Recharger les modifications",
@@ -12650,5 +12649,7 @@
   "Could not load earlier messages.": "Impossible de charger les messages précédents.",
   "Load earlier messages again": "Recharger les messages précédents",
   "Reload queue": "Recharger la file",
-  "Could not load queued messages. Use Reload queue above.": "Impossible de charger les messages en file. Utilisez Recharger la file ci-dessus."
+  "Could not load queued messages. Use Reload queue above.": "Impossible de charger les messages en file. Utilisez Recharger la file ci-dessus.",
+  "Open a project to use folders": "Ouvrez un projet pour utiliser les dossiers",
+  "No eligible model right now. Runs wait until one is available.": "Aucun modèle éligible pour le moment. Les exécutions attendent qu’un modèle soit disponible."
 }

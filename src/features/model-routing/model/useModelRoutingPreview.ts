@@ -14,12 +14,21 @@ export function useModelRoutingPreview(
   queryKey: QueryKey,
   input: Parameters<typeof resolveModelRouting>[1],
 ) {
-  return useQuery({
+  return useQuery(modelRoutingPreviewOptions(machineId, queryKey, input));
+}
+
+/** Query options shared by the single preview hook and the per-list `useQueries` readers. */
+export function modelRoutingPreviewOptions(
+  machineId: string,
+  queryKey: QueryKey,
+  input: Parameters<typeof resolveModelRouting>[1],
+) {
+  return {
     queryKey,
     queryFn: () =>
       withTimeout(resolveModelRouting(machineId, input), PREVIEW_DEADLINE_MS, "Model preview"),
     retry: false,
     staleTime: 3000,
     refetchInterval: 60_000,
-  });
+  };
 }

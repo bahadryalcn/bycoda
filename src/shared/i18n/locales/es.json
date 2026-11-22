@@ -12640,7 +12640,6 @@
   "Could not move this conversation": "No se pudo mover esta conversación",
   "Could not open this local conversation": "No se pudo abrir esta conversación local",
   "Could not open the pending conversation links": "No se pudieron abrir los enlaces de conversación pendientes",
-  "Open a project before organizing its sessions into folders.": "Abre un proyecto antes de organizar sus sesiones en carpetas.",
   "Could not record this turn's changes.": "No se pudieron registrar los cambios de este turno.",
   "Could not load the changes.": "No se pudieron cargar los cambios.",
   "Load changes again": "Volver a cargar los cambios",
@@ -12650,5 +12649,7 @@
   "Could not load earlier messages.": "No se pudieron cargar los mensajes anteriores.",
   "Load earlier messages again": "Volver a cargar los mensajes anteriores",
   "Reload queue": "Recargar cola",
-  "Could not load queued messages. Use Reload queue above.": "No se pudieron cargar los mensajes en cola. Usa Recargar cola arriba."
+  "Could not load queued messages. Use Reload queue above.": "No se pudieron cargar los mensajes en cola. Usa Recargar cola arriba.",
+  "Open a project to use folders": "Abre un proyecto para usar carpetas",
+  "No eligible model right now. Runs wait until one is available.": "Ahora no hay ningún modelo apto. Las ejecuciones esperan hasta que haya uno disponible."
 }

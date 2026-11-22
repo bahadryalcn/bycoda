@@ -11,6 +11,7 @@ import { useAutomationHistory } from "../hooks/useAutomationHistory";
 import { unreachableNotice, useAutomationActions } from "../hooks/useAutomationActions";
 import { useAutomationDraftStart } from "../hooks/useAutomationDraftStart";
 import { useAutomationFolderOptions } from "../hooks/useAutomationFolderOptions";
+import { canOrganizeSessions } from "../../sessions/public/sessionOrganizationOperations";
 import { automationKey } from "../model/automationKey";
 import {
   TRIGGER_CATEGORIES,
@@ -1253,6 +1254,7 @@ function AutomationEditor({
       (draft.runInBackground && !draft.cwd && !!draft.hostMachineId)) &&
     draft.model.length > 0;
   const folderChoices = useAutomationFolderOptions(draft.cwd, draft.sessionFolderId);
+  const folderUnavailable = !canOrganizeSessions(draft.cwd);
   const update = <K extends keyof AutomationDraft>(key: K, value: AutomationDraft[K]) =>
     onChange({ ...draft, [key]: value });
   const setTriggers = (triggers: AutomationTrigger[]) => onChange(applyTriggers(draft, triggers));
@@ -1580,10 +1582,12 @@ function AutomationEditor({
                         <SettingsRow
                           label={t("Session folder")}
                           hint={
-                            folderChoices.error ??
-                            (folderChoices.loading
-                              ? t("Loading folders…")
-                              : "Where runs appear in the sidebar")
+                            folderUnavailable
+                              ? t("Open a project to use folders")
+                              : (folderChoices.error ??
+                                (folderChoices.loading
+                                  ? t("Loading folders…")
+                                  : "Where runs appear in the sidebar"))
                           }
                         >
                           <SearchableSelect
@@ -1594,7 +1598,9 @@ function AutomationEditor({
                             label={t("Session folder")}
                             value={draft.sessionFolderId}
                             options={folderChoices.options}
-                            disabled={folderChoices.loading || !!folderChoices.error}
+                            disabled={
+                              folderUnavailable || folderChoices.loading || !!folderChoices.error
+                            }
                             onChange={(value) => update("sessionFolderId", value)}
                           />
                         </SettingsRow>

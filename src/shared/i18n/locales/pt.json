@@ -5875,7 +5875,7 @@
   "Search name, role, model or group": "Pesquisar por nome, função, modelo ou grupo",
   "{p0} selected, {p1} hidden by filter": "{p0} selecionados, {p1} ocultos pelo filtro",
   "Selected members": "Membros selecionados",
-  "No model": "Nenhum modelo",
+  "No model": "Sem modelo",
   "Automatic: 1 candidate": "Automático: 1 candidato",
   "Automatic: {p0} candidates": "Automático: {p0} candidatos",
   "Fixed: {p0}": "Fixo: {p0}",
@@ -12640,7 +12640,6 @@
   "Could not move this conversation": "Não foi possível mover esta conversa",
   "Could not open this local conversation": "Não foi possível abrir esta conversa local",
   "Could not open the pending conversation links": "Não foi possível abrir os links de conversa pendentes",
-  "Open a project before organizing its sessions into folders.": "Abra um projeto antes de organizar suas sessões em pastas.",
   "Could not record this turn's changes.": "Não foi possível registrar as alterações deste turno.",
   "Could not load the changes.": "Não foi possível carregar as alterações.",
   "Load changes again": "Carregar alterações novamente",
@@ -12650,5 +12649,7 @@
   "Could not load earlier messages.": "Não foi possível carregar as mensagens anteriores.",
   "Load earlier messages again": "Carregar mensagens anteriores novamente",
   "Reload queue": "Recarregar fila",
-  "Could not load queued messages. Use Reload queue above.": "Não foi possível carregar as mensagens na fila. Use Recarregar fila acima."
+  "Could not load queued messages. Use Reload queue above.": "Não foi possível carregar as mensagens na fila. Use Recarregar fila acima.",
+  "Open a project to use folders": "Abra um projeto para usar pastas",
+  "No eligible model right now. Runs wait until one is available.": "Nenhum modelo elegível no momento. As execuções aguardam até que um esteja disponível."
 }

@@ -1,4 +1,7 @@
+import { useQueries } from "@tanstack/react-query";
 import { t, useLocale } from "../../../../shared/i18n";
+import type { ModelRoutingRole } from "../../../../shared/model/host-contracts/model-routing";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Group } from "../../../../shared/ui/settings";
 import type { OrderDraft } from "../../model/modelRoutingDraft";
 import {
@@ -6,7 +9,9 @@ import {
   MODEL_ROLE_GROUPS,
   MODEL_ROLE_METADATA,
 } from "../../model/modelRoutingRoles";
+import { modelRoutingPreviewOptions } from "../../model/useModelRoutingPreview";
 import { ModelRoleRow } from "./ModelRoleRow";
+import { waitsForModel, type RolePreview } from "./ModelRolePreview";
 
 export type ModelRolesGroupsProps = {
   /** The Host whose routing is edited. */
@@ -35,8 +40,37 @@ export function ModelRolesGroups({
 }: ModelRolesGroupsProps) {
   useLocale();
   const { roles, pools, entries } = draft.routing;
+  const orderReady = live && entries.length > 0;
+  // One read for the whole list, so a single notice can speak for every job that would wait.
+  const previews = useQueries({
+    queries: MODEL_ROLE_METADATA.map((item) => {
+      const choice = effectiveRoleChoice(roles, item.role);
+      return {
+        ...modelRoutingPreviewOptions(
+          machineId,
+          ["model-routing-role-preview", machineId, item.role, choice, savedVersion],
+          { role: item.role, choice },
+        ),
+        enabled: orderReady && !!choice && choice.kind !== "fixed",
+      };
+    }),
+  });
+  const previewOf = (role: ModelRoutingRole): RolePreview | undefined => {
+    const query = previews[MODEL_ROLE_METADATA.findIndex((item) => item.role === role)];
+    const choice = effectiveRoleChoice(roles, role);
+    if (!orderReady || !choice || choice.kind === "fixed" || !query) return undefined;
+    return { data: query.data, isError: query.isError };
+  };
+  const anyWaits = MODEL_ROLE_METADATA.some((item) =>
+    waitsForModel(previewOf(item.role), item.role.startsWith("text.")),
+  );
   return (
     <>
+      {anyWaits ? (
+        <InlineMessage tone="warning">
+          {t("No eligible model right now. Runs wait until one is available.")}
+        </InlineMessage>
+      ) : null}
       {MODEL_ROLE_GROUPS.map((group) => (
         <Group key={group} title={t(group)} layout="full">
           {MODEL_ROLE_METADATA.filter((item) => item.group === group).map((item) => (
@@ -44,11 +78,9 @@ export function ModelRolesGroups({
               key={item.role}
               role={item.role}
               label={item.labelKey}
-              machineId={machineId}
-              version={savedVersion}
               pools={pools}
               seed={entries[0]}
-              orderReady={live && entries.length > 0}
+              preview={previewOf(item.role)}
               choice={effectiveRoleChoice(roles, item.role)}
               disabled={disabled}
               onChange={(choice) => {

@@ -12640,7 +12640,6 @@
   "Could not move this conversation": "无法移动此对话",
   "Could not open this local conversation": "无法打开此本地对话",
   "Could not open the pending conversation links": "无法打开待处理的对话链接",
-  "Open a project before organizing its sessions into folders.": "请先打开项目，再将其会话整理到文件夹中。",
   "Could not record this turn's changes.": "无法记录本轮的更改。",
   "Could not load the changes.": "无法加载更改。",
   "Load changes again": "重新加载更改",
@@ -12650,5 +12649,7 @@
   "Could not load earlier messages.": "无法加载更早的消息。",
   "Load earlier messages again": "重新加载更早的消息",
   "Reload queue": "重新加载队列",
-  "Could not load queued messages. Use Reload queue above.": "无法加载排队的消息。请使用上方的“重新加载队列”。"
+  "Could not load queued messages. Use Reload queue above.": "无法加载排队的消息。请使用上方的“重新加载队列”。",
+  "Open a project to use folders": "打开项目后才能使用文件夹",
+  "No eligible model right now. Runs wait until one is available.": "当前没有可用的模型。运行将等待，直到有模型可用。"
 }

@@ -12640,7 +12640,6 @@
   "Could not move this conversation": "Could not move this conversation",
   "Could not open this local conversation": "Could not open this local conversation",
   "Could not open the pending conversation links": "Could not open the pending conversation links",
-  "Open a project before organizing its sessions into folders.": "Open a project before organizing its sessions into folders.",
   "Could not record this turn's changes.": "Could not record this turn's changes.",
   "Could not load the changes.": "Could not load the changes.",
   "Load changes again": "Load changes again",
@@ -12650,5 +12649,7 @@
   "Could not load earlier messages.": "Could not load earlier messages.",
   "Load earlier messages again": "Load earlier messages again",
   "Reload queue": "Reload queue",
-  "Could not load queued messages. Use Reload queue above.": "Could not load queued messages. Use Reload queue above."
+  "Could not load queued messages. Use Reload queue above.": "Could not load queued messages. Use Reload queue above.",
+  "Open a project to use folders": "Open a project to use folders",
+  "No eligible model right now. Runs wait until one is available.": "No eligible model right now. Runs wait until one is available."
 }

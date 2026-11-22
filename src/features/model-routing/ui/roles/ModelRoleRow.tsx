@@ -15,10 +15,8 @@ import {
   defaultModelSettings,
   resolveModel,
 } from "../../../sessions/public/models";
-import { HelperRoleResolution } from "./HelperRoleResolution";
-import type { HelperModelRole } from "../../model/helperModelRouting";
 import { withoutDelegation } from "../../model/modelRoutingRoles";
-import { ModelRoutingResolution } from "../choice/ModelRoutingResolution";
+import { ModelRolePreview, type RolePreview } from "./ModelRolePreview";
 
 const POOL_PREFIX = "pool:";
 
@@ -34,9 +32,7 @@ export function ModelRoleRow({
   choice,
   pools,
   seed,
-  machineId,
-  version,
-  orderReady,
+  preview,
   disabled,
   onChange,
 }: {
@@ -45,10 +41,8 @@ export function ModelRoleRow({
   choice: ModelRoutingChoice | undefined;
   pools: ModelRoutingDraft["pools"];
   seed?: ModelRoutingTarget;
-  machineId: string;
-  version: number;
-  /** The saved order has entries, so a live "uses …" preview is meaningful. */
-  orderReady: boolean;
+  /** What the list read for this job; absent while no live "uses …" preview is meaningful. */
+  preview?: RolePreview;
   disabled: boolean;
   onChange: (choice: ModelRoutingChoice | undefined) => void;
 }) {
@@ -94,30 +88,13 @@ export function ModelRoleRow({
     { value: "fixed", label: t("Fixed model") },
   ];
   // Every job says which model it runs on now, so the order and groups need no explanation.
-  const preview =
-    choice && choice.kind !== "fixed" && orderReady ? (
-      helper ? (
-        <HelperRoleResolution
-          machineId={machineId}
-          role={role as HelperModelRole}
-          choice={choice}
-          version={version}
-        />
-      ) : (
-        <ModelRoutingResolution
-          machineId={machineId}
-          role={role}
-          choice={choice}
-          revision={version}
-        />
-      )
-    ) : null;
+  const previewNode = preview ? <ModelRolePreview preview={preview} helper={helper} /> : null;
   return (
     <Row
       label={t(label)}
       disabled={disabled}
       stacked={choice?.kind === "fixed"}
-      feedback={choice?.kind === "fixed" ? undefined : preview}
+      feedback={choice?.kind === "fixed" ? undefined : previewNode}
     >
       <div className="flex w-full flex-wrap items-center gap-2">
         <div className="w-56 max-w-full shrink-0">

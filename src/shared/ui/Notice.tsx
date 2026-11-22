@@ -164,10 +164,10 @@ export function NoticeLink({ action }: { action: NoticeAction }) {
  * @avoid Direct use in a feature: use Alert, InlineMessage/InlineError, Toast or EmptyState.
  * @status internal
  */
-export function NoticeButton({ action }: { action: NoticeAction }) {
+export function NoticeButton({ action, quiet }: { action: NoticeAction; quiet?: boolean }) {
   return (
     <Button
-      variant="secondary"
+      variant={quiet ? "ghost" : "secondary"}
       size="sm"
       loading={action.pending ?? false}
       disabled={action.disabled}

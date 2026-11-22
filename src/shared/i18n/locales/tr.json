@@ -12640,7 +12640,6 @@
   "Could not move this conversation": "Bu konuşma taşınamadı",
   "Could not open this local conversation": "Bu yerel konuşma açılamadı",
   "Could not open the pending conversation links": "Bekleyen konuşma bağlantıları açılamadı",
-  "Open a project before organizing its sessions into folders.": "Oturumları klasörlere düzenlemeden önce bir proje aç.",
   "Could not record this turn's changes.": "Bu turun değişiklikleri kaydedilemedi.",
   "Could not load the changes.": "Değişiklikler yüklenemedi.",
   "Load changes again": "Değişiklikleri yeniden yükle",
@@ -12650,5 +12649,7 @@
   "Could not load earlier messages.": "Önceki mesajlar yüklenemedi.",
   "Load earlier messages again": "Önceki mesajları yeniden yükle",
   "Reload queue": "Kuyruğu yeniden yükle",
-  "Could not load queued messages. Use Reload queue above.": "Kuyruktaki mesajlar yüklenemedi. Yukarıdaki Kuyruğu yeniden yükle'yi kullanın."
+  "Could not load queued messages. Use Reload queue above.": "Kuyruktaki mesajlar yüklenemedi. Yukarıdaki Kuyruğu yeniden yükle'yi kullanın.",
+  "Open a project to use folders": "Klasörleri kullanmak için bir proje açın",
+  "No eligible model right now. Runs wait until one is available.": "Şu anda uygun model yok. Çalışmalar biri uygun olana kadar bekler."
 }

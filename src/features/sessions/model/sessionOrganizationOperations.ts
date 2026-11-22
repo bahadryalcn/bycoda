@@ -1,4 +1,3 @@
-import { t } from "../../../shared/i18n";
 import { normalizeProjectPath } from "../../projects/public/recents";
 import {
   addSessionToFolder,
@@ -121,10 +120,15 @@ export type OrganizationOperation =
     }
   | { kind: "rebase"; cwd: string; to: string };
 
+/** False while no project is open (empty, "~" or not normalizable); menus disable folder actions then. */
+export function canOrganizeSessions(cwd: string): boolean {
+  return !!cwd && cwd !== "~" && !!normalizeProjectPath(cwd);
+}
+
 function keyFor(store: Record<string, unknown>, cwd: string): string {
   const key = normalizeProjectPath(cwd);
-  if (!cwd || cwd === "~" || !key)
-    throw new Error(t("Open a project before organizing its sessions into folders."));
+  // Defensive only: menus disable these actions, so this error never reaches the user.
+  if (!canOrganizeSessions(cwd)) throw new Error("Open a project before organizing sessions.");
   const aliases = Object.keys(store).filter((entry) => normalizeProjectPath(entry) === key);
   if (aliases.length > 1)
     throw new Error("Project paths have conflicting aliases; recovery is required.");

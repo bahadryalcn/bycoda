@@ -12640,7 +12640,6 @@
   "Could not move this conversation": "この会話を移動できませんでした",
   "Could not open this local conversation": "このローカル会話を開けませんでした",
   "Could not open the pending conversation links": "保留中の会話リンクを開けませんでした",
-  "Open a project before organizing its sessions into folders.": "セッションをフォルダーに整理するには、先にプロジェクトを開いてください。",
   "Could not record this turn's changes.": "このターンの変更を記録できませんでした。",
   "Could not load the changes.": "変更を読み込めませんでした。",
   "Load changes again": "変更を再読み込み",
@@ -12650,5 +12649,7 @@
   "Could not load earlier messages.": "以前のメッセージを読み込めませんでした。",
   "Load earlier messages again": "以前のメッセージを再読み込み",
   "Reload queue": "キューを再読み込み",
-  "Could not load queued messages. Use Reload queue above.": "キュー内のメッセージを読み込めませんでした。上の「キューを再読み込み」を使ってください。"
+  "Could not load queued messages. Use Reload queue above.": "キュー内のメッセージを読み込めませんでした。上の「キューを再読み込み」を使ってください。",
+  "Open a project to use folders": "フォルダーを使うにはプロジェクトを開いてください",
+  "No eligible model right now. Runs wait until one is available.": "現在、利用できるモデルがありません。利用可能になるまで実行は待機します。"
 }

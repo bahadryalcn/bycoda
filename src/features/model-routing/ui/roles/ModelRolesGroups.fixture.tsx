@@ -390,6 +390,42 @@ it("describes helper fallback when every entry is ineligible", async () => {
   expect(row.textContent).not.toContain("Runs wait");
 });
 
+it("warns once above the list and badges only the jobs without an eligible model", async () => {
+  mocks.resolve.mockImplementation(async (_machine: string, input: { role: string }) =>
+    input.role === "task.worker"
+      ? { ok: false, reason: "noEligibleEntry", skipped: [] }
+      : {
+          ok: true,
+          target: { harness: "codex", model: "m", modelSettings: {} },
+          source: { kind: "order", entryId: "e" },
+          skipped: [],
+        },
+  );
+  const roles = {
+    "task.worker": { kind: "order" },
+    "task.reviewer": { kind: "order" },
+  } as const;
+  await render(<Groups initial={draftOf({ entries: [entry], roles })} />);
+  const warning = "No eligible model right now. Runs wait until one is available.";
+  expect(container.textContent?.split(warning).length).toBe(2);
+  expect(container.textContent?.indexOf(warning)).toBeLessThan(
+    container.textContent?.indexOf("Unattended work") ?? 0,
+  );
+  expect(rowOf("Task worker").textContent).toContain("No model");
+  expect(rowOf("Task worker").textContent).not.toContain("Now uses");
+  expect(rowOf("Task reviewer").textContent).toContain("Now uses");
+  expect(rowOf("Task reviewer").textContent).not.toContain("No model");
+  expect(container.textContent?.split("No model").length).toBe(2);
+});
+
+it("shows no list warning while every job has a model", async () => {
+  await render(
+    <Groups initial={draftOf({ entries: [entry], roles: { "task.worker": { kind: "order" } } })} />,
+  );
+  expect(container.textContent).not.toContain("Runs wait");
+  expect(container.textContent).not.toContain("No model");
+});
+
 it("does not claim the helper's own model when the preview fails or is slow", async () => {
   const roles = { "text.title": { kind: "order" } } as const;
   mocks.resolve.mockRejectedValue(new Error("offline"));

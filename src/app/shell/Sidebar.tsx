@@ -245,6 +245,7 @@ import {
 } from "../../features/sessions/model/sessionFolders";
 import { createFolderCollapseQueue } from "../../features/sessions/model/folderCollapseQueue";
 import {
+  canOrganizeSessions,
   executeOrganizationOperation,
   organizationFoldersForProject,
   organizationOrderForProject,
@@ -1987,6 +1988,9 @@ function SidebarComponent({
   const canRemoveMenuSessionsFromFolders = multipleMenuSessions
     ? anyMenuSessionFoldered
     : !!menuSessionFolder;
+  // Without an open project folders have no home: items stay visible but inert, with the reason beneath.
+  const organizable = canOrganizeSessions(cwd);
+  const noProjectReason = t("Open a project to use folders");
   const menuFolder = folderMenu
     ? sessionFolders.find((folder) => folder.id === folderMenu.folderId)
     : undefined;
@@ -2068,6 +2072,9 @@ function SidebarComponent({
                 kind: "item" as const,
                 id: "pin",
                 label: allMenuSessionsPinned ? "Unpin" : "Pin",
+                disabled: NATIVE_SESSION_ORGANIZATION_ACTIVE && !organizable,
+                description:
+                  NATIVE_SESSION_ORGANIZATION_ACTIVE && !organizable ? noProjectReason : undefined,
               },
             ]
           : []),
@@ -2208,6 +2215,8 @@ function SidebarComponent({
           get label() {
             return t("New folder");
           },
+          disabled: !organizable,
+          description: organizable ? undefined : noProjectReason,
         },
         ...(sessionFolders.length > 0
           ? [
@@ -2215,6 +2224,8 @@ function SidebarComponent({
                 kind: "item" as const,
                 id: "folder-add",
                 label: t("Add to"),
+                disabled: !organizable,
+                description: organizable ? undefined : noProjectReason,
                 submenuSearch: { placeholder: t("Search folders"), emptyLabel: t("No results") },
                 submenu: sessionFolders.map((folder) => ({
                   kind: "item" as const,
@@ -2233,6 +2244,8 @@ function SidebarComponent({
                 kind: "item" as const,
                 id: "folder-remove",
                 label: multipleMenuSessions ? "Remove from folders" : "Remove from folder",
+                disabled: !organizable,
+                description: organizable ? undefined : noProjectReason,
               },
             ]
           : []),
@@ -2391,6 +2404,8 @@ function SidebarComponent({
       setLinkingSession(menuSessions[0] ?? null);
       return;
     }
+    if (id.startsWith("folder-") && !organizable) return;
+    if (id === "pin" && NATIVE_SESSION_ORGANIZATION_ACTIVE && !organizable) return;
     if (id === "folder-new") {
       if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
         const folderId = crypto.randomUUID();

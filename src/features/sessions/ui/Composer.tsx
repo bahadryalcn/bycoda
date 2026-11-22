@@ -251,7 +251,10 @@ import {
   type SessionFolderTarget,
   type SessionFolder,
 } from "../model/sessionFolders";
-import { organizationFoldersForProject } from "../model/sessionOrganizationOperations";
+import {
+  canOrganizeSessions,
+  organizationFoldersForProject,
+} from "../model/sessionOrganizationOperations";
 import {
   cachedSessionOrganization,
   hydrateSessionOrganization,
@@ -1632,6 +1635,10 @@ export const Composer = memo(function Composer({
   };
 
   const openSessionFolderPicker = useCallback(() => {
+    if (!canOrganizeSessions(cwd)) {
+      setSessionFolderError(t("Open a project to use folders"));
+      return;
+    }
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
       if (sessionFolderLoading.current) return;
       sessionFolderLoading.current = true;
