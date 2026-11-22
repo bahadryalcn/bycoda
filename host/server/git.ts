@@ -78,6 +78,7 @@ export function createGitRuntime(
     project: (id) => dependencies.engine.store.project(id),
     resolveWorktree: resolveHostWorktreeAsync,
     withIdleProject: (id, work) => dependencies.engine.withIdleProject(id, work),
+    withStableCheckout: (id, work) => dependencies.engine.withStableCheckout(id, work),
     serializeMutation: (cwd, work, scope) => withHostGitMutation(cwd, work, undefined, scope),
     startActivity: (cwd) => dependencies.startWorkspaceActivity(cwd, "mutation", "git.action"),
     invalidateRoots: () => dependencies.workspace.invalidateRoots(),
