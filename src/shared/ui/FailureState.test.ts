@@ -106,6 +106,13 @@ it("accepts a caller-owned retrying state and keeps a synchronous retry immediat
   expect(onRetry).toHaveBeenCalledTimes(2);
 });
 
+it("renders the retry as a small secondary button, not a filled primary", async () => {
+  await render();
+  const retry = button("Try again");
+  expect(retry.getAttribute("data-button-variant")).toBe("secondary");
+  expect(retry.getAttribute("data-button-size")).toBe("sm");
+});
+
 it("labels the failure with a visible title and uses a heading level that fits its place", async () => {
   await render({ title: "Panel failed" });
   expect(container.querySelector("h2")?.textContent).toBe("Panel failed");

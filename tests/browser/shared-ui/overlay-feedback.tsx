@@ -15,8 +15,7 @@ import { UsageMeter } from "../../../src/shared/ui/UsageMeter";
 import { Progress } from "../../../src/shared/ui/Progress";
 import { RecoveryBoundary } from "../../../src/shared/ui/RecoveryBoundary";
 import { Skeleton } from "../../../src/shared/ui/Skeleton";
-import { toast, ToastRegion, type ToastOptions } from "../../../src/shared/ui/ToastRegion";
-import { TransientNotice } from "../../../src/shared/ui/TransientNotice";
+import { Toast, toast, ToastRegion, type ToastOptions } from "../../../src/shared/ui/ToastRegion";
 import { WorkingIndicator } from "../../../src/shared/ui/WorkingIndicator";
 import { LoadingText } from "../../../src/shared/ui/LoadingText";
 import { SurfaceLoading } from "../../../src/shared/ui/SurfaceLoading";
@@ -271,7 +270,8 @@ function NoticesSection() {
         <Button onClick={show("long")}>Show long notice</Button>
       </div>
       {open.undo ? (
-        <TransientNotice
+        <Toast
+          tone="info"
           message="Archived 3 sessions"
           action={{ label: "Undo", onClick: () => count("notice-undo") }}
           durationMs={null}
@@ -279,17 +279,21 @@ function NoticesSection() {
         />
       ) : null}
       {open.danger ? (
-        <TransientNotice
+        <Toast
           tone="danger"
           title="Update failed"
           message="The release feed returned 503. Nothing was changed."
-          action={{ label: "Retry", onClick: () => void retry(), pending }}
-          durationMs={noticeParams.has("persistent-notice") ? null : undefined}
+          // An error with an action never expires; the expiry case is the same error without one.
+          action={
+            noticeParams.has("persistent-notice")
+              ? { label: "Retry", onClick: () => void retry(), pending }
+              : undefined
+          }
           onDismiss={dismiss("danger")}
         />
       ) : null}
       {open.progress ? (
-        <TransientNotice
+        <Toast
           tone="success"
           title="Exporting transcript"
           message="Preparing files"
@@ -299,7 +303,7 @@ function NoticesSection() {
         />
       ) : null}
       {open.long ? (
-        <TransientNotice
+        <Toast
           tone="warning"
           title={LONG_LABEL}
           message={LONG_COPY}
@@ -313,6 +317,7 @@ function NoticesSection() {
         <Button
           onClick={() =>
             toast.show({
+              tone: "info",
               title: "bycoda beklenmedik şekilde kapandı",
               message:
                 "Düzeltmemize yardımcı olmak için tanılama günlükleri gönderilsin mi? Günlükler bu bilgisayarda temizlenir ve konuşmalarınızı asla içermez.",

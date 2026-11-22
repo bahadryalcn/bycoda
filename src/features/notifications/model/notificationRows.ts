@@ -1,21 +1,13 @@
 import type { NotificationHistoryEntry, NotificationHistoryTone } from "./notificationHistory";
 
 /**
- * Severity shown as the row's leading icon. Failed turns and failed notices are errors; a
- * question, an approval, a reminder or a warning notice is a warning; everything else is calm.
+ * Severity shown as the row's leading icon. Only real errors (failed turns, failed notices) and
+ * warnings (a warning notice) carry one; a question, an approval or a reminder is unread, not
+ * a warning, so it has no tone and shows the neutral unread dot instead.
  */
 export function historyTone(entry: NotificationHistoryEntry): NotificationHistoryTone | undefined {
   if (entry.tone) return entry.tone;
-  switch (entry.kind) {
-    case "failed":
-      return "danger";
-    case "question":
-    case "approval":
-    case "reminder":
-      return "warning";
-    default:
-      return undefined;
-  }
+  return entry.kind === "failed" ? "danger" : undefined;
 }
 
 /** Unread until the owner marks it read or marks everything read after its latest arrival. */

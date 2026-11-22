@@ -14,7 +14,8 @@ const entry: NotificationHistoryEntry = {
 
 it("derives the severity icon from the kind unless the row carries its own tone", () => {
   expect(historyTone({ ...entry, kind: "failed" })).toBe("danger");
-  expect(historyTone({ ...entry, kind: "question" })).toBe("warning");
+  for (const kind of ["question", "approval", "reminder"] as const)
+    expect(historyTone({ ...entry, kind })).toBeUndefined();
   expect(historyTone({ ...entry, kind: "notice", tone: "warning" })).toBe("warning");
   expect(historyTone({ ...entry, kind: "finished" })).toBeUndefined();
   expect(historyTone({ ...entry, kind: "background" })).toBeUndefined();

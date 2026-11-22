@@ -234,7 +234,8 @@ export function FailureState({
         <div className={styles.actions}>
           {onRetry ? (
             <Button
-              variant="primary"
+              variant="secondary"
+              size="sm"
               motion="none"
               loading={retryBusy || undefined}
               onClick={() => void retry()}
@@ -247,6 +248,7 @@ export function FailureState({
           {extra}
           <Button
             variant="ghost"
+            size="sm"
             motion="none"
             aria-expanded={details}
             aria-controls={detailsId}
@@ -270,6 +272,8 @@ export function FailureState({
             ) : null}
             <div className={styles.actions}>
               <Button
+                variant="secondary"
+                size="sm"
                 motion="none"
                 onClick={() => void copyDetails()}
                 loading={copy === "pending" || undefined}

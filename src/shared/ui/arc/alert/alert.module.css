@@ -36,6 +36,9 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
+    /* Link actions inherit this size, so they match the body and share the title line's height. */
+    font-size: var(--ui-font-secondary);
+    line-height: var(--ui-leading-secondary);
     min-block-size: var(--ui-leading-secondary);
     margin-inline-start: auto;
   }

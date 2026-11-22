@@ -363,19 +363,22 @@ export function ApprovalToasts({
           onClose={closePanel}
           headerActions={
             <>
-              <Text size="caption" tone="muted" truncate className="tabular-nums">
-                <LiveText text={unreadCount > 0 ? t("{p0} unread", { p0: unreadCount }) : ""} />
-              </Text>
-              {unreadCount > 0 ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  onClick={() => markNotificationsSeen()}
-                >
-                  {t("Mark all read")}
-                </Button>
-              ) : null}
+              {/* Title, count and action read as one line: they share a text baseline. */}
+              <span className="notification-header-meta">
+                <Text size="caption" tone="muted" truncate className="tabular-nums">
+                  <LiveText text={unreadCount > 0 ? t("{p0} unread", { p0: unreadCount }) : ""} />
+                </Text>
+                {unreadCount > 0 ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => markNotificationsSeen()}
+                  >
+                    {t("Mark all read")}
+                  </Button>
+                ) : null}
+              </span>
               <Button
                 iconOnly
                 size="sm"

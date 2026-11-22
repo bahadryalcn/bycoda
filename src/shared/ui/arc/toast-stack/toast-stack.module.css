@@ -101,7 +101,7 @@
   }
   .count {
     margin-inline-start: 0.25rem;
-    color: var(--text-secondary);
+    color: var(--ui-text-muted);
     font-weight: 400;
     font-size: var(--ui-font-caption);
     font-variant-numeric: tabular-nums;

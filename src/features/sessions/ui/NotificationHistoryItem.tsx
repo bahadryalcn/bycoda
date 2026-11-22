@@ -175,24 +175,31 @@ export function HistoryItem({
           ) : null}
         </span>
         <span className="notification-history-text">
-          <Text
-            as="span"
-            className="notification-history-title"
-            size="secondary"
-            tone={unread ? "primary" : "secondary"}
-            weight={unread ? "medium" : "regular"}
-            lines={expanded ? undefined : 2}
-          >
-            {title}
+          {/* The title shortens; the ×N counter keeps its own fixed slot on the same line. */}
+          <span className="notification-history-titleline">
+            <Text
+              as="span"
+              className="notification-history-title"
+              size="secondary"
+              tone={unread ? "primary" : "secondary"}
+              weight={unread ? "medium" : "regular"}
+              truncate={!expanded}
+            >
+              {title}
+              {unread ? <span className="sr-only">{`, ${t("Unread")}`}</span> : null}
+            </Text>
             {count > 1 ? (
-              <span className="notification-history-count">
-                <Text as="span" size="caption" tone="muted" weight="regular">
-                  {t("×{p0}", { p0: count })}
-                </Text>
-              </span>
+              <Text
+                as="span"
+                className="notification-history-count"
+                size="caption"
+                tone="muted"
+                weight="regular"
+              >
+                {t("×{p0}", { p0: count })}
+              </Text>
             ) : null}
-            {unread ? <span className="sr-only">{`, ${t("Unread")}`}</span> : null}
-          </Text>
+          </span>
           {detail ? (
             <Text
               className={expanded ? "notification-history-label" : "notification-history-preview"}

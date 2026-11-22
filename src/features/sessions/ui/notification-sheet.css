@@ -82,6 +82,15 @@
   flex: 1;
   min-inline-size: 0;
 }
+/* Header actions sit on the title's baseline: the header is top-aligned, so the group is a
+   baseline row whose first line is offset to the heading's. */
+.notification-header-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-inline-size: 0;
+  padding-block-start: 2px;
+}
 .notification-section-label {
   padding-inline: 10px;
   padding-block: 8px 4px;
@@ -120,15 +129,20 @@
   min-inline-size: 0;
   gap: 2px;
 }
+.notification-history-titleline {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-inline-size: 0;
+}
 .notification-history-title {
   min-inline-size: 0;
   overflow-wrap: anywhere;
 }
 .notification-history-count {
-  display: inline-flex;
-  align-items: center;
-  margin-inline-start: 4px;
-  vertical-align: middle;
+  flex: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .notification-history-preview[data-lines][data-size],
 .notification-history-label {
