@@ -273,6 +273,8 @@ fall. Suppress one line only, always with a reason.
   - settings Group nested in a Group or card Surface, or a card Surface inside a Group (a Group is already a framed card; flatten to rows or use one container)
 - `one-primary-per-view` (`TSX in src/app, src/features, src/shared (excluding tests)`)
   - multiple literal primary Buttons in one JSX return (one finding per file; keep one primary action, use secondary for peers)
+- `pane-edge-erased` (`src/app, src/features, shared stylesheets`)
+  - CSS that sets border, border-width or border-color to 0/none/hidden/transparent on a workbench pane root (.bycoda-sidebar, .bycoda-project-rail, .sidebar-pane, .body-glass, [data-side-pane], [data-surface-frame=pane]); the 1px edge between panes is owned by --ui-pane-border, so drop the frame through the Surface edge prop instead
 - `popover-menu` (`src/app, src/features, shared stylesheets`)
   - Popover with role=menu/listbox (use DropdownMenu/picker)
 - `portal-outside-shared` (`src/app, src/features, shared stylesheets`)

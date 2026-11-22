@@ -13,7 +13,12 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { cssSelectorRules, scanViewGuards, transcriptBaseInk } from "./ui-drift-view-guards.mjs";
+import {
+  cssSelectorRules,
+  paneEdgeErased,
+  scanViewGuards,
+  transcriptBaseInk,
+} from "./ui-drift-view-guards.mjs";
 import {
   appearanceRuleOfDeclaration,
   appearanceRules,
@@ -67,6 +72,8 @@ export const rules = {
     "literal radius/size: rounded-[…], h-/w-/size-[Npx|rem], CSS border-radius px or rem",
   "shared-internal-selector":
     "feature/app CSS selects a shared component's class, data hook or role (.modal-panel, .popover-*, .settings-row*, .settings-group*, .bycoda-arc-*, [data-slot], [role=tab|tablist], …); pass a prop, slot or variant to the shared component, or change the component",
+  "pane-edge-erased":
+    "CSS that sets border, border-width or border-color to 0/none/hidden/transparent on a workbench pane root (.bycoda-sidebar, .bycoda-project-rail, .sidebar-pane, .body-glass, [data-side-pane], [data-surface-frame=pane]); the 1px edge between panes is owned by --ui-pane-border, so drop the frame through the Surface edge prop instead",
   "specificity-doubling":
     "doubled class selector (.x.x) used to win the cascade; fix the source order or the owning rule instead",
   "transcript-base-ink":
@@ -728,6 +735,9 @@ export function scanFile(file, text, definitions) {
         if (/cubic-bezier\(/.test(value) || (motionProperty && /(?<![\w.])\d+ms\b/.test(value)))
           add("motion-literal", valueOffset);
       }
+      if (scope === "app" || scope === "styles")
+        if (paneEdgeErased(declaration, isTokenBlock(selectors)))
+          add("pane-edge-erased", valueOffset);
       if (scope === "app" || scope === "styles")
         if (transcriptBaseInk(file, declaration, isTokenBlock(selectors)))
           add("transcript-base-ink", valueOffset);

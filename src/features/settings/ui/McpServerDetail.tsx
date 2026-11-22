@@ -107,6 +107,16 @@ export function McpServerDetail({
   const hubLocked =
     stale || hub.saving || !!hub.busy || !!hub.loading?.corrupt || managed?.enabled === false;
   const configLocked = stale || actions.locked;
+  const staleReason = stale ? t("This server is no longer listed.") : undefined;
+  const hubLockedReason =
+    staleReason ??
+    (hub.saving || hub.busy
+      ? t("Wait for the current change to finish.")
+      : hub.loading?.corrupt
+        ? t("Hub settings could not be read.")
+        : managed?.enabled === false
+          ? t("Enable this server first.")
+          : undefined);
   const [fileError, setFileError] = useState("");
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [managedEditor, setManagedEditor] = useState<
@@ -210,6 +220,12 @@ export function McpServerDetail({
                     size="sm"
                     variant="secondary"
                     disabled={configLocked || managed?.enabled === false}
+                    disabledReason={
+                      staleReason ??
+                      (actions.locked
+                        ? t("Wait for the current change to finish.")
+                        : t("Enable this server first."))
+                    }
                     onClick={() => setCredentialsOpen(true)}
                   >
                     {credentialConfigured ? t("Manage credentials") : t("Set credentials")}
@@ -251,6 +267,7 @@ export function McpServerDetail({
                         size="sm"
                         variant="ghost"
                         disabled={hubLocked}
+                        disabledReason={hubLockedReason}
                         onClick={() => void hub.signOut(hubEntry.name)}
                       >
                         {hubEntry.oauthInherited ? t("Disconnect for this project") : t("Sign out")}

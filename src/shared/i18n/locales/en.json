@@ -12670,5 +12670,11 @@
   "Waiting to reconnect": "Waiting to reconnect",
   "Try now": "Try now",
   "Your computer {p0} isn’t reachable right now": "Your computer {p0} isn’t reachable right now",
-  "Your computer {p0} isn’t available": "Your computer {p0} isn’t available"
+  "Your computer {p0} isn’t available": "Your computer {p0} isn’t available",
+  "You can add up to 20 credentials.": "You can add up to 20 credentials.",
+  "This server is no longer listed.": "This server is no longer listed.",
+  "Hub settings could not be read.": "Hub settings could not be read.",
+  "Enable this server first.": "Enable this server first.",
+  "Server settings are unavailable on this computer.": "Server settings are unavailable on this computer.",
+  "Nothing is playing.": "Nothing is playing."
 }

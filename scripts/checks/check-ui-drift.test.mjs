@@ -964,3 +964,15 @@ test("role-status-banner flags tone-styled status regions only", (t) => {
     [[0, 2]],
   );
 });
+
+test("pane-edge-erased flags CSS that hides the edge between workbench panes", () => {
+  const file = "src/features/demo/Demo.css";
+  const flagged = (css) => rulesOf(file, css).includes("pane-edge-erased");
+  assert.ok(flagged(".bycoda-sidebar { border-inline-end-color: transparent; }"));
+  assert.ok(flagged(".bycoda-project-rail { border-right: none; }"));
+  assert.ok(flagged('[data-side-pane="workspace"] { border-inline-end-width: 0; }'));
+  assert.ok(flagged('.x [data-surface-frame="pane"] { border: 0; }'));
+  assert.ok(!flagged(".bycoda-sidebar { border-inline-end-color: var(--ui-pane-border); }"));
+  assert.ok(!flagged(".card { border-right: none; }"));
+  assert.ok(!flagged(".bycoda-sidebar { background: transparent; }"));
+});

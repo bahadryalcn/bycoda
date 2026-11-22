@@ -487,6 +487,11 @@ function McpConnections({
               (!!remote &&
                 (loading || (!hub.manageServer && (!!error || nativeConfigAvailable === false))))
             }
+            disabledReason={
+              hub.pending || (!!remote && loading)
+                ? t("Checking servers…")
+                : t("Server settings are unavailable on this computer.")
+            }
             onClick={() => setAddOpen(true)}
           >
             <Plus className="icon-sm" />
@@ -759,7 +764,11 @@ function McpConnections({
           }}
           footer={
             <>
-              <Button disabled={busy !== ""} onClick={() => setRemoveTarget(null)}>
+              <Button
+                disabled={busy !== ""}
+                disabledReason={t("Wait for the current change to finish.")}
+                onClick={() => setRemoveTarget(null)}
+              >
                 {t("Cancel")}
               </Button>
               <Button

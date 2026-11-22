@@ -2816,7 +2816,7 @@
   "Cursor CLI (cursor-agent) is not installed. Install it to sign in from here, or sign in to this server inside Cursor.": "Cursor CLI (cursor-agent) kurulu değil. Buradan giriş yapmak için kurun ya da bu sunucuya Cursor içinden giriş yapın.",
   "{p0} CLI is not installed. Install it to sign in from here.": "{p0} CLI kurulu değil. Buradan giriş yapmak için kurun.",
   "Claude did not finish checking every server in time. Servers it did not reach show Configured.": "Claude her sunucuyu zamanında kontrol edemedi. Ulaşamadığı sunucular “Configured” olarak görünür.",
-  "Checking servers…": "Sunucular kontrol ediliyor…",
+  "Checking servers…": "Sunucular denetleniyor…",
   "No MCP servers configured for this provider.": "Bu sağlayıcı için yapılandırılmış MCP sunucusu yok.",
   "Scope to remove {p0} from": "{p0}'ın kaldırılacağı kapsam",
   "Local": "Yerel",
@@ -12670,5 +12670,11 @@
   "Waiting to reconnect": "Yeniden bağlanmak için bekleniyor",
   "Try now": "Şimdi dene",
   "Your computer {p0} isn’t reachable right now": "{p0} bilgisayarınıza şu an ulaşılamıyor",
-  "Your computer {p0} isn’t available": "{p0} bilgisayarınız kullanılamıyor"
+  "Your computer {p0} isn’t available": "{p0} bilgisayarınız kullanılamıyor",
+  "You can add up to 20 credentials.": "En fazla 20 kimlik bilgisi ekleyebilirsiniz.",
+  "This server is no longer listed.": "Bu sunucu artık listede yok.",
+  "Hub settings could not be read.": "Hub ayarları okunamadı.",
+  "Enable this server first.": "Önce bu sunucuyu etkinleştirin.",
+  "Server settings are unavailable on this computer.": "Sunucu ayarları bu bilgisayarda kullanılamıyor.",
+  "Nothing is playing.": "Şu an çalan bir şey yok."
 }

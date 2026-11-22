@@ -165,6 +165,7 @@ export function VoiceSetupSteps({
             <Button
               variant="ghost"
               disabled={!busy && !confirmed}
+              disabledReason={t("Nothing is playing.")}
               onClick={() => {
                 epoch.current++;
                 playback.current?.abort();

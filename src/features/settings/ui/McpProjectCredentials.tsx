@@ -38,6 +38,7 @@ export function McpProjectCredentials({
   ]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const busyReason = busy ? t("Saving…") : undefined;
   const dirty = fields.some(
     (field) => field.value || field.name !== (field.id === 0 && http ? "Authorization" : ""),
   );
@@ -165,6 +166,7 @@ export function McpProjectCredentials({
                 iconOnly
                 label={t("Remove field")}
                 disabled={busy}
+                disabledReason={busyReason}
                 onClick={() => setFields(fields.filter((item) => item.id !== field.id))}
               >
                 <X className="icon-sm" />
@@ -178,6 +180,7 @@ export function McpProjectCredentials({
             variant="ghost"
             size="sm"
             disabled={busy || fields.length >= 20}
+            disabledReason={busyReason ?? t("You can add up to 20 credentials.")}
             onClick={() => {
               const id = nextId.current++;
               setFields([...fields, { id, name: "", value: "" }]);
@@ -195,6 +198,7 @@ export function McpProjectCredentials({
               variant="ghost"
               tone="danger"
               disabled={busy}
+              disabledReason={busyReason}
               onClick={() => {
                 void confirmInApp({
                   title: projectName ? t("Remove project credentials?") : t("Remove credentials"),
@@ -215,7 +219,13 @@ export function McpProjectCredentials({
               {t("Remove credentials")}
             </Button>
           ) : null}
-          <Button type="button" variant="ghost" disabled={busy} onClick={() => void close()}>
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={busy}
+            disabledReason={busyReason}
+            onClick={() => void close()}
+          >
             {t("Cancel")}
           </Button>
           <Button type="submit" variant="primary" loading={busy} disabled={busy}>

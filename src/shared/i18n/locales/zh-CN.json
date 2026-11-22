@@ -2633,7 +2633,7 @@
   "Cursor CLI (cursor-agent) is not installed. Install it to sign in from here, or sign in to this server inside Cursor.": "未安装 Cursor CLI (cursor-agent)。请安装后在此登录，或在 Cursor 中登录此服务器。",
   "{p0} CLI is not installed. Install it to sign in from here.": "未安装 {p0} CLI。请安装后在此登录。",
   "Claude did not finish checking every server in time. Servers it did not reach show Configured.": "Claude 未能及时检查所有服务器。未检查到的服务器显示为“Configured”。",
-  "Checking servers…": "检查服务器...",
+  "Checking servers…": "正在检查服务器…",
   "No MCP servers configured for this provider.": "没有为此提供商配置 MCP 服务器。",
   "Scope to remove {p0} from": "要从中删除 {p0} 的范围",
   "Local": "本地",
@@ -12670,5 +12670,11 @@
   "Waiting to reconnect": "等待重新连接",
   "Try now": "立即重试",
   "Your computer {p0} isn’t reachable right now": "你的计算机 {p0} 当前无法访问",
-  "Your computer {p0} isn’t available": "你的计算机 {p0} 不可用"
+  "Your computer {p0} isn’t available": "你的计算机 {p0} 不可用",
+  "You can add up to 20 credentials.": "最多可添加 20 项凭据。",
+  "This server is no longer listed.": "此服务器已不在列表中。",
+  "Hub settings could not be read.": "无法读取 Hub 设置。",
+  "Enable this server first.": "请先启用此服务器。",
+  "Server settings are unavailable on this computer.": "此电脑上无法使用服务器设置。",
+  "Nothing is playing.": "当前没有正在播放的内容。"
 }

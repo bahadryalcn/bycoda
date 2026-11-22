@@ -42,6 +42,7 @@ export function SessionWorkSummary({ tools, busy, onOpenLiveWork }: WorkProps) {
   const label = t("Work summary");
   return (
     <>
+      {/* oxlint-disable-next-line bycoda/transcript-row-trigger -- popover trigger in the activity dock (composer chrome), not a transcript row */}
       <Button
         iconOnly
         variant="ghost"

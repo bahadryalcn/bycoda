@@ -381,3 +381,25 @@ export function transcriptBaseInk(file, { property, value, selectors }, tokenBlo
     selectors.some((selector) => transcriptSelector.test(selector))
   );
 }
+
+/** Selector text of a workbench pane root: the rail, the session sidebar and framed panes. */
+const paneRootSelector =
+  /\[data-side-pane\b|\.bycoda-sidebar\b|\.bycoda-project-rail\b|\.sidebar-pane\b|\.sidebar-glass\b|\.body-glass\b|\[data-surface-frame=["']?pane["']?\]/;
+
+/**
+ * True for a declaration that erases the 1px edge between workbench panes: a border, border-width
+ * or border-color on a pane root that is 0, none, hidden or transparent. The edge colour and
+ * width are owned by --ui-pane-border (src/styles/index.css, pinned by paneBorderContrast.test.ts);
+ * a pane that must not show an edge drops the frame via its Surface edge prop, not by hiding it.
+ */
+export function paneEdgeErased({ property, value, selectors }, tokenBlock = false) {
+  if (
+    tokenBlock ||
+    !/^border(?:-(?:inline|block)-(?:start|end)|-top|-right|-bottom|-left)?(?:-color|-width)?$/.test(
+      property,
+    )
+  )
+    return false;
+  if (!selectors.some((selector) => paneRootSelector.test(selector))) return false;
+  return /^\s*(?:0(?:px)?|none|hidden|transparent)\b/.test(value);
+}

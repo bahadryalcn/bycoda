@@ -12670,5 +12670,11 @@
   "Waiting to reconnect": "En attente de reconnexion",
   "Try now": "Réessayer maintenant",
   "Your computer {p0} isn’t reachable right now": "Votre ordinateur {p0} est injoignable pour le moment",
-  "Your computer {p0} isn’t available": "Votre ordinateur {p0} n’est pas disponible"
+  "Your computer {p0} isn’t available": "Votre ordinateur {p0} n’est pas disponible",
+  "You can add up to 20 credentials.": "Vous pouvez ajouter jusqu'à 20 identifiants.",
+  "This server is no longer listed.": "Ce serveur ne figure plus dans la liste.",
+  "Hub settings could not be read.": "Les paramètres du Hub n'ont pas pu être lus.",
+  "Enable this server first.": "Activez d'abord ce serveur.",
+  "Server settings are unavailable on this computer.": "Les paramètres du serveur ne sont pas disponibles sur cet ordinateur.",
+  "Nothing is playing.": "Rien n'est en cours de lecture."
 }

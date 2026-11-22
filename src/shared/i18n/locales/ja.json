@@ -2633,7 +2633,7 @@
   "Cursor CLI (cursor-agent) is not installed. Install it to sign in from here, or sign in to this server inside Cursor.": "Cursor CLI (cursor-agent) がインストールされていません。ここからサインインするにはインストールするか、Cursor 内でこのサーバーにサインインしてください。",
   "{p0} CLI is not installed. Install it to sign in from here.": "{p0} CLI がインストールされていません。ここからサインインするにはインストールしてください。",
   "Claude did not finish checking every server in time. Servers it did not reach show Configured.": "Claude は時間内にすべてのサーバーを確認できませんでした。確認できなかったサーバーは「Configured」と表示されます。",
-  "Checking servers…": "サーバーをチェック中…",
+  "Checking servers…": "サーバーを確認しています…",
   "No MCP servers configured for this provider.": "このプロバイダー用に構成された MCP サーバーはありません。",
   "Scope to remove {p0} from": "{p0} を削除するスコープ",
   "Local": "ローカル",
@@ -12670,5 +12670,11 @@
   "Waiting to reconnect": "再接続を待機中",
   "Try now": "今すぐ再試行",
   "Your computer {p0} isn’t reachable right now": "あなたのコンピューター {p0} に現在接続できません",
-  "Your computer {p0} isn’t available": "あなたのコンピューター {p0} は利用できません"
+  "Your computer {p0} isn’t available": "あなたのコンピューター {p0} は利用できません",
+  "You can add up to 20 credentials.": "認証情報は最大20件まで追加できます。",
+  "This server is no longer listed.": "このサーバーは一覧に表示されなくなりました。",
+  "Hub settings could not be read.": "Hub の設定を読み取れませんでした。",
+  "Enable this server first.": "先にこのサーバーを有効にしてください。",
+  "Server settings are unavailable on this computer.": "このコンピューターではサーバー設定を利用できません。",
+  "Nothing is playing.": "再生中のものはありません。"
 }

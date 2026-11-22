@@ -2633,7 +2633,7 @@
   "Cursor CLI (cursor-agent) is not installed. Install it to sign in from here, or sign in to this server inside Cursor.": "Die Cursor-CLI (cursor-agent) ist nicht installiert. Installieren Sie sie, um sich hier anzumelden, oder melden Sie sich in Cursor bei diesem Server an.",
   "{p0} CLI is not installed. Install it to sign in from here.": "Die {p0}-CLI ist nicht installiert. Installieren Sie sie, um sich hier anzumelden.",
   "Claude did not finish checking every server in time. Servers it did not reach show Configured.": "Claude hat nicht alle Server rechtzeitig geprüft. Nicht erreichte Server werden als „Configured“ angezeigt.",
-  "Checking servers…": "Server werden überprüft…",
+  "Checking servers…": "Server werden geprüft…",
   "No MCP servers configured for this provider.": "Für diesen Anbieter sind keine MCP-Server konfiguriert.",
   "Scope to remove {p0} from": "Bereich, aus dem {p0} entfernt werden soll",
   "Local": "Lokal",
@@ -12670,5 +12670,11 @@
   "Waiting to reconnect": "Warte auf erneute Verbindung",
   "Try now": "Jetzt versuchen",
   "Your computer {p0} isn’t reachable right now": "Dein Computer {p0} ist gerade nicht erreichbar",
-  "Your computer {p0} isn’t available": "Dein Computer {p0} ist nicht verfügbar"
+  "Your computer {p0} isn’t available": "Dein Computer {p0} ist nicht verfügbar",
+  "You can add up to 20 credentials.": "Sie können bis zu 20 Zugangsdaten hinzufügen.",
+  "This server is no longer listed.": "Dieser Server ist nicht mehr aufgeführt.",
+  "Hub settings could not be read.": "Die Hub-Einstellungen konnten nicht gelesen werden.",
+  "Enable this server first.": "Aktivieren Sie zuerst diesen Server.",
+  "Server settings are unavailable on this computer.": "Die Servereinstellungen sind auf diesem Computer nicht verfügbar.",
+  "Nothing is playing.": "Es wird nichts wiedergegeben."
 }

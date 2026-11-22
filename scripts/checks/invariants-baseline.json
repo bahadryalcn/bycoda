@@ -95,9 +95,6 @@
     "host/native-authority/source-registry.ts": {
       "bycoda/handled-background-promise": 1
     },
-    "host/native-buffer/native-buffer-catalog.ts": {
-      "bycoda/handled-background-promise": 1
-    },
     "host/package.mjs": {
       "oxlint/no-restricted-imports": 1
     },
@@ -546,12 +543,6 @@
     },
     "src/app/workspace/files/useExternalFileDrop.ts": {
       "bycoda/effect-names-its-sync": 1
-    },
-    "src/app/workspace/files/useHostBufferRecovery.ts": {
-      "bycoda/effect-names-its-sync": 3
-    },
-    "src/app/workspace/files/useLegacyBufferRecovery.ts": {
-      "bycoda/effect-names-its-sync": 3
     },
     "src/app/workspace/files/useManagedWorkspaceBuffers.ts": {
       "bycoda/effect-names-its-sync": 1
@@ -2396,12 +2387,6 @@
     "src/features/settings/ui/McpServerConfigEditor.tsx": {
       "bycoda/disabled-needs-reason": 1
     },
-    "src/features/settings/ui/McpServerDetail.tsx": {
-      "bycoda/disabled-needs-reason": 1
-    },
-    "src/features/settings/ui/McpSettings.tsx": {
-      "bycoda/disabled-needs-reason": 1
-    },
     "src/features/settings/ui/NewProjectFolderSettings.tsx": {
       "bycoda/disabled-needs-reason": 1
     },
@@ -2806,7 +2791,7 @@
       "bycoda/effect-names-its-sync": 3
     },
     "src/features/source-control/ui/WorkspaceSourceControl.tsx": {
-      "bycoda/disabled-needs-reason": 3,
+      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/source-control/ui/WorktreePicker.tsx": {
@@ -3055,15 +3040,11 @@
       "bycoda/disabled-needs-reason": 1
     },
     "src/features/voice/ui/VoiceOverlayWindow.tsx": {
-      "bycoda/disabled-needs-reason": 2,
       "bycoda/effect-names-its-sync": 4,
       "bycoda/shared-resize-observer": 1
     },
     "src/features/voice/ui/VoiceSetupRow.tsx": {
       "bycoda/disabled-needs-reason": 1
-    },
-    "src/features/voice/ui/VoiceSetupSteps.tsx": {
-      "bycoda/effect-names-its-sync": 3
     },
     "src/features/voice/ui/VoiceToolActivityPanel.tsx": {
       "bycoda/effect-names-its-sync": 1

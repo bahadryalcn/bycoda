@@ -248,6 +248,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
       label={t("Mute speaker")}
       pressed={speakerMuted}
       disabled={!state}
+      disabledReason={t("Connecting voice…")}
       onClick={() => send("toggleSpeaker")}
     >
       {speakerMuted ? <VolumeX className="icon-sm" /> : <Volume2 className="icon-sm" />}
@@ -471,6 +472,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 iconOnly
                 label={t("Full screen")}
                 disabled={!state}
+                disabledReason={t("Connecting voice…")}
                 onClick={() => {
                   send("openWorkspace");
                   showApp();
@@ -581,6 +583,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   <Button
                     variant="primary"
                     disabled={!state?.canStart}
+                    disabledReason={statusText}
                     onClick={() => send("start")}
                     startIcon={<Mic className="icon-sm" />}
                   >
