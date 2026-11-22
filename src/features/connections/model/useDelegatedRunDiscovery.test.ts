@@ -17,9 +17,36 @@ vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("./delegatedRunDiscovery", () => ({ discoverDelegatedRuns: discover }));
 vi.mock("./connections", () => ({ remoteRequest: vi.fn(), loadRemoteSession: vi.fn() }));
 function Probe({ id }: { id: string }) {
-  useDelegatedRunDiscovery(id, true);
-  return null;
+  const discovery = useDelegatedRunDiscovery(id, true);
+  return discovery.error ?? null;
 }
+
+it("waits for a project in a new window before looking for delegated runs", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const parent = { id: "p", cwd: "~", modelSettings: {} } as Session;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  discover.mockClear();
+  resetSessionsStore([parent]);
+  try {
+    await act(async () => root.render(createElement(Probe, { id: "p" })));
+    expect(discover).not.toHaveBeenCalled();
+
+    discover.mockRejectedValueOnce(new Error("Could not load delegated runs."));
+    await act(async () => setSessions([{ ...parent, cwd: "C:/projects/demo" }]));
+    expect(discover).toHaveBeenCalledOnce();
+    expect(discover.mock.calls[0][0]).toMatchObject({ cwd: "C:/projects/demo" });
+    expect(container.textContent).toBe("Could not load delegated runs.");
+
+    await act(async () => setSessions([parent]));
+    expect(discover).toHaveBeenCalledOnce();
+    expect(container.textContent).toBe("");
+  } finally {
+    await act(async () => root.unmount());
+    resetSessionsStore([]);
+    vi.unstubAllGlobals();
+  }
+});
 
 it("hydrates children and resumes background updates after the live sheet owner closes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

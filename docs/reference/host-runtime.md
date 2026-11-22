@@ -67,7 +67,7 @@ after reentrant Stop. Manual compact/edit retain explicit account/app/lead
 context. Local provider high-water guards are source matching rather than Host
 run attestation. Native CLI/MCP invocation/final effect gates, unattributed/raw
 messages, Host per-run writers, crash recovery and complete cohorts remain OPEN;
-this layer is not full Native Buffers or migration qualification.
+this layer is not migration qualification.
 
 Native application access belongs to the original source-issued control turn and
 the actual window issuer. Closing that window revokes its grants; revocation is
@@ -195,8 +195,7 @@ Notes image jobs create a fresh file, bound the actual opened-source stream and
 sync its bytes before granting access. A failed copy/sync/grant returns its
 original error without publishing a path or deleting an uncertain replacement.
 These file-byte checks do not establish namespace/power-loss or Notes-row/image
-graph durability. The Native Buffers lane still requires a complete native cut;
-partial raw retention alone does not finish its second checkpoint operation.
+graph durability.
 
 Native Automation writes use the actual caller's global Persistence admission
 before entering SQL. An admitted transaction and its notification retain their
@@ -265,13 +264,13 @@ are separate from normal transient drafts and never restore or answer a question
 Exact editor ACK claims are compared with the actual Native owner, whole stored
 metadata and exact text/EOL/baseline inside the same checked FULL transaction.
 Missing or coalesced ACKs stay unverified. This validates captured rows only;
-`rosterComplete` remains false, and Buffers/actor/FS admission proof is still open.
+`rosterComplete` remains false, and actor/FS admission proof is still open.
 
 After an uncertain reply, a bounded read of the original retained artifact can
 report data retention only. It does not replay the checkpoint, rebuild an owned
 projection receipt, refresh a window/round or prove provider application. Reopen
 inspection is a distinct historical data read preserving the old runtime identity.
-This foundation remains unqualified: parent and Buffers producer coverage,
+This foundation remains unqualified: parent producer coverage,
 native attachment durability and full actor/input/writer closure are still open;
 automatic historical migration and default promotion remain disabled.
 
@@ -284,7 +283,7 @@ by HTTP and WS. Other domain methods retain explicit
 HTTP compatibility paths while their extraction and qualification continue.
 
 The 20 internal Native workspace operations use a shared Host domain for turns,
-activities, buffer reports, rewind and cleanup. Owner-bound ports close over the
+activities, rewind and cleanup. Owner-bound ports close over the
 actual issued workspace authorization; RPC fields cannot supply it. Platform hash,
 base64, fatal UTF8 decoding and timer adapters remain outside the domain.
 
@@ -390,32 +389,19 @@ check fails after receiving an accepted reply. No command receipt is invented.
 Scoped tool adapters, other auxiliary domains, exhaustive original-input coverage and
 installed cross-device acceptance remain separate work.
 
-Buffer updates larger than a WS frame use five bounded private upload methods.
-The Host verifies exact original bytes/hash before dispatching the original update
-once. The Native registry retains the same upload ID across new channels, preserves
-unknown commits, and removes an intent only after successful local consumption.
-Authenticated missing staging can restart under that same ID only before any
-possible commit. A single absolute budget covers staging/admission/send with a
-reserved status window. Upload state is in-process; original identity and outcome
-are retained separately as described below. Crash/authority qualification remains
-separate work.
-
-The actual Native buffer producer and finite desktop finish/formatter client
+The finite desktop finish/formatter client
 journal complete first request bytes in their managed SessionStore, including
 requests small enough to send inline. A private original identity binds method,
-selected route and exact bytes/hash. Physical buffer owner/nonce/version and the
-original finish job determine semantic identity; independent format invocations
+selected route and exact bytes/hash. The original finish job determines
+semantic identity; independent format invocations
 remain independent even with identical input. A restored or possibly dispatched
 original can query status only. Neither an absent receipt nor a lost connection
 authorizes resubmitting its effect.
 
-Five private delivery methods use `native.buffers.delivery.v1` and
-`native.services.delivery.v1`. The Host records critical intent before effects.
-Buffer outcomes require matching proof in the actual current/archive filesystem
-projection; status performs no writes or clock changes. Native records and ACKs
-the exact result using FULL transactions under original/current response gates.
-Current buffer confirmation and original ACK share one transaction. Recovery
-does not mark an old physical report fresh or recreate its former owner.
+Private delivery methods use `native.services.delivery.v1`. The Host records
+critical intent before effects. Status performs no writes or clock changes.
+Native records and ACKs the exact result using FULL transactions under
+original/current response gates.
 
 Large requests stage the unchanged original params up to16MiB. Service outcomes
 above the inline threshold use bounded result.read chunks, preserving the32MiB
@@ -428,21 +414,20 @@ Filesystem temp-file sync/rename does not prove parent-directory power-loss
 durability. Process-restart fixtures do not qualify installed/default authority.
 
 Once Native guarded consumption and its local FULL ACK commit, a metadata-only
-outbox can send `native.buffers.delivery.ack` or `native.services.delivery.ack`.
+outbox can send `native.services.delivery.ack`.
 Separate `.delivery.ack.v1` capabilities preserve older delivery catalogs. The
 Host compares the immutable original and canonical consumed-result digest, then
 critically retires result/proof bytes and their capacity reservation. It retains
 the original/digest tombstone: a duplicate apply or ACK never repeats the effect.
 Lost ACKs and failed local completion markers retry only this idempotent cleanup.
-An unknown service original cannot be retired; buffer retirement additionally
-requires its same verified current/archive proof. Retired status carries no
+An unknown service original cannot be retired. Retired status carries no
 payload and changes no source freshness or execution owner.
 
 New formatting reserves 4 MiB before invoking its handler, matching the enforced
 serialized formatter output bound. `native.services.workspace.format.bounded.v1`
 advertises that bound; Native keeps the original 32 MiB allowance for older Hosts
 and retained legacy originals. The Host format pool remains 64 MiB globally and
-32 MiB per principal; tiny fixed buffer/finish outcomes use their bounded metadata
+32 MiB per principal; tiny fixed finish outcomes use their bounded metadata
 row allowance instead. Native admission separates bounded formatting, legacy
 formatting and control reservations: 64 MiB, 128 MiB and 128 MiB respectively,
 including retained request bytes. Each lane admits at most 256 active result owners;
@@ -471,34 +456,11 @@ live caller and unconsumed reply have relinquished ownership. Discard uses guard
 local acknowledgement and the existing remote cleanup outbox; it never applies
 the old text to a current editor. An active caller's result remains protected.
 
-The actual Host now retains buffer report bytes, archive parts and completion
-proofs in its critical FULL SQLite owner. These reports contain file paths,
-dirty/unknown state and Native provenance; they do not add unsaved editor text.
-Content-addressed bounded chunks preserve exact legacy BOM/whitespace. A staged
-mutation publishes its source/archive dependencies and proof in one critical
-completion before ACK; clock reservation is a separate earlier FULL commit.
-Unknown completion remains queryable without re-running the original handler.
-
-Process startup retains legacy current/hold reports and independently recoverable
-catalog metadata, validates complete clock chains including reserved gaps, then
-adopts SQL floors. A known exact current body can survive an incomplete matching
-legacy archive through an immutable raw fallback, while conflicting headers stay
-held. Once adopted, report and catalog reads use SQL only and never repair files,
-rebuild counters from snapshots or restore Native owner freshness. Directory
-metadata uses indexed bounded views, including concurrent legacy imports.
-
-Filesystem copies are preserved legacy inputs. Backups/restores must include the
-coherent Host database; copying those old JSON directories alone no longer backs
-up newly retained reports. Compatibility with an older Host binary that lacks
-this storage format is a separate downgrade/restore acceptance gate. File-backed
-SQLite rollback/reopen and cache-deletion fixtures are not physical power-loss or
-installed-platform acceptance. Actor/writer qualification remains disabled.
-
 The delivery journal also owns the single admitted effect continuation. If that
 handler or result-record await exits with failure, only its captured admission
 winner can release the now-unneeded result reservation. The exact original and
-planned buffer proof stay retained, and status remains unknown unless an actual
-recorded result or verified buffer source proves otherwise. A zero reservation
+planned proof stay retained, and status remains unknown unless an actual
+recorded result proves otherwise. A zero reservation
 fences every later result write for that unknown original. Failure bookkeeping
 cannot overwrite a committed recorded/retired result after a lost COMMIT reply.
 After authorization loss it uses only the existing process-owned recovery
@@ -522,7 +484,7 @@ schemas are losslessly generated for both clients; owners separately validate
 counter relationships, exact identity, authority and current route.
 
 First open establishes an irreversible minimum-v2 floor for that principal.
-Fresh legacy journal inserts and deliveryless buffer, finish and format effects
+Fresh legacy journal inserts and deliveryless finish and format effects
 then fail before execution. Existing legacy status/results/ACKs remain readable.
 Only the actual successful v2 admission's private, live execution context passes
 the helper effect gates. A saved receipt or asynchronous callback after that
@@ -798,15 +760,6 @@ immediately before the index transaction. Closing admission defers unstarted
 index writes without losing dirty rows or poisoning search results. Process work
 is not assigned to a Window and cannot disappear when a requester closes.
 
-Workspace buffer reports now hold the actual Window's Buffers-lane admission
-before waiting for the report gate, through SQL, the actual Host response and
-local confirmation. A native-generated report nonce plus exact payload/time is
-checked before delivery and in the confirmation CAS, so an older response cannot
-confirm a replacement row from the same millisecond. Schema upgrade serializes
-column inspection and preserves legacy dirty/unknown rows. The legacy Window-label
-row namespace remains; physical row ownership and compatible recovery are still
-required before treating this as a qualified buffer checkpoint.
-
 Native application acknowledgement reads the actually stored Host decision bytes
 through one SQL snapshot. Fence, source store/profile IDs, decision digest,
 terminal journal and current floor must agree. Verification alone is not an apply
@@ -919,12 +872,12 @@ Tauri commands open a native owner epoch, capture/read the current owner's lates
 document, report a revision-covered save, and list recovery metadata. Ownership is
 bound to the actual Window resource incarnation and Store construction UUID;
 required epoch matching also rejects first writes queued across a page reload.
-Buffers admission lasts through actual SQLite settlement. Revision/digest CAS
+Admission lasts through actual SQLite settlement. Revision/digest CAS
 preserves newer edits, with bounded per-document/profile storage and no eviction.
 A save report retains the full payload and is not independent disk-save proof or
 permission to retire a local/Host fence. A newer full capture may supersede it.
-CodeMirror producers, recovery content/UI, verified filesystem receipts and legacy
-buffer reconciliation still need integration; existing legacy rows remain intact.
+CodeMirror producers, recovery content/UI and verified filesystem receipts still
+need integration; existing legacy rows remain intact.
 
 Renderer session/draft services now account accepted work before timers/awaits,
 including coalesced writes, blob storage, repairs and separate workspace/in-flight
@@ -1019,16 +972,7 @@ The serving Host (`HostStore.startMaintenance()`, started by `serve`) runs one
 bounded pass 10 minutes after start and then hourly, off the request path
 (`host/storage/host-db-maintenance.ts`; duration metric `storage.maintenance`):
 
-- Native buffer blob GC deletes a blob and its chunks only when no
-  `native_buffer_artifacts` row and no certificate (snapshot digest or artifact
-  list) references its sha256. The orphan set (and the unreadable-certificate
-  guard) is derived once per pass; each delete transaction (at most 500 blobs or
-  64 MB) re-proves its batch against the artifact rows and an unchanged
-  certificate count/newest rowid, and re-derives the set when a certificate
-  appeared. An unreadable certificate skips the pass. Artifacts and certificates
-  are never deleted.
-- Native buffer history is bounded only in the git store (see "Native buffer content store"). The
-  legacy SQL rows are never trimmed.
+- Legacy `native_buffer_*` tables are dropped in batches (see "Native buffer cleanup").
 - Replay events are capped at 256 MiB in total on top of the per-session 4 MiB.
   The oldest revisions of the largest sessions go first, and every session keeps
   its newest 50.
@@ -1046,47 +990,13 @@ bounded step above and the rewrite stays rare. A second WAL truncation then
 shrinks the file, and one log line reports the sizes. The pass result reports
 `vacuum`. If the idle condition never holds the file stays as is.
 
-### Native buffer content store
+### Native buffer cleanup
 
-Native buffer content and history live in a bycoda-owned bare git repository,
-`<host data dir>/native-buffer-store.git`, never in a user repository
-(`host/native-buffer/native-buffer-git-persistence.ts`). One ref,
-`refs/bycoda/native-buffer`, points at an unparented snapshot commit: each
-completion writes a new commit whose tree is the previous tree plus the batch,
-moved with a compare-and-swap `update-ref`, so superseded trees become
-unreachable. Per report only the newest 20 history versions are kept; older
-history keys and their certificates leave the tree in the same commit, and the
-mutable current snapshot is never dropped. The maintenance pass runs `git gc
---prune=now` on the store after its retention steps (metric
-`storage.nativeBufferGitGc`; failures are logged and do not stop the pass).
-Clocks stay in SQL.
-
-If `git` is not on PATH the Host logs one warning
-(`Native buffer git store unavailable (git not found); using the SQL native buffer store.`)
-and keeps the SQL store. Otherwise git is primary and the SQL rows are a
-read-only fallback for keys git does not hold
-(`native-buffer-composite-persistence.ts`).
-
-The legacy SQL content has no value once the Host runs on the git store, so the
-maintenance pass releases it automatically, and only while the git store is
-registered. Each pass deletes rows in transactions of 20,000 through the store
-worker (`native_buffer_blob_chunks`, `native_buffer_blobs`,
-`native_buffer_artifacts`, `native_buffer_directory_children`,
-`native_buffer_certificates`; clock tables and everything else stay), yielding
-between batches, and stops after 200 batches or 2 minutes; the next pass
-continues. The `VACUUM` above waits until the last row is gone. The pass result
-reports `legacyRowsDeleted`.
-
-For an immediate shrink with the Host stopped, the owner can run
-
-`node host.mjs native-buffer legacy-release --data-dir <dir> [--yes]`
-
-Without `--yes` it prints the row count and content bytes of the five tables and
-changes nothing. With `--yes` it deletes the rows in one transaction, runs
-`VACUUM` and prints the file sizes before and after. Back up `host.db` first:
-the drop is irreversible, and `VACUUM` rewrites the whole file and needs about as
-much free disk space as the file itself (roughly one to three minutes for 2 GB on
-an SSD).
+The Host stores no desktop editor buffers. A one-time cleanup drops the old
+`native_buffer_*` tables in batches of 20,000 rows during hourly maintenance,
+yielding between batches and stopping after 200 batches or 2 minutes; the next
+pass continues. It then removes `managed-workspaces/native-activity/buffers`,
+`buffer-history` and `native-buffer-store.git` under the Host data directory.
 
 ## Contracts and qualification
 

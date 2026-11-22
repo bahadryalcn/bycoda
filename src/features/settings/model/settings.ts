@@ -778,12 +778,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   ...(IS_WIN
     ? [
         {
-          id: "close-to-tray",
+          id: "minimize-to-tray",
           section: "general" as const,
           get label() {
-            return t("Close to tray");
+            return t("Minimize to tray");
           },
-          keywords: "minimize background quit exit window taskbar windows",
+          keywords: "minimize close tray background quit exit window taskbar windows",
         },
       ]
     : []),
@@ -1830,7 +1830,7 @@ export function saveLiveAgentsEnabled(value: boolean) {
 
 export const subscribeLiveAgentsEnabled = liveAgentsEnabledSetting.subscribe;
 
-const CLOSE_TO_TRAY_KEY = "bycoda.closeToTray";
+const MINIMIZE_TO_TRAY_KEY = "bycoda.minimizeToTray";
 
 export const KEEP_AWAKE_DEFAULT = false;
 export const KEEP_AWAKE_CHANGE_EVENT = "bycoda:keep-awake-change";
@@ -1965,20 +1965,21 @@ export function subscribeKeepAwakeHoldAfter(onChange: () => void): () => void {
   return subscribeAgentDefaults(onChange);
 }
 
-export const CLOSE_TO_TRAY_DEFAULT = true;
+export const MINIMIZE_TO_TRAY_DEFAULT = false;
 
-export function loadCloseToTray(): boolean {
-  // Close to tray is Windows-only: nowhere else installs a tray icon.
+export function loadMinimizeToTray(): boolean {
+  // This preference controls the Windows workbench's minimize button.
   if (!IS_WIN) return false;
-  return readFlag(CLOSE_TO_TRAY_KEY) ?? CLOSE_TO_TRAY_DEFAULT;
+  return readFlag(MINIMIZE_TO_TRAY_KEY) ?? MINIMIZE_TO_TRAY_DEFAULT;
 }
 
-export function saveCloseToTray(value: boolean) {
-  writeFlag(CLOSE_TO_TRAY_KEY, value);
-  if (typeof window !== "undefined") window.dispatchEvent(new Event("bycoda:close-to-tray-change"));
+export function saveMinimizeToTray(value: boolean) {
+  writeFlag(MINIMIZE_TO_TRAY_KEY, value);
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new Event("bycoda:minimize-to-tray-change"));
 }
-export const subscribeCloseToTray = (onChange: () => void) =>
-  subscribePreferenceChanges([CLOSE_TO_TRAY_KEY], "bycoda:close-to-tray-change", onChange);
+export const subscribeMinimizeToTray = (onChange: () => void) =>
+  subscribePreferenceChanges([MINIMIZE_TO_TRAY_KEY], "bycoda:minimize-to-tray-change", onChange);
 
 const CREW_SCENE_ENABLED_KEY = "bycoda.crewSceneEnabled";
 

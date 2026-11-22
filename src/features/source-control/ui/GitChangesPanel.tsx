@@ -51,6 +51,7 @@ import { GitPanelSections, usePanelPreferencesMenu } from "./GitPanelSections";
 import { GitActionsMenu, type ChangesActions } from "./GitActionsMenu";
 import { AheadBehindCount } from "./AheadBehindCount";
 import { isMissingPathError } from "../model/checkoutSelection";
+import { worktreeRowDetail } from "../model/worktreeRows";
 import { BranchPicker } from "./BranchPicker";
 import { applyCommit, applyIndexAction, applySync } from "../model/optimisticIndex";
 import { ACTION_LABEL, busyLabel } from "../model/gitBusyLabel";
@@ -223,8 +224,8 @@ export function GitChangesPanel({
   const [stillThere, setStillThere] = useState(false);
   const vanished = !!onMissing && !stillThere && isMissingPathError(reportedError);
   const loadError = vanished ? null : reportedError;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- asks the filesystem whether the read folder still exists after a not-found Git read
   useEffect(() => {
-    // Reason: reports a not-found read to the checkout owner and learns whether the folder exists.
     if (vanished) void onMissing().then((deleted) => setStillThere(!deleted));
   }, [vanished, onMissing]);
   // Fetch, and the merge status of a host that predates conflict info, need
@@ -467,12 +468,22 @@ export function GitChangesPanel({
             className={styles.disclosure}
           >
             {repository.checkout && branchControl ? (
-              // A worktree row is titled by its branch, which the picker beside the chevron
-              // already shows: the title stays for assistive technology only.
-              <>
+              // The branch picker beside the chevron already shows the branch, so the visible
+              // title is the folder (as in the collapsed row); the branch name is assistive-only.
+              <span className={styles.identity}>
                 <FolderTree aria-hidden className="icon-xs shrink-0" tone="secondary" />
                 <span className="sr-only">{repository.name}</span>
-              </>
+                <Text
+                  size="caption"
+                  leading="inherit"
+                  tone="primary"
+                  weight="medium"
+                  truncate
+                  className={styles.name}
+                >
+                  {worktreeRowDetail(repository.checkout)}
+                </Text>
+              </span>
             ) : (
               <CheckoutIdentity
                 name={repository.name}

@@ -86,7 +86,7 @@ it("resolves mention bodies only for referenced notes, preserving the complete p
     if (command === "notes_get") return params?.id === note.id ? note : null;
     throw new Error(command);
   });
-  const prompt = await applyNotesToTurn("Review @note/plan and @note/plan.");
+  const prompt = await applyNotesToTurn("Review @notes:plan and @note/plan.");
   expect(prompt).toContain(note.body);
   expect(prompt).not.toContain(summary.preview);
   expect(invoke.mock.calls.filter(([command]) => command === "notes_get")).toEqual([

@@ -95,7 +95,7 @@ describe("cold sync gate", () => {
     await vi.advanceTimersByTimeAsync(300);
     cancelQueuedSessionSyncs("m");
     await expect(all[5]).rejects.toThrow("cancelled");
-    for (const entry of [...h.open.values()]) entry.resolve();
+    for (const entry of h.open.values()) entry.resolve();
     await vi.advanceTimersByTimeAsync(0);
     expect(h.started).toHaveLength(COLD_SYNCS_PER_MACHINE);
     // A later wave starts clean.

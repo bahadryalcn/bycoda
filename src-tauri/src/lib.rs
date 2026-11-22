@@ -1220,6 +1220,7 @@ pub fn run() {
             window::quit_commit_dialog,
             window::quit_ready,
             window::quit_finalization::request_app_restart,
+            window::quit_finalization::request_app_quit,
             window_glass_state::set_window_glass_enabled,
             window_fullscreen::set_window_fullscreen,
             voice_overlay::voice_overlay_open,
@@ -1320,6 +1321,10 @@ pub fn run() {
                 .into_iter()
                 .find(|window| window.label() == label)
             {
+                #[cfg(windows)]
+                if workspace.is_visible().unwrap_or(false) {
+                    tray::windows::revealed(handle, &label);
+                }
                 let _ = window::ensure_window_reachable(&workspace);
             }
         }

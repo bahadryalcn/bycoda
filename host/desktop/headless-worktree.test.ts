@@ -152,9 +152,15 @@ it("grants the unattended removal path only after the grace period and only on o
 it("keeps the dedicated verifier path when no desktop is known", async () => {
   const verify = vi.fn(async () => {});
   const live = new DesktopLive(Date.now, false, verify);
-  await live.withRemovalLease("1", "/repo", async () => {}, async () => "/project", {
-    unattended: false,
-  });
+  await live.withRemovalLease(
+    "1",
+    "/repo",
+    async () => {},
+    async () => "/project",
+    {
+      unattended: false,
+    },
+  );
   expect(verify).toHaveBeenCalledWith("/repo", "/project");
 });
 
@@ -188,8 +194,12 @@ it("surfaces the editors refusal instead of the generic terminal message", async
 });
 
 it("accepts a grant with the editors check and, with the flag off, one without it", async () => {
-  await expect(attendedLease(true, { granted: true, checks: ["editors"] })).resolves.toBeUndefined();
-  await expect(attendedLease(false, { granted: true, checks: ["editors"] })).resolves.toBeUndefined();
+  await expect(
+    attendedLease(true, { granted: true, checks: ["editors"] }),
+  ).resolves.toBeUndefined();
+  await expect(
+    attendedLease(false, { granted: true, checks: ["editors"] }),
+  ).resolves.toBeUndefined();
   await expect(attendedLease(false, { granted: true })).resolves.toBeUndefined();
 });
 

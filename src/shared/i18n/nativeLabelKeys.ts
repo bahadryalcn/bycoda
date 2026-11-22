@@ -22,6 +22,10 @@ export const NATIVE_LABEL_KEYS: readonly string[] = [
   "Paste",
   "Minimize",
   "Zoom",
+  // Windows notification area window actions.
+  "Hidden windows",
+  "Open",
+  "Close window",
   // menu.rs `build`.
   "Settings…",
   "Check for Updates…",

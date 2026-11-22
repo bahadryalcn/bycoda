@@ -611,6 +611,9 @@ pub async fn session_upsert(
 }
 
 fn upsert_git_info(session: &SessionUpsert) -> crate::fs::GitInfo {
+    if session.cwd == "~" {
+        return crate::fs::GitInfo::default();
+    }
     // Scope by cwd and the caller's branch hint. Read HEAD as well so an
     // external branch switch invalidates the longer save-path cache promptly.
     type Key = (PathBuf, Option<String>, Option<Vec<u8>>);
@@ -1020,7 +1023,11 @@ pub async fn session_list_by_project(
             return Err("cwd is required".into());
         }
         // Git lookups can spawn processes; do them before taking any connection.
-        let git = crate::fs::git_info_for(&crate::fs::expand_home(&cwd));
+        let git = if cwd == "~" {
+            crate::fs::GitInfo::default()
+        } else {
+            crate::fs::git_info_for(&crate::fs::expand_home(&cwd))
+        };
         store.with_read_conn(|conn| {
             list_by_project_with_git(conn, &cwd, git).map_err(|e| e.to_string())
         })
@@ -4987,6 +4994,22 @@ mod tests {
             assert!(saved.worktree_cwd.is_none());
         }
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn scratch_mode_round_trips_and_lists_under_no_project() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut session = sample("scratch-session", "~", "Projectless chat");
+        session.workspace_mode = Some("scratch".into());
+        upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+
+        let saved = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(saved.workspace_mode.as_deref(), Some("scratch"));
+        let rows = list_by_project_with_git(&conn, "~", crate::fs::GitInfo::default()).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, session.id);
+        assert_eq!(rows[0].cwd, "~");
     }
 
     #[test]

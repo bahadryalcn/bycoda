@@ -1,9 +1,11 @@
-//! Windows restores hidden windows; macOS/Linux also expose recent sessions.
+//! Native tray actions for hidden windows, recent sessions and availability.
 
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::Mutex};
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::TrayIconBuilder;
+#[cfg(windows)]
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
 
 const SHOW: &str = "tray_show";
@@ -13,6 +15,9 @@ const SESSION_PREFIX: &str = "tray_session_";
 const OPEN_EVENT: &str = "bycoda:tray-open-session";
 const PRESENCE_REFRESH: &str = "tray_presence_refresh";
 const PRESENCE_PREFIX: &str = "tray_presence_choice_";
+
+#[cfg(windows)]
+pub(crate) mod windows;
 
 #[cfg(windows)]
 fn windows_tray_icon_size(width: i32, height: i32) -> Option<(u32, u32, u32)> {
@@ -173,6 +178,8 @@ struct TrayState {
     rendered: Option<String>,
     presence: crate::assistant_presence::View,
     presence_targets: BTreeMap<String, (String, crate::assistant_presence::Choice)>,
+    #[cfg(windows)]
+    parked: windows::ParkedWindows,
 }
 
 fn merged_rows(windows: &BTreeMap<String, Vec<SessionRow>>) -> Vec<(String, SessionRow)> {
@@ -265,6 +272,8 @@ struct Plan {
     rows: Vec<(String, SessionRow)>,
     labels: Labels,
     presence: crate::assistant_presence::View,
+    #[cfg(windows)]
+    parked: Vec<String>,
 }
 
 type Built = (
@@ -306,6 +315,8 @@ impl TrayState {
             ),
             self.labels.presence
         );
+        #[cfg(windows)]
+        let rendered = format!("{rendered}{:?}", self.parked.labels);
         if self.rendered.as_deref() == Some(rendered.as_str()) {
             return None;
         }
@@ -317,6 +328,8 @@ impl TrayState {
             rows,
             labels: self.labels.clone(),
             presence: self.presence.clone(),
+            #[cfg(windows)]
+            parked: self.parked.labels.clone(),
         })
     }
 
@@ -381,6 +394,10 @@ fn build_menu(app: &AppHandle, name: &str, plan: &Plan) -> tauri::Result<Built> 
         &MenuItemBuilder::with_id(SHOW, crate::native_language::menu_text("Show", name))
             .build(app)?,
     );
+    #[cfg(windows)]
+    if !plan.parked.is_empty() {
+        menu = menu.item(&windows::menu(app, &plan.parked)?);
+    }
     let mut targets = BTreeMap::new();
     let mut presence_targets = BTreeMap::new();
     if plan.rows.is_empty() {
@@ -550,7 +567,12 @@ pub async fn tray_sessions_update(
 
 pub fn window_closed(app: &AppHandle, label: &str) {
     let state = app.state::<Mutex<TrayState>>();
-    locked(&state).windows.remove(label);
+    {
+        let mut guard = locked(&state);
+        guard.windows.remove(label);
+        #[cfg(windows)]
+        guard.parked.remove(label);
+    }
     if let Err(error) = refresh(app, &state) {
         log::warn!("Session menu refresh failed: {error}");
     }
@@ -571,9 +593,14 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(!cfg!(target_os = "windows"))
         .on_menu_event(|app, event| match event.id().as_ref() {
             SHOW => {
+                #[cfg(windows)]
+                windows::reopen(app);
+                #[cfg(not(windows))]
                 let _ = crate::window::show_hidden_or_open_new(app);
             }
             QUIT => crate::window::request_quit(app),
+            #[cfg(windows)]
+            id if windows::dispatch(app, id) => {}
             PRESENCE_REFRESH => {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
@@ -626,21 +653,23 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
                 }
             }
             _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if cfg!(target_os = "windows")
-                && matches!(
-                    event,
-                    TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    }
-                )
-            {
-                let _ = crate::window::show_hidden_or_open_new(tray.app_handle());
+        });
+
+    #[cfg(windows)]
+    {
+        tray = tray.on_tray_icon_event(|tray, event| {
+            if matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                }
+            ) {
+                windows::reopen(tray.app_handle());
             }
         });
+    }
 
     #[cfg(windows)]
     let icon = windows_tray_icon().or_else(|| app.default_window_icon().cloned());

@@ -50,18 +50,21 @@ export function useWorktreeList({
       ]
     : [];
   return usePickerList({
-    options: [...allOption, ...rows.map((row) => ({
-      value: pathKey(row.path),
-      title: row.title,
-      description: row.detail,
-      icon: row.isMain ? (
-        <GitBranch className="icon-sm shrink-0" tone="secondary" />
-      ) : (
-        <FolderTree className="icon-sm shrink-0" tone="secondary" />
-      ),
-      trailing: trailing?.(row),
-      disabled,
-    }))],
+    options: [
+      ...allOption,
+      ...rows.map((row) => ({
+        value: pathKey(row.path),
+        title: row.title,
+        description: row.detail,
+        icon: row.isMain ? (
+          <GitBranch className="icon-sm shrink-0" tone="secondary" />
+        ) : (
+          <FolderTree className="icon-sm shrink-0" tone="secondary" />
+        ),
+        trailing: trailing?.(row),
+        disabled,
+      })),
+    ],
     value: all?.selected ? ALL_WORKTREES_ACTIVE : value == null ? null : pathKey(value),
     activeValue:
       activePath == null

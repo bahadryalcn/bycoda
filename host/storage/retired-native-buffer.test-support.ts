@@ -1,3 +1,4 @@
+// oxlint-disable-next-line no-restricted-imports -- test fixture writes scratch files in a temporary directory, never Host state
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

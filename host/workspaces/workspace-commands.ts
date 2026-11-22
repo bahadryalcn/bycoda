@@ -385,9 +385,17 @@ export class WorkspaceCommands {
     const key = await hostGitRepositoryKey(cwd);
     const projects = await this.store.projects();
     const matching = await Promise.all(
-      projects.map(async (project) =>
-        (await hostGitRepositoryKey(project.cwd)) === key ? project : null,
-      ),
+      projects.map(async (project) => {
+        try {
+          return (await hostGitRepositoryKey(project.cwd)) === key ? project : null;
+        } catch (failure) {
+          const error = failure as NodeJS.ErrnoException;
+          // A removed project has no checkout to match. Keep Git metadata and other IO errors fatal.
+          if (error.code === "ENOENT" && error.syscall === "realpath" && error.path === project.cwd)
+            return null;
+          throw failure;
+        }
+      }),
     );
     const owners = matching.filter((project) => project !== null);
     if (!owners.length) throw new Error("Project is unavailable");

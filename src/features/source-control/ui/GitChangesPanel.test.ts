@@ -2701,4 +2701,7 @@ it("titles an open worktree row once: the branch picker, with the title for assi
   const header = container.querySelector("header")!;
   expect(header.querySelector(".sr-only")?.textContent).toBe("feature/row");
   expect(header.querySelector('button[aria-label="Branch feature/row"]')).not.toBeNull();
+  // The folder is the visible identity beside the picker, so the row is not nameless on screen.
+  const visible = header.querySelector(".sr-only")!.nextElementSibling!;
+  expect(visible.textContent).toContain("open-worktree");
 });

@@ -54,6 +54,7 @@ export type WorkspaceSessionStub = {
   inboxAsk?: InboxAskContext;
   id: string;
   cwd: string;
+  scratchWorkspace?: true;
   harness: HarnessId;
   model: string;
   modelSettings: Record<string, string>;
@@ -393,6 +394,7 @@ function sessionStub(session: Session): WorkspaceSessionStub | null {
   return {
     id: session.id,
     cwd: session.cwd || "~",
+    ...(session.cwd === "~" && session.scratchWorkspace ? { scratchWorkspace: true } : {}),
     harness: remote?.harness ?? session.harness,
     model: session.model,
     modelSettings: { ...session.modelSettings },
@@ -419,6 +421,7 @@ function sessionFromStub(stub: WorkspaceSessionStub): Session {
   return {
     ...session,
     id: stub.id,
+    scratchWorkspace: stub.scratchWorkspace,
     // A snapshot is a saved choice, not a new conversation. Catalog discovery
     // and the current picker preferences must not replace its model.
     model: stub.model || session.model,
@@ -453,6 +456,7 @@ function sanitizeStub(raw: unknown): WorkspaceSessionStub | null {
   return {
     id: value.id,
     cwd: typeof value.cwd === "string" && value.cwd.trim() ? value.cwd.trim() : "~",
+    ...(value.cwd === "~" && value.scratchWorkspace === true ? { scratchWorkspace: true } : {}),
     harness,
     model: typeof value.model === "string" ? value.model : "",
     modelSettings,

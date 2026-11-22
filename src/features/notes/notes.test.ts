@@ -100,6 +100,13 @@ describe("note mentions", () => {
     ]);
   });
 
+  it("resolves scoped notes and deduplicates legacy references to the same note", () => {
+    expect(
+      noteSlugsInText("> @notes:hidden\nRead @notes:auth and @note/auth, then @notes:plan-2."),
+    ).toEqual(["auth", "plan-2"]);
+    expect(noteSlugsInText("@notes: @crews:auth")).toEqual([]);
+  });
+
   it("injects referenced bodies after the prompt", () => {
     expect(
       injectNotePrompt("Use this.", [

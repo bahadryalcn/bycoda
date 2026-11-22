@@ -16,6 +16,19 @@ describe("resolveSessionCwd", () => {
     expect(await resolveSessionCwd("~", home)).toBe(home);
   });
 
+  it("creates separate stable scratch directories and rejects traversal", async () => {
+    const first = "~/.bycoda-host/scratch/session-00000000-0000-4000-8000-000000000001";
+    const second = "~/.bycoda-host/scratch/session-quick_launch_2";
+    const path = await resolveSessionCwd(first, home);
+    expect(path).toBe(join(home, first.slice(2)));
+    expect(await resolveSessionCwd(first, home)).toBe(path);
+    expect(await resolveSessionCwd(second, home)).not.toBe(path);
+    expect((await stat(path!)).isDirectory()).toBe(true);
+    await expect(
+      resolveSessionCwd("~/.bycoda-host/scratch/session-../elsewhere", home),
+    ).rejects.toThrow("Invalid session scratch directory");
+  });
+
   it("creates and returns the configured folder", async () => {
     const folder = join(home, "work", "scratch");
     await writeFile(sessionFolderPath(home), JSON.stringify({ folder }));

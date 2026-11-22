@@ -2022,7 +2022,7 @@ fn mcp_command(
     cwd: String,
     timeout: Duration,
 ) -> Result<String, String> {
-    let workdir = crate::session_folder::resolve_session_cwd(&cwd);
+    let workdir = crate::session_folder::resolve_session_cwd(&cwd)?;
     if !workdir.is_dir() {
         return Err("Project directory does not exist".into());
     }
@@ -2901,7 +2901,7 @@ fn harness_spawn_blocking(
     } else {
         (command, args)
     };
-    let workdir = crate::session_folder::resolve_session_cwd(&cwd);
+    let workdir = crate::session_folder::resolve_session_cwd(&cwd)?;
     if !workdir.is_dir() {
         return Err(format!(
             "Working directory does not exist: {}",
@@ -5519,7 +5519,7 @@ pub(crate) fn exec_output_with_env(
     env: &[(&str, &str)],
 ) -> Result<std::process::Output, String> {
     exec_command_output(
-        configured_exec_command(command, args, cwd, env),
+        configured_exec_command(command, args, cwd, env)?,
         command,
         timeout,
     )
@@ -5532,7 +5532,7 @@ fn exec_output_read(
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
     exec_command_output(
-        configured_exec_command(command, args, cwd, &[]),
+        configured_exec_command(command, args, cwd, &[])?,
         command,
         timeout,
     )
@@ -5546,7 +5546,7 @@ fn exec_output_read_partial(
     cwd: Option<&str>,
     timeout: Duration,
 ) -> Result<(std::process::Output, bool), String> {
-    let mut cmd = configured_exec_command(command, args, cwd, &[]);
+    let mut cmd = configured_exec_command(command, args, cwd, &[])?;
     let rx = spawn_output_wait(&mut cmd).map_err(|e| format!("Failed to run {command}: {e}"))?;
     match rx.recv_timeout(timeout) {
         Ok(Ok(output)) => Ok((output, false)),
@@ -5569,7 +5569,7 @@ fn configured_exec_command(
     args: &[String],
     cwd: Option<&str>,
     env: &[(&str, &str)],
-) -> Command {
+) -> Result<Command, String> {
     let mut cmd = Command::new(command);
     cmd.args(args)
         .stdin(Stdio::null())
@@ -5578,13 +5578,13 @@ fn configured_exec_command(
     prepare_child(&mut cmd, command);
     cmd.envs(env.iter().copied());
     if let Some(dir) = cwd {
-        let workdir = crate::session_folder::resolve_session_cwd(dir);
+        let workdir = crate::session_folder::resolve_session_cwd(dir)?;
         if workdir.is_dir() {
             cmd.current_dir(workdir);
         }
     }
 
-    cmd
+    Ok(cmd)
 }
 
 struct OutputWait {
@@ -5686,7 +5686,7 @@ pub(crate) fn exec_output_with_env_observed(
     cwd: Option<&Path>,
     observe: impl FnOnce(Arc<process_lifecycle::ProcessOwner>),
 ) -> Result<std::process::Output, String> {
-    let mut child = configured_exec_command(command, args, None, env);
+    let mut child = configured_exec_command(command, args, None, env)?;
     if let Some(cwd) = cwd {
         child.current_dir(cwd);
     }
@@ -5766,7 +5766,7 @@ pub async fn run_shell_command(
         return Err("Enter a command to run".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        let activity_root = crate::session_folder::resolve_session_cwd(&cwd);
+        let activity_root = crate::session_folder::resolve_session_cwd(&cwd)?;
         let mut activity = if exact_workspace_activity_enabled(&app, &activity_root) {
             crate::native_workspace::Activity::start(&app, &activity_root, "shell", None)?
         } else {
@@ -5802,7 +5802,7 @@ fn run_shell_command_sync(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     prepare_gui_child(&mut cmd);
-    let workdir = crate::session_folder::resolve_session_cwd(cwd);
+    let workdir = crate::session_folder::resolve_session_cwd(cwd)?;
     if !workdir.is_dir() {
         return Err(format!("{}: No such directory", workdir.display()));
     }

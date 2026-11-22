@@ -767,9 +767,9 @@ test("branches held by another worktree are grouped, badged and move the header 
   await expect(page.getByRole("button", { name: `Branch ${audit}`, exact: true })).toBeVisible();
   const checkouts = await page.evaluate(
     () =>
-      (
-        window as unknown as { gitFixtureCalls: { command: string }[] }
-      ).gitFixtureCalls.filter((call) => call.command === "git_checkout").length,
+      (window as unknown as { gitFixtureCalls: { command: string }[] }).gitFixtureCalls.filter(
+        (call) => call.command === "git_checkout",
+      ).length,
   );
   expect(checkouts).toBe(0);
 });
@@ -821,8 +821,9 @@ test("All worktrees groups rows, mounts panels lazily and follows the header foc
       (path) =>
         (
           window as unknown as { gitFixtureCalls: { command: string; args: { cwd?: string } }[] }
-        ).gitFixtureCalls.filter((call) => call.command === "git_diff_index" && call.args.cwd === path)
-          .length,
+        ).gitFixtureCalls.filter(
+          (call) => call.command === "git_diff_index" && call.args.cwd === path,
+        ).length,
       cwd,
     );
   // The project folder is open; worktrees with work are collapsed rows; clean ones sit behind
@@ -862,14 +863,17 @@ test("All worktrees groups rows, mounts panels lazily and follows the header foc
         (value) => document.documentElement.classList.toggle("theme-light", value),
         light,
       );
-      await expect(rowFor(audit)).toContainText("audit/2026-10-14-long-branch-name-for-responsive-review");
+      await expect(rowFor(audit)).toContainText(
+        "audit/2026-10-14-long-branch-name-for-responsive-review",
+      );
       await expect(rowFor(audit)).toContainText("very-long-worktree-folder-name");
       await expect
         .poll(() =>
           list.evaluate((element) =>
-            [element, ...element.querySelectorAll("[data-git-repository], [data-worktree-row]")].every(
-              (node) => node.scrollWidth <= node.clientWidth,
-            ),
+            [
+              element,
+              ...element.querySelectorAll("[data-git-repository], [data-worktree-row]"),
+            ].every((node) => node.scrollWidth <= node.clientWidth),
           ),
         )
         .toBe(true);
@@ -885,9 +889,7 @@ test("All worktrees groups rows, mounts panels lazily and follows the header foc
   await expect(rowFor(audit)).toHaveCount(0);
   await expect(headerFor(audit)).toHaveAttribute("aria-expanded", "true");
   await expect(panelFor(audit).getByText("workspace.tsx", { exact: true })).toBeVisible();
-  await expect
-    .poll(() => diffReads(audit))
-    .toBeGreaterThan(0);
+  await expect.poll(() => diffReads(audit)).toBeGreaterThan(0);
   expect(await diffReads("/trees/clean-one")).toBe(0);
   await clean.click();
   await expect(clean).toHaveAttribute("aria-expanded", "true");

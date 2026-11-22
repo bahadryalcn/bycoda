@@ -52,7 +52,9 @@ it("lists run tasks through the indexed per-run read, never a project scan per r
     task("d", "p2", "r3", 7),
   ];
   const listProject = vi.fn(async (projectId?: string) =>
-    all.filter((t) => !projectId || t.projectId === projectId).sort((x, y) => x.createdAt - y.createdAt),
+    all
+      .filter((t) => !projectId || t.projectId === projectId)
+      .sort((x, y) => x.createdAt - y.createdAt),
   );
   const listCrewRun = vi.fn(async (runId: string, projectId: string) =>
     all

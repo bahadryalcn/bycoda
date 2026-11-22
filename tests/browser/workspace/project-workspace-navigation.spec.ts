@@ -1,5 +1,30 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+test("No project is selectable under Projects in light and dark layouts", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/tests/browser/workspace/project-workspace-navigation.html?layout=1");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const row = page.getByRole("button", { name: "No project", exact: true });
+  await expect(row).toBeVisible();
+  await row.click();
+  await expect(page.getByLabel("Selected live session")).toHaveText("~");
+  await expect(row).toHaveAttribute("aria-current", "page");
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await expect(row).toBeInViewport();
+      await page.screenshot({
+        path: testInfo.outputPath(`rail-${theme}-${width}.png`),
+      });
+    }
+  }
+});
+
 test("session preview replaces browsing tabs and keeps drafts across themes and narrow layouts", async ({
   page,
 }, testInfo) => {
@@ -809,9 +834,10 @@ async function choose(panel: Locator, label: string, option: string | RegExp) {
 async function chooseHeaderWorktree(page: Page, option: string) {
   await page.getByRole("button", { name: "Switch worktree", exact: true }).click();
   const list = page.getByRole("dialog", { name: "Worktrees", exact: true });
-  await (option === "All worktrees"
-    ? list.getByRole("option", { name: "All worktrees", exact: true })
-    : list.getByRole("option").filter({ hasText: option })
+  await (
+    option === "All worktrees"
+      ? list.getByRole("option", { name: "All worktrees", exact: true })
+      : list.getByRole("option").filter({ hasText: option })
   )
     .first()
     .click();

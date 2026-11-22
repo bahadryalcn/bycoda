@@ -75,8 +75,8 @@ export function WorkspaceSourceControl({
   onOpen: (request: RepositoryReviewRequest) => void;
 }) {
   useLocale();
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- drops the retired review-target keys from localStorage once the overview mounts
   useEffect(() => {
-    // Reason: one-time cleanup of the retired per-session review-target storage.
     if (checkouts) dropLegacyCheckoutSelections();
   }, [checkouts]);
   // Worktrees deleted from another window, found before the worktree list catches up.
@@ -162,8 +162,8 @@ export function WorkspaceSourceControl({
     }
   };
   const checkedWorktree = focused ?? "";
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- window focus and visibility listeners recheck that the shown worktree folder still exists
   useEffect(() => {
-    // Reason: window focus/visibility is when a deletion in another window becomes visible here.
     if (!checkedWorktree) return;
     const check = () => {
       if (!document.hidden) void confirmGone(checkedWorktree);

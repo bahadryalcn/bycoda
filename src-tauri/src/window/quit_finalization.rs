@@ -18,6 +18,11 @@ pub fn request_quit(app: &AppHandle) {
     start_run(app, false);
 }
 
+#[tauri::command]
+pub fn request_app_quit(app: AppHandle) {
+    request_quit(&app);
+}
+
 /// Quit through the same save-and-confirm run as a manual quit, then relaunch.
 /// Settings that only take effect at window creation (Window glass) use this.
 #[tauri::command]

@@ -510,7 +510,7 @@ pub fn pty_spawn(
         }
         path
     } else {
-        working_dir(&cwd)
+        working_dir(&cwd)?
     };
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     crate::mobile_pty::reserve_native_spawn(&app, &id)?;
@@ -1611,12 +1611,12 @@ fn spawn_windows(
     Ok(())
 }
 
-fn working_dir(cwd: &str) -> std::path::PathBuf {
-    let path = resolve_session_cwd(cwd);
+fn working_dir(cwd: &str) -> Result<std::path::PathBuf, String> {
+    let path = resolve_session_cwd(cwd)?;
     if path.is_dir() {
-        return path;
+        return Ok(path);
     }
-    dirs_home().map(std::path::PathBuf::from).unwrap_or(path)
+    Ok(dirs_home().map(std::path::PathBuf::from).unwrap_or(path))
 }
 
 /// A shell to start: its path, its arguments, and environment it needs.

@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { NativeEditorDraftRecord } from "../../../src/features/files/data/editorDraftPersistence";
 import type { WorkspaceTab } from "../../../src/features/workspace/model/layout";
 
@@ -28,8 +28,6 @@ function snapshot(page: Page) {
     (window as unknown as { editorRecoveryFixture: Controls }).editorRecoveryFixture.snapshot(),
   );
 }
-// The fixture module installs its controls after top-level awaits; goto can resolve first.
-const fixtureReady = (page: Page) => page.waitForFunction(() => "editorRecoveryFixture" in window);
 const recoveredEditor = (page: Page) => page.locator('[data-workspace="recovered"] .cm-content');
 const sourceRow = (page: Page) =>
   page

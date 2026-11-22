@@ -12,6 +12,7 @@ export const HOST_CREW_MEMBER_ASK_CAPABILITY = "crews.member.ask.v1";
 /** Reserved `ProjectFile.path` prefixes, like Notes' `note/`, so the file picker can carry these rows. */
 export const CREW_MEMBER_MENTION_PREFIX = "crew-member/";
 export const CREW_MENTION_PREFIX = "crew/";
+export const CREWS_MENTION_SCOPE = "crews:";
 
 const MAX_MEMBER_ROWS = 6;
 const MAX_CREW_ROWS = 4;
@@ -39,7 +40,7 @@ export function isCrewMentionPath(path: string): boolean {
   return path.startsWith(CREW_MEMBER_MENTION_PREFIX) || path.startsWith(CREW_MENTION_PREFIX);
 }
 
-export function crewMentionOf(file: RankedFile): CrewMentionTarget | undefined {
+export function crewMentionOf(file: { path: string }): CrewMentionTarget | undefined {
   return (file as Partial<CrewMentionRow>).crew;
 }
 
@@ -125,7 +126,8 @@ export function rankCrewMentions(source: CrewMentionSource, query: string): Crew
 const FENCED_CODE = /```[\s\S]*?(?:```|$)/g;
 const INLINE_CODE = /`[^`\n]*`/g;
 /** `@token` at a word start, ended by whitespace or end of text (after trailing punctuation). */
-const MENTION = /(^|\s)@([A-Za-z0-9][A-Za-z0-9-]*)(?=[.,;:!?)\]}"']*(?:\s|$))/g;
+const MENTION =
+  /(^|\s)@(?:crews:|(?!crews:|notes:))([A-Za-z0-9][A-Za-z0-9-]*)(?=[.,;:!?)\]}"']*(?:\s|$))/gi;
 
 /**
  * The members and crews a message names with a resolved `@token`, in order, once each.

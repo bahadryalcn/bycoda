@@ -9,7 +9,6 @@ import {
   type NativeDeliveryKind,
 } from "./native-delivery-store";
 import { assertNativeDeliveryEffect, createNativeDeliveryEpochs } from "./native-delivery-epochs";
-import { nativeDeliveryFixture } from "./native-delivery.test-support";
 import {
   nativeDeliveryEpochOriginalId,
   type NativeDeliveryEpochRef,

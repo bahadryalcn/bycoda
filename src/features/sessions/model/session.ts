@@ -568,6 +568,8 @@ export type Session = {
   title: string;
   /** Project / working directory for this session. */
   cwd: string;
+  /** New projectless chats have a machine-managed working directory of their own. */
+  scratchWorkspace?: true;
   blocks: Block[];
   /** True while a harness turn is in flight. */
   busy?: boolean;
@@ -784,6 +786,7 @@ export function newSession(
     runtimeMode: runtimeMode ?? runtimeModeForNewSession(harness, defaults.runtimeMode),
     title: HARNESS_LABEL[harness],
     cwd,
+    ...(cwd === "~" ? { scratchWorkspace: true as const } : {}),
     providerAccountId: accountId,
     blocks: [],
   };
@@ -873,6 +876,7 @@ export function retargetSessionToProject(session: Session, cwd: string): Session
   return {
     ...session,
     cwd,
+    ...(cwd !== session.cwd ? { scratchWorkspace: cwd === "~" ? true : undefined } : {}),
     harness,
     model: resolved.id,
     modelSettings: settings,
@@ -993,7 +997,11 @@ export function sessionDisplayTitle(title: string, harness: HarnessId): string {
   return title;
 }
 
-/** Working copy the agent and session git UIs should use. */
-export function sessionWorkCwd(session: { cwd: string; worktreeCwd?: string }): string {
+/** Working directory for the session, distinct from its project association. */
+export function sessionWorkCwd(
+  session: Pick<Session, "cwd" | "worktreeCwd"> & Partial<Pick<Session, "id" | "scratchWorkspace">>,
+): string {
+  if (session.cwd === "~" && session.scratchWorkspace && session.id)
+    return `~/.bycoda-host/scratch/session-${session.id}`;
   return session.worktreeCwd || session.cwd;
 }

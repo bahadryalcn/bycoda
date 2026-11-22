@@ -14,11 +14,14 @@ export function ComposerSuggestions({
   below,
   dialog,
   matchComposer = false,
+  solid = false,
   children,
 }: {
   anchor: RefObject<HTMLDivElement | null>;
   below: boolean;
   matchComposer?: boolean;
+  /** Keep dense lists readable over chat text and backgrounds. */
+  solid?: boolean;
   /** Optional dialog ownership for focused composer pickers; ordinary suggestions stay a list. */
   dialog?: { label: string; onDismiss: (reason: "escape" | "outside") => void };
   children: ReactNode;
@@ -39,6 +42,7 @@ export function ComposerSuggestions({
       width={matchComposer ? width : undefined}
       minWidth={matchComposer ? undefined : width}
       appearance={matchComposer ? "composer" : undefined}
+      solid={solid}
       padding={matchComposer ? 4 : undefined}
       gap={4}
       kind={dialog ? "dialog" : undefined}

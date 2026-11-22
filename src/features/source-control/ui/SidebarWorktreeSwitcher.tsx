@@ -1,14 +1,6 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
-import {
-  isListedWorktree,
-  worktreeRows,
-  type WorktreeRow,
-} from "../model/worktreeRows";
-import {
-  ALL_WORKTREES_ACTIVE,
-  WorktreeList,
-  useWorktreeList,
-} from "./WorktreeList";
+import { isListedWorktree, worktreeRows, type WorktreeRow } from "../model/worktreeRows";
+import { ALL_WORKTREES_ACTIVE, WorktreeList, useWorktreeList } from "./WorktreeList";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -52,9 +44,7 @@ export function SidebarWorktreeSwitcher({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activePath, setActivePath] = useState<string | null>(null);
-  const [reportedSwitchError, setReportedSwitchError] = useState<
-    string | undefined
-  >(undefined);
+  const [reportedSwitchError, setReportedSwitchError] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState<string>();
   const creatingRef = useRef(false);
@@ -117,12 +107,7 @@ export function SidebarWorktreeSwitcher({
     setCreating(true);
     setCreationError(undefined);
     try {
-      const tree = await createProjectWorktree(
-        focus?.path ?? cwd,
-        createName,
-        "HEAD",
-        false,
-      );
+      const tree = await createProjectWorktree(focus?.path ?? cwd, createName, "HEAD", false);
       await refresh();
       // Finishing a creation for a previous project must not navigate this one.
       if (!mounted.current || currentCwd.current !== cwd) return;
@@ -145,9 +130,7 @@ export function SidebarWorktreeSwitcher({
       !switchError &&
       data &&
       !data.worktrees.some(
-        (tree) =>
-          isListedWorktree(tree) &&
-          pathKey(tree.path) === pathKey(focus.path),
+        (tree) => isListedWorktree(tree) && pathKey(tree.path) === pathKey(focus.path),
       )
     )
       onSelect?.(undefined);
@@ -164,10 +147,7 @@ export function SidebarWorktreeSwitcher({
     rows,
     value: focus?.path ?? main?.path ?? cwd,
     activePath:
-      activePath ??
-      (showAll && allSelected ? ALL_WORKTREES_ACTIVE : null) ??
-      rows[0]?.path ??
-      null,
+      activePath ?? (showAll && allSelected ? ALL_WORKTREES_ACTIVE : null) ?? rows[0]?.path ?? null,
     all: showAll
       ? {
           selected: allSelected,
@@ -185,8 +165,7 @@ export function SidebarWorktreeSwitcher({
     onPick: pick,
   });
   const focused =
-    focus &&
-    data?.worktrees.find((tree) => pathKey(tree.path) === pathKey(focus.path));
+    focus && data?.worktrees.find((tree) => pathKey(tree.path) === pathKey(focus.path));
   // Shown after the project name: the focused worktree's branch, "All worktrees"
   // when several exist, or the lone project folder's branch.
   const copyName = focus
@@ -213,9 +192,7 @@ export function SidebarWorktreeSwitcher({
         endIcon={
           pending || creating ? (
             <Spinner
-              label={
-                creating ? t("Creating worktree") : t("Switching worktree")
-              }
+              label={creating ? t("Creating worktree") : t("Switching worktree")}
               className="shrink-0"
               tone="muted"
             />
@@ -236,20 +213,13 @@ export function SidebarWorktreeSwitcher({
         className="flex w-fit min-w-0 max-w-full items-center gap-2 @max-[280px]/workspace-pane:gap-1"
       >
         {projectIcon ? (
-          <span className="grid size-4 shrink-0 place-items-center">
-            {projectIcon}
-          </span>
+          <span className="grid size-4 shrink-0 place-items-center">{projectIcon}</span>
         ) : null}
         <MiddleTruncate mode="text" className="min-w-0">
           {project}
         </MiddleTruncate>
         {copyName ? (
-          <MiddleTruncate
-            mode="text"
-            tone="muted"
-            className="min-w-0"
-            data-workspace-copy-name
-          >
+          <MiddleTruncate mode="text" tone="muted" className="min-w-0" data-workspace-copy-name>
             {copyName}
           </MiddleTruncate>
         ) : null}
@@ -317,12 +287,7 @@ export function SidebarWorktreeSwitcher({
                 tooltip={t("Create worktree {p0}", { p0: createName })}
                 tooltipWhen="overflow"
               >
-                <Text
-                  size="inherit"
-                  tone="inherit"
-                  truncate
-                  className="min-w-0"
-                >
+                <Text size="inherit" tone="inherit" truncate className="min-w-0">
                   {t("Create worktree ")}
                   {createName}
                 </Text>

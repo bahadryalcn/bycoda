@@ -35,9 +35,7 @@ it("hides missing and prunable worktrees and orders main, active, clean", () => 
 });
 
 it("keeps the checkout containing cwd first and is stable for the same cwd", () => {
-  expect(worktreeRows(trees, "/t/clean/sub").map((row) => row.path)[0]).toBe(
-    "/t/clean",
-  );
+  expect(worktreeRows(trees, "/t/clean/sub").map((row) => row.path)[0]).toBe("/t/clean");
   expect(worktreeRows(trees, "/repo")).toEqual(
     worktreeRows([...trees].reverse().reverse(), "/repo"),
   );
@@ -52,12 +50,8 @@ it("titles by branch with a path detail and marks the project folder", () => {
 });
 
 it("filters title, detail and path without case or surrounding whitespace", () => {
-  expect(
-    worktreeRows(trees, "/repo", "  DIRTY ").map((row) => row.path),
-  ).toEqual(["/t/dirty"]);
-  expect(
-    worktreeRows(trees, "/repo", "/T/CLEAN").map((row) => row.path),
-  ).toEqual(["/t/clean"]);
+  expect(worktreeRows(trees, "/repo", "  DIRTY ").map((row) => row.path)).toEqual(["/t/dirty"]);
+  expect(worktreeRows(trees, "/repo", "/T/CLEAN").map((row) => row.path)).toEqual(["/t/clean"]);
   expect(worktreeRows(trees, "/repo", "gone")).toEqual([]);
   expect(worktreeRows(undefined, "/repo")).toEqual([]);
 });

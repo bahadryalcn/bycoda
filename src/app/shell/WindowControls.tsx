@@ -3,12 +3,17 @@ import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "../../shared/ui/icons";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useSyncExternalStore } from "react";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
 import { ErrorDetails, errorHeadline, fitsOneLine } from "../../shared/ui/ErrorDetails";
 import { setNativeFullscreen } from "../../platform/tauri/fullscreen";
 import { refreshWindowState, useNativeWindowState } from "../../platform/tauri/windowState";
 import { surfaceAttributes } from "../../shared/ui/Surface";
+import {
+  loadMinimizeToTray,
+  subscribeMinimizeToTray,
+} from "../../features/settings/model/settings";
+import { hideCurrentWindow } from "../model/appLifecycle";
 
 export async function toggleWindowMaximize(): Promise<void> {
   const win = getCurrentWindow();
@@ -36,6 +41,11 @@ function NativeWindowControls() {
   const isMaximized = native?.maximized ?? false;
   const isFullscreen = native?.fullscreen ?? false;
   const [error, setError] = useState<string | null>(null);
+  const minimizeToTray = useSyncExternalStore(
+    subscribeMinimizeToTray,
+    loadMinimizeToTray,
+    () => false,
+  );
 
   const runAction = async (action: () => Promise<void>) => {
     setError(null);
@@ -47,7 +57,8 @@ function NativeWindowControls() {
     }
   };
 
-  const handleMinimize = () => void runAction(() => getCurrentWindow().minimize());
+  const handleMinimize = () =>
+    void runAction(minimizeToTray ? hideCurrentWindow : () => getCurrentWindow().minimize());
   const handleToggleMaximize = () => void runAction(toggleWindowMaximize);
   const handleClose = () => void runAction(() => getCurrentWindow().close());
 
@@ -71,8 +82,8 @@ function NativeWindowControls() {
       ) : null}
       <Button
         iconOnly
-        label={t("Minimize window")}
-        tooltip={t("Minimize")}
+        label={minimizeToTray ? t("Minimize to tray") : t("Minimize window")}
+        tooltip={minimizeToTray ? undefined : t("Minimize")}
         tooltipSide="bottom"
         variant="ghost"
         motion="none"

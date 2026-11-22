@@ -60,10 +60,7 @@ export function WorktreePicker({
     error: loadError,
     refresh,
     loading,
-  } = useProjectWorktrees(
-    cwd,
-    enabled && (worktreeRemoved || !!branches?.current || inWorktree),
-  );
+  } = useProjectWorktrees(cwd, enabled && (worktreeRemoved || !!branches?.current || inWorktree));
   if (!enabled && (open || creating || branchPicker)) {
     setOpen(false);
     setCreating(false);
@@ -93,9 +90,7 @@ export function WorktreePicker({
   // Track navigation by path so background refreshes cannot move the highlight.
   const active = Math.max(
     0,
-    rows.findIndex(
-      (row) => pathKey(row.path) === pathKey(activePath ?? executionCwd),
-    ),
+    rows.findIndex((row) => pathKey(row.path) === pathKey(activePath ?? executionCwd)),
   );
   const list = useWorktreeList({
     rows,
@@ -124,9 +119,7 @@ export function WorktreePicker({
   return (
     <div ref={anchor} className="relative flex min-w-0 shrink">
       <GitPickerTrigger
-        disabled={
-          !enabled || (!worktreeRemoved && !branches?.current && !inWorktree)
-        }
+        disabled={!enabled || (!worktreeRemoved && !branches?.current && !inWorktree)}
         title={
           worktreeRemoved
             ? t("Select a branch or worktree to continue this session")
@@ -184,9 +177,7 @@ export function WorktreePicker({
               worktreeRemoved || opensNewSession ? (
                 <InfoPopover width={240}>
                   {worktreeRemoved
-                    ? t(
-                        "This session’s worktree was deleted. Select a worktree to continue.",
-                      )
+                    ? t("This session’s worktree was deleted. Select a worktree to continue.")
                     : t("Another worktree opens a new session.")}
                 </InfoPopover>
               ) : undefined
@@ -213,10 +204,7 @@ export function WorktreePicker({
             as="div"
             size="caption"
             tone="inherit"
-            {...surfaceAttributes(
-              { frame: "pane", edge: "top" },
-              "shrink-0 p-1",
-            )}
+            {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 p-1")}
           >
             <Button
               variant="item"

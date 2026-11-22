@@ -114,9 +114,10 @@ export const MiddleTruncate = memo(function MiddleTruncate({
   const tailEnd = parts.tail
     ? lastCharacters(parts.tail, parts.tail.length > TEXT_TAIL ? TEXT_TAIL : MIN_TAIL_END)
     : "";
-  // A head of one or two characters needs no reserved ellipsis room; longer ones keep room for "x...".
+  // A head of up to four characters is narrower than the reserved "x..." room, which would leave a gap
+  // inside an untruncated value ("fea ture/graph"); only longer heads keep that room.
   const headClass =
-    Array.from(parts.head).length > 2 ? `${styles.head} ${styles.headReserve}` : styles.head;
+    Array.from(parts.head).length > 4 ? `${styles.head} ${styles.headReserve}` : styles.head;
   const type = optionalTextAttributes(
     { size, tone },
     [parts.tail ? styles.root : styles.plain, className].filter(Boolean).join(" "),

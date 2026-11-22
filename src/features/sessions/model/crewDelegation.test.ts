@@ -35,7 +35,7 @@ const calls = (method: string) => request.mock.calls.filter((call) => call[1] ==
 describe("delegateCrewMentions", () => {
   it("asks a mentioned member and a crew with stable request ids", async () => {
     capabilities.mockResolvedValue(["crews.v1", "crews.member.ask.v1"]);
-    const notes = await delegateCrewMentions("@dba check @data-team plan", context);
+    const notes = await delegateCrewMentions("@crews:dba check @crews:data-team plan", context);
     expect(notes).toEqual([
       "Delegated to @dba (task task-9); results will appear here.",
       "Delegated to @data-team (run run-4); results will appear here.",
@@ -44,7 +44,7 @@ describe("delegateCrewMentions", () => {
       projectId: "p1",
       requestId: "chat-mention:s1:turn-0:member:m1",
       memberId: "m1",
-      prompt: "@dba check @data-team plan",
+      prompt: "@crews:dba check @crews:data-team plan",
       parentSessionId: "s1",
     });
     expect(calls("crews.start")[0]![2]).toMatchObject({
@@ -52,7 +52,7 @@ describe("delegateCrewMentions", () => {
       newConversation: true,
       requestId: "chat-mention:s1:turn-0:crew:c1",
     });
-    await delegateCrewMentions("@dba check @data-team plan", context);
+    await delegateCrewMentions("@crews:dba check @crews:data-team plan", context);
     expect(calls("crews.member.ask")[1]![2]).toMatchObject({
       requestId: "chat-mention:s1:turn-0:member:m1",
     });

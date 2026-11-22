@@ -73,7 +73,7 @@ export function useActiveWorkspaceContext(
   useEffect(() => {
     reportBootProjectState({ activeTabId: reportedTabId, projectCwd, sidebarCwd });
   }, [reportedTabId, projectCwd, sidebarCwd]);
-  const sidebarCwdKey = sidebarCwd && sidebarCwd !== "~" ? normalizeProjectPath(sidebarCwd) : null;
+  const sidebarCwdKey = sidebarCwd ? normalizeProjectPath(sidebarCwd) : null;
   const historyFailed = sidebarCwdKey != null && historyErrorCwd === sidebarCwdKey;
   // True from the very first frame that shows a project we have never listed,
   // so the sidebar can stay blank instead of flashing "No sessions yet".

@@ -16,7 +16,6 @@ import {
   HOST_SCHEMA_VERSION,
   WS_SUBPROTOCOL,
   WS_WIRE_VERSION,
-  WS_LIMITS,
   RPC_ERROR_CODES,
 } from "../../../src/shared/model/host-contracts";
 import { NATIVE_WORKSPACE_METHODS } from "../../../src/shared/model/host-contracts/native-workspaces";

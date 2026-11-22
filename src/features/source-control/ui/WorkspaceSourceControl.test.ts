@@ -6,7 +6,6 @@ import { WorkspaceSourceControl } from "./WorkspaceSourceControl";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import type { Worktree } from "../model/worktrees";
 import { saveWorkspaceProjectNames } from "../../workspace/model/tabGroups";
-import { OPEN_WORKTREE_MANAGEMENT } from "../model/worktreeManagement";
 
 const { notify, discovery, discover } = vi.hoisted(() => ({
   notify: vi.fn(),

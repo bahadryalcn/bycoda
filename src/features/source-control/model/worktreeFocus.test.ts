@@ -30,8 +30,12 @@ describe("worktree focus", () => {
     const main = { path: "/repo", branch: "main" };
     setWorktreeFocus("/repo", main);
     expect(worktreeFocus("/repo")).toEqual(main);
-    expect(inWorktreeFocus({ cwd: "/repo", worktreeCwd: "/trees/a" }, worktreeFocus("/repo"))).toBe(false);
+    expect(inWorktreeFocus({ cwd: "/repo", worktreeCwd: "/trees/a" }, worktreeFocus("/repo"))).toBe(
+      false,
+    );
     setWorktreeFocus("/repo", undefined);
-    expect(inWorktreeFocus({ cwd: "/repo", worktreeCwd: "/trees/a" }, worktreeFocus("/repo"))).toBe(true);
+    expect(inWorktreeFocus({ cwd: "/repo", worktreeCwd: "/trees/a" }, worktreeFocus("/repo"))).toBe(
+      true,
+    );
   });
 });

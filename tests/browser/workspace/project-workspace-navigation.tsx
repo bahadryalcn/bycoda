@@ -66,12 +66,13 @@ function ShellLayoutFixture() {
         <div className="flex min-h-0 flex-1">
           <ProjectRail
             visible
-            cwd="G:/wallet/api"
+            cwd={selected === "~" ? "~" : "G:/wallet/api"}
             recents={Array.from({ length: 18 }, (_, index) => ({
               path: `G:/project-${index}`,
               openedAt: 1,
             }))}
             onSelectProject={setSelected}
+            onOpenNoProject={() => setSelected("~")}
             onOpenProject={() => {}}
             onSelectAgent={setSelected}
             notesEnabled
@@ -180,10 +181,7 @@ function Fixture() {
         {worktreesDemo ? (
           // The sidebar header is the only worktree selector; the panel follows its focus.
           <div className="shrink-0 px-2 py-1">
-            <SidebarWorktreeSwitcher
-              cwd={cwd}
-              onSelect={(next) => setWorktreeFocus(cwd, next)}
-            />
+            <SidebarWorktreeSwitcher cwd={cwd} onSelect={(next) => setWorktreeFocus(cwd, next)} />
           </div>
         ) : null}
         <SourceControl

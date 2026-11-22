@@ -55,6 +55,8 @@ it("covers every message the native shell translates", () => {
   for (const prefix of prefixes) need(`${prefix.slice(1, -1)} {p0}`);
   for (const [, prefix] of rust("tray.rs").matchAll(/menu_text\(\s*"([^"]+)"/g))
     need(`${prefix} {p0}`);
+  for (const [, message] of rust("tray/windows.rs").matchAll(/translated\(\s*"([^"]+)"/g))
+    need(message);
   const notifications = [...rust("desktop_shortcut.rs").matchAll(/translated\(\s*"([^"]+)"/g)];
   expect(notifications.length).toBeGreaterThan(0);
   for (const [, message] of notifications) need(message);

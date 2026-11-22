@@ -180,15 +180,10 @@ or branch. Unknown directories and main are never automatic cleanup targets.
 On Windows, dependency links must be detached without following their targets;
 unsafe links and blocked handles leave a recoverable blocked operation.
 
-Unsaved or unknown native editor reports also block removal and rewind. Fresh
-reports settle only that app profile, process instance and window; reconnecting
-one app cannot silently clear another app's buffers. Uncertain prior process
-leases require explicit reconciliation, even after their process appears old.
-Stale closed windows and earlier app instances can remain blocked until their
-state is explicitly reconciled. Clean app exit retires an authenticated empty
-buffer report. After restart, only empty predecessor reports from the same device
-and client can be reconciled when the Host proves their process has exited.
-Dirty or unknown reports continue to require explicit owner recovery.
+Unsaved files open in a connected desktop block removal: save or close them
+first. Uncertain prior process leases require explicit reconciliation, even after
+their process appears old. Unsaved editor text is kept as a local draft copy, so
+removing a worktree never discards it.
 
 Finished sessions expose Delete directory directly. The same guarded removal
 preview and activity checks apply; the conversation, unmerged branch and recovery
@@ -262,7 +257,7 @@ The exact-rewind workflow below applies only when the experimental setting is on
 Managed Git rewind restores the selected accepted user boundary's conversation,
 branch HEAD, index and working copy together. Preview shows affected commits and
 paths and capture blockers. Unsupported or incomplete capture cannot promise an
-exact rewind. Settle provider execution, shells and editor buffers first.
+exact rewind. Settle provider execution and shells first.
 
 Apply uses a short-lived reviewed plan, revalidates state, and preserves rescue
 HEAD/index/worktree and transcript state before restoring anything. Changed

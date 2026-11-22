@@ -16,14 +16,10 @@ export type WorktreeRow = {
 };
 
 /** A worktree that can be opened: neither deleted on disk nor awaiting prune. */
-export const isListedWorktree = (tree: Worktree) =>
-  !tree.missing && !tree.prunable;
+export const isListedWorktree = (tree: Worktree) => !tree.missing && !tree.prunable;
 
 export const worktreeRowTitle = (tree: Worktree) =>
-  tree.branch ??
-  (tree.head
-    ? t("Detached {p0}", { p0: shortSha(tree.head) })
-    : t("Detached HEAD"));
+  tree.branch ?? (tree.head ? t("Detached {p0}", { p0: shortSha(tree.head) }) : t("Detached HEAD"));
 
 export const worktreeRowDetail = (tree: Worktree) =>
   `${tree.isMain ? `${t("Project folder")} · ` : ""}${prettyCwd(tree.path)}`;
@@ -49,8 +45,6 @@ export function worktreeRows(
       isMain: tree.isMain,
     }))
     .filter((row) =>
-      `${row.title}\n${row.detail}\n${row.path}`
-        .toLocaleLowerCase()
-        .includes(needle),
+      `${row.title}\n${row.detail}\n${row.path}`.toLocaleLowerCase().includes(needle),
     );
 }

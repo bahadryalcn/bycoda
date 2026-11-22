@@ -7,7 +7,7 @@ import {
   type ShellPhysicalIdentity,
 } from "../../src/features/sessions/model/shellRun";
 import { resolveShellProfile, shellInvocation, type ShellProfile } from "./shellProfiles";
-import { resolveSessionCwd } from "../providers/session-folder";
+import { isSessionScratchCwd, resolveSessionCwd } from "../providers/session-folder";
 
 /** Far above what a transcript keeps; bounds what one command can hold in memory. */
 const MAX_CAPTURED = 512 * 1024;
@@ -29,10 +29,10 @@ export function runHostShell(
 ): Promise<ShellResult> {
   // A session without a project (cwd exactly `~`) runs in the chosen session folder.
   // Any other cwd spawns synchronously, as before.
-  if (cwd === "~")
+  if (cwd === "~" || isSessionScratchCwd(cwd))
     return resolveSessionCwd(cwd)
-      .catch(() => undefined)
-      .then((resolved) => runInCwd(resolved ?? cwd));
+      .then((resolved) => runInCwd(resolved ?? cwd))
+      .catch((error: unknown) => ({ output: String(error), exitCode: null, timedOut: false }));
   return runInCwd(cwd);
   function runInCwd(cwd: string): Promise<ShellResult> {
     return new Promise((resolve) => {

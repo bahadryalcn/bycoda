@@ -446,6 +446,7 @@ type Props = {
   lastSessionsRemoteRows?: readonly RemoteRailSession[];
   newListedSessionRequest?: number;
   onNewListedSession?: (projectPath: string) => void | Promise<void>;
+  onOpenNoProject?: () => void;
   onOpenLastSessions?: () => void;
   onCloseLastSessions?: () => void;
   /** Leaves Last sessions and any tool page and shows the workspace of the current tab. */
@@ -611,6 +612,7 @@ function SidebarComponent({
   lastSessionsData,
   lastSessionsRemoteRows,
   onNewListedSession,
+  onOpenNoProject,
   newListedSessionRequest = 0,
   onOpenLastSessions,
   onSelectListedSession,
@@ -858,12 +860,16 @@ function SidebarComponent({
     ? (sessionId: string, pinned: boolean) => {
         void remoteChange(sessionId, { pinned });
       }
-    : onPinLocalSession;
+    : cwd === "~"
+      ? undefined
+      : onPinLocalSession;
   const onPinSessions = remoteProject
     ? (sessionIds: readonly string[], pinned: boolean) => {
         void Promise.all(sessionIds.map((id) => remoteChange(id, { pinned })));
       }
-    : onPinLocalSessions;
+    : cwd === "~"
+      ? undefined
+      : onPinLocalSessions;
   const onDeleteSession = remoteProject
     ? (sessionId: string) => {
         void remoteDelete([sessionId]);
@@ -1608,8 +1614,6 @@ function SidebarComponent({
           onSelectSettingsSection("account");
         }
       : undefined;
-  // A blank session has no project to browse, so the shell stands alone until
-  // one is picked — whether or not the rail is open.
   const sidebarAvailable =
     !searchActive &&
     !inboxActive &&
@@ -1619,7 +1623,7 @@ function SidebarComponent({
     !tasksActive &&
     !socialActive &&
     !settingsOpen &&
-    (inProject || lastSessionsOpen);
+    (inProject || cwd === "~" || lastSessionsOpen);
   const sidebarVisible = open && sidebarAvailable;
   // With the sidebar collapsed beside the compact rail, its tab shortcuts
   // open the sidebar temporarily until the user clicks away.
@@ -1639,7 +1643,7 @@ function SidebarComponent({
     gitRoot,
     repositoryPaths,
     focus: focusedWorktree,
-    active: panelOpen && sidebarAvailable,
+    active: panelOpen && sidebarAvailable && inProject,
   });
 
   // Reset project-owned state before paint when switching projects. Initialization already
@@ -1663,7 +1667,7 @@ function SidebarComponent({
   }, [cwd]);
 
   useEffect(() => {
-    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) return;
+    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !cwd || cwd === "~") return;
     let alive = true;
     let reconciliation = 0;
     const onOrganizationChange = () => {
@@ -1866,6 +1870,7 @@ function SidebarComponent({
     onApplied?: (state: SessionOrganizationState, previous?: SessionOrganizationState) => void,
     quiet = false,
   ): Promise<boolean> => {
+    if (!cwd || cwd === "~") return false;
     const unavailable = organizationUnresolved.current || organizationRefreshRequired.current;
     if (!organizationReady.current || organizationBusy.current || unavailable) {
       if (!quiet && !unavailable) setOrganizationNotice(t("Still saving. Try again in a moment."));
@@ -2203,13 +2208,9 @@ function SidebarComponent({
             ]
           : []),
         { kind: "sep" as const },
-        {
-          kind: "item" as const,
-          id: "folder-new",
-          get label() {
-            return t("New folder");
-          },
-        },
+        ...(cwd !== "~"
+          ? [{ kind: "item" as const, id: "folder-new", label: t("New folder") }]
+          : []),
         ...(sessionFolders.length > 0
           ? [
               {
@@ -3032,7 +3033,11 @@ function SidebarComponent({
       onPrefetch={onPrefetchSession ? cardActions.prefetch : undefined}
       onPlaceOnPane={onPlaceSessionOnPane ? cardActions.placeOnPane : undefined}
       onPopOut={onPopOutSession ? cardActions.popOut : undefined}
-      onListDrop={reminderIds.has(session.id) || searchNarrowed ? undefined : cardActions.listDrop}
+      onListDrop={
+        cwd === "~" || reminderIds.has(session.id) || searchNarrowed
+          ? undefined
+          : cardActions.listDrop
+      }
       onListDropTargetChange={setSessionDrop}
       onContextMenu={cardActions.contextMenu}
       settleable={!remoteProject}
@@ -3294,8 +3299,7 @@ function SidebarComponent({
 
   // The session list's own tools sit in the Workspace header row: an inline filter that opens from
   // its icon, bulk select and the filter popover. The global search stays the top-left Search.
-  const showSessionTools =
-    tab === "sessions" && (lastSessionsOpen || (Boolean(cwd) && cwd !== "~"));
+  const showSessionTools = tab === "sessions" && (lastSessionsOpen || Boolean(cwd));
   if (!showSessionTools && sessionSearchExpanded) setSessionSearchExpanded(false);
   const remoteWorkspaceStatus =
     remoteProject && !lastSessionsOpen ? (
@@ -3586,7 +3590,7 @@ function SidebarComponent({
             <SidebarRemoteWorkspaceTitle cwd={cwd} status={remoteWorkspaceStatus} />
           ) : (
             <Text as="span" size="title" weight="medium" tone="inherit">
-              {t(lastSessionsOpen ? "Last sessions" : "Workspace")}
+              {t(lastSessionsOpen ? "Last sessions" : cwd === "~" ? "No project" : "Workspace")}
             </Text>
           )
         }
@@ -3698,15 +3702,17 @@ function SidebarComponent({
       {railVisible ? (
         <>
           {workspaceHeader()}
-          <WorkspaceTabList
-            value={tab}
-            {...surfaceAttributes(
-              { frame: "pane", edge: "bottom" },
-              "bycoda-workspace-tabs flex shrink-0 items-center gap-0",
-            )}
-          >
-            {workspaceTabItems}
-          </WorkspaceTabList>
+          {cwd !== "~" || lastSessionsOpen ? (
+            <WorkspaceTabList
+              value={tab}
+              {...surfaceAttributes(
+                { frame: "pane", edge: "bottom" },
+                "bycoda-workspace-tabs flex shrink-0 items-center gap-0",
+              )}
+            >
+              {workspaceTabItems}
+            </WorkspaceTabList>
+          ) : null}
         </>
       ) : (
         <>
@@ -3726,7 +3732,8 @@ function SidebarComponent({
             />
           )}
           {compactRailVisible ? workspaceHeader(!titleBarAbove) : null}
-          {(lastSessionsOpen || (remoteProject && !onSelectProject)) && !compactRailVisible ? (
+          {(lastSessionsOpen || cwd === "~" || (remoteProject && !onSelectProject)) &&
+          !compactRailVisible ? (
             workspaceHeader()
           ) : onSelectProject && !compactRailVisible ? (
             <SidebarProjectPicker
@@ -4082,7 +4089,7 @@ function SidebarComponent({
                 />
               ) : null}
             </SessionSearchQueryContext.Provider>
-          ) : !cwd || cwd === "~" ? (
+          ) : !cwd ? (
             <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
               {t("No project folder")}
             </Text>
@@ -4090,7 +4097,7 @@ function SidebarComponent({
             <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
               <div className={sessionsStale ? "opacity-60" : undefined}>
                 {/* Crews read through the same machine; its error would only repeat the notice. */}
-                {onOpenCrewSession && !sessionsHidden && (
+                {onOpenCrewSession && inProject && !sessionsHidden && (
                   <CrewSidebar
                     key={cwd}
                     cwd={cwd}
@@ -4581,6 +4588,7 @@ function SidebarComponent({
       ) : null}
       {railMounted.current && onSelectProject && onOpenProject ? (
         <ProjectRail
+          onOpenNoProject={onOpenNoProject}
           onOpenLastSessions={onOpenLastSessions}
           lastSessionsOpen={lastSessionsOpen}
           onSelectListedSession={onSelectListedSession}
@@ -4662,6 +4670,13 @@ function SidebarComponent({
           >
             {(projectFilter) => (
               <ProjectRail
+                onOpenNoProject={
+                  onOpenNoProject &&
+                  (() => {
+                    setProjectNavigationAnchor(null);
+                    onOpenNoProject();
+                  })
+                }
                 visible
                 presentation="navigator"
                 projectFilter={projectFilter}

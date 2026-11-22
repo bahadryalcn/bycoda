@@ -805,7 +805,7 @@ function Workspace({
   });
   const gitCwdBranches = useProjectBranches(
     gitCwd,
-    Boolean(gitCwd) && gitCwd !== "~" && !isRemoteProjectPath(sidebarCwd),
+    Boolean(gitCwd) && sidebarCwd !== "~" && !isRemoteProjectPath(sidebarCwd),
   );
   const explorerRootLabel =
     active?.worktreeCwd && sameProjectPath(gitCwd, sessionWorkCwd(active))
@@ -3052,6 +3052,23 @@ function Workspace({
   });
 
   const sidebarActions = useSidebarActions({
+    onOpenNoProject: () => {
+      setLastSessionsOpen(false);
+      onShowWorkspace();
+      workspaceNavigation.cancel();
+      const session = active?.cwd === "~" ? active : undefined;
+      const tab = session
+        ? activeTab
+        : tabsRef.current.find((entry) =>
+            sessionsRef.current.some(
+              (candidate) => candidate.id === entry.focusedId && candidate.cwd === "~",
+            ),
+          );
+      if (tab) activateTab(tab.id, session?.id);
+      else onNewSessionForProject("~");
+      setSessionSidebarOpen(true);
+      setSidebarTab("sessions", "~");
+    },
     onNewListedSession: (project: string) => {
       if (!canCreateListedSession(project, allowedRecentProjectKeys, getGroupLockView().lock)) {
         throw new Error(t("This project is no longer available."));
@@ -3236,6 +3253,7 @@ function Workspace({
                     <WorkspaceSidebar
                       newListedSessionRequest={newListedSessionRequest}
                       onNewListedSession={sidebarActions.onNewListedSession}
+                      onOpenNoProject={sidebarActions.onOpenNoProject}
                       lastSessionsData={lastSessionsData}
                       lastSessionsRemoteRows={listedRemoteSessions}
                       lastSessionsOpen={lastSessionsOpen}
