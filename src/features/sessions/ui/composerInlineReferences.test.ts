@@ -36,3 +36,19 @@ it("prefers a resolved attachment over a missing reference with the same source 
     ["missing", "other.png"],
   ]);
 });
+
+it("keeps complete scoped mentions intact as inline references", () => {
+  const draft =
+    "Ask @crews:audit-source-fixes and @crews:backend-engineer, read @notes:plan and @jira:BYC-142. `@crews:example` @crews:";
+  expect(
+    composerInlineReferences(draft, context).map(({ kind, start, end }) => [
+      kind,
+      draft.slice(start, end),
+    ]),
+  ).toEqual([
+    ["crew", "@crews:audit-source-fixes"],
+    ["crew", "@crews:backend-engineer"],
+    ["note", "@notes:plan"],
+    ["work-item", "@jira:BYC-142"],
+  ]);
+});

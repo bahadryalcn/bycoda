@@ -25,13 +25,17 @@ import {
 } from "../../../src/features/sessions/model/sessionListDisplay";
 import { LiveAgentsPreview } from "../../../src/features/sessions/ui/LiveAgentsPreview";
 import type { SessionWait } from "../../../src/features/sessions/model/sessionWait";
-import { applyThemePreference } from "../../../src/features/settings/model/appearance";
+import {
+  applyThemePreference,
+  saveSessionSidebarWidth,
+} from "../../../src/features/settings/model/appearance";
 import { languageReady } from "../../../src/shared/i18n";
 import type { SessionLifecycleView } from "../../../src/features/sessions/model/sessionLifecycle";
 import "./session-row-layout.css";
 
 // Isolated browser-local history and preferences. No native writes or provider calls.
 const params = new URLSearchParams(location.search);
+if (params.has("wide-workspace")) saveSessionSidebarWidth(510);
 if (params.has("remote-settle") || params.has("local-bulk-settle")) {
   mockWindows("main");
   const local = params.has("local-bulk-settle");
@@ -375,6 +379,10 @@ function Fixture() {
             setCreateCount((count) => count + 1);
             setProjectCwd(path);
             setGitCwd(path);
+            if (path !== projectCwd) {
+              setLastSessionsOpen(false);
+              setTab("sessions");
+            }
           }}
           lastSessionsData={{
             rows: params.has("empty") || params.has("loading") ? [] : lastSessionsRows,

@@ -15,7 +15,7 @@ export default defineConfig({
   webServer: {
     cwd: fileURLToPath(new URL("../../..", import.meta.url)),
     command:
-      "pnpm exec vite build --config tests/browser/sessions/session-row-layout.vite.config.ts --logLevel error && pnpm exec vite preview --config tests/browser/sessions/session-row-layout.vite.config.ts",
+      "pnpm exec vp build --config tests/browser/sessions/session-row-layout.vite.config.ts --logLevel error && pnpm exec vp preview --config tests/browser/sessions/session-row-layout.vite.config.ts",
     url: "http://127.0.0.1:15520/tests/browser/sessions/session-row-layout.html",
     reuseExistingServer: true,
     timeout: 180000,

@@ -409,3 +409,92 @@ it("treats the project folder as a real focus and keeps it while listed", async 
   expect(trigger().textContent).toBe("pickermain");
   expect(select).not.toHaveBeenCalled();
 });
+
+const mixedTrees = () => [
+  tree("/picker", "main", true),
+  tree("/picker-worktrees/clean-one", "by/clean-one"),
+  { ...tree("/picker-worktrees/dirty-one", "feat/dirty-one"), dirty: true },
+  { ...tree("/picker-worktrees/ahead-one", "feat/ahead-one"), unpushed: 2 },
+];
+
+it("reads as a breadcrumb: project, separator, branch icon and branch, then the picker chevron", async () => {
+  setWorktreeFocus("/picker", { path: "/picker-a", branch: "feature-a" });
+  await render();
+  expect(trigger().textContent).toBe("pickerfeature-a");
+  const icons = [...trigger().querySelectorAll("svg")].map((svg) =>
+    [...svg.classList].find((name) => name.startsWith("lucide-")),
+  );
+  expect(icons).toEqual(["lucide-chevron-right", "lucide-git-branch", "lucide-chevron-down"]);
+  // No path in the trigger text.
+  expect(trigger().textContent).not.toContain("/picker-a");
+});
+
+it("names the project and All worktrees without a branch icon when none is selected", async () => {
+  await render();
+  expect(copyName()).toBe("All worktrees");
+  expect(trigger().querySelector("svg.lucide-git-branch")).toBeNull();
+});
+
+it("lists the picker in the panel's groups and order: leading rows, With changes, Clean", async () => {
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: { worktrees: mixedTrees(), defaultRoot: "/picker-worktrees" },
+    refresh,
+  });
+  await render();
+  await act(async () => trigger().click());
+  const options = [...document.querySelectorAll('[role="option"]')].map((node) => node.textContent);
+  expect(options[0]).toContain("All worktrees");
+  expect(options[1]).toContain("main");
+  expect(options[2]).toContain("feat/dirty-one");
+  expect(options[3]).toContain("feat/ahead-one");
+  expect(options[4]).toContain("by/clean-one");
+  const headings = [...document.querySelectorAll('[role="group"] > [role="presentation"]')].map(
+    (node) => node.textContent,
+  );
+  expect(headings).toEqual(["With changes", "Clean · 1"]);
+});
+
+it("shows each picker row once: one branch icon, bold branch, muted folder, session marker, no Worktree label", async () => {
+  vi.mocked(useProjectWorktrees).mockReturnValue({
+    data: { worktrees: mixedTrees(), defaultRoot: "/picker-worktrees" },
+    refresh,
+  });
+  await render();
+  await act(async () => trigger().click());
+  const dirty = option("feat/dirty-one");
+  expect(dirty.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
+  expect(dirty.querySelector("svg.lucide-folder-tree")).toBeNull();
+  expect(dirty.textContent).toContain("dirty-one");
+  expect(dirty.textContent).not.toContain("Worktree");
+  expect(dirty.textContent).not.toContain("/picker-worktrees");
+  // The change dot is named for assistive tech.
+  expect(dirty.querySelector('[aria-label="Changes"]')).not.toBeNull();
+  expect(option("by/clean-one").querySelector('[aria-label="Changes"]')).toBeNull();
+  expect(option("feat/ahead-one").textContent).toContain("↑2");
+  // The project folder is named, and the session's checkout is marked.
+  expect(option("main").textContent).toContain("Project folder");
+  expect(option("main").textContent).toContain("This session");
+  expect(option("feat/dirty-one").textContent).not.toContain("This session");
+});
+
+it("keeps the full path in the row's hint rather than in its text", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(useProjectWorktrees).mockReturnValue({
+      data: { worktrees: mixedTrees(), defaultRoot: "/picker-worktrees" },
+      refresh,
+    });
+    await render();
+    await act(async () => trigger().click());
+    const label = option("feat/dirty-one").querySelector("span.flex")!;
+    await act(async () => {
+      label.dispatchEvent(new Event("pointerover", { bubbles: true }));
+      vi.advanceTimersByTime(520);
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
+      "/picker-worktrees/dirty-one",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});

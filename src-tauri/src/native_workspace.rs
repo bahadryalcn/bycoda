@@ -170,14 +170,15 @@ pub struct BufferState {
     dirty: bool,
 }
 
-/// Tables of the retired persisted buffer reports. Dropping a table also drops
-/// its triggers. Editor drafts (`native_editor_drafts*`) are unrelated.
+/// Tables of the retired persisted buffer reports, referencing tables first (history points at
+/// bodies). Dropping a table also drops its triggers. Editor drafts (`native_editor_drafts*`) are
+/// unrelated.
 const RETIRED_BUFFER_TABLES: [&str; 9] = [
+    "native_workspace_buffer_history",
     "native_workspace_buffers",
     "native_workspace_buffer_clock",
     "native_workspace_buffer_identity",
     "native_workspace_buffer_bodies",
-    "native_workspace_buffer_history",
     "native_workspace_buffer_guard_groups",
     "native_workspace_buffer_holds",
     "native_workspace_buffer_write_permits",
@@ -187,6 +188,9 @@ const RETIRED_BUFFER_TABLES: [&str; 9] = [
 /// One-time, idempotent migration run with the session-store schema.
 pub(crate) fn ensure_schema(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
     let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    // The retired tables reference each other; with foreign keys on, dropping a referenced table
+    // first failed at app start. Checks run at commit, when none of them is left.
+    tx.execute_batch("PRAGMA defer_foreign_keys = ON;")?;
     for table in RETIRED_BUFFER_TABLES {
         tx.execute_batch(&format!("DROP TABLE IF EXISTS {table};"))?;
     }
@@ -219,10 +223,12 @@ mod tests {
             // Legacy shape, including a trigger that blocks deleting history rows.
             conn.execute_batch(
                 "CREATE TABLE native_workspace_buffers(owner_id TEXT PRIMARY KEY,snapshot_json TEXT NOT NULL,updated_at INTEGER NOT NULL,confirmed INTEGER NOT NULL DEFAULT 0);
-                 CREATE TABLE native_workspace_buffer_history(id INTEGER PRIMARY KEY,owner_id TEXT);
+                 CREATE TABLE native_workspace_buffer_bodies(id INTEGER PRIMARY KEY,body BLOB);
+                 CREATE TABLE native_workspace_buffer_history(id INTEGER PRIMARY KEY,owner_id TEXT,body_id INTEGER REFERENCES native_workspace_buffer_bodies(id));
                  CREATE TRIGGER native_buffers_v2_history_delete BEFORE DELETE ON native_workspace_buffer_history BEGIN SELECT RAISE(ABORT,'NATIVE_BUFFER_HISTORY_IMMUTABLE'); END;
                  INSERT INTO native_workspace_buffers VALUES('main','[]',1,1);
-                 INSERT INTO native_workspace_buffer_history(owner_id) VALUES('main');
+                 INSERT INTO native_workspace_buffer_bodies VALUES(1,x'00');
+                 INSERT INTO native_workspace_buffer_history(owner_id,body_id) VALUES('main',1);
                  INSERT INTO native_editor_drafts(owner_id,document_id,store_instance,window_incarnation,window_label,path,revision,payload_json,payload_digest,text_digest,serialized_text_digest,baseline_digest,retained_bytes,state,updated_at)
                  VALUES('o','d','s','w','main','C:/fixture/draft.ts',1,'{}','p','t','s','b',600,'retained',5);",
             )
@@ -391,3 +397,4 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
     }
 }
+

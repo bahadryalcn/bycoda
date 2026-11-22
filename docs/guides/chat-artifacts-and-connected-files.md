@@ -39,6 +39,8 @@ Type `@` for connected trackers, crews, notes, members, folders and files.
 Choose Jira or GitHub to search that tracker. Type `@notes:` to search and
 reference a note, or `@crews:` to find a crew or member. Sending a crew or
 member mention delegates work through the existing project permissions.
+Complete references are highlighted in the draft and sent message. You can
+still edit or copy the reference text.
 
 ## Image attachments
 

@@ -123,7 +123,10 @@ small-size vector mark. Expanded sections share label and count columns; Last
 sessions keeps separate collapse and open actions. The workspace header emphasizes
 the current location. Back, Forward, Expand projects and conversation tools align
 to the right. **New session** sits at the far right, with a label when the workspace
-pane is wide and a conversation icon when space is limited. In narrow panes, **More
+pane is wide and an icon when space is limited. Click the main button to start in
+the current project. Click its arrow or right-click the main button to choose a
+project. Choosing another project opens its **Sessions** list with the new
+conversation selected. In narrow panes, **More
 actions** contains conversation search, selection and filters. Crews, Servers, Notes,
 Automations, Social Media, Tasks and Room appear directly as stacked rail icons.
 Hover or focus an icon for its name and shortcut. The rail scrolls in short windows
@@ -391,10 +394,11 @@ project's saved icon, color and background. This view stays open when a conversa
 is selected. A refresh keeps the previous complete list visible until the new
 history has loaded; an error leaves that list available while retrying.
 Explorer and Changes follow that conversation's real project and
-execution worktree. The **+** action in Last Sessions first asks which project should own the new
-conversation. Search or choose a project, including the current one; cancelling
-creates nothing. The new conversation uses that project’s defaults and selected
-checkout while Last Sessions stays open. Choose **No project** to start a conversation
+execution worktree. **New session** in Last sessions asks which project should own the
+new conversation. Search or choose a project, including the current one. Cancelling
+creates nothing. The new conversation uses the chosen project's defaults and selected
+checkout. Choosing the current project keeps Last sessions open. Choosing another
+project opens its **Sessions** list. Choose **No project** to start a conversation
 without a project. Bycoda gives it its own working directory under
 `~/.bycoda-host/scratch` when it first runs. The files stay on disk when the
 conversation is deleted. Choose **No project** under **Projects** to browse these

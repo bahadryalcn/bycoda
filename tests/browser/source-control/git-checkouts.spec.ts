@@ -365,9 +365,9 @@ test("repository overview collapses with keyboard and preserves open panels and 
   const panel = page.locator('[data-git-repository="/fixture/core-pack"]');
   const row = panel.locator("header button[aria-expanded]").first();
   await expect(row).toHaveAttribute("aria-expanded", "false");
-  // Folder and branch share one compact line; the full path remains discoverable.
+  // Name, branch and marker share one compact line; the hint adds only the full path.
   await row.hover();
-  await expect(page.getByRole("tooltip")).toHaveText(/core-pack.*\/fixture\/core-pack/);
+  await expect(page.getByRole("tooltip")).toHaveText("/fixture/core-pack");
   await page.mouse.move(0, 0);
   await expect(page.getByRole("tooltip")).toHaveCount(0);
   expect((await panel.locator("header").boundingBox())!.height).toBeLessThanOrEqual(44);
@@ -896,7 +896,7 @@ test("All worktrees groups rows, mounts panels lazily and follows the header foc
   await expect(rowFor("/trees/clean-one")).toBeVisible();
   // Selecting a worktree in the header focuses it: only its panel remains, and the expanded
   // state of the overview rows survives the round trip.
-  await pickWorktree(page, "/trees/detached");
+  await pickWorktree(page, "Detached");
   await expect(list).toHaveCount(0);
   await expect(page.getByRole("status", { name: "Header focus" })).toHaveText("/trees/detached");
   await expect(branchTrigger(page)).toBeVisible();

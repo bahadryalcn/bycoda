@@ -35,6 +35,7 @@ export function createGitRuntime(
     ServerBindings,
     | "engine"
     | "providers"
+    | "catalogs"
     | "startWorkspaceActivity"
     | "terminals"
     | "touchTerminalWorkspace"
@@ -118,6 +119,7 @@ export function createGitRuntime(
         { ...params, preferred, choice },
         {
           authorize,
+          catalog: async (harness) => (await dependencies.catalogs.read(cwd)).models[harness] ?? [],
           context: async (kind) =>
             (await dependencies.workspace.run(
               kind === "commit" ? "git_staged_context" : "git_range_context",

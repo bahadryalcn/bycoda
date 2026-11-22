@@ -1,10 +1,11 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { Badge } from "../../../shared/ui/Badge";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { CopyButton } from "../../../shared/ui/CopyButton";
-import { BlockQuote, Info, X } from "../../../shared/ui/icons";
+import { BlockQuote, Info, StickyNote, UsersRound, X } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { chatCitationPreview, chatCitationToken, type ChatCitation } from "../model/chatCitation";
@@ -14,29 +15,24 @@ import { tokenLabel } from "../model/attachmentTokens";
 import { findCitationTokens } from "../model/citationTokens";
 import { highlightChatCitation } from "../model/chatCitationHighlight";
 import styles from "./ChatCitationText.module.css";
-import { providerForAlias } from "../../inbox/public/workItemMentions";
+import { scopedMentionParts } from "../model/composerMentionScopes";
 
-/** Display every tracker token, including repeats beyond the context lookup limit. */
-export function workItemMentionParts(text: string): { text: string; workItem?: true }[] {
-  const parts: { text: string; workItem?: true }[] = [];
-  const tokens = /(^|[\s([{])(@([a-z]+):[a-z0-9](?:[a-z0-9_./#!-]*[a-z0-9])?)/gi;
-  let end = 0;
-  for (const match of text.matchAll(tokens)) {
-    if (!providerForAlias(match[3])) continue;
-    const start = match.index + match[1].length;
-    if (start > end) parts.push({ text: text.slice(end, start) });
-    parts.push({ text: match[2], workItem: true });
-    end = start + match[2].length;
-  }
-  if (end < text.length) parts.push({ text: text.slice(end) });
-  return parts;
-}
-
-/** Tracker tokens render as chips that look up their item on click. */
-export function WorkItemMentionText({ text }: { text: string }) {
-  return workItemMentionParts(text).map((part, index) =>
-    part.workItem ? (
+/** Tracker tokens keep their lookup action. Crew and note tokens retain their source text. */
+export function ScopedMentionText({ text }: { text: string }) {
+  return scopedMentionParts(text).map((part, index) =>
+    part.kind === "work-item" ? (
       <WorkItemMentionChip key={index} token={part.text} />
+    ) : part.kind ? (
+      <Badge
+        key={index}
+        size="xs"
+        appearance="subtle"
+        tone="accent"
+        icon={part.kind === "crew" ? <UsersRound /> : <StickyNote />}
+        data-scoped-mention={part.kind}
+      >
+        {part.text}
+      </Badge>
     ) : (
       <SkillTokenText key={index} text={part.text} />
     ),

@@ -137,7 +137,7 @@ async function tooltipText(element: HTMLElement): Promise<string> {
   return text;
 }
 
-/** Visible text of the highlighted working copy option; a fully shown path is not repeated in a hint. */
+/** Visible text of the highlighted working copy option: branch, folder name and marker (the path is its hint). */
 function highlightedPath(): string | null {
   const option = document.querySelector<HTMLElement>('[data-active][role="option"]');
   return option?.textContent ?? null;
@@ -489,7 +489,7 @@ it.each(["/repo", tree.path])(
     await act(async () => trigger.click());
     const selected = document.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')!;
     const other = document.querySelector<HTMLElement>('[role="option"][aria-selected="false"]')!;
-    expect(selected.textContent).toContain(executionCwd);
+    expect(selected.textContent).toContain(executionCwd === "/repo" ? "Project folder" : "feature");
     expect(selected.hasAttribute("data-active")).toBe(true);
     expect(other.hasAttribute("data-active")).toBe(false);
     await act(async () =>
@@ -543,13 +543,13 @@ it("highlights the current worktree after a cold load and keeps navigation throu
   await act(async () =>
     search.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })),
   );
-  expect(highlightedPath()).toContain(main.path);
+  expect(highlightedPath()).toContain("Project folder");
   vi.mocked(listWorktrees).mockResolvedValue({
     ...result(),
     worktrees: [tree, main],
   });
   await act(async () => notifyGitChanged());
-  expect(highlightedPath()).toContain(main.path);
+  expect(highlightedPath()).toContain("Project folder");
 });
 
 it("highlights search results and restores the current worktree when search is cleared", async () => {
@@ -565,7 +565,7 @@ it("highlights search results and restores the current worktree when search is c
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
   const search = document.querySelector<HTMLInputElement>('[aria-label="Search worktrees"]')!;
   await act(async () => type(search, "main"));
-  expect(highlightedPath()).toContain("/repo");
+  expect(highlightedPath()).toContain("Project folder");
   await act(async () => type(search, "no matches"));
   expect(document.querySelector('[data-active][role="option"]')).toBeNull();
   await act(async () => type(search, ""));
@@ -612,17 +612,13 @@ it.each([
     );
     await act(async () => trigger.click());
     const options = document.querySelectorAll('[role="option"]');
-    for (const [index, Icon] of [GitBranch, FolderTree].entries()) {
-      expect(
-        options[index].querySelector(
-          index === 0 ? "svg.lucide-git-branch" : "svg.lucide-folder-tree",
-        )?.outerHTML,
-      ).toBe(
+    // Every worktree row has the one branch icon, and no second worktree icon.
+    for (const option of options) {
+      expect(option.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
+      expect(option.querySelector("svg.lucide-folder-tree")).toBeNull();
+      expect(option.querySelector("svg.lucide-git-branch")?.outerHTML).toBe(
         renderToStaticMarkup(
-          createElement(Icon, {
-            className: "icon-sm shrink-0",
-            tone: "secondary",
-          }),
+          createElement(GitBranch, { className: "icon-sm shrink-0", tone: "secondary" }),
         ),
       );
     }

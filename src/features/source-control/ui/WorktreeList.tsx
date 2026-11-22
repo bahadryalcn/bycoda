@@ -3,7 +3,9 @@ import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { t } from "../../../shared/i18n/git";
 import { pathKey } from "../../../shared/lib/paths";
 import { FolderTree, GitBranch } from "../../../shared/ui/icons";
-import type { WorktreeRow } from "../model/worktreeRows";
+import { Tooltip } from "../../../shared/ui/Tooltip";
+import { CheckoutIdentity, CheckoutStatus } from "./CheckoutIdentity";
+import { worktreeGroupLabel, type WorktreeRow } from "../model/worktreeRows";
 
 /** Active-path marker of the leading "All worktrees" row. */
 export const ALL_WORKTREES_ACTIVE = "*all-worktrees*";
@@ -54,14 +56,31 @@ export function useWorktreeList({
       ...allOption,
       ...rows.map((row) => ({
         value: pathKey(row.path),
-        title: row.title,
-        description: row.detail,
-        icon: row.isMain ? (
-          <GitBranch className="icon-sm shrink-0" tone="secondary" />
-        ) : (
-          <FolderTree className="icon-sm shrink-0" tone="secondary" />
+        // The one row format: bold branch, muted folder, marker; the full path is the hint.
+        title: (
+          <Tooltip label={row.path} asChild>
+            <span className="flex min-w-0">
+              <CheckoutIdentity
+                icon={false}
+                title={row.title}
+                detail={row.folder}
+                marker={row.current ? t("This session") : undefined}
+              />
+            </span>
+          </Tooltip>
         ),
-        trailing: trailing?.(row),
+        textValue: `${row.title} ${row.folder}`,
+        group: worktreeGroupLabel(
+          row.group,
+          rows.filter((other) => other.group === row.group).length,
+        ),
+        icon: <GitBranch className="icon-sm shrink-0" tone="secondary" />,
+        trailing: (
+          <>
+            <CheckoutStatus dirty={row.tree.dirty} ahead={row.tree.unpushed ?? 0} />
+            {trailing?.(row)}
+          </>
+        ),
         disabled,
       })),
     ],

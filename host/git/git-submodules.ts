@@ -1,5 +1,5 @@
-import { realpath, stat } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { readFile, realpath, stat } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { hostGitExec } from "./git-exec-pool";
 import {
@@ -65,6 +65,19 @@ export function sharedHostGitSubmodules(
   return scan;
 }
 
+/**
+ * True when the directory's `.git` is a file pointing into `<common dir>/worktrees/<name>`, which
+ * is how Git links any worktree (of this repository or another) to its repository. Submodules
+ * point into `modules/` and independent repositories have a `.git` directory.
+ */
+async function isLinkedWorktree(directory: string): Promise<boolean> {
+  const text = await readFile(join(directory, ".git"), "utf8").catch(() => "");
+  const gitdir = /^gitdir:\s*(.+?)\s*$/m.exec(text)?.[1];
+  if (!gitdir) return false;
+  const target = resolve(directory, gitdir).split(sep).join("/");
+  return /\/worktrees\/[^/]+\/?$/i.test(target);
+}
+
 /** Initialized gitlinks by default; opt-in source repositories. Never clones or moves a checkout. */
 export async function hostGitSubmodules(
   cwd: string,
@@ -117,8 +130,13 @@ export async function hostGitSubmodules(
     const discovery = await nestedRepositoryCandidates(root, remaining);
     limit ??= discovery.limit;
     const children: string[] = [];
+    // A linked worktree is another checkout, not a repository of this one; nothing inside it counts.
+    const worktrees: string[] = [];
+    for (const candidate of discovery.repositories)
+      if (await isLinkedWorktree(candidate)) worktrees.push(await realpath(candidate));
     for (const candidate of discovery.repositories) {
       const child = await realpath(candidate);
+      if (worktrees.some((tree) => child === tree || child.startsWith(tree + sep))) continue;
       const rel = relative(root, child);
       if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) || seen.has(child))
         continue;

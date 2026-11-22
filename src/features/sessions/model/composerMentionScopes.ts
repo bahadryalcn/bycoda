@@ -1,6 +1,9 @@
 import { NOTE_MENTION_PREFIX, NOTES_MENTION_SCOPE } from "../../notes";
 import type { RankedFile } from "../../files";
 import { CREWS_MENTION_SCOPE } from "./crewMentions";
+import { providerForAlias } from "../../inbox/public/workItemMentions";
+import { ignoredMentionMarkdown } from "../../../shared/lib/text/ignoredMentionMarkdown";
+import { isMarkdownBlockquotePosition } from "./quoteDraft";
 
 export type ComposerMentionScope = typeof CREWS_MENTION_SCOPE | typeof NOTES_MENTION_SCOPE;
 const SCOPE_HINT_PATH = "composer-mention-scope/";
@@ -38,4 +41,44 @@ export function composerMentionScopeHintOf(file: {
 
 export function scopedNoteMentionLabel(label: string): string {
   return `${NOTES_MENTION_SCOPE}${label.slice(NOTE_MENTION_PREFIX.length)}`;
+}
+
+export type ScopedMentionKind = "crew" | "note" | "work-item";
+
+/** Visual ranges also work for saved messages with no project catalog. */
+export function scopedMentionRanges(
+  text: string,
+  { markdownTree = false } = {},
+): { start: number; end: number; kind: ScopedMentionKind }[] {
+  if (!text.includes("@")) return [];
+  const ranges: ReturnType<typeof scopedMentionRanges> = [];
+  const tokens =
+    /(^|[\s([{])(@(?:(?:crews:|notes:|note\/)[a-z0-9_-]+(?=[.,;:!?)\]}"']*(?:\s|$))|([a-z]+):[a-z0-9](?:[a-z0-9_./#!-]*[a-z0-9])?))/gi;
+  let ignored: Uint8Array | undefined;
+  for (const match of text.matchAll(tokens)) {
+    const [, boundary, token, alias] = match;
+    if (alias && !providerForAlias(alias)) continue;
+    const start = match.index + boundary.length;
+    if (!markdownTree) ignored ??= ignoredMentionMarkdown(text);
+    if (ignored?.[start] || (markdownTree && isMarkdownBlockquotePosition(text, start))) continue;
+    const kind = alias
+      ? "work-item"
+      : token.slice(1).toLowerCase().startsWith(CREWS_MENTION_SCOPE)
+        ? "crew"
+        : "note";
+    ranges.push({ start, end: start + token.length, kind });
+  }
+  return ranges;
+}
+
+export function scopedMentionParts(text: string): { text: string; kind?: ScopedMentionKind }[] {
+  const parts: ReturnType<typeof scopedMentionParts> = [];
+  let offset = 0;
+  for (const { start, end, kind } of scopedMentionRanges(text)) {
+    if (start > offset) parts.push({ text: text.slice(offset, start) });
+    parts.push({ text: text.slice(start, end), kind });
+    offset = end;
+  }
+  if (offset < text.length) parts.push({ text: text.slice(offset) });
+  return parts;
 }

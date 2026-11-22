@@ -260,12 +260,19 @@ export function invalidateHostWorktrees(cwd?: string): void {
   else listCache.delete(cwd);
 }
 
-function build(text: string): HostWorktrees {
-  const worktrees = parse(text).map((tree) => ({
-    ...tree,
-    path: available(tree.path) ? canonicalWorkspacePathSync(tree.path) : tree.path,
-    missing: !available(tree.path),
-  }));
+// Asynchronous and parallel: a project lists dozens of worktrees, and synchronous stat/realpath for each held
+// the Host main thread for 1.75 s on Windows (file-system filter drivers inspect every call).
+async function build(text: string): Promise<HostWorktrees> {
+  const worktrees = await Promise.all(
+    parse(text).map(async (tree) => {
+      const present = await stat(tree.path).then(
+        (info) => info.isDirectory(),
+        () => false,
+      );
+      const path = present ? await canonicalWorkspacePath(tree.path).catch(() => undefined) : undefined;
+      return { ...tree, path: path ?? tree.path, missing: path === undefined };
+    }),
+  );
   const main = worktrees[0];
   if (!main) throw new Error("No working copies found");
   return {
@@ -303,8 +310,8 @@ function listCached(
     generation: listGeneration,
     promise: hostGitExec
       .exec("git", LIST_ARGS, { ...bufferedOptions(cwd), lane })
-      .then(({ stdout }) => {
-        const value = build(stdout);
+      .then(async ({ stdout }) => {
+        const value = await build(stdout);
         entry.value = value;
         return value;
       }),

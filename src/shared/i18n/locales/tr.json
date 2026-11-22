@@ -12473,5 +12473,7 @@
   " branch is deleted if it is fully merged.": " dalı tamamen birleştirilmişse silinir.",
   "The branch is deleted if it is fully merged.": "Dal, tamamen birleştirilmişse silinir.",
   "All worktrees": "Tüm çalışma ağaçları",
-  "Clean · {p0}": "Temiz · {p0}"
+  "Clean · {p0}": "Temiz · {p0}",
+  "With changes": "Değişiklik olanlar",
+  "Separate repository": "Ayrı depo"
 }

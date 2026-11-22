@@ -12473,5 +12473,7 @@
   " branch is deleted if it is fully merged.": " est supprimée si elle est entièrement fusionnée.",
   "The branch is deleted if it is fully merged.": "La branche est supprimée si elle est entièrement fusionnée.",
   "All worktrees": "Tous les arbres de travail",
-  "Clean · {p0}": "Propre · {p0}"
+  "Clean · {p0}": "Propre · {p0}",
+  "With changes": "Avec modifications",
+  "Separate repository": "Dépôt séparé"
 }

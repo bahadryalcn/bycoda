@@ -13,6 +13,7 @@ import { attachComposerInlineInput } from "./composerInlineInput";
 import { inlineComposerWidgets } from "./composerInlineWidgets";
 import {
   composerInlineReferences,
+  isInlineMentionMark,
   type InlineReference,
   type InlineReferenceContext,
 } from "./composerInlineReferences";
@@ -83,7 +84,9 @@ export function ComposerInlineEditor({
     if (!input || !parent || editor.current || !parent.parentElement?.clientWidth || !input.value)
       return;
     const configuration = current();
-    if (!composerInlineReferences(input.value, configuration.references).length) return;
+    // Highlight-only mentions already work in the textarea and do not need replacement widgets.
+    const references = composerInlineReferences(input.value, configuration.references);
+    if (references.every(isInlineMentionMark)) return;
     const widgets = inlineComposerWidgets(configuration.references, {
       open,
       remove,

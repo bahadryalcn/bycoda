@@ -24,6 +24,7 @@ import { Alert } from "../../shared/ui/Alert";
 import { TextField } from "../../shared/ui/TextField";
 import { Modal } from "../../shared/ui/Modal";
 import { Button } from "../../shared/ui/Button";
+import { ButtonGroup } from "../../shared/ui/ButtonGroup";
 import { Tab } from "../../shared/ui/Tabs";
 import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
 import { WorkspaceTabList } from "./WorkspaceTabList";
@@ -88,6 +89,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Archive,
   Chatting,
+  ChevronDown,
   CheckList,
   DashboardSquare,
   Bot,
@@ -99,7 +101,6 @@ import {
   GitPullRequest,
   Inbox,
   ListFilter,
-  MessageSquarePlus,
   PanelLeft,
   Pin,
   PinOff,
@@ -1424,6 +1425,7 @@ function SidebarComponent({
     lastSessionsOpen ? "7d" : "all",
   );
   const [newSessionProjectOpen, setNewSessionProjectOpen] = useState(false);
+  const chooseNewSessionProject = onNewListedSession && (() => setNewSessionProjectOpen(true));
   const [handledNewSessionRequest, setHandledNewSessionRequest] = useState(newListedSessionRequest);
   if (newListedSessionRequest !== handledNewSessionRequest) {
     setHandledNewSessionRequest(newListedSessionRequest);
@@ -3567,9 +3569,7 @@ function SidebarComponent({
   // of leaving an empty row over the Workspace selector.
   const workspaceHeader = (withVisitNav = false) => {
     const switcher = !lastSessionsOpen && !remoteProject && cwd && cwd !== "~";
-    const createSession = lastSessionsOpen
-      ? onNewListedSession && (() => setNewSessionProjectOpen(true))
-      : onNew;
+    const createSession = lastSessionsOpen ? undefined : onNew;
     return (
       <PaneHeader
         dragRegion
@@ -3594,7 +3594,14 @@ function SidebarComponent({
             </Text>
           )
         }
-        trailing={createSession ? <WorkspaceNewSessionButton onNew={createSession} /> : null}
+        trailing={
+          createSession || chooseNewSessionProject ? (
+            <WorkspaceNewSessionButton
+              onNew={createSession}
+              onChooseProject={chooseNewSessionProject}
+            />
+          ) : null
+        }
       >
         {withVisitNav || (compactRailVisible && onToggleProjectRail) ? (
           <div className="flex shrink-0 items-center gap-1" data-workspace-navigation>
@@ -3745,6 +3752,7 @@ function SidebarComponent({
               onOpenProject={onOpenProject}
               onRemoveProject={onRemoveProject}
               onNew={onNew}
+              onChooseNewSessionProject={chooseNewSessionProject}
               onSearch={onSearch}
               onOpenInbox={onOpenInbox}
               onOpenNotificationSettings={onOpenNotificationSettings}
@@ -4874,6 +4882,7 @@ function SidebarProjectPicker({
   onOpenProject,
   onRemoveProject,
   onNew,
+  onChooseNewSessionProject,
   onSearch,
   onOpenInbox,
   onOpenNotificationSettings,
@@ -4899,6 +4908,7 @@ function SidebarProjectPicker({
   onOpenProject?: () => void;
   onRemoveProject?: Props["onRemoveProject"];
   onNew?: () => string | void;
+  onChooseNewSessionProject?: () => void;
   onSearch?: () => void;
   onOpenInbox?: () => void;
   onOpenNotificationSettings?: (projectPath?: string) => void;
@@ -4928,9 +4938,7 @@ function SidebarProjectPicker({
       actions={
         <>
           {onNew ? (
-            <IconButton label={t("New session")} command="Tab: New" onClick={onNew}>
-              <Plus className="icon-sm" strokeWidth={1.75} />
-            </IconButton>
+            <WorkspaceNewSessionButton onNew={onNew} onChooseProject={onChooseNewSessionProject} />
           ) : null}
           {onSearch ? (
             <IconButton
@@ -5367,24 +5375,60 @@ function CompactRailAction({
   );
 }
 
-function WorkspaceNewSessionButton({ onNew }: { onNew: () => void }) {
+function WorkspaceNewSessionButton({
+  onNew,
+  onChooseProject,
+}: {
+  onNew?: () => void;
+  onChooseProject?: () => void;
+}) {
   const t = useT();
   const shortcut = useKeybindingShortcut("Tab: New");
   const label = t("New session");
-  return (
+  const primary = (
     <Button
       aria-label={label}
+      aria-haspopup={!onNew && onChooseProject ? "dialog" : undefined}
       tooltip={label}
       shortcut={shortcut || undefined}
       motion="none"
       padding={{ inline: "sm" }}
-      startIcon={<MessageSquarePlus className="icon-sm" strokeWidth={1.75} />}
-      onClick={onNew}
+      variant={onNew && onChooseProject ? "ghost" : undefined}
+      tone="accent"
+      startIcon={
+        <img src={`${import.meta.env.BASE_URL}new-session.png`} alt="" className="icon-sm" />
+      }
+      onClick={onNew ?? onChooseProject}
+      onContextMenu={
+        onChooseProject &&
+        ((event) => {
+          event.preventDefault();
+          onChooseProject();
+        })
+      }
       data-session-selection-keep
       data-usage-guide="new-session"
     >
       <span className={styles.newSessionLabel}>{label}</span>
     </Button>
+  );
+  if (!onNew || !onChooseProject) return primary;
+  return (
+    <ButtonGroup aria-label={label}>
+      {primary}
+      <Button
+        variant="ghost"
+        tone="accent"
+        motion="none"
+        iconOnly
+        label={t("Choose project")}
+        aria-haspopup="dialog"
+        onClick={onChooseProject}
+        data-session-selection-keep
+      >
+        <ChevronDown className="icon-sm" />
+      </Button>
+    </ButtonGroup>
   );
 }
 

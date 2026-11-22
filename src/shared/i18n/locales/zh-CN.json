@@ -12473,5 +12473,7 @@
   " branch is deleted if it is fully merged.": " 如果已完全合并，则会删除。",
   "The branch is deleted if it is fully merged.": "如果已完全合并，则会删除该分支。",
   "All worktrees": "所有工作树",
-  "Clean · {p0}": "干净 · {p0}"
+  "Clean · {p0}": "干净 · {p0}",
+  "With changes": "有更改",
+  "Separate repository": "独立仓库"
 }

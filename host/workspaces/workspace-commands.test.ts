@@ -91,6 +91,35 @@ async function managedDeliverySetup(startMutation?: WorkspaceCommandDelivery["st
   return { commands, registry, service, project, tree, git, projects };
 }
 
+it("generates commit context from working changes without staging and prefers a populated index", async () => {
+  const { commands, tree, git } = await managedDeliverySetup();
+  const tracked = join(tree, "tracked.txt");
+  await writeFile(tracked, "baseline\n");
+  git(tree, "add", "tracked.txt");
+  git(tree, "commit", "-qm", "track file");
+  await expect(commands.run("git_staged_context", { cwd: tree })).rejects.toThrow(
+    "No changes to summarize",
+  );
+
+  await writeFile(tracked, "working edit\n");
+  await writeFile(join(tree, "new.txt"), "untracked content\n");
+  await expect(commands.run("git_staged_context", { cwd: tree })).resolves.toMatchObject({
+    summary: expect.stringContaining("Untracked files:\nnew.txt"),
+    patch: expect.stringContaining("+working edit"),
+  });
+  expect(git(tree, "diff", "--cached", "--name-only")).toBe("");
+
+  git(tree, "add", "tracked.txt");
+  await writeFile(tracked, "later edit\n");
+  const context = await commands.run("git_staged_context", { cwd: tree });
+  expect(context).toMatchObject({
+    summary: expect.stringContaining("tracked.txt"),
+    patch: expect.stringContaining("+working edit"),
+  });
+  expect(context).not.toMatchObject({ patch: expect.stringContaining("later edit") });
+  expect(context).not.toMatchObject({ summary: expect.stringContaining("new.txt") });
+});
+
 it("fences Git and editor writes while leaving reads available and releases admission on success or validation failure", async () => {
   const release = vi.fn(async () => {});
   const startMutation = vi

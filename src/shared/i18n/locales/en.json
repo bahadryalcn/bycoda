@@ -12473,5 +12473,7 @@
   "{p0} queued": "{p0} queued",
   "worktree": "worktree",
   "In a worktree": "In a worktree",
-  "Checked out in {p0}. A started session stays in its worktree.": "Checked out in {p0}. A started session stays in its worktree."
+  "Checked out in {p0}. A started session stays in its worktree.": "Checked out in {p0}. A started session stays in its worktree.",
+  "With changes": "With changes",
+  "Separate repository": "Separate repository"
 }

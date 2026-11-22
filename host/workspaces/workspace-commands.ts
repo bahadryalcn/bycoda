@@ -1751,10 +1751,24 @@ export class WorkspaceCommands {
   private async gitStagedContext(cwd: unknown) {
     const [index, summary, patch] = await Promise.all([
       this.gitIndex(cwd),
-      this.gitCommand(cwd, ["diff", "--cached", "--stat"]),
-      this.gitCommand(cwd, ["diff", "--cached", "--no-ext-diff"]),
+      this.gitCommand(cwd, ["diff", "--cached", "--stat", "--"]),
+      this.gitCommand(cwd, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--"]),
     ]);
-    return { branch: index.branch, summary, patch };
+    if (summary.trim() || patch.trim()) return { branch: index.branch, summary, patch };
+
+    // The desktop already summarizes working changes if the index is empty.
+    // Listing new file names gives the same context without mutating the index.
+    const [workingSummary, workingPatch, untracked] = await Promise.all([
+      this.gitCommand(cwd, ["diff", "--stat", "--"]),
+      this.gitCommand(cwd, ["diff", "--no-ext-diff", "--no-textconv", "--"]),
+      this.gitCommand(cwd, ["ls-files", "--others", "--exclude-standard", "--"]),
+    ]);
+    const names = untracked.trim();
+    const changes = [workingSummary.trim(), names ? `Untracked files:\n${names}` : ""]
+      .filter(Boolean)
+      .join("\n");
+    if (!changes && !workingPatch.trim()) throw new Error("No changes to summarize");
+    return { branch: index.branch, summary: changes, patch: workingPatch };
   }
 
   private async gitRangeContext(cwd: unknown) {

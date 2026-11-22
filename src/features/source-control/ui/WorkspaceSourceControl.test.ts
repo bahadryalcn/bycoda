@@ -80,6 +80,7 @@ vi.mock("./GitChangesPanel", () => ({
     repository?: {
       name: string;
       expanded?: boolean;
+      nested?: boolean;
       onToggle: (value: boolean) => void;
     };
     onOpenFile: (path: string, kind: string) => void;
@@ -94,6 +95,7 @@ vi.mock("./GitChangesPanel", () => ({
         "data-cwd": props.cwd,
         "data-compact": !!props.repository,
         "data-has-checkout": !!props.checkout,
+        "data-nested": !!props.repository?.nested,
       },
       createElement(
         "button",
@@ -522,6 +524,43 @@ it("lists a focused worktree's child repositories as rows", async () => {
   discovery.modules = { "/t/idle": ["/t/idle/pkg"] };
   await renderCheckouts("/t/mine/src", trees, "/t/idle");
   expect(mounted()).toEqual(["/t/idle", "/t/idle/pkg"]);
+});
+it("never lists another worktree as a separate repository of the focused one", async () => {
+  // A worktree that lives inside the project folder is found by child discovery too.
+  discovery.modules = { "/repo": ["/repo/mobile", "/t/work", "/t/idle"] };
+  await renderCheckouts("/t/mine/src", trees, "/repo");
+  expect(mounted()).toEqual(["/repo", "/repo/mobile"]);
+  expect(rowPaths()).toEqual([]);
+  // The one nested repository is its own collapsed section, flagged as separate (the panel
+  // draws the repository icon and marker from that flag); the focused worktree is not.
+  const mobile = host.querySelector<HTMLElement>('[data-cwd="/repo/mobile"]')!;
+  expect(mobile.querySelector("button")!.getAttribute("aria-expanded")).toBe("false");
+  expect(mobile.dataset.nested).toBe("true");
+  expect(host.querySelector<HTMLElement>('[data-cwd="/repo"]')!.dataset.nested).toBe("false");
+});
+it("labels the worktrees with work and keeps clean ones in a collapsed group, in that order", async () => {
+  await renderCheckouts();
+  const text = host.querySelector<HTMLElement>("[data-checkout-overview]")!.textContent!;
+  // Session worktree and project folder are open panels; the label precedes the collapsed rows.
+  expect(text.indexOf("With changes")).toBeGreaterThan(-1);
+  const rows = host.querySelector<HTMLElement>('[data-worktree-row="/t/work"]')!;
+  const label = [...host.querySelectorAll<HTMLElement>("div")].find(
+    (node) => node.textContent === "With changes",
+  )!;
+  expect(label.compareDocumentPosition(rows) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const clean = [...host.querySelectorAll("button")].find((b) => b.textContent === "Clean · 2")!;
+  expect(rows.compareDocumentPosition(clean) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+it("draws a collapsed worktree row once: branch icon, branch, folder, no Worktree label or path", async () => {
+  await renderCheckouts();
+  const row = host.querySelector<HTMLElement>('[data-worktree-row="/t/work"]')!;
+  expect(row.querySelectorAll("svg.lucide-git-branch")).toHaveLength(1);
+  expect(row.querySelector("svg.lucide-folder-tree")).toBeNull();
+  expect(row.textContent).toContain("work");
+  expect(row.textContent).not.toContain("Worktree");
+  expect(row.textContent).not.toContain("/t/work");
+  // A dirty record shows the change dot.
+  expect(row.querySelector('[aria-label="Changes"]')).not.toBeNull();
 });
 it("falls back to the overview when the focused worktree left the list", async () => {
   await renderCheckouts("/t/mine/src", trees, "/t/gone");

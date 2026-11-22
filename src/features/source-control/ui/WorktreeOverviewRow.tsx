@@ -1,17 +1,14 @@
-import { Badge } from "../../../shared/ui/Badge";
-import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
-import { FolderTree, GitBranch } from "../../../shared/ui/icons";
-import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
+import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { worktreeRowDetail, worktreeRowTitle } from "../model/worktreeRows";
+import { worktreeRowFolder, worktreeRowTitle } from "../model/worktreeRows";
 import type { Worktree } from "../model/worktrees";
-import { AheadBehindCount } from "./AheadBehindCount";
+import { CheckoutIdentity, CheckoutStatus } from "./CheckoutIdentity";
 import styles from "./CheckoutHeader.module.css";
 
 /**
  * A worktree row of the All-worktrees overview while it is collapsed. It is drawn from the
- * worktree record alone (title, path, dirty, unpushed), so a collapsed row reads no Git state and
+ * worktree record alone (title, folder, dirty, unpushed), so a collapsed row reads no Git state and
  * mounts no changes panel; expanding it swaps in the full panel.
  */
 export function CollapsedWorktreeRow({
@@ -24,8 +21,6 @@ export function CollapsedWorktreeRow({
   onExpand: () => void;
 }) {
   useLocale();
-  const title = worktreeRowTitle(tree);
-  const Icon = tree.isMain ? GitBranch : FolderTree;
   return (
     <Text
       as="header"
@@ -42,38 +37,17 @@ export function CollapsedWorktreeRow({
         expanded={false}
         chevron="start"
         onClick={onExpand}
-        tooltip={`${title} · ${tree.path}`}
+        // The row already shows branch and folder; the hint adds where it lives.
+        tooltip={tree.path}
         className={styles.disclosure}
       >
-        <span className={styles.identity}>
-          <Icon aria-hidden className="icon-xs shrink-0" tone="secondary" />
-          <Text
-            size="caption"
-            leading="inherit"
-            tone="primary"
-            weight="medium"
-            className={styles.name}
-          >
-            <MiddleTruncate className="min-w-0">{title}</MiddleTruncate>
-          </Text>
-          <Text size="caption" leading="inherit" tone="secondary" truncate className={styles.path}>
-            {worktreeRowDetail(tree)}
-          </Text>
-        </span>
-        {current ? (
-          <Text size="caption" leading="inherit" tone="accent" className={styles.current}>
-            {t("Current")}
-          </Text>
-        ) : null}
+        <CheckoutIdentity
+          title={worktreeRowTitle(tree)}
+          detail={worktreeRowFolder(tree)}
+          marker={current ? t("This session") : undefined}
+        />
       </Button>
-      <span className={styles.summary}>
-        {tree.dirty ? (
-          <Badge size="xs" appearance="subtle">
-            {t("Changes")}
-          </Badge>
-        ) : null}
-        <AheadBehindCount ahead={tree.unpushed ?? 0} behind={0} hideZero />
-      </span>
+      <CheckoutStatus dirty={tree.dirty} ahead={tree.unpushed ?? 0} />
     </Text>
   );
 }

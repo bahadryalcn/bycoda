@@ -12473,5 +12473,7 @@
   " branch is deleted if it is fully merged.": " Zweig wird gelöscht, wenn er vollständig zusammengeführt ist.",
   "The branch is deleted if it is fully merged.": "Der Zweig wird gelöscht, wenn er vollständig zusammengeführt ist.",
   "All worktrees": "Alle Arbeitsbäume",
-  "Clean · {p0}": "Sauber · {p0}"
+  "Clean · {p0}": "Sauber · {p0}",
+  "With changes": "Mit Änderungen",
+  "Separate repository": "Separates Repository"
 }

@@ -127,7 +127,13 @@ export function WorkspaceSourceControl({
       : paths;
   const { modules, limits, error, refresh } = useGitSubmodules(discoveryRoots, enabled, true);
   const connectionShownCentrally = useConnectionErrorShownCentrally(error);
-  const repositories = checkoutRepositoryPaths(checkouts ? discoveryRoots : paths, modules);
+  // Another listed worktree is never a repository of this one, even when it sits inside its folder.
+  const repositories = checkoutRepositoryPaths(checkouts ? discoveryRoots : paths, modules).filter(
+    (path) =>
+      !checkouts ||
+      discoveryRoots.some((root) => same(root, path)) ||
+      !paths.some((other) => same(other, path)),
+  );
   const childNames = new Map(
     Object.entries(modules).flatMap(([parent, children]) =>
       children.map(
@@ -322,6 +328,7 @@ export function WorkspaceSourceControl({
           name: name(path),
           checkout: worktrees[path],
           current: checkouts && own(path),
+          nested: checkouts && childNames.has(projectKey(path)),
           pointer: pointerOf(path),
           expanded: expanded[projectKey(path)] ?? (checkouts ? rowOpen(path) : undefined),
           onToggle: (value) =>
@@ -450,7 +457,22 @@ export function WorkspaceSourceControl({
             >
               {checkouts && groups && !focused ? (
                 <>
-                  {[...groups.primary, ...groups.active].map(renderWorktree)}
+                  {groups.primary.map(renderWorktree)}
+                  {groups.active.length > 0 ? (
+                    <>
+                      <div {...surfaceAttributes({ separator: "block" })}>
+                        <Text
+                          as="div"
+                          size="caption"
+                          tone="secondary"
+                          className={styles.groupLabel}
+                        >
+                          {t("With changes")}
+                        </Text>
+                      </div>
+                      {groups.active.map(renderWorktree)}
+                    </>
+                  ) : null}
                   {groups.idle.length > 0 ? (
                     <>
                       <div {...surfaceAttributes({ separator: "block" })}>

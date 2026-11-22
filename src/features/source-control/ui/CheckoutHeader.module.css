@@ -79,6 +79,7 @@
 .summary {
   display: flex;
   flex-shrink: 0;
+  margin-inline-start: auto;
   flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
@@ -131,4 +132,9 @@
   .conflicts {
     display: none;
   }
+}
+
+.marker {
+  flex-shrink: 0;
+  white-space: nowrap;
 }

@@ -3677,7 +3677,7 @@ export const Composer = memo(function Composer({
           </ComposerSuggestions>
         ) : null}
         {mentionOpen && !pickerOpen ? (
-          <ComposerSuggestions anchor={boxRef} below={shell} solid>
+          <ComposerSuggestions anchor={boxRef} below={shell} solid matchComposer>
             <FileMentionPicker
               files={rankedFiles}
               query={mention?.query ?? ""}

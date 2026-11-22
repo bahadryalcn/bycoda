@@ -3090,6 +3090,10 @@ function Workspace({
         throw new Error(t("This project is no longer available."));
       }
       onNewSessionForProject(project);
+      if (!sameProjectPath(project, sidebarCwd)) {
+        setLastSessionsOpen(false);
+        setSidebarTab("sessions", project);
+      }
     },
     onOpenLastSessions: () => {
       setLastSessionsOpen(true);

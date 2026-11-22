@@ -16,7 +16,7 @@ import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
 import { shortSha } from "../../../shared/lib/shortSha";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
-import { Plus } from "../../../shared/ui/icons";
+import { ChevronDown, ChevronRight, GitBranch, Plus } from "../../../shared/ui/icons";
 
 /** The sidebar title. Picking a worktree narrows the sidebar, and the
  * sessions opened from it, to that working copy and names it here. */
@@ -196,10 +196,12 @@ export function SidebarWorktreeSwitcher({
               className="shrink-0"
               tone="muted"
             />
-          ) : undefined
+          ) : (
+            <ChevronDown aria-hidden className="icon-xs shrink-0" tone="secondary" />
+          )
         }
-        tooltip={fullTitle}
-        tooltipDetails={focus ? [prettyCwd(focus.path)] : undefined}
+        // The trigger shows project and branch; the hint adds the folder, or the clipped text.
+        tooltip={focus ? prettyCwd(focus.path) : fullTitle}
         tooltipWhen={focus ? "always" : "overflow"}
         onClick={() => {
           if (open) closePicker();
@@ -219,9 +221,15 @@ export function SidebarWorktreeSwitcher({
           {project}
         </MiddleTruncate>
         {copyName ? (
-          <MiddleTruncate mode="text" tone="muted" className="min-w-0" data-workspace-copy-name>
-            {copyName}
-          </MiddleTruncate>
+          <>
+            <ChevronRight aria-hidden className="icon-xs shrink-0" tone="secondary" />
+            {focus || !hasAll ? (
+              <GitBranch aria-hidden className="icon-xs -ms-1 shrink-0" tone="secondary" />
+            ) : null}
+            <MiddleTruncate mode="text" tone="muted" className="min-w-0" data-workspace-copy-name>
+              {copyName}
+            </MiddleTruncate>
+          </>
         ) : null}
       </Button>
       {open ? (
