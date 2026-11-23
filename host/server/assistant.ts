@@ -116,8 +116,10 @@ export async function createAssistantRuntime(
       path: project.cwd,
       name: project.name,
     }));
-  const assistantKeepAwake = new HostAssistantKeepAwake();
-  assistantPorts.keepAwake = (enabled) => assistantKeepAwake.setEnabled(enabled);
+  const assistantKeepAwake = new HostAssistantKeepAwake({
+    onChange: () => assistantPorts.onChange?.(),
+  });
+  assistantPorts.keepAwake = async (enabled) => assistantKeepAwake.sync(enabled);
   assistantPorts.readPushPhones = () => dependencies.pushDevices.recipients();
   assistantPorts.readPresence = () => readOwnerAvailability();
   const assistant = new HostAssistant(dependencies.engine.store, assistantPorts);
