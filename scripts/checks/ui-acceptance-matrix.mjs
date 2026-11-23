@@ -56,7 +56,9 @@ async function shellInit() {
     path.join(root, "tests/browser/app-shell/compact-navigation.spec.ts"),
     "utf8",
   );
-  const start = spec.indexOf("page.addInitScript(") + "page.addInitScript(".length;
+  // Other tests in the spec also call addInitScript; the shell stub lives in the fixture installer.
+  const installer = Math.max(0, spec.indexOf("async function installNavigationFixture("));
+  const start = spec.indexOf("page.addInitScript(", installer) + "page.addInitScript(".length;
   const stop = spec.indexOf("\n  });\n}", start) + 4;
   if (start < "page.addInitScript(".length || stop < start) return null;
   return require("esbuild").transformSync(`(${spec.slice(start, stop)})()`, { loader: "ts" }).code;
