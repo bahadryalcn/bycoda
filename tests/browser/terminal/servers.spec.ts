@@ -755,7 +755,9 @@ test("saved SSH command previews its target and copies without terminal input or
     .click();
   const dialog = page.getByRole("region", { name: "Saved SSH commands", exact: true });
   await expect(dialog).toContainText("Target: Server 00");
-  await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Inspect directory");
+  await dialog
+    .getByRole("textbox", { name: "Name (optional)", exact: true })
+    .fill("Inspect directory");
   await dialog.getByRole("textbox", { name: "Command preview", exact: true }).fill("pwd");
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
   await expect(dialog.getByRole("list", { name: "Saved commands" })).toContainText(
@@ -791,7 +793,9 @@ test("saves and reopens a command from a saved SSH tab without a verified shell 
   await expect(dialog).toContainText("Target: Server 03");
   const command = dialog.getByRole("textbox", { name: "Command preview", exact: true });
   await expect(command).toHaveValue("");
-  await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Inspect directory");
+  await dialog
+    .getByRole("textbox", { name: "Name (optional)", exact: true })
+    .fill("Inspect directory");
   await command.fill("pwd");
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "Saved", exact: true })).toBeVisible();
@@ -834,7 +838,9 @@ for (const theme of ["light", "dark"]) {
         .dblclick();
       await page.getByRole("button", { name: "Save command", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Save command", exact: true });
-      await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Inspect directory");
+      await dialog
+        .getByRole("textbox", { name: "Name (optional)", exact: true })
+        .fill("Inspect directory");
       await dialog.getByRole("textbox", { name: "Command preview", exact: true }).fill("pwd");
       await expect(dialog.getByRole("button", { name: "Save", exact: true })).toBeInViewport();
       const folder = "temp/verification/servers-agent/saved-commands";
