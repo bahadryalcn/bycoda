@@ -17,7 +17,9 @@ const buttons = (root: ParentNode, label: string) =>
 it("asks before Start fresh lets the window save over the unreadable layout", async () => {
   const startFresh = vi.fn();
   await act(async () => showBootRestoreNotice({ canRead: async () => false, startFresh }));
-  expect(document.body.textContent).toContain("save over it");
+  expect(document.body.textContent).toContain("Could not restore your tabs");
+  // The consequence is stated once, in the confirmation, not in the toast.
+  expect(document.body.textContent).not.toContain("save over it");
 
   await act(async () => buttons(document.body, "Start fresh")[0]!.click());
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;

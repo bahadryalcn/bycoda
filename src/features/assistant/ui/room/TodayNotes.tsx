@@ -55,7 +55,7 @@ export function TodayNotes({
             {group.rows.map((row) => (
               <li key={row.key} className={styles.note} data-timed={row.time ? "" : undefined}>
                 {row.time && (
-                  <Text size="caption" tone="muted" leading="inherit" className={styles.noteTime}>
+                  <Text size="caption" tone="muted" leading="inherit">
                     {row.time}
                   </Text>
                 )}

@@ -30,7 +30,10 @@ function importBindings(file, tree) {
     const clause = statement.importClause;
     if (!clause || clause.isTypeOnly) continue;
     if (clause.name)
-      bindings.set(clause.name.text, { source, name: path.posix.basename(source, path.extname(source)) });
+      bindings.set(clause.name.text, {
+        source,
+        name: path.posix.basename(source, path.extname(source)),
+      });
     if (clause.namedBindings && ts.isNamedImports(clause.namedBindings))
       for (const item of clause.namedBindings.elements)
         if (!item.isTypeOnly)
@@ -47,33 +50,74 @@ const sharedName = (imports, name) => {
 
 const classSlot = /^(?:className|[a-z]\w*ClassName)$/;
 const additionalControls = new Set([
-  "Badge", "ButtonGroup", "Chip", "Divider", "DropdownMenu", "EmptyState", "Field", "FieldGroup",
-  "Group", "Heading", "InfoPopover", "Link", "ListRow", "Modal", "ModalActions", "NativeSelect",
-  "PaneHeader", "PickerList", "PickerPopover", "Popover", "RadioGroup", "Row", "SearchInputGroup",
-  "SectionLabel", "Sheet", "Stepper", "Surface", "Tabs", "Text", "Tooltip", "TreeRow",
+  "Badge",
+  "ButtonGroup",
+  "Chip",
+  "Divider",
+  "DropdownMenu",
+  "EmptyState",
+  "Field",
+  "FieldGroup",
+  "Group",
+  "Heading",
+  "InfoPopover",
+  "Link",
+  "ListRow",
+  "Modal",
+  "ModalActions",
+  "NativeSelect",
+  "PaneHeader",
+  "PickerList",
+  "PickerPopover",
+  "Popover",
+  "RadioGroup",
+  "Row",
+  "SearchInputGroup",
+  "SectionLabel",
+  "Sheet",
+  "Stepper",
+  "Surface",
+  "Tabs",
+  "Text",
+  "Tooltip",
+  "TreeRow",
 ]);
 
 function localModuleMembers(node, imports, resolve, add, seen = new Set()) {
   node = expressionOf(node);
   if (!node) return;
   if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
-    const member = ts.isPropertyAccessExpression(node) ? node.name.text : literal(node.argumentExpression);
+    const member = ts.isPropertyAccessExpression(node)
+      ? node.name.text
+      : literal(node.argumentExpression);
     const receiver = node.expression;
     const entry = ts.isIdentifier(receiver) && !resolve(receiver) && imports.get(receiver.text);
     if (member && entry && /^src\/(?:app|features)\/.*\.module\.css$/.test(entry.source))
       add(entry.source, member);
   } else if (ts.isIdentifier(node)) {
     const declaration = resolve(node);
-    if (!declaration || !ts.isVariableDeclaration(declaration) ||
-        !(declaration.parent.flags & ts.NodeFlags.Const) || seen.has(declaration)) return;
+    if (
+      !declaration ||
+      !ts.isVariableDeclaration(declaration) ||
+      !(declaration.parent.flags & ts.NodeFlags.Const) ||
+      seen.has(declaration)
+    )
+      return;
     seen.add(declaration);
     localModuleMembers(declaration.initializer, imports, resolve, add, seen);
-  } else if (ts.isCallExpression(node) && /^(?:cn|clsx|twMerge|twJoin)$/.test(node.expression.getText())) {
-    for (const argument of node.arguments) localModuleMembers(argument, imports, resolve, add, seen);
+  } else if (
+    ts.isCallExpression(node) &&
+    /^(?:cn|clsx|twMerge|twJoin)$/.test(node.expression.getText())
+  ) {
+    for (const argument of node.arguments)
+      localModuleMembers(argument, imports, resolve, add, seen);
   } else if (ts.isConditionalExpression(node)) {
     localModuleMembers(node.whenTrue, imports, resolve, add, seen);
     localModuleMembers(node.whenFalse, imports, resolve, add, seen);
-  } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
+  } else if (
+    ts.isBinaryExpression(node) &&
+    node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+  ) {
     localModuleMembers(node.right, imports, resolve, add, seen);
   }
 }
@@ -104,16 +148,24 @@ function lexicalBindings(tree) {
   function register(scope, name, declaration) {
     if (!scopes.has(scope)) scopes.set(scope, new Map());
     const bindings = scopes.get(scope);
-    if (ts.isIdentifier(name)) bindings.set(name.text, bindings.has(name.text) ? null : declaration);
-    else for (const item of name.elements)
-      if (ts.isBindingElement(item)) register(scope, item.name, item);
+    if (ts.isIdentifier(name))
+      bindings.set(name.text, bindings.has(name.text) ? null : declaration);
+    else
+      for (const item of name.elements)
+        if (ts.isBindingElement(item)) register(scope, item.name, item);
   }
   function visit(node, scope) {
     if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name)
       register(scope, node.name, node);
-    if (ts.isFunctionLike(node) || ts.isBlock(node) || ts.isCatchClause(node) ||
-        ts.isForStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node) ||
-        ts.isCaseBlock(node))
+    if (
+      ts.isFunctionLike(node) ||
+      ts.isBlock(node) ||
+      ts.isCatchClause(node) ||
+      ts.isForStatement(node) ||
+      ts.isForOfStatement(node) ||
+      ts.isForInStatement(node) ||
+      ts.isCaseBlock(node)
+    )
       scope = node;
     if (ts.isVariableDeclaration(node) || ts.isParameter(node)) register(scope, node.name, node);
     ts.forEachChild(node, (child) => visit(child, scope));
@@ -198,17 +250,25 @@ function textIdentity(node, resolve, normalize = normalizedText) {
 }
 
 function uncertainVisibility(opening, resolve) {
-  if (hasSpread(opening) || ["hidden", "truncate", "lineClamp", "iconOnly", "revealLabel"].some((name) => {
-    const prop = attribute(opening, name);
-    return prop && expressionOf(prop.initializer)?.kind !== ts.SyntaxKind.FalseKeyword;
-  })) return true;
+  if (
+    hasSpread(opening) ||
+    ["hidden", "truncate", "lineClamp", "iconOnly", "revealLabel"].some((name) => {
+      const prop = attribute(opening, name);
+      return prop && expressionOf(prop.initializer)?.kind !== ts.SyntaxKind.FalseKeyword;
+    })
+  )
+    return true;
   const className = expressionOf(attribute(opening, "className")?.initializer);
   if (!className) return false;
   const classes = ts.isIdentifier(className)
     ? literal(resolve(className)?.initializer)
     : literal(className);
-  return classes === null ||
-    /(?:^|[\s:])(?:hidden|invisible|sr-only|opacity-0|truncate|text-ellipsis|line-clamp-\S+)(?=\s|$)/.test(classes);
+  return (
+    classes === null ||
+    /(?:^|[\s:])(?:hidden|invisible|sr-only|opacity-0|truncate|text-ellipsis|line-clamp-\S+)(?=\s|$)/.test(
+      classes,
+    )
+  );
 }
 
 function visibleLabel(node, imports, resolve) {
@@ -226,18 +286,38 @@ function visibleLabel(node, imports, resolve) {
   }
   const texts = [];
   for (const child of node.children) {
-    if ((ts.isJsxText(child) && !child.text.trim()) ||
-        (ts.isJsxExpression(child) && !child.expression)) continue;
+    if (
+      (ts.isJsxText(child) && !child.text.trim()) ||
+      (ts.isJsxExpression(child) && !child.expression)
+    )
+      continue;
     const childOpening = openingOf(child);
     if (childOpening) {
       const name = childOpening.tagName.getText();
       const shared = sharedName(imports, name);
-      if (name === "svg" ||
-          literal(attribute(childOpening, "aria-hidden")?.initializer) === "true" ||
-          expressionOf(attribute(childOpening, "aria-hidden")?.initializer)?.kind === ts.SyntaxKind.TrueKeyword ||
-          /\/shared\/ui\/icons$/.test(imports.get(name)?.source ?? "")) continue;
-      if (!["span", "strong", "em", "b", "i", "Text", "Button", "Link", "Checkbox", "Switch", "InlineTextAction"]
-        .includes(shared ?? (!imports.has(name) && name)))
+      if (
+        name === "svg" ||
+        literal(attribute(childOpening, "aria-hidden")?.initializer) === "true" ||
+        expressionOf(attribute(childOpening, "aria-hidden")?.initializer)?.kind ===
+          ts.SyntaxKind.TrueKeyword ||
+        imports.get(name)?.source.endsWith("/shared/ui/icons")
+      )
+        continue;
+      if (
+        ![
+          "span",
+          "strong",
+          "em",
+          "b",
+          "i",
+          "Text",
+          "Button",
+          "Link",
+          "Checkbox",
+          "Switch",
+          "InlineTextAction",
+        ].includes(shared ?? (!imports.has(name) && name))
+      )
         return null;
       texts.push(visibleLabel(child, imports, resolve));
     } else if (ts.isJsxFragment(child)) texts.push(visibleLabel(child, imports, resolve));
@@ -301,7 +381,10 @@ function hoverOnly(className) {
 /** Only known settings slots with the same label and description. */
 function inlineHelpGuard(node, opening, name, imports, resolve, add) {
   if (!["Group", "Row", "Field"].includes(name) || hasSpread(opening)) return;
-  const label = textIdentity(attribute(opening, name === "Group" ? "title" : "label")?.initializer, resolve);
+  const label = textIdentity(
+    attribute(opening, name === "Group" ? "title" : "label")?.initializer,
+    resolve,
+  );
   if (!label) return;
   const description = attribute(opening, "description");
   if (description && textIdentity(description.initializer, resolve) === label)
@@ -310,9 +393,11 @@ function inlineHelpGuard(node, opening, name, imports, resolve, add) {
   for (const child of node.children) {
     if (!ts.isJsxElement(child)) continue;
     const help = child.openingElement;
-    if (sharedName(imports, help.tagName.getText()) === "Text" &&
-        ["muted", "secondary"].includes(literal(attribute(help, "tone")?.initializer)) &&
-        visibleLabel(child, imports, resolve) === label)
+    if (
+      sharedName(imports, help.tagName.getText()) === "Text" &&
+      ["muted", "secondary"].includes(literal(attribute(help, "tone")?.initializer)) &&
+      visibleLabel(child, imports, resolve) === label
+    )
       add("inline-help-text", help.getStart());
   }
 }
@@ -329,11 +414,16 @@ function renderContext(node) {
   let child = node;
   for (let parent = child.parent; parent; child = parent, parent = parent.parent) {
     if (ts.isJsxElement(parent)) {
-      if (parent.openingElement === child || uncertainRenderParent(parent.openingElement)) return child;
+      if (parent.openingElement === child || uncertainRenderParent(parent.openingElement))
+        return child;
       continue;
     }
-    if (ts.isJsxFragment(parent) || ts.isParenthesizedExpression(parent) ||
-        ts.isJsxExpression(parent)) continue;
+    if (
+      ts.isJsxFragment(parent) ||
+      ts.isParenthesizedExpression(parent) ||
+      ts.isJsxExpression(parent)
+    )
+      continue;
     if (ts.isConditionalExpression(parent) || ts.isBinaryExpression(parent)) return child;
     return parent;
   }
@@ -342,8 +432,11 @@ function renderContext(node) {
 
 // A component can choose to hide or rearrange its children. Compare ordinary wrappers only.
 function uncertainRenderParent(opening) {
-  return !/^[a-z]/.test(opening.tagName.getText()) || hasSpread(opening) ||
-    Boolean(attribute(opening, "hidden"));
+  return (
+    !/^[a-z]/.test(opening.tagName.getText()) ||
+    hasSpread(opening) ||
+    Boolean(attribute(opening, "hidden"))
+  );
 }
 
 function footerReason(node, opening, imports, resolve) {
@@ -357,21 +450,24 @@ function footerReason(node, opening, imports, resolve) {
     if (!ts.isJsxElement(parent)) return null;
     const footer = parent.openingElement;
     if (sharedName(imports, footer.tagName.getText()) === "ModalActions")
-      return !hasSpread(footer) &&
-        value === exact(attribute(footer, "reason")) ? reason : null;
+      return !hasSpread(footer) && value === exact(attribute(footer, "reason")) ? reason : null;
     if (uncertainRenderParent(footer)) return null;
   }
   return null;
 }
 
 function feedbackMessage(node, opening, name) {
-  const message = name === "FailureState"
-    ? attribute(opening, "descriptionText") ?? attribute(opening, "description")
-    : attribute(opening, "message");
+  const message =
+    name === "FailureState"
+      ? (attribute(opening, "descriptionText") ?? attribute(opening, "description"))
+      : attribute(opening, "message");
   if (message) return [message.initializer, message];
   if (ts.isJsxElement(node)) {
-    const children = node.children.filter((child) => ts.isJsxExpression(child) && child.expression ||
-      (!ts.isJsxExpression(child) && (!ts.isJsxText(child) || child.text.trim())));
+    const children = node.children.filter(
+      (child) =>
+        (ts.isJsxExpression(child) && child.expression) ||
+        (!ts.isJsxExpression(child) && (!ts.isJsxText(child) || child.text.trim())),
+    );
     if (children.length === 1) return [children[0], children[0]];
   }
   return [];
@@ -380,9 +476,11 @@ function feedbackMessage(node, opening, name) {
 function objectValue(node, name) {
   if (!node || !ts.isObjectLiteralExpression(node) || node.properties.some(ts.isSpreadAssignment))
     return null;
-  const prop = node.properties.find((item) =>
-    (ts.isPropertyAssignment(item) || ts.isShorthandPropertyAssignment(item)) &&
-    (literal(item.name) ?? item.name.getText()) === name);
+  const prop = node.properties.find(
+    (item) =>
+      (ts.isPropertyAssignment(item) || ts.isShorthandPropertyAssignment(item)) &&
+      (literal(item.name) ?? item.name.getText()) === name,
+  );
   return prop && (ts.isShorthandPropertyAssignment(prop) ? prop.name : prop.initializer);
 }
 
@@ -403,9 +501,10 @@ function duplicateFeedbackGuard(tree, imports, resolve, add) {
   const visit = (node) => {
     const opening = openingOf(node);
     if (opening && !hasSpread(opening)) {
-      const name = ts.isIdentifier(opening.tagName) && !resolve(opening.tagName)
-        ? sharedName(imports, opening.tagName.text)
-        : null;
+      const name =
+        ts.isIdentifier(opening.tagName) && !resolve(opening.tagName)
+          ? sharedName(imports, opening.tagName.text)
+          : null;
       const channel = feedbackChannels.get(name);
       if (name === "Button") {
         const reason = footerReason(node, opening, imports, resolve);
@@ -416,21 +515,33 @@ function duplicateFeedbackGuard(tree, imports, resolve, add) {
         const value = boundValue(message, resolve);
         if (value) {
           record(rendered, renderContext(node), channel, value, diagnostic);
-          if (channel !== "toast" && value.kind === ts.SyntaxKind.BindingElement &&
-              ts.isArrayBindingPattern(value.parent) && value.parent.elements[0] === value) {
+          if (
+            channel !== "toast" &&
+            value.kind === ts.SyntaxKind.BindingElement &&
+            ts.isArrayBindingPattern(value.parent) &&
+            value.parent.elements[0] === value
+          ) {
             const [state, setter] = value.parent.elements;
             const hook = state.parent.parent.initializer;
             const callee = hook && ts.isCallExpression(hook) && hook.expression;
             const imported = callee && ts.isIdentifier(callee) && imports.get(callee.text);
-            if (imported?.source === "react" && imported.name === "useState" &&
-                !resolve(callee) && setter && ts.isBindingElement(setter))
+            if (
+              imported?.source === "react" &&
+              imported.name === "useState" &&
+              !resolve(callee) &&
+              setter &&
+              ts.isBindingElement(setter)
+            )
               stateSinks.set(setter, channel);
           }
         }
       }
     }
-    if (ts.isCallExpression(node) && ts.isExpressionStatement(node.parent) &&
-        ts.isBlock(node.parent.parent))
+    if (
+      ts.isCallExpression(node) &&
+      ts.isExpressionStatement(node.parent) &&
+      ts.isBlock(node.parent.parent)
+    )
       calls.push(node);
     ts.forEachChild(node, visit);
   };
@@ -445,14 +556,21 @@ function duplicateFeedbackGuard(tree, imports, resolve, add) {
     if (ts.isIdentifier(callee)) {
       channel = stateSinks.get(resolve(callee));
       message = call.arguments[0];
-    } else if (ts.isPropertyAccessExpression(callee) && callee.name.text === "show" &&
-        ts.isIdentifier(callee.expression)) {
+    } else if (
+      ts.isPropertyAccessExpression(callee) &&
+      callee.name.text === "show" &&
+      ts.isIdentifier(callee.expression)
+    ) {
       const receiver = callee.expression;
       const local = resolve(receiver);
       const hook = local?.initializer;
-      const entry = !local ? imports.get(receiver.text)
-        : hook && ts.isCallExpression(hook) && ts.isIdentifier(hook.expression) &&
-          !resolve(hook.expression) && imports.get(hook.expression.text);
+      const entry = !local
+        ? imports.get(receiver.text)
+        : hook &&
+          ts.isCallExpression(hook) &&
+          ts.isIdentifier(hook.expression) &&
+          !resolve(hook.expression) &&
+          imports.get(hook.expression.text);
       if (inSharedUi(entry) && entry.name === (local ? "useToast" : "toast")) {
         channel = "toast";
         message = objectValue(call.arguments[0], "message");
@@ -475,7 +593,11 @@ function duplicateFeedbackGuard(tree, imports, resolve, add) {
 export function scanViewGuards(file, source, add) {
   if (!file.endsWith(".tsx") || !/^src\/(?:app|features|shared)\//.test(file)) return;
   // Avoid parsing most source files; comments and string examples are rejected by the AST.
-  if (!/card|opacity-0|invisible|Group|(?:t|T)ooltip|description|muted|secondary|ModalActions|InlineMessage|InlineError|Alert|FailureState|Toast|(?:focus|outline)[-:]/.test(source))
+  if (
+    !/card|opacity-0|invisible|Group|(?:t|T)ooltip|description|muted|secondary|ModalActions|InlineMessage|InlineError|Alert|FailureState|Toast|(?:focus|outline)[-:]/.test(
+      source,
+    )
+  )
     return;
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const imports = importBindings(file, tree);
@@ -497,9 +619,12 @@ export function scanViewGuards(file, source, add) {
       inlineHelpGuard(node, opening, name, imports, resolve, add);
       const hint = tooltipRepeatsLabel(node, opening, imports, resolve);
       if (hint) add("tooltip-repeats-label", hint.getStart(tree));
-      if (/^src\/(?:app|features)\//.test(file) &&
-          (sizedControls.has(name) || additionalControls.has(name)) &&
-          ts.isIdentifier(opening.tagName) && !resolve(opening.tagName))
+      if (
+        /^src\/(?:app|features)\//.test(file) &&
+        (sizedControls.has(name) || additionalControls.has(name)) &&
+        ts.isIdentifier(opening.tagName) &&
+        !resolve(opening.tagName)
+      )
         for (const prop of opening.attributes.properties)
           if (ts.isJsxAttribute(prop) && classSlot.test(prop.name.getText()))
             scanSharedFocusClasses(prop.getText(tree), prop.getStart(tree), add);

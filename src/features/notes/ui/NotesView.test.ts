@@ -43,15 +43,12 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 /** Project picker rows with the path each stands for. Rows show the name then the parent folder;
  *  the full path rides in the shared tooltip, not a native title. */
-function pickerRows(scope: ParentNode = document): { button: HTMLButtonElement; path: string }[] {
+function pickerRows(scope: ParentNode = document): { button: HTMLElement; path: string }[] {
   const picker = scope.querySelector('[aria-label="Project picker"]') ?? scope;
-  return [...picker.querySelectorAll<HTMLButtonElement>("button")].flatMap((button) => {
-    const [name, parent] = [...button.querySelectorAll("span.truncate, span[title]")].map(
-      (span) => span.textContent ?? "",
-    );
-    return name !== undefined && parent !== undefined
-      ? [{ button, path: `${parent}/${name}` }]
-      : [];
+  return [...picker.querySelectorAll<HTMLElement>('[role="option"]')].flatMap((button) => {
+    const name = button.querySelector("span.truncate")?.textContent;
+    const parent = button.querySelector('span[class*="meta"]')?.textContent;
+    return name != null && parent != null ? [{ button, path: `${parent}/${name}` }] : [];
   });
 }
 

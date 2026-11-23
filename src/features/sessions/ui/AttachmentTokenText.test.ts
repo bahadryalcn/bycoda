@@ -165,9 +165,8 @@ describe("AttachmentTokenText", () => {
       trigger.click();
     });
     expect(loadPreview).toHaveBeenCalledOnce();
-    expect(trigger.disabled).toBe(true);
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("Loading");
+    expect(trigger.getAttribute("aria-busy")).toBe("true");
     await act(async () => resolve(btoa("image")));
-    expect(trigger.disabled).toBe(false);
+    expect(trigger.getAttribute("aria-busy")).toBeNull();
   });
 });

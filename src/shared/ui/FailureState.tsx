@@ -202,7 +202,12 @@ export function FailureState({
               {secondaryAction ? <NoticeButton action={secondaryAction} /> : null}
               {extra}
               {onRetry ? (
-                <Button variant="primary" size="sm" loading={retryBusy} onClick={() => void retry()}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  loading={retryBusy}
+                  onClick={() => void retry()}
+                >
                   {retryText}
                 </Button>
               ) : null}

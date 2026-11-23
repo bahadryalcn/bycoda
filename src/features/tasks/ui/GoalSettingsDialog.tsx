@@ -62,7 +62,13 @@ function GoalSettingsForm({
     >
       <div className="task-form-body">
         <div className="flex min-w-0 items-center gap-1">
-          <Text as="p" size="inherit" tone="inherit" weight="medium" className="min-w-0 break-words">
+          <Text
+            as="p"
+            size="inherit"
+            tone="inherit"
+            weight="medium"
+            className="min-w-0 break-words"
+          >
             {goal.title}
           </Text>
           <InfoPopover label={t("About epic settings")} className="shrink-0">
@@ -139,13 +145,7 @@ function GoalSettingsForm({
           <Button variant="ghost" disabled={saving} onClick={onCancel}>
             {t("Cancel")}
           </Button>
-          <Button
-            variant="primary"
-            type="submit"
-            form={formId}
-            loading={saving}
-            disabled={!valid}
-          >
+          <Button variant="primary" type="submit" form={formId} loading={saving} disabled={!valid}>
             {t("Save")}
           </Button>
         </ModalActions>

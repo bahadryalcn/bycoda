@@ -5,7 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Code } from "../../../shared/ui/Code";
 import { Surface } from "../../../shared/ui/Surface";
-import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
+import { FoldVertical, UnfoldVertical } from "../../../shared/ui/icons";
 import { Link } from "../../../shared/ui/Link";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -549,9 +549,9 @@ function MarkdownCodeShell({
         onClick={() => setCollapsed((value) => !value)}
       >
         {collapsed ? (
-          <ChevronDown aria-hidden className="icon-sm" />
+          <UnfoldVertical aria-hidden className="icon-sm" />
         ) : (
-          <ChevronUp aria-hidden className="icon-sm" />
+          <FoldVertical aria-hidden className="icon-sm" />
         )}
       </Button>
       {collapsed ? (

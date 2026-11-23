@@ -159,7 +159,13 @@ describe("account center", () => {
   it("renders every tab for a signed-in account", async () => {
     mocks.state = signedIn();
     await render(AccountScreen);
-    expect(tabs()).toEqual(["Account", "Active time", "Notifications", "Privacy & data", "Support"]);
+    expect(tabs()).toEqual([
+      "Account",
+      "Active time",
+      "Notifications",
+      "Privacy & data",
+      "Support",
+    ]);
     expect(container.textContent).toContain("ada@example.com");
   });
 

@@ -60,7 +60,7 @@ function openMenu(element: Element) {
   return document.querySelector<HTMLElement>('[role="menu"][aria-label="File link actions"]');
 }
 
-async function pick(label: string, link = container.querySelector("a")!) {
+async function pick(label: string, link: Element = container.querySelector("a")!) {
   const menu = openMenu(link)!;
   const item = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
     (button) => button.textContent === label,

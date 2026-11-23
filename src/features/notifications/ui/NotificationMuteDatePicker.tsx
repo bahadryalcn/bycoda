@@ -88,11 +88,7 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
         <Button type="button" onClick={onCancel} variant="ghost">
           {t("Cancel")}
         </Button>
-        <Button
-          type="submit"
-          disabled={!projectIds.length || unavailable}
-          variant="primary"
-        >
+        <Button type="submit" disabled={!projectIds.length || unavailable} variant="primary">
           {t("Mute until then")}
         </Button>
       </div>

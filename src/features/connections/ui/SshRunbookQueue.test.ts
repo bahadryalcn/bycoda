@@ -63,7 +63,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 const button = (name: string) =>
-  [...document.querySelectorAll("button")].find((item) => item.textContent?.trim().startsWith(name))!;
+  [...document.querySelectorAll("button")].find((item) =>
+    item.textContent?.trim().startsWith(name),
+  )!;
 async function open() {
   await act(async () => root.render(createElement(SshRunbookQueue)));
   await act(async () => button("SSH reviews").click());

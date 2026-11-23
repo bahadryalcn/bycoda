@@ -34,12 +34,13 @@ const valueRoll: Variants = {
  */
 export const SelectTrigger = forwardRef<
   HTMLButtonElement,
-  ComponentPropsWithoutRef<"button"> & { expanded?: boolean }
->(function SelectTrigger({ className, expanded, children, ...props }, ref) {
+  ComponentPropsWithoutRef<"button"> & { expanded?: boolean; controlWidth?: "compact" }
+>(function SelectTrigger({ className, expanded, controlWidth, children, ...props }, ref) {
   return (
     <button
       aria-expanded={expanded}
       {...props}
+      data-select-width={controlWidth}
       ref={ref}
       className={[styles.trigger, "bycoda-arc", className].filter(Boolean).join(" ")}
     >

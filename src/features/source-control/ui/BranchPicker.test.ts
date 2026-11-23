@@ -437,6 +437,11 @@ it("badges a worktree branch, groups it last and goes to the worktree instead of
 it("disables a worktree branch on a started session and states why", async () => {
   const onSelectWorktree = vi.fn();
   const row = await openWithWorktreeBranch({ onSelectWorktree, worktreeLocked: true });
+  // The reason shows when the locked row is inspected, not on every row.
+  expect(row.textContent).not.toContain("A started session stays in its worktree");
+  act(() => {
+    row.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 5, clientY: 6 }));
+  });
   expect(row.textContent).toContain("A started session stays in its worktree");
   await act(async () => row.click());
   expect(onSelectWorktree).not.toHaveBeenCalled();

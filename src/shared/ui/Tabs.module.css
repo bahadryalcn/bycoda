@@ -31,7 +31,8 @@
     scroll-padding-inline: var(--ui-space-1, 0.25rem);
   }
   :global([data-pane-header-tabs])
-    .list[data-scroll="wrap"]:not([aria-orientation="vertical"], [data-fill]) > * {
+    .list[data-scroll="wrap"]:not([aria-orientation="vertical"], [data-fill])
+    > * {
     flex: none;
   }
   .list[data-scroll="auto"][aria-orientation="vertical"] {
@@ -41,6 +42,10 @@
   .list[data-scroll="auto"] > *,
   .list[data-scroll="auto"] > :not([role="tab"]) > [role="tab"] {
     flex: none;
+  }
+  .list[data-scroll="auto"]:not([aria-orientation="vertical"]) [role="tab"],
+  :global([data-pane-header-tabs]) .list[data-scroll="wrap"] [role="tab"] {
+    white-space: nowrap;
   }
   .list[aria-orientation="vertical"] {
     flex-direction: column;

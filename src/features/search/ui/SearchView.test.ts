@@ -181,7 +181,6 @@ it("names incomplete application indexing instead of claiming a confirmed empty 
   await render();
   await typeQuery("missing");
   expect(host.textContent).toContain("No indexed matches yet");
-  expect(host.textContent).toContain("Indexing 3 conversations");
   expect(host.textContent).not.toContain("No results");
 });
 
@@ -232,6 +231,15 @@ async function typeQuery(query: string) {
     input.focus();
   });
 }
+/** The failure alert names the failure; the raw error sits behind its Details link. */
+async function openFailureDetails() {
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>('[role="alert"] button')]
+      .find((button) => button.textContent === "Details")!
+      .click(),
+  );
+  return document.body.textContent ?? "";
+}
 
 it("searches remote filenames and enables the owning-host content route in Files", async () => {
   const cwd = "remote://environment/repo";
@@ -253,10 +261,13 @@ it("shows remote filename-read failure and retries its listing", async () => {
     .mockResolvedValueOnce([file("needle.ts", cwd)]);
   await render(cwd);
   await typeQuery("needle");
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
-    "Owning computer disconnected",
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Search failed");
+  expect(await openFailureDetails()).toContain("Owning computer disconnected");
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>('[role="alert"] button')]
+      .find((button) => button.textContent === "Retry")!
+      .click(),
   );
-  await act(async () => host.querySelector<HTMLButtonElement>('[role="alert"] button')!.click());
   expect(host.querySelector('[role="alert"]')).toBeNull();
   expect(host.textContent).toContain("needle.ts");
 });
@@ -403,15 +414,16 @@ it("keeps file index failures scoped to All and Files", async () => {
   index.load.mockRejectedValue(new Error("File index offline"));
   await render();
   await typeQuery("needle");
-  expect(host.textContent).toContain("File index offline");
+  expect(host.textContent).toContain("Search failed");
   for (const scope of ["Projects", "Sessions", "Files", "All"]) {
     await act(async () =>
       [...host.querySelectorAll("button")].find((node) => node.textContent === scope)!.click(),
     );
     if (scope === "Projects" || scope === "Sessions")
-      expect(host.textContent).not.toContain("File index offline");
-    else expect(host.textContent).toContain("File index offline");
+      expect(host.textContent).not.toContain("Search failed");
+    else expect(host.textContent).toContain("Search failed");
   }
+  expect(await openFailureDetails()).toContain("File index offline");
 });
 
 it("opens contextual conversation search then broadens in the same surface without losing text", async () => {

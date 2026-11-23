@@ -42,12 +42,7 @@ export function ProductDetails() {
   return (
     <>
       <Row label={t("Developed by")}>
-        <Text
-          as="span"
-          size="secondary"
-          tone="primary"
-          leading="normal"
-        >
+        <Text as="span" size="secondary" tone="primary" leading="normal">
           {PRODUCT_IDENTITY.developerName}
         </Text>
       </Row>

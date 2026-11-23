@@ -52,7 +52,9 @@ export function AccountsScreen({
   // One notice with one Retry: the first failure wins, a reload retries all three reads.
   const loadProblem =
     data.error ||
-    (data.projectsError ? t("Could not read projects. Previous results may be out of date.") : "") ||
+    (data.projectsError
+      ? t("Could not read projects. Previous results may be out of date.")
+      : "") ||
     (data.needsHumanError ? t("Could not check whether accounts need your attention.") : "");
 
   return (

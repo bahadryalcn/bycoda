@@ -171,7 +171,9 @@ export function McpProjectCredentials({
             variant="ghost"
             size="sm"
             disabled={busy || fields.length >= 20}
-            disabledReason={fields.length >= 20 ? t("You can add up to 20 credentials.") : undefined}
+            disabledReason={
+              fields.length >= 20 ? t("You can add up to 20 credentials.") : undefined
+            }
             onClick={() => {
               const id = nextId.current++;
               setFields([...fields, { id, name: "", value: "" }]);
@@ -209,12 +211,7 @@ export function McpProjectCredentials({
               {t("Remove credentials")}
             </Button>
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => void close()}
-          >
+          <Button type="button" variant="ghost" disabled={busy} onClick={() => void close()}>
             {t("Cancel")}
           </Button>
           <Button type="submit" variant="primary" loading={busy} disabled={busy}>

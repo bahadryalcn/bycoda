@@ -134,7 +134,7 @@
 /* The row's own actions take the time's place while the row is hovered or focused. */
 .notification-history-actions-inline {
   position: absolute;
-  inset-block-start: 5px;
+  inset-block-start: var(--ui-space-1);
   inset-inline-end: 6px;
   display: flex;
   align-items: center;

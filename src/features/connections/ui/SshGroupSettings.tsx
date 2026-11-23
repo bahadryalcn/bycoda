@@ -151,6 +151,7 @@ export function SshGroupSettings({
     setPreview(undefined);
     setLoading(false);
   }, [server.id]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- loads native SSH group inventory while this settings panel is mounted
   useEffect(() => {
     mounted.current = true;
     void Promise.resolve().then(() => {
@@ -162,6 +163,7 @@ export function SshGroupSettings({
   }, [load]);
   // The effective configuration is previewed automatically for every selection; Apply then
   // writes only the digest the user can see below. `scope` covers the server and the selection.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- refreshes the native configuration preview for the selected inheritance
   useEffect(() => {
     if (!initialized || loading || editing || preview?.scope === scope) return;
     let current = true;
@@ -401,9 +403,7 @@ export function SshGroupSettings({
           <Button
             variant="primary"
             disabled={busy || !activePreview?.reviewed}
-            disabledReason={
-              activePreview || error ? undefined : t("Reviewing the configuration…")
-            }
+            disabledReason={activePreview || error ? undefined : t("Reviewing the configuration…")}
             onClick={() =>
               void operation(async () => {
                 if (!activePreview?.reviewed) return;

@@ -74,9 +74,7 @@ export function ServerItem({
   ];
   // Kind (machine vs plain SSH endpoint) is identity: it rides on the glyph, never a text tag;
   // the status slot only ever carries live connection state.
-  const status = server.machine ? (
-    <MachineStatus machine={server.machine} quiet />
-  ) : null;
+  const status = server.machine ? <MachineStatus machine={server.machine} quiet /> : null;
   const favorite = server.metadata.favorite ? (
     <Star aria-label={t("Favorite")} className="icon-xs shrink-0" tone="muted" />
   ) : null;
@@ -175,14 +173,15 @@ export function ServerItem({
   const checkbox =
     onCheck && selectionMode ? (
       <Checkbox
-        aria-label={t("Select {p0}", { p0: server.name })}
+        label={<span className="sr-only">{t("Select {p0}", { p0: server.name })}</span>}
         checked={checked}
         disabled={busy}
         onChange={(event) => onCheck(event.target.checked)}
+        padding={cards ? { top: "xl" } : undefined}
         className={
           cards
-            ? "flex shrink-0 basis-8 cursor-pointer items-start justify-center self-stretch pt-3 pointer-coarse:min-h-11"
-            : "server-selection"
+            ? "flex shrink-0 basis-8 items-start justify-center self-stretch"
+            : "flex shrink-0 basis-9 items-center justify-center self-stretch pointer-coarse:basis-11"
         }
       />
     ) : null;
@@ -202,7 +201,7 @@ export function ServerItem({
       <CollectionRow
         as="li"
         {...rootProps}
-        className="server-list-row"
+        className="flex min-w-0 items-center"
         selected={selectionMode ? checked : selected}
         before={checkbox}
         leading={identityIcon}

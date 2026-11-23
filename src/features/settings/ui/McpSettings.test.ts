@@ -1150,6 +1150,9 @@ it("rejects an invalid draft locally without writing", async () => {
   await act(async () => sheetButtons("Save")[0].click());
   expect(invoke.mock.calls.some(([command]) => command === "mcp_server_config_write")).toBe(false);
   expect(sheet()!.querySelector('[role="alert"]')).not.toBeNull();
-  await act(async () => sheetButtons("Revert")[0].click());
+  // Revert is an icon-only button named by its accessible label.
+  await act(async () =>
+    sheet()!.querySelector<HTMLButtonElement>('button[aria-label="Revert"]')!.click(),
+  );
   expect(configArea().value).toBe("{}");
 });

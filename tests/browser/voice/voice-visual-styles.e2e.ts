@@ -693,7 +693,9 @@ for (const theme of ["light", "dark"]) {
       await expect(next).toBeEnabled();
       await setup.screenshot({ path: join(captures, `${theme}-${width}-setup-microphone.png`) });
       await next.click();
-      await expect(setup.getByText("The microphone opens only when you choose to talk.")).toBeVisible();
+      await expect(
+        setup.getByText("The microphone opens only when you choose to talk."),
+      ).toBeVisible();
       await setup.getByRole("button", { name: "Start", exact: true }).click();
       await expect(setup).toHaveCount(0);
       expect(

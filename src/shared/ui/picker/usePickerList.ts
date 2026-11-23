@@ -127,8 +127,11 @@ export function usePickerList(props: PickerListOptions) {
       : chosen?.key === resetKey
         ? chosen.value
         : initialValue();
-  const found = options.findIndex((option) => option.value === requested && canInspectPickerOption(option));
-  const activeIndex = found >= 0 ? found : props.activeValue !== undefined ? -1 : firstInspectable();
+  const found = options.findIndex(
+    (option) => option.value === requested && canInspectPickerOption(option),
+  );
+  const activeIndex =
+    found >= 0 ? found : props.activeValue !== undefined ? -1 : firstInspectable();
   const activeValue = options[activeIndex]?.value ?? null;
   const setActive = (index: number) => {
     const value = canInspectPickerOption(options[index]) ? options[index]!.value : null;

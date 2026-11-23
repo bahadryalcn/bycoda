@@ -13,6 +13,14 @@ import { RevealedSetting } from "../../../shared/ui/settings";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+/** The slider is named by its visible label through aria-labelledby. */
+const angleSlider = (host: HTMLElement) =>
+  [...host.querySelectorAll<HTMLElement>('[role="slider"]')].find(
+    (slider) =>
+      host.querySelector(`[id="${slider.getAttribute("aria-labelledby")}"]`)?.textContent ===
+      "Gradient angle",
+  ) ?? null;
+
 it("renders the gradient angle control for a revealed setting", async () => {
   const host = document.createElement("div");
   document.body.append(host);
@@ -27,7 +35,7 @@ it("renders the gradient angle control for a revealed setting", async () => {
         ),
       ),
     );
-    expect(host.querySelector('[role="slider"][aria-label="Gradient angle"]')).not.toBeNull();
+    expect(angleSlider(host)).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
     host.remove();
@@ -68,11 +76,8 @@ it("selects a preset and retains its colors when toggled off and on", async () =
       radial!.click();
       await new Promise((resolve) => requestAnimationFrame(resolve));
     });
-    expect(
-      host
-        .querySelector('[role="slider"][aria-label="Gradient angle"]')
-        ?.getAttribute("aria-disabled"),
-    ).toBe("true");
+    // A radial gradient has no angle, so the control is hidden and the saved angle is kept.
+    expect(angleSlider(host)).toBeNull();
     expect(loadWorkspaceBackground().angle).toBe(savedAngle);
     const color = host.querySelector<HTMLButtonElement>('button[aria-label="Color 1"]');
     expect(color).toBeDefined();

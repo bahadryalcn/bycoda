@@ -4,9 +4,23 @@ import { afterEach, describe, expect, it } from "vitest";
 import { EmptySession } from "./EmptySession";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { adoptRemoteMachineInventory } from "../../connections/model/connections";
+import { projectlessMachineProject } from "../../connections/model/sessionMachineTarget";
 
 describe("empty session heading", () => {
   afterEach(() => adoptRemoteMachineInventory([]));
+
+  it.each(["~", projectlessMachineProject("remote-host").key])(
+    "leaves project selection to the composer and workbench for %s",
+    (cwd) => {
+      const markup = renderToStaticMarkup(
+        createElement(EmptySession, { cwd, composer: createElement("textarea") }),
+      );
+
+      expect(markup).toContain("<textarea");
+      expect(markup).not.toContain("Open a project");
+      expect(markup).not.toContain("bycoda-task-brief");
+    },
+  );
 
   it("shows the project path as visible text, not only on hover", () => {
     const markup = renderToStaticMarkup(

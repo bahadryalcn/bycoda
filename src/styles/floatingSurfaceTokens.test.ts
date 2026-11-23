@@ -32,8 +32,11 @@ it("routes imperative floating surfaces through the shared radius, fill and elev
 
 it("lets the Explorer drag preview styles cascade in either theme", () => {
   expect(previewCss).not.toContain("!important");
-  expect(ruleBody(previewCss, "html.theme-light .explorer-file-drag-preview")).not.toContain(
-    "background:",
+  expect(previewCss).not.toMatch(/\b(?:background(?:-color)?|box-shadow|border-radius):/);
+  expect(previewCss).not.toMatch(/\.theme-(?:light|dark)/);
+  const tree = readFileSync("src/features/files/ui/FileTree.tsx", "utf8");
+  expect(tree).toMatch(
+    /surfaceAttributes\(\{\s*variant: "floating",\s*frame: "pane",\s*radius: "popup",\s*elevation: "floating",/,
   );
 });
 

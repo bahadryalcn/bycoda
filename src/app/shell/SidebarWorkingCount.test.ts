@@ -50,6 +50,12 @@ beforeEach(() => {
             ssh: { target: "me@host", port: null, remotePort: 3774 },
           },
         ];
+      // The machine's capability read precedes its session list.
+      if (
+        command === "remote_request" &&
+        (args as { method?: string })?.method === "environment.describe"
+      )
+        return { capabilities: [] };
       if (command === "remote_request" && (args as { method?: string })?.method === "sessions.list")
         return hostSessions;
       return undefined;

@@ -545,7 +545,7 @@ it("reads the inherited auto-compact segment as Default (On), not a second On", 
   vi.unstubAllGlobals();
 });
 
-it("moves an unavailable inherited advisor into a badge instead of the select label", () => {
+it("names an unavailable inherited advisor in the select label without a separate badge", () => {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -578,9 +578,9 @@ it("moves an unavailable inherited advisor into a badge instead of the select la
   const select = container.querySelector<HTMLButtonElement>(
     '[aria-label^="Claude Code default Advisor"]',
   )!;
-  expect(select.textContent).toContain("Bycoda defaults (Claude Code · Opus)");
-  expect(select.textContent).not.toContain("Unavailable");
-  expect(container.textContent).toContain("Unavailable");
+  // The unavailable state is carried by the option's own label; no label-parsing badge is added.
+  expect(select.textContent).toContain("Bycoda defaults (Unavailable: Claude Code · Opus)");
+  expect(container.querySelectorAll('[data-tone="warning"]')).toHaveLength(0);
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();

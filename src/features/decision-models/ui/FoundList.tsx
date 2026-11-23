@@ -106,11 +106,7 @@ export function FoundList({
       ) : null}
       {empty ? (
         <div className="px-4 py-2.5">
-          <EmptyState
-            context="list"
-            size="inline"
-            description={t("Nothing found.")}
-          />
+          <EmptyState context="list" size="inline" description={t("Nothing found.")} />
         </div>
       ) : null}
     </>

@@ -3,11 +3,12 @@ import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";
 import { gitHistory, subscribeGitChanged } from "../../../platform/tauri/fs";
-import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
+import { parseRemotePath, remotePath } from "../../connections/public/remoteProjects";
 import { subscribeRemoteCapabilities } from "../../connections/model/connections";
 import { subscribeRemoteRecovered } from "../../connections/model/remoteHealth";
 import { invalidateMachineSnapshot } from "../../automations/model/machineSnapshot";
-import type { WorkspaceMode } from "../../sessions/model/session";
+import type { WorkspaceMode } from "../../sessions";
+import { isProjectlessCwd } from "../../sessions/public/projectless";
 import { fetchGitIndex } from "../../source-control/model/gitIndexStore";
 import { listWorktrees } from "../../source-control/model/worktrees";
 import type { WorkspacePolicy } from "./contracts";
@@ -139,7 +140,8 @@ export function useWorkspaceCreation(
   choice?: WorkspaceMode,
   base?: string,
 ) {
-  const managedActive = active && choice !== "current";
+  const hasProject = Boolean(cwd) && !isProjectlessCwd(cwd);
+  const managedActive = active && hasProject && choice !== "current";
   const [reload, setReload] = useState(0);
   const [result, setResult] = useState<{
     cwd: string;
@@ -175,7 +177,7 @@ export function useWorkspaceCreation(
     };
   }, [managedActive, cwd, refresh]);
   useEffect(() => {
-    if (!managedActive || !cwd || cwd === "~") {
+    if (!managedActive) {
       setResult(undefined);
       return;
     }
@@ -208,10 +210,13 @@ export function useWorkspaceCreation(
       : undefined;
   return {
     // A warning means the policy was unreadable: behave as the current checkout.
-    mode: choice ?? (current?.warning ? undefined : current?.policy?.defaultMode) ?? "current",
-    base:
-      base ||
-      (current?.policy ? shortWorkspaceRef(current.policy.integrationBranchRef) : undefined),
+    mode: hasProject
+      ? (choice ?? (current?.warning ? undefined : current?.policy?.defaultMode) ?? "current")
+      : "current",
+    base: hasProject
+      ? base ||
+        (current?.policy ? shortWorkspaceRef(current.policy.integrationBranchRef) : undefined)
+      : undefined,
     preview: current?.preview,
     error: current?.error,
     warning: current?.warning,

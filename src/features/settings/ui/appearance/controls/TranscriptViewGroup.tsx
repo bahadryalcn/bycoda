@@ -170,114 +170,119 @@ export function TranscriptViewGroup({
           "transcript-actions",
         ]}
       >
-      <Row
-        id="transcript-surface"
-        label={t("Reading surface")}
-        info={t("Reply paints one surface per answer, Column one for the whole conversation.")}
-        modified={modified("transcriptSurface")}
-        onReset={reset("transcriptSurface")}
-      >
-        <Segmented
+        <Row
+          id="transcript-surface"
           label={t("Reading surface")}
-          value={preferences.transcriptSurface}
-          options={TRANSCRIPT_SURFACES.map((value) => ({ value, label: SURFACE_LABELS[value]() }))}
-          disabled={preferencesUnavailable}
-          onChange={(transcriptSurface) => set({ transcriptSurface })}
-        />
-      </Row>
-      <Row
-        id="transcript-surface-opacity"
-        label={t("Surface opacity")}
-        dependsOn={!surfaceOff}
-        disabledReason={offReason}
-        modified={modified("transcriptSurfaceOpacity")}
-        onReset={reset("transcriptSurfaceOpacity")}
-      >
-        {slider("transcriptSurfaceOpacity", t("Surface opacity"), percent)}
-      </Row>
-      <Row
-        id="transcript-surface-blur"
-        label={t("Surface blur")}
-        info={t("Blur applies only over a background image.")}
-        dependsOn={!surfaceOff}
-        disabledReason={offReason}
-        modified={modified("transcriptSurfaceBlur")}
-        onReset={reset("transcriptSurfaceBlur")}
-      >
-        {slider("transcriptSurfaceBlur", t("Surface blur"), pixels)}
-      </Row>
-      <Row
-        id="chat-message-color"
-        label={t("Surface color")}
-        modified={modified("messageColor")}
-        onReset={reset("messageColor")}
-      >
-        <Segmented
+          info={t("Reply paints one surface per answer, Column one for the whole conversation.")}
+          modified={modified("transcriptSurface")}
+          onReset={reset("transcriptSurface")}
+        >
+          <Segmented
+            label={t("Reading surface")}
+            value={preferences.transcriptSurface}
+            options={TRANSCRIPT_SURFACES.map((value) => ({
+              value,
+              label: SURFACE_LABELS[value](),
+            }))}
+            disabled={preferencesUnavailable}
+            onChange={(transcriptSurface) => set({ transcriptSurface })}
+          />
+        </Row>
+        <Row
+          id="transcript-surface-opacity"
+          label={t("Surface opacity")}
+          dependsOn={!surfaceOff}
+          disabledReason={offReason}
+          modified={modified("transcriptSurfaceOpacity")}
+          onReset={reset("transcriptSurfaceOpacity")}
+        >
+          {slider("transcriptSurfaceOpacity", t("Surface opacity"), percent)}
+        </Row>
+        <Row
+          id="transcript-surface-blur"
+          label={t("Surface blur")}
+          info={t("Blur applies only over a background image.")}
+          dependsOn={!surfaceOff}
+          disabledReason={offReason}
+          modified={modified("transcriptSurfaceBlur")}
+          onReset={reset("transcriptSurfaceBlur")}
+        >
+          {slider("transcriptSurfaceBlur", t("Surface blur"), pixels)}
+        </Row>
+        <Row
+          id="chat-message-color"
           label={t("Surface color")}
-          value={preferences.messageColor}
-          options={[
-            { value: "theme", label: t("Theme") },
-            { value: "neutral", label: t("Neutral") },
-          ]}
-          disabled={preferencesUnavailable}
-          onChange={(messageColor) => set({ messageColor })}
-        />
-      </Row>
-      <Row
-        id="user-message-opacity"
-        label={t("Your message opacity")}
-        modified={modified("userMessageOpacity")}
-        onReset={reset("userMessageOpacity")}
-      >
-        {slider("userMessageOpacity", t("Your message opacity"), percent)}
-      </Row>
-      <Row
-        id="transcript-body-ink"
-        label={t("Reply text")}
-        info={t("Scaled by Contrast in Theme.")}
-        modified={modified("transcriptBodyInk")}
-        onReset={reset("transcriptBodyInk")}
-      >
-        {slider("transcriptBodyInk", t("Reply text"), percent)}
-      </Row>
-      <Row
-        id="transcript-chrome-ink"
-        label={t("Tool and action text")}
-        info={t("A share of the reply text, so it is never brighter. Scaled by Contrast in Theme.")}
-        modified={modified("transcriptChromeInk")}
-        onReset={reset("transcriptChromeInk")}
-      >
-        {slider("transcriptChromeInk", t("Tool and action text"), percent)}
-      </Row>
-      <Row
-        id="transcript-cards"
-        label={t("Cards and code")}
-        modified={modified("transcriptCards")}
-        onReset={reset("transcriptCards")}
-      >
-        <Segmented
+          modified={modified("messageColor")}
+          onReset={reset("messageColor")}
+        >
+          <Segmented
+            label={t("Surface color")}
+            value={preferences.messageColor}
+            options={[
+              { value: "theme", label: t("Theme") },
+              { value: "neutral", label: t("Neutral") },
+            ]}
+            disabled={preferencesUnavailable}
+            onChange={(messageColor) => set({ messageColor })}
+          />
+        </Row>
+        <Row
+          id="user-message-opacity"
+          label={t("Your message opacity")}
+          modified={modified("userMessageOpacity")}
+          onReset={reset("userMessageOpacity")}
+        >
+          {slider("userMessageOpacity", t("Your message opacity"), percent)}
+        </Row>
+        <Row
+          id="transcript-body-ink"
+          label={t("Reply text")}
+          info={t("Scaled by Contrast in Theme.")}
+          modified={modified("transcriptBodyInk")}
+          onReset={reset("transcriptBodyInk")}
+        >
+          {slider("transcriptBodyInk", t("Reply text"), percent)}
+        </Row>
+        <Row
+          id="transcript-chrome-ink"
+          label={t("Tool and action text")}
+          info={t(
+            "A share of the reply text, so it is never brighter. Scaled by Contrast in Theme.",
+          )}
+          modified={modified("transcriptChromeInk")}
+          onReset={reset("transcriptChromeInk")}
+        >
+          {slider("transcriptChromeInk", t("Tool and action text"), percent)}
+        </Row>
+        <Row
+          id="transcript-cards"
           label={t("Cards and code")}
-          value={preferences.transcriptCards}
-          options={TRANSCRIPT_CARDS.map((value) => ({ value, label: CARD_LABELS[value]() }))}
-          disabled={preferencesUnavailable}
-          onChange={(transcriptCards) => set({ transcriptCards })}
-        />
-      </Row>
-      <Row
-        id="transcript-actions"
-        label={t("Message actions")}
-        info={t("The last reply and keyboard focus always show them.")}
-        modified={modified("transcriptActions")}
-        onReset={reset("transcriptActions")}
-      >
-        <Segmented
+          modified={modified("transcriptCards")}
+          onReset={reset("transcriptCards")}
+        >
+          <Segmented
+            label={t("Cards and code")}
+            value={preferences.transcriptCards}
+            options={TRANSCRIPT_CARDS.map((value) => ({ value, label: CARD_LABELS[value]() }))}
+            disabled={preferencesUnavailable}
+            onChange={(transcriptCards) => set({ transcriptCards })}
+          />
+        </Row>
+        <Row
+          id="transcript-actions"
           label={t("Message actions")}
-          value={preferences.transcriptActions}
-          options={TRANSCRIPT_ACTIONS.map((value) => ({ value, label: ACTION_LABELS[value]() }))}
-          disabled={preferencesUnavailable}
-          onChange={(transcriptActions) => set({ transcriptActions })}
-        />
-      </Row>
+          info={t("The last reply and keyboard focus always show them.")}
+          modified={modified("transcriptActions")}
+          onReset={reset("transcriptActions")}
+        >
+          <Segmented
+            label={t("Message actions")}
+            value={preferences.transcriptActions}
+            options={TRANSCRIPT_ACTIONS.map((value) => ({ value, label: ACTION_LABELS[value]() }))}
+            disabled={preferencesUnavailable}
+            onChange={(transcriptActions) => set({ transcriptActions })}
+          />
+        </Row>
       </AdvancedSettings>
     </>
   );

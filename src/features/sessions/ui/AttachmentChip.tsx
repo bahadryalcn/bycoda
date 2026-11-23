@@ -108,6 +108,7 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
               motion="none"
               layout="media"
               iconOnly
+              stretch
               label={t("Open {p0} full screen", { p0: attachment.name })}
               variant="ghost"
               type="button"
@@ -173,7 +174,7 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
             )}
           </>
         )}
-        {((token && onInsertToken) || saveCopy.canSave || onRemove) ? (
+        {(token && onInsertToken) || saveCopy.canSave || onRemove ? (
           <div
             {...motionAttributes({ transition: "opacity" })}
             {...actionContentAttributes(
@@ -181,61 +182,61 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
               "absolute end-0 top-1 flex",
             )}
           >
-          {token && onInsertToken ? (
-            <Button
-              motion="none"
-              size="sm"
-              iconOnly
-              label={t("Insert {p0} into the message", { p0: token })}
-              variant="secondary"
-              shape="pill"
-              type="button"
-              // Keep the composer caret where the token will be inserted.
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onInsertToken();
-              }}
-            >
-              <Link className="icon-xs" />
-            </Button>
-          ) : null}
-          {saveCopy.canSave ? (
-          <Button
-            motion="none"
-            size="sm"
-            iconOnly
-            label={t("Save {p0}", { p0: attachment.name })}
-            variant="secondary"
-            shape="pill"
-            type="button"
-            disabled={saveCopy.saving}
-            loading={saveCopy.saving}
-            onClick={(event) => {
-              event.stopPropagation();
-              saveCopy.save();
-            }}
-          >
-            <Download className="icon-xs" strokeWidth={2} />
-          </Button>
-        ) : null}
-        {onRemove ? (
-          <Button
-            motion="none"
-            size="sm"
-            iconOnly
-            label={t("Remove {p0}", { p0: attachment.name })}
-            variant="secondary"
-            shape="pill"
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onRemove();
-            }}
-          >
-            <X className="icon-xs" strokeWidth={2} />
-          </Button>
-        ) : null}
+            {token && onInsertToken ? (
+              <Button
+                motion="none"
+                size="sm"
+                iconOnly
+                label={t("Insert {p0} into the message", { p0: token })}
+                variant="secondary"
+                shape="pill"
+                type="button"
+                // Keep the composer caret where the token will be inserted.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onInsertToken();
+                }}
+              >
+                <Link className="icon-xs" />
+              </Button>
+            ) : null}
+            {saveCopy.canSave ? (
+              <Button
+                motion="none"
+                size="sm"
+                iconOnly
+                label={t("Save {p0}", { p0: attachment.name })}
+                variant="secondary"
+                shape="pill"
+                type="button"
+                disabled={saveCopy.saving}
+                loading={saveCopy.saving}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  saveCopy.save();
+                }}
+              >
+                <Download className="icon-xs" strokeWidth={2} />
+              </Button>
+            ) : null}
+            {onRemove ? (
+              <Button
+                motion="none"
+                size="sm"
+                iconOnly
+                label={t("Remove {p0}", { p0: attachment.name })}
+                variant="secondary"
+                shape="pill"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemove();
+                }}
+              >
+                <X className="icon-xs" strokeWidth={2} />
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>

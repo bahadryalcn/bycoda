@@ -2,7 +2,7 @@ import { PermissionsSettings } from "../../permissions";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
+import type { BackgroundSessionTarget } from "../../tasks";
 import { Button } from "../../../shared/ui/Button";
 import { shouldHandleGlobalEscape } from "../../../shared/ui/overlay";
 import { Heading } from "../../../shared/ui/Heading";
@@ -13,7 +13,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConnectionsSettings } from "../../connections/public/ConnectionsSettings";
 import { ArrowLeft, Maximize2, Minimize2, RotateCcw } from "../../../shared/ui/icons";
-import { useCallback, useEffect, useId, useRef, useState, type ComponentProps } from "react";
+import { useEffect, useId, useRef, useState, type ComponentProps } from "react";
 import "./BycodaSettings.css";
 import { AccountScreen } from "../../account";
 import { SignedInAccountNotifications } from "../../account/ui/AccountNotifications";
@@ -282,23 +282,20 @@ export function SettingsView({
     };
   }, [revealed, revealRequest, section, notificationProjectPath, notificationSettingsRequest]);
 
-  const onReveal = useCallback(
-    (next: SettingsSectionId, settingId: string | null) => {
-      const reveal = () => {
-        if (next !== section) onSelectSection?.(next);
-        setReveal({ id: settingId, section: next });
-        setRevealRequest((request) => request + 1);
-        // The page title is the meaningful target; the tabpanel itself is not a keyboard stop.
-        if (!settingId)
-          requestAnimationFrame(() =>
-            panelRef.current?.querySelector<HTMLElement>(".settings-page-title")?.focus(),
-          );
-      };
-      if (next === section) reveal();
-      else leave.guard(reveal);
-    },
-    [leave.guard, onSelectSection, section],
-  );
+  const onReveal = (next: SettingsSectionId, settingId: string | null) => {
+    const reveal = () => {
+      if (next !== section) onSelectSection?.(next);
+      setReveal({ id: settingId, section: next });
+      setRevealRequest((request) => request + 1);
+      // The page title is the meaningful target; the tabpanel itself is not a keyboard stop.
+      if (!settingId)
+        requestAnimationFrame(() =>
+          panelRef.current?.querySelector<HTMLElement>(".settings-page-title")?.focus(),
+        );
+    };
+    if (next === section) reveal();
+    else leave.guard(reveal);
+  };
 
   const selectCategory = (next: SettingsSectionId) => {
     if (next === section) return;
@@ -657,7 +654,9 @@ export function SettingsView({
                             <Row id="import-history" label={null}>
                               <Button
                                 variant="ghost"
-                                onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}
+                                onClick={() =>
+                                  window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))
+                                }
                               >
                                 {t("Import history")}
                               </Button>

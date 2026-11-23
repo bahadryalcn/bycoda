@@ -61,7 +61,9 @@ type SetBoolean = Dispatch<SetStateAction<boolean>>;
 
 class LinkedTargetUnavailable extends Error {
   constructor(readonly reason: "host" | "target") {
-    super(reason === "host" ? t("Host unavailable. Try again.") : t("The linked item is unavailable."));
+    super(
+      reason === "host" ? t("Host unavailable. Try again.") : t("The linked item is unavailable."),
+    );
   }
 }
 
@@ -220,6 +222,14 @@ function WorkspaceToolPanelsComponent({
   const onLeaveNotes = navigation?.onBack ?? leaveNotes;
   const onLeaveServers = navigation?.onBack ?? leaveServers;
   const onLeaveAutomations = navigation?.onBack ?? leaveAutomations;
+  const railPlacement = {
+    besideRail: !detachedSessionWindow && (projectRailOpen || compactProjectRail),
+    compactRail: compactRailActive,
+  };
+  const toolRail = {
+    ...railPlacement,
+    onToggleSidebar: toolWindow ? undefined : onToggleSidebar,
+  };
   const auxiliaryHeader = (
     <PaneHeader
       dragRegion
@@ -381,8 +391,7 @@ function WorkspaceToolPanelsComponent({
             }}
             onReviewJobTasks={async (target) => {
               const machine = await invoke<RemoteMachine | null>("local_host_connect");
-              if (!machine || !target.environmentId)
-                throw new LinkedTargetUnavailable("host");
+              if (!machine || !target.environmentId) throw new LinkedTargetUnavailable("host");
               const [environment, projects, response, goals] = await Promise.all([
                 remoteRequest<{ environmentId: string }>(
                   machine.id,
@@ -435,8 +444,7 @@ function WorkspaceToolPanelsComponent({
               const machine = await invoke<RemoteMachine | null>("local_host_connect");
               if (!machine) throw new LinkedTargetUnavailable("host");
               const expectedEnvironmentId = target.environmentId ?? machine.environmentId;
-              if (!expectedEnvironmentId)
-                throw new LinkedTargetUnavailable("host");
+              if (!expectedEnvironmentId) throw new LinkedTargetUnavailable("host");
               const [environment, projects, automations] = await Promise.all([
                 remoteRequest<{ environmentId: string }>(
                   machine.id,
@@ -487,8 +495,7 @@ function WorkspaceToolPanelsComponent({
               const machine = await invoke<RemoteMachine | null>("local_host_connect");
               if (!machine) throw new LinkedTargetUnavailable("host");
               const expectedEnvironmentId = sourceEnvironmentId ?? machine.environmentId;
-              if (!expectedEnvironmentId)
-                throw new LinkedTargetUnavailable("host");
+              if (!expectedEnvironmentId) throw new LinkedTargetUnavailable("host");
               const [host, projects] = await Promise.all([
                 remoteRequest<HostSession | null>(
                   machine.id,
@@ -552,8 +559,7 @@ function WorkspaceToolPanelsComponent({
         <NavigationBoundary name="Crews" onBack={onLeaveServers}>
           <CrewsView
             cwd={projectCwd}
-            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
-            compactRail={compactRailActive}
+            {...railPlacement}
             onClose={onLeaveServers}
             onToggleSidebar={onToggleSidebar}
             onOpenSession={onOpenBackgroundSession}
@@ -576,8 +582,7 @@ function WorkspaceToolPanelsComponent({
         <NavigationBoundary name="Servers" onBack={onLeaveServers}>
           <ServerAgentContext.Provider value={serverAgent ?? null}>
             <ServersView
-              besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
-              compactRail={compactRailActive}
+              {...railPlacement}
               onClose={onLeaveServers}
               onToggleSidebar={onToggleSidebar}
             />
@@ -593,10 +598,8 @@ function WorkspaceToolPanelsComponent({
             onOpenProject={pickProject}
             cwd={sidebarCwd}
             recents={visibleRecents}
-            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
-            compactRail={compactRailActive}
+            {...toolRail}
             onClose={onLeaveInbox}
-            onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
             onStart={onStartInboxItem}
             onAsk={onAskInboxItem}
             onAskRestart={onRestartInboxAsk}
@@ -612,12 +615,10 @@ function WorkspaceToolPanelsComponent({
       <ToolPanel active={notesViewOpen}>
         <NavigationBoundary name="Notes" onBack={onLeaveNotes}>
           <NotesView
-            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
-            compactRail={compactRailActive}
+            {...toolRail}
             cwd={projectCwd}
             recents={visibleRecents}
             onClose={onLeaveNotes}
-            onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
           />
         </NavigationBoundary>
       </ToolPanel>
@@ -627,9 +628,7 @@ function WorkspaceToolPanelsComponent({
             onOpenSession={onOpenSocialSession}
             onSessionMount={onSocialSessionMount}
             cwd={socialPanelCwd || projectCwd}
-            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
-            compactRail={compactRailActive}
-            onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
+            {...toolRail}
             onClose={onLeaveAutomations}
           />
         </NavigationBoundary>
@@ -639,12 +638,10 @@ function WorkspaceToolPanelsComponent({
           <TasksView
             goalReveal={goalReveal}
             taskReveal={taskReveal}
-            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
-            compactRail={compactRailActive}
+            {...toolRail}
             cwd={projectCwd}
             recents={visibleRecents}
             onClose={onLeaveAutomations}
-            onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
             onOpenBackgroundSession={onOpenBackgroundSession}
           />
         </NavigationBoundary>
@@ -656,17 +653,14 @@ function WorkspaceToolPanelsComponent({
           <AutomationsView
             revealAutomation={automationReveal}
             onOpenTask={(target) => {
-              if (isProjectLocked(target.cwd))
-                throw new LinkedTargetUnavailable("target");
+              if (isProjectLocked(target.cwd)) throw new LinkedTargetUnavailable("target");
               setTaskReveal({ ...target, token: Date.now() });
               onSelectTool("tasks");
             }}
-            besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
-            compactRail={compactRailActive}
+            {...toolRail}
             cwd={projectCwd}
             recents={visibleRecents}
             onClose={onLeaveAutomations}
-            onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
             onLaunchAssistant={onLaunchAutomationAssistant}
             onLaunch={(automation, run) => launchAutomation(automation, run, true)}
             onOpenSession={onOpenAutomationSession}

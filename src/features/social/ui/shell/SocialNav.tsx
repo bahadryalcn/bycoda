@@ -1,6 +1,4 @@
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import { useLayoutEffect, useRef } from "react";
-import { observeResize } from "../../../../shared/lib/observeResize";
 import { t } from "../../../../shared/i18n";
 import { TabStrip } from "../../../../shared/ui/Tabs";
 import { Inbox, Link, MessageMultiple, Share, Zap } from "../../../../shared/ui/icons";
@@ -40,30 +38,8 @@ export function SocialNav({
   active: SocialScreenId;
   onSelect: (screen: SocialScreenId) => void;
 }) {
-  const nav = useRef<HTMLElement>(null);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Sync nav scroll with selected tab and DOM resizing without moving page scroll.
-  useLayoutEffect(() => {
-    const node = nav.current;
-    // The strip (`scroll="auto"`) is the scroller, so the selected tab is revealed inside it.
-    const list = node?.querySelector<HTMLElement>('[role="tablist"]');
-    if (!node || !list) return;
-    const reveal = () => {
-      const tab = list.querySelector<HTMLElement>('[aria-selected="true"]');
-      if (!tab) return;
-      const bounds = list.getBoundingClientRect();
-      const selected = tab.getBoundingClientRect();
-      if (selected.left < bounds.left) list.scrollLeft += selected.left - bounds.left;
-      else if (selected.right > bounds.right) list.scrollLeft += selected.right - bounds.right;
-    };
-    reveal();
-    const cleanups = [observeResize(node, reveal), observeResize(list, reveal)];
-    for (const tab of list.querySelectorAll<HTMLElement>('[role="tab"]')) {
-      cleanups.push(observeResize(tab, reveal));
-    }
-    return () => cleanups.forEach((cleanup) => cleanup());
-  }, [active]);
   return (
-    <nav ref={nav} {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "social-shell-nav")}>
+    <nav {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "social-shell-nav")}>
       <TabStrip
         label={t("Social sections")}
         scroll="auto"

@@ -102,7 +102,7 @@ describe("detached working header", () => {
     const bar = container.querySelector("[data-detached-working-bar]")!;
     await act(async () => {
       bar.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-      bar.querySelector("span")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      bar.querySelector("div[aria-hidden]")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     });
     expect(native.toggleMaximize).toHaveBeenCalledTimes(2);
     await act(async () => {
@@ -130,7 +130,7 @@ describe("detached working header", () => {
 
   it("drags the native window only after blank-header pointer movement exceeds threshold", async () => {
     render([agent("one")]);
-    const label = container.querySelector("[data-detached-working-bar] > span")!;
+    const label = container.querySelector("[data-detached-working-bar] > div[aria-hidden]")!;
     pointer(label, "pointerdown", 10, 10);
     pointer(window, "pointermove", 13, 10);
     expect(native.startDragging).not.toHaveBeenCalled();
@@ -149,8 +149,10 @@ describe("detached working header", () => {
       }),
     ]);
     const trigger = container.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")!;
-    expect(trigger.textContent).toContain("1 session");
-    expect(trigger.textContent).not.toContain("1 sessions");
+    // The count is visible; the noun and aggregate state live in the accessible name.
+    expect(trigger.textContent).toBe("1");
+    expect(trigger.getAttribute("aria-label")).toContain("1 session ·");
+    expect(trigger.getAttribute("aria-label")).not.toContain("1 sessions");
     pointer(trigger, "pointerdown", 10, 10);
     pointer(window, "pointermove", 30, 10);
     expect(native.startDragging).not.toHaveBeenCalled();
@@ -158,8 +160,9 @@ describe("detached working header", () => {
     const menu = container.querySelector<HTMLElement>("[role=menu]")!;
     const item = menu.querySelector<HTMLButtonElement>("[role=menuitem]")!;
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(item.dataset.menuLabel!.length).toBeLessThanOrEqual(72);
-    expect(item.textContent).toContain("Needs input · Other window");
+    // The row shows the bounded title; state and owner window live in its accessible label.
+    expect(item.dataset.menuLabel!.split(" · ")[0]!.length).toBeLessThanOrEqual(72);
+    expect(item.dataset.menuLabel).toContain("Needs input · Other window");
     expect(container.textContent).not.toContain("VERY_LONG_SECRET_COMMAND");
     expect(container.querySelector("select")).toBeNull();
     act(() => item.click());
@@ -171,7 +174,8 @@ describe("detached working header", () => {
   it("supports keyboard navigation, Escape, and completed status", () => {
     render([agent("one"), agent("two", { done: true })]);
     const trigger = container.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")!;
-    expect(trigger.textContent).toContain("2 sessions");
+    expect(trigger.textContent).toBe("2");
+    expect(trigger.getAttribute("aria-label")).toContain("2 sessions");
     act(() =>
       trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
     );
@@ -181,7 +185,7 @@ describe("detached working header", () => {
       items[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
     );
     expect(document.activeElement).toBe(items[1]);
-    expect(items[1].textContent).toContain("Done");
+    expect(items[1].dataset.menuLabel).toContain("Done");
     act(() =>
       items[1].dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
     );
@@ -215,9 +219,13 @@ describe("detached working header", () => {
 
   it("captions the bar with the aggregate state of finished and failed sessions", () => {
     render([agent("one", { done: true }), agent("two", { done: true, issue: "failed" })]);
-    expect(container.querySelector("[aria-haspopup=menu]")?.getAttribute("aria-label")).toContain("Failed");
+    expect(container.querySelector("[aria-haspopup=menu]")?.getAttribute("aria-label")).toContain(
+      "Failed",
+    );
     render([agent("one", { done: true })]);
-    expect(container.querySelector("[aria-haspopup=menu]")?.getAttribute("aria-label")).toContain("Done");
+    expect(container.querySelector("[aria-haspopup=menu]")?.getAttribute("aria-label")).toContain(
+      "Done",
+    );
   });
 
   it("marks other-window sessions without repeating their status in visible copy", () => {

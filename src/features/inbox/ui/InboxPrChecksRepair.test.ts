@@ -619,11 +619,12 @@ it("reports fresh checks for a later PR commit without confirming old or stale r
   expect(visibleText(host)).toContain("Awaiting new CI checks");
   await render("new-commit");
   expect(visibleText(host)).toContain("CI passed");
+  // The commit sentence is gone; expanding lists only the included checks.
   expect(visibleText(host)).not.toContain("new-com");
   act(() =>
     host.querySelector<HTMLElement>('[aria-label="Repair progress"] details > summary')!.click(),
   );
-  expect(visibleText(host)).toContain("new-com");
+  expect(host.querySelector('[aria-label="Included checks"]')?.textContent).toContain("tests");
   await render("new-commit", [passed], { stale: true });
   expect(visibleText(host)).not.toContain("CI passed");
   expect(visibleText(host)).toContain("CI results are out of date");

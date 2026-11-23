@@ -22,8 +22,11 @@ it("routes plain, disclosure and split rail headings through the same layout slo
   const headers = container.querySelectorAll("[data-rail-section-header]");
   expect(headers).toHaveLength(3);
   for (const header of headers) {
-    expect(header.querySelector("[data-rail-section-mark]")).not.toBeNull();
     expect(header.querySelector("[data-rail-section-text]")).not.toBeNull();
   }
+  // A plain heading with no icon or disclosure has nothing to mark; the others share the mark slot.
+  expect(headers[0]?.querySelector("[data-rail-section-mark]")).toBeNull();
+  expect(headers[1]?.querySelector("[data-rail-section-mark]")).not.toBeNull();
+  expect(headers[2]?.querySelector("[data-rail-section-mark]")).not.toBeNull();
   expect(headers[2]?.querySelectorAll("button")).toHaveLength(2);
 });

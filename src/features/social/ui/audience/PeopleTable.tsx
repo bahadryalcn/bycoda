@@ -75,11 +75,7 @@ function PersonCell({ person, onOpen }: { person: SocialPerson; onOpen: (id: str
 
 function AccountsCell({ person }: { person: SocialPerson }) {
   const platforms = [...new Set(person.handles.map((handle) => handle.platform))];
-  return platforms.length ? (
-    <PlatformMarks platforms={platforms} size="xs" />
-  ) : (
-    "–"
-  );
+  return platforms.length ? <PlatformMarks platforms={platforms} size="xs" /> : "–";
 }
 
 /** The score as a number only; the person panel is where a score is read in detail. */

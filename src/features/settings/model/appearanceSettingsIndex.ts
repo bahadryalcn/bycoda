@@ -95,7 +95,8 @@ export const APPEARANCE_SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Surface contrast");
     },
-    keywords: "advanced tone card cards layer layers elevation depth black field dialog surface lift canvas",
+    keywords:
+      "advanced tone card cards layer layers elevation depth black field dialog surface lift canvas",
   },
   {
     id: "accent-readability",

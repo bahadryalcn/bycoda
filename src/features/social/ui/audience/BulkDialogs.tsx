@@ -8,7 +8,7 @@ import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialList, SocialPerson } from "../../model/audience";
 import type { Sequence } from "../../model/outreach";
 import type { SocialClient } from "../../model/socialClient";
-import { LabeledSelect } from "./LabeledSelect";
+import { Select } from "../../../../shared/ui/Select";
 import { AudienceReportList } from "./AudienceReportList";
 import { addTag, addToList, addToSequence, type BulkResult } from "./audienceBulk";
 import { errorMessage } from "./audienceModel";
@@ -134,7 +134,7 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
     >
       <div className="audience-stack">
         {action === "list" ? (
-          <LabeledSelect
+          <Select
             label={t("List")}
             value={listId}
             disabled={running}
@@ -145,7 +145,7 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
                 label: list.name,
               })),
             ]}
-            onChange={setListId}
+            onValueChange={setListId}
           />
         ) : null}
         {action === "tag" ? (
@@ -158,7 +158,7 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
         ) : null}
         {action === "sequence" ? (
           <div className="audience-row">
-            <LabeledSelect
+            <Select
               label={t("Sequence")}
               value={sequenceId}
               disabled={running}
@@ -169,7 +169,7 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
                   label: sequence.name,
                 })),
               ]}
-              onChange={setSequenceId}
+              onValueChange={setSequenceId}
             />
             <InfoPopover>
               {t(

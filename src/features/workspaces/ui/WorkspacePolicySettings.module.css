@@ -13,7 +13,6 @@
   gap: var(--ui-space-2);
   padding: var(--ui-space-3) var(--ui-space-4);
   min-inline-size: 0;
-  font-variant-numeric: tabular-nums;
 }
 
 .storageLine {

@@ -102,11 +102,7 @@ export function SessionSubagentsMenu({
         data-composer-subagents-trigger
         onClick={() => setOpen((value) => !value)}
       >
-        {running > 0 ? (
-          <WorkingIndicator size="xs" />
-        ) : (
-          <Bot aria-hidden className="icon-sm" />
-        )}
+        {running > 0 ? <WorkingIndicator size="xs" /> : <Bot aria-hidden className="icon-sm" />}
         <Text as="span" size="inherit" tone="inherit">
           {agents.length}
         </Text>

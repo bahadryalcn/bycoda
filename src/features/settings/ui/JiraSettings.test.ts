@@ -47,11 +47,23 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+/** Plain form fields are named by their visible label. */
+function jiraField(label: string) {
+  const owner = [...container.querySelectorAll("label")].find(
+    (item) => item.textContent?.trim() === label,
+  );
+  return (
+    owner?.htmlFor
+      ? container.querySelector<HTMLInputElement>(`[id="${owner.htmlFor}"]`)
+      : owner?.querySelector<HTMLInputElement>("input")
+  ) as HTMLInputElement;
+}
+
 async function input(label: string, value: string) {
-  const field = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  const target = jiraField(label);
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
-    field.dispatchEvent(new Event("input", { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(target, value);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
 
@@ -74,7 +86,7 @@ async function submit() {
 it("reveals the typed Jira token with the shared control while preserving its value", async () => {
   await act(async () => root.render(createElement(JiraSettings)));
   await input("Jira API token", "fixture-token");
-  const field = container.querySelector<HTMLInputElement>('input[aria-label="Jira API token"]')!;
+  const field = jiraField("Jira API token");
   expect(field.type).toBe("password");
   await act(async () =>
     container.querySelector<HTMLButtonElement>('button[aria-label="Show password"]')!.click(),
@@ -179,15 +191,9 @@ it("shows authentication errors without claiming a successful connection", async
   await submit();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("invalid");
   expect(container.querySelector("form")).not.toBeNull();
-  expect(container.querySelector<HTMLInputElement>('input[aria-label="Jira site"]')?.value).toBe(
-    "acme",
-  );
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="Atlassian email"]')?.value,
-  ).toBe("ada@example.com");
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="Jira API token"]')?.value,
-  ).toBe("bad-token");
+  expect(jiraField("Jira site").value).toBe("acme");
+  expect(jiraField("Atlassian email").value).toBe("ada@example.com");
+  expect(jiraField("Jira API token").value).toBe("bad-token");
   expect(container.textContent).not.toContain("Projects");
   await submit();
   expect(container.textContent).toContain("ada@example.com");
@@ -205,8 +211,18 @@ it("preserves project and board permissions when reconnecting", async () => {
   expect(loadHiddenJiraProjectIds()).toEqual(["10000"]);
   expect(loadAllowedJiraBoardIds()).toEqual([7]);
   expect(boardRequests()).toEqual([{ projectIds: null }]);
-  expect(container.textContent).toContain("0 of 0 boards selected");
+  expect(scope("Boards")).toEqual({ total: 0, selected: 0 });
 });
+
+/** The count text shows only while searching, so read selection from the checklist rows. */
+function scope(label: string) {
+  const boxes = [
+    ...container.querySelectorAll<HTMLInputElement>(
+      `[role="group"][aria-label="${label}"] input[type=checkbox]`,
+    ),
+  ];
+  return { total: boxes.length, selected: boxes.filter((box) => box.checked).length };
+}
 
 function boardRequests() {
   return vi
@@ -248,7 +264,7 @@ it("scopes boards from one cached catalog when project checkboxes change", async
   await submit();
   expect(boardRequests()).toEqual([{ projectIds: null }]);
   await act(async () => finishBoards());
-  expect(container.textContent).toContain("0 of 2 boards selected");
+  expect(scope("Boards")).toEqual({ total: 2, selected: 0 });
   await pickOption("Ops board");
   expect(loadAllowedJiraBoardIds()).toEqual([8]);
 
@@ -257,19 +273,19 @@ it("scopes boards from one cached catalog when project checkboxes change", async
   expect(loadHiddenJiraProjectIds()).toEqual(["10001"]);
   expect(boardCheckbox("Ops board")).toBeUndefined();
   expect(boardCheckbox("Eng board")!.disabled).toBe(false);
-  expect(container.textContent).toContain("0 of 1 boards selected");
+  expect(scope("Boards")).toEqual({ total: 1, selected: 0 });
   // The hidden project's board choice stays persisted for when the project returns.
   expect(loadAllowedJiraBoardIds()).toEqual([8]);
 
   await pickOption("Engineering");
   expect(loadHiddenJiraProjectIds()).toEqual(["10000", "10001"]);
-  expect(container.textContent).toContain("0 of 0 boards selected");
+  expect(scope("Boards")).toEqual({ total: 0, selected: 0 });
 
   await pickOption("Operations");
   await pickOption("Engineering");
   expect(boardCheckbox("Ops board")!.checked).toBe(true);
   expect(boardCheckbox("Ops board")!.disabled).toBe(false);
-  expect(container.textContent).toContain("1 of 2 boards selected");
+  expect(scope("Boards")).toEqual({ total: 2, selected: 1 });
   // Every checkbox above narrowed the first catalog instead of starting another request.
   expect(boardRequests()).toEqual([{ projectIds: null }]);
 });
@@ -280,7 +296,7 @@ it("filters projects by name or key without changing saved scope", async () => {
   await input("Atlassian email", "ada@example.com");
   await input("Jira API token", "secret");
   await submit();
-  expect(container.textContent).toContain("1 of 1 projects selected");
+  expect(scope("Projects")).toEqual({ total: 1, selected: 1 });
   await act(async () => {
     const search = container.querySelector<HTMLInputElement>(
       'input[aria-label="Search projects"], input[placeholder="Search projects"]',

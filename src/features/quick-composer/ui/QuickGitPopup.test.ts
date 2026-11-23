@@ -184,7 +184,7 @@ it("keeps branch creation inside the popup and finishes only after creating the 
     );
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await act(async () => button("Create branch").click());
+  await act(async () => button("Create").click());
   expect(gitCreateBranch).toHaveBeenCalledWith("/repo", "feature/popup");
   expect(onFinish).toHaveBeenCalledTimes(1);
 });

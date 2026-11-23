@@ -1,6 +1,6 @@
 .bycoda-session-backdrop {
   position: absolute;
-  inset: auto 0 5.5rem;
+  inset: auto 0 calc(var(--ui-space-12) + var(--ui-space-10));
   z-index: -1;
   margin: 0 auto;
   pointer-events: none;
@@ -42,13 +42,6 @@
   white-space: normal;
   overflow-wrap: anywhere;
   text-wrap: balance;
-}
-.bycoda-empty .bycoda-entry-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
-  margin-block-start: var(--space-3);
 }
 .bycoda-entry-composer {
   position: relative;

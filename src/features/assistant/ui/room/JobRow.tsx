@@ -1,10 +1,10 @@
-import { Text } from "../../../../shared/ui/Text";
+import { textAttributes } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import type { AssistantJob } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import {
-  ActionHost,
   actionContentAttributes,
+  actionHostAttributes,
   InlineAction,
   InlineMoreAction,
   InlineTextAction,
@@ -61,19 +61,21 @@ function JobStatusMark({ job }: { job: AssistantJob }) {
   }
   const tone = jobStatusTone(job);
   return (
-    <Text
-      as="span"
-      size="inherit"
-      tone={
-        tone === "success" || tone === "danger" || tone === "warning" || tone === "info"
-          ? tone
-          : "secondary"
-      }
-      leading="inherit"
-      className={styles.mark}
+    <span
+      {...textAttributes(
+        {
+          size: "inherit",
+          tone:
+            tone === "success" || tone === "danger" || tone === "warning" || tone === "info"
+              ? tone
+              : "secondary",
+          leading: "inherit",
+        },
+        styles.mark,
+      )}
     >
       {mark}
-    </Text>
+    </span>
   );
 }
 
@@ -113,7 +115,7 @@ export function JobRow({
   const caption = [jobStatusLabel(job), total > 0 ? `${done}/${total}` : ""].filter(Boolean);
   const running = job.status === "running";
   return (
-    <ActionHost className={styles.row} selected={selected}>
+    <div {...actionHostAttributes({ selected }, styles.row)}>
       <Checkbox
         {...motionAttributes({ transition: "opacity", easing: "standard" })}
         {...actionContentAttributes(
@@ -151,25 +153,26 @@ export function JobRow({
             </Badge>
           )}
         </div>
-        <Text
-          as="div"
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          className={styles.progressLine}
+        <div
+          {...textAttributes(
+            { size: "caption", tone: "secondary", leading: "inherit" },
+            styles.progressLine,
+          )}
         >
           {running && total > 0 && (
-            <Progress
-              compact
-              aria-label={t("Progress")}
-              value={done}
-              max={total}
-              aria-valuetext={`${done}/${total}`}
-              tone={job.status === "failed" ? "danger" : "accent"}
-            />
+            <div className={styles.progressMeter}>
+              <Progress
+                compact
+                aria-label={t("Progress")}
+                value={done}
+                max={total}
+                aria-valuetext={`${done}/${total}`}
+                tone={job.status === "failed" ? "danger" : "accent"}
+              />
+            </div>
           )}
           <span>{caption.join(" · ")}</span>
-        </Text>
+        </div>
         {job.dispatchState === "unknown" && (
           <InlineError>
             {t("Dispatch status unknown. Check the linked epic before retrying.")}
@@ -249,6 +252,6 @@ export function JobRow({
           ]}
         />
       )}
-    </ActionHost>
+    </div>
   );
 }

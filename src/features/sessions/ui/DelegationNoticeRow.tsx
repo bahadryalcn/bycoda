@@ -47,7 +47,11 @@ export function DelegationNoticeRow({ block }: { block: Block }) {
               ) : section.status === "failed" ? (
                 <CircleX className="icon-sm shrink-0" tone="danger" aria-label={t("Failed")} />
               ) : section.status ? (
-                <Square className="icon-sm shrink-0" tone="warning" aria-label={t("Stopped by you")} />
+                <Square
+                  className="icon-sm shrink-0"
+                  tone="warning"
+                  aria-label={t("Stopped by you")}
+                />
               ) : null}
             </span>
           }

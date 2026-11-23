@@ -493,7 +493,7 @@ export function GitGraphWorkspace({
           <>
             <aside
               ref={branchPane.setPaneRef}
-              className="flex max-h-full min-w-[180px] shrink-0 flex-col overflow-hidden"
+              className="flex max-h-full min-w-45 shrink-0 flex-col overflow-hidden"
             >
               <GitGraphBranches
                 cwd={cwd}
@@ -514,7 +514,7 @@ export function GitGraphWorkspace({
         ) : null}
         {/* An explicitly reopened branch rail shares narrow windows with the inspector. The
             graph can yield to its compact commit column instead of pushing the inspector offscreen. */}
-        <section aria-label={t("Commit graph")} className="flex min-w-[180px] flex-1 flex-col">
+        <section aria-label={t("Commit graph")} className="flex min-w-45 flex-1 flex-col">
           <div {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0")}>
             <Button
               size="sm"
@@ -554,7 +554,7 @@ export function GitGraphWorkspace({
         <aside
           ref={inspectorPane.setPaneRef}
           aria-label={t("Git inspector")}
-          className="flex min-w-[360px] shrink-0 flex-col"
+          className="flex min-w-90 shrink-0 flex-col"
         >
           {commit ? (
             <GitGraphCommitInspector

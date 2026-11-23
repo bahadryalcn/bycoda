@@ -26,9 +26,13 @@ it("opens each destination and refreshes without reloading the app", async () =>
     expect(
       [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
     ).toEqual(["More"]);
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click());
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click(),
+    );
     const refreshButton = () =>
-      document.querySelector<HTMLButtonElement>('[role^="menuitem"][aria-label="Refresh current view"]')!;
+      document.querySelector<HTMLButtonElement>(
+        '[role^="menuitem"][aria-label="Refresh current view"]',
+      )!;
     await act(async () => refreshButton().click());
     expect(reload).toHaveBeenCalledOnce();
     expect(document.body.textContent).not.toContain("Manage hidden groups");
@@ -40,6 +44,10 @@ it("opens each destination and refreshes without reloading the app", async () =>
           canRefresh: false,
         }),
       ),
+    );
+    // Picking an item closed the menu; open it again to see the disabled state.
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click(),
     );
     expect(refreshButton().disabled).toBe(true);
     await act(async () => refreshButton().click());
@@ -90,8 +98,12 @@ it("persists the sound toggle, follows Settings changes and retains state on fai
   try {
     document.body.append(host);
     await act(async () => root.render(createElement(WorkspaceControls, {})));
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click());
-    const button = document.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"][aria-label="Sounds"]')!;
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click(),
+    );
+    const button = document.querySelector<HTMLButtonElement>(
+      '[role="menuitemcheckbox"][aria-label="Sounds"]',
+    )!;
     expect(button.getAttribute("aria-checked")).toBe("true");
     await act(async () => button.click());
     expect(loadSoundsEnabled()).toBe(false);

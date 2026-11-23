@@ -127,7 +127,11 @@ it("ignores a read that finishes after the surface closed", async () => {
   );
   const errors = vi.spyOn(console, "error").mockImplementation(() => {});
   await act(async () => root.render(createElement(FileAccessSettings)));
-  expect(container.textContent).toContain("Loading…");
+  // The loading notice is delayed, so the pending read shows as a locked action.
+  const change = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Change file access"),
+  )!;
+  expect(change.disabled).toBe(true);
   await act(async () => root.unmount());
   await act(async () => finish("all-files"));
   expect(errors).not.toHaveBeenCalled();

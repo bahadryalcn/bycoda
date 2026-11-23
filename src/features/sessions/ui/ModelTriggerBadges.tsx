@@ -66,14 +66,7 @@ export function ModelTriggerBadges({ account, effort, fast, extras = [] }: Model
           role="img"
           aria-label={t("Fast on")}
           className="shrink-0 @max-[22rem]/model-trigger:hidden"
-          icon={
-            <Zap
-              className="icon-xs"
-              fill="currentColor"
-              strokeWidth={1.75}
-              aria-hidden
-            />
-          }
+          icon={<Zap className="icon-xs" fill="currentColor" strokeWidth={1.75} aria-hidden />}
         />
       ) : null}
       {extras.map((extra) => (

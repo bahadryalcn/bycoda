@@ -168,9 +168,7 @@ it("keeps theme recipes exact and derives them from existing grounds", () => {
   expect(roles).toContain(
     "color-mix(insrgb,var(--ui-tone-danger-fg)calc(var(--ui-tone-subtle-strength)*0.45),var(--ui-surface))",
   );
-  expect(roles).toContain(
-    "color-mix(insrgb,var(--ui-tone-danger-fg)calc(var(--ui-tone-subtle-strength)*0.45),var(--ui-surface-floating))",
-  );
+  expect(roles).toContain("--ui-surface-danger-floating:var(--ui-surface-floating);");
   expect(roles).toContain("color-mix(inoklab,var(--color-background-base)45%,transparent)");
   expect(roles).not.toMatch(/#[0-9a-f]|rgba?\(/i);
 });

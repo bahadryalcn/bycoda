@@ -121,8 +121,11 @@ it("clears old usage on provider changes and ignores late responses", async () =
 it("does not guess a provider for defaults or unsupported models", async () => {
   for (const model of ["pi:default", "pi:openai/gpt-5.4", "pi:openrouter/anthropic/claude"]) {
     await show(model);
-    expect(container.textContent).toContain("pi");
+    // The mark stands alone; the tooltip carries the reason. No provider is guessed.
+    const mark = container.querySelector<HTMLElement>("[data-provider-usage] span");
+    expect(mark).not.toBeNull();
     expect(container.textContent).not.toMatch(/\d+%/);
+    expect(await tooltipText(mark!)).toMatch(/Pi can report|not supported/);
   }
   expect(invoke).not.toHaveBeenCalled();
 });
@@ -134,8 +137,14 @@ it("clears quotas on failed refresh and can recover after a Pi login", async () 
     status: "unavailable",
     message: "Sign in through Pi, then refresh usage.",
   });
+  // Refresh lives in the provider detail popover, not on the footer chip.
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Pi · Anthropic usage details"]')
+      ?.click(),
+  );
   const refresh = () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Refresh Pi usage"]');
+    document.querySelector<HTMLButtonElement>('[aria-label="Refresh usage"]');
   expect(refresh()).not.toBeNull();
   await act(async () => refresh()?.click());
   expect(container.textContent).not.toContain("24%");

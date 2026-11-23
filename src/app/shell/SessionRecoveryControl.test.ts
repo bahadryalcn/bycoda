@@ -39,6 +39,7 @@ it("dismisses the recovered list immediately under one label in both modes", asy
     );
   try {
     await render(false);
+    expect(button("Recovered sessions (2)")?.hasAttribute("data-button-badged")).toBe(true);
     expect(button("Dismiss recovered sessions")).toBeUndefined();
     await openOptions("Recovered sessions (2)");
     expect(button("Dismiss recovered sessions")).toBeDefined();

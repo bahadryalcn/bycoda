@@ -1,7 +1,7 @@
 import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Text } from "../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ASSISTANT_MIN_DAILY_TOKEN_BUDGET,
@@ -367,10 +367,9 @@ export function AssistantSetup({
         ) : undefined
       }
     >
-      <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.setup}>
+      <div {...textAttributes({ size: "inherit", tone: "inherit", leading: "normal" }, styles.setup)}>
         {loadError && (
           <InlineError
-            className={styles.feedback}
             details={loadError}
             retry={{ onRetry: () => void refresh(), pending: loading }}
           >
@@ -455,7 +454,7 @@ export function AssistantSetup({
             </div>
           </>
         )}
-      </Text>
+      </div>
     </Modal>
   );
 }

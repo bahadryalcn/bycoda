@@ -288,11 +288,7 @@ export function ExternalTunnelsPanel({
         />
       ) : null}
       {total === 0 && settled && loaded && !loading ? (
-        <EmptyState
-          context="panel"
-          kind="empty"
-          title={t("No shared links")}
-        />
+        <EmptyState context="panel" kind="empty" title={t("No shared links")} />
       ) : null}
     </section>
   );

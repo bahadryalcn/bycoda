@@ -51,8 +51,10 @@ function render(workingDirectory = "/work/web") {
   );
 }
 function button(text: string) {
-  const found = [...document.querySelectorAll<HTMLButtonElement>("button")].find((element) =>
-    element.getAttribute("aria-label") === text || visibleSessionTestText(element)?.includes(text),
+  const found = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (element) =>
+      element.getAttribute("aria-label") === text ||
+      visibleSessionTestText(element)?.includes(text),
   );
   expect(found, text).toBeDefined();
   return found!;
@@ -146,7 +148,7 @@ describe("session folders", () => {
       vi.mocked(pickFolders).mockRejectedValueOnce(new Error("unavailable"));
       render();
       open();
-      await act(async () => button("Wählen Sie aus").click());
+      await act(async () => button("Ordner hinzufügen…").click());
       expect(pickFolders).toHaveBeenCalledWith("Ordner zu dieser Sitzung hinzufügen", true);
       expect(document.querySelector('[role="alert"]')?.textContent).toBe(
         "Der Ordnerauswahldialog konnte nicht geöffnet werden. Bitte versuchen Sie es erneut.",
@@ -174,7 +176,9 @@ describe("session folders", () => {
     render();
     open();
     click("Change project…");
-    expect(document.body.textContent).toContain("new session");
+    // The "opens a new session" consequence rides the Change project tooltip, not visible copy.
+    expect(button("Back")).toBeDefined();
+    expect(document.body.textContent).not.toContain("new session");
     click("api");
     expect(onProjectChange).toHaveBeenCalledWith("/other/api");
     expect(document.querySelector('[role="dialog"]')).toBeNull();

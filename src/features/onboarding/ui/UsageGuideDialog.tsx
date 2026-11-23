@@ -10,12 +10,7 @@ import { MessageSquare, Check } from "../../../shared/ui/icons";
 import { UsageGuideTooltip } from "./UsageGuideTooltip";
 import { GuideShortcuts } from "./GuideShortcuts";
 import { findUsageGuideTarget } from "../model/usageGuideTargets";
-import {
-  COMPACT_TOUR_OPTIONS,
-  TOUR_FLOATING,
-  tourLocale,
-  useTourArrowKeys,
-} from "./tourRunner";
+import { COMPACT_TOUR_OPTIONS, TOUR_FLOATING, tourLocale, useTourArrowKeys } from "./tourRunner";
 import { runGuideAction, setGuideStepDone, type GuideAction } from "../model/guide";
 import { guideMissingHelp, guideTopics } from "../model/guideTopics";
 import { tourPlan } from "../model/guideTours";

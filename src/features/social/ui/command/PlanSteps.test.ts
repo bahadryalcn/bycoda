@@ -66,11 +66,11 @@ const button = (text: string) =>
   [...element.querySelectorAll("button")].find((b) => b.textContent?.trim() === text);
 const steps = () => [...element.querySelectorAll<HTMLElement>(".command-step")];
 const statusOf = (index: number) =>
-  steps()[index]?.querySelector(".command-step-status")?.textContent;
+  steps()[index]?.querySelector(".command-step-head")?.children[1]?.textContent;
 
 it("lists the steps in order with what the Host will do with each", () => {
   render();
-  expect(steps().map((step) => step.querySelector(".command-step-summary")?.textContent)).toEqual([
+  expect(steps().map((step) => step.querySelector(".command-step-head")?.children[0]?.textContent)).toEqual([
     "Reply to the pricing question",
     "Show lists",
     "Message the new follower",

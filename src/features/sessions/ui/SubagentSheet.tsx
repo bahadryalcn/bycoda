@@ -313,12 +313,14 @@ export function SubagentSheet({
         />
       )}
       {!command && (requests || composer) ? (
-        <ScrollArea gutter="stable" className={styles.requests}>
-          <div data-chat-column className="mx-auto w-full min-w-0">
-            {requests}
-            {composer ?? (relay ? <SubagentMessageForm name={name} relay={relay} /> : null)}
-          </div>
-        </ScrollArea>
+        <div className={styles.requests}>
+          <ScrollArea gutter="stable" className="min-h-0 flex-1">
+            <div data-chat-column className="mx-auto w-full min-w-0">
+              {requests}
+              {composer ?? (relay ? <SubagentMessageForm name={name} relay={relay} /> : null)}
+            </div>
+          </ScrollArea>
+        </div>
       ) : !command && relay ? (
         <SubagentMessageForm name={name} relay={relay} />
       ) : !command ? (
@@ -523,7 +525,7 @@ function CommandDetails({
       </section>
       <section
         aria-label={t("Output")}
-        className="relative flex min-h-[8rem] flex-1 flex-col gap-1"
+        className="relative flex min-h-32 flex-1 flex-col gap-1"
       >
         <SectionLabel>{t("Output")}</SectionLabel>
         <div className="relative flex min-h-0 flex-1 flex-col">
@@ -558,7 +560,7 @@ function CommandDetails({
           </ScrollArea>
           {behind && output ? (
             <Button
-              className="absolute right-3 bottom-3 shadow-(--ui-elevation-floating)"
+              className="absolute right-3 bottom-3"
               variant="secondary"
               type="button"
               onClick={jumpToLatest}
@@ -657,9 +659,9 @@ function PromptCard({ prompt }: { prompt: string }) {
     <Surface
       as="section"
       variant="card"
-      padding="none"
+      padding="sm"
       aria-label={t("Prompt")}
-      className="mb-2 px-3 py-2"
+      className="mb-2"
     >
       <Text as="div" size="secondary" tone="inherit" leading="normal">
         <SectionLabel>{t("Prompt")}</SectionLabel>

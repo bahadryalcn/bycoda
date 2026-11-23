@@ -156,7 +156,7 @@ export function AssistantNotificationRecovery({
         ) : null}
         {rows.map((row) => (
           <div key={row.notificationId} className={rt.recoveryRow}>
-            <MiddleTruncate className={rt.recoveryId}>{row.notificationId}</MiddleTruncate>
+            <MiddleTruncate>{row.notificationId}</MiddleTruncate>
             <Badge size="xs" tone={row.state === "unknown" ? "danger" : "neutral"}>
               {stateLabel(row.state)}
             </Badge>

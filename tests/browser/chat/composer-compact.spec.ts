@@ -1271,7 +1271,9 @@ for (const { theme, width } of PANE_MATRIX.filter((entry) => entry.width === 800
     const controls = page.locator("[data-composer-workspace-controls]");
     await expect(controls).toBeVisible();
     await expect(controls.getByRole("button", { name: /^Run on:/ })).toHaveText("This computer");
-    await expect(controls.getByRole("button", { name: "Workspace Current checkout" })).toBeVisible();
+    await expect(
+      controls.getByRole("button", { name: "Workspace Current checkout" }),
+    ).toBeVisible();
     await expect(controls.getByRole("button", { name: "Branch main", exact: true })).toBeVisible();
     const chips = await controls.locator("button, [role='combobox']").evaluateAll((nodes) =>
       nodes
@@ -1292,8 +1294,10 @@ for (const { theme, width } of PANE_MATRIX.filter((entry) => entry.width === 800
     );
     expect(chips.length, "workspace controls render their chips").toBeGreaterThanOrEqual(3);
     for (const chip of chips) {
-      expect(chip.label.length, `chip "${chip.name}" shows a readable label, not an icon alone`)
-        .toBeGreaterThan(0);
+      expect(
+        chip.label.length,
+        `chip "${chip.name}" shows a readable label, not an icon alone`,
+      ).toBeGreaterThan(0);
       expect(chip.clipped, `chip "${chip.name}" label is not clipped`).toBe(false);
     }
   });
@@ -1313,7 +1317,9 @@ test("the access shield stays icon-only for every mode", async ({ page }) => {
     const state = await iconOnly();
     expect(state.text, `access shield (${mode}) shows no text`).toBe("");
     expect(state.glyphs, `access shield (${mode}) shows its icon`).toBeGreaterThan(0);
-    expect(state.name.length, `access shield (${mode}) keeps an accessible name`).toBeGreaterThan(0);
+    expect(state.name.length, `access shield (${mode}) keeps an accessible name`).toBeGreaterThan(
+      0,
+    );
   };
   await check("initial");
   await trigger.click();

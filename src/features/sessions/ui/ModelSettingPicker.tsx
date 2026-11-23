@@ -171,13 +171,7 @@ export function ModelSettingPicker({
       }
     >
       <div className="flex shrink-0 items-center gap-1.5 px-1.5 pt-1 pb-1.5">
-        <Button
-          iconOnly
-          variant="ghost"
-          type="button"
-          label={t("Back")}
-          onClick={onClose}
-        >
+        <Button iconOnly variant="ghost" type="button" label={t("Back")} onClick={onClose}>
           <ArrowLeft className="icon-sm" strokeWidth={1.75} />
         </Button>
         <Text

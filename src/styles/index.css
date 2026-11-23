@@ -72,6 +72,9 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
 }
 
 @theme {
+  --container-rail-icon: 140px;
+  --container-rail-narrow: 200px;
+  --container-rail-wide: 240px;
   /* Preserve descenders in compact labels, including two 10px lines in a 30px tab. */
   --leading-label: 1.4;
   /* Semantic type scale (compact desktop). Use text-ui-micro|caption|secondary|body|title|heading.
@@ -914,7 +917,6 @@ html.theme-light {
   --ui-fill-subtle: color-mix(in srgb, var(--color-content) 8%, transparent);
   --ui-fill-muted: color-mix(in srgb, var(--color-content) 10%, transparent);
   --ui-fill-strong: color-mix(in srgb, var(--color-content) 12%, transparent);
-  --ui-inline-code-surface: var(--ui-fill-strong);
   --theme-hue: 216;
   --theme-saturation: 24%;
   --theme-dark-lightness: 4%;
@@ -3230,10 +3232,6 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 }
 
 @media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-  :root {
-    --ui-inline-code-surface: var(--ui-surface-raised);
-  }
-
   [data-session-review-actions] {
     --ui-surface: var(--ui-surface-panel);
     --ui-surface-raised: var(--ui-surface-floating);

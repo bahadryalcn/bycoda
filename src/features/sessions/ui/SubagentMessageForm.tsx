@@ -95,13 +95,14 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
   const direct = relay.mode === "direct";
   const canSend = !relay.blockedReason && !!relay.draft.trim();
   return (
+    <div className={styles.composer}>
     <ScrollArea
       as="form"
       gutter="stable"
       data-chat-column
       {...surfaceAttributes(
         { frame: "pane", edge: "top" },
-        `${styles.composer} mx-auto flex w-full shrink-0 flex-col gap-2 px-4 py-3`,
+        "mx-auto flex min-h-0 w-full flex-1 flex-col gap-2 px-4 py-3",
       )}
       onSubmit={(event) => {
         event.preventDefault();
@@ -109,9 +110,9 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
       }}
     >
       <TextareaField
-        className={styles.message}
         label={t("Message for {p0}", { p0: name })}
-        rows={2}
+        minRows={2}
+        maxRows={5}
         value={relay.draft}
         aria-keyshortcuts="Control+Enter Meta+Enter"
         onChange={(event) => relay.setDraft(event.target.value)}
@@ -168,15 +169,11 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
             {t("Open session")}
           </Button>
         ) : null}
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={!canSend}
-          shortcut="Mod+Enter"
-        >
+        <Button type="submit" variant="primary" disabled={!canSend} shortcut="Mod+Enter">
           {direct ? t("Send") : t("Relay via main agent")}
         </Button>
       </div>
     </ScrollArea>
+    </div>
   );
 }

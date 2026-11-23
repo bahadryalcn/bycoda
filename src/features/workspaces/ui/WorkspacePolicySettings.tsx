@@ -409,7 +409,9 @@ export function WorkspacePolicySettings({
       )}
       {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
       {stageNotice("inventory", t("Managed workspace directories"), inventoryLoaded)}
-      {hostUpdateNotice ? <SettingsFeedback state="warning">{hostUpdateNotice}</SettingsFeedback> : null}
+      {hostUpdateNotice ? (
+        <SettingsFeedback state="warning">{hostUpdateNotice}</SettingsFeedback>
+      ) : null}
       {showRoster && (
         <section aria-label={t("Worktrees")} className="flex min-w-0 flex-col gap-2">
           {!renderHeader && <Heading size="item">{t("Worktrees")}</Heading>}

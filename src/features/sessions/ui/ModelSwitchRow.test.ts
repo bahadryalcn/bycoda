@@ -34,9 +34,8 @@ describe("ModelSwitchRow", () => {
     });
     const row = container.querySelector('[role="note"]');
     expect(row?.getAttribute("aria-label")).toBe(
-      "Switched from Claude Code · work · Opus 5.5 to Codex · GPT-5.5",
+      "Switched from Claude Code · work · Opus 5.5 to Codex · GPT-5.5. Summary goes with next message",
     );
-    expect(row?.querySelector('[aria-label="Summary goes with next message"]')).not.toBeNull();
     expect(container.querySelector("button")).toBeNull();
   });
 

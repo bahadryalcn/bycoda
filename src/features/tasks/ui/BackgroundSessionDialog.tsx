@@ -74,11 +74,7 @@ export function BackgroundSessionDialog({
   }, [target.machineId, target.sessionId, revision]);
 
   return (
-    <Modal
-      title={summary?.title ?? t("Background session")}
-      onClose={onClose}
-      size="md"
-    >
+    <Modal title={summary?.title ?? t("Background session")} onClose={onClose} size="md">
       <div className="flex min-h-0 flex-col gap-3">
         {error ? (
           <Alert tone="danger" className="flex-wrap">

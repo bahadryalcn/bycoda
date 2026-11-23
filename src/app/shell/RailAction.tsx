@@ -75,6 +75,40 @@ export function RailAction({
       disabled={!onClick}
       aria-label={ariaLabel ?? label}
       className="relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center"
+      trailing={
+        badge != null || dot || shortcut ? (
+          <span className="inline-flex items-center gap-2">
+            {badge != null ? (
+              <Badge
+                variant="count"
+                size="sm"
+                max={99}
+                aria-hidden
+                className="shrink-0 @max-[140px]/rail:absolute @max-[140px]/rail:right-1 @max-[140px]/rail:top-1"
+              >
+                {badge}
+              </Badge>
+            ) : null}
+            {dot ? (
+              <StatusDot
+                aria-hidden
+                className="shrink-0 @max-[140px]/rail:absolute @max-[140px]/rail:right-2 @max-[140px]/rail:top-1.5"
+              />
+            ) : shortcut ? (
+              <Text
+                data-rail-search-shortcut={search || undefined}
+                data-tooltip-shortcut=""
+                aria-hidden
+                size="caption"
+                tone="secondary"
+                className="shrink-0 @max-[200px]/rail:hidden"
+              >
+                {shortcut}
+              </Text>
+            ) : null}
+          </span>
+        ) : undefined
+      }
     >
       <Icon
         className="icon-sm shrink-0"
@@ -92,38 +126,15 @@ export function RailAction({
       >
         {label}
       </Text>
-      {badge != null ? (
-        <Badge
-          variant="count"
-          size="sm"
-          max={99}
-          aria-hidden
-          className="shrink-0 @max-[140px]/rail:absolute @max-[140px]/rail:right-1 @max-[140px]/rail:top-1"
-        >
-          {badge}
-        </Badge>
-      ) : null}
-      {dot ? (
-        <StatusDot
-          aria-hidden
-          className="shrink-0 @max-[140px]/rail:absolute @max-[140px]/rail:right-2 @max-[140px]/rail:top-1.5"
-        />
-      ) : shortcut ? (
-        <Text
-          data-rail-search-shortcut={search || undefined}
-          data-tooltip-shortcut=""
-          aria-hidden
-          size="caption"
-          tone="secondary"
-          className="shrink-0 @max-[200px]/rail:hidden"
-        >
-          {shortcut}
-        </Text>
-      ) : null}
     </Button>
   );
 }
 
-export function RailSearch(props: Pick<Props, "active" | "ariaLabel" | "command" | "icon" | "label" | "onClick" | "shortcut">) {
+export function RailSearch(
+  props: Pick<
+    Props,
+    "active" | "ariaLabel" | "command" | "icon" | "label" | "onClick" | "shortcut"
+  >,
+) {
   return <RailAction {...props} search />;
 }

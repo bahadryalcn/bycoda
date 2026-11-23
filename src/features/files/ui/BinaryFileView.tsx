@@ -196,15 +196,7 @@ export function BinaryFileView({ path }: Props) {
   return <ImageView path={path} url={state.url} size={state.size} />;
 }
 
-function ImageView({
-  path,
-  url,
-  size,
-}: {
-  path: string;
-  url: string;
-  size: number;
-}) {
+function ImageView({ path, url, size }: { path: string; url: string; size: number }) {
   useLocale();
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -328,12 +320,7 @@ function ImageView({
         >
           <Minus className="icon-xs" strokeWidth={1.75} />
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={imageZoom.reset}
-          className="tabular-nums"
-        >
+        <Button size="sm" variant="ghost" onClick={imageZoom.reset} className="tabular-nums">
           {zoom === 1
             ? t("Fit")
             : `${Math.round(zoom * (natural && imageRef.current?.offsetWidth ? imageRef.current.offsetWidth / natural.w : 1) * 100)}%`}

@@ -29,9 +29,9 @@ const items = [
   { kind: "item" as const, id: "three", label: "Three" },
 ];
 
-function press(key: string) {
+function press(target: HTMLElement, key: string) {
   return act(async () => {
-    window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+    target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
   });
 }
 
@@ -58,16 +58,19 @@ it("maps size to the Popover rem steps", async () => {
   vi.unstubAllGlobals();
 });
 
-it("highlight=state moves by window keys while focus stays outside the menu", async () => {
+it("highlight=state handles keys from the opening button before the menu takes focus", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
+  const trigger = document.createElement("button");
+  container.before(trigger);
+  trigger.focus();
   const root = createRoot(container);
   const onPick = vi.fn();
   await act(async () =>
     root.render(
       createElement(DropdownMenu, {
-        anchor: container,
+        anchor: trigger,
         label: "Menu",
         items,
         highlight: "state",
@@ -83,11 +86,13 @@ it("highlight=state moves by window keys while focus stays outside the menu", as
     )!.id;
   expect(menu().getAttribute("aria-activedescendant")).toBe(rowId("One"));
   // The disabled row is skipped.
-  await press("ArrowDown");
+  await press(trigger, "ArrowDown");
   expect(menu().getAttribute("aria-activedescendant")).toBe(rowId("Three"));
-  await press("Enter");
+  expect(document.activeElement).toBe(trigger);
+  await press(trigger, "Enter");
   expect(onPick).toHaveBeenCalledWith("three");
   await act(async () => root.unmount());
   container.remove();
+  trigger.remove();
   vi.unstubAllGlobals();
 });

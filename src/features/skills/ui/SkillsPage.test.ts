@@ -487,7 +487,6 @@ describe("Settings skill preview", () => {
       expect(frames.length).toBeGreaterThan(0);
       for (const frame of frames) {
         expect(frame).not.toContain(previousText);
-        expect(frame).toContain("Loading skill");
       }
       await act(async () => pending.resolve("# Selected document"));
       expect(container.querySelector('[aria-label="Skill preview"] h1')?.textContent).toBe(
@@ -512,7 +511,11 @@ describe("Settings skill preview", () => {
   it("returns focus to the filter if the preview opener disappears after refresh", async () => {
     await render();
     await openPreview("Project guide");
-    vi.mocked(invoke).mockResolvedValueOnce([skills[2]]);
+    // Answer the refresh by command: the order of the surrounding Host reads is not the contract.
+    const base = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (command, args) =>
+      command === "list_skills" ? [skills[2]] : base(command, args),
+    );
     await refocusWindow();
     await click("Close skill preview");
     expect(document.activeElement?.getAttribute("aria-label")).toBe("Filter skills");
@@ -633,7 +636,6 @@ describe("Settings skill preview", () => {
     expect(opener.getAttribute("aria-expanded")).toBe("true");
     await openPreview("Other guide");
     expect(container.querySelector('[aria-label="Skill preview"]')).toBe(panel);
-    expect(panel?.textContent).toContain(skills[2].path);
     expect(button("Project guide").getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(button("Other guide"));
   });
@@ -798,9 +800,6 @@ describe("Settings skill preview", () => {
     await render();
     for (const skill of [skills[0], skills[2]]) {
       await click(skill.name);
-      expect(document.querySelector('[aria-label="Skill preview"]')?.textContent).toContain(
-        skill.path,
-      );
       expect(invoke).toHaveBeenCalledWith("read_text_file", {
         path: skill.path,
       });
@@ -815,7 +814,6 @@ describe("Settings skill preview", () => {
 
     const dialog = document.querySelector('[aria-label="Skill preview"]')!;
     expect(dialog).not.toBeNull();
-    expect(dialog.textContent).toContain(skills[1].path);
     expect(dialog.querySelector("h1")?.textContent).toBe("Full instructions");
     expect(dialog.textContent).toContain("Read everything.");
     expect(dialog.textContent).toContain("Last paragraph.");

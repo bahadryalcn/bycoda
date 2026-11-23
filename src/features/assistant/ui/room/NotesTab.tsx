@@ -9,7 +9,6 @@ import type {
 import { formatDate, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
-import { Surface } from "../../../../shared/ui/Surface";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { deleteNotesInOrder } from "./noteBulkDelete";
 import { matches } from "./assistantRoomHelpers";
@@ -152,7 +151,9 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           {dailySummary &&
             dailySummary.environmentId === environmentId &&
             dailySummary.scopeKey === privacy.key && (
-              <Surface variant="card" padding="md" className={styles.summary}>
+              <div
+                {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, styles.summary)}
+              >
                 {dailySummary.snapshot.briefing && canReadBriefing(dailySummary.snapshot) ? (
                   <>
                     <Heading size="item" level={3}>
@@ -175,7 +176,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                     description={t("Nothing new to report.")}
                   />
                 )}
-              </Surface>
+              </div>
             )}
           {!snapshot.capabilities.notes && (
             <Text

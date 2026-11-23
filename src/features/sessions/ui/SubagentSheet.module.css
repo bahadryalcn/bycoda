@@ -6,32 +6,22 @@
    Keep room for the trail; the composer can scroll on short split panes. Whole
    pixels: a fractional height leaves the last row clipped at the deepest scroll. */
 .composer {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
   min-block-size: 0;
   max-block-size: round(down, 55%, 1px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  overflow-wrap: anywhere;
-}
-
-.composer .message {
-  min-block-size: 2lh;
-  max-block-size: 8rem;
-}
-
-.composer > * {
-  flex-shrink: 0;
 }
 
 /* Request forms and the message draft share one bounded scroll owner. */
 .requests {
+  display: flex;
+  flex-direction: column;
   min-block-size: 0;
   max-block-size: round(down, 55%, 1px);
   flex-shrink: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 .requests .composer {
   max-block-size: none;
-  overflow: visible;
 }

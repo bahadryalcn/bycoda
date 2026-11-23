@@ -113,7 +113,8 @@ it("renders the daily token budget and the permission picker as their own parts"
   await act(async () => root!.unmount());
   container.remove();
   await setup({ execution }, "permissions");
-  expect(container.textContent).toContain("Execution permissions");
+  // The picker is icon-only: its label is the accessible name, not visible text.
+  expect(container.querySelector('[aria-label="Execution permissions"]')).toBeTruthy();
   expect(container.textContent).not.toContain("Autonomy");
 });
 

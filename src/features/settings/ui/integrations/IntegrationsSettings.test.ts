@@ -79,7 +79,7 @@ it("retains account and new-account drafts while switching and locks pending sav
     throw new Error(`Unexpected command: ${command}`);
   });
   await act(async () => root.render(createElement(EmailAccountsSettings)));
-  expect(container.textContent).toContain("Configured");
+  expect(container.querySelectorAll('[role="listitem"]')).toHaveLength(2);
   const edit = async (index: number) => {
     const row = container.querySelectorAll('[role="listitem"]')[index]!;
     await act(async () =>
@@ -90,12 +90,22 @@ it("retains account and new-account drafts while switching and locks pending sav
     [...container.querySelectorAll<HTMLInputElement>('input[aria-label="Display name"]')].find(
       (item) => !item.closest("[hidden]"),
     )!;
-  const name = async (value: string) =>
+  // Display name lives under the form's collapsed Advanced section; its drafts stay mounted.
+  const openAdvanced = () =>
     act(async () => {
+      for (const toggle of container.querySelectorAll<HTMLButtonElement>(
+        'button[aria-expanded="false"]',
+      ))
+        if (toggle.textContent?.trim() === "Advanced" && !toggle.closest("[hidden]")) toggle.click();
+    });
+  const name = async (value: string) => {
+    await openAdvanced();
+    await act(async () => {
       const field = visibleInput();
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
       field.dispatchEvent(new Event("input", { bubbles: true }));
     });
+  };
   await edit(0);
   await name("Draft A");
   await edit(1);
@@ -132,7 +142,6 @@ it("applies a late form completion only to its original account", async () => {
     root.render(
       createElement(MessagingAccountsCard, {
         provider: "email",
-        emptyLabel: "No accounts",
         addLabel: "Add",
         describe: (value) => value.identity,
         Form,
@@ -184,7 +193,8 @@ it("keeps a rejected email draft, then lists the verified account", async () => 
     throw new Error(`Unexpected command: ${command} ${JSON.stringify(args)}`);
   });
   await act(async () => root.render(createElement(EmailAccountsSettings)));
-  expect(container.textContent).toContain("No email accounts connected yet.");
+  // With no account the add form opens directly instead of an empty message.
+  expect(input("Email address")).not.toBeNull();
   await toggle("Use an app password instead");
   await fill("Email address", "owner@example.com");
   await fill("Password or app password", "app-password-fixture");
@@ -201,7 +211,7 @@ it("keeps a rejected email draft, then lists the verified account", async () => 
   expect(save[1]![1]).toMatchObject({
     input: { provider: "email", secret: { password: "app-password-fixture" } },
   });
-  expect(container.textContent).toContain("Connected as owner@example.com.");
+  expect(container.querySelector('[role="listitem"]')?.textContent).toContain("owner@example.com");
   expect(container.querySelector('input[aria-label="Password or app password"]')).toBeNull();
   expect(button("Add account")).toBeDefined();
 });
@@ -266,11 +276,11 @@ it("offers the app password when Google sign-in is refused", async () => {
   });
   vi.useFakeTimers();
   await act(async () => root.render(createElement(EmailAccountsSettings)));
-  expect(container.textContent).toContain("Can't sign in with Google?");
+  // The app password fallback is offered only after the browser sign-in fails.
+  expect(button("Use an app password instead")).toBeUndefined();
   await click("Sign in with Google");
   await act(async () => vi.advanceTimersByTimeAsync(1500));
   expect(container.textContent).toContain("Google refused this sign-in.");
-  expect(container.textContent).not.toContain("Can't sign in with Google?");
   await click("Use an app password instead");
   expect(input("Password or app password")).not.toBeNull();
   expect(button("Sign in with Google")).toBeUndefined();

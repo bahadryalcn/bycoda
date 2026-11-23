@@ -1,5 +1,5 @@
-import type { Session, WorkspaceMode } from "../../sessions/model/session";
-import { isProjectlessCwd } from "../../sessions/model/recentSessions";
+import type { Session, WorkspaceMode } from "../../sessions";
+import { isProjectlessCwd } from "../../sessions/public/projectless";
 import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
 import { t } from "../../../shared/i18n";
 import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";

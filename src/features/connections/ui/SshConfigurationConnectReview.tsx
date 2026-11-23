@@ -40,6 +40,7 @@ export function SshConfigurationConnectReview({
     setReview(undefined);
     setError("");
   }
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- requests the native configuration preview for the current server
   useEffect(() => {
     let current = true;
     used.current = false;
@@ -65,11 +66,13 @@ export function SshConfigurationConnectReview({
     };
   }, [server.id, target, revision]);
   // Group names only label provenance; a failed lookup leaves the revision-only label.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- reads the native SSH group names for the review
   useEffect(() => {
     let current = true;
     void listSshGroupDefaults()
       .then((groups) => {
-        if (current) setGroupNames(Object.fromEntries(groups.map((group) => [group.id, group.name])));
+        if (current)
+          setGroupNames(Object.fromEntries(groups.map((group) => [group.id, group.name])));
       })
       .catch(() => {});
     return () => {

@@ -11,7 +11,8 @@ export const issueCopy: Record<TunnelUiIssue, string> = {
   "origin-unreachable": "The local service is not listening on this computer.",
   "connection-failed": "The tunnel provider could not connect.",
   "startup-timeout": "The tunnel did not connect in time.",
-  "unexpected-exit": "The tunnel process closed unexpectedly. Its public URL is no longer available.",
+  "unexpected-exit":
+    "The tunnel process closed unexpectedly. Its public URL is no longer available.",
   "process-error": "The tunnel process could not start.",
   "stop-failed": "The tunnel process did not stop.",
   "host-restarted": "The host restarted and interrupted this tunnel.",

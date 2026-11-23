@@ -139,7 +139,7 @@ it("adds an account-only computer through the account: shows the code, then the 
   expect(container.textContent).not.toContain("no SSH address");
   await act(async () => addButton().click());
   expect(dialogText()).toContain("482913");
-  expect(dialogText()).toContain("Allow it on Studio");
+  expect(dialogText()).toContain("Allow it there");
   expect(onAdd).not.toHaveBeenCalled();
 
   // The other computer says no: the dialog says so and offers another try.
@@ -152,7 +152,11 @@ it("keeps Add disabled for an account computer without a published https route",
   account.state = { phase: "signed-in", deviceId: "me-1" };
   vi.mocked(listOtherComputers).mockResolvedValue([{ ...studio, routes: [] }] as never);
   await render([]);
-  expect(addButton().disabled).toBe(true);
+  // A disabled control that explains why stays focusable, so it is aria-disabled.
+  expect(addButton().getAttribute("aria-disabled")).toBe("true");
+  await act(async () => addButton().click());
+  expect(onAdd).not.toHaveBeenCalled();
+  expect(dialogText()).not.toContain("Allow it there");
 });
 
 it("adds a home-network account computer over SSH when an SSH entry has its address", async () => {
@@ -195,6 +199,8 @@ it("shows every found machine, and a search field only for a long list", async (
   vi.mocked(listOtherComputers).mockResolvedValue([]);
   await render(many.slice(0, 3));
   expect(container.querySelector("input")).toBeNull();
+  // Remount: the list reads its candidates once per mount and then on a timer.
+  await act(async () => root.render(null));
   await render(many);
   expect(container.textContent).toContain("box-0");
   expect(container.textContent).toContain("box-6");

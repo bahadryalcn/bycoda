@@ -94,6 +94,8 @@ export function LocalHostDownNotice({
   useLocale();
   return (
     <Alert
+      // Controlled: dismissing removes the notice at once; the owner hides the row itself.
+      open
       tone="warning"
       title={t("The host on this computer is not running.")}
       action={{

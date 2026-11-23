@@ -1,12 +1,10 @@
 .actions,
-.row,
 .scope {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
 }
-.row,
 .scope {
   justify-content: space-between;
 }
@@ -33,7 +31,6 @@
   gap: 4px;
 }
 .count {
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .stack,
@@ -41,18 +38,6 @@
   display: grid;
   gap: 12px;
   min-inline-size: 0;
-}
-/* Token grants are rows of the surrounding Group: bounded, unframed, scrolling. */
-.list {
-  display: grid;
-  max-block-size: 320px;
-  overflow-y: auto;
-}
-.row {
-  padding: var(--ui-row-inset-block) var(--ui-row-inset-inline);
-}
-.list:empty {
-  display: none;
 }
 .identity {
   display: grid;

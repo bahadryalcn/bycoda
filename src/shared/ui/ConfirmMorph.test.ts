@@ -65,7 +65,7 @@ it("keeps arming grace, prevents duplicate pending execution and focuses real re
   );
   expect(ref.current).toBe(control());
   await click("Delete note");
-  expect(document.activeElement).toBe(button("Confirm delete"));
+  expect(document.activeElement).toBe(button("Cancel"));
   now += 100;
   await click("Confirm delete");
   expect(confirm).not.toHaveBeenCalled();

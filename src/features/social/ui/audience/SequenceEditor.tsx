@@ -240,7 +240,9 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
               min={1}
               value={perHour}
               disabled={saving}
-              error={touched("hour") && !hourValid ? t("Enter a whole number, 1 or more.") : undefined}
+              error={
+                touched("hour") && !hourValid ? t("Enter a whole number, 1 or more.") : undefined
+              }
               onBlur={() => touch("hour")}
               onChange={(event) => setPerHour(event.target.value)}
             />
@@ -249,7 +251,9 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
               min={1}
               value={perDay}
               disabled={saving}
-              error={touched("day") && !dayValid ? t("Enter a whole number, 1 or more.") : undefined}
+              error={
+                touched("day") && !dayValid ? t("Enter a whole number, 1 or more.") : undefined
+              }
               onBlur={() => touch("day")}
               onChange={(event) => setPerDay(event.target.value)}
             />
@@ -258,7 +262,11 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
               min={0}
               value={warmupDays}
               disabled={saving}
-              error={touched("warmup") && !warmupValid ? t("Enter a whole number, 0 or more.") : undefined}
+              error={
+                touched("warmup") && !warmupValid
+                  ? t("Enter a whole number, 0 or more.")
+                  : undefined
+              }
               onBlur={() => touch("warmup")}
               onChange={(event) => setWarmupDays(event.target.value)}
             />

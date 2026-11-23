@@ -1,9 +1,9 @@
 .crew-stage-card {
   display: grid;
   justify-items: center;
-  gap: 0.25rem;
+  gap: var(--ui-space-1);
   inline-size: 100%;
-  padding-block: 0.25rem 0;
+  padding-block: var(--ui-space-1) 0;
 }
 
 .crew-stage-card .crew-scene {

@@ -95,7 +95,6 @@
 .threadTime {
   flex: none;
   margin-inline-start: auto;
-  font-variant-numeric: tabular-nums;
 }
 
 .transcript {
@@ -182,7 +181,6 @@
   padding: var(--ui-space-2) clamp(16px, 4vw, 48px) var(--ui-space-4);
 }
 .composerNote {
-  margin: 0;
   padding: 0 var(--ui-space-5) var(--ui-space-3);
 }
 .draftError {

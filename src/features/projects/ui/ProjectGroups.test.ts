@@ -89,11 +89,13 @@ it("keeps quick project actions visible and opens appearance and folder actions 
   act(() =>
     appearance.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
   );
-  expect(document.querySelector('[role="dialog"][aria-label="Appearance"]')).not.toBeNull();
+  expect(document.querySelector('[role="menu"][aria-label="Appearance"]')).not.toBeNull();
   expect(button("Add project logo")).toBeDefined();
   expect(button("Background image")).toBeDefined();
-  act(() => button("Folders").dispatchEvent(new Event("pointermove", { bubbles: true })));
-  expect(document.querySelector('[role="dialog"][aria-label="Appearance"]')).toBeNull();
+  act(() => button("Rename folder…").dispatchEvent(new Event("pointermove", { bubbles: true })));
+  // Leaving a flyout row closes it after a short grace delay.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 400)));
+  expect(document.querySelector('[role="menu"][aria-label="Appearance"]')).toBeNull();
   expect(button("Rename folder…")).toBeDefined();
   expect(button("Additional folders…")).toBeDefined();
   await act(async () => button("Additional folders…").click());
@@ -347,7 +349,7 @@ it("confirms group deletion with projects and removes the active project last", 
   expect(remove).not.toHaveBeenCalled();
   expect(loadProjectGroups()).toHaveLength(1);
   const dialog = document.querySelector('[role="dialog"]')!;
-  expect(dialog.textContent).toContain("Folders on disk stay");
+  expect(dialog.textContent).toContain("folders on disk stay");
   await act(async () =>
     (
       Array.from(dialog.querySelectorAll("button")).find(

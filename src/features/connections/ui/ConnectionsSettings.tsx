@@ -59,7 +59,6 @@ import { notifyRemoteRecovered } from "../model/remoteHealth";
 import { machineLabel } from "../model/machineIdentity";
 import type { RemoteMachine } from "../model/protocol";
 
-
 export function ConnectionsSettings() {
   useLocale();
   const revealed = useContext(RevealedSetting);
@@ -153,10 +152,7 @@ ${next.error}`
                 ? t("{p0} was updated and reconnected.", {
                     p0: next.machine.name,
                   })
-                : t(
-                    "{p0} is connected.",
-                    { p0: next.machine.name },
-                  ),
+                : t("{p0} is connected.", { p0: next.machine.name }),
             next,
             next.machine.name,
           ),

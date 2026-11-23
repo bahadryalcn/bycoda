@@ -119,10 +119,12 @@ export function WorkItemMentionCard({
             {t("This work item was not found in your connected trackers.")}
           </Text>
         ) : (
-          <Text as="p" size="caption" tone="secondary" className={styles.pending}>
+          <div className={styles.pending}>
             <Spinner size="xs" />
-            {t("Looking up work item…")}
-          </Text>
+            <Text as="p" size="caption" tone="secondary">
+              {t("Looking up work item…")}
+            </Text>
+          </div>
         )}
       </div>
     </Popover>

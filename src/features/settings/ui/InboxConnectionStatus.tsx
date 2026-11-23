@@ -99,7 +99,11 @@ export function InboxConnectionStatus({
               : t("Not configured")}
         </Badge>
       </Tooltip>
-      {error ? <Button disabled={busy || checking} onClick={onCheck}>{t("Retry")}</Button> : null}
+      {error ? (
+        <Button disabled={busy || checking} onClick={onCheck}>
+          {t("Retry")}
+        </Button>
+      ) : null}
     </Row>
   );
 }

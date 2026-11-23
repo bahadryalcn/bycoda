@@ -196,6 +196,16 @@ async function openAppearanceTab(label: string) {
   await act(async () => tab!.click());
 }
 
+/** The account dialog's name field, named by its visible "Account name" label. */
+function accountNameInput() {
+  const label = [...document.querySelectorAll("label")].find(
+    (item) => item.textContent?.trim() === "Account name",
+  );
+  return (
+    label?.htmlFor ? document.getElementById(label.htmlFor) : label?.querySelector("input")
+  ) as HTMLInputElement;
+}
+
 /** Opens a provider account's overflow menu and picks one of its items. */
 async function accountAction(account: string, item: string) {
   await act(async () =>
@@ -561,9 +571,12 @@ describe("settings pages", () => {
     expect(openUrl).toHaveBeenCalledWith("mailto:info@bycoda.codes");
     vi.mocked(openUrl).mockRejectedValueOnce(new Error("No email app"));
     await act(async () => contact.click());
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-      "Copy info@bycoda.codes",
-    );
+    // Help also hosts Diagnostics, which can raise its own alert, so look through all of them.
+    expect(
+      [...document.querySelectorAll('[role="alert"]')].some((alert) =>
+        alert.textContent?.includes("Copy info@bycoda.codes"),
+      ),
+    ).toBe(true);
   });
 
   it("keeps application and developer contacts distinct in About", async () => {
@@ -695,7 +708,10 @@ describe("settings pages", () => {
         (node) => !node.closest("[data-transcript-preview]"),
       ),
     ).toHaveLength(0);
-    // The tone field is shown directly on the Theme tab, so its settings are always reachable.
+    // Tone fields sit in the Advanced section; Settings search reveals and opens it for them.
+    expect(container.querySelector('[data-setting-id="hue"]')).toBeNull();
+    await render("appearance", { anchor: "dark-lightness" });
+    expect(container.querySelector('[data-setting-id="hue"]')).not.toBeNull();
     expect(container.querySelector('[data-setting-id="dark-lightness"]')).not.toBeNull();
   });
 
@@ -883,6 +899,16 @@ describe("settings pages", () => {
     expect(help).not.toContain("choosing Sleep still works");
     await act(async () => info.click());
 
+    // The duration and screen options are under the Sleep group's Advanced section.
+    await act(async () =>
+      [
+        ...toggle.closest("section")!.querySelectorAll<HTMLButtonElement>(
+          'button[aria-expanded="false"]',
+        ),
+      ]
+        .find((button) => button.textContent?.trim() === "Advanced")
+        ?.click(),
+    );
     const hold = [
       ...container.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="listbox"]'),
     ].find((button) =>
@@ -1082,18 +1108,19 @@ describe("settings pages", () => {
     }
   });
 
-  it("shows background effect choices above scope when artwork is available", async () => {
+  it("keeps the background effect under Advanced after the scope when artwork is available", async () => {
     localStorage.setItem("bycoda.chatBackgroundPath", "/app-data/backgrounds/chat-background.png");
-    await render("appearance");
+    // The effect is an advanced image option; revealing it opens the Image layer and Advanced.
+    await render("appearance", { anchor: "new-thread-background-effect" });
     await openAppearanceTab("Background");
 
     const effect = container.querySelector("#new-thread-background-effect-dither")!;
+    expect(effect).not.toBeNull();
     const effectRow = effect.closest(".settings-row")!;
     const scopeRow = container
       .querySelector('[aria-label="Show background on"]')!
       .closest(".settings-row")!;
-    expect(effect).not.toBeNull();
-    expect(effectRow.compareDocumentPosition(scopeRow) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+    expect(scopeRow.compareDocumentPosition(effectRow) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
       0,
     );
 
@@ -1120,7 +1147,7 @@ describe("settings pages", () => {
     }
     globalThis.Image = DecodedImage as unknown as typeof Image;
     try {
-      await render("appearance");
+      await render("appearance", { anchor: "new-thread-background-effect" });
       await openAppearanceTab("Background");
 
       const option = container.querySelector<HTMLButtonElement>(
@@ -1142,7 +1169,7 @@ describe("settings pages", () => {
       expect(localStorage.getItem("bycoda.newThreadBackgroundEffect")).toBe("gradient-blur");
 
       await render("providers");
-      await render("appearance");
+      await render("appearance", { anchor: "new-thread-background-effect" });
       expect(
         container
           .querySelector("#new-thread-background-effect-gradient-blur")
@@ -1167,9 +1194,7 @@ describe("settings pages", () => {
     expect(container.textContent).toContain("Claude Code");
     expect(container.textContent).toContain("Codex");
     await accountAction("Default account", "Edit account");
-    const defaultInput = document.querySelector<HTMLInputElement>(
-      '[aria-label="Rename Claude Code account"]',
-    )!;
+    const defaultInput = accountNameInput();
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         defaultInput,
@@ -1183,7 +1208,7 @@ describe("settings pages", () => {
     expect(providerAccounts("claude")[0]?.label).toBe("Primary");
 
     await accountAction("Wrk", "Edit account");
-    const input = document.querySelector<HTMLInputElement>('[aria-label="Rename Codex account"]')!;
+    const input = accountNameInput();
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         input,
@@ -1273,7 +1298,8 @@ describe("settings pages", () => {
 
     expect(container.textContent).toContain("Same sign-in as Max A");
     expect(container.textContent?.match(/Same sign-in as/g)).toHaveLength(1);
-    expect(container.textContent).toContain("Signed out");
+    // A signed-out profile carries no status label; its recovery is the Sign in action.
+    expect(container.querySelector('[aria-label="Sign in to Max B"]')).not.toBeNull();
     // The default account has no "Make default" item; the other accounts do.
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Actions for Max A"]')!.click(),
@@ -1442,8 +1468,9 @@ describe("settings pages", () => {
       JSON.parse(localStorage.getItem("bycoda.providerBinaryPaths.v1") ?? "{}").codex,
     ).toBeUndefined();
     await act(async () => details.click());
+    // The detected path is the whole state: no "Auto-detected" badge, and no stale override.
     expect(document.body.textContent).toContain("/auto/codex");
-    expect(document.body.textContent).toContain("Auto-detected");
+    expect(document.body.textContent).not.toContain("/opt/codex/bin/codex");
   });
 
   it("offers manual auto-detect retry when a CLI is missing", async () => {
@@ -1581,7 +1608,17 @@ describe("settings pages", () => {
   it("gives every section a rail group", () => {
     const groups = new Set(SETTINGS_SECTIONS.map((section) => section.group));
     expect([...groups].sort()).toEqual(
-      ["app", "agents", "tools", "code", "connections", "about", "account"].sort(),
+      [
+        "account",
+        "app",
+        "conversation",
+        "models",
+        "workspace",
+        "connections",
+        "privacy",
+        "tools",
+        "help",
+      ].sort(),
     );
   });
 
@@ -1642,7 +1679,8 @@ describe("settings pages", () => {
   });
 
   it("offers tab animations as an opt-in", async () => {
-    await render("appearance");
+    // Tab animations sit under an Advanced section; revealing the setting opens it.
+    await render("appearance", { anchor: "tab-animations" });
     const control = container.querySelector<HTMLButtonElement>(
       '[role="switch"][aria-label="Tab animations"]',
     )!;
@@ -1753,7 +1791,9 @@ describe("settings pages", () => {
     await render(section);
     if (section === "skills") {
       await act(async () =>
-        container.querySelector<HTMLButtonElement>('button[aria-label="New"]')!.click(),
+        [...container.querySelectorAll<HTMLButtonElement>("button")]
+          .find((button) => button.textContent?.trim() === "New")!
+          .click(),
       );
       await act(async () =>
         [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')]
@@ -1819,7 +1859,13 @@ describe("settings pages", () => {
     const group = container.querySelector('[data-setting-id="harness-updates"]')!;
     const status = container.querySelector('[data-setting-id="cli-path-claude"]')!;
     expect(group.textContent).toContain("Not checked yet");
-    expect(status.textContent).toContain("Unknown");
+    // The state is an icon named by its accessible label, not row text.
+    const statusIcon = () => status.querySelector('[role="img"]')?.getAttribute("aria-label");
+    const updateButton = () =>
+      [...status.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent?.trim() === "Update",
+      );
+    expect(statusIcon()).toBe("Unknown");
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "harness_exec")).toBe(
       false,
     );
@@ -1830,14 +1876,10 @@ describe("settings pages", () => {
     await act(async () => checkButton.click());
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(status.textContent).toContain("2.1.284");
-    expect(status.textContent).toContain("Update available");
+    expect(statusIcon()).toBe("Update available");
     expect(group.textContent).toContain("Update available: Claude Code");
 
-    await act(async () =>
-      status
-        .querySelector<HTMLButtonElement>('[aria-label="Update Claude Code to 2.1.285"]')!
-        .click(),
-    );
+    await act(async () => updateButton()!.click());
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(invoke).toHaveBeenCalledWith("harness_update", {
       command: "/bin/claude",
@@ -1846,8 +1888,8 @@ describe("settings pages", () => {
       targetVersion: "2.1.285",
     });
     expect(status.textContent).toContain("2.1.285");
-    expect(status.textContent).toContain("Up to date");
-    expect(status.querySelector('[aria-label="Update Claude Code to 2.1.285"]')).toBeNull();
+    expect(statusIcon()).toBe("Up to date");
+    expect(updateButton()).toBeUndefined();
 
     // Claude Code, updated earlier in this session, falls behind again and
     // still counts for Update all.
@@ -1978,11 +2020,15 @@ describe("settings search", () => {
   // mentions it; anything weaker loses to the settings themselves.
   it("ranks a page against the settings that mention it, grouped under one page heading each", async () => {
     // Results gather by page in order of first appearance; the rank holds within a page.
+    // Page results lead the list; each other setting joins one heading per page, in rank order.
     const grouped = (query: string) => {
+      const results = searchSettings(query);
+      const isPage = (item: (typeof results)[number]) =>
+        !item.settingId || item.label === item.sectionLabel;
       const pages = new Map<string, string[]>();
-      for (const item of searchSettings(query))
+      for (const item of results.filter((entry) => !isPage(entry)))
         pages.set(item.sectionLabel, [...(pages.get(item.sectionLabel) ?? []), item.label]);
-      return [...pages.values()].flat();
+      return [...results.filter(isPage).map((item) => item.label), ...[...pages.values()].flat()];
     };
     const titles = () =>
       options().map((item) => item.querySelector("[data-search-result-title]")!.textContent);

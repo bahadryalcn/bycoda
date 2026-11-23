@@ -189,8 +189,8 @@ export function ModelExtrasPanel({
       <div
         key={setting.id}
         {...surfaceAttributes(
-          { frame: dependent ? "pane" : undefined, edge: "left" },
-          dependent ? "ms-2 border-s border-(--ui-tone-neutral-border) ps-2.5" : undefined,
+          { frame: dependent ? "pane" : undefined, edge: dependent ? "left" : undefined },
+          dependent ? "ms-2 ps-2.5" : undefined,
         )}
       >
         <Text as="div" size="caption" tone="inherit" className="flex min-h-8 items-center gap-2">
@@ -263,7 +263,7 @@ export function ModelExtrasPanel({
               value={value}
               disabled={disabled || inactive}
               onChange={(e) => update(e.target.value)}
-              className="w-[52%] max-w-[11.5rem] min-w-0 shrink-0"
+              className="w-[52%] max-w-46 min-w-0 shrink-0"
               truncate
             >
               {setting.options.map((option) => (
@@ -279,12 +279,11 @@ export function ModelExtrasPanel({
   };
   return (
     <>
-      {/* z-10: in-popover sticky header over the scrolling list; no in-pane layer scale exists, so the literal stays. */}
       {!compact && (
         <div
           {...surfaceAttributes(
             { frame: "pane", edge: "bottom", variant: "floating" },
-            "sticky top-0 z-(--layer-pane-sheet)  border-(--ui-tone-neutral-border) px-3 pt-2.5 pb-2",
+            "sticky top-0 z-(--layer-pane-sheet) px-3 pt-2.5 pb-2",
           )}
         >
           <div className="flex items-center justify-between gap-2">
@@ -448,7 +447,7 @@ export function TogglePill({
       variant="chip"
       type="button"
       aria-label={label}
-      aria-pressed={on}
+      pressed={on}
       selected={on}
       data-model-control
       onMouseDown={(event) => event.preventDefault()}

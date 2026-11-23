@@ -76,7 +76,9 @@ export function CollectionFooter({
           <EmptyState
             size="inline"
             description={partial || (emptyMessage ?? t("No records"))}
-            action={hasMore && onLoadMore ? { label: t("Load more"), onClick: onLoadMore } : undefined}
+            action={
+              hasMore && onLoadMore ? { label: t("Load more"), onClick: onLoadMore } : undefined
+            }
           />
         )}
       </div>

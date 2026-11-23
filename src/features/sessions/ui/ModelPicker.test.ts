@@ -37,6 +37,8 @@ vi.mock("../../../shared/ui/Popover", async () => ({
     className,
     tabIndex,
     onKeyDown,
+    onFocus,
+    ref,
     ...props
   }: {
     children: ReactNode;
@@ -45,6 +47,8 @@ vi.mock("../../../shared/ui/Popover", async () => ({
     className?: string;
     tabIndex?: number;
     onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
+    onFocus?: React.FocusEventHandler<HTMLDivElement>;
+    ref?: React.Ref<HTMLDivElement>;
     minHeight?: number;
     maxHeight?: number;
     style?: CSSProperties;
@@ -61,6 +65,8 @@ vi.mock("../../../shared/ui/Popover", async () => ({
         className,
         tabIndex,
         onKeyDown,
+        onFocus,
+        ref,
         style: props.style,
         "data-min-height": props.minHeight,
         "data-max-height": props.maxHeight,
@@ -580,7 +586,7 @@ describe("model picker", () => {
     expect(container.querySelector('[role="menu"]')).toBeNull();
     expect(container.querySelector('[role="dialog"][aria-label="Models"]')).not.toBeNull();
 
-    const fastPill = container.querySelector<HTMLButtonElement>('button[aria-label="Fast: Off"]')!;
+    const fastPill = container.querySelector<HTMLButtonElement>('button[aria-label="Fast"]')!;
     expect(fastPill.getAttribute("aria-pressed")).toBe("false");
     await act(async () => fastPill.click());
     expect(onSettingsChange).toHaveBeenCalledWith({ fast: "true" });
@@ -1113,6 +1119,8 @@ describe("model picker", () => {
     );
 
     const trigger = container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!;
+    // The key chord is pressed on the focused trigger, so the menu opens from it.
+    trigger.focus();
     await contextMenu(trigger);
 
     const recentMenu = container.querySelector<HTMLElement>(
@@ -1127,7 +1135,8 @@ describe("model picker", () => {
     const grokModel = recentItems.find((item) => item.textContent?.includes("Grok 4.6"))!;
     const claudeModel = recentItems.find((item) => item.textContent?.includes("Opus 5"))!;
     const cursorModel = recentItems.find((item) => item.textContent?.includes("Composer 2.5"))!;
-    expect(cursorModel.textContent).toContain("Cursor");
+    // The provider rides as its icon, not a repeated name beside the model.
+    expect(cursorModel.textContent).not.toContain("Cursor");
     expect(cursorModel.querySelector("svg")).not.toBeNull();
 
     // The composer can retain focus after opening its toolbar menu. Recent

@@ -30,7 +30,14 @@ export function OnboardingConnections({
             key={machine.id}
           >
             <Globe aria-hidden className="icon-lg shrink-0" />
-            <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit" truncate>
+            <Text
+              as="strong"
+              size="inherit"
+              tone="inherit"
+              weight="medium"
+              leading="inherit"
+              truncate
+            >
               {machine.name}
             </Text>
           </Surface>

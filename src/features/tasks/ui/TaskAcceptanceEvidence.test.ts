@@ -87,9 +87,16 @@ it("shows recorded verdicts and inert evidence, with provenance opening only the
   expect(container.querySelector("a, img, script")).toBeNull();
   expect(container.textContent).toContain("<img src=x onerror=alert(1)>");
   expect(container.textContent).toContain("Replace the unsupported claim.");
-  expect(container.textContent).toContain("Files may have changed since this review.");
   expect(container.querySelector("time")?.dateTime).toBe("2023-11-14T22:13:20.000Z");
-  await act(async () => container.querySelector("button")?.click());
+  // The caveat sits behind the Help popover, not in the row.
+  expect(container.textContent).not.toContain("Files may have changed since this review.");
+  await act(async () => container.querySelector<HTMLElement>('button[aria-label="Help"]')?.click());
+  expect(document.body.textContent).toContain("Files may have changed since this review.");
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Open review session")
+      ?.click(),
+  );
   expect(onOpenReview).toHaveBeenCalledExactlyOnceWith("review-session");
 });
 

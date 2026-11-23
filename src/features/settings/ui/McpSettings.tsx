@@ -627,7 +627,6 @@ function McpConnections({
           <Surface variant="card" frame="card" radius="card" padding="none">
             <ContinuousList
               rowAppearance="settings"
-              className={styles.list}
               items={visible}
               itemKey={(entry) => entry.name}
               stateKey={`${stateKey}:${providerFilter}:${statusFilter}`}
@@ -763,10 +762,7 @@ function McpConnections({
           }}
           footer={
             <>
-              <Button
-                disabled={busy !== ""}
-                onClick={() => setRemoveTarget(null)}
-              >
+              <Button disabled={busy !== ""} onClick={() => setRemoveTarget(null)}>
                 {t("Cancel")}
               </Button>
               <Button

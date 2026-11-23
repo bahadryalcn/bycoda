@@ -211,10 +211,7 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
   return embedded ? (
     content
   ) : (
-    <Group
-      id="file-access-permissions"
-      title={t("File access")}
-    >
+    <Group id="file-access-permissions" title={t("File access")}>
       {content}
     </Group>
   );

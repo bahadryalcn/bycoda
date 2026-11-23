@@ -195,7 +195,8 @@ describe("orchestration composer and card", () => {
     );
     expect(fullModel).toBeDefined();
     expect(fullModel?.getAttribute("data-truncate")).not.toBe("true");
-    expect(container.textContent).toContain("Codex");
+    // The harness is the row icon alone; the details no longer repeat its name as text.
+    expect(container.textContent).not.toContain("Codex");
   });
 
   it("keeps readonly proposal and task identities readable after assignment editing ends", async () => {
@@ -559,7 +560,9 @@ describe("orchestration composer and card", () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Approval unavailable",
     );
-    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Retained instructions\n".repeat(20));
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
+      "Retained instructions\n".repeat(20),
+    );
     expect(latest.settings.maxWorkers).toBe(3);
     expect(button("Confirm & start").disabled).toBe(false);
   });
@@ -1049,10 +1052,6 @@ describe("orchestration composer and card", () => {
       ),
     );
 
-    await click(document.querySelector('button[aria-label="Help"]')!);
-    expect(document.querySelector('[role="dialog"][aria-label="Help"]')?.textContent).toContain(
-      "Resume continues interrupted workers from their checkouts",
-    );
     expect(container.textContent).toContain(
       "Investigating the failure is still running in this project.",
     );

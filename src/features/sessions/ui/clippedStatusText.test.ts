@@ -44,7 +44,9 @@ describe("clipped status sentences stay readable", () => {
         }),
       ),
     );
-    expect(container.querySelector('svg[aria-label="Summary goes with next message"]')).not.toBeNull();
+    expect(
+      container.querySelector('svg[aria-label="Summary goes with next message"]'),
+    ).not.toBeNull();
     expect(container.textContent).not.toContain("Summary goes with next message");
   });
 
@@ -66,7 +68,7 @@ describe("clipped status sentences stay readable", () => {
     expect(note.getAttribute("tabindex")).toBe("0");
   });
 
-  it("makes the Crew managed bar note truncating and focusable for its overflow tooltip (#1281)", async () => {
+  it("keeps the Crew managed bar name truncating for its overflow tooltip (#1281)", async () => {
     await act(async () =>
       root.render(
         createElement(CrewManagedBar, {
@@ -81,10 +83,8 @@ describe("clipped status sentences stay readable", () => {
         }),
       ),
     );
-    const note = [...container.querySelectorAll<HTMLElement>("[tabindex='0']")].find((el) =>
-      el.textContent?.includes("Managed from Crews"),
-    );
-    expect(note).toBeDefined();
-    expect(note!.hasAttribute("data-truncate")).toBe(true);
+    // The explanatory note is gone; the crew name is the long line that must clip and stay reachable.
+    const name = textElement("Product Team");
+    expect(name.hasAttribute("data-truncate")).toBe(true);
   });
 });

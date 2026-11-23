@@ -55,14 +55,13 @@ afterEach(() => {
   container.remove();
   vi.unstubAllGlobals();
 });
-function render() {
-  act(() => root.render(createElement(AntigravityAccountSettings)));
+/** Mounting checks the CLI on its own, so the page settles after the first probe. */
+async function render() {
+  await act(async () => root.render(createElement(AntigravityAccountSettings)));
 }
 function button() {
   return Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
-    (node) =>
-      node.textContent?.includes("Check installation and models") ||
-      node.textContent?.includes("Checking"),
+    (node) => node.textContent?.trim() === "Retry",
   )!;
 }
 
@@ -88,8 +87,8 @@ it("opens shared-account setup from Accounts without offering unsupported named 
   expect(details.open).toBe(false);
 });
 
-it("shows both native installers and the real agy authentication instructions", () => {
-  render();
+it("shows both native installers and the real agy authentication instructions", async () => {
+  await render();
   expect(container.textContent).toContain("Antigravity CLI account");
   expect(container.textContent).toContain("irm https://antigravity.google/cli/install.ps1 | iex");
   expect(container.textContent).toContain(
@@ -114,11 +113,13 @@ it("expands shared-account instructions when Settings search reveals them", () =
   expect(container.querySelector<HTMLDetailsElement>("details")?.open).toBe(true);
 });
 it("does not discover models or claim sign-in when the CLI is missing", async () => {
-  render();
+  await render();
+  expect(mock.probe).toHaveBeenCalledWith({ force: false });
   await act(async () => button().click());
   expect(mock.probe).toHaveBeenCalledWith({ force: true });
   expect(mock.discover).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("CLI was not found");
+  expect(container.textContent).toContain("install.ps1");
+  expect(container.textContent).not.toContain("Signed in");
 });
 it("rechecks Antigravity and refreshes its model picker without claiming account authentication", async () => {
   const models = [
@@ -135,18 +136,15 @@ it("rechecks Antigravity and refreshes its model picker without claiming account
     mock.listeners.forEach((fn) => fn());
   });
   mock.discover.mockResolvedValue(models);
-  render();
-  await act(async () => button().click());
+  await render();
   expect(mock.setModels).toHaveBeenCalledWith("antigravity", models);
-  expect(container.textContent).toContain("Antigravity models refreshed");
   expect(container.textContent).not.toContain("Signed in");
   expect(container.textContent).not.toContain("install.ps1");
 });
 it("shows discovery errors and allows retry", async () => {
   mock.available = true;
   mock.discover.mockRejectedValueOnce(new Error("Authentication required"));
-  render();
-  await act(async () => button().click());
+  await render();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Authentication required",
   );

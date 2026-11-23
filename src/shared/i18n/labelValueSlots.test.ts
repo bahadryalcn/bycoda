@@ -38,10 +38,9 @@ const retiredKeys = [
 ];
 
 const callSites = [
-  ["app/shell/SessionDetailTimes.tsx", "Last activity: {p0}"],
+  ["app/shell/SessionDetailTimes.tsx", "{p0} worked"],
   ["app/shell/SessionRecoveryPanel.tsx", "Last activity: {p0}"],
   ["features/decision-models/ui/LocalInstallWizard.tsx", "Model: {p0}"],
-  ["features/settings/ui/appearance/controls/BackgroundGenerator.tsx", "Model: {p0}"],
   ["features/model-routing/ui/order/ModelOrderRow.tsx", "Position {p0}"],
   ["features/assistant/ui/room/JobReviewDialog.tsx", "Job {p0}"],
   ["features/crews/ui/CrewWorkTimeline.tsx", "Request: {p0}"],
@@ -54,6 +53,18 @@ describe("label/value and index placeholder strings", () => {
     for (const retired of retiredKeys) {
       expect(source).not.toContain(`t("${retired}", {`);
     }
+  });
+
+  it("keeps gradient generation on the selected model without repeating its identity", () => {
+    const source = readFileSync(
+      new URL(
+        "../../features/settings/ui/appearance/controls/BackgroundGenerator.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(source).toMatch(/requestBackgroundSuggestion\(\{[^}]*\bmodel: choice\.model,/);
+    expect(source).not.toContain('t("Model: {p0}", {');
   });
 
   it.each(Object.entries(locales))(

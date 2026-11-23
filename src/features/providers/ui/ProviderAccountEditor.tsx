@@ -77,8 +77,8 @@ export function ProviderAccountEditor({
   const incomplete = Boolean(error);
   // Kind defaults to Personal, so a new account never waits on an extra choice.
   const needsDefaultKind = Boolean(onMetadata) && !editor.kind;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- syncs the visible Personal default to the caller's draft before it can submit
   useEffect(() => {
-    // Seeds the parent's draft once; a new account starts as Personal.
     if (needsDefaultKind) onMetadata?.({ kind: "personal" });
   }, [needsDefaultKind, onMetadata]);
   const actions = (

@@ -397,9 +397,10 @@ describe("session recovery navigation", () => {
     expect(rows[0].getAttribute("aria-description")).toContain("history is kept");
   });
   it("keeps the same primary label and counts the filtered sessions", async () => {
-    const primary = () => [...container.querySelectorAll("button")].find((item) =>
-      item.textContent?.startsWith("Open sessions"),
-    )!;
+    const primary = () =>
+      [...container.querySelectorAll("button")].find((item) =>
+        item.textContent?.startsWith("Open sessions"),
+      )!;
     expect(primary().querySelector('[data-variant="count"]')?.textContent).toBe("2");
     const finished = [{ id: "done", role: "user" as const, text: "Task", durationMs: 10 }];
     render([], recovery, [{ ...sessions[0], busy: false, blocks: finished }, sessions[1]]);

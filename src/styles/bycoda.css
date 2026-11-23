@@ -290,49 +290,8 @@ html.theme-light .project-sigil {
     opacity: 0.88;
   }
 }
-.bycoda-welcome {
-  position: absolute;
-  z-index: var(--layer-pane-sheet);
-  top: 48px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 16px;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-popup);
-  background: var(--ui-surface-floating);
-  box-shadow: var(--ui-elevation-floating);
-  color: var(--color-content);
-  font-size: 12px;
-  white-space: nowrap;
-  animation: bycoda-welcome calc(var(--motion-duration-scene) * 0.64) var(--motion-ease-standard)
-    both;
-}
-.bycoda-welcome-icon {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  object-fit: contain;
-}
-@keyframes bycoda-welcome {
-  0% {
-    opacity: 0;
-    margin-top: -4px;
-  }
-  15%,
-  80% {
-    opacity: 1;
-    margin-top: 0;
-  }
-  100% {
-    opacity: 0;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .bycoda-sigil-active,
-  .bycoda-welcome {
+  .bycoda-sigil-active {
     animation: none;
   }
 }

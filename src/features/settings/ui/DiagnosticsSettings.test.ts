@@ -30,7 +30,8 @@ it("shows the Host CPU profile switch off by default and stores a change on the 
     stallProfiles.save.mockRejectedValueOnce(new Error("Host offline"));
     await act(async () => hostSwitch().click());
     expect(hostSwitch().getAttribute("aria-checked")).toBe("true");
-    expect(container.textContent).toContain("Host offline");
+    expect(container.textContent).toContain("Could not confirm the Host setting.");
+    expect(container.textContent).toContain("Retry");
   } finally {
     await act(async () => root.unmount());
     container.remove();

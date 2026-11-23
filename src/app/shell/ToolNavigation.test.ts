@@ -3,12 +3,21 @@ import { act, createElement as h, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { ToolHeader, ToolNavigationContext, ToolPanel } from "./ToolNavigation";
+import {
+  OpenSshReviewsContext,
+  ToolHeader,
+  ToolNavigationContext,
+  ToolPanel,
+} from "./ToolNavigation";
 import type { ToolId, WorkspaceToolId } from "../model/toolWindows";
 import { routeWindowDestination } from "../model/windowNavigation";
 import { preloadToolSurface } from "../workspace/surfaces/lazySurfaces";
 
 vi.mock("../workspace/surfaces/lazySurfaces", () => ({ preloadToolSurface: vi.fn() }));
+const ssh = vi.hoisted(() => ({ intents: [] as { id: string }[] }));
+vi.mock("../../features/connections/model/sshRunbookQueue", () => ({
+  useSshRunbookQueue: () => ssh,
+}));
 vi.mock("../../features/assistant/model/assistantClient", () => ({
   useAssistantIdentity: () => ({ name: "Arif", room: "Arif's Room", setupComplete: true }),
 }));
@@ -28,6 +37,7 @@ const roots: ReturnType<typeof createRoot>[] = [];
 afterEach(async () => {
   for (const root of roots.splice(0)) await act(() => root.unmount());
   document.body.innerHTML = "";
+  ssh.intents = [];
   vi.clearAllMocks();
   vi.mocked(routeWindowDestination).mockResolvedValue(false);
 });
@@ -39,6 +49,7 @@ async function mount(
   includeServers = false,
   includeAuxiliaryTools = false,
   includeCrews = false,
+  onOpenSshReviews?: () => void,
 ) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -61,12 +72,41 @@ async function mount(
             includeCrews,
           },
         },
-        h(ToolHeader, null, "Title"),
+        h(
+          OpenSshReviewsContext.Provider,
+          { value: onOpenSshReviews },
+          h(ToolHeader, null, "Title"),
+        ),
       ),
     ),
   );
   return { container, onSelect };
 }
+
+it("opens the Servers workspace review dialog without reselecting its tab", async () => {
+  ssh.intents = [{ id: "pending" }];
+  const openReviews = vi.fn();
+  const { container, onSelect } = await mount(
+    true,
+    true,
+    "servers",
+    true,
+    false,
+    false,
+    openReviews,
+  );
+  const button = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Pending SSH reviews"]',
+  );
+  expect(button?.textContent).toBe("1");
+  expect(button?.getAttribute("aria-haspopup")).toBe("dialog");
+  expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "Servers",
+  );
+  await act(async () => button!.click());
+  expect(openReviews).toHaveBeenCalledTimes(1);
+  expect(onSelect).not.toHaveBeenCalled();
+});
 
 it("preloads a tool on pointer and keyboard intent without navigating", async () => {
   const { container, onSelect } = await mount();

@@ -19,6 +19,7 @@ import {
   updateSessionListDisplay,
   useSessionListDisplay,
 } from "../model/sessionListDisplay";
+import { OPEN_SESSION_IMPORT_EVENT } from "../import/importModel";
 
 type Props = {
   x: number;
@@ -96,8 +97,6 @@ export function SessionFiltersMenu({
 }: Props) {
   const t = useT();
   const hiddenHarnesses = new Set(filters.hiddenHarnesses);
-  // View options are not filters: they never mark the trigger active or clear.
-  const display = useSessionListDisplay();
 
   const toggleHarness = (harness: HarnessId) => {
     const next = new Set(hiddenHarnesses);
@@ -121,7 +120,6 @@ export function SessionFiltersMenu({
     onChange({ ...filters, showArchived: !filters.showArchived });
   };
 
-  const onPatchDisplay = (patch: Partial<SessionListDisplay>) => updateSessionListDisplay(patch);
   const managedName = useManagedFilterLabel(local);
   const check = (
     id: string,
@@ -140,17 +138,24 @@ export function SessionFiltersMenu({
     (option) => !allowedTimeFilters || allowedTimeFilters.includes(option.id),
   );
   const items: DropdownMenuItem[] = [
-    toggle(check("archived", t("Archived"), filters.showArchived), toggleArchived),
-    ...(settled
-      ? [
-          toggle(check("settled", t("Settled"), filters.showSettled), () =>
-            onChange({ ...filters, showSettled: !filters.showSettled }),
-          ),
-        ]
-      : []),
-    toggle(check("managed", managedName, filters.assistantManaged), () =>
-      onChange({ ...filters, assistantManaged: !filters.assistantManaged }),
-    ),
+    {
+      kind: "group",
+      id: "show",
+      label: t("Show"),
+      items: [
+        toggle(check("archived", t("Archived"), filters.showArchived), toggleArchived),
+        ...(settled
+          ? [
+              toggle(check("settled", t("Settled"), filters.showSettled), () =>
+                onChange({ ...filters, showSettled: !filters.showSettled }),
+              ),
+            ]
+          : []),
+        toggle(check("managed", managedName, filters.assistantManaged), () =>
+          onChange({ ...filters, assistantManaged: !filters.assistantManaged }),
+        ),
+      ],
+    },
     {
       kind: "group",
       id: "status",
@@ -176,38 +181,22 @@ export function SessionFiltersMenu({
       ),
     },
     ...(harnesses.length > 1 || harnesses.some((harness) => hiddenHarnesses.has(harness))
-      ? [{
-          kind: "group" as const,
-          id: "provider",
-          label: t("Provider"),
-          items: harnesses.map((harness) =>
-            toggle(
-              check(`harness:${harness}`, HARNESS_TITLE[harness], !hiddenHarnesses.has(harness), {
-                icon: <HarnessIcon harness={harness} className="size-3.5 shrink-0" />,
-              }),
-              () => toggleHarness(harness),
+      ? [
+          {
+            kind: "group" as const,
+            id: "provider",
+            label: t("Provider"),
+            items: harnesses.map((harness) =>
+              toggle(
+                check(`harness:${harness}`, HARNESS_TITLE[harness], !hiddenHarnesses.has(harness), {
+                  icon: <HarnessIcon harness={harness} className="size-3.5 shrink-0" />,
+                }),
+                () => toggleHarness(harness),
+              ),
             ),
-          ),
-        }]
+          },
+        ]
       : []),
-    {
-      kind: "group",
-      id: "view",
-      label: t("View"),
-      items: [
-        ...DENSITY_OPTIONS.map((option) =>
-          toggle(radio(`density:${option.id}`, option.label, display.density === option.id), () =>
-            onPatchDisplay({ density: option.id }),
-          ),
-        ),
-        toggle(check("showModel", t("Show model"), display.showModel), () =>
-          onPatchDisplay({ showModel: !display.showModel }),
-        ),
-        toggle(check("showBranch", t("Show branch"), display.showBranch), () =>
-          onPatchDisplay({ showBranch: !display.showBranch }),
-        ),
-      ],
-    },
   ];
   if (hasActiveSessionFilters(filters, defaultFilters.time)) {
     items.push(
@@ -226,6 +215,66 @@ export function SessionFiltersMenu({
       size="sm"
       closeOnSelect={false}
       onPick={(id) => actions[id]?.()}
+      onClose={onClose}
+    />
+  );
+}
+
+export function SessionViewMenu({
+  x,
+  y,
+  onClose,
+  canImport = false,
+}: Pick<Props, "x" | "y" | "onClose"> & { canImport?: boolean }) {
+  const t = useT();
+  const display = useSessionListDisplay();
+  const fields = [
+    { id: "showModel" as const, label: t("Show model") },
+    { id: "showBranch" as const, label: t("Show branch") },
+  ];
+  return (
+    <DropdownMenu
+      anchor={{ x, y }}
+      label={t("View")}
+      size="sm"
+      items={[
+        ...DENSITY_OPTIONS.map(({ id, label }): DropdownMenuAction => ({
+          kind: "item",
+          id,
+          label,
+          checked: display.density === id,
+          selectionRole: "radio",
+        })),
+        { kind: "sep" },
+        ...fields.map(({ id, label }): DropdownMenuAction => ({
+          kind: "item",
+          id,
+          label,
+          checked: display[id],
+        })),
+        ...(canImport
+          ? [
+              { kind: "sep" as const },
+              { kind: "item" as const, id: "import", label: t("Import history") },
+            ]
+          : []),
+      ]}
+      closeOnSelect={false}
+      onPick={(id) => {
+        if (id === "import") {
+          onClose();
+          window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT));
+          return;
+        }
+        const density = DENSITY_OPTIONS.find((option) => option.id === id)?.id;
+        const field = fields.find((option) => option.id === id)?.id;
+        const change: Partial<SessionListDisplay> | undefined = density
+          ? { density }
+          : field
+            ? { [field]: !display[field] }
+            : undefined;
+        if (change) updateSessionListDisplay(change);
+      }}
       onClose={onClose}
     />
   );

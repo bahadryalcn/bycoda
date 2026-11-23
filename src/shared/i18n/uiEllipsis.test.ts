@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
 const surfaces = [
-  ["app/shell/SidebarSessionSearch.tsx", "Search sessions"],
+  ["app/shell/SidebarSessionSearch.tsx", "Search"],
   ["app/shell/Sidebar.tsx", "Search projects"],
   ["app/shell/BootLoading.tsx", "Restoring your workspace and saved drafts"],
   ["features/projects/ui/SearchableProjectPicker.tsx", "Search projects"],

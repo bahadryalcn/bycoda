@@ -664,7 +664,8 @@ export function SshRunbooks({
                   />
                   {saved?.triggers?.nextRunAt ? (
                     <p>
-                      {t("Next review")}: {formatDate(new Date(saved.triggers.nextRunAt), DATE_TIME)}
+                      {t("Next review")}:{" "}
+                      {formatDate(new Date(saved.triggers.nextRunAt), DATE_TIME)}
                     </p>
                   ) : null}
                 </div>
@@ -701,9 +702,7 @@ export function SshRunbooks({
                     {sshEndpointPreview(target.endpoint)}
                   </p>
                   {target.endpoint.httpProxy ? (
-                    <p className="break-all">
-                      {sshProxyEndpointText(target.endpoint.httpProxy)}
-                    </p>
+                    <p className="break-all">{sshProxyEndpointText(target.endpoint.httpProxy)}</p>
                   ) : null}
                   <Disclosure size="sm" summary={t("Connection details")}>
                     <DescriptionList size="sm">

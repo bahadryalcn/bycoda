@@ -40,6 +40,10 @@
 .count {
   flex: none;
 }
+:is(.text, .inline)[data-section-label-wrap] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .inline {
   font-size: var(--ui-font-micro);
   line-height: var(--ui-leading-micro);

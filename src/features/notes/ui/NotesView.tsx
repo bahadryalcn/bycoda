@@ -1210,7 +1210,7 @@ export function NotesView({
         {...resize.sashProps}
         label={t("Resize notes list")}
         appearance="hidden"
-        className="absolute inset-y-0 -right-px"
+        className="absolute inset-y-0 end-0"
       />
     </div>
   );
@@ -2028,47 +2028,47 @@ function NoteEditor({
             {noteHeading(body) && !titleError ? (
               <span className="note-detail-title" />
             ) : (
-            <TextField
-              label={t("Note title")}
-              appearance="quiet"
-              fieldVariant="compact"
-              error={titleError}
-              hideLabel
-              ref={titleFieldRef}
-              value={title}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (!inputOwner.allowed() || !inputOwner.canRetainText("title", value)) {
-                  inputOwner.external(() => {
-                    draftState.unadmittedInputs = [
-                      ...new Set([...(draftState.unadmittedInputs ?? []), "title"]),
-                    ];
-                    editsRef.current = { ...editsRef.current, title: value };
-                    setEdits(editsRef.current);
-                    setSaveError(
-                      t(
-                        "This input was not admitted. Your text is retained; open the note to edit it.",
-                      ),
-                    );
-                  });
-                  return;
-                }
-                draftState.unadmittedInputs = draftState.unadmittedInputs?.filter(
-                  (key) => key !== "title",
-                );
-                finalizeRef.current = null;
-                editNote({ title: value });
-                scheduleSave();
-              }}
-              onBlur={commitTitle}
-              onKeyDown={onTitleKeyDown}
-              readOnly={preparing}
-              fieldClassName="note-detail-title"
-              textSize="title"
-              weight="medium"
-              leading="snug"
-              placeholder={t("Untitled")}
-            />
+              <TextField
+                label={t("Note title")}
+                appearance="quiet"
+                fieldVariant="compact"
+                error={titleError}
+                hideLabel
+                ref={titleFieldRef}
+                value={title}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (!inputOwner.allowed() || !inputOwner.canRetainText("title", value)) {
+                    inputOwner.external(() => {
+                      draftState.unadmittedInputs = [
+                        ...new Set([...(draftState.unadmittedInputs ?? []), "title"]),
+                      ];
+                      editsRef.current = { ...editsRef.current, title: value };
+                      setEdits(editsRef.current);
+                      setSaveError(
+                        t(
+                          "This input was not admitted. Your text is retained; open the note to edit it.",
+                        ),
+                      );
+                    });
+                    return;
+                  }
+                  draftState.unadmittedInputs = draftState.unadmittedInputs?.filter(
+                    (key) => key !== "title",
+                  );
+                  finalizeRef.current = null;
+                  editNote({ title: value });
+                  scheduleSave();
+                }}
+                onBlur={commitTitle}
+                onKeyDown={onTitleKeyDown}
+                readOnly={preparing}
+                fieldClassName="note-detail-title"
+                textSize="title"
+                weight="medium"
+                leading="snug"
+                placeholder={t("Untitled")}
+              />
             )}
             <div className="note-detail-actions">
               {preparing ? (

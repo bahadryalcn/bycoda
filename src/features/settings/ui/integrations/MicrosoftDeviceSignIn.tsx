@@ -141,7 +141,11 @@ export function MicrosoftDeviceSignIn({
         </p>
         <div className="integration-actions">
           <CopyButton label={t("Copy code")} text={start.userCode} resetKeys={[start.userCode]} />
-          <Button variant="ghost" startIcon={<ExternalLink className="icon-sm" />} onClick={() => openSignIn(start, request.current)}>
+          <Button
+            variant="ghost"
+            startIcon={<ExternalLink className="icon-sm" />}
+            onClick={() => openSignIn(start, request.current)}
+          >
             {t("Open again")}
           </Button>
           <Button onClick={cancel}>{t("Cancel")}</Button>

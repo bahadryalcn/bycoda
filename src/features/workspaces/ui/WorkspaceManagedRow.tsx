@@ -116,7 +116,9 @@ export function WorkspaceManagedRow({
                   workspace.directoryState === "removing") && (
                   <Badge size="sm">{t("Removing directory…")}</Badge>
                 )}
-                {workspace.pinned && <Pin role="img" aria-label={t("Pinned")} className="icon-xs" />}
+                {workspace.pinned && (
+                  <Pin role="img" aria-label={t("Pinned")} className="icon-xs" />
+                )}
               </span>
               <Tooltip label={caption} when="overflow">
                 <Text

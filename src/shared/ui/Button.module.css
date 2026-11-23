@@ -46,6 +46,16 @@
     align-self: stretch;
     aspect-ratio: auto;
   }
+  .control[data-button-variant="caption"] {
+    align-self: stretch;
+    flex: none;
+    inline-size: var(--ui-space-10);
+    block-size: auto;
+    min-block-size: 0;
+    padding: 0;
+    aspect-ratio: auto;
+    border-radius: 0;
+  }
   .control.link {
     padding-inline: var(--space-1);
   }
@@ -84,6 +94,9 @@
   }
   .control.item {
     inline-size: 100%;
+  }
+  .control.item > .trailing {
+    margin-inline-start: auto;
   }
   /* Structural defaults describe an unaligned control. An explicit `align`, or the
      migrated `text-left`, is stronger than an item's start or a tab's center. */
@@ -262,6 +275,36 @@
 }
 .nativeContent {
   gap: var(--space-2);
+}
+
+.control[data-button-badged] {
+  position: relative;
+}
+.badge {
+  position: absolute;
+  inset-block-start: calc(-1 * var(--ui-space-1));
+  inset-inline-end: calc(-1 * var(--ui-space-1));
+  pointer-events: none;
+}
+.trailing {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+
+@container pane-header (inline-size <= 26rem) {
+  .control[data-button-collapse-label] {
+    padding-inline: var(--ui-space-2);
+  }
+  .control[data-button-collapse-label] .label {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: clip;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    contain: size;
+  }
 }
 /* An icon stays in place while a toolbar action reveals its label. */
 .control[data-button-reveal-label] {
@@ -444,6 +487,13 @@
     border-color: var(--button-border);
     opacity: 1;
     box-shadow: none;
+  }
+  .control[data-button-variant="caption"][data-button-tone="danger"]:hover:not(
+      [aria-disabled="true"]
+    ) {
+    color: var(--ui-tone-danger-on-solid);
+    background: var(--ui-tone-danger-solid);
+    border-color: var(--ui-tone-danger-solid);
   }
   .control[data-button-hierarchy="primary"]:hover:not([aria-disabled="true"]) {
     background: var(--button-solid-hover);

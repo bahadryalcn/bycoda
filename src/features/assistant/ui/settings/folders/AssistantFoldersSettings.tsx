@@ -84,11 +84,7 @@ export function AssistantFoldersSettings({
       >
         <div className={styles.list}>
           {draft.paths.length === 0 && (
-            <EmptyState
-              size="inline"
-              kind="empty"
-              description={t("No folders added yet.")}
-            />
+            <EmptyState size="inline" kind="empty" description={t("No folders added yet.")} />
           )}
           {draft.paths.map((path) => (
             <div key={path} {...surfaceAttributes({ separator: "pane-block" }, styles.item)}>

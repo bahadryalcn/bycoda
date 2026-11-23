@@ -65,6 +65,7 @@ import { LinkedWorkItemUpdateNotice } from "../../inbox/ui/LinkedWorkItemUpdateN
 import { orchestrationLocksUndo, useSessionReviewEligibility } from "./SessionReview";
 import { LatestTurnAccessory } from "./LatestTurnAccessory";
 import { isProjectlessCwd } from "../model/recentSessions";
+import { usageLimitFailureId, type UsageLimitRecovery } from "./SessionErrorNotice";
 import { SessionProviderGoal, type SessionProviderGoalCommand } from "./SessionProviderGoal";
 import { PromptOutline } from "./PromptOutline";
 import {
@@ -426,6 +427,14 @@ function approvalContextFor(getSession: () => Session, dispatch: Props["onApprov
     },
     getSession,
     dispatch,
+  };
+}
+
+function composerReturnFocus(paneRef: { current: HTMLElement | null }) {
+  return {
+    get current() {
+      return paneRef.current?.querySelector<HTMLElement>("[data-composer-box] textarea") ?? null;
+    },
   };
 }
 
@@ -1204,6 +1213,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     onUsageLimitResumeAtReset(session.id, enabled),
   );
   const composerUsageLimitDismiss = useStableCallback(() => onUsageLimitDismiss(session.id));
+  const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0);
   const composerSelectProviderAccount = useStableCallback(
     (provider: ProviderAccountProvider, accountId: string) =>
       onSelectProviderAccount?.(session.id, provider, accountId),
@@ -1404,15 +1414,44 @@ const LocalSessionPane = memo(function LocalSessionPane({
       ) : null}
     </>
   );
+  const composerDisabled =
+    rewindingMessage ||
+    workspaceSwitchingSessionId === session.id ||
+    windowMovingSessionIds?.has(session.id);
+  const composerBusy = !!session.busy || !!session.continuingElsewhere;
+  const accountProvider = supportsProviderAccounts(session.harness) ? session.harness : undefined;
+  const providerAccountId = accountProvider
+    ? (session.nextProviderAccountId ?? sessionAccountId)
+    : undefined;
+  const quotaFailureId = session.usageLimit ? usageLimitFailureId(session.blocks) : undefined;
+  const usageLimitRecovery: UsageLimitRecovery | undefined =
+    session.usageLimit && quotaFailureId
+      ? {
+          errorId: quotaFailureId,
+          notice: {
+            limit: session.usageLimit,
+            provider: accountProvider,
+            accountId: providerAccountId,
+            onResume:
+              showOwnerComposer && onUsageLimitResumeProp ? composerUsageLimitResume : undefined,
+            resumeDisabled: composerBusy || composerDisabled,
+            onResumeAtReset: showOwnerComposer ? composerUsageLimitResumeAtReset : undefined,
+            onSwitchAccount:
+              showOwnerComposer && accountProvider && onSelectProviderAccountProp
+                ? (accountId: string) => composerSelectProviderAccount(accountProvider, accountId)
+                : undefined,
+            onSwitchModel: showOwnerComposer
+              ? () => setModelPickerOpenRequest((count) => count + 1)
+              : undefined,
+            onDismiss: showOwnerComposer ? composerUsageLimitDismiss : undefined,
+          },
+        }
+      : undefined;
   const ownerComposer = (
     <Composer
       notices={composerNotices}
       key={session.id}
-      disabled={
-        rewindingMessage ||
-        workspaceSwitchingSessionId === session.id ||
-        windowMovingSessionIds?.has(session.id)
-      }
+      disabled={composerDisabled}
       subagents={sessionSubagentRows}
       onOpenSubagent={openDockAgent}
       remoteSession={remoteSession}
@@ -1460,14 +1499,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               <SessionMachinePicker
                 environmentId={remoteExecutionEnvironment(session)}
                 triggerRef={(trigger) => onSessionMachinePickerTrigger?.(session.id, trigger)}
-                returnFocusRef={{
-                  get current() {
-                    return (
-                      paneRef.current?.querySelector<HTMLElement>("[data-composer-box] textarea") ??
-                      null
-                    );
-                  },
-                }}
+                returnFocusRef={composerReturnFocus(paneRef)}
                 onSelect={
                   !locked &&
                   !remoteSessionStarted &&
@@ -1576,19 +1608,17 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onSteerQueuedMessage={composerSteerQueuedMessage}
       onResumeQueue={composerResumeQueue}
       usageLimit={session.usageLimit}
+      usageLimitInTranscript={Boolean(usageLimitRecovery) && !remoteSessionLoading}
+      modelPickerOpenRequest={modelPickerOpenRequest}
       onUsageLimitResume={onUsageLimitResumeProp ? composerUsageLimitResume : undefined}
       onUsageLimitResumeAtReset={composerUsageLimitResumeAtReset}
       onUsageLimitDismiss={composerUsageLimitDismiss}
-      providerAccountId={
-        supportsProviderAccounts(session.harness)
-          ? (session.nextProviderAccountId ?? sessionAccountId)
-          : undefined
-      }
+      providerAccountId={providerAccountId}
       onSelectProviderAccount={
         onSelectProviderAccountProp ? composerSelectProviderAccount : undefined
       }
       onOpenFile={onOpenFile}
-      busy={!!session.busy || !!session.continuingElsewhere}
+      busy={composerBusy}
       backgroundOnly={isBackgroundOnly(turnOpen, session.backgroundTasks, session.backgroundAgents)}
       backgroundTaskCount={session.backgroundTasks?.length ?? 0}
       subagentsRunning={delegatedAgents.some((agent) => agent.status === "running")}
@@ -1764,7 +1794,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
         titleBarSlot ? (
           // A lone chat's actions live in the title bar's chrome row beside its tab (pane-hosted portal,
           // not a popover: the target is the title bar slot).
-          visible ? <Portal target={titleBarSlot}>{headerActions}</Portal> : null
+          visible ? (
+            <Portal target={titleBarSlot}>{headerActions}</Portal>
+          ) : null
         ) : (
           <div
             data-session-toolbar
@@ -1969,6 +2001,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       model={session.model}
                       modelSettings={session.modelSettings}
                       providerAccountId={session.providerAccountId}
+                      usageLimitRecovery={usageLimitRecovery}
                       pendingQuestion={!!session.pendingQuestion}
                       pendingOwnerApproval={session.pendingOwnerApproval}
                       questionBehavior={session.pendingQuestion?.behavior}

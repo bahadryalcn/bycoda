@@ -323,7 +323,9 @@ export function LimitsPanel({
                 title={
                   <>
                     {t("Max concurrent tasks")}
-                    <InfoPopover>{t("Applies to all epics and tasks on this machine.")}</InfoPopover>
+                    <InfoPopover>
+                      {t("Applies to all epics and tasks on this machine.")}
+                    </InfoPopover>
                   </>
                 }
               >

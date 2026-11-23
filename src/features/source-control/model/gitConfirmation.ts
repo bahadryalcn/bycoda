@@ -5,8 +5,8 @@ import { basename, type GitChangedFile } from "../../../platform/tauri/fs";
 export type GitConfirmation = {
   /** The decision, e.g. "Delete tag?". */
   title: string;
-  /** Target and effect. */
-  message: string;
+  /** Consequences or target details the title does not already convey. */
+  message?: string;
   /** The real action, e.g. "Delete tag". */
   confirmLabel: string;
   /** `danger` (default) for anything that loses work or rewrites history. */
@@ -17,7 +17,8 @@ export type GitConfirmation = {
 
 /** One Git confirmation in the shared in-app dialog: Cancel is secondary, the action is explicit. */
 export function confirmGitAction(confirmation: GitConfirmation): Promise<boolean> {
-  return confirmInApp({ tone: "danger", cancelLabel: t("Cancel"), ...confirmation });
+  const { message = "", ...action } = confirmation;
+  return confirmInApp({ tone: "danger", cancelLabel: t("Cancel"), ...action, message });
 }
 
 export function confirmDiscardFile(file: GitChangedFile): Promise<boolean> {

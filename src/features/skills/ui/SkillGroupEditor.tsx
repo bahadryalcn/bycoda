@@ -101,7 +101,12 @@ export function SkillGroupEditor({
               onClose={() => setMenuOpen(false)}
               onPick={(id) => onEdit({ kind: id === "rename" ? "rename" : "delete", group })}
               items={[
-                { kind: "item", id: "rename", label: t("Rename"), icon: <Pencil className="icon-sm" /> },
+                {
+                  kind: "item",
+                  id: "rename",
+                  label: t("Rename"),
+                  icon: <Pencil className="icon-sm" />,
+                },
                 {
                   kind: "item",
                   id: "delete",
@@ -192,7 +197,12 @@ export function SkillGroupEditor({
             />
           </div>
           <Divider decorative />
-          <ScrollArea className={styles.groupEditorList} gutter="stable" aria-label={t("Skills")}>
+          <ScrollArea
+            className={`${styles.groupEditorList} min-h-0`}
+            gutter="stable"
+            aria-label={t("Skills")}
+          >
+            <div className={styles.groupEditorContent}>
             {shown.map((entry) => (
               <Checkbox
                 key={entry.key}
@@ -206,6 +216,7 @@ export function SkillGroupEditor({
                 }
               />
             ))}
+            </div>
           </ScrollArea>
         </>
       ) : (

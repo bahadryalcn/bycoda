@@ -104,7 +104,9 @@ export function SidebarUpdateFooter({
 
   const updateAction = actionable ? (
     <Button
-      {...(icon && compact ? { iconOnly: true as const, label: actionLabel } : { label: actionLabel })}
+      {...(icon && compact
+        ? { iconOnly: true as const, label: actionLabel }
+        : { label: actionLabel })}
       revealLabel={icon && !compact}
       startIcon={actionIcon}
       variant={icon ? "ghost" : "secondary"}
@@ -126,7 +128,11 @@ export function SidebarUpdateFooter({
       {promptOpen && actionable ? (
         <Modal
           title={snapshot.phase === "error" ? t("Update failed") : t("Update available")}
-          description={snapshot.availableVersion ? `v${snapshot.currentVersion} – v${snapshot.availableVersion}` : undefined}
+          description={
+            snapshot.availableVersion
+              ? `v${snapshot.currentVersion} – v${snapshot.availableVersion}`
+              : undefined
+          }
           size="sm"
           onClose={closePrompt}
           footer={
@@ -194,13 +200,7 @@ export function SidebarUpdate({
     : t("Update to {p0}", { p0: snapshot.availableVersion ?? "" });
 
   return (
-    <Button
-      onClick={onClick}
-      disabled={busy}
-      variant="primary"
-      fullWidth={!compact}
-      motion="none"
-    >
+    <Button onClick={onClick} disabled={busy} variant="primary" fullWidth={!compact} motion="none">
       <span className="icon-md grid shrink-0 place-items-center">
         {busy ? (
           <Spinner size="md" className="opacity-70" />

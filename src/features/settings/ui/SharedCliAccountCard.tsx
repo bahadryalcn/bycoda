@@ -145,7 +145,12 @@ export function SharedCliAccountCard({
           {/* An empty status column would wrap the menu onto its own line at narrow widths. */}
           {missing ? (
             <div className="provider-account-status">
-              <AlertCircle role="img" aria-label={t("Not installed")} tone="warning" className="icon-sm" />
+              <AlertCircle
+                role="img"
+                aria-label={t("Not installed")}
+                tone="warning"
+                className="icon-sm"
+              />
             </div>
           ) : null}
           <div className="provider-account-actions">

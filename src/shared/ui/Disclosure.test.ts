@@ -158,7 +158,10 @@ it("applies body dividers without remounting a draft when disclosure closes", as
 
 it("step: the chevron stays visible in the chrome ink and an open row keeps no wash", () => {
   const css = readFileSync(join(__dirname, "Disclosure.module.css"), "utf8");
-  expect(css).toContain("--transcript-ink-chrome");
+  expect(css).toContain("var(--ui-quiet-chrome-ink, var(--ui-text-secondary))");
+  expect(css).toMatch(
+    /\.root\[data-variant="step"\] > \.summary > \.chevron \{\s*color: inherit;/,
+  );
   expect(css).not.toMatch(/\[open\][^{]*\{[^}]*background/);
 });
 

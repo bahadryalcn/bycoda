@@ -558,7 +558,7 @@ describe("model picker unsupported Reasoning and Fast", () => {
       ),
     );
     const pill = container.querySelector<HTMLButtonElement>('button[aria-pressed="false"]')!;
-    expect(pill.getAttribute("aria-label")).toBe("Fast: Off");
+    expect(pill.getAttribute("aria-label")).toBe("Fast");
     expect(container.textContent).not.toContain("Reasoning");
     await act(async () => pill.click());
     expect(onSettingsChange).toHaveBeenCalledWith({ fast: "true" });
@@ -587,11 +587,11 @@ describe("model picker unsupported Reasoning and Fast", () => {
       );
     await render({});
     const off = container.querySelector<HTMLButtonElement>('button[aria-pressed="false"]')!;
-    expect(off.getAttribute("aria-label")).toBe("Hızlı: Kapalı");
+    expect(off.getAttribute("aria-label")).toBe("Hızlı");
     expect(off.textContent).toContain("Hızlı");
     await render({ fast: "true" });
     const on = container.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')!;
-    expect(on.getAttribute("aria-label")).toBe("Hızlı: Açık");
+    expect(on.getAttribute("aria-label")).toBe("Hızlı");
     expect(container.textContent).not.toContain("Fast");
   });
 

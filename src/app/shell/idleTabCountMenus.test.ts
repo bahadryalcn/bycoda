@@ -81,11 +81,11 @@ describe("idle tab count is read only by open menus", () => {
 
     const menu = document.querySelector<HTMLElement>('[role="menu"]')!;
     expect(countIdleTabs).toHaveBeenCalled();
-    expect(menuButton(menu, "Close Idle Tabs").disabled).toBe(true);
+    expect(menuButton(menu, "Close idle tabs").disabled).toBe(true);
 
     countIdleTabs.mockReturnValue(3);
     keyOn(menu, "ArrowDown");
-    expect(menuButton(document.querySelector('[role="menu"]')!, "Close Idle Tabs").disabled).toBe(
+    expect(menuButton(document.querySelector('[role="menu"]')!, "Close idle tabs").disabled).toBe(
       false,
     );
   });

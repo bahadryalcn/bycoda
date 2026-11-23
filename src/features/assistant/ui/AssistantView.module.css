@@ -26,12 +26,11 @@
 .muted {
   overflow-wrap: anywhere;
 }
-.empty {
-  margin: 0;
-  padding-block: var(--ui-space-4);
-}
 .error {
   overflow-wrap: anywhere;
+  margin: 0;
+}
+.empty {
   margin: 0;
 }
 .feedback {
@@ -42,15 +41,12 @@
   gap: var(--ui-space-2) var(--ui-space-3);
 }
 .pageTitle {
-  display: flex;
-  align-items: baseline;
   flex: 1 1 auto;
-  gap: var(--ui-space-2);
   min-inline-size: 0;
   margin: 0;
 }
-.pageTitle span {
-  font-variant-numeric: tabular-nums;
+.collectionCount {
+  margin-inline-start: var(--ui-space-2);
 }
 .collectionTools > :nth-child(2) {
   flex: 0 1 240px;
@@ -62,11 +58,7 @@
   gap: var(--ui-space-3);
   min-inline-size: 0;
 }
-.fieldRow >:global(.max-w-52) {
-  max-inline-size: none;
-}
-/* One compact block: kind, "Every day at" + time, then the Host timezone notes as a caption line.
-   The shared sentence renders loose inline nodes, so it dissolves into this row. */
+/* Keep the schedule kind and sentence in separate wrapping groups. */
 .scheduleRow {
   display: flex;
   flex-wrap: wrap;
@@ -80,21 +72,11 @@
   min-inline-size: 0;
 }
 .scheduleSentence {
-  display: contents;
-}
-.scheduleSentence > * {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-}
-.scheduleSentence::after {
-  content: "";
-  order: 1;
-  flex-basis: 100%;
-  block-size: 0;
-}
-.scheduleSentence > :nth-last-child(-n + 2) {
-  order: 2;
-  min-block-size: 0;
+  gap: var(--ui-space-1) var(--ui-space-2);
+  min-inline-size: 0;
 }
 .quickNoteFields {
   grid-column: 1 / -1;

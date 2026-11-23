@@ -133,7 +133,9 @@ for (const light of [true, false])
     });
 
 for (const directory of ["scratch-missing", "scratch-present"]) {
-  test(`settled projectless session skips checkpoint review with ${directory}`, async ({ page }) => {
+  test(`settled projectless session skips checkpoint review with ${directory}`, async ({
+    page,
+  }) => {
     await page.goto(`/tests/browser/sessions/session-usability.html?reviewFixture=${directory}`);
     await expect(page.getByText("The report is ready for review.", { exact: false })).toBeVisible();
     await expect(page.locator("[data-session-review-shell]")).toHaveCount(0);

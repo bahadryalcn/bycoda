@@ -166,9 +166,8 @@ describe("project folder browser", () => {
     expect(container.querySelector('[role="option"]')?.textContent).toContain("Notes");
     await key("Enter");
     expect(fs.listDir).toHaveBeenLastCalledWith("C:/Users/me/Notes");
-    expect(container.querySelector<HTMLInputElement>('[aria-label="Search folders"]')?.value).toBe(
-      "",
-    );
+    // The query resets in the new folder; its short listing needs no filter field again.
+    expect(container.querySelector('[aria-label="Search folders"]')).toBeNull();
     await click("Add (1)");
     expect(onPick).toHaveBeenCalledWith(["C:/Users/me/Projects"]);
   });

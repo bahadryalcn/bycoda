@@ -16,9 +16,13 @@ export function RecoveryVerification({
   const t = useT();
   return (
     <div className="grid gap-(--ui-space-1)">
-      <Text size="caption" tone="secondary" wrap="anywhere">{verification}</Text>
+      <Text size="caption" tone="secondary" wrap="anywhere">
+        {verification}
+      </Text>
       {readError ? (
-        <InlineError retry={{ label: t("Retry verification"), pending, onRetry }}>{readError}</InlineError>
+        <InlineError retry={{ label: t("Retry verification"), pending, onRetry }}>
+          {readError}
+        </InlineError>
       ) : null}
     </div>
   );

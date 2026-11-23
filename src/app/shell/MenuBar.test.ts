@@ -181,7 +181,7 @@ describe("application menu bar keyboard model", () => {
     keyOn(button("file"), "keydown", "ArrowDown");
     const closeIdle = () =>
       [...menu()!.querySelectorAll<HTMLButtonElement>("button")].find(
-        (item) => item.textContent === "Close Idle Tabs",
+        (item) => item.textContent === "Close idle tabs",
       );
     expect(closeIdle()?.disabled).toBe(true);
     countIdleTabs.mockReturnValue(1);

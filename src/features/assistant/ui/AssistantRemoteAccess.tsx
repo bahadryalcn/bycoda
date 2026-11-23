@@ -8,7 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useRemoteMachines } from "../../connections/model/connections";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Surface } from "../../../shared/ui/Surface";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
@@ -206,7 +206,13 @@ export function AssistantRemoteAccess({
           <div className={styles.body}>
             {/* A healthy registration needs no sentence; only the checking and failed states do. */}
             {sourceStatus !== "registered" && (
-              <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.status}>
+              <Text
+                as="p"
+                size="caption"
+                tone="secondary"
+                leading="normal"
+                className={styles.status}
+              >
                 {sourceStatus === "unavailable"
                   ? t("Room registration is unavailable. Reopen the Room to retry.")
                   : t("Checking Room registration…")}
@@ -265,7 +271,9 @@ export function AssistantRemoteAccess({
               )}
             </Text>
             {request && (
-              <Surface variant="card" padding="md" className={styles.request}>
+              <div
+                {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, styles.request)}
+              >
                 <Text as="p" leading="normal">
                   {t("Inspect the original request before starting another connection.")}{" "}
                   <Code>{request.requestId}</Code>
@@ -292,7 +300,7 @@ export function AssistantRemoteAccess({
                     </Button>
                   )}
                 </div>
-              </Surface>
+              </div>
             )}
             {result && (
               <Text
@@ -319,7 +327,9 @@ export function AssistantRemoteAccess({
             </div>
             {error && <InlineError>{error}</InlineError>}
             {identity && (
-              <Surface variant="card" padding="md" className={styles.identity}>
+              <div
+                {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, styles.identity)}
+              >
                 <Text as="p" tone="inherit" leading="inherit">
                   {t("Installation ID")}: <Code>{identity.installationId}</Code>
                 </Text>
@@ -329,7 +339,7 @@ export function AssistantRemoteAccess({
                 <OutputBlock size="caption" tone="inherit" leading="inherit" frame="none">
                   {identity.publicKey}
                 </OutputBlock>
-              </Surface>
+              </div>
             )}
           </div>
         </Modal>

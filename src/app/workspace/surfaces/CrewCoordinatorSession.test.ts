@@ -106,7 +106,7 @@ it("routes inline Stop through confirmed Crew stop on the exact owner host", asy
   );
   const props = pane.mock.calls.at(-1)![0];
   await act(async () => (props.onStop as (id: string) => void)("lead"));
-  expect(confirmStop).toHaveBeenCalledWith(expect.objectContaining({ confirmLabel: "Stop work" }));
+  expect(confirmStop).toHaveBeenCalledWith(expect.objectContaining({ title: "Stop work?", confirmLabel: "Stop" }));
   expect(stopRequest).toHaveBeenCalledWith(
     "host",
     "crews.stop",

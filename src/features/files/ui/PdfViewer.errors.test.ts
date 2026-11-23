@@ -95,10 +95,15 @@ afterEach(async () => {
 });
 
 const mount = () => act(async () => root.render(createElement(PdfViewer, { bytes })));
+// The raw message sits behind the shared "Details" link; it opens a popover outside the frame.
 const showDetails = (scope: ParentNode) =>
   act(async () =>
     [...scope.querySelectorAll("button")]
-      .find((button) => button.textContent === "Show details")!
+      .find(
+        (button) =>
+          button.textContent === "Show details" ||
+          button.getAttribute("aria-label")?.startsWith("Details"),
+      )!
       .click(),
   );
 const frame = (number: number) => host.querySelector<HTMLElement>(`[data-page="${number}"]`)!;
@@ -116,7 +121,7 @@ it("shows an accessible page-loading error, then retries only that page", async 
   });
   await mount();
   await showDetails(frame(1));
-  expect(frame(1).textContent).toContain("Page dictionary damaged");
+  expect(document.body.textContent).toContain("Page dictionary damaged");
   expect(frame(2).querySelector("canvas")!.width).toBe(600);
   const retry = [...frame(1).querySelectorAll("button")].find(
     (button) => button.textContent === "Retry page 1",
@@ -144,7 +149,7 @@ it("reports a decoder failure, frees its render buffer and preserves the other p
   await mount();
   expect(frame(1).textContent).toContain("Couldn’t render page 1");
   await showDetails(frame(1));
-  expect(frame(1).textContent).toContain("Decoder failed");
+  expect(document.body.textContent).toContain("Decoder failed");
   expect(render.mock.calls[0][0].canvas.width).toBe(0);
   expect(render.mock.calls[0][0].canvas.height).toBe(0);
   expect(frame(1).querySelector("canvas")!.width).toBe(0);
@@ -213,7 +218,7 @@ it("recovers a parse error when the same mounted viewer receives repaired bytes"
   pdf.getPage.mockResolvedValue(page());
   await mount();
   await showDetails(host);
-  expect(host.textContent).toContain("Invalid PDF structure");
+  expect(document.body.textContent).toContain("Invalid PDF structure");
   let finish!: (document: { numPages: number; getPage: typeof pdf.getPage }) => void;
   pdf.load.mockImplementationOnce(() => ({
     promise: new Promise((resolve) => {
@@ -222,7 +227,7 @@ it("recovers a parse error when the same mounted viewer receives repaired bytes"
     destroy: vi.fn(),
   }));
   await act(async () => root.render(createElement(PdfViewer, { bytes: new Uint8Array([2]) })));
-  expect(host.textContent).not.toContain("Invalid PDF structure");
+  expect(document.body.textContent).not.toContain("Invalid PDF structure");
   await vi.waitFor(() => expect(host.textContent).toContain("Loading PDF\u2026"));
   await act(async () => finish({ numPages: 2, getPage: pdf.getPage }));
   expect(host.querySelector('[aria-label="PDF preview"]')).not.toBeNull();

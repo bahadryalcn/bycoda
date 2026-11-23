@@ -157,14 +157,20 @@ it("zooms the preview by Ctrl+wheel and toolbar while retaining mounted document
     }
     expect(zoomButton().textContent).toBe("200%");
     await act(async () => zoomButton().click());
-    expect(zoomAction("Zoom in").disabled || zoomAction("Zoom in").getAttribute("aria-disabled") === "true").toBe(true);
+    expect(
+      zoomAction("Zoom in").disabled ||
+        zoomAction("Zoom in").getAttribute("aria-disabled") === "true",
+    ).toBe(true);
     await act(async () => zoomButton().click());
     for (let step = 0; step < 20; step++) {
       expect((await wheel(preview, 100)).defaultPrevented).toBe(true);
     }
     expect(zoomButton().textContent).toBe("50%");
     await act(async () => zoomButton().click());
-    expect(zoomAction("Zoom out").disabled || zoomAction("Zoom out").getAttribute("aria-disabled") === "true").toBe(true);
+    expect(
+      zoomAction("Zoom out").disabled ||
+        zoomAction("Zoom out").getAttribute("aria-disabled") === "true",
+    ).toBe(true);
     await act(async () => zoomAction("Reset zoom").click());
     expect(zoomButton().textContent).toBe("100%");
 

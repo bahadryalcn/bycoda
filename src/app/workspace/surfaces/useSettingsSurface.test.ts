@@ -100,6 +100,17 @@ it("opens Settings at Decision models when Decision models asks for it", () => {
       window.dispatchEvent(new Event(OPEN_DECISION_MODELS_SETTINGS_EVENT));
     });
     expect(deps.setSettingsSection).toHaveBeenLastCalledWith("decisionModels");
+    for (const [legacySection, targetAnchor] of [
+      ["models", "models-chat"],
+      ["work", "models-order"],
+    ] as const) {
+      vi.mocked(deps.setNotificationSettingsRequest).mockClear();
+      act(() => actions.openSettings(legacySection));
+      act(() => actions.openSettings(legacySection));
+      expect(deps.setSettingsSection).toHaveBeenLastCalledWith("providers");
+      expect(deps.setSettingsAnchor).toHaveBeenLastCalledWith(targetAnchor);
+      expect(deps.setNotificationSettingsRequest).toHaveBeenCalledTimes(2);
+    }
     for (const tab of ["order", "roles", "chat", "delegation"] as const) {
       act(() => openModelsSettings(tab));
       expect(deps.setSettingsSection).toHaveBeenLastCalledWith("providers");

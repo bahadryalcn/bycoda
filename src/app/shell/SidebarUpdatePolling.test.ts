@@ -66,7 +66,8 @@ it("shares one check and one download across both entry points and retains insta
     );
     expect(mocks.probe).toHaveBeenCalledOnce();
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
-    expect(document.querySelector("details")?.textContent).toContain("Release details");
+    // The notes show directly in the prompt, not behind a disclosure.
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Release details");
     const later = Array.from(document.querySelectorAll("button")).find(
       (button) => button.textContent === "Remind me tomorrow",
     )!;

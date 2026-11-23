@@ -107,16 +107,10 @@
 }
 
 /* Status popovers (assistant status, presence, filter). */
-.popover {
+.statusContent {
   display: grid;
   gap: var(--ui-space-3);
   inline-size: min(20rem, calc(100vw - 2rem));
-}
-.popover p {
-  margin: 0;
-}
-.popover > button {
-  justify-self: start;
 }
 .popoverRow {
   display: flex;

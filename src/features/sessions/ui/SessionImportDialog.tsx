@@ -352,7 +352,6 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
     });
   };
 
-
   return (
     <Modal
       title={t("Import sessions")}

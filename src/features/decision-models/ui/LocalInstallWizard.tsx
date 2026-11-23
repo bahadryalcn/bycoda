@@ -166,27 +166,27 @@ export function LocalInstallWizard({
     >
       <div className="flex min-w-0 flex-col gap-4">
         <div className="flex min-w-0 flex-col gap-2">
-            {loadError !== null ? (
-              <ErrorNotice
-                title={t("Could not check this computer.")}
-                error={loadError}
-                onRetry={() => setAttempt((value) => value + 1)}
-              />
-            ) : null}
-            {loaded === null && loadError === null ? (
-              <Progress
-                label={
-                  target ? t("Checking Host {p0}…", { p0: target }) : t("Checking this computer…")
-                }
-              />
-            ) : null}
-            {loaded ? (
-              <Text as="ul" className="flex min-w-0 flex-col gap-1">
-                {formatHardware(loaded.hardware).map((line) => (
-                  <li key={line}>{line}</li>
-                ))}
-              </Text>
-            ) : null}
+          {loadError !== null ? (
+            <ErrorNotice
+              title={t("Could not check this computer.")}
+              error={loadError}
+              onRetry={() => setAttempt((value) => value + 1)}
+            />
+          ) : null}
+          {loaded === null && loadError === null ? (
+            <Progress
+              label={
+                target ? t("Checking Host {p0}…", { p0: target }) : t("Checking this computer…")
+              }
+            />
+          ) : null}
+          {loaded ? (
+            <Text as="ul" className="flex min-w-0 flex-col gap-1">
+              {formatHardware(loaded.hardware).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </Text>
+          ) : null}
         </div>
         {loaded ? (
           <div className="flex min-w-0 flex-col gap-2">

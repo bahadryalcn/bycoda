@@ -1,7 +1,12 @@
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { PickerFooter, PickerList, PopoverSearchHeader, usePickerList } from "../../../shared/ui/picker";
+import {
+  PickerFooter,
+  PickerList,
+  PopoverSearchHeader,
+  usePickerList,
+} from "../../../shared/ui/picker";
 import { useT, type t as Translate } from "../../../shared/i18n";
 import { useRef, useState } from "react";
 import { basename, pickFolders } from "../../../platform/tauri/fs";
@@ -208,13 +213,13 @@ export function SessionDirsPicker({
     ),
     icon: <Folder className="icon-sm" />,
     meta:
-      mode === "project"
-        ? pathKey(path) === pathKey(project)
-          ? <Check className="icon-sm" role="img" aria-label={t("Current")} />
-          : undefined
-        : pathKey(path) === pathKey(workingDirectory)
-          ? <Home className="icon-sm" role="img" aria-label={t("Working folder")} />
-          : undefined,
+      mode === "project" ? (
+        pathKey(path) === pathKey(project) ? (
+          <Check className="icon-sm" role="img" aria-label={t("Current")} />
+        ) : undefined
+      ) : pathKey(path) === pathKey(workingDirectory) ? (
+        <Home className="icon-sm" role="img" aria-label={t("Working folder")} />
+      ) : undefined,
     disabled:
       picking ||
       !enabled ||
@@ -302,9 +307,11 @@ export function SessionDirsPicker({
                 variant="ghost"
                 type="button"
                 disabled={picking || !enabled}
-                tooltip={mode === "folders"
-                  ? t("Existing conversations open a new session in the chosen project.")
-                  : undefined}
+                tooltip={
+                  mode === "folders"
+                    ? t("Existing conversations open a new session in the chosen project.")
+                    : undefined
+                }
                 onClick={() => {
                   setMode(mode === "folders" ? "project" : "folders");
                   setQuery("");

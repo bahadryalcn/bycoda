@@ -59,7 +59,6 @@ export function defaultBranchCopy(kind: "push" | "pr", branch: string): GitConfi
       kind === "pr"
         ? t('Create a pull request from default branch "{p0}"?', { p0: branch })
         : t('Push to default branch "{p0}"?', { p0: branch }),
-    message: t("The default branch is shared with everyone on this repository."),
     confirmLabel: kind === "pr" ? t("Create pull request") : t("Push"),
     tone: "normal",
   };
@@ -68,7 +67,6 @@ export function defaultBranchCopy(kind: "push" | "pr", branch: string): GitConfi
 export function discardConflictCopy(): GitConfirmation {
   return {
     title: t("Discard the unsaved conflict resolution?"),
-    message: t("Your edits to this conflict will be lost."),
     confirmLabel: t("Discard"),
   };
 }
@@ -76,7 +74,6 @@ export function discardConflictCopy(): GitConfirmation {
 export function deleteRemoteBranchCopy(ref: string): GitConfirmation {
   return {
     title: t("Delete {p0} from the remote?", { p0: ref }),
-    message: t("The branch is removed for everyone who uses this remote."),
     confirmLabel: t("Delete"),
   };
 }

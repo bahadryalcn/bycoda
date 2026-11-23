@@ -265,12 +265,7 @@ export function PickerList({
     return actions == null ? (
       button
     ) : (
-      <ActionHost
-        key={option.value}
-        {...measure}
-        selected={selected}
-        className={styles.actionRow}
-      >
+      <ActionHost key={option.value} {...measure} selected={selected} className={styles.actionRow}>
         {button}
         <div data-picker-actions="" className={styles.actions}>
           {actions}

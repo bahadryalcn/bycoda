@@ -155,14 +155,24 @@ describe("ContentEditorFields media gate", () => {
 });
 
 describe("ContentEditorFields accounts", () => {
-  it("disables an account without draft access and says why, but never traps a chosen one", () => {
+  it("disables an account without draft access and says why, but never traps a chosen one", async () => {
     const noAccess = account("li1", "linkedin", "Studio LinkedIn", {});
     const snapshot = snapshotOf([x, noAccess]);
     render({}, { snapshot });
     expect(accountBox("Studio LinkedIn")?.disabled).toBe(true);
-    expect(element.textContent).toContain(
+    // The reason rides a tooltip on the row, not a text line per account.
+    expect(element.textContent).not.toContain("No access to this project");
+    const target = accountBox("Studio LinkedIn")!;
+    await act(async () => {
+      target.dispatchEvent(new Event("pointerover", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 520));
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
       "No access to this project. Grant it in Accounts & Settings.",
     );
+    await act(async () => {
+      target.dispatchEvent(new Event("pointerout", { bubbles: true }));
+    });
     expect(accountBox("Studio X")?.disabled).toBe(false);
     render({ accountIds: ["li1"] }, { snapshot });
     expect(accountBox("Studio LinkedIn")?.disabled).toBe(false);

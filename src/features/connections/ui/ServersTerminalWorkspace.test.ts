@@ -193,7 +193,7 @@ it("mobile review uses the canonical native form and closes its own terminal whi
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
   await act(async () =>
     [...document.querySelectorAll('[role="dialog"] button')]
-      .find((button) => button.textContent === "Connect")!
+      .find((button) => named(button, "Connect"))!
       .click(),
   );
   const opened = (await pending) as SshWorkspaceStatus;
@@ -259,7 +259,7 @@ it("keeps the approval pending until final live authority settles and refuses re
   });
   await act(async () =>
     [...document.querySelectorAll('[role="dialog"] button')]
-      .find((button) => button.textContent === "Connect")!
+      .find((button) => named(button, "Connect"))!
       .click(),
   );
   expect(authorize).toBeTypeOf("function");
@@ -285,7 +285,7 @@ it("cold restore previews the current canonical target and connects a fresh shel
   expect(container.textContent).toContain("example.invalid:22");
   await act(async () =>
     [...container.querySelectorAll("button")]
-      .find((button) => button.textContent === "Connect")!
+      .find((button) => named(button, "Connect"))!
       .click(),
   );
   expect(events.mounted).toEqual([server.id]);
@@ -339,7 +339,7 @@ it("keeps an open mobile review when a desktop tab asks for another inherited re
   );
   await act(async () =>
     [...document.querySelectorAll('[role="dialog"] button')]
-      .find((button) => button.textContent === "Connect")!
+      .find((button) => named(button, "Connect"))!
       .click(),
   );
   expect(events.mounted).toEqual([server.id]);
@@ -382,22 +382,29 @@ it("keeps an open mobile review when a desktop tab asks for another inherited re
   expect(settled).toBe(false);
   await act(async () =>
     [...document.querySelectorAll('[role="dialog"] button')]
-      .find((button) => button.textContent === "Connect")!
+      .find((button) => named(button, "Connect"))!
       .click(),
   );
   expect(await pending).toMatchObject({ state: "opened-on-computer" });
 });
 
+// Icon-only actions (cold-restore Connect) are named by aria-label, not text.
+const named = (button: Element, name: string) =>
+  button.textContent === name || button.getAttribute("aria-label") === name;
 function Inventory() {
   const open = useOpenServerTerminal();
   return createElement("button", { onClick: () => open?.(server) }, "Open explicit SSH");
 }
 it("requests startup review once for explicit live terminals and never for restored integration", async () => {
+  // The startup review queue reads runbook names when it opens.
+  native.invoke.mockImplementation(async (command: string) =>
+    command === "ssh_runbooks_list" ? [] : undefined,
+  );
   serverTerminalRestoreState.initialize({ version: 1, enabled: false, tabs: [] });
   const click = async (label: string) =>
     act(async () =>
       [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === label)!
+        .find((button) => named(button, label))!
         .click(),
     );
   const prompt = async () =>
@@ -482,7 +489,7 @@ it("reviews inherited configuration before a new terminal and never persists the
   expect(document.body.textContent).toContain("literal $(not executed)");
   await act(async () =>
     [...document.querySelectorAll('[role="dialog"] button')]
-      .find((button) => button.textContent === "Connect")!
+      .find((button) => named(button, "Connect"))!
       .click(),
   );
   expect(events.mounted).toEqual([server.id]);
@@ -698,7 +705,8 @@ it("generates a key only after the explicit action and does not restore keygen o
       .click(),
   );
   expect(events.mounted).toEqual(["keygen:C:/disposable/id_ed25519"]);
-  expect(container.textContent).toContain("C:/disposable/id_ed25519");
+  // The key path reaches the terminal (asserted above); its tab is named for the action.
+  expect(container.textContent).toContain("Generate SSH key");
   await act(async () => root.render(null));
   await act(async () => render());
   expect(events.mounted).toHaveLength(1);

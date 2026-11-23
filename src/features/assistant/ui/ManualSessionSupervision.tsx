@@ -6,7 +6,6 @@ import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Surface } from "../../../shared/ui/Surface";
 import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -189,11 +188,8 @@ export function ManualSessionSupervision({
     !stopping;
   if (idle)
     return (
-      <Surface
-        as="section"
-        variant="card"
-        padding="md"
-        className={sessionStyles.frame}
+      <section
+        {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, sessionStyles.frame)}
         aria-label={t("Manual session supervision")}
       >
         <div className={sessionStyles.statusRow}>
@@ -217,7 +213,7 @@ export function ManualSessionSupervision({
             <RefreshIcon loading={pending === "list"} disabled={!!pending} onClick={reload} />
           </div>
         </div>
-      </Surface>
+      </section>
     );
   const refresh = settings ? (
     <Button
@@ -373,11 +369,8 @@ export function ManualSessionSupervision({
       </>
     );
   return (
-    <Surface
-      as="section"
-      variant="card"
-      padding="md"
-      className={sessionStyles.frame}
+    <section
+      {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, sessionStyles.frame)}
       aria-label={t("Manual session supervision")}
     >
       <div className={sessionStyles.statusRow}>
@@ -574,11 +567,11 @@ export function ManualSessionSupervision({
         <EmptyState
           size="inline"
           kind="empty"
-          className={styles.empty}
+          inset="panel"
           description={t("No visible conversations are available for enrollment.")}
         />
       )}
       {openError && <InlineError className={styles.error}>{t(openError)}</InlineError>}
-    </Surface>
+    </section>
   );
 }

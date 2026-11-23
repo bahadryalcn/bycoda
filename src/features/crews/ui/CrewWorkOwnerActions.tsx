@@ -108,7 +108,7 @@ function Composer({
         setText((current) => (current === text ? "" : current));
       });
   return (
-    <div className="mt-3 flex max-w-[46rem] flex-col gap-2">
+    <div className="mt-3 flex max-w-184 flex-col gap-2">
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-0 flex-1 basis-48">
           <Select

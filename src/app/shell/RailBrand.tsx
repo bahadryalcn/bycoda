@@ -43,7 +43,7 @@ export function RailBrand({
           draggable={false}
         />
       </span>
-      {showSearch ? (
+      {showSearch && onSearch ? (
         <div className="bycoda-rail-search-slot min-w-0 flex-1">
           <RailSearch
             label={t("Search")}

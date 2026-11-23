@@ -398,7 +398,8 @@ describe("merge conflicts and blame in the file editor", () => {
   it("disables blame for a remote project until its host is known to support it", async () => {
     disk = "one\n";
     await render("remote://env/repo", false);
-    expect(blameToggle().disabled).toBe(true);
+    // Disabled with a reason stays focusable: aria-disabled, not the native attribute.
+    expect(blameToggle().getAttribute("aria-disabled")).toBe("true");
     expect(blameToggle().title).toBe("");
     expect(await tooltipText(blameToggle())).toMatch(/machine/);
   });

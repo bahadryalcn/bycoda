@@ -49,7 +49,7 @@
 .host-browser-bar > .host-browser-progress {
   position: absolute;
   inset-inline: 0;
-  inset-block-end: -1px;
+  inset-block-end: 0;
   pointer-events: none;
 }
 

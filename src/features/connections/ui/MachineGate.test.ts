@@ -117,13 +117,13 @@ it("shows a side panel as art and one line, and the page with Manage connections
     Array.from(notice()?.querySelectorAll("button") ?? []).map((button) => button.textContent);
 
   await render("panel");
-  expect(notice()?.querySelector("img")).not.toBeNull();
-  // Only the info button; the reason stays behind it and no action repeats the page's.
+  // A compact panel carries no art: one line, the reason behind the info button, no action.
+  expect(notice()).not.toBeNull();
+  expect(notice()?.querySelector("img")).toBeNull();
   expect(labels()).toEqual([""]);
   expect(notice()?.textContent).not.toContain("Add it in Connections");
 
   await render("page");
   expect(notice()?.querySelector("img")).not.toBeNull();
   expect(labels()).toContain("Manage connections");
-  expect(notice()?.textContent).not.toContain("Add it in Connections");
 });

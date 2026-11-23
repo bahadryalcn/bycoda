@@ -3372,6 +3372,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       label={moveName}
       aria-description={moveHint}
       className={styles.drag}
+      stretch={compact}
       onDoubleClick={() => {
         if (compact) setCompact(false);
       }}

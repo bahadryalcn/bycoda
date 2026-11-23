@@ -362,9 +362,7 @@ function LiveAgentCard({
           className="icon-xs shrink-0"
           active={live}
         />
-        {remote ? (
-          <Internet aria-hidden className="icon-xs shrink-0" strokeWidth={1.75} />
-        ) : null}
+        {remote ? <Internet aria-hidden className="icon-xs shrink-0" strokeWidth={1.75} /> : null}
         <Text
           size="inherit"
           tone="inherit"

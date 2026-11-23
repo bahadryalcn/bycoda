@@ -119,6 +119,7 @@ import {
   Plus,
   Search,
   Share,
+  SlidersHorizontal,
   Sparkles,
   SplitSquare,
   StickyNote,
@@ -371,7 +372,7 @@ import { IconButton, TabVisitNav } from "./TitleBar";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { Popover } from "../../shared/ui/Popover";
 import { useProjectMenu } from "./useProjectMenu";
-import { SessionFiltersMenu } from "../../features/sessions/ui/SessionFiltersMenu";
+import { SessionFiltersMenu, SessionViewMenu } from "../../features/sessions/ui/SessionFiltersMenu";
 import {
   SessionSettleAction,
   SessionSettleButton,
@@ -1319,7 +1320,11 @@ function SidebarComponent({
   const [sessionFilters, setSessionFilters] = useState(loadSessionSidebarFilters);
   const [globalSessionFilters, setGlobalSessionFilters] =
     useState<SessionSidebarFilters>(GLOBAL_SESSION_FILTERS);
-  const [filterMenu, setFilterMenu] = useState<{ x: number; y: number } | null>(null);
+  const [filterMenu, setFilterMenu] = useState<{
+    x: number;
+    y: number;
+    kind: "filter" | "view";
+  } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sessionSearchExpanded, setSessionSearchExpanded] = useState(false);
   const sessionSearchRef = useRef<ExpandingSearchHandle>(null);
@@ -3340,10 +3345,11 @@ function SidebarComponent({
     saveSessionSidebarFilters(next);
   };
 
-  const onFilterButtonClick = (
+  const onSessionOptionsClick = (
     event: Pick<ReactMouseEvent<HTMLButtonElement>, "currentTarget">,
+    kind: "filter" | "view",
   ) => {
-    if (filterMenu) {
+    if (filterMenu?.kind === kind) {
       setFilterMenu(null);
       return;
     }
@@ -3351,7 +3357,7 @@ function SidebarComponent({
     setSessionMenu(null);
     setFolderMenu(null);
     // The menu aligns its end edge to this point, under the button's end edge.
-    setFilterMenu({ x: rect.right, y: rect.bottom + 2 });
+    setFilterMenu({ x: rect.right, y: rect.bottom + 2, kind });
   };
 
   // The session list's own tools sit in the Workspace header row: an inline filter that opens from
@@ -3374,7 +3380,7 @@ function SidebarComponent({
       data-tauri-drag-region="false"
     >
       <div
-        className="min-w-(--ui-control-height-compact) max-w-[248px] flex-1"
+        className="min-w-(--ui-control-height-compact) max-w-62 flex-1"
         style={
           sessionSearchExpanded
             ? { minWidth: "calc(var(--ui-control-height-compact) * 3)" }
@@ -3408,11 +3414,21 @@ function SidebarComponent({
         <SessionsHeaderButton
           label={t("Filter sessions")}
           active={filtersActive}
-          open={!!filterMenu}
+          open={filterMenu?.kind === "filter"}
           hasPopup
-          onClick={onFilterButtonClick}
+          onClick={(event) => onSessionOptionsClick(event, "filter")}
         >
           <ListFilter className="icon-xs" strokeWidth={1.75} />
+        </SessionsHeaderButton>
+      ) : null}
+      {!sessionSearchExpanded ? (
+        <SessionsHeaderButton
+          label={t("View")}
+          open={filterMenu?.kind === "view"}
+          hasPopup
+          onClick={(event) => onSessionOptionsClick(event, "view")}
+        >
+          <SlidersHorizontal className="icon-xs" strokeWidth={1.75} />
         </SessionsHeaderButton>
       ) : null}
     </div>
@@ -3652,11 +3668,18 @@ function SidebarComponent({
             checked: filtersActive,
             icon: <ListFilter className="icon-sm" />,
           },
+          {
+            kind: "item",
+            id: "view",
+            label: t("View"),
+            icon: <SlidersHorizontal className="icon-sm" />,
+          },
         ]
       : [];
     const onToolbarPick = (id: string, anchor: HTMLButtonElement) => {
       if (id === "search") sessionSearchRef.current?.expand();
-      else if (id === "filter") onFilterButtonClick({ currentTarget: anchor });
+      else if (id === "filter" || id === "view")
+        onSessionOptionsClick({ currentTarget: anchor }, id);
       else if (id === "select") {
         if (selectionMode) clearSessionSelection();
         else {
@@ -3751,11 +3774,7 @@ function SidebarComponent({
         {projectless && sessionToolbar ? (
           <div className={styles.projectlessToolbar}>{sessionToolbar}</div>
         ) : sessionToolbar ? (
-          <WorkspaceToolbar
-            active={activeTools}
-            items={toolbarItems}
-            onPick={onToolbarPick}
-          >
+          <WorkspaceToolbar active={activeTools} items={toolbarItems} onPick={onToolbarPick}>
             {sessionToolbar}
           </WorkspaceToolbar>
         ) : null}
@@ -4032,10 +4051,9 @@ function SidebarComponent({
             <RemoteLoadError cwd={cwd} failure={sessionsFailure} stale compact />
           ) : !remote.machine && remote.dataState.error && remoteConnectionIssue ? (
             <RemoteLoadError cwd={cwd} failure={classifyRemoteError(remote.dataState.error)} />
-          ) : (
+          ) : remote.dataState.phase === "error" || remote.dataState.phase === "stale" ? (
             <RemoteDataStatus
               cwd={cwd}
-              presentation="notice"
               state={remote.dataState}
               connectionIssueHandled={remoteConnectionIssue}
               label={
@@ -4046,7 +4064,7 @@ function SidebarComponent({
               onRefresh={remote.refresh}
               disabled={!remote.machine && !remote.dataState.error}
             />
-          )
+          ) : null
         ) : null}
         <layoutMotion.div
           layoutScroll
@@ -4062,29 +4080,23 @@ function SidebarComponent({
         >
           {lastSessionsOpen ? (
             <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
-              {lastSessionsData?.remoteHistoryLimited && !lastSessionsData.rows.length ? (
-                <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
-                  {t("Remote sessions shown from available history")}
-                </Text>
-              ) : null}
-              {lastSessionsData?.error && !lastSessionsData.rows.length ? (
-                <Alert tone="danger">
-                  <p>{t("Couldn’t load sessions")}</p>
-                  <Button
-                    variant="ghost"
-                    motion="none"
-                    type="button"
-                    onClick={lastSessionsData.refresh}
-                  >
-                    {t("Retry")}
-                  </Button>
-                </Alert>
-              ) : null}
-              {lastSessionsData?.loading && !lastSessionsData.rows.length ? (
-                <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-2">
-                  {t("Loading sessions…")}
-                </Text>
-              ) : lastSessionsData?.error && !lastSessionsData.rows.length ? null : (
+              {lastSessionsData &&
+              !lastSessionsData.rows.length &&
+              (lastSessionsData.loading ||
+                lastSessionsData.error ||
+                lastSessionsData.remoteHistoryLimited) ? (
+                <CollectionFooter
+                  empty
+                  loading={lastSessionsData.loading}
+                  error={lastSessionsData.error && t("Couldn’t load sessions")}
+                  onRetry={lastSessionsData.refresh}
+                  partial={
+                    lastSessionsData.remoteHistoryLimited
+                      ? t("Remote sessions shown from available history")
+                      : undefined
+                  }
+                />
+              ) : (
                 (() => {
                   const rows = filterSessionsByQuery(
                     filterSessionsByStatus(
@@ -4171,7 +4183,7 @@ function SidebarComponent({
                       description={
                         narrowedByUser || lastSessionsData?.rows.length
                           ? t("No matching sessions")
-                          : t("No sessions in the last 7 days")
+                          : t("No sessions")
                       }
                     />
                   );
@@ -4292,9 +4304,7 @@ function SidebarComponent({
                         />
                       );
                     })()
-                  ) : (
-                    null
-                  )
+                  ) : null
                 ) : (
                   <>
                     <SessionListWindow
@@ -4595,7 +4605,7 @@ function SidebarComponent({
           )}
         </Toast>
       ) : null}
-      {filterMenu ? (
+      {filterMenu?.kind === "filter" ? (
         <SessionFiltersMenu
           x={filterMenu.x}
           y={filterMenu.y}
@@ -4606,6 +4616,13 @@ function SidebarComponent({
           allowedTimeFilters={lastSessionsOpen ? GLOBAL_SESSION_TIME_FILTERS : undefined}
           defaultFilters={lastSessionsOpen ? GLOBAL_SESSION_FILTERS : undefined}
           onChange={lastSessionsOpen ? setGlobalSessionFilters : onSessionFiltersChange}
+          onClose={() => setFilterMenu(null)}
+        />
+      ) : filterMenu?.kind === "view" ? (
+        <SessionViewMenu
+          x={filterMenu.x}
+          y={filterMenu.y}
+          canImport={!remoteProject || lastSessionsOpen}
           onClose={() => setFilterMenu(null)}
         />
       ) : null}
@@ -4632,7 +4649,9 @@ function SidebarComponent({
               onFocus={(event) => event.currentTarget.select()}
             />
             {copyIdFailure.error ? (
-              <InlineError details={copyIdFailure.error}>{t("Could not copy the session ID")}</InlineError>
+              <InlineError details={copyIdFailure.error}>
+                {t("Could not copy the session ID")}
+              </InlineError>
             ) : null}
             <Button
               loading={copyIdRetrying}
@@ -4878,7 +4897,7 @@ function SidebarComponent({
           ref={drawerRef}
           data-sidebar-drawer={drawerClosing ? "closing" : "open"}
           inert={drawerClosing || undefined}
-          className={`flex shrink-0 justify-end overflow-hidden max-[596px]:absolute max-[596px]:inset-y-0 max-[596px]:start-14 max-[596px]:z-(--layer-pane-sheet) ${
+          className={`flex shrink-0 justify-end overflow-hidden max-[596px]:absolute max-[596px]:inset-y-0 max-[596px]:start-[calc(var(--ui-space-12)+var(--ui-space-2))] max-[596px]:z-(--layer-pane-sheet) ${
             drawerClosing ? "pointer-events-none" : ""
           }`}
         >
@@ -5524,6 +5543,7 @@ function WorkspaceNewSessionButton({
       <SplitButton
         label={label}
         menuLabel={t("Session actions")}
+        collapseLabel="container"
         tone="accent"
         motion="none"
         variant="ghost"
@@ -5546,6 +5566,7 @@ function WorkspaceNewSessionButton({
   return (
     <Button
       aria-haspopup={!onNew && onChooseProject ? "dialog" : undefined}
+      collapseLabel="container"
       shortcut={shortcut || undefined}
       motion="none"
       variant="ghost"

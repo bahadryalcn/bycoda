@@ -70,11 +70,5 @@ export function TasksViewEmpty({
     );
   // The one New task action lives here; the toolbar leaves it out while there is nothing else.
   if (onboarding) return <TasksEmptyState onCreate={onCreate} disabled={createDisabled} />;
-  return (
-    <EmptyState
-      context="panel"
-      kind="empty"
-      title={t("No tasks yet")}
-    />
-  );
+  return <EmptyState context="panel" kind="empty" title={t("No tasks yet")} />;
 }

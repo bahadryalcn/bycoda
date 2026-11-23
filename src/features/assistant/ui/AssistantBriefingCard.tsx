@@ -5,7 +5,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Heading } from "../../../shared/ui/Heading";
-import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { X, Mic, Volume2, Square, File, Check, Languages } from "../../../shared/ui/icons";
 import type { AssistantSnapshot } from "../../../shared/model/host-contracts/assistant";
 import {
@@ -186,11 +186,8 @@ export function AssistantBriefingCard({
     if (targets.length === 1 && result.unavailable === 0) await open(targets[0], guard, owner);
   }
   return (
-    <Surface
-      as="section"
-      variant="canvas"
-      padding="none"
-      className={briefingStyles.briefing}
+    <section
+      {...surfaceAttributes({ variant: "canvas" }, briefingStyles.briefing)}
       aria-label={t("While you were away")}
     >
       <div className={briefingStyles.header}>
@@ -315,11 +312,7 @@ export function AssistantBriefingCard({
         text={
           speaking === "idle"
             ? ""
-            : t(
-                speaking === "loading"
-                  ? "Preparing audio…"
-                  : "Reading the briefing.",
-              )
+            : t(speaking === "loading" ? "Preparing audio…" : "Reading the briefing.")
         }
       />
       {audioError && <InlineError>{t(audioError)}</InlineError>}
@@ -361,6 +354,6 @@ export function AssistantBriefingCard({
         </div>
       )}
       {error && <InlineError>{t(error)}</InlineError>}
-    </Surface>
+    </section>
   );
 }

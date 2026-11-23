@@ -45,6 +45,7 @@ function useSshInventory<T>(command: string) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [attempt, setAttempt] = useState(0);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- reads the native SSH inventory when its command changes
   useEffect(() => {
     let current = true;
     setLoading(true);
@@ -100,6 +101,7 @@ export function SshSettings({
   const [config, setConfig] = useState("");
   // Mirrors the textarea so a preview that resolves after an edit is dropped, not applied.
   const configRef = useRef(config);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps native preview completions matched to the committed input
   useLayoutEffect(() => {
     configRef.current = config;
   });
@@ -149,8 +151,8 @@ export function SshSettings({
     }
   };
   // Previews the pasted config once typing pauses; a result for older text is dropped.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- debounces the native preview call for the current pasted configuration
   useEffect(() => {
-    // Effect reason: debounce the native preview call so pasting needs no extra Preview action.
     const content = config;
     if (!content.trim()) return;
     const timer = window.setTimeout(() => {
@@ -162,7 +164,8 @@ export function SshSettings({
           }
         },
         (reason) => {
-          if (configRef.current === content) setImportError(sanitizeConnectionError(errorText(reason)));
+          if (configRef.current === content)
+            setImportError(sanitizeConnectionError(errorText(reason)));
         },
       );
     }, 400);
@@ -175,7 +178,8 @@ export function SshSettings({
         (candidate.effectiveSshEndpoint ?? candidate.sshEndpoint) &&
         sameSshEndpoint((candidate.effectiveSshEndpoint ?? candidate.sshEndpoint)!, host.endpoint),
     );
-  const newHosts = preview?.hosts.filter((host) => !host.duplicate && !existingFor(host).length) ?? [];
+  const newHosts =
+    preview?.hosts.filter((host) => !host.duplicate && !existingFor(host).length) ?? [];
   return (
     <Sheet title={t("SSH settings")} onClose={() => onClose()} size="lg">
       <div className="flex flex-col gap-4">
@@ -438,7 +442,10 @@ export function SshSettings({
                       });
                       setPreview(
                         (previous) =>
-                          previous && { ...previous, hosts: previous.hosts.filter((h) => h !== host) },
+                          previous && {
+                            ...previous,
+                            hosts: previous.hosts.filter((h) => h !== host),
+                          },
                       );
                     }
                   })

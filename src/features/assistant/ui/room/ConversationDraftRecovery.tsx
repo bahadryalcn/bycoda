@@ -53,54 +53,54 @@ export function ConversationDraftRecovery({ c }: { c: ConversationContext }) {
       }
     >
       <div className={styles.recovery}>
-      {draftRecovery.error && <InlineError>{draftRecovery.error}</InlineError>}
-      <SearchableSelect
-        hideLabel
-        label={t("Saved draft")}
-        value={draftRecovery.selected}
-        options={draftRecovery.backups.map((item, index) => ({
-          value: item.hash,
-          label: t("Draft {p0}", { p0: index + 1 }),
-          description: formatBytes(item.bytes),
-        }))}
-        onChange={(value) => void selectDraftBackup(value).catch(report)}
-        disabled={draftRecovery.loading || draftRecovery.backups.length === 0}
-      />
-      <TextareaField
-        hideLabel
-        label={t("Draft preview")}
-        readOnly
-        minRows={3}
-        maxRows={8}
-        autosize
-        value={draftRecovery.selectedText ?? ""}
-      />
-      {draftRecovery.selectedSavedAt != null && (
-        <Text as="p" size="caption" tone="secondary" leading="inherit">
-          {formatDate(draftRecovery.selectedSavedAt, { dateStyle: "medium", timeStyle: "short" })}
-        </Text>
-      )}
-      {draftRecovery.next && (
-        <CollectionFooter
-          standalone
-          hasMore
-          loadMoreButtonProps={{ variant: "secondary", disabled: draftRecovery.loading }}
-          loadMoreLabel={t("Load more")}
-          onLoadMore={() => {
-            const current = draftRecovery;
-            setDraftRecovery({ ...current, loading: true });
-            void loadDraftBackups(
-              current.threadId,
-              current.environmentId,
-              current.next,
-              current.revision,
-            ).catch(report);
-          }}
+        {draftRecovery.error && <InlineError>{draftRecovery.error}</InlineError>}
+        <SearchableSelect
+          hideLabel
+          label={t("Saved draft")}
+          value={draftRecovery.selected}
+          options={draftRecovery.backups.map((item, index) => ({
+            value: item.hash,
+            label: t("Draft {p0}", { p0: index + 1 }),
+            description: formatBytes(item.bytes),
+          }))}
+          onChange={(value) => void selectDraftBackup(value).catch(report)}
+          disabled={draftRecovery.loading || draftRecovery.backups.length === 0}
         />
-      )}
-      {!draftRecovery.loading && !draftRecovery.backups.length && !draftRecovery.error && (
-        <EmptyState size="inline" kind="empty" description={t("No saved drafts found.")} />
-      )}
+        <TextareaField
+          hideLabel
+          label={t("Draft preview")}
+          readOnly
+          minRows={3}
+          maxRows={8}
+          autosize
+          value={draftRecovery.selectedText ?? ""}
+        />
+        {draftRecovery.selectedSavedAt != null && (
+          <Text as="p" size="caption" tone="secondary" leading="inherit">
+            {formatDate(draftRecovery.selectedSavedAt, { dateStyle: "medium", timeStyle: "short" })}
+          </Text>
+        )}
+        {draftRecovery.next && (
+          <CollectionFooter
+            standalone
+            hasMore
+            loadMoreButtonProps={{ variant: "secondary", disabled: draftRecovery.loading }}
+            loadMoreLabel={t("Load more")}
+            onLoadMore={() => {
+              const current = draftRecovery;
+              setDraftRecovery({ ...current, loading: true });
+              void loadDraftBackups(
+                current.threadId,
+                current.environmentId,
+                current.next,
+                current.revision,
+              ).catch(report);
+            }}
+          />
+        )}
+        {!draftRecovery.loading && !draftRecovery.backups.length && !draftRecovery.error && (
+          <EmptyState size="inline" kind="empty" description={t("No saved drafts found.")} />
+        )}
       </div>
     </Modal>
   );

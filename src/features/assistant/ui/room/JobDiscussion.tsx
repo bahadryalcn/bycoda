@@ -8,7 +8,6 @@ import { Button } from "../../../../shared/ui/Button";
 import { Text } from "../../../../shared/ui/Text";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
-import { ScrollArea } from "../../../../shared/ui/ScrollArea";
 import { CheckList, RefreshCw } from "../../../../shared/ui/icons";
 import { MessageTimeline } from "../../../../shared/ui/MessageTimeline";
 import { AssistantChatComposer, assistantChatItem } from "./AssistantChat";
@@ -116,7 +115,7 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
   return (
     <section className={styles.discussion}>
       {!!c.visible.length && (
-        <ScrollArea
+        <div
           className={styles.discussionTranscript}
           ref={c.history}
           onScroll={(event) => c.onHistoryScroll(event.currentTarget)}
@@ -141,7 +140,7 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
               }),
             )}
           />
-        </ScrollArea>
+        </div>
       )}
       {c.error ? (
         <InlineError

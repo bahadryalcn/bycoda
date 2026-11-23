@@ -22,23 +22,34 @@
   .value[data-placeholder] {
     color: var(--ui-text-secondary);
   }
-  /* The popover sizes to its content: a calendar is seven day cells wide and
-     the time columns sit beside it instead of below. */
+  /* Give the measured frame a preferred width before laying out its contents. */
   .popover {
     --picker-calendar: calc(var(--ui-control-height-compact) * 7);
     --picker-time: calc(var(--ui-control-height-compact) * 5);
+    --picker-preset-width: 9rem;
+    --picker-editor-width: var(--picker-calendar);
+    --picker-extra-width: 0px;
+    container: date-time-picker / inline-size;
+    inline-size: calc(var(--picker-editor-width) + var(--picker-extra-width) + 2 * var(--space-3));
+    max-inline-size: 100%;
     padding: var(--space-3);
+  }
+  .popover:has(.panel[data-mode="datetime"], .range[data-time]) {
+    --picker-editor-width: max(21rem, var(--picker-calendar) + var(--picker-time) + var(--space-3));
+  }
+  .popover:has(.range[data-presets]) {
+    --picker-extra-width: calc(var(--picker-preset-width) + var(--space-3));
   }
   .panel {
     display: grid;
     gap: var(--space-3);
   }
   .popover .panel {
-    inline-size: var(--picker-calendar);
+    inline-size: 100%;
   }
   .popover .panel[data-mode="datetime"] {
     inline-size: auto;
-    grid-template-columns: var(--picker-calendar) var(--picker-time);
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
     align-items: start;
     --picker-rail-rows: 7;
   }
@@ -151,6 +162,7 @@
   }
   .footer {
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: var(--space-2);
     border-block-start: 1px solid var(--ui-field-border);
     margin-block-start: var(--space-3);
@@ -166,7 +178,7 @@
     align-items: start;
   }
   .range[data-presets] {
-    grid-template-columns: auto auto;
+    grid-template-columns: minmax(0, var(--picker-preset-width)) minmax(0, 1fr);
   }
   .range > .footer {
     grid-column: 1 / -1;
@@ -182,16 +194,17 @@
   }
   .presets > * {
     justify-content: flex-start;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .rangeMain {
     display: grid;
     gap: var(--space-3);
-    grid-template-columns: var(--picker-calendar);
+    grid-template-columns: minmax(0, var(--picker-calendar));
     align-items: start;
   }
   .range[data-time] .rangeMain {
-    grid-template-columns: var(--picker-calendar) var(--picker-time);
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
   }
   .side {
     display: grid;
@@ -201,7 +214,7 @@
     grid-column: 1 / -1;
     display: grid;
     gap: var(--space-2);
-    grid-template-columns: repeat(auto-fit, minmax(var(--picker-time), 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--picker-time)), 1fr));
   }
   .endpoints {
     display: flex;
@@ -216,13 +229,13 @@
   .rangeMain {
     max-inline-size: 100%;
   }
-  /* A window too narrow for the side-by-side layout stacks it again. */
-  @media (max-width: 40rem) {
-    .range[data-presets],
+  @container date-time-picker (inline-size < 21rem) {
     .range[data-time] .rangeMain,
     .popover .panel[data-mode="datetime"] {
       grid-template-columns: minmax(0, var(--picker-calendar));
     }
+  }
+  @container date-time-picker (inline-size < 31rem) {
     .range[data-presets] {
       grid-template-columns: minmax(0, 1fr);
     }
@@ -232,8 +245,15 @@
       border-inline-end: 0;
       padding-inline-end: 0;
     }
-    .presets > * {
-      white-space: normal;
+  }
+  @container date-time-picker (22rem <= inline-size < 31rem) {
+    .range[data-presets]:not([data-time]) {
+      grid-template-columns: minmax(0, var(--picker-preset-width)) minmax(0, 1fr);
+    }
+    .range[data-presets]:not([data-time]) .presets {
+      display: grid;
+      border-inline-end: 1px solid var(--ui-field-border);
+      padding-inline-end: var(--space-3);
     }
   }
 }

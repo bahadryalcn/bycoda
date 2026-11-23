@@ -57,9 +57,9 @@ it("shows one compact status and an accent update action with version columns", 
   );
   expect(html).toContain("provider-cli-status");
   expect(html).toContain("0.94.0");
-  expect(html).toContain("0.95.0");
   expect(html).toContain("Update available");
-  expect(html).toContain('aria-label="Update Codex to 0.95.0"');
+  // The latest version rides in the Update button tooltip, not a second visible column.
+  expect(html).toContain("Update</span>");
   expect(html).not.toContain("settings-row");
 });
 it("keeps unchanged catalogs quiet and preserves genuine refresh failures", () => {

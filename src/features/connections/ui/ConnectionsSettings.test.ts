@@ -713,13 +713,8 @@ it("explains removal and removes the saved connection without stopping or revoki
     machineId: "machine",
   });
   expect(document.body.textContent).toContain("The host and its sessions keep running");
-  // The credential explanation sits behind the info button; the service command behind its disclosure.
-  expect(document.body.textContent).not.toContain("credential valid on the host");
-  await act(async () =>
-    document.querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label="Help"]')!.click(),
-  );
+  // The credential consequence is the option's own description, visible without a disclosure.
   expect(document.body.textContent).toContain("credential valid on the host");
-  expect(document.body.textContent).toContain("~/.bycoda-host/bin/bycoda-host service uninstall");
   await act(async () => confirmRemove().click());
   expect(invoke).toHaveBeenCalledWith("remote_disconnect", {
     machineId: "machine",

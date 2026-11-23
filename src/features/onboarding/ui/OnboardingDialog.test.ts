@@ -22,6 +22,7 @@ const mock = vi.hoisted(() => ({
   available: vi.fn(),
   auth: vi.fn(),
   language: vi.fn(),
+  machines: [] as unknown[],
 }));
 vi.mock("../../../shared/i18n", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../shared/i18n")>()),
@@ -61,7 +62,7 @@ vi.mock("../../connections/ui/AddRemoteProjectDialog", () => ({
   AddRemoteProjectDialog: () => null,
 }));
 vi.mock("../../connections/model/connections", () => ({
-  useRemoteMachines: () => ({ machines: [] }),
+  useRemoteMachines: () => ({ machines: mock.machines }),
 }));
 vi.mock("../../sessions/ui/HarnessIcon", () => ({ HarnessIcon: () => null }));
 vi.mock("../../sessions/ui/ProviderSignInDialog", () => ({
@@ -185,6 +186,7 @@ async function projects() {
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.clearAllMocks();
+  mock.machines = [];
   localStorage.clear();
   mock.available.mockReturnValue(false);
   mock.auth.mockResolvedValue("unknown");
@@ -382,7 +384,7 @@ describe("onboarding workflow", () => {
     expect(isPickerProviderVisible("codex")).toBe(false);
     expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(1);
     expect(container.textContent).not.toContain("Cursor");
-    await click("Machines");
+    await click("Appearance");
     await click("Agents");
     expect(container.textContent).not.toContain("Cursor");
     await act(async () =>
@@ -431,7 +433,7 @@ describe("onboarding workflow", () => {
     await click("Save fixture path");
     expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(1);
     expect(container.textContent).toContain("Cursor");
-    await click("Machines");
+    await click("Appearance");
     await click("Agents");
     expect(container.textContent).toContain("Cursor");
   });
@@ -472,6 +474,9 @@ describe("onboarding workflow", () => {
   });
 
   it("opens the existing connection editor without scanning history", async () => {
+    mock.machines = [
+      { id: "m1", name: "Office", endpoint: "https://office.example", environmentId: "env" },
+    ];
     await render();
     await click("Machines");
     await click("Manage connections");

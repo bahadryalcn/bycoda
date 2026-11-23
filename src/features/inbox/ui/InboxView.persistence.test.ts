@@ -296,9 +296,9 @@ it("keeps active filters on an icon button and clears them through the menu", as
 });
 
 it.each([
-  ["indeterminate", "running"],
-  ["done", "done"],
-  ["new", "idle"],
+  ["indeterminate", "accent"],
+  ["done", "success"],
+  ["new", "secondary"],
 ])(
   "presents Jira status category %s without cramped uppercase metadata",
   async (stateType, tone) => {

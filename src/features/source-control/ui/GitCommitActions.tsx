@@ -311,7 +311,7 @@ export function GitCommitActions({
   if (!directSync) return split;
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-      <div className="min-w-[8rem] flex-1">{split}</div>
+      <div className="min-w-32 flex-1">{split}</div>
       <Button
         variant="secondary"
         size="sm"

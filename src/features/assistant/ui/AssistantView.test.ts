@@ -216,9 +216,8 @@ it("keeps one compact identity and reveals health metadata only on owner request
   expect(container.textContent).not.toContain("Work tracking continues while voice is off.");
   await click("Assistant status");
   expect(document.body.textContent).toContain("Last checked");
+  // The work state lives in the header chip; the status popover does not repeat it.
   expect(document.body.textContent).not.toContain("Work tracking continues while voice is off.");
-  await click("About work tracking");
-  expect(document.body.textContent).toContain("Work tracking continues while voice is off.");
   expect(
     mock.request.mock.calls.some(
       ([input]) => !["projects.list", "snapshot", "manual.list"].includes(input.op),
@@ -667,7 +666,7 @@ it("toggles memory with only canonical schema fields and its captured version", 
     },
   ];
   await render({ initialTab: "memory" });
-  await click("Active");
+  await click("Enable memory");
   const request = mock.request.mock.calls.find(([input]) => input.op === "memory.save")![0];
   expect(request).toMatchObject({
     id: "rule-one",
@@ -1996,8 +1995,19 @@ it("offers the unconfigured setup budget without saving and saves rules before e
     (button) => button.textContent?.trim() === "Start",
   )!;
   expect(start.disabled).toBe(false);
-  expect(document.body.textContent).toContain((1_000_000).toLocaleString());
+  // The one-screen setup shows no budget field; an unconfigured budget gets the setup default.
+  expect(document.body.textContent).not.toContain((1_000_000).toLocaleString());
   expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
+  await click("Start");
+  expect(mock.request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      op: "profile.update",
+      patch: expect.objectContaining({ setupComplete: true, dailyTokenBudget: 1_000_000 }),
+    }),
+    "room-fixture",
+  );
+  mock.close.mockClear();
+  mock.request.mockClear();
   await act(async () => root!.unmount());
   root = undefined;
   container.remove();
@@ -2024,7 +2034,6 @@ it("offers the unconfigured setup budget without saving and saves rules before e
     }),
     "room-fixture",
   );
-  await click("Done"); // The optional "Ready for 24/7" checklist follows a successful Start.
   expect(mock.close).toHaveBeenCalledOnce();
 });
 it("saves project priority through its captured Host and preserves exact uncertain replans", async () => {

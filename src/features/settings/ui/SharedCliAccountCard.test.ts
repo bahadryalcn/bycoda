@@ -42,7 +42,7 @@ it("shows the shared sign-in as a named account row without profile actions", ()
   expect(row.textContent).toContain("OpenCode");
   expect(row.textContent).toContain("Shared CLI profile");
   expect(container.textContent).not.toContain("Add account");
-  expect(container.textContent).not.toContain("Not installed");
+  expect(container.querySelector('[role="img"][aria-label="Not installed"]')).toBeNull();
 });
 
 it("renames the shared sign-in from the account menu", () => {
@@ -65,5 +65,6 @@ it("renames the shared sign-in from the account menu", () => {
 it("flags a missing CLI", () => {
   mock.available = false;
   act(() => root.render(createElement(SharedCliAccountCard, { provider: "opencode" })));
-  expect(container.textContent).toContain("Not installed");
+  // The missing CLI is an icon named by its accessible label, not row text.
+  expect(container.querySelector('[role="img"][aria-label="Not installed"]')).not.toBeNull();
 });

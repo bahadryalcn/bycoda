@@ -68,13 +68,8 @@ export function WorkspaceStorageSummary({
           </Button>
         }
       >
-        <Text
-          as="div"
-          size="secondary"
-          tone="inherit"
-          leading="inherit"
-          className={styles.storageBody}
-        >
+        <Text as="div" size="secondary" tone="inherit" leading="inherit" className="tabular-nums">
+          <div className={styles.storageBody}>
           <div className={styles.storageLine}>
             <span>
               <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
@@ -112,6 +107,7 @@ export function WorkspaceStorageSummary({
               {measure(storage.recoveryBytes)}
             </DescriptionItem>
           </DescriptionList>
+          </div>
         </Text>
         {storage.materialization !== "allowed" && (
           <SettingsFeedback state="warning">

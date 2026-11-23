@@ -1,6 +1,8 @@
 import { floatingFrameClassName, NativePopupHost, PopupBackdrop } from "./NativePopupHost";
 // Public alias of the NativePopupHost component; the catalog entry lives on its definition.
 export { NativePopover } from "./NativePopupHost";
+// The window backdrop paints the same opaque floating ground as popups, so it reuses this owner.
+export { PopupBackdrop } from "./NativePopupHost";
 import {
   useCallback,
   useContext,

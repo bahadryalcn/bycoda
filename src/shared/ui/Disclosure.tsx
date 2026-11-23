@@ -35,7 +35,8 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   /**
-   * `plain` inline text-level, `row` list-row height, `card` framed like `Surface variant="card"`,
+   * `plain` inline text-level, `compact` for quiet form detail, `row` list-row height,
+   * `card` framed like `Surface variant="card"`,
    * `step` one transcript line (28px, follows density): the whole row toggles (icon, label, gaps,
    * chevron), the chevron is always visible in the chrome ink and turns when open, hover washes the
    * row but an open row keeps no wash, the body opens below. Hover and focus stay within the row.
@@ -44,7 +45,7 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
    * `chevron="end"` and `collapsible={false}` for a row with nothing to open. Mount the body only
    * while `open` to keep long lists cheap.
    */
-  variant?: "plain" | "row" | "card" | "step";
+  variant?: "plain" | "compact" | "row" | "card" | "step";
   /** Accessible name for the summary row when the visible label is truncated or an icon. */
   summaryLabel?: string;
   size?: "sm" | "md";
@@ -93,9 +94,9 @@ export function Disclosure({
   onOpenChange,
   variant = "plain",
   summaryLabel,
-  size = "md",
-  textSize,
-  tone,
+  size: sizeProp,
+  textSize: textSizeProp,
+  tone: toneProp,
   weight,
   leading,
   chevron = "start",
@@ -107,6 +108,10 @@ export function Disclosure({
   ref,
   ...props
 }: DisclosureProps) {
+  const compact = variant === "compact";
+  const size = sizeProp ?? (compact ? "sm" : "md");
+  const textSize = textSizeProp ?? (compact ? "caption" : undefined);
+  const tone = toneProp ?? (compact ? "muted" : undefined);
   const innerRef = useRef<HTMLDetailsElement | null>(null);
   const controlled = open !== undefined;
   const [, reassert] = useState(0);

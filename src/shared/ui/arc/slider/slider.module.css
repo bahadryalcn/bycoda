@@ -48,6 +48,8 @@
   gap: 0.3em;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  min-inline-size: var(--ui-slider-readout-min, 6ch);
+  justify-content: flex-end;
   white-space: nowrap;
 }
 .dash {
@@ -75,7 +77,7 @@
 .end > .readout {
   display: block;
   flex: 0 1 auto;
-  min-inline-size: 0;
+  min-inline-size: min(100%, var(--ui-slider-readout-min, 6ch));
   margin-inline-start: auto;
   text-align: end;
   white-space: normal;

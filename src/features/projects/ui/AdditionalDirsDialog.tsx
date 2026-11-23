@@ -16,6 +16,7 @@ import {
 } from "../model/additionalDirs";
 import { useProjectGroupAssignments } from "../model/projectGroups";
 import { useRecents } from "../model/recents";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 
 type Props = {
   project: string;
@@ -109,8 +110,8 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
                   checked={selectedKeys.has(pathKey(path))}
                   onChange={() => toggle(path)}
                   label={
-                    <>
-                      <span className="flex min-w-0 flex-col" title={path}>
+                    <Tooltip label={path} asChild>
+                      <span className="flex min-w-0 flex-col">
                         <Text wrap="anywhere" size="secondary" tone="primary">
                           {basename(path)}
                         </Text>
@@ -121,7 +122,7 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
                           </Text>
                         ) : null}
                       </span>
-                    </>
+                    </Tooltip>
                   }
                   padding={{ inline: "md", block: "sm" }}
                   className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5"

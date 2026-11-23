@@ -419,17 +419,19 @@ export function ProvidersPage({
                     >
                       {t("Check all")}
                     </Button>
-                    {pendingUpdates.length ? <Button
-                      size="sm"
-                      stableWidth
-                      onClick={() => {
-                        for (const update of pendingUpdates) void runHarnessUpdate(update);
-                      }}
-                      variant="primary"
-                      startIcon={<ArrowDownCircle aria-hidden />}
-                    >
-                      {t("Update all ({p0})", { p0: pendingUpdates.length })}
-                    </Button> : null}
+                    {pendingUpdates.length ? (
+                      <Button
+                        size="sm"
+                        stableWidth
+                        onClick={() => {
+                          for (const update of pendingUpdates) void runHarnessUpdate(update);
+                        }}
+                        variant="primary"
+                        startIcon={<ArrowDownCircle aria-hidden />}
+                      >
+                        {t("Update all ({p0})", { p0: pendingUpdates.length })}
+                      </Button>
+                    ) : null}
                   </div>
                 }
                 feedback={

@@ -170,7 +170,7 @@ function PendingPresentation({
     }
   };
   return (
-    <Text as="article" size="inherit" tone="inherit" leading="normal" className={styles.card}>
+    <article className={styles.card}>
       <Heading size="section" level={3} className={styles.title}>
         {value.input.title ?? value.input.questions[0].prompt}
       </Heading>
@@ -186,7 +186,7 @@ function PendingPresentation({
           {t("Retry")}
         </Button>
       </div>
-    </Text>
+    </article>
   );
 }
 function OwnerQuestionCard({
@@ -337,11 +337,7 @@ function OwnerQuestionCard({
     held = !!model?.intentPending;
   if (!creation.model)
     return (
-      <Text
-        as="article"
-        size="inherit"
-        tone="inherit"
-        leading="normal"
+      <article
         {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, styles.card)}
       >
         <Heading size="section" level={3} className={styles.title}>
@@ -356,17 +352,13 @@ function OwnerQuestionCard({
         <Button size="sm" onClick={notify}>
           {t("Retry")}
         </Button>
-      </Text>
+      </article>
     );
   if (!held && ["answered", "cancelled", "superseded"].includes(value.status)) return null;
   const snoozed = !held && value.status === "snoozed" && !expanded;
   const stale = value.sourceCurrent === false;
   return (
-    <Text
-      as="article"
-      size="inherit"
-      tone="inherit"
-      leading="normal"
+    <article
       {...surfaceAttributes(
         ready && !snoozed && !stale
           ? { variant: "page", frame: "none", radius: "none" }
@@ -444,6 +436,6 @@ function OwnerQuestionCard({
           </Text>
         </div>
       ) : null}
-    </Text>
+    </article>
   );
 }

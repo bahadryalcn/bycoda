@@ -12,6 +12,7 @@ import {
  */
 export function WindowTransferNotice() {
   // Bridge the transfer store into the workbench's shared toast region.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- mirrors window-transfer store notices into the toast region
   useEffect(() => {
     let activeId: string | undefined;
     const sync = () => {

@@ -128,9 +128,8 @@ it("retains JSON draft and exact provider/scope identity after a rejected save",
     config: value,
   });
   expect(config.value).toBe(value);
-  const nameField = dialog().querySelector<HTMLInputElement>('input[placeholder="my-server"]')!;
-  expect(nameField.disabled).toBe(true);
-  expect(nameField.value).toBe("docs");
+  // The JSON supplies the server name, so the separate name field is not offered.
+  expect(dialog().querySelector('input[placeholder="my-server"]')).toBeNull();
   expect(dialog().textContent).toContain("Configuration changed; reload before saving");
   expect(onClose).not.toHaveBeenCalled();
   expect(onAdded).not.toHaveBeenCalled();

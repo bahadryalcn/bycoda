@@ -561,11 +561,17 @@ it("patches only owned organization fields, leaving last-use and forwards native
   await render();
   await click("Personal SSH");
   const form = document.body.querySelector("details form")!;
+  // An unchanged draft saves nothing; edit the group so a save happens.
+  const input = form.querySelector("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Work");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   await act(async () =>
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
-  expect(updateServerMetadata).toHaveBeenCalledWith("ssh-stable", {
-    group: "Personal",
+  expect(updateServerMetadata).toHaveBeenCalledExactlyOnceWith("ssh-stable", {
+    group: "Work",
     tags: ["linux"],
     favorite: true,
   });

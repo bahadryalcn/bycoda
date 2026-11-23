@@ -19,7 +19,7 @@ import { defaultModelSettings, resolveModel } from "../../sessions/model/models"
 import { RUNTIME_MODES, RUNTIME_MODE_LABEL } from "../../sessions/model/session";
 import { REMOTE_PROVIDERS, isRemoteProvider } from "../../connections/model/protocol";
 import { TimeTriggerSentence } from "../../automations/ui/TriggerEditor";
-import { Text } from "../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../shared/ui/Text";
 import styles from "./AssistantView.module.css";
 
 /** One finite owner-reviewed schedule. No inheritance or Run now action. */
@@ -146,12 +146,11 @@ export function AssistantQuickAutomationFields({
                   }
                 />
               </div>
-              <Text
-                as="div"
-                size="secondary"
-                tone="neutral"
-                leading="inherit"
-                className={styles.scheduleSentence}
+              <div
+                {...textAttributes(
+                  { size: "secondary", tone: "neutral", leading: "inherit" },
+                  styles.scheduleSentence,
+                )}
               >
                 <TimeTriggerSentence
                   trigger={
@@ -165,7 +164,7 @@ export function AssistantQuickAutomationFields({
                     if (!disabled) onChange(next);
                   }}
                 />
-              </Text>
+              </div>
             </div>
           )}
         </FieldGroup>

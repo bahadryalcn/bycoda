@@ -98,7 +98,7 @@ pub(in crate::checkpoint) fn publish(
     cwd: &str,
 ) -> Result<bool, String> {
     let own_name = name(session, turn);
-    let canonical = std::fs::canonicalize(cwd).map_err(|e| e.to_string())?;
+    let canonical = std::fs::canonicalize(project_root(cwd)?).map_err(|e| e.to_string())?;
     let mut own = Lease {
         owner: "native".into(),
         session_id: session.into(),

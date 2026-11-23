@@ -282,9 +282,12 @@ export function ProviderBinaryControl({
         type="text"
         value={draft}
         placeholder={inspection?.path ?? t("Auto-detected path")}
-        description={t("Enter the absolute path to the CLI executable. Changes apply after restarting {p0}.", {
-          p0: PRODUCT_IDENTITY.displayName,
-        })}
+        description={t(
+          "Enter the absolute path to the CLI executable. Changes apply after restarting {p0}.",
+          {
+            p0: PRODUCT_IDENTITY.displayName,
+          },
+        )}
         disabled={working}
         autoFocus
         onChange={(event) => {
@@ -348,15 +351,23 @@ export function ProviderBinaryControl({
           footer={editing ? pathActions : undefined}
         >
           <div className="grid gap-2" aria-busy={working} id={`${provider}-binary-popover`}>
-            {restartRequired ? <Badge size="sm" tone="warning">{t("Restart required")}</Badge> : null}
+            {restartRequired ? (
+              <Badge size="sm" tone="warning">
+                {t("Restart required")}
+              </Badge>
+            ) : null}
             {editing ? (
               pathForm
             ) : (
               <>
                 {inspection ? (
-                  <OutputBlock frame="filled">{[inspection.path, inspection.version].filter(Boolean).join("\n")}</OutputBlock>
+                  <OutputBlock frame="filled">
+                    {[inspection.path, inspection.version].filter(Boolean).join("\n")}
+                  </OutputBlock>
                 ) : !error ? (
-                  <Text size="caption" tone="secondary">{t("Checking the selected CLI…")}</Text>
+                  <Text size="caption" tone="secondary">
+                    {t("Checking the selected CLI…")}
+                  </Text>
                 ) : null}
                 {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
                 {revealError ? (

@@ -74,6 +74,7 @@ export function FileMentionPicker({
   const retry = useStableCallback(onRetry);
   const retried = useRef(false);
   // Give the file index one refresh per picker opening when a settled search misses.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- schedules a search retry while the file index is warming up
   useEffect(() => {
     if (
       retried.current ||
@@ -156,25 +157,26 @@ export function FileMentionPicker({
         ) : (
           <FileTypeIcon name={file.name} isDir={Boolean(file.isDir)} size="md" />
         ),
-        group: !includesMentions && !hasQuery && files.length < 8
-          ? undefined
-          : workItem
-          ? workItemsScoped
-            ? WORK_ITEM_PROVIDER_NAMES[workItem.provider]
-            : t("Work items")
-          : crew?.kind === "member"
-            ? t("Members")
-            : crew || scopeHint === CREWS_MENTION_SCOPE
-              ? t("Crews")
-              : note || scopeHint === NOTES_MENTION_SCOPE
-                ? t("Notes")
-                : server
-                  ? t("Servers")
-                  : treeGroups
-                    ? [t("Project root"), t("Folders"), t("Notes")][treeRank(file)]
-                    : file.isDir
-                      ? t("Folders")
-                      : t("Files"),
+        group:
+          !includesMentions && !hasQuery && files.length < 8
+            ? undefined
+            : workItem
+              ? workItemsScoped
+                ? WORK_ITEM_PROVIDER_NAMES[workItem.provider]
+                : t("Work items")
+              : crew?.kind === "member"
+                ? t("Members")
+                : crew || scopeHint === CREWS_MENTION_SCOPE
+                  ? t("Crews")
+                  : note || scopeHint === NOTES_MENTION_SCOPE
+                    ? t("Notes")
+                    : server
+                      ? t("Servers")
+                      : treeGroups
+                        ? [t("Project root"), t("Folders"), t("Notes")][treeRank(file)]
+                        : file.isDir
+                          ? t("Folders")
+                          : t("Files"),
         meta:
           workItem?.kind === "hint" || scopeHint ? (
             <Code size="micro" tone="secondary">
@@ -241,7 +243,8 @@ export function FileMentionPicker({
         }
         onRetry={onRetry}
         emptyLabel={
-          indexMessage ?? (includesMentions
+          indexMessage ??
+          (includesMentions
             ? workItemsFailure
               ? workItemSearchNotice(workItemsFailure.error, workItemsFailure.machine, t, now)
               : t("No matches")

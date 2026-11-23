@@ -32,7 +32,6 @@
 .progress {
   flex: none;
   margin-inline-start: auto;
-  font-variant-numeric: tabular-nums;
 }
 .body {
   min-inline-size: 0;
@@ -92,7 +91,6 @@
   margin-block-end: var(--space-1);
 }
 .fields .radio > legend {
-  padding: 0;
   margin-block-end: var(--space-1);
   overflow-wrap: anywhere;
 }
@@ -108,7 +106,6 @@
 .option {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-3);
   min-inline-size: 0;
   cursor: pointer;
 }

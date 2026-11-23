@@ -168,7 +168,7 @@ export function CrewWorkDetail({
         <Text
           as="p"
           size="secondary"
-          className="mt-2 max-h-32 max-w-[46rem] overflow-y-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+          className="mt-2 max-h-32 max-w-184 overflow-y-auto whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
         >
           {request.text}
         </Text>

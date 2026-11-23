@@ -190,10 +190,7 @@ export async function collectLayoutViolations(page: Page, surface: LayoutSurface
         if (!clips(style) || style.textOverflow === "ellipsis" || !rendered(el)) continue;
         if (allowed(el, "overflow")) continue;
         if (style.webkitLineClamp !== "none" && style.webkitLineClamp !== "") continue;
-        if (
-          ["hidden", "clip"].includes(style.overflowX) &&
-          el.scrollWidth > el.clientWidth + 1
-        )
+        if (["hidden", "clip"].includes(style.overflowX) && el.scrollWidth > el.clientWidth + 1)
           out.push({
             check: "overflow",
             detail: `${label(el)} scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth}`,
@@ -284,7 +281,10 @@ export async function collectLayoutViolations(page: Page, surface: LayoutSurface
     }
 
     if (input.checks.includes("gap")) {
-      type Box = { el: HTMLElement; rect: { left: number; top: number; right: number; bottom: number } };
+      type Box = {
+        el: HTMLElement;
+        rect: { left: number; top: number; right: number; bottom: number };
+      };
       const boxes: Box[] = [];
       for (const el of candidates) {
         const rect = visibleRect(el);
@@ -311,14 +311,16 @@ export async function collectLayoutViolations(page: Page, surface: LayoutSurface
       };
       if (input.axis !== "column") {
         const used = new Set<number>();
-        const byTop = boxes.map((entry, index) => ({ ...entry, index })).sort(
-          (x, y) => x.rect.top - y.rect.top,
-        );
+        const byTop = boxes
+          .map((entry, index) => ({ ...entry, index }))
+          .sort((x, y) => x.rect.top - y.rect.top);
         for (const first of byTop) {
           if (used.has(first.index)) continue;
           const line = byTop.filter((entry) => {
             const center = (entry.rect.top + entry.rect.bottom) / 2;
-            return !used.has(entry.index) && center >= first.rect.top && center <= first.rect.bottom;
+            return (
+              !used.has(entry.index) && center >= first.rect.top && center <= first.rect.bottom
+            );
           });
           for (const entry of line) used.add(entry.index);
           line.sort((x, y) => x.rect.left - y.rect.left);
@@ -328,9 +330,9 @@ export async function collectLayoutViolations(page: Page, surface: LayoutSurface
       }
       if (input.axis !== "row") {
         const used = new Set<number>();
-        const byLeft = boxes.map((entry, index) => ({ ...entry, index })).sort(
-          (x, y) => x.rect.left - y.rect.left,
-        );
+        const byLeft = boxes
+          .map((entry, index) => ({ ...entry, index }))
+          .sort((x, y) => x.rect.left - y.rect.left);
         for (const first of byLeft) {
           if (used.has(first.index)) continue;
           const column = byLeft.filter((entry) => {
@@ -346,7 +348,12 @@ export async function collectLayoutViolations(page: Page, surface: LayoutSurface
           for (const entry of column) used.add(entry.index);
           column.sort((x, y) => x.rect.top - y.rect.top);
           for (let i = 1; i < column.length; i++)
-            check(column[i - 1], column[i], column[i].rect.top - column[i - 1].rect.bottom, "column");
+            check(
+              column[i - 1],
+              column[i],
+              column[i].rect.top - column[i - 1].rect.bottom,
+              "column",
+            );
         }
       }
       // Glyph to label: the icon and its text inside one control sit 4 px apart.
@@ -366,7 +373,12 @@ export async function collectLayoutViolations(page: Page, surface: LayoutSurface
         const g = glyph.getBoundingClientRect();
         const t = text.getBoundingClientRect();
         if (t.width === 0 || Math.min(g.bottom, t.bottom) - Math.max(g.top, t.top) <= 0) continue;
-        const gap = g.right <= t.left + 1 ? t.left - g.right : g.left >= t.right - 1 ? g.left - t.right : null;
+        const gap =
+          g.right <= t.left + 1
+            ? t.left - g.right
+            : g.left >= t.right - 1
+              ? g.left - t.right
+              : null;
         if (gap !== null && Math.abs(gap - 4) > 1)
           out.push({
             check: "gap",
@@ -443,7 +455,8 @@ export async function watchAnnouncements(page: Page, message: string) {
   await page.evaluate((text) => {
     const w = window as unknown as { __announced?: string[] };
     w.__announced = [];
-    const LIVE = '[role="alert"], [role="status"], [role="log"], [aria-live]:not([aria-live="off"])';
+    const LIVE =
+      '[role="alert"], [role="status"], [role="log"], [aria-live]:not([aria-live="off"])';
     const normalize = (value: string | null) => (value ?? "").replace(/\s+/g, " ").trim();
     new MutationObserver((records) => {
       for (const record of records) {

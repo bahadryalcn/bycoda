@@ -785,7 +785,9 @@ it("marks one row read from its hover action and keeps the others unread", async
   await act(async () => rowButton(first, "Mark read").click());
   expect(historyRows()[0].getAttribute("data-unread")).toBeNull();
   expect(historyRows()[1].getAttribute("data-unread")).toBe("true");
-  expect(button("Notifications").querySelector(".notification-trigger-count")?.textContent).toBe("1");
+  expect(button("Notifications").querySelector(".notification-trigger-count")?.textContent).toBe(
+    "1",
+  );
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)[0].read).toBe(true);
 });
 
@@ -856,7 +858,9 @@ it("marks a row that arrived after the last look as new while the sheet is open"
   expect(row("Fresh").getAttribute("data-unread")).toBe("true");
   expect(row("Fresh").textContent).toContain("Unread");
   expect(row("Stale").getAttribute("data-unread")).toBeNull();
-  expect(button("Notifications").querySelector(".notification-trigger-count")?.textContent).toBe("1");
+  expect(button("Notifications").querySelector(".notification-trigger-count")?.textContent).toBe(
+    "1",
+  );
 });
 
 it("opens a history conversation from its row and reports an unavailable one", async () => {
@@ -928,7 +932,8 @@ it("lists a live owner approval in the pending card with its time left and count
   expect(card.textContent).toContain("Approve p1");
   expect(card.textContent).toContain("1:30 left");
   expect(card.textContent).not.toContain("Private details");
-  expect(document.querySelector(".notification-section-label")?.textContent).toContain("1");
+  // The count lives once, on the trigger badge; the section label only names the group.
+  expect(document.querySelector(".notification-section-label")?.textContent).toBe("Waiting for you");
 });
 
 it("opens the owner request's conversation, or only closes the sheet without one", () => {

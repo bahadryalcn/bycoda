@@ -98,12 +98,12 @@ describe("shared title and status renderers", () => {
     }
   });
 
-  it("keeps pane title semantics while sharing item typography", () => {
+  it("keeps pane title semantics while using shared section typography", () => {
     const pane = render(
       createElement(PaneHeader, { title: "Files", titleAs: "div", titleId: "files" }),
     );
     expect(pane.querySelector("#files")?.tagName).toBe("DIV");
-    expect(pane.querySelector("#files")?.getAttribute("data-size")).toBe("item");
+    expect(pane.querySelector("#files")?.getAttribute("data-size")).toBe("section");
     const panel = render(createElement(PanelHeader, { title: "Settings", titleId: "settings" }));
     expect(panel.querySelector("#settings")?.tagName).toBe("H2");
     expect(panel.querySelector("#settings")?.getAttribute("data-size")).toBe("page");

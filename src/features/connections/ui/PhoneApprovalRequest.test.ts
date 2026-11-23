@@ -4,8 +4,26 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { usePhoneApprovalRequest } from "./PhoneApprovalRequest";
 vi.mock("../../../shared/ui/Modal", () => ({
-  Modal: ({ children, onClose }: { children: ReactNode; onClose: () => void }) =>
-    createElement("div", null, children, createElement("button", { onClick: onClose }, "Close")),
+  Modal: ({
+    title,
+    children,
+    footer,
+    onClose,
+  }: {
+    title?: ReactNode;
+    children: ReactNode;
+    footer?: ReactNode;
+    onClose: () => void;
+  }) =>
+    createElement(
+      "div",
+      null,
+      createElement("h2", null, title),
+      children,
+      footer,
+      createElement("button", { onClick: onClose }, "Close"),
+    ),
+  ModalActions: ({ children }: { children: ReactNode }) => createElement("div", null, children),
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let cleanup: (() => void) | undefined;

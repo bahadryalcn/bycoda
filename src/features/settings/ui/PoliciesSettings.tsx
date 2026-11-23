@@ -89,7 +89,9 @@ export function PoliciesSettings() {
         </div>
         <InfoPopover>
           <p>
-            {t("Documents are bundled for offline reading. Other interface languages use the English text.")}
+            {t(
+              "Documents are bundled for offline reading. Other interface languages use the English text.",
+            )}
           </p>
           {turkish && activePolicy.id === "software-license" ? (
             <p>{t("This license is shown in its original English text.")}</p>
@@ -107,9 +109,8 @@ export function PoliciesSettings() {
           ]}
           onChange={(value) => {
             if (value === "") return;
-            const heading = reader.current?.querySelectorAll<HTMLElement>(".policy-document h2")[
-              Number(value)
-            ];
+            const heading =
+              reader.current?.querySelectorAll<HTMLElement>(".policy-document h2")[Number(value)];
             if (!heading) return;
             heading.tabIndex = -1;
             heading.scrollIntoView({ block: "start" });

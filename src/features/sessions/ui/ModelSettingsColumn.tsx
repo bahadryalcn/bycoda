@@ -703,7 +703,7 @@ function OptionGrid({
       label={label}
       value={value}
       keepFocus
-      className={`grid gap-1 px-1.5 pt-1 pb-1.5 ${columns}`}
+      className={`grid gap-1 ${columns}`}
       tileClassName={`min-w-0 ${columns === "grid-cols-1" ? "justify-start" : "justify-center"}`}
       tile={{ variant: "ghost" }}
       options={setting.options.map((option, index) => ({

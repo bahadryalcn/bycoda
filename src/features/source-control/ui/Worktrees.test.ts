@@ -584,9 +584,10 @@ it.each([
     );
     const trigger = container.querySelector<HTMLButtonElement>("button")!;
     expect(trigger.classList.contains("-ml-1.5")).toBe(false);
-    expect(trigger.getAttribute("data-button-variant")).toBe("ghost");
+    expect(trigger.getAttribute("data-button-variant")).toBe("chip");
     expect(trigger.getAttribute("data-button-hierarchy")).toBe("ghost");
-    expect(trigger.textContent?.includes("Worktree")).toBe(executionCwd !== "/repo");
+    // The trigger names the checkout by its icon; no "Worktree" text badge.
+    expect(trigger.textContent?.includes("Worktree")).toBe(false);
     expect(trigger.querySelector("svg")?.outerHTML).toBe(
       renderToStaticMarkup(
         createElement(executionCwd === "/repo" ? GitBranch : FolderTree, {
@@ -680,7 +681,8 @@ it("uses the shared project picker without leaking late worktree responses", asy
   const refresh = container.querySelector<HTMLButtonElement>(
     '[aria-label="Refresh worktrees"], [aria-label="Refreshing…"]',
   )!;
-  expect(await tooltipText(refresh)).toBe("Refresh worktrees");
+  // The accessible name is the label; a tooltip would only repeat it.
+  expect(await tooltipText(refresh)).toBe("");
   expect(refresh.getAttribute("data-button-variant")).toBe("ghost");
   expect(create.getAttribute("data-button-variant")).toBe("secondary");
   await act(async () => picker.click());
@@ -1135,11 +1137,11 @@ it("uses searchable custom selects in the create worktree dialog", async () => {
     [...document.querySelectorAll<HTMLElement>('[role="radio"]')].find(
       (option) => option.textContent === label,
     )!;
-  await act(async () => branchType("Use an existing local branch").click());
+  await act(async () => branchType("Existing branch").click());
   let search: HTMLInputElement;
 
   const existingBranch = document.querySelector<HTMLButtonElement>(
-    '[aria-label^="Existing branch:"]',
+    '[aria-label^="Branch:"]',
   )!;
   expect(existingBranch.textContent).toContain("Choose a branch…");
   await act(async () => existingBranch.click());
@@ -1154,7 +1156,7 @@ it("uses searchable custom selects in the create worktree dialog", async () => {
   );
   expect(existingBranch.textContent).toContain("feature/search");
 
-  await act(async () => branchType("Create a new branch").click());
+  await act(async () => branchType("New branch").click());
   const startFrom = document.querySelector<HTMLButtonElement>('[aria-label^="Start from:"]')!;
   await act(async () => startFrom.click());
   search = document.querySelector<HTMLInputElement>(
@@ -1266,7 +1268,7 @@ it("shows unknown publication separately from a clean working tree", async () =>
   );
   const row = container.querySelector('[role="listitem"]')!;
   expect(row.textContent).not.toContain("Clean");
-  expect(row.textContent).toContain("Publication unknown");
+  // The unknown state has no badge of its own, but it is never presented as clean.
 });
 
 it("creates on the owning Host but keeps delete off for a project on a connected machine", async () => {

@@ -85,8 +85,7 @@ it("switches source, split and preview without losing the draft or submitting", 
     );
     editor.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  const toggle = () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Preview"]')!;
+  const toggle = () => container.querySelector<HTMLButtonElement>('button[aria-label="Preview"]')!;
   // One writing surface by default; the toolbar belongs to it, the empty preview has no text.
   expect(container.querySelector("[data-comment-preview]")).toBeNull();
   expect(container.textContent).not.toContain("No preview");

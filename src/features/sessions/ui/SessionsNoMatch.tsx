@@ -24,7 +24,12 @@ export function SessionsNoMatch({
   const searchShortcut = useKeybindingShortcut("App: Search");
   return (
     <div role="status" className="flex flex-col gap-2 px-3 py-2">
-      <EmptyState size="inline" context="list" kind="filtered" description={t("No matching sessions")} />
+      <EmptyState
+        size="inline"
+        context="list"
+        kind="filtered"
+        description={t("No matching sessions")}
+      />
       <div className="flex flex-wrap items-center gap-1">
         {onSearchAll ? (
           <Button
@@ -40,13 +45,7 @@ export function SessionsNoMatch({
             {t("Search all conversations")}
           </Button>
         ) : null}
-        <Button
-          variant="ghost"
-          size="sm"
-          motion="none"
-          type="button"
-          onClick={onClear}
-        >
+        <Button variant="ghost" size="sm" motion="none" type="button" onClick={onClear}>
           {t("Clear search")}
         </Button>
         {children}

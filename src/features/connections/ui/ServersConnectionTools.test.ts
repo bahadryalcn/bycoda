@@ -141,7 +141,8 @@ it("persists the key assignment once and reuses the saved server on later connec
     identityFile: "C:/keys/work",
   });
   expect(choose.disabled).toBe(true);
-  expect(choose.textContent).toContain("Assigned");
+  // The assigned key is the pressed one; the control is icon-only.
+  expect(choose.getAttribute("aria-pressed")).toBe("true");
   expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("Edit SSH server");
   expect(terminalHooks.open).not.toHaveBeenCalled();
   await act(async () =>
@@ -476,11 +477,23 @@ it("deduplicates an import against the effective inherited endpoint while editin
       .find((item) => item.textContent === "SSH settings")!
       .click(),
   );
+  // Import: paste a config; the preview follows once typing pauses (no Preview button).
   await act(async () =>
-    [...document.querySelectorAll("button")]
-      .find((item) => item.textContent === "Preview")!
-      .click(),
+    [...document.querySelectorAll('[role="tab"]')]
+      .find((item) => item.textContent === "Import SSH config")!
+      .dispatchEvent(new MouseEvent("click", { bubbles: true })),
   );
+  const config = document.querySelector<HTMLTextAreaElement>("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      config,
+      "Host effective-import",
+    );
+    config.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
   expect(document.body.textContent).toContain("Saved identity");
   const editExisting = [...document.querySelectorAll("button")].find(
     (item) => item.textContent === "Open existing",

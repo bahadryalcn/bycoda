@@ -117,10 +117,7 @@ export function RailSectionHeader({
         tabIndex: drag ? 0 : undefined,
         "aria-keyshortcuts": drag ? "Alt+ArrowUp Alt+ArrowDown" : undefined,
       }}
-      {...surfaceAttributes(
-        { radius: "row" },
-        drag ? RAIL_DRAG_HANDLE : "",
-      )}
+      {...surfaceAttributes({ radius: "row" }, drag ? RAIL_DRAG_HANDLE : "")}
       classNames={{
         count: "ms-auto ps-1",
         actions: "cursor-default",

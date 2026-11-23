@@ -205,7 +205,7 @@ describe("HarnessUpdateNotice", () => {
       )!;
       await act(async () => row.querySelector("button")!.click());
       expect(snapshot().runs.opencode?.status).toBe("updating");
-      expect(row.querySelector("button")!.disabled).toBe(true);
+      expect(row.querySelector("button")!.getAttribute("aria-busy")).toBe("true");
 
       const dismiss = notice.querySelector<HTMLButtonElement>('[aria-label="Dismiss notice"]')!;
       expect(dismiss.disabled).toBe(false);

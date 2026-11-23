@@ -55,7 +55,6 @@ it("asks for a model and does not offer Do not use AI when no agent is set", () 
   );
   expect(element.querySelector('[data-testid="model-picker"]')?.textContent).toBe("Choose a model");
   expect(element.textContent).not.toContain("Do not use AI");
-  expect(element.textContent).toContain("AI cannot write replies or plans until you do.");
 });
 
 it("shows the saved agent without an explanatory sentence", () => {

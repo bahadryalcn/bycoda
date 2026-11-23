@@ -129,6 +129,10 @@ it("keeps the shared opaque frame when solid is requested", async () => {
   );
   expect(document.body.querySelector(".popover-solid")).not.toBeNull();
   expect(document.body.querySelector(".popover-backdrop, .backdrop-blur-xl")).toBeNull();
+  const css = fs.readFileSync("src/styles/index.css", "utf8");
+  expect(css).toMatch(
+    /\.popover-backdrop,\s*\.popover-solid,\s*\.popover-frosted\s*\{\s*background: var\(--ui-surface-floating\);\s*\}/,
+  );
 });
 
 it.each([

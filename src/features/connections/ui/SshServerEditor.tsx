@@ -360,7 +360,9 @@ export function SshServerEditor({
                 </Text>
                 {proxyConflict ? (
                   <InlineError live="polite">
-                    {t("Choose either an HTTP proxy or a jump chain. Both cannot be used together.")}
+                    {t(
+                      "Choose either an HTTP proxy or a jump chain. Both cannot be used together.",
+                    )}
                   </InlineError>
                 ) : null}
               </>

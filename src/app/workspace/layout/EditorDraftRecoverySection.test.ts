@@ -49,6 +49,8 @@ async function render(records: EditorDraftRecoveryMetadata[]) {
     root.render(createElement(EditorDraftRecoverySection, { recovery, records })),
   );
 }
+const many = (count: number) =>
+  Array.from({ length: count }, (_, index) => row(`file-${index}.ts`, true, index + 1));
 const type = async (input: HTMLInputElement, value: string) => {
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
@@ -68,7 +70,10 @@ describe("file recovery pane summaries", () => {
   });
 
   it("uses one label per landmark and a placeholder that adds information", async () => {
+    // The filter field appears only once the list is long enough to need it.
     await render([row("a.ts", true)]);
+    expect(container.querySelector("input")).toBeNull();
+    await render(many(9));
     const labels = [...container.querySelectorAll("[aria-label]")].map((node) =>
       node.getAttribute("aria-label"),
     );
@@ -78,12 +83,15 @@ describe("file recovery pane summaries", () => {
     expect(search.getAttribute("placeholder")).toBe("Filter by file name or window");
   });
 
-  it("announces only the filter result, and only while a filter hides rows", async () => {
-    await render([row("alpha.ts", true), row("beta.ts", true)]);
+  it("lets the narrowed list and its empty state report a filter, with no extra status line", async () => {
+    await render([row("alpha.ts", true), ...many(8)]);
+    expect(container.querySelectorAll("li")).toHaveLength(9);
     await type(container.querySelector("input")!, "alpha");
-    const status = container.querySelector(".recovery-status");
-    expect(status?.textContent).toContain("Showing 1 of 2");
-    await type(container.querySelector("input")!, "");
+    expect(container.querySelectorAll("li")).toHaveLength(1);
     expect(container.querySelector(".recovery-status")).toBeNull();
+    await type(container.querySelector("input")!, "zzz");
+    expect(container.textContent).toContain("No matching file copies");
+    await type(container.querySelector("input")!, "");
+    expect(container.querySelectorAll("li")).toHaveLength(9);
   });
 });

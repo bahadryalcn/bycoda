@@ -189,13 +189,7 @@ function WorkerHelp() {
   );
 }
 
-function InstructionsField({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange(value: string): void;
-}) {
+function InstructionsField({ value, onChange }: { value: string; onChange(value: string): void }) {
   useLocale();
   const ref = useRef<HTMLTextAreaElement>(null);
   const lockOverscroll = useLockOverscroll<HTMLTextAreaElement>();
@@ -342,9 +336,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
         </div>
       </div>
       {!!proposal.tasks.length && (
-        <ul
-          {...surfaceAttributes({ frame: "pane", edge: "top" }, "py-1")}
-        >
+        <ul {...surfaceAttributes({ frame: "pane", edge: "top" }, "py-1")}>
           {visible.map((task) => {
             const open = expanded.includes(task.id);
             const taskChoice = proposal.settings.choices.find(

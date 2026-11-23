@@ -1,7 +1,6 @@
 import { errorText } from "../../../shared/lib/errors";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import { Divider } from "../../../shared/ui/Divider";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
@@ -30,7 +29,6 @@ import {
   type DropdownMenuItem,
 } from "../../../shared/ui/DropdownMenu";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { MenuRow as SharedMenuRow } from "../../../shared/ui/MenuRow";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectIconPicker } from "../../projects/ui/ProjectIconPicker";
 import { RailBackgroundControls } from "../../projects/ui/RailBackgroundControls";
@@ -334,14 +332,6 @@ export function TabGroupMenu({
           onChange={onRailBackgroundChange}
         />
       ) : null}
-      {appearanceItems?.length ? (
-        <>
-          <Divider className="my-1" />
-          {appearanceItems.map((item) => (
-            <MenuRow key={item.id} item={item} onPick={() => pickExtra(item.id)} />
-          ))}
-        </>
-      ) : null}
     </>
   );
 
@@ -376,6 +366,14 @@ export function TabGroupMenu({
     };
   };
   const SEP: DropdownMenuItem = { kind: "sep" };
+  const appearanceForm: DropdownMenuItem = {
+    kind: "content",
+    id: "appearance-form",
+    node: appearance,
+  };
+  const appearanceActions = appearanceItems?.length
+    ? [SEP, ...appearanceItems.map((item) => action(item))]
+    : [];
   const items: DropdownMenuItem[] = [
     ...(leadingAction ? [action(leadingAction), SEP] : []),
     {
@@ -405,12 +403,16 @@ export function TabGroupMenu({
       ),
     },
     ...(info ? [{ kind: "content", id: "info", node: info } as const] : []),
-    compactAppearance
-      ? action(
-          { id: "appearance", label: t("Appearance"), icon: ImagePlus },
-          { panel: appearance, submenuWidth: APPEARANCE_WIDTH },
-        )
-      : { kind: "content", id: "appearance-form", node: appearance },
+    ...(compactAppearance
+      ? [
+          action(
+            { id: "appearance", label: t("Appearance"), icon: ImagePlus },
+            appearanceActions.length
+              ? { submenu: [appearanceForm, ...appearanceActions], submenuWidth: APPEARANCE_WIDTH }
+              : { panel: appearance, submenuWidth: APPEARANCE_WIDTH },
+          ),
+        ]
+      : [appearanceForm, ...appearanceActions]),
     ...(showActions
       ? [
           SEP,
@@ -455,35 +457,3 @@ export function TabGroupMenu({
   );
 }
 
-function MenuRow({
-  item,
-  onPick,
-}: {
-  item: Pick<TabGroupMenuExtraItem, "id" | "label" | "icon" | "disabled" | "danger">;
-  onPick: () => void;
-}) {
-  useLocale();
-  const Icon = item.icon;
-  return (
-    <SharedMenuRow
-      destructive={item.danger}
-      type="button"
-      role="menuitem"
-      disabled={item.disabled}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onPick}
-    >
-      <Icon className="icon-sm shrink-0" strokeWidth={1.75} />
-      <Text
-        as="span"
-        size="inherit"
-        tone="inherit"
-        leading="snug"
-        truncate
-        className="min-w-0 flex-1"
-      >
-        {item.label}
-      </Text>
-    </SharedMenuRow>
-  );
-}

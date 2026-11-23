@@ -625,7 +625,7 @@ export function KeybindingsPage() {
             size="caption"
             tone="secondary"
             leading="inherit"
-            className={styles.summary}
+            className={`${styles.summary} tabular-nums`}
             role="status"
           >
             {t("Showing {p0} of {p1} bindings", { p0: rows.length, p1: allRows.length })}
@@ -641,13 +641,8 @@ export function KeybindingsPage() {
             flow="scroll"
             onDismiss={() => setFiltersOpen(false)}
           >
-            <Text
-              as="div"
-              size="caption"
-              tone="secondary"
-              leading="inherit"
-              className={styles.popover}
-            >
+            <Text as="div" size="caption" tone="secondary" leading="inherit">
+              <div className={styles.filterStack}>
               <Text as="span" size="secondary" weight="medium" tone="primary">
                 {t("Category")}
               </Text>
@@ -679,18 +674,14 @@ export function KeybindingsPage() {
               <Button variant="ghost" onClick={resetFilters} disabled={!filtered}>
                 {t("Reset filters")}
               </Button>
+              </div>
             </Text>
           </Popover>
         ) : null}
       </div>
       {filtered ? (
-        <Text
-          as="div"
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          className={styles.activeFilters}
-        >
+        <Text as="div" size="caption" tone="secondary" leading="inherit">
+          <div className={styles.activeFilters}>
           <span>
             {[
               category !== "all" ? `${t("Category")}: ${t(category)}` : null,
@@ -704,6 +695,7 @@ export function KeybindingsPage() {
           <Button variant="ghost" size="sm" onClick={resetFilters}>
             {t("Reset filters")}
           </Button>
+          </div>
         </Text>
       ) : null}
       <div className={styles.list}>
@@ -734,7 +726,7 @@ export function KeybindingsPage() {
                       size="caption"
                       tone="muted"
                       leading="inherit"
-                      className={styles.groupCount}
+                      className="tabular-nums"
                     >
                       · {entries.length}
                     </Text>

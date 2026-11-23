@@ -137,9 +137,11 @@ export function ComposerCitations({
           flow="scroll"
         >
           <div className={styles.editor}>
-            <Text as="blockquote" size="caption" leading="relaxed" className={styles.quote}>
-              {editingCitation.text}
-            </Text>
+            <blockquote className={styles.quote}>
+              <Text size="caption" leading="relaxed">
+                {editingCitation.text}
+              </Text>
+            </blockquote>
             <TextareaField
               label={t("Comment (optional)")}
               value={editing.comment}

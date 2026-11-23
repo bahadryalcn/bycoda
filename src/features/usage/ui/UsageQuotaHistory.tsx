@@ -198,57 +198,57 @@ export function QuotaHistory({
           >
             {tableOpen ? (
               <Text as="div" leading="inherit">
-                  <div
-                    className="usage-history-table"
-                    role="region"
-                    aria-label={t("Limit history")}
-                    tabIndex={0}
-                  >
-                    <SortableDataTable
-                      caption={t("Limit history")}
-                      rowKey="key"
-                      rows={rows
-                        .slice(-100)
-                        .reverse()
-                        .map((s) => ({
-                          key: `${s.account}:${s.kind}:${s.at}`,
-                          account: accountLabel(accountMap.get(s.account)!),
-                          at: s.at,
-                          time: s.at,
-                          used: s.used,
-                          minutes: s.minutes,
-                          reset: s.resetsAt ?? null,
-                        }))}
-                      columns={[
-                        { key: "account", label: t("Account") },
-                        {
-                          key: "time",
-                          label: t("Time"),
-                          render: (v) => observationTime(Number(v)),
-                        },
-                        {
-                          key: "used",
-                          label: t("Used (%)"),
-                          numeric: true,
-                          render: (v) => percent(Number(v)),
-                        },
-                        {
-                          key: "minutes",
-                          label: t("Window"),
-                          numeric: true,
-                          render: (value) =>
-                            Number(value) % 60 === 0 ? `${Number(value) / 60}h` : `${Number(value)}m`,
-                        },
-                        {
-                          key: "reset",
-                          label: t("Reset"),
-                          render: (v) =>
-                            v == null ? t("Reset time unavailable") : observationTime(Number(v)),
-                        },
-                      ]}
-                    />
-                  </div>
-                </Text>
+                <div
+                  className="usage-history-table"
+                  role="region"
+                  aria-label={t("Limit history")}
+                  tabIndex={0}
+                >
+                  <SortableDataTable
+                    caption={t("Limit history")}
+                    rowKey="key"
+                    rows={rows
+                      .slice(-100)
+                      .reverse()
+                      .map((s) => ({
+                        key: `${s.account}:${s.kind}:${s.at}`,
+                        account: accountLabel(accountMap.get(s.account)!),
+                        at: s.at,
+                        time: s.at,
+                        used: s.used,
+                        minutes: s.minutes,
+                        reset: s.resetsAt ?? null,
+                      }))}
+                    columns={[
+                      { key: "account", label: t("Account") },
+                      {
+                        key: "time",
+                        label: t("Time"),
+                        render: (v) => observationTime(Number(v)),
+                      },
+                      {
+                        key: "used",
+                        label: t("Used (%)"),
+                        numeric: true,
+                        render: (v) => percent(Number(v)),
+                      },
+                      {
+                        key: "minutes",
+                        label: t("Window"),
+                        numeric: true,
+                        render: (value) =>
+                          Number(value) % 60 === 0 ? `${Number(value) / 60}h` : `${Number(value)}m`,
+                      },
+                      {
+                        key: "reset",
+                        label: t("Reset"),
+                        render: (v) =>
+                          v == null ? t("Reset time unavailable") : observationTime(Number(v)),
+                      },
+                    ]}
+                  />
+                </div>
+              </Text>
             ) : null}
           </Disclosure>
         </>

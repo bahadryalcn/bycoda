@@ -171,7 +171,7 @@ export function OrchestrationSidebarAgents({
               </Button>
               {/* Indented to the title's column: the icon slot and its gap. */}
               {open && (
-                <div className="space-y-2 pb-3 ps-7 pe-2">
+                <div className="space-y-2 pb-3 ps-6 pe-2">
                   <Text
                     as="p"
                     size="micro"
@@ -231,9 +231,7 @@ export function OrchestrationSidebarAgents({
       {/* Stopping a run belongs to the composer, which stops the lead and its
           agents together. Resume has no other home, so it stays. */}
       {run?.status === "paused" && (
-        <div
-          {...surfaceAttributes({ frame: "pane", edge: "top" }, "mt-1.5 space-y-1.5 pt-1.5")}
-        >
+        <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "mt-1.5 space-y-1.5 pt-1.5")}>
           {resumeBlocker && (
             <Text as="p" size="micro" tone="warning" leading="relaxed" className="px-0.5">
               {t("{p0} is still running in this project.", {

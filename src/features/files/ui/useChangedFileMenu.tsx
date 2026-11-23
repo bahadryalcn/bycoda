@@ -1,12 +1,15 @@
 import { translateAt, useLocale, type LanguageDomain } from "../../../shared/i18n";
 import { useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
-import { FileActionError } from "./FileActionError";
+import { reportFailure } from "../../../shared/ui/reportFailure";
+import { useToast } from "../../../shared/ui/ToastRegion";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { openPathWithDefaultApp, revealPath } from "../../../platform/tauri/fs";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { parentPath } from "../../../shared/lib/paths";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ExplorerMenu, type ExplorerMenuItem } from "./ExplorerMenu";
+import { canPreviewFile } from "../model/filePreview";
+import { setMarkdownViewMode } from "../../sessions/public/MarkdownModeToggle";
 
 type ChangedFileTarget = {
   path: string;
@@ -48,7 +51,7 @@ export function useChangedFileMenu({
   const t = (message: string, values?: Record<string, unknown>) =>
     translateAt(locale, message, values);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const toast = useToast();
   const trigger = useRef<HTMLElement | null>(null);
   const selected = position
     ? typeof selection === "function"
@@ -68,6 +71,18 @@ export function useChangedFileMenu({
             return t("View Changes");
           },
         },
+        ...(onOpenFile && canPreviewFile(path)
+          ? [
+              {
+                kind: "item" as const,
+                id: "preview",
+                get label() {
+                  return t("Preview");
+                },
+                disabled: targets.every((target) => target.deleted),
+              },
+            ]
+          : []),
         ...(onOpenFile
           ? [
               {
@@ -134,6 +149,14 @@ export function useChangedFileMenu({
         case "changes":
           for (const target of targets) target.onOpenChanges();
           return;
+        case "preview":
+          for (const target of targets) {
+            if (!target.deleted && target.onOpenFile && canPreviewFile(target.path)) {
+              setMarkdownViewMode(target.path, "preview");
+              target.onOpenFile();
+            }
+          }
+          return;
         case "open":
           for (const target of targets) if (!target.deleted) target.onOpenFile?.();
           return;
@@ -157,7 +180,7 @@ export function useChangedFileMenu({
           if (action && !action.disabled) await action.run();
         }
       }
-    })().catch((error) => setActionError(String(error)));
+    })().catch((error) => reportFailure(error, { toast }).catch(() => {}));
   };
   return {
     onContextMenu: (event: MouseEvent<HTMLElement>) => {
@@ -195,9 +218,6 @@ export function useChangedFileMenu({
             onPick={pick}
             onClose={close}
           />
-        ) : null}
-        {actionError ? (
-          <FileActionError message={actionError} onDismiss={() => setActionError(null)} />
         ) : null}
       </>
     ),

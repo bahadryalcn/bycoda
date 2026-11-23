@@ -21,10 +21,7 @@ export function RemoteMediaSettings() {
   const mode = useRemoteMediaMode();
   return (
     <Group title={null}>
-      <Row
-        id="remote-media"
-        label={t("Remote media")}
-      >
+      <Row id="remote-media" label={t("Remote media")}>
         <Select
           hideLabel
           label={t("Remote media")}

@@ -54,11 +54,7 @@ export function AddRemoteProjectDialog({
   const [machineId, setMachineId] = useState<string>();
   const machine = machines.find((entry) => entry.id === machineId) ?? machines[0];
   return (
-    <Modal
-      title={t("Open folder on a machine")}
-      size="md"
-      onClose={onCancel}
-    >
+    <Modal title={t("Open folder on a machine")} size="md" onClose={onCancel}>
       {/* Keyed by machine: browse state belongs to one machine and starts fresh for the next. */}
       <AddRemoteProjectForm
         key={machine?.id ?? ""}

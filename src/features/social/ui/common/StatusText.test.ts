@@ -17,18 +17,19 @@ afterEach(() => {
   element.remove();
 });
 
-it.each<[StatusTextStatus, string]>([
-  ["succeeded", "Sent"],
-  ["completed", "Completed"],
-  ["queued", "Scheduled"],
-  ["running", "Sending"],
-  ["failed", "Failed"],
-  ["review", "Needs review"],
-  ["cancelled", "Cancelled"],
-  ["delivery", "Waiting for you"],
-  ["needs_human", "Waiting for you"],
-])("shows status %s as the plain word %s", (status, word) => {
+it.each<[StatusTextStatus, string, string]>([
+  ["succeeded", "Sent", "done"],
+  ["completed", "Completed", "done"],
+  ["queued", "Scheduled", "idle"],
+  ["running", "Sending", "running"],
+  ["failed", "Failed", "failed"],
+  ["review", "Needs review", "needs-you"],
+  ["cancelled", "Cancelled", "idle"],
+  ["delivery", "Waiting for you", "needs-you"],
+  ["needs_human", "Waiting for you", "needs-you"],
+])("shows status %s as the plain word %s", (status, word, tone) => {
   act(() => root.render(createElement(StatusText, { status })));
   expect(element.textContent).toBe(word);
-  expect(element.querySelector("[data-status]")?.getAttribute("data-status")).toBe(status);
+  // The shared StatusText owns `data-status` and sets it to the tone; the raw code is never exposed.
+  expect(element.querySelector("[data-status]")?.getAttribute("data-status")).toBe(tone);
 });

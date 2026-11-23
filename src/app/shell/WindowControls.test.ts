@@ -247,6 +247,12 @@ it("routes only Minimize to the tray after the preference changes", async () => 
 
 it("keeps close neutral like the other caption controls", async () => {
   await mounted(async (host) => {
+    const buttons = [...host.querySelectorAll("[data-window-controls] button")];
+    expect(buttons).toHaveLength(3);
+    for (const button of buttons) {
+      expect(button.getAttribute("data-button-variant")).toBe("caption");
+      expect(button.getAttribute("data-tauri-drag-region")).toBe("false");
+    }
     expect(
       host.querySelector('[aria-label="Close window"]')?.getAttribute("data-button-tone"),
     ).toBe("neutral");

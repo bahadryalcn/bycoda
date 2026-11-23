@@ -27,7 +27,13 @@ import arcStyles from "./arc/button/button.module.css";
 import styles from "./Button.module.css";
 
 export type { ButtonSize } from "./arc/button/button";
-export type ButtonVariant = Exclude<ArcButtonVariant, "danger"> | "link" | "item" | "tab" | "chip";
+export type ButtonVariant =
+  | Exclude<ArcButtonVariant, "danger">
+  | "link"
+  | "item"
+  | "tab"
+  | "chip"
+  | "caption";
 export type ButtonShape = "default" | "pill";
 export type ButtonTone = "neutral" | "accent" | "info" | "success" | "warning" | "danger";
 
@@ -144,6 +150,12 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   disabledReason?: string;
   startIcon?: ReactNode;
   endIcon?: ReactNode;
+  /** Visual badge anchored to the control. Include meaningful counts in the accessible label. */
+  badge?: ReactNode;
+  /** Non-interactive content after the label and end icon. Item buttons align it to the end. */
+  trailing?: ReactNode;
+  /** Hide the visible label in a narrow pane header. Supply a leading icon and a text label. */
+  collapseLabel?: "container";
   /** Icon-only box with a precise pointer, label shown in the tooltip (hover and focus) so the
    *  control never resizes or displaces neighbours; on touch the label is always visible.
    *  Needs `label`. Use with motion="none" in a bounded toolbar. */
@@ -284,6 +296,9 @@ export function Button({
   disabledReason,
   startIcon,
   endIcon,
+  badge,
+  trailing,
+  collapseLabel,
   revealLabel = false,
   fullWidth = false,
   motion = "auto",
@@ -327,6 +342,7 @@ export function Button({
   // reserves (icon included), so completion never shifts neighbouring actions.
   const overlayCheck = confirmed && startIcon == null;
   const leadingIcon = confirmed && startIcon != null ? <Check className="icon-sm" /> : startIcon;
+  const canCollapseLabel = collapseLabel === "container" && startIcon != null && !iconOnly;
   const [announcerMounted, setAnnouncerMounted] = useState(false);
   if (confirmed && !announcerMounted) setAnnouncerMounted(true);
   const reservedLabels = successLabel ? [...(reserveLabels ?? []), successLabel] : reserveLabels;
@@ -364,8 +380,8 @@ export function Button({
   };
   useEffect(() => () => void clearLongPress(), []);
   const insetText = inset === "text";
-  // A chip is a quiet ghost with its own compact face (see `data-button-variant="chip"`).
-  const hierarchy = variant === "chip" ? "ghost" : variant;
+  // Chips and window caption controls use ghost interaction roles.
+  const hierarchy = variant === "chip" || variant === "caption" ? "ghost" : variant;
   const resolvedTone: ButtonTone = tone ?? "neutral";
   const structural = variant === "item" || variant === "tab";
   // A text action with a start icon swaps that icon for the spinner in the same slot.
@@ -379,6 +395,7 @@ export function Button({
     layout !== "media";
   const native =
     structural ||
+    variant === "caption" ||
     variant === "link" ||
     motion === "none" ||
     !!(
@@ -404,9 +421,7 @@ export function Button({
       isTrue(props["aria-current"]) ||
       props["aria-current"] === "page");
   const arcVariant: ArcButtonVariant =
-    hierarchy === "link" || hierarchy === "item" || hierarchy === "tab"
-      ? "ghost"
-      : hierarchy;
+    hierarchy === "link" || hierarchy === "item" || hierarchy === "tab" ? "ghost" : hierarchy;
   const classes = [
     "bycoda-arc",
     styles.control,
@@ -533,6 +548,8 @@ export function Button({
     "data-control-height": controlHeight,
     "data-control-min-height": controlMinHeight,
     "data-button-reveal-label": revealLabel || undefined,
+    "data-button-collapse-label": canCollapseLabel || undefined,
+    "data-button-badged": badge != null || undefined,
     // Any explicit alignment is authoritative over structural (item/tab) defaults.
     "data-button-align": align,
     // Not `data-size`/`data-tone`: the control owns those roles through its own attributes.
@@ -742,6 +759,8 @@ export function Button({
             />
           ))}
         </span>
+      ) : canCollapseLabel ? (
+        <span className={styles.label}>{contentLabel}</span>
       ) : (
         contentLabel
       )}
@@ -757,6 +776,7 @@ export function Button({
           )}
         </span>
       ) : null}
+      {trailing != null ? <span className={styles.trailing}>{trailing}</span> : null}
     </>
   );
   const withHint = (control: ReactNode) => (
@@ -768,6 +788,12 @@ export function Button({
       ) : null}
     </>
   );
+  const badgeSlot =
+    badge == null ? null : (
+      <span className={styles.badge} aria-hidden="true">
+        {badge}
+      </span>
+    );
   if (native) {
     return withHint(
       <button
@@ -804,6 +830,7 @@ export function Button({
             <span className={arcStyles.spinner} />
           </span>
         ) : null}
+        {badgeSlot}
       </button>,
     );
   }
@@ -813,6 +840,7 @@ export function Button({
       variant={arcVariant}
       size={size}
       loading={loading && !inlineProgress}
+      overlay={badgeSlot}
       className={controlClasses}
     >
       {content}

@@ -1,7 +1,7 @@
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
-import { Text } from "../../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../../shared/ui/Text";
 import { Select } from "../../../../shared/ui/Select";
 import { Popover } from "../../../../shared/ui/Popover";
 import { DescriptionItem, DescriptionList } from "../../../../shared/ui/DescriptionList";
@@ -35,7 +35,12 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
           aria-label={t("Assistant status")}
           variant="panel"
         >
-          <Text as="div" size="caption" tone="inherit" leading="inherit" className={styles.popover}>
+          <div
+            {...textAttributes(
+              { size: "caption", tone: "inherit", leading: "inherit" },
+              styles.statusContent,
+            )}
+          >
             <DescriptionList size="sm">
               <DescriptionItem term={t("Presence")}>
                 <AssistantPresenceStatus
@@ -94,7 +99,7 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
             >
               {t("I'm back")}
             </Button>
-          </Text>
+          </div>
         </Popover>
       )}
     </>

@@ -134,6 +134,7 @@ export function MarkdownViewShell({
           {actions}
           {zoomable && mode === "preview" ? (
             <>
+              {/* oxlint-disable-next-line bycoda/transcript-row-trigger -- opens a zoom menu from the document toolbar */}
               <Button
                 ref={zoomButton}
                 variant="ghost"
@@ -152,8 +153,20 @@ export function MarkdownViewShell({
                   label={t("Zoom")}
                   onClose={() => setZoomOpen(false)}
                   items={[
-                    { kind: "item", id: "in", label: t("Zoom in"), icon: <Plus className="icon-sm" />, disabled: zoom === 200 },
-                    { kind: "item", id: "out", label: t("Zoom out"), icon: <Minus className="icon-sm" />, disabled: zoom === 50 },
+                    {
+                      kind: "item",
+                      id: "in",
+                      label: t("Zoom in"),
+                      icon: <Plus className="icon-sm" />,
+                      disabled: zoom === 200,
+                    },
+                    {
+                      kind: "item",
+                      id: "out",
+                      label: t("Zoom out"),
+                      icon: <Minus className="icon-sm" />,
+                      disabled: zoom === 50,
+                    },
                     { kind: "item", id: "reset", label: t("Reset zoom"), disabled: zoom === 100 },
                   ]}
                   onPick={(id) => {

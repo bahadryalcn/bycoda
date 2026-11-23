@@ -2,7 +2,11 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { SessionErrorNotice } from "./SessionErrorNotice";
+import {
+  SessionErrorNotice,
+  UsageLimitRecoveryContext,
+  usageLimitFailureId,
+} from "./SessionErrorNotice";
 
 let host: HTMLDivElement;
 let root: Root;
@@ -84,4 +88,47 @@ it("keeps a long plain failure out of the transcript while preserving its full t
   expect(host.textContent).toContain("The provider could not complete this turn.");
   await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
   expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe(raw);
+});
+
+it("attaches quota recovery to the matching failure and gives its reset one owner", async () => {
+  const text = "You've hit your weekly limit · resets 8am (Europe/Istanbul) (HTTP 429)";
+  const onResume = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(
+        UsageLimitRecoveryContext.Provider,
+        { value: { errorId: "latest", notice: { limit: { resetsAt: 1 }, onResume } } },
+        createElement(SessionErrorNotice, { text, errorId: "previous" }),
+        createElement(SessionErrorNotice, { text, errorId: "latest" }),
+      ),
+    ),
+  );
+
+  const notices = host.querySelectorAll('[role="status"]');
+  expect(notices).toHaveLength(2);
+  expect(notices[0].textContent).toContain("resets 8am");
+  expect(notices[0].querySelector("[data-usage-limit]")).toBeNull();
+  expect(notices[1].hasAttribute("data-usage-limit")).toBe(true);
+  expect(notices[1].textContent).toContain("Usage limit reached");
+  expect(notices[1].textContent).toContain("Limit has reset");
+  expect(notices[1].textContent).not.toContain("resets 8am");
+  const resume = [...notices[1].querySelectorAll("button")].find(
+    (button) => button.textContent === "Resume",
+  );
+  expect(resume).toBeDefined();
+  await act(async () => resume!.click());
+  expect(onResume).toHaveBeenCalledTimes(1);
+});
+
+it("does not attach a live limit to a failure from an older turn", () => {
+  const failure = {
+    id: "error",
+    role: "system" as const,
+    notice: "error" as const,
+    text: "Usage limit reached",
+  };
+  expect(usageLimitFailureId([failure])).toBe("error");
+  expect(
+    usageLimitFailureId([failure, { id: "user", role: "user", text: "Next turn" }]),
+  ).toBeUndefined();
 });

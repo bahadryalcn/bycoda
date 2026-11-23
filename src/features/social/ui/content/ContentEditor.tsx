@@ -272,9 +272,7 @@ export function ContentEditor(props: ContentEditorProps) {
         {locked ? <InlineMessage tone="info">{locked}</InlineMessage> : null}
         {/* One notice slot: a failure, or the accounts the post could not go to. */}
         {error ? <InlineError>{error}</InlineError> : null}
-        {!error
-          ? blocked.map((line) => <InlineError key={line}>{line}</InlineError>)
-          : null}
+        {!error ? blocked.map((line) => <InlineError key={line}>{line}</InlineError>) : null}
         <ContentEditorFields
           client={client}
           editor={editor}

@@ -12,13 +12,20 @@ export function ReleaseNotesSurface({ source }: { source: ReleaseNotesTabSource 
 
   return (
     <div ref={lockOverscroll} className="h-full overflow-y-auto overscroll-none">
-      <article aria-label={t("Release notes")} className="mx-auto w-full max-w-3xl px-(--ui-space-8) py-(--ui-space-10)">
+      <article
+        aria-label={t("Release notes")}
+        className="mx-auto w-full max-w-3xl px-(--ui-space-8) py-(--ui-space-10)"
+      >
         {markdown ? (
           <SurfaceSelection contentVersion={markdown}>
             <AgentMarkdown text={markdown} streaming={false} />
           </SurfaceSelection>
         ) : (
-          <EmptyState size="inline" context="list" description={t("Release notes for this version are not available in this build.")} />
+          <EmptyState
+            size="inline"
+            context="list"
+            description={t("Release notes for this version are not available in this build.")}
+          />
         )}
       </article>
     </div>

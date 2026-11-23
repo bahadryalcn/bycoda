@@ -3,13 +3,7 @@ import { Button } from "../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
 import { Text } from "../../shared/ui/Text";
 import { useT } from "../../shared/i18n";
-import {
-  AudioLines,
-  Maximize2,
-  Minimize2,
-  MoreHorizontal,
-  RefreshCw,
-} from "../../shared/ui/icons";
+import { AudioLines, Maximize2, Minimize2, MoreHorizontal, RefreshCw } from "../../shared/ui/icons";
 import { useFullscreenToggle } from "./FullscreenButton";
 import { useSoundsToggle } from "../../features/notifications/ui/SoundsButton";
 

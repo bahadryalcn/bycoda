@@ -221,45 +221,46 @@ export function TerminalTools({
     >
       <div className={styles.tools}>
         <>
-            <SearchInput
-              ref={inputRef}
-              clearable={false}
-              className={styles.field}
-              aria-label={t("Find in terminal")}
-              placeholder={t("Find in terminal")}
-              value={query}
-              onChange={(event) => {
-                setResults(undefined);
-                setQuery(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
-                  event.preventDefault();
-                  find(event.shiftKey);
-                }
-              }}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              label={t("Previous match")}
-              disabled={!query}
-              onClick={() => find(true)}
-            >
-              <ChevronUp className="icon-sm" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              iconOnly
-              label={t("Next match")}
-              disabled={!query}
-              onClick={() => find(false)}
-            >
-              <ChevronDown className="icon-sm" />
-            </Button>
-            <Text size="caption" tone="muted" role="status" className={styles.hint}>
+          <SearchInput
+            ref={inputRef}
+            clearable={false}
+            className={styles.field}
+            aria-label={t("Find in terminal")}
+            placeholder={t("Find in terminal")}
+            value={query}
+            onChange={(event) => {
+              setResults(undefined);
+              setQuery(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
+                event.preventDefault();
+                find(event.shiftKey);
+              }
+            }}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={t("Previous match")}
+            disabled={!query}
+            onClick={() => find(true)}
+          >
+            <ChevronUp className="icon-sm" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={t("Next match")}
+            disabled={!query}
+            onClick={() => find(false)}
+          >
+            <ChevronDown className="icon-sm" />
+          </Button>
+          <div className={styles.hint}>
+            <Text size="caption" tone="muted" role="status">
               {query && !found
                 ? t("No matches")
                 : query && results && searchDecorations
@@ -270,6 +271,7 @@ export function TerminalTools({
                       : t("{p0} matches", { p0: String(results.resultCount) })
                   : ""}
             </Text>
+          </div>
         </>
         <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={close}>
           <X className="icon-sm" />
@@ -279,34 +281,36 @@ export function TerminalTools({
   );
   /** Suggestion exposure stays explicit: the switch, the source and the note live with the menu. */
   const suggestionSettings = remoteShell ? (
-    <Disclosure size="sm" className={styles.settings} summary={t("Suggestion settings")}>
-        <div className={styles.settingRow}>
-          <Text as="span" size="caption">
-            {t("Show suggestions while typing")}
-          </Text>
-          <Switch
-            checked={remoteShell.automatic}
-            onCheckedChange={remoteShell.setAutomatic}
-            aria-label={t("Show suggestions while typing")}
-          />
-        </div>
-        <Select
-          fieldSize="sm"
-          label={t("Suggestion source")}
-          value={remoteShell.source}
-          onValueChange={(value) => remoteShell.setSource(value as "commands" | "paths" | "history")}
-          options={[
-            { value: "commands", label: t("Commands") },
-            { value: "paths", label: t("Remote paths") },
-            { value: "history", label: t("Reviewed history") },
-          ]}
-        />
-        <Text as="p" size="caption" tone="muted" className={styles.settingNote}>
-          {t(
-            "Session only. Remote command and path names may appear here. Reviewed history uses approved command forms; arbitrary shell completion stays on Tab.",
-          )}
+    <div className={styles.suggestionSettings}>
+    <Disclosure size="sm" summary={t("Suggestion settings")}>
+      <div className={styles.settingRow}>
+        <Text as="span" size="caption">
+          {t("Show suggestions while typing")}
         </Text>
+        <Switch
+          checked={remoteShell.automatic}
+          onCheckedChange={remoteShell.setAutomatic}
+          aria-label={t("Show suggestions while typing")}
+        />
+      </div>
+      <Select
+        fieldSize="sm"
+        label={t("Suggestion source")}
+        value={remoteShell.source}
+        onValueChange={(value) => remoteShell.setSource(value as "commands" | "paths" | "history")}
+        options={[
+          { value: "commands", label: t("Commands") },
+          { value: "paths", label: t("Remote paths") },
+          { value: "history", label: t("Reviewed history") },
+        ]}
+      />
+      <Text as="p" size="caption" tone="muted" className={styles.settingNote}>
+        {t(
+          "Session only. Remote command and path names may appear here. Reviewed history uses approved command forms; arbitrary shell completion stays on Tab.",
+        )}
+      </Text>
     </Disclosure>
+    </div>
   ) : null;
   const showSuggestionsItem = !!remoteShell || (!toolbarTarget && suggestionsAllowed);
   const savedFontChanged =
@@ -324,10 +328,14 @@ export function TerminalTools({
         ] satisfies DropdownMenuItem[])
       : []),
     ...(!toolbarTarget && onSaveCommand
-      ? ([{ kind: "item", id: "save-command", label: t("Save command") }] satisfies DropdownMenuItem[])
+      ? ([
+          { kind: "item", id: "save-command", label: t("Save command") },
+        ] satisfies DropdownMenuItem[])
       : []),
     ...(onSavedCommands
-      ? ([{ kind: "item", id: "saved-commands", label: t("Saved commands") }] satisfies DropdownMenuItem[])
+      ? ([
+          { kind: "item", id: "saved-commands", label: t("Saved commands") },
+        ] satisfies DropdownMenuItem[])
       : []),
     ...(onSendSelectedText
       ? ([
@@ -401,7 +409,7 @@ export function TerminalTools({
                   size="caption"
                   tone="secondary"
                   leading="inherit"
-                  className={styles.fontValue}
+                  className={`${styles.fontValue} tabular-nums`}
                   role="status"
                   aria-label={t("Terminal font size")}
                 >
@@ -421,7 +429,9 @@ export function TerminalTools({
             ),
           },
           ...(savedFontChanged
-            ? ([{ kind: "item", id: "reset-font", label: t("Reset text size") }] satisfies DropdownMenuItem[])
+            ? ([
+                { kind: "item", id: "reset-font", label: t("Reset text size") },
+              ] satisfies DropdownMenuItem[])
             : []),
         ] satisfies DropdownMenuItem[])
       : []),

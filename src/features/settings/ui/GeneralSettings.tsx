@@ -174,10 +174,7 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       <LanguageSettings />
       {IS_WIN && (
         <Group title={t("Application behavior")}>
-          <Row
-            id="minimize-to-tray"
-            label={t("Minimize to tray")}
-          >
+          <Row id="minimize-to-tray" label={t("Minimize to tray")}>
             <Toggle label={t("Minimize to tray")} on={minimizeToTray} onChange={onMinimizeToTray} />
           </Row>
         </Group>
@@ -262,11 +259,7 @@ export function HelpSettings() {
         </Row>
         <Row id="usage-guide" label={null}>
           {/* The guide request closes Settings and walks through the workspace. */}
-          <Button
-            variant="ghost"
-            startIcon={<BookOpen aria-hidden />}
-            onClick={openUsageGuide}
-          >
+          <Button variant="ghost" startIcon={<BookOpen aria-hidden />} onClick={openUsageGuide}>
             {t("Open guide…")}
           </Button>
         </Row>

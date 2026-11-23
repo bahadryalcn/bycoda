@@ -161,8 +161,7 @@ export function AssistantProfileFields({
         />
       </>
     );
-  if (section === "workmode")
-    return <AssistantWorkModeField value={value} onChange={onChange} />;
+  if (section === "workmode") return <AssistantWorkModeField value={value} onChange={onChange} />;
   if (section === "jobs" || section === "budget" || section === "permissions")
     return <AssistantWorkFields value={value} onChange={onChange} part={section} />;
   if (section === "presence" || section === "notifications")

@@ -1,5 +1,5 @@
 import type { Ref } from "react";
-import { PopupBackdrop } from "../../shared/ui/NativePopupHost";
+import { PopupBackdrop } from "../../shared/ui/Popover";
 
 /**
  * Shell adapter for the shared opaque backdrop.

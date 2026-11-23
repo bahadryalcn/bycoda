@@ -224,10 +224,7 @@ export function PairedDevicesPanel({
             <LoadingText>{t("Loading devices…")}</LoadingText>
           ) : null}
           {loaded && !loading && ordered.length === 0 ? (
-            <EmptyState
-              kind="empty"
-              title={t("No computer connected")}
-            />
+            <EmptyState kind="empty" title={t("No computer connected")} />
           ) : null}
           {ordered.map((machine) => (
             <ComputerDevices

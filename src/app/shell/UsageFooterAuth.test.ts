@@ -256,7 +256,7 @@ describe("UsageFooter provider authentication", () => {
     );
 
     expect(container.textContent).toContain("grok");
-    expect(container.textContent).not.toContain("sign in");
+    expect(container.textContent).not.toContain("Sign in");
     expect(container.querySelector("button")).toBeNull();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
@@ -283,7 +283,7 @@ describe("UsageFooter provider authentication", () => {
     );
 
     expect(container.textContent).toContain("grok");
-    expect(container.textContent).toContain("sign in");
+    expect(container.textContent).toContain("Sign in");
     act(() => button("Grok Build sign-in required").click());
 
     const dialog = document.querySelector('[role="dialog"]');
@@ -296,7 +296,7 @@ describe("UsageFooter provider authentication", () => {
 
     await act(async () => finishLogin?.());
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.textContent).not.toContain("sign in");
+    expect(container.textContent).not.toContain("Sign in");
   });
 
   it("starts a waiting recovery after another provider login fails", async () => {

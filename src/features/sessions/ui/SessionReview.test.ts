@@ -6,6 +6,7 @@ import { SessionReview, useSessionReviewEligibility } from "./SessionReview";
 import { RECORDING_POLL } from "../model/checkpointRecording";
 import { setMarkdownViewMode, useMarkdownMode } from "./MarkdownModeToggle";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import { toast } from "../../../shared/ui/ToastRegion";
 
 const mocks = vi.hoisted(() => ({
   status: vi.fn(),
@@ -254,13 +255,7 @@ function refreshButton() {
   )!;
 }
 
-function ReviewAccessoryFixture({
-  projectCwd,
-  workCwd,
-}: {
-  projectCwd: string;
-  workCwd: string;
-}) {
+function ReviewAccessoryFixture({ projectCwd, workCwd }: { projectCwd: string; workCwd: string }) {
   return useSessionReviewEligibility(projectCwd, workCwd)
     ? createElement(SessionReview, { sessionId: "settled", cwd: workCwd, onOpenDiff })
     : null;
@@ -286,17 +281,20 @@ it.each([false, true])("skips scratch review whether the directory exists (%s)",
   }
 });
 
-it.each([undefined, false, true])("loads a project checkout only with review support (%s)", async (supported) => {
-  mocks.status.mockClear();
-  mocks.reviewSupport.mockReturnValue(supported);
-  const workCwd = "remote://machine/project-worktree";
-  await act(async () =>
-    root.render(createElement(ReviewAccessoryFixture, { projectCwd: "/project", workCwd })),
-  );
-  expect(mocks.reviewSupport).toHaveBeenCalledWith(workCwd, "sessions.checkpoint-review");
-  if (supported) expect(mocks.status).toHaveBeenCalledWith("settled", workCwd);
-  else expect(mocks.status).not.toHaveBeenCalled();
-});
+it.each([undefined, false, true])(
+  "loads a project checkout only with review support (%s)",
+  async (supported) => {
+    mocks.status.mockClear();
+    mocks.reviewSupport.mockReturnValue(supported);
+    const workCwd = "remote://machine/project-worktree";
+    await act(async () =>
+      root.render(createElement(ReviewAccessoryFixture, { projectCwd: "/project", workCwd })),
+    );
+    expect(mocks.reviewSupport).toHaveBeenCalledWith(workCwd, "sessions.checkpoint-review");
+    if (supported) expect(mocks.status).toHaveBeenCalledWith("settled", workCwd);
+    else expect(mocks.status).not.toHaveBeenCalled();
+  },
+);
 
 it("treats the typed recording code as a wait, not an error", async () => {
   vi.useFakeTimers();
@@ -389,7 +387,9 @@ it("surfaces a different failure while waiting instead of polling on", async () 
     await renderRecording("changes-mind");
     const calls = mocks.status.mock.calls.length;
     await act(async () => vi.advanceTimersByTimeAsync(1000));
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not load the changes.");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not load the changes.",
+    );
     await act(async () => vi.advanceTimersByTimeAsync(60_000));
     expect(mocks.status).toHaveBeenCalledTimes(calls + 1);
   } finally {
@@ -573,11 +573,19 @@ it("keeps reveal available for deleted files and targets the parent", async () =
   expect(mocks.reveal).toHaveBeenCalledWith("/repo/src");
 });
 it("reports native reveal errors", async () => {
-  mocks.reveal.mockRejectedValueOnce(new Error("Folder unavailable"));
-  const menu = openMenu();
-  await act(async () => item(menu, revealLabel).click());
-  expect(mocks.message).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain("Error: Folder unavailable");
+  const show = vi.spyOn(toast, "show").mockImplementation(() => "");
+  try {
+    mocks.reveal.mockRejectedValueOnce(new Error("Folder unavailable"));
+    const menu = openMenu();
+    await act(async () => item(menu, revealLabel).click());
+    expect(mocks.message).not.toHaveBeenCalled();
+    // One owner: the failure surfaces as a danger toast, not a second inline error.
+    expect(show).toHaveBeenCalledWith(
+      expect.objectContaining({ tone: "danger", message: "Folder unavailable" }),
+    );
+  } finally {
+    show.mockRestore();
+  }
 });
 
 it.each(["md", "html", "png", "svg", "pdf"])(

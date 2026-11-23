@@ -11,7 +11,11 @@ import { isRemoteProjectPath, type RecentProject } from "../model/recents";
 import { projectDisplayNameFrom, useProjectLabels } from "../model/projectNames";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { ProjectMascot } from "./ProjectMascot";
-import { duplicateProjectNames, isDuplicateProjectName, parentFolderLabel } from "./projectIdentity";
+import {
+  duplicateProjectNames,
+  isDuplicateProjectName,
+  parentFolderLabel,
+} from "./projectIdentity";
 import {
   resolveTabGroupColor,
   resolveTabGroupMascot,

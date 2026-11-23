@@ -249,7 +249,9 @@ export function CheckRepairForm({
               type="button"
               disabled={blocked || accountChanged}
               disabledReason={
-                blocked && !busy ? t("Wait for the latest checks before starting a fix.") : undefined
+                blocked && !busy
+                  ? t("Wait for the latest checks before starting a fix.")
+                  : undefined
               }
               loading={busy}
               loadingLabel={t("Preparing…")}

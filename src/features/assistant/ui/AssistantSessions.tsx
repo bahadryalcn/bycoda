@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../shared/ui/Text";
 import type { AssistantJob } from "../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -188,10 +188,8 @@ function ManagedSessionRow({
                 {record?.session.title || id}
               </Text>
               {model && (
-                <Text
-                  size="micro"
-                  leading="inherit"
-                  className={sessionStyles.model}
+                <span
+                  {...textAttributes({ size: "micro", leading: "inherit" }, sessionStyles.model)}
                   data-session-model
                 >
                   <HarnessIcon harness={model.harness} size="xs" />
@@ -204,7 +202,7 @@ function ManagedSessionRow({
                   >
                     {model.name}
                   </Text>
-                </Text>
+                </span>
               )}
             </span>
             {!current && (
@@ -243,12 +241,11 @@ function ManagedSessionRow({
           />
         ) : (
           <>
-            <Text
-              as="div"
-              size="caption"
-              tone="secondary"
-              leading="inherit"
-              className={sessionStyles.meterHead}
+            <div
+              {...textAttributes(
+                { size: "caption", tone: "secondary", leading: "inherit" },
+                sessionStyles.meterHead,
+              )}
             >
               <span>{t("Context usage")}</span>
               {percent !== null && (
@@ -258,12 +255,11 @@ function ManagedSessionRow({
                   tone={tone === "danger" || tone === "warning" ? tone : "secondary"}
                   weight="medium"
                   leading="inherit"
-                  className={sessionStyles.percent}
                 >
                   {formatNumber(percent / 100, { style: "percent" })}
                 </Text>
               )}
-            </Text>
+            </div>
             <Meter
               label={t("Context usage")}
               value={percent}

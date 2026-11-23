@@ -209,11 +209,7 @@ export function SearchableProjectPicker({
         type="button"
         disabled={disabled}
         tooltip={inProject ? cwd : undefined}
-        aria-label={
-          inProject
-            ? t("{p0}, current project {p1}", { p0: action, p1: label })
-            : choose
-        }
+        aria-label={inProject ? t("{p0}, current project {p1}", { p0: action, p1: label }) : choose}
         selected={open || appearance === "filled"}
         expanded={compact ? undefined : open}
         aria-expanded={open}

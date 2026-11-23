@@ -265,7 +265,7 @@ it("keeps independent legacy and per-hop drafts when the mode is switched both w
     document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Hostname"]')!.value,
   ).toBe("");
   await setAriaInput("Jump host 1: Hostname", "typed-bastion");
-  await setAriaInput("Jump host 1: Identity file", "~/typed key reference");
+  await input("Jump host 1: Identity file", "~/typed key reference");
   await act(async () => toggle().click());
   expect(
     [...document.querySelectorAll("input")].some((field) => field.value === "legacy@bastion:22"),
@@ -275,10 +275,12 @@ it("keeps independent legacy and per-hop drafts when the mode is switched both w
   expect(
     document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Hostname"]')!.value,
   ).toBe("typed-bastion");
-  expect(
-    document.querySelector<HTMLInputElement>('input[aria-label="Jump host 1: Identity file"]')!
-      .value,
-  ).toBe("~/typed key reference");
+  const identityLabel = [...document.querySelectorAll("label")].find(
+    (entry) => entry.textContent?.trim() === "Jump host 1: Identity file",
+  )!;
+  expect((document.getElementById(identityLabel.htmlFor) as HTMLInputElement).value).toBe(
+    "~/typed key reference",
+  );
   vi.mocked(saveSshConnection).mockResolvedValue(legacy);
   await submit();
   expect(vi.mocked(saveSshConnection).mock.calls[0][0].endpoint).toMatchObject({

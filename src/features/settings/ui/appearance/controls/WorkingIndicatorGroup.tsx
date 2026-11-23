@@ -79,72 +79,75 @@ export function WorkingIndicatorGroup() {
         </Text>
       </Row>
       <AdvancedSettings settingIds={["working-indicator-color", "working-indicator-strength"]}>
-      <Row
-        id="working-indicator-color"
-        controlWidth="fill"
-        label={t("Working color")}
-        description={t("Automatic follows the accent color of your theme.")}
-      >
-        <div ref={anchor} className="state-ladder-source">
-          <Segmented<WorkingIndicatorColor>
-            label={t("Working color")}
-            value={value.color}
-            options={[
-              { value: "auto", label: t("Automatic") },
-              { value: "theme", label: t("Theme") },
-              { value: "custom", label: t("Custom") },
-            ]}
-            onChange={(color) => {
-              update({ color, customColor: color === "custom" ? customColor : value.customColor });
-              setOpen(color === "custom");
-            }}
+        <Row
+          id="working-indicator-color"
+          controlWidth="fill"
+          label={t("Working color")}
+          description={t("Automatic follows the accent color of your theme.")}
+        >
+          <div ref={anchor} className="state-ladder-source">
+            <Segmented<WorkingIndicatorColor>
+              label={t("Working color")}
+              value={value.color}
+              options={[
+                { value: "auto", label: t("Automatic") },
+                { value: "theme", label: t("Theme") },
+                { value: "custom", label: t("Custom") },
+              ]}
+              onChange={(color) => {
+                update({
+                  color,
+                  customColor: color === "custom" ? customColor : value.customColor,
+                });
+                setOpen(color === "custom");
+              }}
+            />
+            {value.color === "custom" && (
+              <Button
+                variant="secondary"
+                size="sm"
+                inset="icon"
+                aria-label={t("Custom color")}
+                onClick={() => setOpen(true)}
+              >
+                <span
+                  {...surfaceAttributes(
+                    { frame: "pane", edge: "all", radius: "circle", variant: "user-color" },
+                    "state-custom-dot",
+                  )}
+                  style={{ "--surface-user-color": customColor } as React.CSSProperties}
+                />
+              </Button>
+            )}
+            {open && (
+              <Popover
+                anchor={anchor}
+                side="bottom"
+                align="end"
+                width={248}
+                flow="scroll"
+                onDismiss={() => setOpen(false)}
+              >
+                <ColorPickerPopover
+                  value={customColor}
+                  onChange={(next) => update({ color: "custom", customColor: next })}
+                />
+              </Popover>
+            )}
+          </div>
+        </Row>
+        <Row id="working-indicator-strength" label={t("Working strength")}>
+          <Slider
+            label={t("Working strength")}
+            value={value.strength}
+            display={`${value.strength}%`}
+            min={WORKING_INDICATOR_STRENGTH_MIN}
+            max={WORKING_INDICATOR_STRENGTH_MAX}
+            step={10}
+            disabled={value.style === "off"}
+            onChange={(strength) => update({ strength })}
           />
-          {value.color === "custom" && (
-            <Button
-              variant="secondary"
-              size="sm"
-              inset="icon"
-              aria-label={t("Custom color")}
-              onClick={() => setOpen(true)}
-            >
-              <span
-                {...surfaceAttributes(
-                  { frame: "pane", edge: "all", radius: "circle", variant: "user-color" },
-                  "state-custom-dot",
-                )}
-                style={{ "--surface-user-color": customColor } as React.CSSProperties}
-              />
-            </Button>
-          )}
-          {open && (
-            <Popover
-              anchor={anchor}
-              side="bottom"
-              align="end"
-              width={248}
-              flow="scroll"
-              onDismiss={() => setOpen(false)}
-            >
-              <ColorPickerPopover
-                value={customColor}
-                onChange={(next) => update({ color: "custom", customColor: next })}
-              />
-            </Popover>
-          )}
-        </div>
-      </Row>
-      <Row id="working-indicator-strength" label={t("Working strength")}>
-        <Slider
-          label={t("Working strength")}
-          value={value.strength}
-          display={`${value.strength}%`}
-          min={WORKING_INDICATOR_STRENGTH_MIN}
-          max={WORKING_INDICATOR_STRENGTH_MAX}
-          step={10}
-          disabled={value.style === "off"}
-          onChange={(strength) => update({ strength })}
-        />
-      </Row>
+        </Row>
       </AdvancedSettings>
     </Group>
   );

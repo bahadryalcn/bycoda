@@ -46,7 +46,7 @@ it.each(["audio.ts", "routes/clientTp.ts", "utils/clientTp.ts", "routes/getAudio
     const name = host.querySelector("[data-git-file] [data-truncate]")!;
     expect(name.getAttribute("data-size")).toBe("secondary");
     expect(name.getAttribute("data-tone")).toBe("primary");
-    expect(name.getAttribute("data-weight")).toBe("regular");
+    expect(name.getAttribute("data-weight")).toBe("medium");
     if (relative.includes("/")) {
       const path = name.nextElementSibling!;
       expect(path.getAttribute("data-weight")).toBe("regular");

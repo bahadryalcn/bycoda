@@ -59,9 +59,13 @@ it("previews an endpoint and only connects explicitly without creating a saved r
   await field("Hostname", "example.invalid");
   await field("SSH user", "alice");
   await field("SSH port", "2200");
-  expect(document.querySelector('[aria-label="Endpoint preview"]')?.textContent).toContain(
-    "alice@example.invalid:2200",
-  );
+  // The endpoint is previewed as the placeholder of the (still empty) Name field.
+  const nameLabel = [...document.querySelectorAll("label")].find(
+    (entry) => entry.textContent?.replace("*", "").trim() === "Name",
+  )!;
+  expect(
+    (document.getElementById(nameLabel.htmlFor) as HTMLInputElement).getAttribute("placeholder"),
+  ).toBe("alice@example.invalid:2200");
   await submit();
   expect(saveSshConnection).not.toHaveBeenCalled();
   expect(callbacks.quick).toHaveBeenCalledExactlyOnceWith(

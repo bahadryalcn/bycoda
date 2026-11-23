@@ -125,7 +125,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
   } = room;
   const [tab, setTab] = useState("activity");
   return (
-    <div className={styles.sheet}>
+    <div className={styles.detailContent}>
       <div className={styles.request}>
         <ClampText key={job.id} lines={4}>
           <p>{job.request}</p>
@@ -269,16 +269,16 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
       )}
       <Disclosure size="sm" summary={t("Related work")}>
         <div className={styles.related}>
-          {(!props.onReviewJobTasks || !onOpenSession) && (job.goalId || job.sessionIds.length > 0) && (
-            <Text as="p" leading="inherit" className={styles.muted}>
-              {t("Open this job on its own computer")}
-            </Text>
-          )}
+          {(!props.onReviewJobTasks || !onOpenSession) &&
+            (job.goalId || job.sessionIds.length > 0) && (
+              <Text as="p" leading="inherit" className={styles.muted}>
+                {t("Open this job on its own computer")}
+              </Text>
+            )}
           {job.goalId && (
             <div>
               <Button
                 variant="link"
-                title={job.goalId}
                 disabled={!props.onReviewJobTasks || !!pending}
                 loading={pending?.key === `tasks:${job.id}`}
                 onClick={() => reviewJobTasks(job)}
@@ -291,7 +291,6 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
             <div key={id}>
               <Button
                 variant="link"
-                title={id}
                 disabled={!onOpenSession}
                 onClick={() => onOpenSession?.(id)}
               >

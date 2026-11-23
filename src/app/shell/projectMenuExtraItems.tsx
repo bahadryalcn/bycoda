@@ -91,9 +91,7 @@ export function projectMenuExtraItems(
       icon: FolderTree,
       submenu: groupSubmenu,
     },
-    ...(canRenameFolder
-      ? [{ id: "rename-folder", label: t("Rename folder…"), icon: Pencil }]
-      : []),
+    ...(canRenameFolder ? [{ id: "rename-folder", label: t("Rename folder…"), icon: Pencil }] : []),
     ...(canAddDirs
       ? [{ id: "additional-dirs", label: t("Additional folders…"), icon: FolderPlus }]
       : []),
@@ -134,30 +132,34 @@ export function projectMenuExtraItems(
           },
         ]),
     { id: "reveal", label: REVEAL_LABEL, icon: FolderOpen },
-    ...(externalEditors === null ? [] : [{
-      id: "external-editor",
-      get label() {
-        return t("Open in editor");
-      },
-      icon: AppWindow,
-      submenu:
-        externalEditors.length > 0
-            ? externalEditors.map((editor) => ({
-                kind: "item" as const,
-                id: `external-editor:${editor.id}`,
-                label: editor.name,
-              }))
-            : [
-                {
+    ...(externalEditors === null
+      ? []
+      : [
+          {
+            id: "external-editor",
+            get label() {
+              return t("Open in editor");
+            },
+            icon: AppWindow,
+            submenu:
+              externalEditors.length > 0
+                ? externalEditors.map((editor) => ({
                     kind: "item" as const,
-                  id: "external-editor:none",
-                  get label() {
-                    return t("No supported editors found");
-                  },
-                  disabled: true,
-                },
-              ],
-    }]),
+                    id: `external-editor:${editor.id}`,
+                    label: editor.name,
+                  }))
+                : [
+                    {
+                      kind: "item" as const,
+                      id: "external-editor:none",
+                      get label() {
+                        return t("No supported editors found");
+                      },
+                      disabled: true,
+                    },
+                  ],
+          },
+        ]),
     {
       id: "notifications-mute",
       get label() {

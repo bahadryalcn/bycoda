@@ -493,7 +493,7 @@ export function ModalFooter({ children }: { children: ReactNode }) {
  * confirm is filled danger: `variant="primary" tone="danger"`. `inline` is only for a form on a
  * page that is not a dialog.
  * @group overlay
- * @use The Cancel and primary actions of a Modal or Sheet footer. Link a visible blocker to its action with `aria-describedby`. A blocked Button can stay keyboard-focusable with `aria-disabled`. Use `disabledReason` only for a non-obvious cause without an adjacent explanation.
+ * @use The Cancel and primary actions of a Modal or Sheet footer. Give the adjacent error an ID and pass it to the blocked Button's `aria-describedby`. For a footer-owned reason, set `reasonId` to that ID. A blocked Button can stay keyboard-focusable with `aria-disabled`. Use `disabledReason` only for a non-obvious cause without an adjacent explanation.
  * @avoid Actions at the end of the scrolling body, or a hand-built footer row.
  *
  * ```tsx

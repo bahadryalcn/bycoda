@@ -40,8 +40,9 @@ it("owns one pending picker and clears cancellation without changing the saved f
   const root = createRoot(container);
   try {
     await act(async () => root.render(createElement(NewProjectFolderGroup)));
+    // The resolved folder itself is the picker button.
     const choose = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Choose folder…",
+      (button) => button.textContent === "C:/home/Projects",
     )!;
     await act(async () => {
       choose.click();

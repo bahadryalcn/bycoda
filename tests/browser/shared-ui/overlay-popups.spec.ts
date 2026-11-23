@@ -613,7 +613,10 @@ test.describe("overlay frame layout contracts", () => {
           expect(box.y + box.height, `${surface} bottom edge`).toBeLessThanOrEqual(height + 1);
           // Shrinking the window with the overlay open must not break the contracts.
           await page.setViewportSize({ width: 800, height: 480 });
-          await expectLayoutContracts(page, { surface: `${surface} after shrink`, root: '[role="dialog"]' });
+          await expectLayoutContracts(page, {
+            surface: `${surface} after shrink`,
+            root: '[role="dialog"]',
+          });
           // The last footer action stays reachable by keyboard.
           const lastAction = dialog.locator("button:visible").last();
           await lastAction.scrollIntoViewIfNeeded();

@@ -102,7 +102,7 @@ describe("GitHub pull request actions", () => {
     expect(dialog.textContent).toContain(
       "from “feature/inbox” will be combined into one commit on “main”",
     );
-    expect(dialog.textContent).toContain(`Reviewed head: ${reviewedHeadOid}`);
+    expect(dialog.textContent).toContain(`Reviewed head: ${reviewedHeadOid.slice(0, 7)}`);
 
     await act(async () => {
       [...dialog.querySelectorAll("button")]

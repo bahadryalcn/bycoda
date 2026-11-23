@@ -255,7 +255,7 @@ export function VoicePanelResize({
               key={direction}
               aria-hidden="true"
               data-resize-direction={direction}
-              className={styles.resizeEdge}
+              className={`${styles.resizeEdge} ${styles.resizeCorner}`}
               {...handlers}
               onDoubleClick={reset}
             />

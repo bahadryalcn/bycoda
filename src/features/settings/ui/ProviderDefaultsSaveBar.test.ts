@@ -115,7 +115,7 @@ it("puts the provider scope in the scope row above the fields, not in the save b
         }),
       ),
     );
-    expect(container.textContent).not.toContain("Apply to");
+    expect(container.textContent).not.toContain("Defaults saved to");
     await act(async () =>
       root.render(
         createElement(ProviderDefaultsScopeRow, {
@@ -128,7 +128,8 @@ it("puts the provider scope in the scope row above the fields, not in the save b
         }),
       ),
     );
-    expect(container.textContent).toContain("Apply to");
+    expect(container.textContent).toContain("Defaults saved to");
+    expect(container.querySelector('[role="radiogroup"][aria-label="Provider scope"]')).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
     container.remove();
@@ -151,7 +152,7 @@ it("shows where defaults are saved above the fields, not in the save bar", async
         }),
       ),
     );
-    expect(container.textContent).toContain("Applies to");
+    expect(container.textContent).toContain("Defaults saved to");
     expect(container.querySelector("button[aria-haspopup='dialog']")).not.toBeNull();
   } finally {
     await act(async () => root.unmount());

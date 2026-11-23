@@ -13,11 +13,6 @@
   min-width: 0;
 }
 
-/* Figures from the previous period stay in place, dimmed, until the selected period has loaded. */
-.pending {
-  opacity: 0.55;
-}
-
 .header {
   display: flex;
   flex-wrap: wrap;
@@ -34,7 +29,6 @@
 }
 
 .updated {
-  font-variant-numeric: tabular-nums;
   margin-inline-end: var(--space-1);
 }
 
@@ -49,10 +43,6 @@
   flex-direction: column;
   gap: var(--ui-space-1);
   min-width: 0;
-}
-
-.statValue {
-  font-variant-numeric: tabular-nums;
 }
 
 .charts {

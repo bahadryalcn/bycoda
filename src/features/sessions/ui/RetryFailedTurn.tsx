@@ -201,6 +201,7 @@ export function RetryFailedTurn({
   });
   // Publishes the recovery to the notice of the error it belongs to: the notice and this
   // owner sit in different parts of the transcript tree, so a keyed store links them.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- registers the current retry action in the recovery store while mounted
   useEffect(() => {
     if (!errorId) return;
     publishRecovery(errorId, { errorId, pending, retry });

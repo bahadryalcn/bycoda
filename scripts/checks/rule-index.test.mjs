@@ -18,13 +18,26 @@ test("every rule in the repository has one definition and a current list entry",
     rules.find((rule) => rule.id === "hover-only-reveal").scope,
     "TSX in src/features, src/shared (excluding tests)",
   );
-  for (const id of ["nested-card", "duplicate-feedback-channel", "tooltip-repeats-label", "inline-help-text"])
+  for (const id of [
+    "nested-card",
+    "duplicate-feedback-channel",
+    "tooltip-repeats-label",
+    "inline-help-text",
+  ])
     assert.equal(
       rules.find((rule) => rule.id === id).scope,
       "TSX in src/app, src/features, src/shared (excluding tests)",
     );
-  assert.equal(rules.some((rule) => rule.id === "one-primary-per-view"), false);
-  for (const id of ["spacing-step", "arbitrary-spacing", "feature-typography", "focus-outline-removed"])
+  assert.equal(
+    rules.some((rule) => rule.id === "one-primary-per-view"),
+    false,
+  );
+  for (const id of [
+    "spacing-step",
+    "arbitrary-spacing",
+    "feature-typography",
+    "focus-outline-removed",
+  ])
     assert.equal(
       rules.find((rule) => rule.id === id).scope,
       "CSS and TSX in src/app and src/features (excluding tests)",

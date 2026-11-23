@@ -1,4 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
+import { textAttributes } from "../../../../shared/ui/Text";
 import { canRunHarnessTextPrompt } from "../../../../integrations/harness";
 import { HARNESSES } from "../../../../shared/model/harnessIdentity";
 import { defaultModelSettings, resolveModel } from "../../../sessions/public/models";
@@ -19,7 +19,7 @@ export function BuilderModelStep({
   onChange: (choice: TranslationChoice) => void;
 }) {
   return (
-    <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.stage}>
+    <div {...textAttributes({ size: "inherit", tone: "inherit", leading: "normal" }, styles.stage)}>
       <ModelPicker
         harness={choice.harness}
         model={choice.model}
@@ -42,6 +42,6 @@ export function BuilderModelStep({
         }
         onSettingsChange={(modelSettings) => onChange({ ...choice, modelSettings })}
       />
-    </Text>
+    </div>
   );
 }

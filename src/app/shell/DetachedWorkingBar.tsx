@@ -141,7 +141,9 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
     return {
       kind: "item",
       id: agent.id,
-      label: [title, state, agent.ownerWindowLabel && t("Other window")].filter(Boolean).join(" · "),
+      label: [title, state, agent.ownerWindowLabel && t("Other window")]
+        .filter(Boolean)
+        .join(" · "),
       content: title,
       trailing: agent.ownerWindowLabel ? <Copy className="icon-sm" aria-hidden /> : undefined,
       icon: <StatusDot tone={agentTone(agent)} />,
@@ -161,31 +163,33 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
       }}
       {...surfaceAttributes(
         { frame: "pane", edge: "bottom" },
-        `flex h-8 min-w-0 shrink-0 select-none items-center gap-2 [padding-inline-start:0.75rem] ${dragging ? "cursor-grabbing" : "cursor-grab"}`,
+        `flex h-8 min-w-0 shrink-0 select-none items-center gap-2 ps-3 ${dragging ? "cursor-grabbing" : "cursor-grab"}`,
       )}
     >
-      {count > 0 ? <Button
-        variant="ghost"
-        motion="none"
-        ref={trigger}
-        type="button"
-        data-tauri-drag-region="false"
-        aria-label={`${summary} · ${detachedBarStatusLabel(status, t)}`}
-        aria-haspopup="menu"
-        expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            setOpen(true);
-          }
-        }}
-      >
-        <StatusDot tone={barTone[status]} />
-        <Text size="inherit" tone="inherit" truncate>
-          {formatNumber(count)}
-        </Text>
-      </Button> : null}
+      {count > 0 ? (
+        <Button
+          variant="ghost"
+          motion="none"
+          ref={trigger}
+          type="button"
+          data-tauri-drag-region="false"
+          aria-label={`${summary} · ${detachedBarStatusLabel(status, t)}`}
+          aria-haspopup="menu"
+          expanded={open}
+          onClick={() => setOpen((value) => !value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              setOpen(true);
+            }
+          }}
+        >
+          <StatusDot tone={barTone[status]} />
+          <Text size="inherit" tone="inherit" truncate>
+            {formatNumber(count)}
+          </Text>
+        </Button>
+      ) : null}
       <div className="min-w-4 flex-1 self-stretch" aria-hidden="true" />
       {!IS_MAC ? <WindowControls /> : null}
       {windowError ? (

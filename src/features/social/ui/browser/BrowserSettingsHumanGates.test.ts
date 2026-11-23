@@ -37,6 +37,19 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+/** A disabled-with-reason control stays focusable; its reason is the shared tooltip. */
+async function tooltipText(target: HTMLElement): Promise<string> {
+  await act(async () => {
+    target.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    target.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 function settings(patch: Partial<BrowserSettingsValue> = {}): BrowserSettingsValue {
   return { accountId: "a1", visibility: "hidden", desktopControl: { allowed: false }, ...patch };
 }
@@ -148,12 +161,14 @@ it("blocks saving allowed desktop control until the owner names the computer, th
   const { client, set } = clientWith();
   await mount(client);
   await act(async () => desktopSwitch().click());
-  expect(button("Save browser settings").disabled).toBe(true);
-  expect(element.textContent).toContain("Choose the computer desktop control may use.");
+  expect(button("Save browser settings").getAttribute("aria-disabled")).toBe("true");
+  expect(await tooltipText(button("Save browser settings"))).toContain(
+    "Choose the computer desktop control may use.",
+  );
   await act(async () => button("Save browser settings").click());
   expect(set).not.toHaveBeenCalled();
   await chooseComputer("Office PC");
-  expect(button("Save browser settings").disabled).toBe(false);
+  expect(button("Save browser settings").getAttribute("aria-disabled")).toBeNull();
   await act(async () => button("Save browser settings").click());
   await settle();
   expect(set).toHaveBeenCalledExactlyOnceWith({
@@ -161,7 +176,9 @@ it("blocks saving allowed desktop control until the owner names the computer, th
     visibility: "hidden",
     desktopControl: { allowed: true, computerId: "c2" },
   });
-  expect(element.textContent).toContain("No changes to save.");
+  // Nothing left to save is obvious from the untouched form: no sentence, the button is just off.
+  expect(element.textContent).not.toContain("No changes to save.");
+  expect(button("Save browser settings").disabled).toBe(true);
 });
 
 it("blocks every change and explains why when this computer is not connected", async () => {
@@ -169,8 +186,10 @@ it("blocks every change and explains why when this computer is not connected", a
   await mount(client, { disabled: true });
   expect(desktopSwitch().disabled).toBe(true);
   expect(button("Open live view").disabled).toBe(true);
-  expect(button("Save browser settings").disabled).toBe(true);
-  expect(element.textContent).toContain("Connect to this computer to change this account.");
+  expect(button("Save browser settings").getAttribute("aria-disabled")).toBe("true");
+  expect(await tooltipText(button("Save browser settings"))).toContain(
+    "Connect to this computer to change this account.",
+  );
   expect(set).not.toHaveBeenCalled();
 });
 

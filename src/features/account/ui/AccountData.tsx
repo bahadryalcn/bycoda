@@ -79,9 +79,11 @@ function StoredData({ summary }: { summary: DataSummary }) {
         </Text>
       </Row>
       {commonRule ? (
-        <Text as="p" size="caption" tone="secondary" className={sectionStyles.retention}>
-          {retentionLabel(commonRule)}
-        </Text>
+        <div className={sectionStyles.retention}>
+          <Text as="p" size="caption" tone="secondary">
+            {retentionLabel(commonRule)}
+          </Text>
+        </div>
       ) : null}
     </>
   );

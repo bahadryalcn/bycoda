@@ -1004,7 +1004,9 @@ export function ProjectRail({
             >
               <Text
                 size="inherit"
-                tone={cwd === "~" && !lastSessionsOpen && !searchOrPageActive ? "inherit" : "secondary"}
+                tone={
+                  cwd === "~" && !lastSessionsOpen && !searchOrPageActive ? "inherit" : "secondary"
+                }
                 truncate
                 className="@max-[140px]/rail:hidden"
               >
@@ -2390,7 +2392,7 @@ function ProjectCard({
       }}
     >
       {multi?.active ? (
-        <span className="my-auto shrink-0 [margin-inline-end:0.5rem]">
+        <span className="my-auto shrink-0 me-2">
           <Checkbox
             data-no-drag
             checked={multiSelected}

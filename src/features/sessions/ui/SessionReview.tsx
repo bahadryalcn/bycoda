@@ -72,7 +72,6 @@ export function orchestrationLocksUndo(runs: readonly UndoLockingRun[], sessionI
 type ReviewError = "recordingFailed" | "loadFailed" | "retryableLoad" | "keep" | "undo";
 type LoadOutcome = "loaded" | "recording" | "failed" | "retry" | "skipped";
 
-
 export function SessionReview(props: Props) {
   return <SessionReviewContent key={JSON.stringify([props.sessionId, props.cwd])} {...props} />;
 }
@@ -149,7 +148,9 @@ function SessionReviewContent({
           if (checkpointFailure === "failed") {
             setError("recordingFailed");
           } else if (
-            /not a directory|no such file or directory|\bENOENT\b|\bENOTDIR\b/i.test(failure.message)
+            /not a directory|no such file or directory|\bENOENT\b|\bENOTDIR\b/i.test(
+              failure.message,
+            )
           ) {
             setFiles([]);
             setError(null);

@@ -63,26 +63,28 @@ it.each(["file", "conversation"])(
   "disables Close while %s recovery is pending and restores it afterwards",
   async (kind) => {
     state.chatPending = kind === "conversation";
-    await render(kind === "file");
+    // Conversation recovery needs a workspace with sessions; file recovery stands alone.
+    await render(kind === "file", kind === "conversation");
     const close = () => document.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!;
     expect(close().disabled).toBe(true);
     await act(async () => close().click());
     expect(onClose).not.toHaveBeenCalled();
     state.chatPending = false;
-    await render(false);
+    await render(false, kind === "conversation");
     expect(close().disabled).toBe(false);
     await act(async () => close().click());
     expect(onClose).toHaveBeenCalledOnce();
   },
 );
 
-it("names the sole recovery section without referencing an absent tab", async () => {
+it("shows the sole recovery section without a one-tab landmark", async () => {
   await render(false);
   expect(document.querySelector('[role="tablist"]')).toBeNull();
   const section = document.getElementById("workspace-recovery-panel-files")!;
   expect(section.getAttribute("aria-labelledby")).toBeNull();
-  expect(section.getAttribute("role")).toBe("region");
-  expect(section.getAttribute("aria-label")).toBe("File drafts");
+  // One section is not a tab set or a landmark: the dialog title names it.
+  expect(section.getAttribute("role")).toBeNull();
+  expect(section.getAttribute("aria-label")).toBeNull();
   expect(section.textContent).toContain("Retained file drafts");
 });
 

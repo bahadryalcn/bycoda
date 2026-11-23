@@ -38,6 +38,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
   }>();
   const mounted = useRef(false);
   const operationPending = useRef(false);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- guards native operation completions against updates after the queue unmounts
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -45,7 +46,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
     };
   }, []);
   const [names, setNames] = useState<Record<string, string>>({});
-  // Read-only runbook names for the open list; they never grant review or execution authority.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- reads native runbook names when the queue opens
   useEffect(() => {
     if (!open) return;
     let current = true;

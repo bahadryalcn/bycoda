@@ -308,9 +308,10 @@ it("dispatches two projectless sends using scratch without reading the Host work
   expect(saved).toMatchObject({ cwd: "~", scratchWorkspace: true });
   expect(saved.workspaceMode).toBeUndefined();
   expect(saved.worktreePreparing).toBeUndefined();
-  expect(
-    saved.blocks.filter((block) => block.role === "user").map((block) => block.text),
-  ).toEqual(["First projectless request", "Second projectless request"]);
+  expect(saved.blocks.filter((block) => block.role === "user").map((block) => block.text)).toEqual([
+    "First projectless request",
+    "Second projectless request",
+  ]);
   expect(saved.blocks.some((block) => block.workspacePreparationPending)).toBe(false);
   expect(saved.blocks.some((block) => block.notice === "error")).toBe(false);
 });

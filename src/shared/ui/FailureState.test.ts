@@ -106,10 +106,10 @@ it("accepts a caller-owned retrying state and keeps a synchronous retry immediat
   expect(onRetry).toHaveBeenCalledTimes(2);
 });
 
-it("renders the retry as a small secondary button, not a filled primary", async () => {
+it("renders the retry as a compact primary recovery action", async () => {
   await render();
   const retry = button("Try again");
-  expect(retry.getAttribute("data-button-variant")).toBe("secondary");
+  expect(retry.getAttribute("data-button-variant")).toBe("primary");
   expect(retry.getAttribute("data-button-size")).toBe("sm");
 });
 

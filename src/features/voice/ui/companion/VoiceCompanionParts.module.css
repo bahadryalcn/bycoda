@@ -215,7 +215,6 @@
 .resizeEdge[data-resize-direction="s"] {
   left: var(--ui-space-3);
   right: var(--ui-space-3);
-  block-size: 6px;
   cursor: ns-resize;
 }
 .resizeEdge[data-resize-direction="e"],
@@ -225,10 +224,7 @@
   inline-size: 6px;
   cursor: ew-resize;
 }
-.resizeEdge[data-resize-direction="ne"],
-.resizeEdge[data-resize-direction="nw"],
-.resizeEdge[data-resize-direction="se"],
-.resizeEdge[data-resize-direction="sw"] {
+.resizeCorner {
   width: var(--ui-space-3);
   height: var(--ui-space-3);
 }

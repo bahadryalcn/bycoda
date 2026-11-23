@@ -192,7 +192,10 @@ export default defineRule({
       const keys = styleKeys(
         context,
         value,
-        (key) => PAINT_VARS.test(key) || APPEARANCE_KEYS.test(key) || (sizesFlagged && MEASURE_KEYS.has(key)),
+        (key) =>
+          PAINT_VARS.test(key) ||
+          APPEARANCE_KEYS.test(key) ||
+          (sizesFlagged && MEASURE_KEYS.has(key)),
       );
       const opaque =
         sizesFlagged &&

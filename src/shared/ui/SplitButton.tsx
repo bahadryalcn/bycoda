@@ -108,15 +108,14 @@ export function SplitButton({
         .filter(Boolean)
         .join(" ")}
     >
-      <Button {...buttonProps} data-split-part="primary" disabled={disabled} loading={loading}>
-        {trailing ? (
-          <>
-            <span className="min-w-0 truncate">{label}</span>
-            {trailing}
-          </>
-        ) : (
-          label
-        )}
+      <Button
+        {...buttonProps}
+        data-split-part="primary"
+        disabled={disabled}
+        loading={loading}
+        trailing={trailing}
+      >
+        {trailing != null ? <span className="min-w-0 truncate">{label}</span> : label}
       </Button>
       {/* A disabled solid primary must not leave a bright solid chevron beside it. */}
       <Button

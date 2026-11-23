@@ -12,7 +12,10 @@ export function SettingsLoadingSurface({ section }: { section: SettingsSectionId
   useLocale();
   return (
     <div {...surfaceAttributes({ variant: "canvas" }, "settings-loading")} data-settings-loading>
-      <Skeleton label={settingsSectionLabel(section)} placeholder={<SettingsGroupsSkeleton rows={4} />} />
+      <Skeleton
+        label={settingsSectionLabel(section)}
+        placeholder={<SettingsGroupsSkeleton rows={4} />}
+      />
     </div>
   );
 }

@@ -78,11 +78,17 @@ export function SessionRecoveryControl({
         ref={anchor}
         data-recovery-control
         variant="ghost"
-        className="relative"
         tone={failure ? "danger" : undefined}
         motion="none"
         iconOnly
         label={`${label} (${count})`}
+        badge={
+          count > 0 ? (
+            <Badge variant="count" size="xs" leading="none">
+              {count}
+            </Badge>
+          ) : undefined
+        }
         aria-haspopup="dialog"
         aria-expanded={canClear || failure ? showOptions : undefined}
         loading={pending}
@@ -106,13 +112,6 @@ export function SessionRecoveryControl({
         }}
       >
         <RotateCcw className="icon-md" aria-hidden />
-        {count > 0 ? (
-          <span className="pointer-events-none absolute -inset-bs-2 -end-1 inline-flex w-max whitespace-nowrap">
-            <Badge variant="count" size="xs" leading="none" aria-hidden>
-              {count}
-            </Badge>
-          </span>
-        ) : null}
       </Button>
       {showOptions && !failure && canClear ? (
         <DropdownMenu

@@ -348,13 +348,12 @@ export function AssistantView(props: AssistantViewProps) {
         )}
         {!snapshot ? (
           loading ? (
-            <LoadingText className={shell.empty} delay={false}>
-              {t("Loading…")}
-            </LoadingText>
+            <div className={shell.empty}>
+              <LoadingText delay={false}>{t("Loading…")}</LoadingText>
+            </div>
           ) : (
             <FailureState
               context="panel"
-              className={shell.empty}
               title={t("Could not open the assistant room")}
               description={t("Connect to the local Host to open this room.")}
               error={readError || undefined}

@@ -21,6 +21,7 @@ export type TextTone =
   | "neutral"
   | "accent"
   | "feature"
+  | "orchestration"
   | "info"
   | "success"
   | "warning"
@@ -68,6 +69,8 @@ export type TextTracking = "normal" | "tight" | "wide" | "wider";
 export type TextRoles = {
   size?: TextSize;
   tone?: TextTone;
+  /** Fixed-width text for technical identifiers and addresses. */
+  family?: "mono";
   weight?: "regular" | "medium";
   leading?: TextLeading;
   truncate?: boolean;
@@ -119,6 +122,8 @@ export type TextProps = Omit<ComponentPropsWithRef<"span">, "ref"> & {
    * diff inks (a change letter, a changed line), `inherit` for the surrounding colour.
    */
   tone?: TextTone;
+  /** Fixed-width text for technical identifiers and addresses. */
+  family?: TextRoles["family"];
   /** Weight; unset keeps the surrounding weight. */
   weight?: "regular" | "medium";
   /**
@@ -167,6 +172,7 @@ export function Text({
   style,
   size = "caption",
   tone = "secondary",
+  family,
   weight,
   leading,
   truncate = false,
@@ -186,7 +192,7 @@ export function Text({
       style={!truncate && lines ? ({ ...style, "--clamp-lines": lines } as CSSProperties) : style}
       ref={ref as Ref<HTMLSpanElement>}
       {...textAttributes(
-        { size, tone, weight, leading, truncate, wrap, tracking, hoverUnderline },
+        { size, tone, family, weight, leading, truncate, wrap, tracking, hoverUnderline },
         className,
       )}
     />
@@ -200,6 +206,7 @@ export function Text({
 export function optionalTextAttributes(roles: TextRoles, className?: string) {
   return roles.size ||
     roles.tone ||
+    roles.family ||
     roles.weight ||
     roles.leading ||
     roles.truncate ||
@@ -220,6 +227,7 @@ export function textAttributes(
   {
     size = "inherit",
     tone = "inherit",
+    family,
     weight,
     leading = size === "inherit" ? "inherit" : undefined,
     truncate,
@@ -234,6 +242,7 @@ export function textAttributes(
     "data-hover-underline": hoverUnderline || undefined,
     "data-size": size,
     "data-tone": tone,
+    "data-family": family,
     "data-weight": weight,
     "data-leading": leading,
     "data-truncate": truncate || undefined,

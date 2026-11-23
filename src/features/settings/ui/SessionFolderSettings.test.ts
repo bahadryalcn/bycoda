@@ -31,8 +31,9 @@ it("refreshes mounted value after reset and guards duplicate pending pickers", a
     await act(async () => restoreSessionFolderDefault());
     expect(container.textContent).toContain("C:\\home");
     expect(container.textContent).not.toContain("Use home folder");
+    // The resolved folder itself is the picker button.
     const choose = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Choose folder…",
+      (button) => button.textContent === "C:\\home",
     )!;
     await act(async () => {
       choose.click();
@@ -88,7 +89,7 @@ it("retains verified path and exposes failed native save", async () => {
   try {
     await act(async () => root.render(createElement(SessionFolderGroup)));
     const choose = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Choose folder…",
+      (button) => button.textContent === "C:\\verified",
     )!;
     await act(async () => choose.click());
     expect(container.textContent).toContain("folder denied");

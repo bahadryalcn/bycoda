@@ -388,7 +388,8 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
           ))
         ) : (
           <ComboboxStatus empty>
-            {emptyMessage ?? (options.length ? t("No matching options") : t("No options available"))}
+            {emptyMessage ??
+              (options.length ? t("No matching options") : t("No options available"))}
           </ComboboxStatus>
         )}
       </div>

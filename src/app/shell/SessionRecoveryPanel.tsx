@@ -584,7 +584,11 @@ export function SessionRecoveryPanel({
               size="sm"
               motion="none"
               label={t("Open sessions")}
-              trailing={<Badge size="xs" variant="count">{primaryIds.length}</Badge>}
+              trailing={
+                <Badge size="xs" variant="count">
+                  {primaryIds.length}
+                </Badge>
+              }
               tooltip={primaryOpensSelected ? t("Open selected") : t("Open shown")}
               menuLabel={t("More ways to open")}
               disabled={pending || !primaryIds.length}

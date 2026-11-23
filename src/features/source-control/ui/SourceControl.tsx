@@ -71,7 +71,12 @@ function SourceControlContent({
         inset="row"
         className="shrink-0"
         details={error}
-        retry={{ onRetry: () => void refresh(), pending: loading, disabled: !enabled, label: t("Retry") }}
+        retry={{
+          onRetry: () => void refresh(),
+          pending: loading,
+          disabled: !enabled,
+          label: t("Retry"),
+        }}
       >
         {data
           ? t("Could not refresh worktrees. Showing the last available list.")

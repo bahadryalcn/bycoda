@@ -106,14 +106,18 @@ it.each([false, true])(
       await act(async () => {
         saveKeybindingOverride("Editor: Find", { disabled: true });
       });
-      expect(await tooltipText(launcher())).toBe("Find in conversation");
+      // With no shortcut the name would only repeat the label, so no tooltip opens.
+      expect(launcher().getAttribute("aria-label")).toBe("Find in conversation");
+      expect(await tooltipText(launcher())).toBe("");
       await act(async () => launcher().click());
       if (inHeader) expect(launcher().getAttribute("aria-expanded")).toBe("true");
       expect(container.querySelector('[role="search"]')).not.toBeNull();
       expect(container.querySelector('[aria-label="Next match"]')).not.toBeNull();
       const close = container.querySelector<HTMLButtonElement>('[aria-label="Close find"]')!;
       await act(async () => close.click());
-      expect(await tooltipText(launcher())).toBe("Find in conversation");
+      // With no shortcut the name would only repeat the label, so no tooltip opens.
+      expect(launcher().getAttribute("aria-label")).toBe("Find in conversation");
+      expect(await tooltipText(launcher())).toBe("");
     } finally {
       await act(async () => root.unmount());
       container.remove();

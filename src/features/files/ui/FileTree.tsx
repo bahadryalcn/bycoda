@@ -1402,13 +1402,15 @@ function TreeChildren({
   return (
     <>
       {error ? (
-        <InlineError inset="row" className="break-words" style={pad} retry={{ onRetry }}>
-          {error}
-        </InlineError>
+        <div style={pad} className="min-w-0 break-words">
+          <InlineError inset="row" retry={{ onRetry }}>
+            {error}
+          </InlineError>
+        </div>
       ) : loading && entries === null ? (
-        <LoadingText inset="row" style={pad}>
-          {t("Loading…")}
-        </LoadingText>
+        <div style={pad}>
+          <LoadingText inset="row">{t("Loading…")}</LoadingText>
+        </div>
       ) : null}
       {!error && !loading && entries !== null && visible.length === 0 && !show ? (
         <Text
@@ -1434,19 +1436,11 @@ function TreeChildren({
       {files.map(renderNode)}
       {hidden > 0 ? (
         <Text as="p" size="caption" tone="secondary" className="flex gap-3 pr-2" style={pad}>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setLimit((n) => n + TREE_WINDOW_CHUNK)}
-          >
+          <Button size="sm" variant="ghost" onClick={() => setLimit((n) => n + TREE_WINDOW_CHUNK)}>
             {t("Show {p0} more…", { p0: Math.min(TREE_WINDOW_CHUNK, hidden) })}
           </Button>
           {hidden > TREE_WINDOW_CHUNK ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setLimit(Number.POSITIVE_INFINITY)}
-            >
+            <Button size="sm" variant="ghost" onClick={() => setLimit(Number.POSITIVE_INFINITY)}>
               {t("Show all {p0}", { p0: hidden })}
             </Button>
           ) : null}

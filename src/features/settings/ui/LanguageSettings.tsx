@@ -10,7 +10,13 @@ import {
   t,
   useLocale,
 } from "../../../shared/i18n";
-import { AdvancedSettings, Group, Row, Select, SettingsFeedback } from "../../../shared/ui/settings";
+import {
+  AdvancedSettings,
+  Group,
+  Row,
+  Select,
+  SettingsFeedback,
+} from "../../../shared/ui/settings";
 
 export function LanguageSettings() {
   useLocale();

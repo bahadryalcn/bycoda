@@ -20,15 +20,23 @@ export function UsageWindowStat({ window, now }: { window: RateLimitWindow; now:
   const shown = showRemaining ? 100 - pct : pct;
   const label = formatWindowLabel(window.windowMinutes);
   const valueText = rateLimitWindowTooltipWith(window, now, showRemaining, t, format);
-  const resetTime = window.resetsAt == null ? undefined : format.formatDate(window.resetsAt, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const resetTime =
+    window.resetsAt == null
+      ? undefined
+      : format.formatDate(window.resetsAt, {
+          hour: "numeric",
+          minute: "2-digit",
+        });
   const tone = pct >= 90 ? "danger" : pct >= 80 ? "warning" : "neutral";
   return (
     <Tooltip label={resetTime ? t("Resets at {p0}", { p0: resetTime }) : undefined}>
       <span className="inline-flex items-center gap-1.5 tabular-nums">
-        <Text aria-hidden="true" size="micro" tone="secondary" className="@max-[320px]/usage:hidden">
+        <Text
+          aria-hidden="true"
+          size="micro"
+          tone="secondary"
+          className="@max-[320px]/usage:hidden"
+        >
           {label} · {formatUsagePercent(shown)}
         </Text>
         <UsageMeter
@@ -45,7 +53,12 @@ export function UsageWindowStat({ window, now }: { window: RateLimitWindow; now:
           tone={tone}
         />
         {window.resetsAt != null ? (
-          <Text aria-hidden="true" size="inherit" tone="secondary" className="@max-[320px]/usage:hidden">
+          <Text
+            aria-hidden="true"
+            size="inherit"
+            tone="secondary"
+            className="@max-[320px]/usage:hidden"
+          >
             {formatResetDuration(window.resetsAt - now)}
           </Text>
         ) : null}

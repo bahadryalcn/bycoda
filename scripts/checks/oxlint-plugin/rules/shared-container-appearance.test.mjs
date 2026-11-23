@@ -135,7 +135,7 @@ test("shared-container-appearance covers aliases, namespaces and control slots",
       '    <UI.Select className="rounded-lg" />', // 12 flagged: namespace control
       '    <UI.Select className="grow" />', // 13 allowed
       '    <Action style={{ background: "red" }} />', // 14 flagged: paint key
-      '    <Action style={{ marginInlineStart: 8, flex: 1 }} />', // 15 allowed: layout keys
+      "    <Action style={{ marginInlineStart: 8, flex: 1 }} />", // 15 allowed: layout keys
       '    <Button className="p-9" />', // 16 allowed: local Button
       "  </>",
       ");",

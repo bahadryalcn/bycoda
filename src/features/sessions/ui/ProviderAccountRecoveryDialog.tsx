@@ -44,14 +44,9 @@ export function ProviderAccountRecoveryDialog({
       size="sm"
       onClose={onClose}
       footer={
-          <Button
-            variant="ghost"
-            type="button"
-            disabled={busy}
-            onClick={onManage}
-          >
-            {t("Manage accounts")}
-          </Button>
+        <Button variant="ghost" type="button" disabled={busy} onClick={onManage}>
+          {t("Manage accounts")}
+        </Button>
       }
     >
       <PickerList

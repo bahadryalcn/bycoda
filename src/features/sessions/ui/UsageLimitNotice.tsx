@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Alert } from "../../../shared/ui/Alert";
-import { Button } from "../../../shared/ui/Button";
-import type { NoticeAction } from "../../../shared/ui/Notice";
+import type { ReactNode } from "react";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { NoticeLink, type NoticeAction } from "../../../shared/ui/Notice";
+import { Text } from "../../../shared/ui/Text";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Gauge } from "../../../shared/ui/icons";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
@@ -20,6 +21,8 @@ export function UsageLimitNotice({
   onSwitchAccount,
   onSwitchModel,
   onDismiss,
+  details,
+  providerSummary,
 }: {
   limit: UsageLimit;
   /** Set for claude/codex; with `accountId`, other accounts can take over. */
@@ -32,6 +35,8 @@ export function UsageLimitNotice({
   /** Opens the composer's model picker to continue on another model. */
   onSwitchModel?: () => void;
   onDismiss?: () => void;
+  details?: ReactNode;
+  providerSummary?: string;
 }) {
   const t = useT();
   const format = useFormat();
@@ -55,7 +60,7 @@ export function UsageLimitNotice({
   const resetText = ready
     ? undefined
     : resetsAt == null
-      ? t("Reset time unknown")
+      ? (providerSummary ?? t("Reset time unknown"))
       : waiting
         ? t("Resets {p0}", { p0: formatUsageLimitResetWith(resetsAt, now, t, format) })
         : t("Limit has reset");
@@ -81,44 +86,47 @@ export function UsageLimitNotice({
     .join(" ");
 
   return (
-    <Alert
+    <InlineMessage
       data-usage-limit
-      actionsAlign="center"
       tone={ready ? "info" : "warning"}
-      // The failed turn's notice states the limit once; this strip only carries the reset and recovery.
-      title={ready ? t("Ready to continue") : undefined}
       icon={ready ? undefined : <Gauge className="icon-md" aria-hidden />}
       action={resume ?? (!ready ? switchModel : undefined)}
       secondaryAction={resume && !ready ? switchModel : undefined}
-      open={onDismiss ? true : undefined}
-      onDismiss={onDismiss}
-      dismissLabel={t("Dismiss usage limit notice")}
       extra={
-        !ready && ((provider && onSwitchAccount) || canChangeAutoResume) ? (
-          <>
-            {provider && onSwitchAccount ? (
-              <ProviderAccountMenu
-                variant="notice"
-                provider={provider}
-                accountId={accountId}
-                onSelect={onSwitchAccount}
-              />
-            ) : null}
-            {canChangeAutoResume ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => canChangeAutoResume(!limit.resumeAtReset)}
-              >
-                {limit.resumeAtReset ? t("Cancel auto-resume") : t("Resume at reset")}
-              </Button>
-            ) : null}
-          </>
-        ) : undefined
+        <>
+          {details}
+          {!ready && provider && onSwitchAccount ? (
+            <ProviderAccountMenu
+              variant="notice"
+              provider={provider}
+              accountId={accountId}
+              onSelect={onSwitchAccount}
+            />
+          ) : null}
+          {canChangeAutoResume ? (
+            <NoticeLink
+              action={{
+                label: limit.resumeAtReset ? t("Cancel auto-resume") : t("Resume at reset"),
+                onClick: () => canChangeAutoResume(!limit.resumeAtReset),
+              }}
+            />
+          ) : null}
+          {onDismiss ? (
+            <NoticeLink
+              action={{
+                label: t("Dismiss"),
+                ariaLabel: t("Dismiss usage limit notice"),
+                onClick: onDismiss,
+              }}
+            />
+          ) : null}
+        </>
       }
     >
-      {description}
-    </Alert>
+      <Text as="span" size="caption" tone="primary" weight="medium">
+        {ready ? t("Ready to continue") : t("Usage limit reached")}
+      </Text>
+      {description ? <> {description}</> : null}
+    </InlineMessage>
   );
 }

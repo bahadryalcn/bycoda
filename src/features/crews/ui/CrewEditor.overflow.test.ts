@@ -1,13 +1,12 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
-it("makes the truncated unfinished-additions note available on hover and keyboard focus", () => {
-  const source = readFileSync(new URL("./CrewEditor.tsx", import.meta.url), "utf8");
+it("shows the unfinished-additions note in full instead of truncating it behind a tooltip", () => {
+  const editor = readFileSync(new URL("./CrewEditor.tsx", import.meta.url), "utf8");
+  const table = readFileSync(new URL("./CrewMemberTable.tsx", import.meta.url), "utf8");
   const note = "Unfinished additions are kept until you add or discard them.";
-  const tooltip = [...source.matchAll(/<OverflowTooltip\b([\s\S]*?)<\/OverflowTooltip>/g)].find(
-    ([, content]) => content.includes(`label={t("${note}")}`),
-  );
 
-  expect(tooltip?.[1]).toMatch(/<Text\b[^>]*\btruncate\b[^>]*\btabIndex=\{0\}/);
-  expect(tooltip?.[1]).toContain(`{t("${note}")}`);
+  expect(editor).toContain(`t("${note}")`);
+  expect(table).toMatch(/unfinishedNote \? <Text as="p">\{unfinishedNote\}<\/Text>/);
+  expect(table).not.toMatch(/<OverflowTooltip[^>]*>\s*<Text[^>]*>\{unfinishedNote\}/);
 });

@@ -62,9 +62,6 @@
   overflow-y: auto;
   min-block-size: 0;
 }
-.item {
-  gap: 0;
-}
 .check {
   flex: none;
 }
@@ -112,12 +109,6 @@
   min-inline-size: 0;
   overflow-wrap: anywhere;
 }
-/* Reader-scoped markdown scale: note headings stay below the note title. */
-.markdown :is(h1, h2, h3, h4, h5, h6) {
-  font-size: var(--ui-font-body);
-  font-weight: 500;
-  line-height: 1.5;
-}
 
 .timeline {
   display: flex;
@@ -134,15 +125,11 @@
   padding-block: var(--ui-space-2);
   overflow-wrap: anywhere;
 }
-.entryTime {
-  font-variant-numeric: tabular-nums;
-  padding-block-start: 0;
-}
-
 .summary {
   display: flex;
   flex-direction: column;
   gap: var(--ui-space-2);
+  padding: var(--ui-space-3);
   max-inline-size: 48rem;
   margin-block-end: var(--ui-space-5);
 }

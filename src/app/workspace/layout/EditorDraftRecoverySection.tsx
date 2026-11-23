@@ -29,6 +29,7 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
   const [mode, setMode] = useState<"unsaved" | "all">("unsaved");
   const { refresh } = recovery;
   // Refresh when opening the recovery view so later captures appear automatically.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- refreshes the native draft journal when recovery opens
   useEffect(() => {
     void refresh().catch(console.error);
   }, [refresh]);
@@ -44,31 +45,33 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
     .sort((a, b) => b.updatedAt - a.updatedAt || a.path.localeCompare(b.path));
   return (
     <section className="recovery-pane" aria-label={t("File recovery copies")}>
-      {canFilter || scoped.length > 8 || query ? <div className="recovery-toolbar">
-        {canFilter ? (
-        <SegmentedControl
-          label={t("File recovery filters")}
-          value={mode}
-          onValueChange={(value) => setMode(value as "unsaved" | "all")}
-          options={[
-            { value: "unsaved", label: t("Unsaved drafts"), accessory: unsaved.length },
-            { value: "all", label: t("All copies"), accessory: candidates.length },
-          ]}
-        />
-        ) : null}
-        {scoped.length > 8 || query ? (
-        <SearchInputGroup appearance="field" className="recovery-toolbar-search">
-          <Search className="icon-sm shrink-0" aria-hidden="true" />
-          <SearchInput
-            focusOwner="group"
-            aria-label={t("Search file recovery copies")}
-            placeholder={t("Filter by file name or window")}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </SearchInputGroup>
-        ) : null}
-      </div> : null}
+      {canFilter || scoped.length > 8 || query ? (
+        <div className="recovery-toolbar">
+          {canFilter ? (
+            <SegmentedControl
+              label={t("File recovery filters")}
+              value={mode}
+              onValueChange={(value) => setMode(value as "unsaved" | "all")}
+              options={[
+                { value: "unsaved", label: t("Unsaved drafts"), accessory: unsaved.length },
+                { value: "all", label: t("All copies"), accessory: candidates.length },
+              ]}
+            />
+          ) : null}
+          {scoped.length > 8 || query ? (
+            <SearchInputGroup appearance="field" className="recovery-toolbar-search">
+              <Search className="icon-sm shrink-0" aria-hidden="true" />
+              <SearchInput
+                focusOwner="group"
+                aria-label={t("Search file recovery copies")}
+                placeholder={t("Filter by file name or window")}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </SearchInputGroup>
+          ) : null}
+        </div>
+      ) : null}
       {recovery.error ? (
         <InlineError retry={{ pending: recovery.loading, onRetry: () => void recovery.refresh() }}>
           {t("Couldn’t load file recovery copies")}
@@ -86,28 +89,23 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
               return (
                 <li key={key} className="flex flex-wrap items-start gap-2 py-2">
                   <div className="min-w-0 basis-48 flex-1">
-                    <Text
-                      as="p"
-                      size="secondary"
-                      tone="inherit"
-                      weight="medium"
-                      truncate
-                    >
+                    <Text as="p" size="secondary" tone="inherit" weight="medium" truncate>
                       {name}
                     </Text>
-                    <Text
-                      as="p"
-                      size="caption"
-                      tone="secondary"
-                    >
+                    <Text as="p" size="caption" tone="secondary">
                       <MiddleTruncate mode="path">{directory}</MiddleTruncate>
                     </Text>
                     <Text as="p" size="caption" tone="secondary">
-                      {row.state === "save-reported" || row.serializedTextDigest === row.baselineDigest ? (
+                      {row.state === "save-reported" ||
+                      row.serializedTextDigest === row.baselineDigest ? (
                         <Check
                           className="icon-xs me-(--ui-space-1) inline"
                           role="img"
-                          aria-label={row.state === "save-reported" ? t("Save reported") : t("Matches captured disk baseline")}
+                          aria-label={
+                            row.state === "save-reported"
+                              ? t("Save reported")
+                              : t("Matches captured disk baseline")
+                          }
                         />
                       ) : null}
                       {row.windowLabel} · {formatRelative(row.updatedAt, now)}

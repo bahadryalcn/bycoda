@@ -481,7 +481,7 @@ const WideRow = memo(function WideRow(props: RowProps & { columns: string; works
   const refs = useMemo(() => orderGraphRefs(row.refs, commit.head), [row.refs, commit.head]);
   const hover = useRowHoverCard(props);
   const button = rowButtonProps(props, hover);
-  const dim = isMergeCommit(commit) && row.kind !== "HEAD" ? "text-[var(--ui-text-secondary)]" : "";
+  const dim = isMergeCommit(commit) && row.kind !== "HEAD" ? "text-(--ui-text-secondary)" : "";
   return (
     <li
       className="min-w-0 overflow-visible [height:var(--layout-height)]"

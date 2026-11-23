@@ -216,7 +216,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
               className="flex min-w-0 flex-wrap items-center gap-2 py-2"
             >
               <div className={`min-w-0 flex-1 ${route.enabled ? "" : "opacity-60"}`}>
-                <Text as="div" size="secondary" tone="inherit" truncate className="font-mono">
+                <Text as="div" size="secondary" tone="inherit" family="mono" truncate>
                   {route.address}
                 </Text>
                 <Text as="div" tone="muted">

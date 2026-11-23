@@ -163,7 +163,7 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
           onDismiss={() => setAnchor(null)}
         >
           <div className={styles.details}>
-            <Text as="div" tone="inherit" leading="inherit" className={styles.header}>
+            <div className={styles.header}>
               <strong>{t("Quoted reply")}</strong>
               <Button
                 iconOnly
@@ -174,10 +174,12 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
               >
                 <X className="icon-sm" />
               </Button>
-            </Text>
-            <Text as="blockquote" size="secondary" leading="inherit" className={styles.quote}>
-              {citation.text}
-            </Text>
+            </div>
+            <blockquote className={styles.quote}>
+              <Text size="secondary" leading="inherit">
+                {citation.text}
+              </Text>
+            </blockquote>
             {citation.comment ? (
               <Text
                 as="p"

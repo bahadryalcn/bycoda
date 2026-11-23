@@ -7,7 +7,15 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useContext, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import {
   getHarnessAvailabilitySnapshot,
   isHarnessAvailable,
@@ -68,6 +76,7 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
 
   const autoCheck = useEffectEvent(() => void checkInstallation(false));
   // Refresh the installation and catalog when setup is shown.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- checks the installed CLI when the account settings are visible
   useEffect(() => {
     if (!embedded || expanded) autoCheck();
   }, [embedded, expanded]);

@@ -102,26 +102,26 @@ export function CrewCoordinatorSession({
     };
   }, [target.cwd, target.machineId, target.projectId, target.sessionId, revision, load]);
   const errorNotice = error ? (
-      <Alert
-        tone="danger"
-        action={{
-          label: t("Retry"),
-          onClick: () => {
-            setError(undefined);
-            if (error.action === "stop" && session)
-              void stop(session.id).catch((reason: unknown) => setError({ reason, action: "stop" }));
-            else setRevision(revision + 1);
-          },
-        }}
-      >
-        {presentWorkspaceActionError(
-          error.reason,
-          error.action === "stop"
-            ? t("Could not stop this conversation.")
-            : t("Could not open this conversation."),
-        )}
-      </Alert>
-    ) : null;
+    <Alert
+      tone="danger"
+      action={{
+        label: t("Retry"),
+        onClick: () => {
+          setError(undefined);
+          if (error.action === "stop" && session)
+            void stop(session.id).catch((reason: unknown) => setError({ reason, action: "stop" }));
+          else setRevision(revision + 1);
+        },
+      }}
+    >
+      {presentWorkspaceActionError(
+        error.reason,
+        error.action === "stop"
+          ? t("Could not stop this conversation.")
+          : t("Could not open this conversation."),
+      )}
+    </Alert>
+  ) : null;
   if (!loaded || !session) return errorNotice ?? <LoadingText>{t("Loading session…")}</LoadingText>;
   return (
     <>

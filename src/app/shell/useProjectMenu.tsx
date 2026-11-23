@@ -171,7 +171,9 @@ export function useProjectMenu({
 }: Options) {
   const t = useT();
   const projectMenuErrors = {
-    selectionChanged: t("Selection changed or a project is working. Close this dialog and review your selection."),
+    selectionChanged: t(
+      "Selection changed or a project is working. Close this dialog and review your selection.",
+    ),
     save: t("Could not save project changes. Try again."),
     privacy: t("Could not save group privacy. Please try again."),
   };
@@ -580,6 +582,7 @@ export function useProjectMenu({
         }}
         showActions={false}
         ariaLabel={t("Project actions")}
+        nameLabel={t("Project name")}
         compactAppearance
         appearanceItems={[{ id: "background", label: t("Background image"), icon: ImagePlus }]}
         leadingAction={
@@ -616,8 +619,18 @@ export function useProjectMenu({
                   label: t("Reorder"),
                   icon: ArrowUp,
                   submenu: [
-                    { kind: "item" as const, id: "move-project-up", label: t("Move up"), disabled: !projectMenu.move.up },
-                    { kind: "item" as const, id: "move-project-down", label: t("Move down"), disabled: !projectMenu.move.down },
+                    {
+                      kind: "item" as const,
+                      id: "move-project-up",
+                      label: t("Move up"),
+                      disabled: !projectMenu.move.up,
+                    },
+                    {
+                      kind: "item" as const,
+                      id: "move-project-down",
+                      label: t("Move down"),
+                      disabled: !projectMenu.move.down,
+                    },
                   ],
                 },
               ]
@@ -1171,7 +1184,8 @@ export function useProjectMenu({
             restoreFocus();
           }}
           onConfirm={async () => {
-            if (!groupRemovalValid(removingGroup)) throw new Error(projectMenuErrors.selectionChanged);
+            if (!groupRemovalValid(removingGroup))
+              throw new Error(projectMenuErrors.selectionChanged);
             const ordered = [...removingGroup.paths].sort(
               (a, b) =>
                 Number(sameProjectPath(a, activeProject ?? "")) -

@@ -192,7 +192,7 @@ export function SessionDiscussionPanel({
         {...sashProps}
         appearance="hidden"
         label={t("Resize discussion")}
-        className="absolute inset-y-0 -start-px"
+        className="absolute inset-y-0 start-0"
       />
       <PaneHeader
         titleAs="div"

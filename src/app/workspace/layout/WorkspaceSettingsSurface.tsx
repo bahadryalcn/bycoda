@@ -184,12 +184,12 @@ function WorkspaceSettingsSurfaceComponent({
           onClose={() => setWorktreeManagementRequest(null)}
         >
           <WorktreesPage
-              cwd={worktreeManagementRequest.cwd}
-              recents={visibleRecents}
-              liveSessions={sessions}
-              onRemove={onRemoveWorktree}
-              onCheckRemove={onCheckWorktreeRemoval}
-              onDeleteSessions={onDeleteWorktreeSessions}
+            cwd={worktreeManagementRequest.cwd}
+            recents={visibleRecents}
+            liveSessions={sessions}
+            onRemove={onRemoveWorktree}
+            onCheckRemove={onCheckWorktreeRemoval}
+            onDeleteSessions={onDeleteWorktreeSessions}
           />
         </Modal>
       ) : null}

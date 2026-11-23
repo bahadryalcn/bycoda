@@ -109,9 +109,7 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
             t("Invite the bot to each channel it should read with /invite."),
           ]}
         >
-          <Code variant="block">
-            {SLACK_BOT_SCOPES.join(" ")}
-          </Code>
+          <Code variant="block">{SLACK_BOT_SCOPES.join(" ")}</Code>
           <div className="integration-actions">
             <CopyButton label={t("Copy scopes")} text={SLACK_BOT_SCOPES.join(",")} />
           </div>

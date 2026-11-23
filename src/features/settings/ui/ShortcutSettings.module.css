@@ -23,7 +23,6 @@
 
 .summary {
   margin-inline-start: auto;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -40,10 +39,6 @@
   flex-direction: column;
   gap: 24px;
   min-inline-size: 0;
-}
-
-.groupCount {
-  font-variant-numeric: tabular-nums;
 }
 
 .editor {
@@ -93,7 +88,7 @@
   margin-inline-start: 8px;
 }
 
-.popover {
+.filterStack {
   display: grid;
   gap: 12px;
 }

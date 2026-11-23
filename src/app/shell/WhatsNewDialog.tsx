@@ -49,26 +49,35 @@ export function WhatsNewDialog({ version, onClose }: Props) {
       description={`${name} ${version}${date ? ` · ${date}` : ""}`}
       size="md"
       height={notes?.markdown ? "tall" : undefined}
-      footer={hasHighlights || releaseUrl ? (
-        <ModalActions>
-          {releaseUrl ? (
-            <Button variant="ghost" onClick={() => {
-              setLinkError(null);
-              void openExternal(releaseUrl).catch((error) => setLinkError(errorText(error)));
-            }}>
-              {t("View release on GitHub")}
-            </Button>
-          ) : null}
-          {hasHighlights ? (
-            <Button variant="primary" size="sm" onClick={() => {
-              onClose();
-              startTour("whats-new");
-            }}>
-              {t("Show me")}
-            </Button>
-          ) : null}
-        </ModalActions>
-      ) : undefined}
+      footer={
+        hasHighlights || releaseUrl ? (
+          <ModalActions>
+            {releaseUrl ? (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setLinkError(null);
+                  void openExternal(releaseUrl).catch((error) => setLinkError(errorText(error)));
+                }}
+              >
+                {t("View release on GitHub")}
+              </Button>
+            ) : null}
+            {hasHighlights ? (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  onClose();
+                  startTour("whats-new");
+                }}
+              >
+                {t("Show me")}
+              </Button>
+            ) : null}
+          </ModalActions>
+        ) : undefined
+      }
     >
       {linkError ? <InlineError>{linkError}</InlineError> : null}
       <WhatsNewBody version={version} />

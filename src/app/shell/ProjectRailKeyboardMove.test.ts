@@ -109,6 +109,12 @@ it("offers Move up/down in the project row menu, disabled at the list edge", asy
         }),
       );
     });
+    // Move up/down sit under one Reorder flyout.
+    act(() =>
+      [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((node) => node.textContent?.trim() === "Reorder")!
+        .click(),
+    );
     const item = (label: string) =>
       [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
         (node) => node.textContent?.trim() === label,
@@ -191,7 +197,7 @@ it("moves a project group with Alt+Arrow through the shared path and announces i
 it("moves a rail section with Alt+Arrow and its menu, announcing the section by name", async () => {
   await withGroupsRail(({ container }) => {
     const header = (name: string) =>
-      [...container.querySelectorAll<HTMLElement>('[title="Drag to reorder"]')].find((node) =>
+      [...container.querySelectorAll<HTMLElement>('[data-rail-section-header]')].find((node) =>
         node.textContent?.trim().startsWith(name),
       )!;
     const order = () =>

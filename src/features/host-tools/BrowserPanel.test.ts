@@ -1210,8 +1210,9 @@ it("blocks duplicate requests before React paints the busy state", async () => {
     button("Claim control").click();
     button("Claim control").click();
   });
-  expect(vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.claim"))
-    .toHaveLength(1);
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.claim"),
+  ).toHaveLength(1);
   await act(async () => finish({ open: true, url: "https://example.test", controlling: true }));
 });
 it("shows an unavailable state and recovers through retry when the initial host read fails", async () => {

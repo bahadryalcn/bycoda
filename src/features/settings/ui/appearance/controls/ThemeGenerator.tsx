@@ -359,40 +359,40 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
         </div>
         <Disclosure summary={t("Options")} size="sm" className="theme-generator-options">
           <div className="theme-generator-config">
-          <Suspense fallback={<LoadingText />}>
-            <ModelPicker
-              harness={choice.harness}
-              model={choice.model}
-              values={choice.modelSettings ?? {}}
-              accountId={choice.providerAccountId}
-              accountChoices
-              allowedHarnesses={HARNESSES.filter(canRunHarnessTextPrompt)}
-              onChange={(harness, model, accountId) => {
-                setChoice({
-                  ...choice,
-                  harness,
-                  model,
-                  modelSettings: defaultModelSettings(resolveModel(harness, model)),
-                  // The Host runs the prompt under this bycoda account; without one it would use
-                  // the provider's own default login, which may be signed out.
-                  providerAccountId: supportsProviderAccounts(harness)
-                    ? (accountId ?? defaultProviderAccountId(harness))
-                    : undefined,
-                });
-              }}
-              onSettingsChange={(modelSettings) => {
-                setChoice({ ...choice, modelSettings });
+            <Suspense fallback={<LoadingText />}>
+              <ModelPicker
+                harness={choice.harness}
+                model={choice.model}
+                values={choice.modelSettings ?? {}}
+                accountId={choice.providerAccountId}
+                accountChoices
+                allowedHarnesses={HARNESSES.filter(canRunHarnessTextPrompt)}
+                onChange={(harness, model, accountId) => {
+                  setChoice({
+                    ...choice,
+                    harness,
+                    model,
+                    modelSettings: defaultModelSettings(resolveModel(harness, model)),
+                    // The Host runs the prompt under this bycoda account; without one it would use
+                    // the provider's own default login, which may be signed out.
+                    providerAccountId: supportsProviderAccounts(harness)
+                      ? (accountId ?? defaultProviderAccountId(harness))
+                      : undefined,
+                  });
+                }}
+                onSettingsChange={(modelSettings) => {
+                  setChoice({ ...choice, modelSettings });
+                }}
+              />
+            </Suspense>
+            <ImageProviderButton
+              value={withImage ? imageProvider : "none"}
+              onChange={(value) => {
+                if (value === "none") session.invalidateImageIntent();
+                setWithImage(value !== "none");
+                if (value !== "none") setImageProvider(value);
               }}
             />
-          </Suspense>
-          <ImageProviderButton
-            value={withImage ? imageProvider : "none"}
-            onChange={(value) => {
-              if (value === "none") session.invalidateImageIntent();
-              setWithImage(value !== "none");
-              if (value !== "none") setImageProvider(value);
-            }}
-          />
           </div>
         </Disclosure>
         <div className="theme-generator-actions">

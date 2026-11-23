@@ -58,10 +58,6 @@
 .note[data-timed] {
   grid-template-columns: 3rem minmax(0, 1fr);
 }
-.noteTime {
-  font-variant-numeric: tabular-nums;
-}
-
 .noteText {
   min-inline-size: 0;
   overflow: hidden;

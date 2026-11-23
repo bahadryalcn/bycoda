@@ -293,9 +293,7 @@ export function MachineForm({
       {error && (
         <Alert
           tone="danger"
-          extra={
-            errorCause ? <ErrorDetails title={errorReason} detail={errorCause} /> : undefined
-          }
+          extra={errorCause ? <ErrorDetails title={errorReason} detail={errorCause} /> : undefined}
         >
           {errorReason}
         </Alert>

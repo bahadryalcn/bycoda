@@ -173,7 +173,7 @@ function GitFeedbackContent({
               </Text>
             ) : null}
             {branchInWorktree ? (
-              <Text as="p" size="inherit" tone="secondary" className="[margin-block-start:0.25rem]">
+              <Text as="p" size="inherit" tone="secondary" className="mt-1">
                 {t(
                   "This branch is in use by a worktree. Delete the worktree first, then delete the branch.",
                 )}

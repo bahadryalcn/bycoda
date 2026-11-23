@@ -161,10 +161,7 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
       </Group>
       {/* File, explorer and editor behavior read as one task; tool visibility is its own group below. */}
       {children}
-      <Group
-        title={t("Workspace tools")}
-        info={<WorkspaceToolsHelp />}
-      >
+      <Group title={t("Workspace tools")} info={<WorkspaceToolsHelp />}>
         <WorkspaceFeatureSettings />
         <Row
           id="working-agents"

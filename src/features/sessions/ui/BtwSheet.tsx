@@ -561,7 +561,7 @@ export function BtwSheet({
                   selected={selected}
                   {...surfaceAttributes(
                     { radius: "row" },
-                    "flex max-w-[15rem] shrink-0 items-center",
+                    "flex max-w-60 shrink-0 items-center",
                   )}
                 >
                   <Tab value={tab.id} tooltip={tab.question} className="min-w-0">

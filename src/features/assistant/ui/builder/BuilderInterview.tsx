@@ -1,4 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
@@ -68,7 +68,7 @@ export function BuilderInterview({
     }
   };
   return (
-    <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.stage}>
+    <div {...textAttributes({ size: "inherit", tone: "inherit", leading: "normal" }, styles.stage)}>
       {controls && <div className={styles.interviewControls}>{controls}</div>}
       <div className={styles.chat} role="log" aria-label={t("Interview")}>
         {transcript.map((turn, index) => (
@@ -149,6 +149,6 @@ export function BuilderInterview({
           />
         }
       />
-    </Text>
+    </div>
   );
 }

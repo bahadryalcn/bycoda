@@ -74,7 +74,9 @@ it("saves metadata when a field is left, once per change, and reports a failed w
 it("saves the favorite flag as soon as it flips", async () => {
   vi.mocked(updateServerMetadata).mockResolvedValue(undefined);
   await act(async () => root.render(createElement(ServerOrganization, { server, expanded: true })));
-  await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  await act(async () =>
+    container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
+  );
   expect(updateServerMetadata).toHaveBeenCalledWith("server-1", {
     group: "",
     tags: [],

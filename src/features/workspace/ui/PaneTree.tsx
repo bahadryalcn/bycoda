@@ -742,70 +742,70 @@ function PaneTreeComponent({
                   )}
                 >
                   <div className="min-w-0 flex-1">
-                <Tabs value={leaf.id} onValueChange={onFocus} panels="none">
-                  <TabList label={t("Pane sessions")} scroll="auto" className="shrink-0">
-                    {leaf.tabIds.map((id) => (
-                      <Tab
-                        key={id}
-                        value={id}
-                        type="button"
-                        data-pane-tab-id={id}
-                        truncate
-                        className="relative max-w-48 shrink-0"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          onFocus(id);
-                        }}
-                        onKeyDown={(event) => {
-                          // Plain arrows, Home and End are the shared tab list's; Alt+Shift moves the pane.
-                          const delta =
-                            event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
-                          if (!event.altKey || !event.shiftKey || !delta) return;
-                          const ids = leaf.tabIds!;
-                          event.preventDefault();
-                          event.stopPropagation();
-                          const to = ids[(ids.indexOf(id) + delta + ids.length) % ids.length];
-                          onMovePane(id, to, "center", delta < 0 ? "before" : "after");
-                        }}
-                        onPointerDown={startPaneDrag}
-                        tooltip={
-                          sessionById.get(id)?.title ||
-                          editorPanes
-                            .find((pane) => pane.id === id)
-                            ?.files[0]?.path.split(/[\\/]/)
-                            .pop() ||
-                          t("Session")
-                        }
-                        tooltipWhen="overflow"
-                      >
-                        {sessionById.get(id)?.title ||
-                          editorPanes
-                            .find((pane) => pane.id === id)
-                            ?.files[0]?.path.split(/[\\/]/)
-                            .pop() ||
-                          t("Session")}
-                        {drop?.overId === id && drop.tabPosition ? (
-                          <span
-                            data-pane-tab-drop={drop.tabPosition}
-                            {...surfaceAttributes(
-                              {
-                                radius: "pill",
-                                variant: drop.invalid ? "drop-blocked" : "drop-line",
-                              },
-                              `pointer-events-none absolute inset-y-0 w-(--ui-drop-line-size) ${drop.tabPosition === "before" ? "start-0" : "end-0"}`,
-                            )}
-                          />
-                        ) : null}
-                      </Tab>
-                    ))}
-                  </TabList>
-                </Tabs>
+                    <Tabs value={leaf.id} onValueChange={onFocus} panels="none">
+                      <TabList label={t("Pane sessions")} scroll="auto" className="shrink-0">
+                        {leaf.tabIds.map((id) => (
+                          <Tab
+                            key={id}
+                            value={id}
+                            type="button"
+                            data-pane-tab-id={id}
+                            truncate
+                            className="relative max-w-48 shrink-0"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              onFocus(id);
+                            }}
+                            onKeyDown={(event) => {
+                              // Plain arrows, Home and End are the shared tab list's; Alt+Shift moves the pane.
+                              const delta =
+                                event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+                              if (!event.altKey || !event.shiftKey || !delta) return;
+                              const ids = leaf.tabIds!;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              const to = ids[(ids.indexOf(id) + delta + ids.length) % ids.length];
+                              onMovePane(id, to, "center", delta < 0 ? "before" : "after");
+                            }}
+                            onPointerDown={startPaneDrag}
+                            tooltip={
+                              sessionById.get(id)?.title ||
+                              editorPanes
+                                .find((pane) => pane.id === id)
+                                ?.files[0]?.path.split(/[\\/]/)
+                                .pop() ||
+                              t("Session")
+                            }
+                            tooltipWhen="overflow"
+                          >
+                            {sessionById.get(id)?.title ||
+                              editorPanes
+                                .find((pane) => pane.id === id)
+                                ?.files[0]?.path.split(/[\\/]/)
+                                .pop() ||
+                              t("Session")}
+                            {drop?.overId === id && drop.tabPosition ? (
+                              <span
+                                data-pane-tab-drop={drop.tabPosition}
+                                {...surfaceAttributes(
+                                  {
+                                    radius: "pill",
+                                    variant: drop.invalid ? "drop-blocked" : "drop-line",
+                                  },
+                                  `pointer-events-none absolute inset-y-0 w-(--ui-drop-line-size) ${drop.tabPosition === "before" ? "start-0" : "end-0"}`,
+                                )}
+                              />
+                            ) : null}
+                          </Tab>
+                        ))}
+                      </TabList>
+                    </Tabs>
                   </div>
                   {maximizeButton ? <span className="shrink-0 px-1">{maximizeButton}</span> : null}
                 </div>
               ) : maximizeButton ? (
                 // A single-session pane has no header row of its own; the button floats at its end.
-                <span className="absolute [inset-block-start:0.25rem] end-2 z-1">
+                <span className="absolute top-1 end-2 z-1">
                   {maximizeButton}
                 </span>
               ) : null}

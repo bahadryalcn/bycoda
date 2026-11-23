@@ -1343,7 +1343,12 @@ it("edits an existing goal on its own host without replanning", async () => {
     container.querySelector<HTMLButtonElement>('button[aria-label="Edit epic settings"]')!.click(),
   );
   const form = document.querySelector<HTMLFormElement>('form[aria-label="Edit epic settings"]')!;
-  expect(form.textContent).toContain(
+  // The delivery caveat sits behind the epic-settings info popover, not in the form body.
+  expect(form.textContent).not.toContain("Delivery requires approval");
+  await act(async () =>
+    form.querySelector<HTMLElement>('button[aria-label="About epic settings"]')!.click(),
+  );
+  expect(document.body.textContent).toContain(
     "Delivery requires approval of the reviewed source and target.",
   );
   await act(async () => checkboxNamed(form, "Merge automatically").click());
@@ -1898,12 +1903,12 @@ it("shows new review notes and saves read/fixed states while opening the source 
   });
   expect(card("Ship the report").querySelector('[aria-label="1 new review note"]')).toBeNull();
   await act(async () => button(notes, "Mark fixed")!.click());
-  expect(notes.textContent).toContain("0 open");
+  expect(notes.querySelector('[aria-label="0 open"]')).not.toBeNull();
   expect(
     card("Ship the report").closest("[data-task-column]")!.getAttribute("data-task-column"),
   ).toBe("blocked");
   await act(async () => button(notes, "Reopen note")!.click());
-  expect(notes.textContent).toContain("1 open");
+  expect(notes.querySelector('[aria-label="1 open"]')).not.toBeNull();
   expect(
     requests
       .filter((request) => request.method === "tasks.notes.resolve")

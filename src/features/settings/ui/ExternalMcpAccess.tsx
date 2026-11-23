@@ -203,16 +203,18 @@ function CreateToken({
       }
     >
       {secret ? (
-        <Text as="div" size="secondary" tone="inherit" leading="inherit" className={styles.stack}>
-          <p>{t("Copy this token now. It will not be shown again.")}</p>
-          <TextField
-            ref={tokenField}
-            label={t("Token")}
-            value={secret}
-            readOnly
-            autoComplete="off"
-            spellCheck={false}
-          />
+        <Text as="div" size="secondary" tone="inherit" leading="inherit">
+          <div className={styles.stack}>
+            <p>{t("Copy this token now. It will not be shown again.")}</p>
+            <TextField
+              ref={tokenField}
+              label={t("Token")}
+              value={secret}
+              readOnly
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
         </Text>
       ) : (
         <Text
@@ -222,9 +224,9 @@ function CreateToken({
           leading="inherit"
           id={formId}
           onSubmit={(event) => void submit(event)}
-          className={styles.stack}
           aria-busy={busy}
         >
+          <div className={styles.stack}>
           <TextField
             ref={nameField}
             label={t("Token name")}
@@ -264,12 +266,7 @@ function CreateToken({
                   onChange={(value) => setModes((current) => ({ ...current, [group]: value }))}
                 />
                 {group === "runtime-logs" ? (
-                  <Text
-                    as="p"
-                    size="caption"
-                    tone="secondary"
-                    leading="inherit"
-                  >
+                  <Text as="p" size="caption" tone="secondary" leading="inherit">
                     {t("Runtime logs are read-only.")}
                   </Text>
                 ) : null}
@@ -289,6 +286,7 @@ function CreateToken({
             />
           </Disclosure>
           {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
+          </div>
         </Text>
       )}
     </Modal>
@@ -474,7 +472,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                 size="caption"
                 tone="secondary"
                 leading="inherit"
-                className={styles.count}
+                className={`${styles.count} tabular-nums`}
                 role="status"
               >
                 {t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}
@@ -500,9 +498,9 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       {!loading && !!data?.tokens.length && shownTokens.length === 0 ? (
         <EmptyState size="inline" inset="row" description={t("No tokens match your filters.")} />
       ) : null}
-      <ScrollArea axis="both" gutter="stable" className={styles.list}>
+      <ScrollArea axis="both" gutter="stable" className="grid max-h-80 empty:hidden">
         {shownTokens.map((grant) => (
-          <ActionHost key={grant.id} variant="settings" separator className={styles.row}>
+          <ActionHost key={grant.id} variant="settings" separator>
             <div className={styles.identity}>
               <span>{grant.name}</span>
               <Text size="caption" tone="secondary" leading="inherit">
@@ -573,7 +571,8 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           kind="dialog"
           aria-label={t("MCP connection examples")}
         >
-          <Text as="div" tone="primary" leading="inherit" className={styles.help}>
+          <Text as="div" tone="primary" leading="inherit">
+            <div className={styles.help}>
             <p>
               {t(
                 "Set BYCODA_MCP_TOKEN in the client environment, then restart the client. Keep it out of URLs and configuration files.",
@@ -594,6 +593,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
               {examples.codex}
             </OutputBlock>
             <CopyButton text={examples.codex} label={t("Copy Codex example")} />
+            </div>
           </Text>
         </Popover>
       )}

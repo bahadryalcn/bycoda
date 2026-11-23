@@ -964,7 +964,10 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
         path: join(output, `automation-review-${theme}-${width}.png`),
       });
-      await review.locator("summary").filter({ hasText: /^Limits$/ }).click();
+      await review
+        .locator("summary")
+        .filter({ hasText: /^Limits$/ })
+        .click();
       await review
         .getByRole("spinbutton", { name: "Run time limit (minutes)", exact: true })
         .fill("45");
@@ -1330,7 +1333,9 @@ for (const theme of ["light", "dark"])
       );
       const card = page.getByRole("region", { name: "While you were away", exact: true });
       await expect(card.getByRole("button", { name: "Listen", exact: true })).toHaveCount(0);
-      await expect(card.getByRole("button", { name: "Choose language", exact: true })).toBeVisible();
+      await expect(
+        card.getByRole("button", { name: "Choose language", exact: true }),
+      ).toBeVisible();
       await page.screenshot({
         animations: "disabled",
         path: join(output, `unknown-language-${theme}-${width}.png`),

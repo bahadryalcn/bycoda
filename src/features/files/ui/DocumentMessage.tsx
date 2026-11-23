@@ -43,7 +43,11 @@ export function DocumentMessage({
           title={title}
           description={
             children ??
-            (direct ? raw : raw ? errorHeadline(raw) : t("The file could not be read; it may be corrupt."))
+            (direct
+              ? raw
+              : raw
+                ? errorHeadline(raw)
+                : t("The file could not be read; it may be corrupt."))
           }
           error={direct ? undefined : raw}
           onRetry={onRetry}

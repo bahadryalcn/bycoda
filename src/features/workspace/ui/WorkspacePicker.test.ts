@@ -146,7 +146,7 @@ it("links the actual listbox while Existing worktree is open", async () => {
   expect(change).not.toHaveBeenCalled();
 });
 
-it("opens Existing worktree only on click, never on hover", async () => {
+it("opens Existing worktree on mouse movement without moving focus", async () => {
   await act(async () =>
     root.render(
       createElement(WorkspacePicker, {
@@ -163,10 +163,19 @@ it("opens Existing worktree only on click, never on hover", async () => {
   const row = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === "Existing worktree…",
   )!;
-  await act(async () => {
-    row.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-  });
   expect(row.hasAttribute("aria-controls")).toBe(false);
-  await act(async () => row.click());
+  const before = document.activeElement;
+  await act(async () => {
+    row.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        pointerType: "mouse",
+        clientX: 24,
+        clientY: 48,
+      }),
+    );
+  });
   expect(row.hasAttribute("aria-controls")).toBe(true);
+  expect(document.activeElement).toBe(before);
+  expect(change).not.toHaveBeenCalled();
 });

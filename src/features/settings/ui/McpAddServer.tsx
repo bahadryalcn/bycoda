@@ -206,7 +206,9 @@ export function AddServerModal({
         [
           machineName ? t("Save on {p0}", { p0: machineName }) : null,
           scope === "user" ? null : t("Selected project: {p0}", { p0: cwd }),
-        ].filter(Boolean).join(" · ") || undefined
+        ]
+          .filter(Boolean)
+          .join(" · ") || undefined
       }
       onClose={() => {
         if (!adding.current) onClose();

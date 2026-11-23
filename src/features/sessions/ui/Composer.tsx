@@ -423,6 +423,9 @@ type Props = {
   /** Model and settings of the turn in progress; queued rows saved for another one cannot steer it. */
   runningModelTarget?: ModelTarget;
   usageLimit?: UsageLimit;
+  /** Recovery lives with the transcript failure when that block is available. */
+  usageLimitInTranscript?: boolean;
+  modelPickerOpenRequest?: number;
   hotkeys?: boolean;
   onFocus: () => void;
   onCwdChange: (cwd: string) => void;
@@ -627,6 +630,8 @@ export const Composer = memo(function Composer({
   queueStatus,
   runningModelTarget,
   usageLimit,
+  usageLimitInTranscript,
+  modelPickerOpenRequest,
   onFocus,
   onCwdChange,
   onBranchChange,
@@ -3423,7 +3428,10 @@ export const Composer = memo(function Composer({
           enabled={enabled}
         />
       ) : null}
-      {draftWorkspace && workspaceCreationError && (hideTopBar || hideBranchPicker) ? (
+      {hasProject &&
+      draftWorkspace &&
+      workspaceCreationError &&
+      (hideTopBar || hideBranchPicker) ? (
         <div className="px-3 py-2">
           <WorkspaceCreationStatus
             pending={false}
@@ -3484,7 +3492,7 @@ export const Composer = memo(function Composer({
       ) : null}
       <ComposerNotices
         leading={notices}
-        usageLimit={usageLimit}
+        usageLimit={usageLimitInTranscript ? undefined : usageLimit}
         accountProvider={accountProvider}
         providerAccountId={providerAccountId}
         guard={(run) => mutateParentInput(parentChanged, run)}
@@ -4038,7 +4046,7 @@ export const Composer = memo(function Composer({
                     compactIdentity
                     showEffortSummary
                     hotkeys={hotkeys && enabled}
-                    openRequest={modelPickerRequest}
+                    openRequest={(modelPickerOpenRequest ?? 0) + modelPickerRequest}
                     closeOnPick={Boolean(usageLimit)}
                     accountId={providerAccountId}
                     accountChoices={Boolean(onSelectProviderAccount)}

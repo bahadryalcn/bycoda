@@ -115,13 +115,12 @@ it("shows Grok limits only within its provider and account filters", () => {
   }
 });
 
-it("shows a known reset day and time as visible semantic text", () => {
+it("shows a known reset as a visible countdown, with the exact time left to its tooltip", () => {
   const resetsAt = Date.UTC(2027, 2, 19, 14, 35, 0);
   limits.session.resetsAt = resetsAt;
   try {
     const markup = renderToStaticMarkup(createElement(UsagePage));
-    expect(markup).toContain(`dateTime="${new Date(resetsAt).toISOString()}"`);
-    expect(markup).toMatch(/<time[^>]*>[^<]*2027[^<]*<\/time>/);
+    expect(markup).toMatch(/Resets in \d+d/);
     expect(markup).not.toContain("Reset time unavailable");
     expect(markup).toContain('aria-label="Default account · 5 hours · left"');
   } finally {

@@ -240,10 +240,7 @@ export function TaskDetail({
                   <HarnessIcon harness={task.harness} className="icon-sm mr-1 inline shrink-0" />
                   {task.modelChoice && task.modelChoice.kind !== "fixed" ? (
                     <>
-                      <TaskModelChoiceLabel
-                        choice={task.modelChoice}
-                        machineId={task.machineId}
-                      />{" "}
+                      <TaskModelChoiceLabel choice={task.modelChoice} machineId={task.machineId} />{" "}
                       ·{" "}
                     </>
                   ) : null}

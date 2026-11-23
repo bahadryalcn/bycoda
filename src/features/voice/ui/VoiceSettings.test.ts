@@ -70,7 +70,6 @@ it.each(["voice-wake-phrase", "voice-sleep-phrase"])(
     await setup(false);
     const row = (id: string) => container.querySelector(`[data-setting-id="${id}"]`)!;
     const wake = row("voice-wake").querySelector<HTMLButtonElement>('[role="switch"]')!;
-    const companion = row("voice-companion").querySelector<HTMLButtonElement>('[role="switch"]')!;
     expect(wake.disabled || wake.getAttribute("aria-disabled") === "true").toBe(true);
     expect(row("voice-companion").parentElement).toBe(row("voice-wake").parentElement);
 
@@ -79,21 +78,16 @@ it.each(["voice-wake-phrase", "voice-sleep-phrase"])(
         createElement(RevealedSetting.Provider, { value: target }, createElement(VoiceSettings)),
       ),
     );
-    const followPrerequisite = async () =>
-      act(async () => row(target).querySelector<HTMLButtonElement>("button")!.click());
-    await followPrerequisite();
-    expect(document.activeElement?.getAttribute("aria-label")).toBe(
-      companion.getAttribute("aria-label"),
-    );
+    // The revealed phrase row is a dimmed placeholder with one stated reason; nothing is changed for the owner.
+    expect(row(target).querySelector("input")).toBeNull();
+    expect(row(target).querySelector("button")).toBeNull();
     expect(loadVoiceSettings().enabled).toBe(false);
 
     await act(async () =>
       row("voice-companion").querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
     );
-    await followPrerequisite();
-    expect(document.activeElement?.getAttribute("aria-label")).toBe(
-      wake.getAttribute("aria-label"),
-    );
+    expect(loadVoiceSettings().enabled).toBe(true);
+    expect(row(target).querySelector("input")).toBeNull();
     expect(loadVoiceSettings().wakeEnabled).not.toBe(true);
 
     await act(async () =>

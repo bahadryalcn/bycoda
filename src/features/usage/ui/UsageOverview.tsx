@@ -12,7 +12,7 @@ import {
   type CSSProperties,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { formatDate, t, useLocale } from "../../../shared/i18n";
+import { dateTimeFormat, formatDate, t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -495,7 +495,10 @@ export function UsageOverview({
                     {
                       ...row,
                       key: `${row.key}:${turn.startedAt}:${index}`,
-                      label: formatDate(turn.startedAt, { dateStyle: "short", timeStyle: "medium" }),
+                      label: dateTimeFormat(locale, {
+                        dateStyle: "short",
+                        timeStyle: "medium",
+                      }).format(turn.startedAt),
                       duration: row.timedTurns ? row.duration : null,
                       cost: row.meteredTurns > row.unpricedTurns ? row.cost : null,
                       tokens: row.meteredTurns ? row.tokens : null,
@@ -795,115 +798,119 @@ export function UsageOverview({
                 : {})}
             />
           ) : null}
-          {isEmptyPeriod ? null : view === "overview" && (
-            <>
-              <div className="usage-metrics">
-                {(
-                  [
-                    "cost",
-                    "tokens",
-                    "duration",
-                    ...(showDetails ? ["input", "output", "cacheRead", "cacheWrite"] : []),
-                  ] as UsageMetric[]
-                ).map((key) => {
-                  const previousValue = previousTotals[key];
-                  const change =
-                    key !== "duration" &&
-                    preset !== "all" &&
-                    previousValue > 0 &&
-                    !load.failed &&
-                    (key !== "cost" || (!unpriced.length && previous.every((s) => s.priced)))
-                      ? ((totals[key] - previousValue) / previousValue) * 100
-                      : null;
-                  return (
-                    <div key={key}>
-                      <Button
-                        variant="link"
-                        selected={metric === key}
-                        onClick={() => setMetric(key)}
-                      >
-                        {t(metricNames[key])}
-                      </Button>
-                      <Text
-                        as="strong"
-                        size="heading"
-                        tone="primary"
-                        weight="medium"
-                        leading="inherit"
-                      >
-                        {!load.refreshedAt ||
-                        (key !== "duration" && !!load.error && !filtered.length) ||
-                        (key === "duration" && load.turns === null) ||
-                        (key === "cost" && unpriced.length > 0 && pricedTokens === 0)
-                          ? "—"
-                          : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`}
-                      </Text>
-                      {/* One subline at most: the change against the previous period. What the numbers
+          {isEmptyPeriod
+            ? null
+            : view === "overview" && (
+                <>
+                  <div className="usage-metrics">
+                    {(
+                      [
+                        "cost",
+                        "tokens",
+                        "duration",
+                        ...(showDetails ? ["input", "output", "cacheRead", "cacheWrite"] : []),
+                      ] as UsageMetric[]
+                    ).map((key) => {
+                      const previousValue = previousTotals[key];
+                      const change =
+                        key !== "duration" &&
+                        preset !== "all" &&
+                        previousValue > 0 &&
+                        !load.failed &&
+                        (key !== "cost" || (!unpriced.length && previous.every((s) => s.priced)))
+                          ? ((totals[key] - previousValue) / previousValue) * 100
+                          : null;
+                      return (
+                        <div key={key}>
+                          <Button
+                            variant="link"
+                            selected={metric === key}
+                            onClick={() => setMetric(key)}
+                          >
+                            {t(metricNames[key])}
+                          </Button>
+                          <Text
+                            as="strong"
+                            size="heading"
+                            tone="primary"
+                            weight="medium"
+                            leading="inherit"
+                          >
+                            {!load.refreshedAt ||
+                            (key !== "duration" && !!load.error && !filtered.length) ||
+                            (key === "duration" && load.turns === null) ||
+                            (key === "cost" && unpriced.length > 0 && pricedTokens === 0)
+                              ? "—"
+                              : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`}
+                          </Text>
+                          {/* One subline at most: the change against the previous period. What the numbers
                           are ("API-equivalent, not billed", elapsed time) is stated in the data notes. */}
-                      {key === "cost" && (!totals.tokens || pricedTokens < totals.tokens) ? (
-                        <Text as="small" size="caption" tone="secondary" leading="inherit">
-                          {`${t("Priced token coverage")}: ${
-                            totals.tokens
-                              ? formatUsagePercent((pricedTokens / totals.tokens) * 100)
-                              : "—"
-                          }`}
+                          {key === "cost" && (!totals.tokens || pricedTokens < totals.tokens) ? (
+                            <Text as="small" size="caption" tone="secondary" leading="inherit">
+                              {`${t("Priced token coverage")}: ${
+                                totals.tokens
+                                  ? formatUsagePercent((pricedTokens / totals.tokens) * 100)
+                                  : "—"
+                              }`}
+                            </Text>
+                          ) : change != null ? (
+                            <Text as="small" size="caption" tone="secondary" leading="inherit">
+                              {t("{p0} vs previous period", {
+                                p0: `${change >= 0 ? "+" : ""}${formatUsagePercent(change)}`,
+                              })}
+                            </Text>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <Disclosure
+                    size="sm"
+                    className="usage-details-disclosure"
+                    summary={t("Usage details")}
+                    open={showDetails}
+                    onOpenChange={setShowDetails}
+                  >
+                    <Text
+                      as="div"
+                      size="caption"
+                      tone="secondary"
+                      leading="inherit"
+                      className="usage-facts"
+                    >
+                      <span>
+                        {t("Cache hit rate")}{" "}
+                        <Text as="b" size="inherit" tone="primary" weight="medium">
+                          {inputTotal
+                            ? formatUsagePercent((totals.cacheRead / inputTotal) * 100)
+                            : "—"}
                         </Text>
-                      ) : change != null ? (
-                        <Text as="small" size="caption" tone="secondary" leading="inherit">
-                          {t("{p0} vs previous period", {
-                            p0: `${change >= 0 ? "+" : ""}${formatUsagePercent(change)}`,
-                          })}
+                      </span>
+                      <span>
+                        {t("Cache savings")}{" "}
+                        <Text as="b" size="inherit" tone="primary" weight="medium">
+                          {unpriced.length ? "≥ " : ""}
+                          {formatMetric(cacheSavings, "cost")}
                         </Text>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-              <Disclosure
-                size="sm"
-                className="usage-details-disclosure"
-                summary={t("Usage details")}
-                open={showDetails}
-                onOpenChange={setShowDetails}
-              >
-                <Text
-                  as="div"
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                  className="usage-facts"
-                >
-                  <span>
-                    {t("Cache hit rate")}{" "}
-                    <Text as="b" size="inherit" tone="primary" weight="medium">
-                      {inputTotal ? formatUsagePercent((totals.cacheRead / inputTotal) * 100) : "—"}
+                      </span>
+                      <span>
+                        {t("Active days")}{" "}
+                        <Text as="b" size="inherit" tone="primary" weight="medium">
+                          {activeDays}
+                        </Text>
+                      </span>
+                      <span>
+                        {t("Cost per active day")}{" "}
+                        <Text as="b" size="inherit" tone="primary" weight="medium">
+                          {activeDays
+                            ? `${unpriced.length ? "≥ " : ""}${formatMetric(totals.cost / activeDays, "cost")}`
+                            : "—"}
+                        </Text>
+                      </span>
                     </Text>
-                  </span>
-                  <span>
-                    {t("Cache savings")}{" "}
-                    <Text as="b" size="inherit" tone="primary" weight="medium">
-                      {unpriced.length ? "≥ " : ""}
-                      {formatMetric(cacheSavings, "cost")}
-                    </Text>
-                  </span>
-                  <span>
-                    {t("Active days")}{" "}
-                    <Text as="b" size="inherit" tone="primary" weight="medium">
-                      {activeDays}
-                    </Text>
-                  </span>
-                  <span>
-                    {t("Cost per active day")}{" "}
-                    <Text as="b" size="inherit" tone="primary" weight="medium">
-                      {activeDays
-                        ? `${unpriced.length ? "≥ " : ""}${formatMetric(totals.cost / activeDays, "cost")}`
-                        : "—"}
-                    </Text>
-                  </span>
-                </Text>
-              </Disclosure>
-            </>
-          )}
+                  </Disclosure>
+                </>
+              )}
           {!isEmptyPeriod && view === "overview" && actualResolution !== resolution && (
             <Text as="p" leading="inherit" className="usage-muted">
               {t(

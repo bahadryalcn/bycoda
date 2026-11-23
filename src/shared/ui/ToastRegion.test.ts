@@ -283,8 +283,16 @@ it("never merges identical toasts that carry their own action, each keeps its ow
     const first = vi.fn();
     const second = vi.fn();
     act(() => {
-      toast.show({ tone: "danger", message: "Could not save", action: { label: "Retry", onClick: first } });
-      toast.show({ tone: "danger", message: "Could not save", action: { label: "Retry", onClick: second } });
+      toast.show({
+        tone: "danger",
+        message: "Could not save",
+        action: { label: "Retry", onClick: first },
+      });
+      toast.show({
+        tone: "danger",
+        message: "Could not save",
+        action: { label: "Retry", onClick: second },
+      });
     });
     const retries = () =>
       [...document.querySelectorAll<HTMLButtonElement>("[data-toast-item] button")].filter(

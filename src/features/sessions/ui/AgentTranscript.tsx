@@ -44,7 +44,11 @@ import { CopyButton } from "../../../shared/ui/CopyButton";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
 import { filterDisplayedBlocks, type DisplayFilterFrame } from "../model/transcriptDisplayFilter";
-import { SessionErrorNotice } from "./SessionErrorNotice";
+import {
+  SessionErrorNotice,
+  UsageLimitRecoveryContext,
+  type UsageLimitRecovery,
+} from "./SessionErrorNotice";
 import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import {
   Check,
@@ -217,6 +221,7 @@ type Props = {
   model?: string;
   modelSettings?: Record<string, string>;
   providerAccountId?: string;
+  usageLimitRecovery?: UsageLimitRecovery;
   pendingQuestion?: boolean;
   pendingOwnerApproval?: boolean;
   questionBehavior?: "blocking" | "nonBlocking";
@@ -928,7 +933,9 @@ function VirtualizedTranscriptComponent(props: Props) {
   return (
     <TranscriptVirtualizationContext.Provider value={virtualization}>
       <InlineVisualHost.Provider value={props.inlineVisualHost}>
-        <AgentTranscriptComponent {...props} />
+        <UsageLimitRecoveryContext.Provider value={props.usageLimitRecovery}>
+          <AgentTranscriptComponent {...props} />
+        </UsageLimitRecoveryContext.Provider>
       </InlineVisualHost.Provider>
     </TranscriptVirtualizationContext.Provider>
   );

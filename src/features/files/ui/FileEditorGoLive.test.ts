@@ -268,7 +268,8 @@ describe("HTML Go Live", () => {
 
   it("disables local Chrome launch for remote HTML", async () => {
     await render("remote://machine/repo/gallery.html");
-    expect(button()?.disabled).toBe(true);
+    expect(button()?.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => button()!.click());
     expect(opened()).toHaveLength(0);
   });
   it("localizes HTML reveal labels after changing language", async () => {

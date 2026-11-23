@@ -586,7 +586,9 @@ export function ServersView({
           />
         </div>
       ) : null}
-      {loading && !loaded && !error ? <LoadingText inset="row">{t("Loading servers…")}</LoadingText> : null}
+      {loading && !loaded && !error ? (
+        <LoadingText inset="row">{t("Loading servers…")}</LoadingText>
+      ) : null}
       {groups.length > 0 ? (
         <div
           aria-label={t("Group")}

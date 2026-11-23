@@ -404,9 +404,6 @@ it("binds explicit SFTP list/download/upload to one approved operation and cance
     );
     native.open.mockResolvedValueOnce("C:/chosen.txt");
     await act(async () => context.button("Upload").click());
-    await act(async () =>
-      context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
-    );
     await act(async () => context.button("Upload file").click());
     const upload = approval.request.mock.calls.find(
       ([request]) => request.operation.kind === "sftpUpload",
@@ -414,7 +411,7 @@ it("binds explicit SFTP list/download/upload to one approved operation and cance
     expect(upload.operation).toMatchObject({
       localPath: "C:/chosen.txt",
       remotePath: "./chosen.txt",
-      overwriteConfirmed: true,
+      overwriteConfirmed: false,
     });
     expect(native.invoke).toHaveBeenCalledWith(
       "ssh_sftp_upload",

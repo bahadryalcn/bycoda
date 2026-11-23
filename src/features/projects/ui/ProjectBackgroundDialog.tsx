@@ -262,53 +262,61 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
         {/* These settings act on an image, so they appear only once one is chosen. */}
         {path ? (
           <>
-        <ProjectBackgroundRow label={t("Show on")}>
-          <SegmentedControl
-            label={t("Show project background on")}
-            value={scope}
-            onValueChange={(next) => updateScope(next as ChatBackgroundScope)}
-            options={[
-              { value: "empty", label: t("Empty only"), disabled: busy },
-              { value: "all", label: t("All sessions"), disabled: busy },
-            ]}
-          />
-        </ProjectBackgroundRow>
+            <ProjectBackgroundRow label={t("Show on")}>
+              <SegmentedControl
+                label={t("Show project background on")}
+                value={scope}
+                onValueChange={(next) => updateScope(next as ChatBackgroundScope)}
+                options={[
+                  { value: "empty", label: t("Empty only"), disabled: busy },
+                  { value: "all", label: t("All sessions"), disabled: busy },
+                ]}
+              />
+            </ProjectBackgroundRow>
 
-        <ProjectBackgroundRow label={t("Empty chat visibility")}>
-          <div className="flex w-56 max-w-full items-center gap-3">
-            <Slider
-              disabled={busy}
-              hideLabel
-              label={t("Project background visibility in empty chats")}
-              min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
-              max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
-              value={Math.round(emptyOpacity * 100)}
-              onValueChange={(next) => updateOpacity("empty", next)}
-              className="min-w-0 flex-1"
-            />
-            <Text size="caption" tone="primary" className="w-10 shrink-0 text-right tabular-nums">
-              {Math.round(emptyOpacity * 100)}%
-            </Text>
-          </div>
-        </ProjectBackgroundRow>
+            <ProjectBackgroundRow label={t("Empty chat visibility")}>
+              <div className="flex w-56 max-w-full items-center gap-3">
+                <Slider
+                  disabled={busy}
+                  hideLabel
+                  label={t("Project background visibility in empty chats")}
+                  min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
+                  max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
+                  value={Math.round(emptyOpacity * 100)}
+                  onValueChange={(next) => updateOpacity("empty", next)}
+                  className="min-w-0 flex-1"
+                />
+                <Text
+                  size="caption"
+                  tone="primary"
+                  className="w-10 shrink-0 text-right tabular-nums"
+                >
+                  {Math.round(emptyOpacity * 100)}%
+                </Text>
+              </div>
+            </ProjectBackgroundRow>
 
-        <ProjectBackgroundRow label={t("Session visibility")}>
-          <div className="flex w-56 max-w-full items-center gap-3">
-            <Slider
-              disabled={busy}
-              hideLabel
-              label={t("Project background visibility in sessions")}
-              min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
-              max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
-              value={Math.round(sessionOpacity * 100)}
-              onValueChange={(next) => updateOpacity("session", next)}
-              className="min-w-0 flex-1"
-            />
-            <Text size="caption" tone="primary" className="w-10 shrink-0 text-right tabular-nums">
-              {Math.round(sessionOpacity * 100)}%
-            </Text>
-          </div>
-        </ProjectBackgroundRow>
+            <ProjectBackgroundRow label={t("Session visibility")}>
+              <div className="flex w-56 max-w-full items-center gap-3">
+                <Slider
+                  disabled={busy}
+                  hideLabel
+                  label={t("Project background visibility in sessions")}
+                  min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
+                  max={Math.round(CHAT_BACKGROUND_OPACITY_MAX * 100)}
+                  value={Math.round(sessionOpacity * 100)}
+                  onValueChange={(next) => updateOpacity("session", next)}
+                  className="min-w-0 flex-1"
+                />
+                <Text
+                  size="caption"
+                  tone="primary"
+                  className="w-10 shrink-0 text-right tabular-nums"
+                >
+                  {Math.round(sessionOpacity * 100)}%
+                </Text>
+              </div>
+            </ProjectBackgroundRow>
           </>
         ) : null}
 

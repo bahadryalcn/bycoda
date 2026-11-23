@@ -146,10 +146,7 @@ export function SshIdentityField({
         )}
       />
       {failed ? (
-        <Alert
-          tone="danger"
-          action={{ label: t("Retry"), onClick: retryKeys }}
-        >
+        <Alert tone="danger" action={{ label: t("Retry"), onClick: retryKeys }}>
           {t("Could not load SSH keys. Enter a path or retry.")}
         </Alert>
       ) : pickerError ? (

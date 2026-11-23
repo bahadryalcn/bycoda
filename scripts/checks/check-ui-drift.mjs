@@ -53,7 +53,8 @@ export const ruleScopes = {
   "hover-only-reveal": "TSX in src/features, src/shared (excluding tests)",
   "nested-surface": "TSX in src/app, src/features, src/shared (excluding tests)",
   "tooltip-repeats-label": viewScope,
-  "shared-internal-selector": "CSS in src/app and src/features, including CSS-module classes applied to shared UI slots (excluding tests)",
+  "shared-internal-selector":
+    "CSS in src/app and src/features, including CSS-module classes applied to shared UI slots (excluding tests)",
   "spacing-step": productScope,
   "arbitrary-spacing": productScope,
   "radius-size": `${productScope}; radius literals in src/shared/ui/arc CSS`,
@@ -82,8 +83,7 @@ export const rules = {
   "undefined-var": "var(--x) / Tailwind (--x) with no definition in src CSS or inline style",
   "arc-var-outside-arc":
     "Arc-only variable (.bycoda-arc block in arc.css) used outside an Arc root",
-  typography:
-    "literal px/rem font-size in Arc CSS (use the shared typography scale)",
+  typography: "literal px/rem font-size in Arc CSS (use the shared typography scale)",
   "radius-size":
     "literal radius or private size (use a shared component size or a semantic radius token)",
   "shared-internal-selector":
@@ -109,7 +109,8 @@ export const rules = {
   "color-base-hue":
     "raw base hue var in feature CSS (var(--color-accent…)); the text|bg|border-danger… utilities are semantic and allowed",
   "color-base-opacity": "opacity-modified base token (bg-background-base/45, border-stroke/60…)",
-  "native-title": "native title hint (remove repeated copy; use Tooltip for a shortcut, reason or detail, or OverflowTooltip to recover clipped text)",
+  "native-title":
+    "native title hint (remove repeated copy; use Tooltip for a shortcut, reason or detail, or OverflowTooltip to recover clipped text)",
   "role-alert-text": "<p role=alert> / <span role=alert> (use the shared inline error)",
   "role-alert-container": "<div>/<small>/<li>/<section> role=alert (use the shared inline error)",
   "role-status-banner":
@@ -571,7 +572,10 @@ const twRules = [
   ],
   ["font-weight", tw(String.raw`font-(?:semibold|bold|extrabold|black)` + end)],
 ];
-const hoverBackground = new RegExp(String.raw`(?<![\w\-:])(?:${variantChars}+:)*hover:bg-[\w\-[(]`, "g");
+const hoverBackground = new RegExp(
+  String.raw`(?<![\w\-:])(?:${variantChars}+:)*hover:bg-[\w\-[(]`,
+  "g",
+);
 const sizingRules = new Set(["radius-size", "arbitrary-spacing", "spacing-step"]);
 
 const translatableProps =
@@ -649,7 +653,13 @@ export function scanFile(file, text, definitions) {
   // A narrower rule reports first; an appearance rule never reports the same spot again.
   const reported = new Set();
   const appearance = scope === "app" && !isBespokeSurface(file);
+  // Avatar and Crew Table palette entries paint pixel-art assets in their content owners.
+  const artworkPalette =
+    /^src\/features\/crews\/model\/(?:crewTableArt|memberAvatar(?:Agent|Art|Droid|Ent|Shared))\.ts$/.test(
+      file,
+    );
   const add = (rule, offset) => {
+    if (rule === "theme-palette-literal" && artworkPalette) return;
     if ((rule in appearanceRules || rule === "hover-bg") && reported.has(offset)) return;
     reported.add(offset);
     const line = lineAt(starts, offset);
@@ -757,12 +767,16 @@ export function scanFile(file, text, definitions) {
           add("transcript-base-ink", valueOffset);
       if (appearance && !isTokenBlock(selectors)) {
         const explicitHook = selectors.some((selector) =>
-          cssSelectorRules(selector).includes("shared-internal-selector"));
-        const sharedSlot = !explicitHook &&
-          selectsSharedModuleSlot(selectors, definitions.sharedSlots?.get(file));
-        const rule = focusRuleOfDeclaration(declaration, sharedSlot || explicitHook) ??
+          cssSelectorRules(selector).includes("shared-internal-selector"),
+        );
+        const sharedSlot =
+          !explicitHook && selectsSharedModuleSlot(selectors, definitions.sharedSlots?.get(file));
+        const rule =
+          focusRuleOfDeclaration(declaration, sharedSlot || explicitHook) ??
           (sharedSlot && restylesSharedSlot(declaration) ? "shared-internal-selector" : null) ??
-          (explicitHook && restylesSharedSlot(declaration) ? null : appearanceRuleOfDeclaration(declaration));
+          (explicitHook && restylesSharedSlot(declaration)
+            ? null
+            : appearanceRuleOfDeclaration(declaration));
         if (rule && !isBespokePart(file, rule, { selectors, text: `${property}:${value}` }))
           add(rule, rule === "shared-internal-selector" ? offset : valueOffset);
       }
@@ -977,7 +991,11 @@ export function scanFile(file, text, definitions) {
       if (reported.has(offset)) return;
       const token = classTokenAt(source, offset);
       if (rule === "interaction-state" && /(?:^|:)hover:bg-/.test(token)) return;
-      if (sizingRules.has(rule) && sizedControls.has(containing(offset)?.name) && controlSizeClass.test(token))
+      if (
+        sizingRules.has(rule) &&
+        sizedControls.has(containing(offset)?.name) &&
+        controlSizeClass.test(token)
+      )
         return;
       if (!isBespokePart(file, rule, { text: token })) add(rule, offset);
     });
@@ -1122,8 +1140,13 @@ export function checkUiDrift({ root = defaultRoot, overrides = new Map(), files,
     };
   const { sources, definitions } = readTree(root, overrides, catalog);
   const targets = files
-    ? [...new Set([...files].filter((file) => scopeOf(file)).flatMap((file) =>
-        [file, ...(definitions.modulesByImporter.get(file) ?? [])]))]
+    ? [
+        ...new Set(
+          [...files]
+            .filter((file) => scopeOf(file))
+            .flatMap((file) => [file, ...(definitions.modulesByImporter.get(file) ?? [])]),
+        ),
+      ]
     : [...sources.keys()];
   const findings = targets.flatMap((file) =>
     sources.has(file) ? scanFile(file, sources.get(file), definitions) : [],

@@ -52,6 +52,9 @@ beforeEach(() => {
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command === "remote_machines") return [machine];
     const method = (args as { method?: string } | undefined)?.method;
+    // The machine's capability read precedes its session list.
+    if (command === "remote_request" && method === "environment.describe")
+      return { capabilities: [] };
     if (command === "remote_request" && method === "sessions.list")
       return new Promise((resolve, reject) => {
         answer = resolve;
@@ -166,14 +169,14 @@ const freshSession = {
 it("refreshes within the cache TTL, retains rows on failure and retries to a verified empty list", async () => {
   await renderRemoteProject();
   await act(async () => answer([freshSession]));
-  expect(document.body.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
-  const refreshButton = container.querySelector<HTMLButtonElement>(
-    'button[aria-label="Refresh sessions from MacBook"]',
-  )!;
-  await act(async () => refreshButton.click());
+  expect(document.body.querySelector('[data-remote-data-state="ready"]')).toBeNull();
+  await act(async () => refreshRemoteProjectSessions());
   expect(document.body.querySelector('[data-remote-data-state="refreshing"]')).not.toBeNull();
   expect(document.body.textContent).toContain("Current conversation");
-  expect(refreshButton.disabled).toBe(true);
+  expect(
+    container.querySelector<HTMLButtonElement>('button[aria-label="Refresh sessions from MacBook"]')
+      ?.disabled,
+  ).toBe(true);
   await act(async () => refuse(new Error("permission denied reading sessions")));
   expect(document.body.querySelector('[data-remote-data-state="error"]')).not.toBeNull();
   expect(document.body.textContent).toContain("Showing last loaded data");
@@ -184,7 +187,7 @@ it("refreshes within the cache TTL, retains rows on failure and retries to a ver
       .click(),
   );
   await act(async () => answer([]));
-  expect(document.body.querySelector('[data-remote-data-state="empty"]')).not.toBeNull();
+  expect(document.body.querySelector('[data-remote-data-state="empty"]')).toBeNull();
   expect(document.body.textContent).not.toContain("Current conversation");
   expect(document.body.textContent).not.toContain("permission denied");
 });
@@ -219,7 +222,7 @@ it("labels cached rows as unverified while the initial owner read is pending", a
   expect(document.body.querySelector('[data-remote-data-state="refreshing"]')).not.toBeNull();
   expect(document.body.textContent).toContain("Showing last loaded data");
   await act(async () => answer([freshSession]));
-  expect(document.body.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
+  expect(document.body.querySelector('[data-remote-data-state="ready"]')).toBeNull();
 });
 
 it("keeps the loaded session list when the machine goes offline", async () => {

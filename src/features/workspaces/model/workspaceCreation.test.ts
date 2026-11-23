@@ -15,6 +15,7 @@ import { fetchGitIndex } from "../../source-control/model/gitIndexStore";
 import { gitHistory } from "../../../platform/tauri/fs";
 import { notifyRemoteRecovered } from "../../connections/model/remoteHealth";
 import { remotePath } from "../../connections/model/remoteProjects";
+import { projectlessMachineProject } from "../../connections/model/sessionMachineTarget";
 import { invalidateMachineSnapshot } from "../../automations/model/machineSnapshot";
 import type { WorkspaceMode } from "../../sessions/model/session";
 
@@ -89,6 +90,20 @@ afterEach(async () => {
   expect(capabilityListeners.size).toBe(0);
   vi.unstubAllGlobals();
 });
+
+it.each(["~", projectlessMachineProject("environment").key])(
+  "does not read or subscribe to managed workspace policy for projectless cwd %s",
+  async (cwd) => {
+    await renderCreation("worktree", cwd);
+    expect(state.mode).toBe("current");
+    expect(state.base).toBeUndefined();
+    expect(state.pending).toBe(false);
+    expect(state.preview).toBeUndefined();
+    expect(state.error).toBeUndefined();
+    expect(getWorkspaceCapabilities).not.toHaveBeenCalled();
+    expect(capabilityListeners.size).toBe(0);
+  },
+);
 
 it("previews the committed policy baseline and counts unique excluded paths including conflicts", async () => {
   const result = await loadWorkspaceCreation("/project");

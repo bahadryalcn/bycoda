@@ -53,6 +53,7 @@ export function ComposerNotices({
   const t = useT();
   const recovered = useStableCallback(onSessionFolderRecovered);
   // Read a blocked write's outcome twice while leaving manual recovery available.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- polls native folder mutation state while the composer is blocked
   useEffect(() => {
     if (!sessionFolderMutationBlocked) return;
     let cancelled = false;

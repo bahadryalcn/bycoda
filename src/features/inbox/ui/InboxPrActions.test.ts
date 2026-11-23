@@ -186,7 +186,9 @@ it("converts to draft at once without a confirmation popover", async () => {
       }),
     ),
   );
-  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="More pull request actions"]')!.click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="More pull request actions"]')!.click(),
+  );
   await act(async () =>
     [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
       .find((node) => node.textContent?.includes("Convert to draft"))!

@@ -502,14 +502,7 @@ function SearchableSelectMenu({
     const committed = options.findIndex(
       (option) => values.includes(option.value) && !option.disabled,
     );
-    setActive(
-      committed >= 0
-        ? committed
-        : Math.max(
-            0,
-            options.findIndex(canInspectPickerOption),
-          ),
-    );
+    setActive(committed >= 0 ? committed : Math.max(0, options.findIndex(canInspectPickerOption)));
     setOpen(true);
   };
 

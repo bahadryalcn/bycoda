@@ -281,7 +281,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
         "Local and connected models that decide small things for the app, such as routing and privacy scans.",
       );
     },
-    keywords: "decision models local model ollama gguf clef classifier routing threshold scan privacy",
+    keywords:
+      "decision models local model ollama gguf clef classifier routing threshold scan privacy",
   },
   {
     id: "usage",
@@ -342,9 +343,7 @@ export function settingsSectionsByGroup(active?: SettingsSectionId): {
       (section) =>
         section.group === group.id &&
         (section.id === active || (section.id !== "archive" && section.id !== "tools")),
-    ).sort(
-      (a, b) => SETTINGS_SECTION_ORDER.indexOf(a.id) - SETTINGS_SECTION_ORDER.indexOf(b.id),
-    ),
+    ).sort((a, b) => SETTINGS_SECTION_ORDER.indexOf(a.id) - SETTINGS_SECTION_ORDER.indexOf(b.id)),
   })).filter((group) => group.sections.length > 0);
 }
 
@@ -1095,14 +1094,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("Project notifications");
     },
     keywords: "mute resume sounds banners reminders categories",
-  },
-  {
-    id: "show-archived",
-    section: "archive",
-    get label() {
-      return t("Show archived in the sidebar");
-    },
-    keywords: "hidden conversations list",
   },
   ...[
     {

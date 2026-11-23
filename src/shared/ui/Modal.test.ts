@@ -91,7 +91,10 @@ describe("ModalPanel", () => {
       createElement(Sheet, { ...props, modal: false, anchor: "container" }),
     ].map((element) => renderToStaticMarkup(element));
     const header = (markup: string) =>
-      /<header[\s\S]*?<\/header>/.exec(markup)![0].replace(/id="[^"]*"/g, 'id="title"');
+      /<header[\s\S]*?<\/header>/.exec(markup)![0]
+        .replace(/id="[^"]*"/g, 'id="title"')
+        // A non-modal sheet advertises Esc on its close button.
+        .replace(' data-tooltip-owner=""', "");
     const footer = (markup: string) => /<footer[^>]*>/.exec(markup)![0];
     for (const markup of variants) {
       expect(header(markup)).toBe(header(variants[0]));
@@ -121,7 +124,11 @@ describe("ModalPanel", () => {
       createElement(
         ModalActions,
         { reason: "Review required", reasonId: "review-blocker" },
-        createElement(Button, { "aria-disabled": true, "aria-describedby": "review-blocker" }, "Save"),
+        createElement(
+          Button,
+          { "aria-disabled": true, "aria-describedby": "review-blocker" },
+          "Save",
+        ),
       ),
     );
     expect(markup).toContain('id="review-blocker"');

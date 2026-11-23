@@ -112,7 +112,9 @@ export function PickerShell({
               align="start"
               gap={4}
               layer={layer}
-              solid
+              // Re-measure the preferred editor width when a viewport clamp is lifted.
+              minWidth={0}
+              flow="scroll"
               className={styles.popover}
               onDismiss={(reason) => (reason === "escape" ? close() : setOpen(false))}
             >

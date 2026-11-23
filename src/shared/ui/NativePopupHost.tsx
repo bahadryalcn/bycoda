@@ -141,12 +141,12 @@ export function NativePopover({
   return (
     <div
       {...frameProps}
-      style={{ ...frameProps.style, "--native-popup-max-height": `${maxHeight}px` } as CSSProperties}
+      style={
+        { ...frameProps.style, "--native-popup-max-height": `${maxHeight}px` } as CSSProperties
+      }
     >
       <PopupBackdrop />
-      <div
-        className={`${contentClassName} max-h-[var(--native-popup-max-height)] overflow-y-auto`}
-      >
+      <div className={`${contentClassName} max-h-[var(--native-popup-max-height)] overflow-y-auto`}>
         {host ? <NativePopupHost value={host}>{children}</NativePopupHost> : null}
       </div>
     </div>

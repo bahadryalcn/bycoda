@@ -3,7 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useMemo, useState, type CSSProperties } from "react";
-import { formatDate, formatNumber, t, useLocale } from "../../../shared/i18n";
+import { dateTimeFormat, formatDate, formatNumber, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import {
@@ -95,12 +95,12 @@ export function UsageTrend({
         label: formatBucket(bucket.start, resolution),
         axisLabel:
           index % Math.max(1, Math.ceil(buckets.length / 6)) === 0
-            ? formatDate(
-                bucket.start,
+            ? dateTimeFormat(
+                locale,
                 resolution === "hour" || resolution === "15m"
                   ? { hour: "2-digit", minute: "2-digit", hour12: false }
                   : { month: "short", day: "numeric" },
-              )
+              ).format(bucket.start)
             : undefined,
         values: Object.fromEntries(
           series.map((s) => [
@@ -190,29 +190,29 @@ export function UsageTrend({
               onSelect({ start: point.start, end: point.end });
             }}
           >
-          <LineChart
-            label={t("Usage over time")}
-            data={series.length ? data : []}
-            emptyLabel={t("No usage recorded in this period.")}
-            selectSeriesLabel={t("Choose a series to show")}
-            series={series.map((s, index) => ({
-              key: s.key,
-              label: usageProviderLabel(usageLabel(s.label)),
-              color: usageChartColor(colors, s.key),
-              area: false,
-              // Series differ by stroke pattern as well as colour (solid, dash, dot).
-              pattern: (["solid", "dash", "dot"] as const)[index % 3],
-            }))}
-            height={250}
-            curve="linear"
-            legend={false}
-            hiddenSeries={hiddenSeries}
-            onHiddenSeriesChange={setHiddenSeries}
-            formatValue={format}
-            formatTick={percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)}
-            // The chart reports null when the pointer leaves, focus leaves or the data changes; clear the selection with it.
-            onActiveChange={(_, datum) => setActive(datum?.key ?? null)}
-          />
+            <LineChart
+              label={t("Usage over time")}
+              data={series.length ? data : []}
+              emptyLabel={t("No usage recorded in this period.")}
+              selectSeriesLabel={t("Choose a series to show")}
+              series={series.map((s, index) => ({
+                key: s.key,
+                label: usageProviderLabel(usageLabel(s.label)),
+                color: usageChartColor(colors, s.key),
+                area: false,
+                // Series differ by stroke pattern as well as colour (solid, dash, dot).
+                pattern: (["solid", "dash", "dot"] as const)[index % 3],
+              }))}
+              height={250}
+              curve="linear"
+              legend={false}
+              hiddenSeries={hiddenSeries}
+              onHiddenSeriesChange={setHiddenSeries}
+              formatValue={format}
+              formatTick={percent ? formatUsagePercent : (value) => formatMetricTick(value, metric)}
+              // The chart reports null when the pointer leaves, focus leaves or the data changes; clear the selection with it.
+              onActiveChange={(_, datum) => setActive(datum?.key ?? null)}
+            />
           </div>
         </>
       )}
@@ -521,13 +521,13 @@ export function TimeDistribution({
           label: formatBucket(bucket.start, chronologicalResolution),
           axisLabel:
             index % Math.max(1, Math.ceil(all.length / 6)) === 0
-              ? formatDate(bucket.start, {
+              ? dateTimeFormat(locale, {
                   month: "short",
                   day: "numeric",
                   hour: "2-digit",
                   minute: "2-digit",
                   hour12: false,
-                })
+                }).format(bucket.start)
               : undefined,
           value: bucket[metric],
         }),

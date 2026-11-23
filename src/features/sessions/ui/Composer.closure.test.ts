@@ -169,7 +169,8 @@ it("rejects an already open mention completion before changing its closed draft"
         : [],
   );
   await loadProjectFiles("/fixture", true);
-  await draw({ initialDraft: "@sel" });
+  // File mentions index only a real project: the draft belongs to the project at /fixture.
+  await draw({ cwd: "/fixture", initialDraft: "@sel" });
   const input = container.querySelector("textarea")!;
   await act(async () => input.dispatchEvent(new Event("input", { bubbles: true })));
   const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(

@@ -93,7 +93,9 @@ export function SessionFolderGroup() {
       <Row
         id="session-folder"
         label={t("Folder for sessions without a project")}
-        description={t("Older projectless sessions use this folder. New sessions get their own folder.")}
+        description={t(
+          "Older projectless sessions use this folder. New sessions get their own folder.",
+        )}
         feedback={
           error ? (
             <SettingsFeedback

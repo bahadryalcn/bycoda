@@ -79,7 +79,9 @@ it("shows the advisor, its model and state, with the advice behind a disclosure"
       }),
     ),
   );
-  expect(container.textContent).toContain("Done");
+  // A finished advisor shows no status text: only a pending or failed state is worth saying.
+  expect(container.textContent).not.toContain("Thinking…");
+  expect(container.textContent).not.toContain("Failed");
   const details = container.querySelector("details")!;
   expect(details).not.toBeNull();
   expect(details.open).toBe(false);

@@ -13,11 +13,9 @@
      readable. A factor below 1 here would leave part of the shortage unabsorbed. */
   flex: 0 1 auto;
   align-items: center;
-  gap: 4px;
   /* Items fill their row by default; here the name sets the width. */
   inline-size: auto;
   min-inline-size: 4rem;
-  min-block-size: var(--ui-control-height-compact);
   text-align: start;
 }
 
@@ -45,7 +43,6 @@
   display: flex;
   flex: 0 3 auto;
   align-items: center;
-  gap: 4px;
   min-inline-size: 0;
 }
 

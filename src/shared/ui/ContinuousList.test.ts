@@ -251,7 +251,8 @@ it("distinguishes loading, empty and failed initial reads", async () => {
 });
 
 it("shows one initial state with no rows and a separate continuation state with rows", async () => {
-  const state = () => container.querySelector("[data-collection-footer]")!.getAttribute("data-state");
+  const state = () =>
+    container.querySelector("[data-collection-footer]")!.getAttribute("data-state");
   await act(async () =>
     root.render(
       createElement(ContinuousList<string>, { ...props, items: [], loading: true, error: "x" }),
@@ -267,7 +268,9 @@ it("shows one initial state with no rows and a separate continuation state with 
   );
   expect(container.textContent).toBe("No sessions");
   await act(async () =>
-    root.render(createElement(ContinuousList<string>, { ...props, items: ["one"], error: "Offline" })),
+    root.render(
+      createElement(ContinuousList<string>, { ...props, items: ["one"], error: "Offline" }),
+    ),
   );
   expect(state()).toBe("continuation");
   expect(container.textContent).toContain("Row one");

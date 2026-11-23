@@ -15,7 +15,7 @@ import type { PersonDetail } from "../../model/socialActions";
 import { PlatformMark } from "../common/PlatformIcon";
 import { SocialAvatar } from "../common/SocialAvatar";
 import { EmptyHint } from "../common/EmptyHint";
-import { LabeledSelect } from "./LabeledSelect";
+import { Select } from "../../../../shared/ui/Select";
 import {
   ALL_STAGES,
   IYS_STATES,
@@ -170,12 +170,12 @@ export function PersonPanel({
                 </Text>
               ))}
             </Text>
-            <LabeledSelect
+            <Select
               label={t("Change stage")}
               value={person.stage}
               disabled={busy}
               options={ALL_STAGES.map((stage) => ({ value: stage, label: stageLabel(stage) }))}
-              onChange={(value) => {
+              onValueChange={(value) => {
                 const stage = toStage(value);
                 if (stage && stage !== person.stage) void save({ stage }).catch(() => undefined);
               }}
@@ -239,12 +239,12 @@ export function PersonPanel({
                 )}
               </InfoPopover>
             </div>
-            <LabeledSelect
+            <Select
               label={t("IYS status")}
               value={person.commercialConsent?.iys ?? "unknown"}
               disabled={busy}
               options={IYS_STATES.map((state) => ({ value: state, label: iysLabel(state) }))}
-              onChange={(value) => {
+              onValueChange={(value) => {
                 const iys = toIys(value);
                 if (iys)
                   void save({ commercialConsent: { iys, checkedAt: Date.now() } }).catch(

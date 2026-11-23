@@ -131,11 +131,7 @@ export function ProviderDefaultsPanel({
   return (
     <>
       {section !== "delegation" ? (
-        <Group
-          id="default-provider"
-          layout="full"
-          title={null}
-        >
+        <Group id="default-provider" layout="full" title={null}>
           <Row label={t("Default provider")}>
             <Select
               hideLabel

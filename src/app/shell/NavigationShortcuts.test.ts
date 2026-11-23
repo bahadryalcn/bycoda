@@ -147,7 +147,8 @@ it("shows live bindings on the projects toggle, history and rail actions without
         saveKeybindingOverride(command, { disabled: true });
       });
       expect(button(label).title).toBe("");
-      if (!railRow) expect(await tooltipText(button(label))).toBe(label);
+      // Without a binding the tooltip would only repeat the accessible name, so none is shown.
+      if (!railRow) expect(await tooltipText(button(label))).toBe("");
       if (railRow) expect(button(label).textContent).not.toContain("M");
       await act(async () => {
         saveKeybindingOverride(command, {});

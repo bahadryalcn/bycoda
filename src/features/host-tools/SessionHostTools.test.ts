@@ -516,13 +516,10 @@ it("offers local and saved machines only for host tools while keeping conversati
     '[role="dialog"][aria-label="Browser controls and setup"]',
   )!;
   expect(controls).not.toBeNull();
-  const help = controls.querySelector<HTMLDetailsElement>("details")!;
-  expect(help.open).toBe(false);
-  await toolAct(() => {
-    help.open = true;
-    help.dispatchEvent(new Event("toggle"));
-  });
-  expect(help.textContent).toContain(
+  const help = controls.querySelector<HTMLButtonElement>('button[aria-label="About the host browser"]')!;
+  expect(help.getAttribute("aria-expanded")).toBe("false");
+  await toolAct(() => help.click());
+  expect(document.body.textContent).toContain(
     "Browser selections can be attached only on this conversation's project host.",
   );
   const annotate = container.querySelector<HTMLButtonElement>(

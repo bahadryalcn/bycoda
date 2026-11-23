@@ -444,9 +444,7 @@ const FileSection = memo(function FileSection({
       ref={setSection}
       data-diff-file={file.path}
       className={`${
-        fileLayout === "cards"
-          ? "overflow-hidden rounded-md border border-stroke"
-          : ""
+        fileLayout === "cards" ? "overflow-hidden rounded-md border border-stroke" : ""
       } ${focused ? "bg-(--ui-surface-hover)" : ""}`}
     >
       <ActionHost
@@ -1377,10 +1375,7 @@ const DiffLineRow = memo(function DiffLineRow({
   useLocale();
   if (line.kind === "hunk") {
     return (
-      <div
-        className="flex items-center bg-(--ui-workspace-canvas-surface)"
-        style={HUNK_HEIGHT}
-      >
+      <div className="flex items-center bg-(--ui-workspace-canvas-surface)" style={HUNK_HEIGHT}>
         {lane === "code" ? (
           <span className="px-3 font-mono diff-meta-text leading-none text-(--ui-text-muted)">
             {line.text}

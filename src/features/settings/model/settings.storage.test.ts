@@ -31,13 +31,15 @@ it("reopens saved Models settings in Providers Defaults", () => {
 it.each(Object.entries(TOOL_SETTINGS_TAB_ANCHORS) as [ToolSettingsTab, string][])(
   "migrates the %s section to its canonical page and destination",
   (alias, anchor) => {
+    // bykit moved into Models → Background work; the other tool tabs stay on Tools.
+    const page = alias === "bykit" ? "providers" : "tools";
     localStorage.setItem("bycoda.settingsSection", alias);
-    expect(loadSettingsSection()).toBe("tools");
+    expect(loadSettingsSection()).toBe(page);
     expect(loadSettingsAliasAnchor()).toBe(anchor);
-    expect(settingsSectionForAnchor(alias)).toBe("tools");
-    expect(settingsSectionForAnchor("general", anchor)).toBe("tools");
+    expect(settingsSectionForAnchor(alias)).toBe(page);
+    expect(settingsSectionForAnchor("general", anchor)).toBe(page);
     saveSettingsSection(alias);
-    expect(localStorage.getItem("bycoda.settingsSection")).toBe("tools");
+    expect(localStorage.getItem("bycoda.settingsSection")).toBe(page);
   },
 );
 it("keep-awake listeners hear Host snapshots, never localStorage events", () => {

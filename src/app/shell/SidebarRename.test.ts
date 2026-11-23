@@ -772,7 +772,8 @@ describe("sidebar session bulk actions", () => {
     expect(document.querySelector("[data-session-delete-status]")?.textContent).toContain(
       "3 conversations deleted.",
     );
-    expect(container.textContent).toContain("Sessions you start will show up here");
+    // An emptied list is blank; the confirmation above is the only feedback.
+    expect(container.querySelectorAll("[data-session-card]")).toHaveLength(0);
     expect(selectedIds()).toEqual([]);
     act(() => vi.advanceTimersByTime(9_999));
     expect(document.querySelector("[data-session-delete-status]")).not.toBeNull();
@@ -830,13 +831,13 @@ describe("sidebar session bulk actions", () => {
     props = { ...props, sessions: [], pending: true };
     act(() => render());
     expect(container.textContent).toContain("Loading sessions…");
-    expect(container.textContent).not.toContain("Sessions you start will show up here");
+    expect(container.textContent).not.toContain("No sessions");
     props = { ...props, pending: false, status: "error" };
     act(() => render());
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Couldn’t load sessions",
     );
-    expect(container.textContent).not.toContain("Sessions you start will show up here");
+    expect(container.textContent).not.toContain("No sessions");
   });
 
   it("asks before deleting the selection with the Delete key", async () => {
@@ -915,12 +916,13 @@ describe("sidebar session IDs", () => {
       )!;
       await act(async () => item.click());
       const dialog = document.querySelector('[role="dialog"]')!;
-      expect(dialog.textContent).toContain("Could not copy the session ID");
+      // The dialog itself is the feedback for the first failure: no separate error line.
+      expect(dialog.textContent).not.toContain("Could not copy the session ID");
       const field = dialog.querySelector<HTMLInputElement>('input[aria-label="Session ID"]')!;
       expect(field.value).toBe(label === "Harness session ID" ? "provider-identity" : "session-1");
       expect(field.readOnly).toBe(true);
       const retry = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent === "Retry",
+        (button) => button.textContent === "Copy",
       )!;
       await act(async () => retry.click());
       expect(copyText).toHaveBeenLastCalledWith(field.value);
@@ -1437,7 +1439,8 @@ describe("sidebar orchestration card", () => {
     // An outer shared tooltip names it; the Button adds no native title of its own.
     expect(orchestrationIcon?.hasAttribute("title")).toBe(false);
     expect(card().querySelector("[data-session-select] [data-orchestration-icon]")).toBeNull();
-    expect(card().textContent).toContain("3 agents");
+    // The "1/3 done" progress carries the agent count; no separate "3 agents" label repeats it.
+    expect(card().textContent).not.toContain("3 agents");
     expect(card().textContent).toContain("1/3 done");
     expect(card().textContent).toContain("Build settings");
     expect(card().textContent).toContain("Needs input");
@@ -1454,12 +1457,11 @@ describe("sidebar orchestration card", () => {
     act(() => archive.click());
     expect(props.onArchiveSession).toHaveBeenCalledExactlyOnceWith(lead.id, true);
     expect(props.onSelectSession).not.toHaveBeenCalled();
-    // A collapsed row stays one line; the model rides along in the tooltip.
-    expect(
-      await tooltipText(
-        card().querySelector<HTMLElement>('[data-orchestration-agent="worker-a"] button')!,
-      ),
-    ).toContain("Codex · Worker A");
+    // A collapsed row stays one line with no tooltip repeating its title; the model is in the
+    // expanded detail below.
+    const workerA = () => card().querySelector<HTMLElement>('[data-orchestration-agent="worker-a"]')!;
+    expect(await tooltipText(workerA().querySelector<HTMLElement>("button")!)).toBe("");
+    expect(workerA().textContent).not.toContain("Worker A");
     expect(card().querySelectorAll("[data-orchestration-agent]")).toHaveLength(3);
     const normal = container.querySelector<HTMLElement>('[data-session-card="unrelated"]')!;
     expect(normal.hasAttribute("data-orchestration-card")).toBe(false);
@@ -1489,6 +1491,7 @@ describe("sidebar orchestration card", () => {
         .querySelector('[data-orchestration-agent="worker-a"] button')
         ?.getAttribute("aria-expanded"),
     ).not.toBe(wasOpen);
+    expect(workerA().textContent).toContain("Worker A");
     // A blocked agent stays expanded while it needs the lead's attention.
     expect(
       card()
@@ -1719,7 +1722,7 @@ describe("sidebar session GitHub links", () => {
     expect(link).toBeDefined();
     act(() => link.click());
     return document.querySelector<HTMLInputElement>(
-      'input[aria-label="GitHub issue or pull request URL"]',
+      '[role="dialog"] input[type="url"]',
     )!;
   }
 
@@ -1780,7 +1783,7 @@ describe("sidebar session GitHub links", () => {
 
     expect(
       document.querySelector<HTMLInputElement>(
-        'input[aria-label="GitHub issue or pull request URL"]',
+        '[role="dialog"] input[type="url"]',
       )?.value,
     ).toBe("https://github.com/acme/widgets/pull/42");
     const remove = Array.from(document.querySelectorAll("button")).find(
@@ -2444,7 +2447,8 @@ describe("collapsed rail Inbox actions", () => {
       expect(menu!.textContent).toContain("Mark all as read");
       expect(menu!.textContent).toContain("Mute all projects");
       expect(menu!.textContent).toContain("Resume muted projects");
-      expect(menu!.textContent).toContain("2 projects");
+      // The menu rows carry no project-count caption.
+      expect(menu!.textContent).not.toContain("2 projects");
       const settings = [...menu!.querySelectorAll("button")].find((button) =>
         button.textContent?.startsWith("Notification settings"),
       )!;
@@ -3235,7 +3239,9 @@ it.each(["arrow", "right-click", "projectless overflow"] as const)(
     });
     if (trigger !== "right-click") {
       await act(async () =>
-        document.querySelector<HTMLButtonElement>('[role="menuitem"][aria-label="Choose project"]')!.click(),
+        [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+          .find((item) => item.textContent === "Choose project")!
+          .click(),
       );
     }
     if (trigger === "right-click") expect(rightClick.defaultPrevented).toBe(true);
@@ -3243,7 +3249,7 @@ it.each(["arrow", "right-click", "projectless overflow"] as const)(
     expect(props.onNewListedSession).not.toHaveBeenCalled();
     const target = [
       ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] [role="option"]'),
-    ].find((option) => option.textContent?.includes("/workspace/other"))!;
+    ].find((option) => option.textContent?.endsWith("other"))!;
     await act(async () => target.click());
     expect(props.onNewListedSession).toHaveBeenCalledExactlyOnceWith("/workspace/other");
     expect(document.querySelector('[role="dialog"]')).toBeNull();
@@ -3261,7 +3267,7 @@ it("opens a project selector for an explicit global New request without creating
   props.newListedSessionRequest = 1;
   await act(async () => render());
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-    "Choose a project for the new session",
+    "New session in",
   );
   expect(props.onNew).not.toHaveBeenCalled();
   expect(props.onNewListedSession).not.toHaveBeenCalled();

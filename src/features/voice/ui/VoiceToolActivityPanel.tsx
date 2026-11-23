@@ -97,7 +97,6 @@ export function VoiceToolActivityPanel({
           flow="scroll"
           tabIndex={0}
           onDismiss={() => setAnchor(null)}
-          className={styles.popover}
         >
           <ul className={styles.list}>
             {entries.map((entry) => {
@@ -142,7 +141,7 @@ export function VoiceToolActivityPanel({
                       </Text>
                     ) : null}
                   </div>
-                  <Text size="caption" tone="muted" className={styles.time}>
+                  <Text size="caption" tone="muted" className="tabular-nums">
                     {formatDuration(entry.elapsedMs ?? elapsedSince(entry.startedAt))}
                   </Text>
                   {live && (

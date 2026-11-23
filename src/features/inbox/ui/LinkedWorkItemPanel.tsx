@@ -106,7 +106,7 @@ export function LinkedWorkItemPanel({
         {...resize.sashProps}
         appearance="hidden"
         label={t("Resize linked {p0} panel", { p0: kindLabel })}
-        className="absolute inset-y-0 -left-px"
+        className="absolute inset-y-0 start-0"
       />
       {/* The detail's own identity row (kind, reference, status) is the one header; the close button sits at its end. */}
       <Button
@@ -115,7 +115,7 @@ export function LinkedWorkItemPanel({
         iconOnly
         label={t("Close {p0} panel", { p0: kindLabel })}
         onClick={onClose}
-        className="absolute end-2 top-1 z-10"
+        className="absolute end-2 top-1 z-1"
       >
         <X className="icon-sm" strokeWidth={1.75} />
       </Button>

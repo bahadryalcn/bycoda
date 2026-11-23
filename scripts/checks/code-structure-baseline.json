@@ -593,7 +593,7 @@
       "cross-feature-deep-import": 3
     },
     "src/features/inbox/ui/InboxView.tsx": {
-      "cross-feature-deep-import": 6,
+      "cross-feature-deep-import": 4,
       "feature-imports-app": 4
     },
     "src/features/inbox/ui/LinkedWorkItemUpdateNotice.tsx": {
@@ -770,7 +770,7 @@
       "cross-feature-deep-import": 4
     },
     "src/features/orchestration/ui/OrchestrationSidebarAgents.tsx": {
-      "cross-feature-deep-import": 2
+      "cross-feature-deep-import": 1
     },
     "src/features/projects/hooks/useLinkedWorkspaceGroups.ts": {
       "cross-feature-deep-import": 2
@@ -1068,7 +1068,7 @@
       "cross-feature-deep-import": 15
     },
     "src/features/sessions/ui/EmptySession.tsx": {
-      "cross-feature-deep-import": 3
+      "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/LiveAgentsPreview.tsx": {
       "cross-feature-deep-import": 1,
@@ -1078,16 +1078,13 @@
       "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/NotificationHistoryItem.tsx": {
-      "cross-feature-deep-import": 2
+      "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/ProviderAccountMenu.tsx": {
       "cross-feature-deep-import": 3
     },
     "src/features/sessions/ui/ProviderAccountRecoveryDialog.tsx": {
       "cross-feature-deep-import": 2
-    },
-    "src/features/sessions/ui/ReminderNotices.tsx": {
-      "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/SessionFiltersMenu.tsx": {
       "cross-feature-deep-import": 1
@@ -1177,7 +1174,7 @@
     },
     "src/features/settings/ui/SettingsView.tsx": {
       "cross-feature-deep-import": 4,
-      "feature-imports-app": 3
+      "feature-imports-app": 2
     },
     "src/features/settings/ui/ShortcutSettings.tsx": {
       "cross-feature-deep-import": 1
@@ -1187,9 +1184,6 @@
     },
     "src/features/settings/ui/TerminalSettings.tsx": {
       "cross-feature-deep-import": 1
-    },
-    "src/features/settings/ui/WorkspaceSettings.tsx": {
-      "cross-feature-deep-import": 2
     },
     "src/features/skills/model/cliCommandCatalog.ts": {
       "cross-feature-deep-import": 1
@@ -1219,7 +1213,7 @@
       "cross-feature-deep-import": 2
     },
     "src/features/skills/ui/SkillsPage.tsx": {
-      "cross-feature-deep-import": 9
+      "cross-feature-deep-import": 8
     },
     "src/features/social/model/social.ts": {
       "cross-feature-deep-import": 1
@@ -1514,7 +1508,7 @@
       "cross-feature-deep-import": 4
     },
     "src/features/workspace/ui/WorkspacePicker.tsx": {
-      "cross-feature-deep-import": 7
+      "cross-feature-deep-import": 5
     },
     "src/features/workspaces/model/nativeManagedTurn.ts": {
       "cross-feature-deep-import": 3
@@ -1523,7 +1517,7 @@
       "cross-feature-deep-import": 6
     },
     "src/features/workspaces/model/sessionWorkspace.ts": {
-      "cross-feature-deep-import": 2
+      "cross-feature-deep-import": 1
     },
     "src/features/workspaces/model/taskWorkspaceState.ts": {
       "cross-feature-deep-import": 1
@@ -1532,7 +1526,7 @@
       "cross-feature-deep-import": 5
     },
     "src/features/workspaces/model/workspaceCreation.ts": {
-      "cross-feature-deep-import": 7
+      "cross-feature-deep-import": 5
     },
     "src/features/workspaces/model/workspacePinning.ts": {
       "cross-feature-deep-import": 1
@@ -1813,13 +1807,7 @@
     "src/shared/ui/identity/HarnessIcon.tsx": {
       "foundation-imports-app": 1
     },
-    "src/shared/ui/Modal.tsx": {
-      "foundation-imports-app": 1
-    },
     "src/shared/ui/PrivateEmail.tsx": {
-      "foundation-imports-app": 1
-    },
-    "src/shared/ui/Sheet.tsx": {
       "foundation-imports-app": 1
     }
   }

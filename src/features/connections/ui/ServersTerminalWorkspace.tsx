@@ -422,56 +422,56 @@ export function ServersTerminalWorkspace({
                 }}
               >
                 <TabList className="min-w-0 flex-1" scroll="wrap" label={t("SSH terminals")}>
-                {terminals.map((terminal) => (
-                  <ActionHost
-                    key={terminal.id}
-                    selected={active === terminal.id}
-                    data-server-terminal-tab
-                    className="flex min-w-28 max-w-64 shrink-0 items-center"
-                    onAuxClick={(event) => {
-                      if (event.button !== 1) return;
-                      event.preventDefault();
-                      void requestClose(terminal.id);
-                    }}
-                  >
-                    <Tab
-                      value={terminal.id}
-                      tone="neutral"
-                      fullWidth
-                      className="min-w-0 flex-1"
-                      tooltip={terminal.name}
-                      tooltipWhen="overflow"
-                      id={`tab-${terminal.id}`}
-                      controls={`panel-${terminal.id}`}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Delete") return;
+                  {terminals.map((terminal) => (
+                    <ActionHost
+                      key={terminal.id}
+                      selected={active === terminal.id}
+                      data-server-terminal-tab
+                      className="flex min-w-28 max-w-64 shrink-0 items-center"
+                      onAuxClick={(event) => {
+                        if (event.button !== 1) return;
                         event.preventDefault();
                         void requestClose(terminal.id);
                       }}
                     >
-                      <Terminal aria-hidden className="icon-sm shrink-0" />
-                      <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-                        {terminal.name}
-                      </Text>
-                      <ServerTerminalStatus lifecycle={terminal.lifecycle} />
-                    </Tab>
-                    <InlineAction
-                      reveal="always"
-                      motion="none"
-                      loading={closing.has(terminal.id)}
-                      label={`${t("Close terminal")}: ${terminal.name}`}
-                      onClick={() => void requestClose(terminal.id)}
-                      onAuxClick={(event) => {
-                        if (event.button === 1) {
+                      <Tab
+                        value={terminal.id}
+                        tone="neutral"
+                        fullWidth
+                        className="min-w-0 flex-1"
+                        tooltip={terminal.name}
+                        tooltipWhen="overflow"
+                        id={`tab-${terminal.id}`}
+                        controls={`panel-${terminal.id}`}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Delete") return;
                           event.preventDefault();
                           void requestClose(terminal.id);
-                        }
-                      }}
-                    >
-                      <X className="icon-xs" />
-                    </InlineAction>
-                  </ActionHost>
-                ))}
+                        }}
+                      >
+                        <Terminal aria-hidden className="icon-sm shrink-0" />
+                        <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                          {terminal.name}
+                        </Text>
+                        <ServerTerminalStatus lifecycle={terminal.lifecycle} />
+                      </Tab>
+                      <InlineAction
+                        reveal="always"
+                        motion="none"
+                        loading={closing.has(terminal.id)}
+                        label={`${t("Close terminal")}: ${terminal.name}`}
+                        onClick={() => void requestClose(terminal.id)}
+                        onAuxClick={(event) => {
+                          if (event.button === 1) {
+                            event.preventDefault();
+                            void requestClose(terminal.id);
+                          }
+                        }}
+                      >
+                        <X className="icon-xs" />
+                      </InlineAction>
+                    </ActionHost>
+                  ))}
                 </TabList>
               </Tabs>
               {navigation?.active ? null : windowControls}

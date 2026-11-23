@@ -42,10 +42,7 @@ export function AccentColorPicker({
         : -1;
 
   return (
-    <div
-      ref={root}
-      className={`appearance-accent${onReadabilityChange ? " appearance-accent-with-readability" : ""}`}
-    >
+    <div ref={root} className="appearance-accent">
       <ColorSwatchRow
         className="appearance-accent-swatches"
         colors={[ACCENT_COLOR_DEFAULT, ...ACCENT_COLOR_PRESETS]}
@@ -75,7 +72,6 @@ export function AccentColorPicker({
         <Button
           id={settingDomId("accent-readability")}
           data-setting-id="accent-readability"
-          className="accent-readability-toggle"
           variant="secondary"
           size="sm"
           pressed={readability === "strong"}

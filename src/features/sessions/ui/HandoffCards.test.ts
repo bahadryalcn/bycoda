@@ -114,7 +114,7 @@ describe("handoff mini card dismiss control", () => {
     renderToStaticMarkup(createElement(HandoffMiniCard, { card: handoff, onDismiss }));
 
     const dismiss = buttonCalls[buttonCalls.length - 1];
-    expect(dismiss["aria-label"]).toBe("Remove handoff");
+    expect(dismiss.label).toBe("Remove handoff");
     (dismiss.onClick as () => void)();
     expect(onDismiss).toHaveBeenCalledOnce();
   });

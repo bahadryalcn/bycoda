@@ -10,7 +10,7 @@ import {
   formatResetCountdown,
   type RateLimitWindow,
   type RateLimitWindowKind,
-} from "../../providers/model/rateLimits";
+} from "../../providers/public/rateLimitsCache";
 
 /**
  * Reset countdown on the shared minute clock. Only this text re-renders each minute, and the

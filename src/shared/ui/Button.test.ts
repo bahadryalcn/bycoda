@@ -57,6 +57,7 @@ it("keeps hierarchy and tone independent", async () => {
       [{ variant: "primary" }, "primary", "neutral"],
       [{ tone: "danger" }, "secondary", "danger"],
       [{ variant: "ghost", tone: "danger" }, "ghost", "danger"],
+      [{ variant: "caption", tone: "danger" }, "ghost", "danger"],
       [{ variant: "tab", tone: "warning", selected: true }, "tab", "warning"],
     ];
     for (const [props, hierarchy, tone] of cases) {
@@ -68,6 +69,27 @@ it("keeps hierarchy and tone independent", async () => {
       expect(button.dataset.buttonTone).toBe(tone);
       expect(button.hasAttribute("tone")).toBe(false);
     }
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("updates a badge in place, outside the label, with the explicit accessible name", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    const render = (badge?: number) =>
+      act(async () =>
+        root.render(createElement(Button, { badge, label: "Recovery", iconOnly: true })),
+      );
+    await render();
+    const button = container.querySelector("button")!;
+    await render(3);
+    expect(container.querySelector("button")).toBe(button);
+    expect(button.getAttribute("aria-label")).toBe("Recovery");
+    expect(button.querySelector(':scope > [aria-hidden="true"]')?.textContent).toBe("3");
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

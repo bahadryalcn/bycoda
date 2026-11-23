@@ -140,13 +140,13 @@ export function AssistantAvatarPicker({
         variant="tiles"
         label={t("Avatar")}
         tileLayout="icon"
-        tileClassName={styles.tile}
-        tile={{ shape: "pill", selectionIndicator: "border-ring" }}
+        tile={{ size: "lg", shape: "pill", selectionIndicator: "border-ring" }}
         value={view.kind === "image" ? assistantAvatarPresetValue(view.id) : (current ?? "")}
         onValueChange={(next) => onChange({ avatar: next })}
         options={[
           ...ASSISTANT_AVATAR_PRESETS.map((preset) => ({
             value: assistantAvatarPresetValue(preset.id),
+            iconOnly: true,
             ariaLabel: t(preset.label),
             tooltip: t(preset.label),
             content: (
@@ -160,6 +160,7 @@ export function AssistantAvatarPicker({
           })),
           ...generated.map((avatar, index) => ({
             value: avatar,
+            iconOnly: true,
             ariaLabel: t("Generated avatar {p0}", { p0: index + 1 }),
             tooltip: t("Generated avatar {p0}", { p0: index + 1 }),
             content: (

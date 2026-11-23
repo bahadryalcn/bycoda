@@ -114,7 +114,7 @@ function LayerRow({
               tone="secondary"
               leading="inherit"
               truncate
-              className={styles.strength}
+              className={`${styles.strength} tabular-nums`}
             >
               {layer.strength}
             </Text>

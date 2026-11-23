@@ -627,13 +627,12 @@ describe("AttachmentChip image preview", () => {
     expect(card.textContent).not.toContain("Text");
     expect(card.hasAttribute("title")).toBe(false);
     expect(container.querySelector("[title]")).toBeNull();
-    // Insert sits bottom-left like an image card; remove stays top-right.
-    expect(
-      container.querySelector('[aria-label="Insert [file1] into the message"]')!.className,
-    ).toContain("bottom-1 left-1");
-    expect(container.querySelector('[aria-label="Remove data.csv"]')!.className).toContain(
-      "right-1 top-1",
-    );
+    // Insert and remove share one action cluster at the top end, insert first.
+    const insert = container.querySelector('[aria-label="Insert [file1] into the message"]')!;
+    const remove = container.querySelector('[aria-label="Remove data.csv"]')!;
+    expect(insert.parentElement).toBe(remove.parentElement);
+    expect(insert.parentElement!.className).toContain("top-1");
+    expect(insert.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("falls back to an image identity when thumbnail decoding fails", () => {

@@ -71,7 +71,7 @@
 
 .code {
   margin: 0;
-  padding: var(--space-2) var(--space-2);
+  padding: var(--space-2);
   border: 1px solid var(--transcript-inset-border);
   border-radius: var(--ui-radius-control);
   background: var(--transcript-card-fill);

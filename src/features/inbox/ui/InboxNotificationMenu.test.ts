@@ -7,6 +7,7 @@ import {
   updateNotificationPreferences,
 } from "../../notifications/model/notificationPreferences";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
+import { formatDate } from "../../../shared/i18n";
 import { InboxNotificationMenu } from "../../../app/shell/sidebarSurfaces";
 import { ProjectRail } from "../../../app/shell/ProjectRail";
 import { invoke } from "@tauri-apps/api/core";
@@ -149,11 +150,10 @@ it("reopens known Inbox actions without a disabled loading frame", async () => {
   await act(async () =>
     inbox.dispatchEvent(new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true })),
   );
-  expect(button("Mute all projects").disabled).toBe(false);
   await act(async () => {});
-  expect(document.querySelector('[role="menu"] [role="status"]')?.textContent).toContain(
-    "2 projects",
-  );
+  // The header no longer repeats a project count or loading line: it only reports errors.
+  expect(button("Mute all projects").disabled).toBe(false);
+  expect(document.querySelector('[role="menu"] [role="status"]')).toBeNull();
 });
 
 it("keeps unread items and the menu open when marking read fails, then allows retry", async () => {
@@ -259,9 +259,11 @@ it("mutes all rail and known Inbox projects for one hour directly from Inbox", a
   ]);
   const inbox = await openInboxMenu();
   act(() => button("Mute all projects").click());
-  expect(button("1 hour").textContent).toBe("1 hour (21:30)");
-  expect(button("4 hours").textContent).toBe("4 hours (Tomorrow, 0:30)");
-  expect(button("8 hours").textContent).toBe("8 hours (Tomorrow, 4:30)");
+  const clock = (hours: number) =>
+    formatDate(new Date(2030, 0, 15, 20 + hours, 30), { hour: "numeric", minute: "2-digit" });
+  expect(button("1 hour").textContent).toBe(`1 hour (${clock(1)})`);
+  expect(button("4 hours").textContent).toBe(`4 hours (Tomorrow, ${clock(4)})`);
+  expect(button("8 hours").textContent).toBe(`8 hours (Tomorrow, ${clock(8)})`);
   expect(button("Until resumed").textContent).toBe("Until resumed");
   expect(button("Choose date and time").textContent).toBe("Choose date and time");
   const start = Date.now();

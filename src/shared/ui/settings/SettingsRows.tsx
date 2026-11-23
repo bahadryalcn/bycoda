@@ -504,7 +504,8 @@ export function Group({
  *   "your choice is preserved" text.
  * - `disabled`: the same dimmed, inert state without the indent (e.g. while an operation runs).
  * - `stacked`: wide controls (fields, editors, lists) sit under the label at full width.
- * - `controlWidth`: `"wide"` (28rem) for a pair of selects or a short field, `"fill"` for a control that takes all the
+ * - `controlWidth`: `"aligned"` (16rem) to share a fixed column across a group,
+ *   `"wide"` (28rem) for a pair of selects or a short field, `"fill"` for a control that takes all the
  *   room the label leaves (segmented choice, card strip). Default keeps the 12-18rem right column.
  * - `density="compact"`: the row inset steps down (`--ui-row-inset-block-compact`) for short rows.
  * - `feedbackPosition="start"`: the feedback (a preview) sits above the label and control.
@@ -545,7 +546,7 @@ export function Row({
   /** Wide controls (text fields, editors, lists) sit under the label at full width. */
   stacked?: boolean;
   /** Width of the right-hand control column: `wide` 28rem, `fill` the whole remaining width. Ignored when `stacked`. */
-  controlWidth?: "default" | "wide" | "fill";
+  controlWidth?: "default" | "aligned" | "wide" | "fill";
   /** `compact` steps the row inset down for short rows (one control, no description). */
   density?: "default" | "compact";
   /** `start` places the feedback above the label and control (a preview that opens the row). */

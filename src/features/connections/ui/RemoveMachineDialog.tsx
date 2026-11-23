@@ -81,10 +81,7 @@ export function RemoveMachineDialog({
           ]}
         />
         {error ? (
-          <Alert
-            tone="danger"
-            extra={cause ? <ErrorDetails detail={cause} /> : undefined}
-          >
+          <Alert tone="danger" extra={cause ? <ErrorDetails detail={cause} /> : undefined}>
             {reason}
           </Alert>
         ) : null}

@@ -1009,7 +1009,7 @@ export function InboxView({
         {...resize.sashProps}
         appearance="hidden"
         label={t("Resize inbox list")}
-        className="inbox-list-sash absolute inset-y-0 -right-px"
+        className="inbox-list-sash absolute inset-y-0 end-0"
       />
     </div>
   );

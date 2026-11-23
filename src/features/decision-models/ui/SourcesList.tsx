@@ -63,10 +63,7 @@ export function SourcesList({
           <ErrorNotice error={sourcesError} onRetry={onRetry} />
         </div>
       ) : null}
-      <ul
-        className="flex min-w-0 flex-col"
-        aria-label={t("Connected decision models")}
-      >
+      <ul className="flex min-w-0 flex-col" aria-label={t("Connected decision models")}>
         {automaticSources(
           testedSources(
             sources,

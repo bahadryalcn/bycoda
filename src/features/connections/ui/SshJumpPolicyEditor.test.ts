@@ -2,6 +2,7 @@
 import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => []) }));
 import { SshJumpPolicyEditor } from "./SshJumpPolicyEditor";
 import {
   emptySshJumpPolicyDraft,
@@ -92,9 +93,9 @@ it("honors controlled changes and eight-hop/disabled limits without callbacks on
       ),
     );
     expect(change).not.toHaveBeenCalled();
-    // Field help buttons (aria-haspopup) stay readable while the editor is disabled.
+    // Field help buttons (aria-haspopup) and disclosure toggles (aria-expanded) stay readable while the editor is disabled.
     expect(
-      [...host.querySelectorAll("button:not([aria-haspopup])")].every(
+      [...host.querySelectorAll("button:not([aria-haspopup]):not([aria-expanded])")].every(
         (b) => (b as HTMLButtonElement).disabled,
       ),
     ).toBe(true);

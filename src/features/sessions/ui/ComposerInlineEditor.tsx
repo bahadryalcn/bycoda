@@ -226,14 +226,9 @@ export function ComposerInlineEditor({
   const close = () => setOpened(null);
   return (
     <>
-      <Text
-        as="div"
-        size="body"
-        tone="neutral"
-        ref={mount}
-        className={styles.mount}
-        data-subagents={hasSubagents || undefined}
-      />
+      <Text as="div" size="body" tone="neutral">
+        <div ref={mount} className={styles.mount} data-subagents={hasSubagents || undefined} />
+      </Text>
       {active && attachment ? (
         <ComposerAttachmentPreview
           key={attachment.id}

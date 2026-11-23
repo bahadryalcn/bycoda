@@ -28,6 +28,18 @@ afterEach(() => {
   element.remove();
 });
 
+async function tooltipText(target: HTMLElement): Promise<string> {
+  await act(async () => {
+    target.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 520));
+  });
+  const text = document.querySelector('[role="tooltip"]')?.textContent ?? "";
+  await act(async () => {
+    target.dispatchEvent(new Event("pointerout", { bubbles: true }));
+  });
+  return text;
+}
+
 const account = { id: "a1", name: "Studio", platform: "x" } as unknown as SocialAccount;
 const stored: AutonomyPolicy = {
   ...DEFAULT_AUTONOMY,
@@ -228,6 +240,9 @@ it("disables every control and says why while the Host is offline", async () => 
   const { client } = fakeClient();
   await render(client, { disabled: true });
   expect(levelTrigger("Publishing")?.disabled).toBe(true);
-  expect(button("Save autonomy")?.disabled).toBe(true);
-  expect(element.textContent).toContain("Connect to this computer to change this account.");
+  // Disabled with a reason stays focusable (aria-disabled) and gives the reason in its tooltip.
+  const save = button("Save autonomy")!;
+  expect(save.getAttribute("aria-disabled")).toBe("true");
+  expect(await tooltipText(save)).toContain("Connect to this computer to change this account.");
+  expect(confirm).not.toHaveBeenCalled();
 });

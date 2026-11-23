@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import type { AssistantMemory } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
@@ -107,17 +107,18 @@ export function AssistantMemoryPanel(props: Props) {
                     >
                       {entry.text}
                     </Text>
-                    <Text
-                      as="div"
-                      size="caption"
-                      tone="secondary"
-                      leading="inherit"
-                      className={styles.meta}
+                    <div
+                      {...textAttributes(
+                        { size: "caption", tone: "secondary", leading: "inherit" },
+                        styles.meta,
+                      )}
                     >
                       {/* Everywhere is the default; only a narrower scope is worth saying. */}
                       {entry.scope !== "all" && (
                         <>
-                          <span>{t(entry.scope === "voice" ? "Voice only" : "Coding sessions only")}</span>
+                          <span>
+                            {t(entry.scope === "voice" ? "Voice only" : "Coding sessions only")}
+                          </span>
                           <span aria-hidden>·</span>
                         </>
                       )}
@@ -129,11 +130,11 @@ export function AssistantMemoryPanel(props: Props) {
                         </>
                       )}
                       <Timestamp className={styles.time} value={entry.createdAt} />
-                    </Text>
+                    </div>
                     {entry.quote && entry.quote !== entry.text && (
-                      <Text as="blockquote" leading="normal" className={styles.quote}>
+                      <blockquote {...textAttributes({ leading: "normal" }, styles.quote)}>
                         {entry.quote}
-                      </Text>
+                      </blockquote>
                     )}
                   </div>
                   <div className={styles.actions}>

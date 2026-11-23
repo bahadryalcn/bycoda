@@ -56,8 +56,11 @@ it("returns the registered key of the folder opened on the requested machine onl
     void pickFolderOnMachine({ kind: "remote", machineId: "b" }).then((key) => (result = key));
   });
   await settle();
-  expect(document.body.textContent).toContain("Beta");
-  expect(document.body.textContent).not.toContain("Alpha");
+  const browsed = vi
+    .mocked(invoke)
+    .mock.calls.filter((call) => (call[1] as { method?: string })?.method === "projects.browse");
+  expect(browsed.length).toBeGreaterThan(0);
+  for (const call of browsed) expect((call[1] as { machineId?: string }).machineId).toBe("b");
   await act(async () => button("Open").click());
   await settle();
   expect(result).toBe("remote://env-b/home/me");
@@ -91,5 +94,9 @@ it("a newer request cancels the one still open", async () => {
   });
   await settle();
   expect(results).toEqual([undefined]);
-  expect(document.body.textContent).toContain("Beta");
+  const lastBrowse = vi
+    .mocked(invoke)
+    .mock.calls.filter((call) => (call[1] as { method?: string })?.method === "projects.browse")
+    .at(-1);
+  expect((lastBrowse![1] as { machineId?: string }).machineId).toBe("b");
 });

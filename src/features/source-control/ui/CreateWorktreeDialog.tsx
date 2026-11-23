@@ -123,7 +123,9 @@ export function CreateWorktreeDialog({
                 { p0: prettyCwd(cwd) },
               )}
             </span>
-            {defaultRoot ? <span>{t("Created in {p0}", { p0: prettyCwd(defaultRoot) })}</span> : null}
+            {defaultRoot ? (
+              <span>{t("Created in {p0}", { p0: prettyCwd(defaultRoot) })}</span>
+            ) : null}
           </InfoPopover>
         </div>
         {existing ? (

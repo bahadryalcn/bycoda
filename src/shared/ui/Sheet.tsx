@@ -418,16 +418,15 @@ function NonModalSheet({
           maxBlockSize: "100%",
           marginInline: "auto",
         };
-  const frame =
-    docked
-      ? end
-        ? "border-s border-(--ui-pane-border)"
-        : "border-t border-(--ui-pane-border)"
-      : end
-        ? viewport
-          ? "rounded-none border-s"
-          : "rounded-e-none border-s"
-        : "w-full max-w-4xl rounded-b-none border border-b-0";
+  const frame = docked
+    ? end
+      ? "border-s border-(--ui-pane-border)"
+      : "border-t border-(--ui-pane-border)"
+    : end
+      ? viewport
+        ? "rounded-none border-s"
+        : "rounded-e-none border-s"
+      : "w-full max-w-4xl rounded-b-none border border-b-0";
 
   const surface = (
     <section

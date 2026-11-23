@@ -108,13 +108,13 @@ export function WorktreeRow({
         </div>
         {caption && (
           <Tooltip label={caption} when="overflow">
-            <Text size="caption" tone="muted" leading="inherit" truncate className={styles.caption}>
+            <Text size="caption" tone="muted" leading="inherit" family="mono" truncate className={styles.caption}>
               {caption}
             </Text>
           </Tooltip>
         )}
         <Tooltip label={prettyCwd(tree.path)} when="overflow">
-          <Text size="caption" tone="muted" leading="inherit" truncate className={styles.caption}>
+          <Text size="caption" tone="muted" leading="inherit" family="mono" truncate className={styles.caption}>
             {prettyCwd(tree.path)}
           </Text>
         </Tooltip>

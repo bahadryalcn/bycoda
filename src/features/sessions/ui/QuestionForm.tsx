@@ -407,13 +407,8 @@ function QuestionFormContent({
       >
         {/* Without a separate heading the question itself sits beside the icon; the field
             legend still names the group for assistive technology. */}
-        <Text
-          as="div"
-          size="inherit"
-          tone={title ? "secondary" : "neutral"}
-          className={styles.context}
-          data-prompt={title ? undefined : ""}
-        >
+        <Text as="div" size="inherit" tone={title ? "secondary" : "neutral"}>
+          <div className={styles.context} data-prompt={title ? undefined : ""}>
           <MessageSquare className="icon-sm shrink-0" tone="secondary" aria-hidden />
           {title ? (
             <Text
@@ -441,13 +436,14 @@ function QuestionFormContent({
           )}
           {total > 1 ? (
             <LiveText
-              className={styles.progress}
+              className={`${styles.progress} tabular-nums`}
               size="caption"
               tone="secondary"
               leading="inherit"
               text={`${index + 1} / ${total}`}
             />
           ) : null}
+          </div>
         </Text>
         <FieldGroup variant="bare" disabled={sending}>
           <div className={styles.body} data-inline-prompt={title ? undefined : ""}>
@@ -532,17 +528,18 @@ function QuestionFormContent({
             {capacityMessage ? <InlineError>{capacityMessage}</InlineError> : null}
             {status ? (
               <Text
-                as="p"
+                as="div"
                 size="caption"
                 tone={failed ? "danger" : "secondary"}
                 leading="normal"
                 role={failed || uncertain ? "alert" : "status"}
-                className={styles.status}
                 id={statusId}
                 data-error={failed ? "true" : undefined}
               >
-                {StatusIcon ? <StatusIcon className="icon-sm shrink-0" aria-hidden /> : null}
-                <span>{status}</span>
+                <p className={styles.status}>
+                  {StatusIcon ? <StatusIcon className="icon-sm shrink-0" aria-hidden /> : null}
+                  <span>{status}</span>
+                </p>
               </Text>
             ) : null}
             {prompt.autoResolveAt != null && !transportHeld ? (

@@ -18,11 +18,6 @@ const panes = [
   { css: `${room}/AssistantMemoryPanel.module.css`, container: "assistant-room", widths: [540] },
   { css: `${room}/AssistantView.module.css`, container: "assistant-room", widths: [600, 720] },
   {
-    css: "src/features/workspaces/ui/WorkspacePolicySettings.module.css",
-    container: "workspace-policy",
-    widths: [640, 560],
-  },
-  {
     css: "src/features/tasks/ui/sprints.css",
     container: "sprint-pane",
     widths: [560],
@@ -51,6 +46,19 @@ for (const pane of panes) {
     );
   });
 }
+
+it("lets workspace policy controls adapt through shared settings rows", () => {
+  const editor = readFileSync("src/features/workspaces/ui/WorkspacePolicyEditor.tsx", "utf8");
+  const policy = readFileSync("src/features/workspaces/ui/WorkspacePolicySettings.module.css", "utf8");
+  const settings = readFileSync("src/shared/ui/settings/settings.css", "utf8");
+  expect(editor).toMatch(/import \{[^}]*\bRow\b[^}]*\} from "[^"]+\/shared\/ui\/settings"/);
+  expect(editor).toContain('<Row id="workspace-pinning"');
+  expect(policy).not.toMatch(/@media[^{]*\b(?:inline-size|width)\b/);
+  expect(settings).toMatch(/container: settings-row \/ inline-size;/);
+  expect(settings).toMatch(
+    /@container settings-row \(inline-size < 35rem\)[\s\S]*?\.settings-row > :is\(\.settings-row-label, \.settings-row-control\)\s*\{\s*grid-column: 1 \/ -1;/,
+  );
+});
 
 it("declares each pane container once, on the pane root", () => {
   const declaring = {

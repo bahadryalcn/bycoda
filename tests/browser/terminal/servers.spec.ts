@@ -1095,7 +1095,7 @@ test("quick connect is explicit, leaves inventory unsaved and keeps the raw tab 
   await page.screenshot({ path: `${evidence}/quick-connect-returned-inventory.png` });
 });
 
-test("SSH config duplicate choices use or edit the existing record without importing over it", async ({
+test("SSH config duplicate choice opens the existing record without importing over it", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1024, height: 780 });
@@ -1121,11 +1121,11 @@ test("SSH config duplicate choices use or edit the existing record without impor
   await expect(dialog).toContainText("This endpoint is already saved");
   await expect(dialog.getByRole("button", { name: "Import", exact: true })).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "Skip", exact: true })).toBeVisible();
-  await dialog.getByRole("button", { name: "Edit existing", exact: true }).click();
-  const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
-  await expect(editor.getByRole("textbox", { name: "Name", exact: true })).toHaveValue(
-    "Existing SSH target",
-  );
+  await dialog.getByRole("button", { name: "Open existing", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "Server details" }).getByText("Existing SSH target").first(),
+  ).toBeVisible();
   expect(
     await page.evaluate(() =>
       (window as unknown as { serversFixtureCalls: string[] }).serversFixtureCalls.includes(
@@ -1203,8 +1203,7 @@ for (const theme of ["light", "dark"])
       .getByRole("textbox", { name: "SSH config", exact: true })
       .fill("Host imported\n HostName duplicate.example.invalid\n User fixture");
     await config.getByRole("button", { name: "Preview", exact: true }).click();
-    await expect(config.getByRole("button", { name: "Use existing", exact: true })).toBeVisible();
-    await expect(config.getByRole("button", { name: "Edit existing", exact: true })).toBeVisible();
+    await expect(config.getByRole("button", { name: "Open existing", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
@@ -1296,7 +1295,7 @@ test("certificate and ordered jump chain edit retains canonical ID and previews 
     "legacy@first.example.invalid:22 → operator@second.example.invalid:2222",
   );
   await expect(settings.getByRole("button", { name: "Import", exact: true })).toHaveCount(0);
-  await expect(settings.getByRole("button", { name: "Use existing", exact: true })).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Open existing", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: `${folder}/certificate-two-hop-existing-import-390.png` });
 });
@@ -1313,7 +1312,9 @@ for (const theme of ["light", "dark"]) {
     await dialog.getByRole("button", { name: "Connect", exact: true }).click();
     await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "About shell suggestions", exact: true }).click();
-    await expect(page.getByText(/custom profile key bindings and history settings are not loaded/)).toBeVisible();
+    await expect(
+      page.getByText(/custom profile key bindings and history settings are not loaded/),
+    ).toBeVisible();
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     const option = page.getByRole("menuitem", { name: /PowerShell suggestions/ });

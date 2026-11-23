@@ -5,7 +5,7 @@ import {
   AssistantStandingConsentFields,
   DEFAULT_CRITICAL_EXCLUSIONS,
 } from "./settings/AssistantStandingConsentFields";
-import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { scrollAreaAttributes } from "../../../shared/ui/ScrollArea";
 import {
   useCallback,
   useEffect,
@@ -465,7 +465,10 @@ export function AssistantSettings({
               ))}
             </TabList>
           </div>
-          <ScrollArea gutter="stable" ref={contentRef} className={settingsStyles.content}>
+          <div
+            {...scrollAreaAttributes({ axis: "y", gutter: "stable" }, settingsStyles.content)}
+            ref={contentRef}
+          >
             <ProfileRowsProvider value>
               {tab(
                 "personal",
@@ -728,7 +731,7 @@ export function AssistantSettings({
                 </>,
               )}
             </ProfileRowsProvider>
-          </ScrollArea>
+          </div>
         </Tabs>
         <footer className={settingsStyles.footer}>
           <SettingsSaveBar

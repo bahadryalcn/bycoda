@@ -248,36 +248,36 @@ export function ProviderDefaultExtras({
                 }}
               />
             ) : (setting.id === "fast" || setting.id === "serviceTier") && !savedIsUnavailable ? (
-                <SegmentedControl
-                  label={t(setting.label)}
-                  value={saved ?? ""}
-                  options={[
-                    inheritedSegment(
-                      inheritedOption
-                        ? speedLabel(inheritedOption.value, inheritedOption.label)
-                        : inheritedLabel
-                          ? t(inheritedLabel)
-                          : undefined,
-                      Boolean(inheritedOption),
-                    ),
-                    ...setting.options
-                      .filter((option) => option.value !== "")
-                      .map((option) => ({
-                        value: option.value,
-                        label: speedLabel(option.value, option.label),
-                        icon:
-                          option.value === "true" || option.value === "fast" ? (
-                            <Zap className="icon-sm" />
-                          ) : undefined,
-                      })),
-                  ]}
-                  onValueChange={(next) => {
-                    const extras = { ...scopeDefaults.extras };
-                    if (next) extras[setting.id] = next;
-                    else delete extras[setting.id];
-                    onSessionDefaultsChange({ ...scopeDefaults, extras });
-                  }}
-                />
+              <SegmentedControl
+                label={t(setting.label)}
+                value={saved ?? ""}
+                options={[
+                  inheritedSegment(
+                    inheritedOption
+                      ? speedLabel(inheritedOption.value, inheritedOption.label)
+                      : inheritedLabel
+                        ? t(inheritedLabel)
+                        : undefined,
+                    Boolean(inheritedOption),
+                  ),
+                  ...setting.options
+                    .filter((option) => option.value !== "")
+                    .map((option) => ({
+                      value: option.value,
+                      label: speedLabel(option.value, option.label),
+                      icon:
+                        option.value === "true" || option.value === "fast" ? (
+                          <Zap className="icon-sm" />
+                        ) : undefined,
+                    })),
+                ]}
+                onValueChange={(next) => {
+                  const extras = { ...scopeDefaults.extras };
+                  if (next) extras[setting.id] = next;
+                  else delete extras[setting.id];
+                  onSessionDefaultsChange({ ...scopeDefaults, extras });
+                }}
+              />
             ) : (
               <SearchableSelect
                 hideLabel

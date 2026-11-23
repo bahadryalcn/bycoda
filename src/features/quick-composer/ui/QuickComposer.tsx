@@ -13,7 +13,7 @@ import { PromptField } from "../../../shared/ui/PromptField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { projectDisplayName } from "../../projects/public/projectNames";
 import { looksLikeProject } from "../../projects/public/recents";
-import { isProjectlessCwd } from "../../sessions/model/recentSessions";
+import { isProjectlessCwd } from "../../sessions/public/projectless";
 import { t, useLocale } from "../../../shared/i18n";
 import { useComposerSpelling } from "../../settings/public/composerSpelling";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -851,7 +851,9 @@ export function QuickComposer({
           motion="none"
           ref={plusRef}
           aria-expanded={picker === "attachments"}
-          tooltip={attachmentsSupported ? undefined : t("This provider does not support attachments")}
+          tooltip={
+            attachmentsSupported ? undefined : t("This provider does not support attachments")
+          }
           disabled={!attachmentsSupported || attachments.loading || busy}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("attachments")}

@@ -1,7 +1,7 @@
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
-  gap: 1rem;
+  gap: var(--ui-space-4);
   align-items: start;
   min-width: 0;
 }
@@ -11,33 +11,24 @@
 .drop {
   width: 100%;
   aspect-ratio: 16 / 10;
-  height: auto;
-  padding: 0;
   overflow: hidden;
 }
 .dropEmpty {
   display: grid;
   justify-items: center;
-  gap: 0.375rem;
-  padding: 0.5rem;
+  gap: var(--ui-space-2);
+  padding: var(--ui-space-2);
   text-align: center;
 }
 .side {
   display: grid;
-  gap: 0.625rem;
+  gap: var(--ui-space-2);
   min-width: 0;
 }
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-}
-.hint {
-  margin: 0;
-}
-.blur {
-  display: grid;
-  gap: 0.25rem;
+  gap: var(--ui-space-2);
 }
 @media (max-width: 40rem) {
   .layout {

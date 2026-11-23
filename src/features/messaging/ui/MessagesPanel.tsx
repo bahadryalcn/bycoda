@@ -251,7 +251,7 @@ export function MessagesPanel({
           {...sashProps}
           appearance="hidden"
           label={t("Resize conversation list")}
-          className="absolute inset-y-0 -right-px"
+          className="absolute inset-y-0 end-0"
         />
       </div>
       <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">

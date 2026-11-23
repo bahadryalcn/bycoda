@@ -1,4 +1,12 @@
-import { useState, useSyncExternalStore, type ReactNode, type Ref, type RefObject } from "react";
+import {
+  useImperativeHandle,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
@@ -14,7 +22,7 @@ import { readRemoteConnection, subscribeChanges } from "../model/remoteHealth";
 
 type SelectChoice = { value: string; label: string; icon: ReactNode; disabled?: boolean };
 
-type MachineStatus =RemoteConnectionStatus | "disabled" | "missing";
+type MachineStatus = RemoteConnectionStatus | "disabled" | "missing";
 
 function subscribeMachineStatus(listener: () => void) {
   const stopHealth = subscribeChanges(listener);
@@ -47,6 +55,8 @@ export function SessionMachinePicker({
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  useImperativeHandle(triggerRef, () => buttonRef.current!);
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const { machines, loaded } = useRemoteMachines();
   const remoteMachines = remoteProjectMachines(machines);
@@ -112,9 +122,8 @@ export function SessionMachinePicker({
     <>
       <Button
         ref={(node) => {
+          buttonRef.current = node;
           setAnchor(node);
-          if (typeof triggerRef === "function") triggerRef(node);
-          else if (triggerRef) triggerRef.current = node;
         }}
         type="button"
         variant="chip"

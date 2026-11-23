@@ -1356,7 +1356,8 @@ it("picks the voice session from the panel and keeps it while the active session
   const { render, onSubmit } = await setup();
   // The session picker lists sessions with their project; choosing one pins it.
   const picker = container.querySelector<HTMLButtonElement>('button[aria-label^="Voice session"]');
-  expect(picker?.textContent).toBe("Alpha");
+  // Unpinned, the picker follows the active session.
+  expect(picker?.textContent).toBe("Follow active session");
   await act(async () => picker!.click());
   const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
     item.textContent?.includes("Beta"),

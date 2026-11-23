@@ -267,8 +267,12 @@ test("settings rows switch from stacked to inline once, at the topic-width thres
       }),
     );
   }
-  const transitions = samples.filter((sample, index) => index && sample.inline !== samples[index - 1].inline);
-  expect(transitions, "stacked -> inline happens exactly once while the pane widens").toHaveLength(1);
+  const transitions = samples.filter(
+    (sample, index) => index && sample.inline !== samples[index - 1].inline,
+  );
+  expect(transitions, "stacked -> inline happens exactly once while the pane widens").toHaveLength(
+    1,
+  );
   expect(samples[0].inline, "narrowest sample is stacked").toBe(false);
   expect(samples.at(-1)!.inline, "widest sample is inline").toBe(true);
   // The switch lands on the documented 560px topic width, within one pixel either way.

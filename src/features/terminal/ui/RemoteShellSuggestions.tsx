@@ -205,14 +205,15 @@ export function RemoteShellSuggestions({
           </Text>
         ) : null}
         {snapshot || retained?.suggestions.length ? (
-          <PickerList
-            label={t("Remote command suggestions")}
-            controller={list}
-            checkPlacement="none"
-            pointerHighlight="movement"
-            className={styles.list}
-            emptyLabel={t("No safe matching suggestions.")}
-          />
+          <div className={styles.list}>
+            <PickerList
+              label={t("Remote command suggestions")}
+              controller={list}
+              checkPlacement="none"
+              pointerHighlight="movement"
+              emptyLabel={t("No safe matching suggestions.")}
+            />
+          </div>
         ) : null}
         {selectionMode ? (
           <Text as="p" size="caption" tone="muted" className={styles.hint}>

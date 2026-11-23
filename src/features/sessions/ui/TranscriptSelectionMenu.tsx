@@ -380,22 +380,17 @@ export function TranscriptSelectionMenu({
         flow="scroll"
         onDismiss={closeComment}
         variant="panel"
-        className={styles.comment}
         data-citation-comment
       >
-        <Text
-          as="div"
-          size="caption"
-          tone="inherit"
-          weight="medium"
-          leading="inherit"
-          className={styles.header}
-        >
-          <span>{t("Add citation")}</span>
+        <div className={styles.comment}>
+        <div className={styles.header}>
+          <Text as="span" size="caption" tone="inherit" weight="medium" leading="inherit">
+            {t("Add citation")}
+          </Text>
           <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={closeComment}>
             <X />
           </Button>
-        </Text>
+        </div>
         <Text as="div" size="caption" tone="secondary" leading="relaxed">
           <blockquote {...surfaceAttributes({ frame: "pane", edge: "inline-start" }, styles.quote)}>
             {selection.text}
@@ -443,6 +438,7 @@ export function TranscriptSelectionMenu({
           </Button>
         </div>
         {errors.chat ? <InlineError>{errors.chat}</InlineError> : null}
+        </div>
       </Popover>
     );
   }

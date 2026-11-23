@@ -340,8 +340,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
               </OverflowTooltip>
               <OverflowTooltip label={config.command}>
                 <Text as="div" size="caption" tone="secondary" truncate>
-                  {config.command} ·{" "}
-                  {t("{p0} environment values", { p0: config.envKeys.length })}
+                  {config.command} · {t("{p0} environment values", { p0: config.envKeys.length })}
                 </Text>
               </OverflowTooltip>
             </div>

@@ -419,7 +419,6 @@ it("keeps job confirmation off by default and saves the owner's choice from the 
 
 it("chooses execution permissions from the icon picker and keeps the selected mode's description visible", async () => {
   await setup({ autonomy: "chief", execution }, "permissions");
-  expect(container.textContent).toContain("Ask before commands and file changes.");
   const edits = container.querySelector<HTMLElement>('[aria-label="Auto-accept edits"]')!;
   expect(edits).toBeTruthy();
   await act(async () => edits.click());

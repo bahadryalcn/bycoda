@@ -9,7 +9,6 @@ import { Button } from "../../../shared/ui/Button";
 import { UserRound } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { PrivateEmail } from "../../../shared/ui/PrivateEmail";
 import { RevealedSetting } from "../../../shared/ui/settings";
 import {
@@ -249,7 +248,13 @@ export function TerminalProfileDiscovery({
                 aria-label={t("Find terminal profiles")}
                 loading={activeOperation === "find"}
                 disabled={disabled || busy}
-                disabledReason={disabled ? t("Wait for the current account operation to finish, then discover or connect a terminal profile.") : undefined}
+                disabledReason={
+                  disabled
+                    ? t(
+                        "Wait for the current account operation to finish, then discover or connect a terminal profile.",
+                      )
+                    : undefined
+                }
                 onClick={() =>
                   void run("find", async (current) => {
                     const found = await invoke<TerminalProfile[]>("provider_terminal_profiles", {
@@ -286,40 +291,42 @@ export function TerminalProfileDiscovery({
               </SettingsFeedback>
             ) : null}
             <ScrollArea gutter="stable" className="max-h-[min(55vh,20rem)]">
-            <ul className="min-w-0 list-none p-0">
-              {providerProfiles?.map((profile) => {
-                const connected = connectedIds.has(profile.id);
-                const label =
-                  storedAccounts.find((account) => account.id === profile.id)?.label ||
-                  profile.label;
-                const email = profile.identity?.email?.trim();
-                return (
-                  <li key={profile.id} className="flex min-w-0 items-center gap-3 py-3">
-                    <div className="min-w-0 flex-1">
-                      <Tooltip label={profile.path} asChild>
-                        <Text as="p" size="secondary" weight="medium" truncate tabIndex={0}>
+              <ul className="min-w-0 list-none p-0">
+                {providerProfiles?.map((profile) => {
+                  const connected = connectedIds.has(profile.id);
+                  const label =
+                    storedAccounts.find((account) => account.id === profile.id)?.label ||
+                    profile.label;
+                  const email = profile.identity?.email?.trim();
+                  return (
+                    <li key={profile.id} className="flex min-w-0 items-center gap-3 py-3">
+                      <div className="min-w-0 flex-1">
+                        {/* The path tells same-named profiles apart; it stays readable, never hover-only. */}
+                        <Text as="p" size="secondary" weight="medium" wrap="anywhere">
                           {label}
                         </Text>
-                      </Tooltip>
-                      {email ? (
+                        {email ? (
+                          <Text as="p" size="caption" tone="secondary" wrap="anywhere">
+                            <PrivateEmail email={email} wrap />
+                          </Text>
+                        ) : null}
                         <Text as="p" size="caption" tone="secondary" wrap="anywhere">
-                          <PrivateEmail email={email} wrap />
+                          {profile.path}
                         </Text>
-                      ) : null}
-                    </div>
-                    <Button
-                      disabled={(connected && !onConnected) || disabled || busy}
-                      loading={activeOperation === profile.id}
-                      onClick={() =>
-                        void run(profile.id, (current) => connect(profile.path, current))
-                      }
-                    >
-                      {onConnected ? t("Use account") : connected ? t("Connected") : t("Connect")}
-                    </Button>
-                  </li>
-                );
-              })}
-            </ul>
+                      </div>
+                      <Button
+                        disabled={(connected && !onConnected) || disabled || busy}
+                        loading={activeOperation === profile.id}
+                        onClick={() =>
+                          void run(profile.id, (current) => connect(profile.path, current))
+                        }
+                      >
+                        {onConnected ? t("Use account") : connected ? t("Connected") : t("Connect")}
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
             </ScrollArea>
             {message ? <SettingsFeedback state="success">{message}</SettingsFeedback> : null}
             {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}

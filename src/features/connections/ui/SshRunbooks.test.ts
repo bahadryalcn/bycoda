@@ -349,7 +349,9 @@ it("exposes native effective public auth, hop trust and group provenance in the 
   expect(document.body.textContent).toContain("~/keys/cert.pub");
   expect(document.body.textContent).toContain("jump@hop.invalid:2222");
   expect(document.body.textContent).toContain("~/trust/hop");
-  expect(document.body.textContent).toContain("group-1");
+  // Provenance names the source and revision; a raw group id is never shown.
+  expect(document.body.textContent).toContain("Group · r5");
+  expect(document.body.textContent).not.toContain("group-1");
   expect(document.body.textContent).toContain("APP_STAGE=literal");
   expect(native.start).not.toHaveBeenCalled();
 });

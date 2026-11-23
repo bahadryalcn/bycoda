@@ -139,7 +139,9 @@ export function DiagnosticsGroup() {
       <Row
         id="performance-trace"
         label={t("Performance trace")}
-        description={t("Record startup and rendering timings. Only durations are kept, never message text, paths or script names.")}
+        description={t(
+          "Record startup and rendering timings. Only durations are kept, never message text, paths or script names.",
+        )}
         feedback={
           unsaved ? (
             <SettingsFeedback
@@ -159,11 +161,7 @@ export function DiagnosticsGroup() {
       >
         <Toggle label={t("Performance trace")} on={enabled} onChange={onEnabled} />
       </Row>
-      <Row
-        id="performance-trace-data"
-        label={t("Trace data")}
-        dependsOn={enabled}
-      >
+      <Row id="performance-trace-data" label={t("Trace data")} dependsOn={enabled}>
         <Text role="status" size="caption" tone="secondary" className="empty:hidden">
           {result === "cleared" ? t("Cleared") : ""}
         </Text>

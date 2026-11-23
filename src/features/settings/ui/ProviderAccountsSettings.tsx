@@ -463,7 +463,11 @@ export function ProviderAccountsSettings({
                             {displayLabel}
                           </Text>
                           {account.isDefault && !defaultNamed ? (
-                            <Star role="img" aria-label={t("Default account")} className="icon-sm" />
+                            <Star
+                              role="img"
+                              aria-label={t("Default account")}
+                              className="icon-sm"
+                            />
                           ) : null}
                         </div>
                         <Text

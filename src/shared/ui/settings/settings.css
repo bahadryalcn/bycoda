@@ -116,7 +116,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  inline-size: max-content;
+  inline-size: var(--settings-control-width, max-content);
   min-inline-size: 12rem;
   max-inline-size: 18rem;
   align-self: center;
@@ -151,6 +151,9 @@
 /* Control width: `wide` widens the column for a pair of selects or a short field; `fill` lets it take
    all the room the label leaves, right aligned, so a segmented choice or card strip fits. */
 @container settings-row (inline-size >= 35rem) {
+  .settings-row[data-control-width="aligned"]:not([data-stacked]) > .settings-row-control {
+    --settings-control-width: 16rem;
+  }
   .settings-row[data-control-width="wide"]:not([data-stacked]) > .settings-row-control {
     max-inline-size: 28rem;
     min-inline-size: 24rem;

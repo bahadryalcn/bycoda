@@ -29,21 +29,21 @@ export function UserDraftFooter({
 }) {
   const t = useT();
   return (
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-        <Tooltip label={deliveryDescription} asChild>
-          <Text
-            as="span"
-            size="caption"
-            tone="secondary"
-            className="flex items-center gap-1.5"
-            role={delivery ? "status" : undefined}
-          >
-            <CircleDashed className="icon-sm" strokeWidth={1.75} />
-            {deliveryLabel}
-          </Text>
-        </Tooltip>
-        <Tooltip label={deliveryActive ? heldActionTitle : undefined} asChild>
-          <span className="flex items-center gap-1">
+    <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+      <Tooltip label={deliveryDescription} asChild>
+        <Text
+          as="span"
+          size="caption"
+          tone="secondary"
+          className="flex items-center gap-1.5"
+          role={delivery ? "status" : undefined}
+        >
+          <CircleDashed className="icon-sm" strokeWidth={1.75} />
+          {deliveryLabel}
+        </Text>
+      </Tooltip>
+      <Tooltip label={deliveryActive ? heldActionTitle : undefined} asChild>
+        <span className="flex items-center gap-1">
           {onEditDraft ? (
             <Button
               motion="none"
@@ -79,8 +79,8 @@ export function UserDraftFooter({
           >
             <ArrowUp className="icon-sm" strokeWidth={2} />
           </Button>
-          </span>
-        </Tooltip>
-      </div>
+        </span>
+      </Tooltip>
+    </div>
   );
 }

@@ -12,7 +12,8 @@ vi.mock("./WorkspaceFeatureSettings", () => ({
   WorkspaceFeatureSettings: () => null,
   WorkspaceToolsHelp: () => null,
 }));
-import { WorkspacePage } from "./WorkspaceSettings";
+// Exact Git rewind moved to Source Control; its row is still owned by this module.
+import { ExactGitRewindSetting } from "./WorkspaceSettings";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -36,7 +37,7 @@ afterEach(async () => {
 });
 
 it("loads the disabled Host policy and blocks duplicate saves until acknowledged", async () => {
-  await act(async () => root.render(createElement(WorkspacePage)));
+  await act(async () => root.render(createElement(ExactGitRewindSetting)));
   expect(toggle().getAttribute("aria-checked")).toBe("false");
   let resolve!: (enabled: boolean) => void;
   mock.save.mockImplementation(
@@ -61,7 +62,7 @@ it("loads the disabled Host policy and blocks duplicate saves until acknowledged
 
 it("retains the previous value after a rejected save and allows another attempt", async () => {
   mock.save.mockRejectedValueOnce(new Error("Synthetic Host busy"));
-  await act(async () => root.render(createElement(WorkspacePage)));
+  await act(async () => root.render(createElement(ExactGitRewindSetting)));
   await act(async () => toggle().click());
   expect(toggle().getAttribute("aria-checked")).toBe("false");
   expect(toggle().disabled).toBe(false);
@@ -73,7 +74,7 @@ it("retains the previous value after a rejected save and allows another attempt"
 
 it("shows a retryable read error without allowing an unknown policy to be changed", async () => {
   mock.load.mockRejectedValueOnce(new Error("Synthetic Host offline"));
-  await act(async () => root.render(createElement(WorkspacePage)));
+  await act(async () => root.render(createElement(ExactGitRewindSetting)));
   expect(toggle().disabled).toBe(true);
   expect(container.textContent).toContain("Synthetic Host offline");
   const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(

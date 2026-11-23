@@ -121,7 +121,9 @@ export function HostShellRow({
           ) : null}
         </div>
         {status.tone === "warning" ? (
-          <Badge tone={status.tone} role="status">{status.label}</Badge>
+          <Badge tone={status.tone} role="status">
+            {status.label}
+          </Badge>
         ) : null}
         <div className="terminal-host-select">
           <SearchableSelect
@@ -134,8 +136,8 @@ export function HostShellRow({
               {
                 value: "",
                 label: systemDefault
-                    ? t("Automatic ({p0})", { p0: systemDefault.name })
-                    : t("Automatic"),
+                  ? t("Automatic ({p0})", { p0: systemDefault.name })
+                  : t("Automatic"),
               },
               ...(listed?.profiles ?? []).map((profile) => ({
                 value: profile.id,
@@ -147,16 +149,18 @@ export function HostShellRow({
           />
         </div>
         <div className="settings-collection-actions">
-          {expanded ? <Button
-            variant="ghost"
-            iconOnly
-            label={refreshLabel}
-            loading={loading}
-            disabled={refreshDisabled || loading}
-            onClick={onRefresh}
-          >
-            <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
-          </Button> : null}
+          {expanded ? (
+            <Button
+              variant="ghost"
+              iconOnly
+              label={refreshLabel}
+              loading={loading}
+              disabled={refreshDisabled || loading}
+              onClick={onRefresh}
+            >
+              <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             iconOnly

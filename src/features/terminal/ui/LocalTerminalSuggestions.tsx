@@ -280,13 +280,14 @@ export function LocalTerminalSuggestions({
       <TerminalGhostText terminal={terminal} suffix={value.slice(snapshot.prefix.length)} />
       {explicit ? (
         <TerminalCursorPopover terminal={terminal} onDismiss={dismiss}>
-          <PickerList
-            label={t("Command suggestions")}
-            controller={list}
-            checkPlacement="none"
-            pointerHighlight="movement"
-            className={styles.list}
-          />
+          <div className={styles.list}>
+            <PickerList
+              label={t("Command suggestions")}
+              controller={list}
+              checkPlacement="none"
+              pointerHighlight="movement"
+            />
+          </div>
         </TerminalCursorPopover>
       ) : null}
     </>

@@ -206,7 +206,8 @@ export function VoiceVisualizer({
         visible &&
         focused &&
         !calm &&
-        (!preview && !STATIC_STATES.has(state));
+        !preview &&
+        !STATIC_STATES.has(state);
       element!.dataset.animating = String(running);
       paint(1300, true);
       if (running) frame = requestAnimationFrame(tick);

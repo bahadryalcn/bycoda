@@ -157,7 +157,8 @@ it("pauses the account from the menu and refreshes", async () => {
   const request = vi.fn(async () => ({}));
   const onChanged = render(request);
   expect(menu("pause")?.textContent).toBe("Pause account");
-  await act(async () => menu("pause")?.click());
+  const item = menu("pause");
+  await act(async () => item?.click());
   expect(request).toHaveBeenCalledExactlyOnceWith("accounts.pause", {
     accountId: "a1",
     paused: true,
@@ -170,7 +171,8 @@ it("offers Resume for a paused account and sends the opposite value", async () =
   render(request, { account: account({ paused: true }) });
   expect(menu("pause")?.textContent).toBe("Resume account");
   expect(element.textContent).toContain("Paused");
-  await act(async () => menu("pause")?.click());
+  const item = menu("pause");
+  await act(async () => item?.click());
   expect(request).toHaveBeenCalledExactlyOnceWith("accounts.pause", {
     accountId: "a1",
     paused: false,
@@ -182,7 +184,8 @@ it("shows the failure and does not refresh when the Host refuses to pause", asyn
     throw new Error("The Host is busy.");
   });
   const onChanged = render(request);
-  await act(async () => menu("pause")?.click());
+  const item = menu("pause");
+  await act(async () => item?.click());
   expect(element.textContent).toContain("The Host is busy.");
   expect(onChanged).not.toHaveBeenCalled();
 });
@@ -190,7 +193,8 @@ it("shows the failure and does not refresh when the Host refuses to pause", asyn
 it("asks with a danger confirmation before removing a connection and removes only after it", async () => {
   const request = vi.fn(async () => ({}));
   const onChanged = render(request);
-  await act(async () => menu("remove")?.click());
+  const item = menu("remove");
+  await act(async () => item?.click());
   expect(confirmRequests).toHaveLength(1);
   expect(confirmRequests[0]?.danger).toBe(true);
   expect(confirmRequests[0]?.title).toBe("Remove the connection of Studio?");
@@ -202,7 +206,8 @@ it("keeps the connection when the owner declines the removal", async () => {
   confirmAnswer.accept = false;
   const request = vi.fn(async () => ({}));
   const onChanged = render(request);
-  await act(async () => menu("remove")?.click());
+  const item = menu("remove");
+  await act(async () => item?.click());
   expect(confirmRequests).toHaveLength(1);
   expect(request).not.toHaveBeenCalled();
   expect(onChanged).not.toHaveBeenCalled();

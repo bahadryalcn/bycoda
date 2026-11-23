@@ -6,7 +6,9 @@ import {
   DEFAULT_SESSION_SIDEBAR_FILTERS,
   type SessionSidebarFilters,
 } from "../model/sessionFilters";
-import { SessionFiltersMenu } from "./SessionFiltersMenu";
+import { SessionFiltersMenu, SessionViewMenu } from "./SessionFiltersMenu";
+import { loadSessionListDisplay, updateSessionListDisplay } from "../model/sessionListDisplay";
+import { OPEN_SESSION_IMPORT_EVENT } from "../import/importModel";
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
@@ -47,6 +49,8 @@ it("limits global time choices and clears back to seven days", async () => {
       (item) => item.textContent?.trim() === label,
     );
   expect(button("All time")).toBeUndefined();
+  expect(button("Compact")).toBeUndefined();
+  expect(button("Show model")).toBeUndefined();
   expect(button("Last 30 days")).toBeUndefined();
   expect(button("Last 7 days")?.getAttribute("aria-checked")).toBe("true");
   expect(button("Clear filters")).toBeUndefined();
@@ -56,6 +60,40 @@ it("limits global time choices and clears back to seven days", async () => {
   expect(button("Last 7 days")?.getAttribute("aria-checked")).toBe("true");
   expect(button("Clear filters")).toBeUndefined();
   await act(async () => root.unmount());
+});
+
+it("keeps view preferences in their own menu and preserves their saved selection", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const previous = loadSessionListDisplay();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const button = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => item.textContent?.trim() === label,
+    );
+  updateSessionListDisplay({ density: "standard", showModel: false });
+  const onImport = vi.fn();
+  const onClose = vi.fn();
+  window.addEventListener(OPEN_SESSION_IMPORT_EVENT, onImport);
+  try {
+    await act(async () =>
+      root.render(createElement(SessionViewMenu, { x: 0, y: 0, onClose, canImport: true })),
+    );
+    expect(button("Working")).toBeUndefined();
+    expect(button("Standard")?.getAttribute("aria-checked")).toBe("true");
+    await act(async () => button("Compact")!.click());
+    await act(async () => button("Show model")!.click());
+    expect(loadSessionListDisplay()).toMatchObject({ density: "compact", showModel: true });
+    expect(button("Compact")?.getAttribute("aria-checked")).toBe("true");
+    await act(async () => button("Import history")!.click());
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onImport).toHaveBeenCalledTimes(1);
+  } finally {
+    window.removeEventListener(OPEN_SESSION_IMPORT_EVENT, onImport);
+    await act(async () => root.unmount());
+    updateSessionListDisplay(previous);
+  }
 });
 
 it("keeps the menu open after toggling Archived and Settled like other filters", async () => {

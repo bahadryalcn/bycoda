@@ -540,7 +540,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
         {...sashProps}
         label={t("Resize notes panel")}
         appearance="hidden"
-        className="absolute inset-y-0 -left-px"
+        className="absolute inset-y-0 start-0"
       />
       {!selectedDetail && renderHeader()}
       {selectedDetail ? (

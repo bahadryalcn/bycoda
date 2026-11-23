@@ -241,26 +241,26 @@ export function GoalForm({
                 )}
               >
                 {machineOptions.length > 1 ? (
-                <GoalOption title={t("Machine")}>
-                  <SearchableSelect
-                    hideLabel
-                    label={t("Machine")}
-                    placeholder={t("Choose machine")}
-                    value={targetId}
-                    options={machineOptions}
-                    onChange={(machineId) =>
-                      onChange({
-                        ...draft,
-                        machineId,
-                        modelChoice: undefined,
-                        cwds: [],
-                        leadCwd: "",
-                        workspaces: undefined,
-                        providerAccountId: defaultAccountFor(draft.harness, machineId),
-                      })
-                    }
-                  />
-                </GoalOption>
+                  <GoalOption title={t("Machine")}>
+                    <SearchableSelect
+                      hideLabel
+                      label={t("Machine")}
+                      placeholder={t("Choose machine")}
+                      value={targetId}
+                      options={machineOptions}
+                      onChange={(machineId) =>
+                        onChange({
+                          ...draft,
+                          machineId,
+                          modelChoice: undefined,
+                          cwds: [],
+                          leadCwd: "",
+                          workspaces: undefined,
+                          providerAccountId: defaultAccountFor(draft.harness, machineId),
+                        })
+                      }
+                    />
+                  </GoalOption>
                 ) : null}
                 <div className="goal-option-wide grid min-w-0 gap-2">
                   <Text

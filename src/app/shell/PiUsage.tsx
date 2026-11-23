@@ -56,13 +56,14 @@ function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: nu
         ...idleRateLimits(piBillingProvider(provider)),
         status: "fetching",
       });
-      try {
-        const result = await fetchPiUsage(provider);
-        if (!disposed) setLimits(result);
-      } finally {
-        inflight = false;
-        lastFetchAt = Date.now();
-      }
+      await fetchPiUsage(provider)
+        .then((result) => {
+          if (!disposed) setLimits(result);
+        })
+        .finally(() => {
+          inflight = false;
+          lastFetchAt = Date.now();
+        });
     };
     refreshRef.current = refresh;
     const onVisible = () => void refresh().catch(console.error);
@@ -78,16 +79,16 @@ function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: nu
     };
   }, [provider]);
   return (
-      <UsageProviderChip
-        limits={limits}
-        now={now}
-        onRefresh={() => refreshRef.current(true).catch(console.error)}
-        refreshing={limits.status === "fetching"}
-        presentation={{
-          sourceLabel: "Pi's saved OAuth account",
-          harness: "pi",
-          label: provider === "anthropic" ? "Pi · Anthropic" : "Pi · OpenAI Codex",
-        }}
-      />
+    <UsageProviderChip
+      limits={limits}
+      now={now}
+      onRefresh={() => refreshRef.current(true).catch(console.error)}
+      refreshing={limits.status === "fetching"}
+      presentation={{
+        sourceLabel: "Pi's saved OAuth account",
+        harness: "pi",
+        label: provider === "anthropic" ? "Pi · Anthropic" : "Pi · OpenAI Codex",
+      }}
+    />
   );
 }

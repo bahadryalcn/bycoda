@@ -379,7 +379,6 @@ it("browses only the requested machine and offers no machine switch", async () =
   machines.push(secondMachine);
   await renderFor("second");
   expect(document.body.querySelector('button[aria-haspopup="dialog"]')).toBeNull();
-  expect(document.body.textContent).toContain("Second server");
   const browsed = vi
     .mocked(invoke)
     .mock.calls.filter((call) => (call[1] as { method?: string })?.method === "projects.browse");

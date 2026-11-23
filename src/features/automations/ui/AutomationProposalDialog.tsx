@@ -1,10 +1,11 @@
-import { useSyncExternalStore, type ReactNode } from "react";
+import { useSyncExternalStore } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
-import { RUNTIME_MODE_LABEL } from "../../sessions/model/session";
+import { RUNTIME_MODE_LABEL } from "../../sessions/public/session";
 import { automationScheduleLabel } from "../model/automations";
 import { dateTimeFormat, useT } from "../../../shared/i18n";
 import {
@@ -13,24 +14,6 @@ import {
   closeAutomationProposal,
   saveAutomationProposal,
 } from "../model/automationProposalStore";
-
-/** One read-only fact of the proposal: a plain label and its value, not a disabled input. */
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <dt>
-        <Text size="caption" tone="muted" weight="medium">
-          {label}
-        </Text>
-      </dt>
-      <dd className="m-0 min-w-0">
-        <Text size="body" tone="primary" className="break-words">
-          {children}
-        </Text>
-      </dd>
-    </div>
-  );
-}
 
 /** A concrete owner confirmation; preparing or cancelling never creates an automation. */
 export function AutomationProposalDialog() {
@@ -70,34 +53,40 @@ export function AutomationProposalDialog() {
         {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
         {saved ? <Alert tone="success">{t("Saved")}</Alert> : null}
         {proposal ? (
-          <dl className="flex min-w-0 flex-col gap-3">
-            <Fact label={t("Name")}>{proposal.name}</Fact>
-            <Fact label={t("Instructions")}>
-              <span className="block max-h-40 overflow-y-auto whitespace-pre-wrap">
-                {proposal.instruction}
-              </span>
-            </Fact>
-            <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-3">
-              <Fact label={t("Host")}>{state.machine?.name ?? ""}</Fact>
-              <Fact label={t("Project")}>{state.session.cwd}</Fact>
-              <Fact label={t("Schedule")}>{automationScheduleLabel(proposal.schedule)}</Fact>
-              <Fact label={t("Time zone")}>{proposal.preview.timeZone}</Fact>
-              <Fact label={t("Next run")}>
+          <>
+            <DescriptionList>
+              <DescriptionItem term={t("Name")}>{proposal.name}</DescriptionItem>
+              <DescriptionItem term={t("Instructions")}>
+                <span className="block max-h-40 overflow-y-auto whitespace-pre-wrap">
+                  {proposal.instruction}
+                </span>
+              </DescriptionItem>
+            </DescriptionList>
+            <DescriptionList columns="auto">
+              <DescriptionItem term={t("Host")}>{state.machine?.name ?? ""}</DescriptionItem>
+              <DescriptionItem term={t("Project")}>{state.session.cwd}</DescriptionItem>
+              <DescriptionItem term={t("Schedule")}>
+                {automationScheduleLabel(proposal.schedule)}
+              </DescriptionItem>
+              <DescriptionItem term={t("Time zone")}>{proposal.preview.timeZone}</DescriptionItem>
+              <DescriptionItem term={t("Next run")}>
                 {dateTimeFormat(undefined, {
                   timeZone: proposal.preview.timeZone,
                   dateStyle: "medium",
                   timeStyle: "short",
                 }).format(state.saved?.nextRunAt ?? proposal.preview.nextRunAt)}
-              </Fact>
-              <Fact label={t("Output")}>
+              </DescriptionItem>
+              <DescriptionItem term={t("Output")}>
                 {proposal.outputTarget === "room" ? t("Assistant room") : t("Task")}
-              </Fact>
-              <Fact label={t("Model")}>
+              </DescriptionItem>
+              <DescriptionItem term={t("Model")}>
                 <ModelLabel harness={execution.harness} model={execution.model} />
-              </Fact>
-              <Fact label={t("Mode")}>{t(RUNTIME_MODE_LABEL[execution.runtimeMode])}</Fact>
-            </div>
-          </dl>
+              </DescriptionItem>
+              <DescriptionItem term={t("Mode")}>
+                {t(RUNTIME_MODE_LABEL[execution.runtimeMode])}
+              </DescriptionItem>
+            </DescriptionList>
+          </>
         ) : null}
       </div>
     </Modal>

@@ -161,13 +161,11 @@ export function SshAgentForwarding({
   const review = active?.review;
   // An expired review is replaced by a fresh one; the user still approves explicitly.
   useEffect(() => {
-    if (!review) return;
-    const timeout = setTimeout(
-      () => void request(),
-      Math.max(0, review.expiresAt - Date.now()),
-    );
+    // An approved review is spent: nothing to renew.
+    if (!review || consumedReview === review.reviewId) return;
+    const timeout = setTimeout(() => void request(), Math.max(0, review.expiresAt - Date.now()));
     return () => clearTimeout(timeout);
-  }, [review, request]);
+  }, [review, consumedReview, request]);
   const valid = Boolean(
     review?.agentAvailable && consumedReview !== review.reviewId && !active?.loading,
   );
@@ -217,10 +215,7 @@ export function SshAgentForwarding({
           )}
         </Alert>
         {active?.error ? (
-          <Alert
-            tone="danger"
-            action={{ label: t("Retry"), onClick: () => void request() }}
-          >
+          <Alert tone="danger" action={{ label: t("Retry"), onClick: () => void request() }}>
             {active.error}
           </Alert>
         ) : active?.loading ? (

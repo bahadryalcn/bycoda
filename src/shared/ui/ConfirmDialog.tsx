@@ -336,7 +336,7 @@ export function ConfirmDialog({
         aria-busy={pending || undefined}
         className="flex flex-col gap-3 text-ui-secondary break-words text-(--ui-text-secondary)"
       >
-        {request.message == null ? null : (
+        {request.message == null || request.message === "" ? null : (
           <Text as="p" size="inherit" tone="inherit" wrap="preserve-lines">
             {request.message}
           </Text>

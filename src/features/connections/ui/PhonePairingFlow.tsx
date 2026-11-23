@@ -108,11 +108,7 @@ export function PhonePairingFlow({
   const localToggle =
     localNetwork &&
     (state.stage === "qr" || (state.stage === "access" && state.access.state === "ready")) ? (
-      <Switch
-        checked
-        onCheckedChange={() => onDisable?.()}
-        label={t("Local network access")}
-      />
+      <Switch checked onCheckedChange={() => onDisable?.()} label={t("Local network access")} />
     ) : null;
   const showCode = (
     <Button stableWidth type="button" onClick={onCreate} variant="primary">
@@ -165,7 +161,9 @@ export function PhonePairingFlow({
       {state.stage === "access" ? (
         <div className="flex flex-col gap-4">
           {/* One message per state: the first that applies. */}
-          {state.access.state === "ready" && localNetwork && (networkHint || state.access.reason) ? (
+          {state.access.state === "ready" &&
+          localNetwork &&
+          (networkHint || state.access.reason) ? (
             <InlineMessage tone={networkHint ? "warning" : "info"}>
               {t((networkHint ?? state.access.reason)!)}
             </InlineMessage>
@@ -185,14 +183,14 @@ export function PhonePairingFlow({
                   ? networkHint
                     ? t(networkHint)
                     : state.access.reason
-                    ? t(state.access.reason)
-                    : state.access.state === "setup-required"
-                      ? t(
-                          "Enable local network access to connect your phone. Pairing and workspace data are encrypted.",
-                        )
-                      : t(
-                          "Local network access is unavailable. Check your computer's network and firewall, then try again.",
-                        )
+                      ? t(state.access.reason)
+                      : state.access.state === "setup-required"
+                        ? t(
+                            "Enable local network access to connect your phone. Pairing and workspace data are encrypted.",
+                          )
+                        : t(
+                            "Local network access is unavailable. Check your computer's network and firewall, then try again.",
+                          )
                   : t(accessCopy[state.access.state])}
               </InlineMessage>
               {localNetwork && addresses.length > 1 ? (

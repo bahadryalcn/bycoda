@@ -142,9 +142,7 @@ export function ContinuousUsageTable({
     <>
       <div className="usage-section-heading">
         <Text as="span" leading="inherit" className="usage-muted">
-          {rows.length === 1
-            ? t("1 record")
-            : t("{p0} records", { p0: formatNumber(rows.length) })}
+          {rows.length === 1 ? t("1 record") : t("{p0} records", { p0: formatNumber(rows.length) })}
         </Text>
         <Button
           variant="ghost"

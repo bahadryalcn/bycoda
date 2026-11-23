@@ -193,7 +193,12 @@ export function CwdPicker({
           <>
             <ProjectLogoIcon path={projectLogoPath} fallbackStrokeWidth={1.5} />
             {/* The projectless state is one quiet label, same type as a project trigger. */}
-            <Text truncate size="caption" tone="inherit" className={inProject ? "font-mono" : undefined}>
+            <Text
+              truncate
+              size="caption"
+              tone="inherit"
+              className={inProject ? "font-mono" : undefined}
+            >
               {inProject ? label : t("No project")}
             </Text>
           </>

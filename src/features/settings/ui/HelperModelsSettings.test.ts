@@ -35,7 +35,9 @@ function button(label: string) {
 }
 
 it("links all helper models to Work assignments once without a feature picker", async () => {
-  expect(container.textContent).toContain("Model set in Settings → Models → Background work.");
+  // The navigation sentence was removed; the row name and its one link carry the meaning.
+  expect(container.textContent).toContain("Translation, reprompt and title models");
+  expect(container.textContent).not.toContain("Model set in Settings");
   expect(container.textContent).not.toContain("Model picker");
   await act(async () => button("Manage models").click());
   expect(links.open).toHaveBeenCalledWith("roles");

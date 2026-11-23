@@ -51,12 +51,7 @@
 .empty {
   display: block;
   margin: 0;
-  padding-block: var(--ui-space-6);
   text-align: center;
-}
-/* An empty live region must keep no height; the empty state still occupies its place only while it has text. */
-.empty:empty {
-  padding-block: 0;
 }
 @container assistant-room (max-width: 540px) {
   .event {

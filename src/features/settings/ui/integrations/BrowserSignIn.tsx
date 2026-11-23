@@ -160,7 +160,6 @@ export function BrowserSignIn({
     setPhase({ kind: "idle" });
   };
 
-
   if (phase.kind === "waiting") {
     const { start } = phase;
     return (

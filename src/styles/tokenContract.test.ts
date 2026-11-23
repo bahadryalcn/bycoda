@@ -57,7 +57,8 @@ const [chipDark, chipLight] = all(/--ui-tone-subtle-strength: (\d+)%;/g);
 const floatingDark = num(
   /--ui-floating-lift: calc\((\d+)% \* var\(--appearance-layer-strength, 1\)\);/,
 );
-const floatingLight = /--ui-floating-lift: clamp\(\s*0%,\s*calc\(\(var\(--ui-ground-lightness\) - ([\d.]+)%\) \* ([\d.]+) \* var\(--appearance-layer-strength, 1\)\),\s*([\d.]+)%\s*\);/;
+const floatingLight =
+  /--ui-floating-lift: clamp\(\s*0%,\s*calc\(\(var\(--ui-ground-lightness\) - ([\d.]+)%\) \* ([\d.]+) \* var\(--appearance-layer-strength, 1\)\),\s*([\d.]+)%\s*\);/;
 const lightness = num(/--theme-light-lightness: ([\d.]+)%;/);
 const hue = num(/--theme-hue: (\d+);/);
 const saturation = num(/--theme-saturation: (\d+)%;/);
@@ -166,6 +167,7 @@ describe("shared declarations", () => {
   it("derives the floating ground from one theme-layer recipe", () => {
     expect(index.match(/--ui-surface-floating:\s*color-mix\(/g)).toHaveLength(1);
     expect(index).toMatch(/--ui-floating-base:\s*var\(--ui-layer-base\);/);
+    expect(index).toMatch(/--ui-floating-lift-color:\s*var\(--color-content\);/);
     expect(index).toMatch(
       /--ui-surface-floating:\s*color-mix\(\s*in oklab,\s*var\(--ui-floating-lift-color\) var\(--ui-floating-lift\),\s*var\(--ui-floating-base\)\s*\);/,
     );

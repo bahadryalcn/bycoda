@@ -270,7 +270,6 @@
     "src/features/sessions/model/transcriptHighlights.test.ts": 1,
     "src/features/sessions/model/transcriptTurnCache.test.ts": 1,
     "src/features/sessions/model/turnSteps.test.ts": 2,
-    "src/features/sessions/ui/AgentMarkdownMenu.test.ts": 2,
     "src/features/sessions/ui/AgentTabView.test.ts": 2,
     "src/features/sessions/ui/AgentTranscript.retention.test.ts": 14,
     "src/features/sessions/ui/AgentTranscript.userTextPreview.test.ts": 1,
@@ -390,13 +389,10 @@
     "src/shared/ui/DropdownMenu.test.ts": 3,
     "src/shared/ui/InfoPopover.test.ts": 1,
     "src/shared/ui/MenuRow.test.ts": 1,
-    "src/shared/ui/MiddleTruncate.test.ts": 4,
     "src/shared/ui/ShortcutRecorder.test.ts": 1,
     "src/shared/ui/TabLabel.test.ts": 3,
-    "src/shared/ui/Tabs.test.ts": 1,
     "src/shared/ui/lazySurface.test.ts": 1,
     "src/shared/ui/overlay.test.ts": 1,
-    "src/shared/ui/overlayFocusReturn.test.ts": 2,
-    "src/shared/ui/settings/settingsRows.test.ts": 1
+    "src/shared/ui/overlayFocusReturn.test.ts": 2
   }
 }

@@ -756,7 +756,9 @@ describe("settings navigation", () => {
     expect(ids).toHaveLength(21);
     expect(new Set(ids).size).toBe(21);
     expect([...ids].sort()).toEqual(
-      SETTINGS_SECTIONS.map((section) => section.id).filter((id) => id !== "tools" && id !== "archive").sort(),
+      SETTINGS_SECTIONS.map((section) => section.id)
+        .filter((id) => id !== "tools" && id !== "archive")
+        .sort(),
     );
     for (const group of groups) {
       expect(group.sections.every((section) => section.group === group.id)).toBe(true);
@@ -791,11 +793,7 @@ describe("settings navigation", () => {
     const byGroup = Object.fromEntries(
       settingsSectionsByGroup().map((group) => [group.id, group.sections.map((s) => s.id)]),
     );
-    expect(byGroup.app).toEqual([
-      "general",
-      "appearance",
-      "keybindings",
-    ]);
+    expect(byGroup.app).toEqual(["general", "appearance", "keybindings"]);
     expect(byGroup.conversation).toEqual(["chat", "voice", "notifications"]);
     expect(byGroup.models).toEqual(["providers", "decisionModels", "usage"]);
     expect(byGroup.tools).toEqual(["skills", "mcp"]);

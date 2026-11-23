@@ -17,8 +17,8 @@ const RETRY_MS = 3000;
 
 /**
  * One-time, non-blocking question for people who were never asked. It waits for dialogs
- * (first-run setup included) to close; every showing counts, so leaving it unanswered asks again
- * next launch, three times at most, and statistics stay off. Hidden in builds without accounts, which send nothing.
+ * (first-run setup included) to close; the showing counts, so it is asked once and statistics
+ * stay off unless the owner opts in. Hidden in builds without accounts, which send nothing.
  */
 export function StatsConsentNotice() {
   useLocale();

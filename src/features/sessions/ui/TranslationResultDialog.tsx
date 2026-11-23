@@ -261,16 +261,12 @@ export function TranslationResultDialog({
                 {t("Original text")}
               </Heading>
             </header>
-            <Text
-              as="div"
-              size="inherit"
-              tone="inherit"
-              leading="relaxed"
-              className={styles.text}
-              tabIndex={0}
-            >
-              {text}
-            </Text>
+            {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the scrollable text box must stay keyboard-scrollable */}
+            <div className={styles.text} tabIndex={0}>
+              <Text as="div" size="inherit" tone="inherit" leading="relaxed">
+                {text}
+              </Text>
+            </div>
           </section>
           <section
             {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.pane)}
@@ -281,37 +277,29 @@ export function TranslationResultDialog({
               <Heading size="item" id={`${id}-translation`}>
                 {reprompt ? t("Rewritten prompt") : t("Translation")}
               </Heading>
-              <Text
-                size="caption"
-                tone="secondary"
-                leading="inherit"
-                className={styles.status}
-                role="status"
-              >
-                {pending ? <Spinner size="xs" /> : null}
-                {pending ? (reprompt ? t("Rewriting…") : t("Translating…")) : null}
-                {pending ? (
-                  <span aria-hidden="true" className={styles.elapsed}>
-                    {elapsed}s
-                  </span>
-                ) : null}
+              <Text size="caption" tone="secondary" leading="inherit">
+                <span className={styles.status} role="status">
+                  {pending ? <Spinner size="xs" /> : null}
+                  {pending ? (reprompt ? t("Rewriting…") : t("Translating…")) : null}
+                  {pending ? (
+                    <span aria-hidden="true" className={styles.elapsed}>
+                      {elapsed}s
+                    </span>
+                  ) : null}
+                </span>
               </Text>
             </header>
             <div className={styles.result}>
               {pending && !result ? (
-                <Text
-                  as="div"
-                  size="inherit"
-                  tone="secondary"
-                  leading="relaxed"
-                  className={styles.placeholder}
-                >
+                <div className={styles.placeholder}>
+                <Text as="div" size="inherit" tone="secondary" leading="relaxed">
                   <div aria-hidden="true" className={styles.skeleton}>
                     <SkeletonBar height="8px" />
                     <SkeletonBar height="8px" index={1} />
                     <SkeletonBar height="8px" width="65%" index={2} />
                   </div>
                 </Text>
+                </div>
               ) : error ? (
                 <Alert
                   tone="danger"
@@ -342,25 +330,15 @@ export function TranslationResultDialog({
                           : t("Could not translate. Try again.")}
                 </Alert>
               ) : result ? (
-                <Text
-                  as="div"
-                  size="inherit"
-                  tone="inherit"
-                  leading="relaxed"
-                  tabIndex={0}
-                  className={styles.text}
-                >
-                  {result}
-                </Text>
+                // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the scrollable result box must stay keyboard-scrollable
+                <div tabIndex={0} className={styles.text}>
+                  <Text as="div" size="inherit" tone="inherit" leading="relaxed">
+                    {result}
+                  </Text>
+                </div>
               ) : (
-                <Text
-                  as="p"
-                  role="status"
-                  size="inherit"
-                  tone="secondary"
-                  leading="relaxed"
-                  className={styles.placeholder}
-                >
+                <div role="status" className={styles.placeholder}>
+                <Text as="p" size="inherit" tone="secondary" leading="relaxed">
                   {!runnable
                     ? reprompt
                       ? t("This provider does not support reprompt requests. Choose another model.")
@@ -373,6 +351,7 @@ export function TranslationResultDialog({
                         : t("Choose a translation model.")
                       : null}
                 </Text>
+                </div>
               )}
             </div>
           </section>

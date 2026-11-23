@@ -39,6 +39,8 @@ export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> &
    * truncates). Needs a block box: a flex or grid item.
    */
   truncate?: boolean;
+  /** Wrap a long caption when it needs to remain fully visible. */
+  wrap?: boolean;
   /** Label ink; unset preserves the section hierarchy. */
   tone?: TextTone;
   /** The group name, in sentence case (no uppercase eyebrow). */
@@ -116,6 +118,7 @@ export function SectionLabel({
   variant = "section",
   size = "caption",
   truncate = false,
+  wrap = false,
   tone,
   as: Heading = "h3",
   labelId,
@@ -147,6 +150,7 @@ export function SectionLabel({
         {...optionalTextAttributes({ tone }, [styles.inline, className].filter(Boolean).join(" "))}
         data-size={size === "caption" ? undefined : size}
         data-truncate={truncate || undefined}
+        data-section-label-wrap={(wrap && !truncate) || undefined}
       >
         {children}
       </span>
@@ -158,6 +162,7 @@ export function SectionLabel({
         {...props}
         {...optionalTextAttributes({ tone })}
         data-truncate={truncate || undefined}
+        data-section-label-wrap={(wrap && !truncate) || undefined}
         className={[
           optionalTextAttributes({ tone }).className,
           styles.inline,
@@ -202,6 +207,7 @@ export function SectionLabel({
     <>
       <span
         data-rail-section-text={compactRail || undefined}
+        data-section-label-wrap={wrap || undefined}
         id={labelId}
         {...optionalTextAttributes(
           { tone },

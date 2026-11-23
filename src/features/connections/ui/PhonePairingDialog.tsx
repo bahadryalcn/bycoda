@@ -7,11 +7,7 @@ import { PhonePairingFlow } from "./PhonePairingFlow";
 export function PhonePairingDialog(props: PhonePairingDialogProps) {
   useLocale();
   return (
-    <Modal
-      title={t("Connect your phone")}
-      onClose={props.onClose}
-      size="md"
-    >
+    <Modal title={t("Connect your phone")} onClose={props.onClose} size="md">
       <PhonePairingFlow variant="dialog" {...props} />
     </Modal>
   );

@@ -148,9 +148,7 @@ export function SummaryPanel({
       {error ? <InlineError>{error}</InlineError> : null}
       {summary ? (
         <>
-          {empty ? (
-            <EmptyState size="inline" description={t("No background activity.")} />
-          ) : null}
+          {empty ? <EmptyState size="inline" description={t("No background activity.")} /> : null}
           {taskSection(
             t("Finished"),
             summary.finished,

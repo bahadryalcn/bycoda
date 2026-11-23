@@ -113,12 +113,7 @@ export function IntegrationsPage() {
         {INTEGRATIONS.map((item) => (
           <div key={item.id} hidden={active !== item.id}>
             <div className="settings-topics">
-              <Group
-                layout="full"
-                id={item.id}
-                title={t("Connection")}
-                info={t(item.description)}
-              >
+              <Group layout="full" id={item.id} title={t("Connection")} info={t(item.description)}>
                 {active === item.id || visited.has(item.id)
                   ? item.render(active === item.id)
                   : null}

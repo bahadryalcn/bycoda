@@ -52,7 +52,9 @@ it.each([
   expect(failedTurnRetry(session)).toBeNull();
   const onSubmit = vi.fn();
   view(session, onSubmit);
-  expect(host.querySelector("button")).toBeNull();
+  // The only control is the technical-details disclosure: nothing offers to resend the old prompt.
+  const labels = [...host.querySelectorAll("button")].map((b) => b.getAttribute("aria-label") ?? "");
+  expect(labels.every((label) => label.startsWith("Technical details"))).toBe(true);
   expect(onSubmit).not.toHaveBeenCalled();
 });
 
@@ -142,7 +144,11 @@ const view = (session: Retry["session"], onSubmit: Retry["onSubmit"], blocked?: 
         ...session.blocks
           .filter((block) => block.notice === "error")
           .map((block) =>
-            createElement(SessionErrorNotice, { key: block.id, text: block.text, errorId: block.id }),
+            createElement(SessionErrorNotice, {
+              key: block.id,
+              text: block.text,
+              errorId: block.id,
+            }),
           ),
       ),
     ),

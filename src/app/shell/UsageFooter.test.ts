@@ -9,13 +9,13 @@ vi.mock("../../features/settings/public/useKeybindingShortcut", () => ({
 }));
 
 describe("UsageFooter terminal control", () => {
-  it("keeps the overflowing provider strip scrollbar visible, not hidden", () => {
+  it("keeps the overflowing provider strip on one line with a hidden scrollbar", () => {
     const markup = renderToStaticMarkup(
       createElement(UsageFooter, { providers: [], onNewTerminal: vi.fn() }),
     );
     expect(markup).toContain("data-provider-usage");
-    // ScrollArea marks a hidden bar with data-scrollbar="hidden"; the shared default omits it.
-    expect(markup).not.toContain('data-scrollbar="hidden"');
+    // The strip stays one line; clipped chips remain reachable by scrolling and keyboard focus.
+    expect(markup).toContain('data-scrollbar="hidden"');
   });
 
   it("replaces the generic terminal button with the live process control", () => {
@@ -38,8 +38,9 @@ describe("UsageFooter terminal control", () => {
       }),
     );
 
-    expect(markup).toContain(">npm</span>");
-    expect(markup).not.toContain(">Terminal</span>");
+    // The running process is named by the accessible label; the control is an icon.
+    expect(markup).toContain('aria-label="Hide terminal npm"');
+    expect(markup).not.toContain('aria-label="New Terminal');
     expect(markup.match(/<button/g)).toHaveLength(1);
   });
 

@@ -84,11 +84,7 @@ type Props = {
   onOpenProject: (path: string) => void;
 };
 
-export default function OnboardingDialog({
-  onFinish,
-  onImported,
-  onOpenProject,
-}: Props) {
+export default function OnboardingDialog({ onFinish, onImported, onOpenProject }: Props) {
   useLocale();
   const { machines } = useRemoteMachines();
   const remotes = remoteProjectMachines(machines);

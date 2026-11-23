@@ -101,7 +101,7 @@ export function DelegationSubagentsControl({
           expanded={open}
           disabled={disabled}
           onClick={() => setOpen((next) => !next)}
-          className="w-[52%] max-w-[11.5rem] min-w-0 shrink-0"
+          className="w-[52%] max-w-46 min-w-0 shrink-0"
         >
           <Text size="inherit" tone="inherit" truncate className="min-w-0">
             {summary}

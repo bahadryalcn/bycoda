@@ -41,12 +41,7 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
       <SwitchState state={to} />
       <StepNote step={to} />
       {switches > 1 ? (
-        <Text
-          as="span"
-          size="caption"
-          tone="muted"
-          className="shrink-0"
-        >
+        <Text as="span" size="caption" tone="muted" className="shrink-0">
           {switches}
         </Text>
       ) : null}
@@ -78,8 +73,7 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
       ) : (
         <Text
           role="note"
-          aria-label={title}
-          aria-description={note}
+          aria-label={note ? `${title}. ${note}` : title}
           as="div"
           size="body"
           tone="secondary"
@@ -153,10 +147,7 @@ function StepNote({ step }: { step: ModelSwitchStep }) {
 function SwitchHistory({ steps }: { steps: ModelSwitchStep[] }) {
   return (
     <ol
-      {...surfaceAttributes(
-        { frame: "pane", edge: "left" },
-        "ms-1.5 flex min-w-0 flex-col ps-3",
-      )}
+      {...surfaceAttributes({ frame: "pane", edge: "left" }, "ms-1.5 flex min-w-0 flex-col ps-3")}
     >
       {steps.map((step, index) => {
         const before = steps[index - 1];

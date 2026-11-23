@@ -156,8 +156,10 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           </SectionLabel>
         )}
         {visibleSelectedCount > 0 && (
-          <Text as="div" size="caption" tone="secondary" leading="inherit" className={styles.bulk}>
-            <span>{t("{p0} selected", { p0: visibleSelectedCount })}</span>
+          <div className={styles.bulk}>
+            <Text size="caption" tone="secondary" leading="inherit">
+              {t("{p0} selected", { p0: visibleSelectedCount })}
+            </Text>
             <Button
               size="sm"
               startIcon={<Square className="icon-sm" />}
@@ -175,7 +177,7 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
             >
               {t("Delete")}
             </Button>
-          </Text>
+          </div>
         )}
       </div>
       {view === "Today" && brief}

@@ -1,13 +1,13 @@
 .preview {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--ui-space-3);
   min-width: 0;
 }
 .stage {
   position: relative;
   height: 10rem;
   overflow: hidden;
-  border-radius: 0.75rem;
+  border-radius: var(--ui-radius-panel);
   border: 1px solid var(--ui-pane-border);
   background: var(--ui-surface);
 }
@@ -27,14 +27,14 @@
   display: grid;
   grid-template-columns: minmax(0, 0.32fr) minmax(0, 1fr);
   overflow: hidden;
-  border-radius: 0.5rem;
+  border-radius: var(--ui-radius-row);
   border: 1px solid var(--ui-pane-border);
 }
 .sidebar {
   display: grid;
   align-content: start;
-  gap: 0.25rem;
-  padding: 0.5rem;
+  gap: var(--ui-space-1);
+  padding: var(--ui-space-2);
   background: color-mix(in srgb, var(--ui-surface) 55%, transparent);
 }
 .sidebar[data-glass] {
@@ -44,7 +44,7 @@
 .sidebar span {
   display: block;
   height: 0.875rem;
-  border-radius: 0.3125rem;
+  border-radius: var(--ui-radius-row);
   background: var(--ui-surface-selected);
 }
 .sidebar span[data-selected] {
@@ -54,13 +54,13 @@
 .main {
   display: grid;
   align-content: end;
-  padding: 0.75rem;
+  padding: var(--ui-space-3);
   background: color-mix(in srgb, var(--ui-surface) 25%, transparent);
 }
 .main span {
   display: block;
   height: 1.5rem;
-  border-radius: 0.4375rem;
+  border-radius: var(--ui-radius-row);
   border: 1px solid var(--ui-pane-border);
   background: var(--ui-surface-selected);
 }

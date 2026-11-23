@@ -18,12 +18,7 @@ type Props = {
 export function TaskListPreview({ items, explanation }: Props) {
   const t = useT();
   return (
-    <Surface
-      as="section"
-      variant="card"
-      padding="none"
-      className="mb-2 overflow-hidden"
-    >
+    <Surface as="section" variant="card" padding="none" className="mb-2 overflow-hidden">
       <div
         {...surfaceAttributes(
           { frame: "pane", edge: "bottom" },
@@ -79,9 +74,7 @@ export function TaskListPreview({ items, explanation }: Props) {
 function TaskState({ status }: { status: TaskListItemStatus }) {
   const t = useT();
   if (status === "completed" || status === "in_progress") {
-    return (
-      <StatusBadge status={status === "completed" ? "done" : "running"} iconOnly size="xs" />
-    );
+    return <StatusBadge status={status === "completed" ? "done" : "running"} iconOnly size="xs" />;
   }
   if (status === "cancelled") {
     return <Badge tone="neutral" size="xs" label={t("Cancelled")} role="img" icon={<Minus />} />;

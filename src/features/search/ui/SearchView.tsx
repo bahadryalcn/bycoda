@@ -647,7 +647,10 @@ export function SearchView({
             <>
               <ErrorDetails
                 title={t("Search failed")}
-                detail={[showFileError ? error : null, showConversationError ? conversationError : null]
+                detail={[
+                  showFileError ? error : null,
+                  showConversationError ? conversationError : null,
+                ]
                   .filter(Boolean)
                   .join("\n")}
               />

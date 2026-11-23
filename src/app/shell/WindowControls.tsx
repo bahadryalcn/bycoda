@@ -21,11 +21,6 @@ export async function toggleWindowMaximize(): Promise<void> {
   else await win.toggleMaximize();
 }
 
-// Full-height caption buttons, flush with the title bar edge. They stay Buttons so the shared
-// tooltip, focus ring and hover states apply; `data-tauri-drag-region="false"` keeps them out of
-// the window drag area.
-const CONTROL_CLASS = "h-full w-10 min-h-0 rounded-none";
-
 // Detached workspaces own their controls in the persistent Working bar.
 export const WindowControlsVisible = createContext(true);
 
@@ -83,11 +78,10 @@ function NativeWindowControls() {
       <Button
         iconOnly
         label={minimizeToTray ? t("Minimize to tray") : t("Minimize window")}
-        variant="ghost"
+        variant="caption"
         motion="none"
         data-tauri-drag-region="false"
         onClick={handleMinimize}
-        className={CONTROL_CLASS}
       >
         <Minus className="icon-sm" strokeWidth={1.75} />
       </Button>
@@ -100,11 +94,10 @@ function NativeWindowControls() {
               ? t("Restore window")
               : t("Maximize window")
         }
-        variant="ghost"
+        variant="caption"
         motion="none"
         data-tauri-drag-region="false"
         onClick={handleToggleMaximize}
-        className={CONTROL_CLASS}
       >
         {isMaximized || isFullscreen ? (
           <Copy className="icon-sm" strokeWidth={1.75} />
@@ -115,12 +108,10 @@ function NativeWindowControls() {
       <Button
         iconOnly
         label={t("Close window")}
-        variant="ghost"
-        tone="danger"
+        variant="caption"
         motion="none"
         data-tauri-drag-region="false"
         onClick={handleClose}
-        className={CONTROL_CLASS}
       >
         <X className="icon-sm" strokeWidth={1.75} />
       </Button>

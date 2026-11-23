@@ -168,34 +168,31 @@ export function ConversationPanel(props: ConversationPanelProps) {
           </div>
         )}
         {draftSaveError && (
-          <InlineError
-            className={styles.draftError}
-            retry={{
-              label: t("Retry saving"),
-              onRetry: () => {
-                if (isTauri() && nativeDraftReady !== nativeDraftKey)
-                  setNativeDraftReload((value) => value + 1);
-                else flushDrafts();
-              },
-            }}
-            secondaryAction={
-              isTauri() ? { label: t("Recover draft"), onClick: openDraftRecovery } : undefined
-            }
-          >
-            {t("Could not save this draft. It is kept in this window.")}
-          </InlineError>
+          <div className={styles.draftError}>
+            <InlineError
+              retry={{
+                label: t("Retry saving"),
+                onRetry: () => {
+                  if (isTauri() && nativeDraftReady !== nativeDraftKey)
+                    setNativeDraftReload((value) => value + 1);
+                  else flushDrafts();
+                },
+              }}
+              secondaryAction={
+                isTauri() ? { label: t("Recover draft"), onClick: openDraftRecovery } : undefined
+              }
+            >
+              {t("Could not save this draft. It is kept in this window.")}
+            </InlineError>
+          </div>
         )}
         <ConversationComposer c={c} onFailure={reportFailure} />
         {!supported && (
-          <Text
-            as="p"
-            size="caption"
-            tone="secondary"
-            leading="inherit"
-            className={styles.composerNote}
-          >
-            {t("Conversation replies are unavailable. Configure a model on this Host.")}
-          </Text>
+          <div className={styles.composerNote}>
+            <Text as="p" size="caption" tone="secondary" leading="inherit">
+              {t("Conversation replies are unavailable. Configure a model on this Host.")}
+            </Text>
+          </div>
         )}
         {draftRecovery &&
           selected.current === draftRecovery.threadId &&

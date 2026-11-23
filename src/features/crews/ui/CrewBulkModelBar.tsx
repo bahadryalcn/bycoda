@@ -77,13 +77,7 @@ export function CrewBulkModelBar({
             supported={supported && !!onApplyChoice}
             disabled={disabled || pending}
             onManage={() => openModelsSettings("order")}
-            fixed={
-              <MemberModelPicker
-                cwd={cwd}
-                value={candidate}
-                onChange={setChosen}
-              />
-            }
+            fixed={<MemberModelPicker cwd={cwd} value={candidate} onChange={setChosen} />}
           />
           <Button
             variant="secondary"

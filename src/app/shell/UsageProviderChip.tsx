@@ -543,7 +543,9 @@ function UsageProviderDetails({
                 }}
               />
             ) : null}
-            {refreshButton ? <div className="flex justify-end pt-(--ui-space-2)">{refreshButton}</div> : null}
+            {refreshButton ? (
+              <div className="flex justify-end pt-(--ui-space-2)">{refreshButton}</div>
+            ) : null}
             {limits.provider === "codex" || limits.provider === "claude" ? (
               <BankedResets
                 limits={detailLimits}

@@ -405,7 +405,8 @@ describe("Composer question focus", () => {
     );
     expect(trigger?.textContent).toBe("repo");
     await act(async () => trigger!.click());
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Working folder");
+    // The marker is an icon with an accessible name, not visible text.
+    expect(document.querySelector('[role="dialog"] [aria-label="Working folder"]')).not.toBeNull();
     expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("Change project…");
   });
 
@@ -2567,8 +2568,8 @@ describe("Composer question focus", () => {
       );
       expect(document.querySelector("[data-mcp-picker]")).not.toBeNull();
       expect(onSaveDraft).not.toHaveBeenCalled();
-      const manage = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-        button.textContent?.includes("Manage MCP Servers"),
+      const manage = document.querySelector<HTMLButtonElement>(
+        '[aria-label="Manage MCP Servers…"]',
       )!;
       await act(async () => manage.click());
       expect(onOpen).toHaveBeenCalledOnce();

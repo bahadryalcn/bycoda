@@ -76,7 +76,7 @@ export function RailToolGroup({ label, tools }: { label: string; tools: readonly
               <StatusDot
                 label={tool.dot}
                 aria-hidden
-                className="absolute [inset-inline-end:4px] [inset-block-start:4px]"
+                className="absolute end-1 top-1"
               />
             ) : null}
           </span>

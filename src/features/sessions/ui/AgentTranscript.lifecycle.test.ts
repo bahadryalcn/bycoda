@@ -62,15 +62,15 @@ it("refreshes every historical Edit from here action when idle eligibility chang
     );
   await renderEligibility(false);
   expect(buttons()).toHaveLength(3);
-  expect(buttons().every((button) => button.disabled)).toBe(true);
+  expect(buttons().every((button) => button.getAttribute("aria-disabled") === "true")).toBe(true);
   // No block identity, busy state or action callback changes: only a completed
   // preparation/permission check makes the existing messages rewindable.
   await renderEligibility(true);
-  expect(buttons().every((button) => !button.disabled)).toBe(true);
+  expect(buttons().every((button) => button.getAttribute("aria-disabled") !== "true")).toBe(true);
   await act(async () => buttons()[1].click());
   expect(onRewindMessage).toHaveBeenCalledExactlyOnceWith(blocks[2], "edit");
   await renderEligibility(false);
-  expect(buttons().every((button) => button.disabled)).toBe(true);
+  expect(buttons().every((button) => button.getAttribute("aria-disabled") === "true")).toBe(true);
 });
 
 it("reveals a remote page whose callback resolves before its blocks reach React", async () => {

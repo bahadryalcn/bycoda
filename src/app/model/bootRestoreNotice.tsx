@@ -54,11 +54,7 @@ function BootRestoreNotice({
       <Toast
         tone="warning"
         title={t("Could not restore your tabs")}
-        message={
-          stillFailing
-            ? t("The saved layout is still unreadable.")
-            : undefined
-        }
+        message={stillFailing ? t("The saved layout is still unreadable.") : undefined}
         durationMs={null}
         action={{ label: t("Retry"), onClick: () => void retry(), pending }}
         actions={[

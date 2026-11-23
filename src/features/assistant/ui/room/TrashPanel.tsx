@@ -1,7 +1,7 @@
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import { Text } from "../../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import type { AssistantTrash } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t } from "../../../../shared/i18n";
@@ -69,7 +69,7 @@ export function TrashPanel({
           <EmptyState
             size="inline"
             kind="empty"
-            className={styles.empty}
+            inset="panel"
             description={t("Nothing deleted recently")}
           />
         )}
@@ -85,7 +85,12 @@ export function TrashPanel({
                   <Text as="strong" size="body" tone="inherit" weight="medium" leading="inherit">
                     {entry.title}
                   </Text>
-                  <Text size="caption" tone="muted" leading="inherit" className={styles.meta}>
+                  <span
+                    {...textAttributes(
+                      { size: "caption", tone: "muted", leading: "inherit" },
+                      styles.meta,
+                    )}
+                  >
                     <Badge size="xs">
                       {t(
                         entry.kind === "jobs"
@@ -101,9 +106,9 @@ export function TrashPanel({
                     </Badge>
                     <span>{when(entry.deletedAt)}</span>
                     <span>{t("Kept until {p0}", { p0: when(entry.expiresAt) })}</span>
-                  </Text>
+                  </span>
                   {entry.kind === "jobs" && entry.deletedTaskCount !== undefined && (
-                    <Text size="caption" tone="muted" leading="inherit" className={styles.meta}>
+                    <Text size="caption" tone="muted" leading="inherit">
                       {t("Includes {p0} deleted tasks. Restoring keeps them stopped.", {
                         p0: entry.deletedTaskCount,
                       })}

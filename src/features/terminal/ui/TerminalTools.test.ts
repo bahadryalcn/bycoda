@@ -115,11 +115,11 @@ it("requests a startup review explicitly without writing terminal input and bloc
     await act(async () => startupItem().click());
     expect(review).toHaveBeenCalledTimes(1);
     await openTools(host);
-    expect(startupItem().getAttribute("aria-disabled")).toBe("true");
+    expect(startupItem().disabled).toBe(true);
     await act(async () => startupItem().click());
     expect(review).toHaveBeenCalledTimes(1);
     await act(async () => finish());
-    expect(startupItem().getAttribute("aria-disabled")).not.toBe("true");
+    expect(startupItem().disabled).toBe(false);
     expect(paste).not.toHaveBeenCalled();
     expect(input).not.toHaveBeenCalled();
   } finally {

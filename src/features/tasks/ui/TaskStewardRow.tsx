@@ -62,7 +62,8 @@ export function StewardRow({
         <Text as="p" size="caption" tone="secondary">
           {steward.modelChoice && steward.modelChoice.kind !== "fixed" ? (
             <>
-              <TaskModelChoiceLabel choice={steward.modelChoice} machineId={steward.machineId} /> ·{" "}
+              <TaskModelChoiceLabel choice={steward.modelChoice} machineId={steward.machineId} />{" "}
+              ·{" "}
             </>
           ) : null}
           <ModelLabel harness={steward.harness} model={steward.model} />

@@ -65,7 +65,10 @@ export function CommandScreen({
       {state.error && !modelRequired ? <InlineError>{state.error}</InlineError> : null}
       {/* Four empty tiles say nothing, so the row appears once there is something to count. */}
       {state.summary &&
-      state.summary.sentToday + state.summary.pending + state.summary.newPeople + state.summary.replyRate >
+      state.summary.sentToday +
+        state.summary.pending +
+        state.summary.newPeople +
+        state.summary.replyRate >
         0 ? (
         <SummaryCards summary={state.summary} />
       ) : null}

@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useState } from "react";
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { TargetAndTransition } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
@@ -18,6 +18,8 @@ export interface ButtonProps extends Omit<
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  /** Shared Button's decoration, outside the loading label and its positioning context. */
+  overlay?: ReactNode;
 }
 
 /* One quick press for every size: a 2% push, back on release, drawn by the stylesheet (`.pressable`) so an idle button carries no
@@ -47,6 +49,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     disabled,
     children,
     onClick,
+    overlay,
     ...props
   },
   ref,
@@ -114,6 +117,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
           <span className={styles.labelPhase}>{children}</span>
         </span>
       </span>
+      {overlay}
     </button>
   );
 });

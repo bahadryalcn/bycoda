@@ -143,7 +143,7 @@ it("shows Settings in the shared Modal with maximize and no duplicate window chr
   expect(typeof shown.onToggleMaximize).toBe("function");
 });
 
-it("keeps the dialog title and section visible while the Settings view is still loading", () => {
+it("keeps the dialog title visible and shows one placeholder while the Settings view is still loading", () => {
   loading.promise = new Promise<never>(() => {});
   const html = renderToStaticMarkup(
     createElement(WorkspaceSettingsSurface, {
@@ -151,9 +151,10 @@ it("keeps the dialog title and section visible while the Settings view is still 
       settingsSection: "appearance",
     } as WorkspaceSettingsSurfaceProps),
   );
-  // The Modal (title and close action) is already mounted; the placeholder names the section.
+  // The Modal (title and close action) is already mounted. The placeholder shows only shapes; the
+  // delayed status that names the section is covered by SettingsLoadingSurface.test.ts.
   expect(html).toContain('data-modal="Settings"');
   expect(html).toContain("data-settings-loading");
-  expect(html).toContain("Appearance");
+  expect(html).not.toContain("Appearance");
   expect(view).not.toHaveBeenCalled();
 });

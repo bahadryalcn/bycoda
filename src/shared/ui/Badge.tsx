@@ -148,14 +148,13 @@ export function statusBadgeTone(status: BadgeStatus): BadgeTone {
   return STATUS_TONE[status];
 }
 
-/** Shared glyph for compact and filled workflow status. */
-export function StatusGlyph({
-  status,
-  size = "xs",
-}: {
-  status: BadgeStatus;
-  size?: "xs" | "sm";
-}) {
+/**
+ * Glyph for workflow states, shared with StatusBadge.
+ * @group feedback
+ * @use Add a status icon beside a workflow label that already provides the accessible status.
+ * @avoid Standalone status indicators: StatusBadge supplies an accessible label and tone.
+ */
+export function StatusGlyph({ status, size = "xs" }: { status: BadgeStatus; size?: "xs" | "sm" }) {
   switch (status) {
     case "failed":
       return <CircleX strokeWidth={1.75} />;

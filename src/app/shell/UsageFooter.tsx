@@ -35,9 +35,7 @@ import {
 } from "../../features/sessions/model/session";
 import { loginHarness, supportsHarnessLogin } from "../../integrations/harness/core/auth";
 import { registerProviderAccount } from "../../features/providers/model/providerAccountRegistration";
-import {
-  type RunningTerminal,
-} from "../../features/terminal/model/terminalTab";
+import { type RunningTerminal } from "../../features/terminal/model/terminalTab";
 import { useKeybindingShortcut } from "../../features/settings/public/useKeybindingShortcut";
 import { ConversationToolsButton } from "../../features/host-tools/ConversationToolsButton";
 import type { ConversationTools } from "../../features/host-tools/SessionHostTools";
@@ -445,10 +443,10 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
 
   if (!canLogin) {
     return (
-        <span className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap">
-          <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
-          <span>{HARNESS_LABEL[session.harness]}</span>
-        </span>
+      <span className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+        <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
+        <span>{HARNESS_LABEL[session.harness]}</span>
+      </span>
     );
   }
 

@@ -59,26 +59,28 @@ function Stat({
   info?: ReactNode;
 }) {
   return (
-    <Surface variant="page" padding="md" className={styles.stat}>
-      <Text size="caption" tone="secondary" leading="inherit" className="flex items-center gap-1">
-        {label}
-        {info ? <InfoPopover label={label}>{info}</InfoPopover> : null}
-      </Text>
-      <Text
-        as="strong"
-        size="title"
-        tone="inherit"
-        weight="medium"
-        leading="tight"
-        className={styles.statValue}
-      >
-        {value}
-      </Text>
-      {hint ? (
-        <Text size="caption" tone="muted" leading="inherit">
-          {hint}
+    <Surface variant="page" padding="md">
+      <div className={styles.stat}>
+        <Text size="caption" tone="secondary" leading="inherit" className="flex items-center gap-1">
+          {label}
+          {info ? <InfoPopover label={label}>{info}</InfoPopover> : null}
         </Text>
-      ) : null}
+        <Text
+          as="strong"
+          size="title"
+          tone="inherit"
+          weight="medium"
+          leading="tight"
+          className="tabular-nums"
+        >
+          {value}
+        </Text>
+        {hint ? (
+          <Text size="caption" tone="muted" leading="inherit">
+            {hint}
+          </Text>
+        ) : null}
+      </div>
     </Surface>
   );
 }
@@ -125,7 +127,7 @@ export function TodayView() {
         <SectionLabel labelId={titleId}>{t("Activity")}</SectionLabel>
         <div className={styles.controls}>
           {updatedAt && data ? (
-            <Text size="caption" tone="muted" leading="inherit" className={styles.updated}>
+            <Text size="caption" tone="muted" leading="inherit" className={`${styles.updated} tabular-nums`}>
               {t("Updated")} {updatedLabel(updatedAt, data.window.end)}
             </Text>
           ) : null}
@@ -175,9 +177,10 @@ export function TodayView() {
         <Motion
           transition="opacity"
           duration="standard"
-          className={loadedPeriod !== period ? `${styles.body} ${styles.pending}` : styles.body}
+          className={loadedPeriod !== period ? "opacity-55" : undefined}
           aria-busy={refreshing}
         >
+          <div className={styles.body}>
           <div className={styles.stats}>
             <Stat label={t("Sessions")} value={data.totals.sessions} />
             <Stat label={t("Agent run time")} value={run(data.totals.runMs)} />
@@ -199,6 +202,7 @@ export function TodayView() {
               activeMinutes={activeMinutes}
               language={locale}
             />
+          </div>
           </div>
         </Motion>
       )}
@@ -232,28 +236,32 @@ function TodayCharts({ data, activity }: { data: TodayData; activity: BarChartDa
   const bars = week ? days : activity;
   return (
     <div className={styles.charts}>
-      <Surface variant="page" padding="md" className={styles.chart}>
-        <SectionLabel>{t("Agent run time by project")}</SectionLabel>
-        {projects.length ? (
-          <DonutChart
-            data={projects}
-            label={t("Agent run time by project")}
-            formatValue={run}
-            totalLabel={t("Total")}
-            size={148}
-            maxSegments={6}
-          />
-        ) : (
-          <EmptyState size="inline" description={t("No recorded run time")} />
-        )}
+      <Surface variant="page" padding="md">
+        <div className={styles.chart}>
+          <SectionLabel>{t("Agent run time by project")}</SectionLabel>
+          {projects.length ? (
+            <DonutChart
+              data={projects}
+              label={t("Agent run time by project")}
+              formatValue={run}
+              totalLabel={t("Total")}
+              size={148}
+              maxSegments={6}
+            />
+          ) : (
+            <EmptyState size="inline" description={t("No recorded run time")} />
+          )}
+        </div>
       </Surface>
-      <Surface variant="page" padding="md" className={styles.chart}>
-        <TodayBars
-          bars={bars}
-          agentPeriod={
-            week ? range(new Date(data.window.start), new Date(data.window.end)) : undefined
-          }
-        />
+      <Surface variant="page" padding="md">
+        <div className={styles.chart}>
+          <TodayBars
+            bars={bars}
+            agentPeriod={
+              week ? range(new Date(data.window.start), new Date(data.window.end)) : undefined
+            }
+          />
+        </div>
       </Surface>
     </div>
   );

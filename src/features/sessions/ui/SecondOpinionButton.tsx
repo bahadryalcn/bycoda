@@ -220,8 +220,8 @@ export function SecondOpinionButton({
     setOpen(false);
     onPick({ harness: model.harness, model: model.id, modelSettings });
   };
-  const menuItems = (): DropdownMenuItem[] => [
-    ...(targets.length === 0
+  const menuItems = (): DropdownMenuItem[] =>
+    targets.length === 0
       ? [
           {
             kind: "content" as const,
@@ -278,8 +278,7 @@ export function SecondOpinionButton({
             submenuWidth: SUBMENU_WIDTH,
             submenuMaxHeight: SUBMENU_MAX_HEIGHT,
           };
-        })),
-  ];
+        });
 
   return (
     <>

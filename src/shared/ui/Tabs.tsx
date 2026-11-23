@@ -195,6 +195,7 @@ export function TabList({
 
   // Exactly one tab stop: the selected enabled tab, else the first enabled one (a value
   // that matches no tab, or a disabled selection, must not leave the strip unreachable).
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- updates DOM tab stops to match the selected enabled tab
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) return;
@@ -205,10 +206,15 @@ export function TabList({
     for (const tab of all) tab.tabIndex = tab === stop ? 0 : -1;
   });
 
-  // Keep the selected tab visible in the strip after selection, resizing or label changes.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- scrolls the selected DOM tab into view after selection and resize
   useLayoutEffect(() => {
     const list = listRef.current;
-    if (!list || scroll !== "auto" || tabs.orientation !== "horizontal") return;
+    if (!list || tabs.orientation !== "horizontal") return;
+    const scrolls =
+      scroll === "auto" ||
+      scrollbar === "hidden" ||
+      (scroll === "wrap" && list.closest("[data-pane-header-tabs]"));
+    if (!scrolls) return;
     const all = ownTabs(list);
     const tab = all.find((entry) => entry.dataset.tabValue === tabs.value);
     if (!tab) return;
@@ -221,7 +227,7 @@ export function TabList({
     reveal();
     const cleanups = [list, ...all].map((node) => observeResize(node, reveal));
     return () => cleanups.forEach((cleanup) => cleanup());
-  }, [scroll, tabs.orientation, tabs.value]);
+  }, [scroll, scrollbar, tabs.orientation, tabs.value]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     onKeyDown?.(event);

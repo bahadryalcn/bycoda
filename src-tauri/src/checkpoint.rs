@@ -2063,7 +2063,9 @@ mod tests {
             .unwrap();
         assert!(folder.is_dir());
         assert!(store.light_turn_active(session_id, "turn").unwrap());
-        let manifest = read_manifest(&store.session_dir(session_id)).unwrap().unwrap();
+        let session_dir = store.session_dir(session_id);
+        assert!(session_dir.join("files-baseline-stamps.json").is_file());
+        let manifest = read_manifest(&session_dir).unwrap().unwrap();
         assert!(same_cwd(&manifest.cwd, cwd));
         assert!(manifest.files.is_empty());
     }

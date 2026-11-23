@@ -4,6 +4,7 @@ import type { AssistantNote } from "../../../../shared/model/host-contracts/assi
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
+import { Tooltip } from "../../../../shared/ui/Tooltip";
 import { Timestamp } from "../../../../shared/ui/Timestamp";
 import { Trash2, Pencil } from "../../../../shared/ui/icons";
 import { AgentMarkdown } from "../../../sessions/public/AgentMarkdown";
@@ -58,15 +59,15 @@ export function NotesReader({
         >
           {lines.map((line, index) => (
             <li key={index} className={styles.entry}>
-              <Text
-                size="caption"
-                tone="muted"
-                leading="inherit"
-                className={styles.entryTime}
-                title={line.time ? t("Times are in UTC.") : undefined}
-              >
-                {line.time ?? ""}
-              </Text>
+              {line.time ? (
+                <Tooltip label={t("Times are in UTC.")} asChild>
+                  <Text size="caption" tone="muted" leading="inherit">
+                    {line.time}
+                  </Text>
+                </Tooltip>
+              ) : (
+                <span />
+              )}
               <span>{line.text}</span>
             </li>
           ))}

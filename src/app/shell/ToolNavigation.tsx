@@ -65,6 +65,9 @@ export const ToolNavigationContext = createContext<{
   onSelect: (tool: WorkspaceToolId) => void;
 } | null>(null);
 
+/** The mounted Servers workspace owns opening its reviews dialog. */
+export const OpenSshReviewsContext = createContext<(() => void) | undefined>(undefined);
+
 export function ToolHeader({ children }: { children: ReactNode }) {
   const navigation = useContext(ToolNavigationContext);
   return navigation?.active ? <ToolNavigation /> : children;
@@ -150,6 +153,7 @@ export function ToolNavigation() {
   const label = (tool: WorkspaceToolId) =>
     tool === "assistant" ? assistant.room : t(labels[tool]);
   const sshReviews = useSshRunbookQueue();
+  const openSshReviews = useContext(OpenSshReviewsContext);
   const navigation = useContext(ToolNavigationContext);
   const [opening, setOpening] = useState<"single" | "grouped" | null>(null);
   const openingRef = useRef(false);
@@ -163,6 +167,9 @@ export function ToolNavigation() {
     }
   }, [navigation?.active]);
   if (!navigation?.active) return null;
+  const sshReviewCount = sshReviews.intents.length;
+  const actionableSshReviews =
+    navigation.active === "servers" && openSshReviews && sshReviewCount > 0;
   const tools: WorkspaceToolId[] =
     navigation.grouped === false
       ? [navigation.active]
@@ -250,14 +257,14 @@ export function ToolNavigation() {
               >
                 <Icon className="icon-sm shrink-0" aria-hidden />
                 <span>{label(tool)}</span>
-                {tool === "servers" && sshReviews.intents.length ? (
+                {tool === "servers" && sshReviewCount > 0 && !actionableSshReviews ? (
                   <Badge
                     variant="count"
                     size="xs"
                     tone="warning"
                     aria-label={t("Pending SSH reviews")}
                   >
-                    {sshReviews.intents.length}
+                    {sshReviewCount}
                   </Badge>
                 ) : null}
               </Tab>
@@ -267,6 +274,20 @@ export function ToolNavigation() {
       </Tabs>
       {navigation.active === "crews" ? null : (
         <div className="tool-window-actions">
+          {actionableSshReviews ? (
+            <Button
+              variant="ghost"
+              motion="none"
+              aria-label={t("Pending SSH reviews")}
+              aria-haspopup="dialog"
+              data-tauri-drag-region="false"
+              onClick={openSshReviews}
+            >
+              <Badge variant="count" size="xs" tone="warning" aria-hidden>
+                {sshReviewCount}
+              </Badge>
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             motion="none"

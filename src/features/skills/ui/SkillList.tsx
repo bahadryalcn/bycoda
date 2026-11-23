@@ -46,7 +46,7 @@ export function SkillList({
   return (
     <div className={styles.listPane}>
       <ScrollArea
-        className={styles.list}
+        className={`${styles.list} min-h-0`}
         gutter="stable"
         aria-label={t("Skills")}
         aria-busy={loading}
@@ -59,12 +59,16 @@ export function SkillList({
           scroll.current.top = event.currentTarget.scrollTop;
         }}
       >
-        {children}
-        {machineNames.length && groups.length ? <SkillMachineColumns names={machineNames} /> : null}
-        {groupedContent ??
-          groups.map((group) => (
-            <SkillListGroup key={group.scope} group={group} renderRow={renderRow} />
-          ))}
+        <div className={styles.listContent}>
+          {children}
+          {machineNames.length && groups.length ? (
+            <SkillMachineColumns names={machineNames} />
+          ) : null}
+          {groupedContent ??
+            groups.map((group) => (
+              <SkillListGroup key={group.scope} group={group} renderRow={renderRow} />
+            ))}
+        </div>
       </ScrollArea>
     </div>
   );

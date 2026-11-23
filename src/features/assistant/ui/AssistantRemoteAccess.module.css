@@ -18,7 +18,10 @@
 .grid > * {
   min-inline-size: 0;
 }
-/* The original request that still needs inspecting is a thin frame, not a card. */
+.request,
+.identity {
+  padding: var(--ui-space-3);
+}
 .request {
   display: grid;
   gap: var(--ui-space-2);

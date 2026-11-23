@@ -69,21 +69,23 @@ export function SidebarAccountFooter({
       <div className={styles.actions}>
         <VoiceLauncherSlot compact={compact} />
         {import.meta.env.DEV ? (
-            <Badge
-              data-dev-mode-indicator=""
-              size="sm"
-              tone="info"
-              appearance="subtle"
-              role="img"
-              aria-label={t("Development build")}
-            >
-              <Wrench className="icon-sm" strokeWidth={1.75} aria-hidden />
-            </Badge>
+          <Badge
+            data-dev-mode-indicator=""
+            size="sm"
+            tone="info"
+            appearance="subtle"
+            role="img"
+            aria-label={t("Development build")}
+          >
+            <Wrench className="icon-sm" strokeWidth={1.75} aria-hidden />
+          </Badge>
         ) : null}
         <div className={styles.status}>
           {recoveryControl}
           <div className={styles.updateNotice}>{updateNotice}</div>
-          <div className={styles.updateAction}><SidebarUpdateFooter icon compact={compact} /></div>
+          <div className={styles.updateAction}>
+            <SidebarUpdateFooter icon compact={compact} />
+          </div>
         </div>
         <div {...surfaceAttributes(compact ? { frame: "pane", edge: "top" } : {}, styles.personal)}>
           {settings}

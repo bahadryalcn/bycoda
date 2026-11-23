@@ -151,13 +151,7 @@ export function AccountSupport() {
       <Group
         title={t("Contact support")}
         action={
-          <Button
-            variant="primary"
-            size="sm"
-            loading={busy}
-            disabled={incomplete}
-            onClick={send}
-          >
+          <Button variant="primary" size="sm" loading={busy} disabled={incomplete} onClick={send}>
             {t("Send to support")}
           </Button>
         }

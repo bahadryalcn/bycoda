@@ -34,62 +34,64 @@ export function WorkspaceRecoveryDialog({
   const hasSessions = !!recovery?.workspace.sessions.length;
   const fileSide = editorDraftRecords.length > 0 || !hasSessions;
   const renderContainer = (sessions: ReactNode, chatPending: boolean) => {
-        const busy = chatPending || draftPending;
-        const tabs: RecoveryTab[] = [
-          ...(hasSessions ? [{ value: "sessions", label: t("Sessions"), disabled: busy }] : []),
-          ...(fileSide
-            ? [
-                {
-                  value: "files",
-                  label: t("File drafts"),
-                  count: editorDraftRecords.length,
-                  disabled: busy,
-                },
-              ]
-            : []),
-        ];
-        const activeMode = tabs.some((tab) => tab.value === mode)
-          ? mode
-          : (tabs[0]?.value ?? "sessions");
-        return (
-          <Modal
-            padding="none"
-            title={t("Recovered work")}
-            onClose={props.onClose}
-            closeDisabled={busy}
-            size="md"
-            fitViewport
+    const busy = chatPending || draftPending;
+    const tabs: RecoveryTab[] = [
+      ...(hasSessions ? [{ value: "sessions", label: t("Sessions"), disabled: busy }] : []),
+      ...(fileSide
+        ? [
+            {
+              value: "files",
+              label: t("File drafts"),
+              count: editorDraftRecords.length,
+              disabled: busy,
+            },
+          ]
+        : []),
+    ];
+    const activeMode = tabs.some((tab) => tab.value === mode)
+      ? mode
+      : (tabs[0]?.value ?? "sessions");
+    return (
+      <Modal
+        padding="none"
+        title={t("Recovered work")}
+        onClose={props.onClose}
+        closeDisabled={busy}
+        size="md"
+        fitViewport
+      >
+        <div className="flex w-full min-h-0 flex-col">
+          {tabs.length > 1 ? (
+            <RecoveryTabs
+              label={t("Recovery type")}
+              idPrefix={PREFIX}
+              value={activeMode}
+              onChange={setMode}
+              tabs={tabs}
+            />
+          ) : null}
+          <div
+            role={tabs.length > 1 ? "tabpanel" : undefined}
+            id={recoveryPanelId(PREFIX, activeMode)}
+            aria-labelledby={tabs.length > 1 ? recoveryTabId(PREFIX, activeMode) : undefined}
+            className="flex min-h-0 flex-col"
           >
-            <div className="flex w-full min-h-0 flex-col">
-              {tabs.length > 1 ? (
-                <RecoveryTabs
-                  label={t("Recovery type")}
-                  idPrefix={PREFIX}
-                  value={activeMode}
-                  onChange={setMode}
-                  tabs={tabs}
-                />
-              ) : null}
-              <div
-                role={tabs.length > 1 ? "tabpanel" : undefined}
-                id={recoveryPanelId(PREFIX, activeMode)}
-                aria-labelledby={tabs.length > 1 ? recoveryTabId(PREFIX, activeMode) : undefined}
-                className="flex min-h-0 flex-col"
-              >
-                {activeMode === "files" ? (
-                  <EditorDraftRecoverySection
-                    recovery={editorDraftRecovery}
-                    records={editorDraftRecords}
-                  />
-                ) : (
-                  sessions
-                )}
-              </div>
-            </div>
-          </Modal>
-        );
+            {activeMode === "files" ? (
+              <EditorDraftRecoverySection
+                recovery={editorDraftRecovery}
+                records={editorDraftRecords}
+              />
+            ) : (
+              sessions
+            )}
+          </div>
+        </div>
+      </Modal>
+    );
   };
   return hasSessions && recovery ? (
     <SessionRecoveryPanel {...props} recovery={recovery} renderContainer={renderContainer} />
-  ) : renderContainer(null, false);
+  ) : (
+    renderContainer(null, false)
+  );
 }

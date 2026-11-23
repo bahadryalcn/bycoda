@@ -422,34 +422,34 @@ function ProjectSearchContent({
       ) : null}
       {/* The empty query needs no status line: the field's placeholder already says what to do. */}
       {loading || error || query.trim() ? (
-      <Text
-        as="div"
-        size="micro"
-        tone="secondary"
-        className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5"
-      >
-        {loading ? (
-          <LoadingText delay={false}>{t("Searching…")}</LoadingText>
-        ) : error ? (
-          <InlineError>{error}</InlineError>
-        ) : query.trim() ? (
-          <span>
-            {matchCount === 0
-              ? t("No results")
-              : t(
-                  matchCount === 1
-                    ? fileCount === 1
-                      ? "{p0} result in {p2} file"
-                      : "{p0} result in {p2} files"
-                    : fileCount === 1
-                      ? "{p0} results in {p2} file"
-                      : "{p0} results in {p2} files",
-                  { p0: matchCount, p2: fileCount },
-                )}
-            {truncated ? t(" (limited)") : ""}
-          </span>
-        ) : null}
-      </Text>
+        <Text
+          as="div"
+          size="micro"
+          tone="secondary"
+          className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5"
+        >
+          {loading ? (
+            <LoadingText delay={false}>{t("Searching…")}</LoadingText>
+          ) : error ? (
+            <InlineError>{error}</InlineError>
+          ) : query.trim() ? (
+            <span>
+              {matchCount === 0
+                ? t("No results")
+                : t(
+                    matchCount === 1
+                      ? fileCount === 1
+                        ? "{p0} result in {p2} file"
+                        : "{p0} result in {p2} files"
+                      : fileCount === 1
+                        ? "{p0} results in {p2} file"
+                        : "{p0} results in {p2} files",
+                    { p0: matchCount, p2: fileCount },
+                  )}
+              {truncated ? t(" (limited)") : ""}
+            </span>
+          ) : null}
+        </Text>
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">

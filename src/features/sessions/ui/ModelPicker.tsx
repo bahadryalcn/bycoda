@@ -864,7 +864,7 @@ export function ModelPicker({
                     {!field ? (
                       <ModelAccountNumber
                         account={activeAccount}
-                        className="absolute -end-2.5 [inset-block-start:-0.375rem]"
+                        className="absolute -end-2.5 -top-1.5"
                       />
                     ) : null}
                   </span>

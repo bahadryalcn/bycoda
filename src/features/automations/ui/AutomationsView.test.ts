@@ -970,8 +970,8 @@ it("locks new automation creation until its submitted snapshot finishes saving",
       (node) => node.textContent?.trim() === text,
     )!;
   await act(async () => findButton("New automation").click());
-  const template = [...container.querySelectorAll<HTMLButtonElement>(".automation-template")].find(
-    (button) => button.textContent?.includes("Find critical bugs"),
+  const template = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.includes("Find critical bugs"),
   )!;
   await act(async () => template.click());
   const name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;

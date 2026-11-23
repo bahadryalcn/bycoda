@@ -24,13 +24,14 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
-import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
+import { useProjectBranchesState } from "../../source-control/public/useProjectBranches";
 import { useProjectWorktrees } from "../../source-control/hooks/useProjectWorktrees";
 import type { Worktree } from "../../source-control/model/worktrees";
 import { MOD, SHIFT } from "../../../platform/tauri/platform";
 import { prettyCwd } from "../../../shared/lib/paths";
 import { shortSha } from "../../../shared/lib/shortSha";
-import type { WorkspaceMode } from "../../sessions/model/session";
+import type { WorkspaceMode } from "../../sessions";
+import { isProjectlessCwd } from "../../sessions/public/projectless";
 import { ChevronRight, Folder, FolderTree, GitBranch, Settings } from "../../../shared/ui/icons";
 import { GitPickerTrigger } from "../../source-control/ui/GitPickerTrigger";
 import { LAYER } from "../../../shared/lib/layers";
@@ -100,7 +101,7 @@ export function WorkspacePicker({
   }, [modeOpen, baseOpen, onOpenChange]);
   useEffect(() => () => onOpenChange?.(false), [onOpenChange]);
   // Without a project folder there is no checkout to choose, so the chip does not exist.
-  const projectless = !cwd || cwd === "~";
+  const projectless = !cwd || isProjectlessCwd(cwd);
   const { branches, settled } = useProjectBranchesState(cwd, enabled && !projectless);
   const resolvedBase = base || branches?.current || undefined;
   const effectiveBase = resolvedBase || "HEAD";
@@ -114,9 +115,7 @@ export function WorkspacePicker({
         mode={mode}
         enabled={enabled && !!resolvedBase}
         // A busy composer disables the chip for its own reason, which the chip needs no sentence for.
-        disabledReason={
-          !enabled ? undefined : !settled ? t("Loading branches…") : t("This folder is not a Git repository")
-        }
+        disabledReason={enabled && !settled ? t("Loading branches…") : undefined}
         onChange={(next) => onModeChange(next, next === "worktree" ? effectiveBase : undefined)}
         onSelectWorktree={onSelectWorktree}
         onOpenSettings={onOpenSettings}

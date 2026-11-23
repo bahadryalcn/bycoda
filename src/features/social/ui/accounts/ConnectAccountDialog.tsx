@@ -9,11 +9,7 @@ import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { HostProject } from "../../../connections/public/protocol";
-import {
-  SOCIAL_PLATFORM_NAMES,
-  type SocialAccount,
-  type SocialPlatform,
-} from "../../model/social";
+import { SOCIAL_PLATFORM_NAMES, type SocialAccount, type SocialPlatform } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import {
   accountTypesFor,

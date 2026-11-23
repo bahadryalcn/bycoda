@@ -44,7 +44,6 @@ export function NotesList({
             <CollectionRow
               as="li"
               key={note.id}
-              className={styles.item}
               selected={note.id === selectedId || isChecked}
               onContextMenu={(event) => {
                 event.preventDefault();

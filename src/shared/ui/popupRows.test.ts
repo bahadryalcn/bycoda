@@ -11,14 +11,20 @@ const sheets = [
 ] as const;
 
 describe("popup choice surfaces", () => {
-  it.each(sheets)("%s never frames an option row in any state", (file, names) => {
+  it.each(sheets)("%s keeps option rows unframed apart from a keyboard focus cue", (file, names) => {
     const css = readFileSync(join(__dirname, file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
     const row = new RegExp(`\\.(?:${names})(?![\\w-])`);
     const frames: string[] = [];
     for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
       if (!row.test(selector) || /\s>\s/.test(selector)) continue;
       for (const [, property, value] of body.matchAll(/([\w-]+)\s*:\s*([^;{}]+);/g)) {
+        const disabledChoiceFocus =
+          file === "arc/combobox/combobox.module.css" &&
+          selector.trim() === '.choice[aria-disabled="true"][data-highlighted]:not(:disabled)' &&
+          property === "outline" &&
+          value === "var(--ui-focus-width) solid var(--ui-focus-ring-color)";
         if (
+          !disabledChoiceFocus &&
           /^(?:border(?!-radius)(?:-[\w-]+)?|outline(?:-(?:width|color|style))?|box-shadow)$/.test(
             property,
           ) &&

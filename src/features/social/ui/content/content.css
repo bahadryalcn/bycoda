@@ -160,13 +160,6 @@
   overflow-wrap: anywhere;
 }
 
-/* The day's "+" shows on hover or keyboard focus; touch screens have no hover, so it stays visible there. */
-@media (hover: hover) {
-  .content-day:not(:hover, :focus-within) .content-day-add {
-    opacity: 0;
-  }
-}
-
 .content-list {
   display: flex;
   flex-direction: column;

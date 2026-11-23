@@ -51,9 +51,7 @@ export function ExplorerSyncStatus({
         {state.phase === "error" && !shownCentrally && (
           <LiveText className="sr-only" mode="assertive" text={state.error ?? ""} />
         )}
-        {warn ? (
-          <CircleAlert aria-hidden tone="warning" className="icon-xs shrink-0" />
-        ) : null}
+        {warn ? <CircleAlert aria-hidden tone="warning" className="icon-xs shrink-0" /> : null}
         {shownError ? (
           <Text size="inherit" tone="inherit" truncate className="min-w-0 max-w-40">
             {errorHeadline(shownError)}

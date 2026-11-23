@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { TerminalProfileDiscovery, dedupeTerminalProfiles } from "./TerminalProfileDiscovery";
+import type { ProviderAccount } from "../../providers/model/providerAccounts";
 import {
   providerAccounts,
   saveTerminalProviderAccount,
@@ -19,7 +20,9 @@ let container: HTMLDivElement;
 let root: Root;
 beforeEach(async () => {
   localStorage.clear();
+  // Opening the popover discovers profiles by itself, so an empty home is the default answer.
   vi.mocked(invoke).mockReset();
+  vi.mocked(invoke).mockResolvedValue([]);
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -32,11 +35,32 @@ beforeEach(async () => {
     ),
   );
   await click("Terminal account profiles");
+  // Count only what each test does after the popover opened.
+  vi.mocked(invoke).mockClear();
 });
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
 });
+
+/** Mounts a setup-style control that discovers on mount, then opens its popover. */
+async function renderAutoDiscover(
+  extra: { onConnected?: (account: ProviderAccount) => void } = {},
+) {
+  await act(async () =>
+    root.render(
+      createElement(TerminalProfileDiscovery, {
+        key: "auto",
+        provider: "claude",
+        disabled: false,
+        autoDiscover: true,
+        ...extra,
+      }),
+    ),
+  );
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-controls$="-popover"]')!;
+  await act(async () => trigger.click());
+}
 
 async function click(label: string) {
   const button = [...document.querySelectorAll("button")].find(
@@ -96,16 +120,7 @@ it("automatically finds profiles for setup and uses an explicitly chosen account
   };
   vi.mocked(invoke).mockResolvedValueOnce([profile]);
   const onConnected = vi.fn((account) => setDefaultProviderAccount(account.provider, account.id));
-  await act(async () =>
-    root.render(
-      createElement(TerminalProfileDiscovery, {
-        provider: "claude",
-        disabled: false,
-        autoDiscover: true,
-        onConnected,
-      }),
-    ),
-  );
+  await renderAutoDiscover({ onConnected });
   expect(invoke).toHaveBeenLastCalledWith("provider_terminal_profiles", { provider: "claude" });
   expect(onConnected).not.toHaveBeenCalled();
   expect(defaultProviderAccountId("claude")).toBe("default");
@@ -181,15 +196,7 @@ it("does not save a connection receipt after its provider was changed", async ()
 
 it("shows automatic discovery errors and clears them after a successful retry", async () => {
   vi.mocked(invoke).mockRejectedValueOnce(new Error("Automatic discovery failed"));
-  await act(async () =>
-    root.render(
-      createElement(TerminalProfileDiscovery, {
-        provider: "claude",
-        disabled: false,
-        autoDiscover: true,
-      }),
-    ),
-  );
+  await renderAutoDiscover();
   expect(document.querySelector('[role="alert"]')?.textContent).toBe("Automatic discovery failed");
   vi.mocked(invoke).mockResolvedValueOnce([]);
   await click("Find terminal profiles");
@@ -206,15 +213,7 @@ it.each(["success", "failure"])(
           settle = outcome === "success" ? resolve : reject;
         }),
     );
-    await act(async () =>
-      root.render(
-        createElement(TerminalProfileDiscovery, {
-          provider: "claude",
-          disabled: false,
-          autoDiscover: true,
-        }),
-      ),
-    );
+    await renderAutoDiscover();
     vi.mocked(invoke).mockResolvedValueOnce([
       { id: "manual", provider: "claude", label: "Manual result", path: "C:/manual" },
     ]);

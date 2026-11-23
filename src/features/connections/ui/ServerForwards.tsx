@@ -166,42 +166,42 @@ export function ServerForwards({
               <div className="flex flex-wrap gap-2">
                 {/* Until the status is verified the badge says so; no second "unknown" control. */}
                 {verified ? (
-                <Button
-                  loading={busy === rule.id}
-                  disabled={Boolean(busy) || stopping}
-                  onClick={() =>
-                    void run(rule.id, async () => {
-                      if (running) return stopSshForward(runtimeId);
-                      const endpoint = server.effectiveSshEndpoint ?? server.sshEndpoint;
-                      const ticket = endpoint
-                        ? await proxy.request({
-                            connectionId: server.id,
-                            endpoint,
-                            operation: {
-                              kind: "forward",
-                              id: runtimeId,
-                              forwardKind: rule.kind ?? "local",
-                              localPort: rule.localPort,
-                              targetHost: rule.targetHost,
-                              targetPort: rule.targetPort,
-                            },
-                          })
-                        : undefined;
-                      if (ticket === null) return;
-                      return ticket
-                        ? startSshForward(server.id, rule, ticket)
-                        : startSshForward(server.id, rule);
-                    })
-                  }
-                >
-                  {stopping
-                    ? t("Stopping")
-                    : unknown
-                      ? t("Retry stop")
-                      : running
-                        ? t("Stop")
-                        : t("Start")}
-                </Button>
+                  <Button
+                    loading={busy === rule.id}
+                    disabled={Boolean(busy) || stopping}
+                    onClick={() =>
+                      void run(rule.id, async () => {
+                        if (running) return stopSshForward(runtimeId);
+                        const endpoint = server.effectiveSshEndpoint ?? server.sshEndpoint;
+                        const ticket = endpoint
+                          ? await proxy.request({
+                              connectionId: server.id,
+                              endpoint,
+                              operation: {
+                                kind: "forward",
+                                id: runtimeId,
+                                forwardKind: rule.kind ?? "local",
+                                localPort: rule.localPort,
+                                targetHost: rule.targetHost,
+                                targetPort: rule.targetPort,
+                              },
+                            })
+                          : undefined;
+                        if (ticket === null) return;
+                        return ticket
+                          ? startSshForward(server.id, rule, ticket)
+                          : startSshForward(server.id, rule);
+                      })
+                    }
+                  >
+                    {stopping
+                      ? t("Stopping")
+                      : unknown
+                        ? t("Retry stop")
+                        : running
+                          ? t("Stop")
+                          : t("Start")}
+                  </Button>
                 ) : null}
                 <span className="ms-auto">
                   <ConfirmMorph

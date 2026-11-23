@@ -1,7 +1,7 @@
 import { Sheet } from "../../../shared/ui/Sheet";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { t, useLocale } from "../../../shared/i18n";
@@ -103,11 +103,12 @@ export function TermiusImportDialog({
       if (mounted.current) setBusy(false);
     }
   };
-  // Scan the default Termius location once when the dialog opens; the pending guard absorbs a strict-mode replay.
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Starts the one-time default scan on open.
-  useEffect(() => {
+  const scanDefaultLocation = useEffectEvent(() => {
     void scan("automatic");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- scans the external Termius store once when the dialog opens
+  useEffect(() => {
+    scanDefaultLocation();
   }, []);
   const apply = async () => {
     if (pending.current || !preview || !selected.size) return;
@@ -175,7 +176,9 @@ export function TermiusImportDialog({
       }
     >
       <div className="flex min-h-0 flex-col gap-3">
-        {busy && !preview && !error ? <LoadingText>{t("Scanning this computer…")}</LoadingText> : null}
+        {busy && !preview && !error ? (
+          <LoadingText>{t("Scanning this computer…")}</LoadingText>
+        ) : null}
         <Disclosure summary={t("Other location…")} size="sm" defaultOpen={!!error}>
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">

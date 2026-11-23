@@ -411,12 +411,7 @@ export function CreateSkillForm({
         >
           {t("Cancel")}
         </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          type="submit"
-          disabled={!valid || busy || parentClosed}
-        >
+        <Button variant="primary" size="sm" type="submit" disabled={!valid || busy || parentClosed}>
           {busy ? t("Creating…") : t("Create")}
         </Button>
       </div>

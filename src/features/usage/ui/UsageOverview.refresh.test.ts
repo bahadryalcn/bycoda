@@ -181,6 +181,8 @@ it("preserves explicit custom intervals during workspace refresh", async () => {
 });
 
 it("keeps one date owner and chart options outside the Filters popover", async () => {
+  // The fixture row is at 10:16; an empty period shows one empty state instead of the options.
+  vi.setSystemTime(new Date(2026, 9, 19, 10, 20));
   await render(0);
   // The metric tiles choose the metric on Overview, so there is no second chooser.
   expect(host.querySelector('[aria-label="Chart metric"]')).toBeNull();
@@ -216,6 +218,7 @@ it("keeps loading distinct from trustworthy zero usage", async () => {
 });
 
 it("shows the previous read at once when the page opens again while it refreshes", async () => {
+  vi.setSystemTime(new Date(2026, 9, 19, 10, 20));
   await render(0);
   expect(host.querySelector(".usage-metrics")).toBeTruthy();
   await act(async () => root.unmount());

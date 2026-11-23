@@ -7,6 +7,7 @@ import { errorText } from "../../../shared/lib/errors";
 import { SkillAdvancedDialog } from "./SkillAdvancedDialog";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { ClampText } from "../../../shared/ui/ClampText";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SkillActionsMenu } from "./SkillActionsMenu";
 import { SkillsLibraryToolbar } from "./SkillsLibraryToolbar";
@@ -1035,9 +1036,16 @@ export function SkillsPage({
                   : null}
               </Text>
               {previewSkill.description ? (
-                <Text as="p" size="secondary" leading="relaxed" className={styles.description}>
+                <ClampText
+                  as="p"
+                  lines={2}
+                  expandable={false}
+                  size="secondary"
+                  leading="relaxed"
+                  className={styles.description}
+                >
                   {previewSkill.description}
-                </Text>
+                </ClampText>
               ) : null}
               {machines.length ? (
                 <Tabs value={detailTab} onValueChange={setDetailTab} panels="none">

@@ -16,9 +16,7 @@ import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { CrewScene } from "./crewSurface";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { BrandMark } from "../../../shared/ui/BrandMark";
-import { Button } from "../../../shared/ui/Button";
-import { FolderOpen } from "../../../shared/ui/icons";
-import { runGuideAction } from "../../onboarding/model/guide";
+import { isProjectlessCwd } from "../model/recentSessions";
 import "./BycodaSession.css";
 
 type Props = {
@@ -29,7 +27,8 @@ type Props = {
 
 export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
   const t = useT();
-  const remote = parseRemotePath(cwd);
+  const hasProject = looksLikeProject(cwd) && !isProjectlessCwd(cwd);
+  const remote = hasProject ? parseRemotePath(cwd) : null;
   const { machines } = useRemoteMachines(!!remote);
   const machine = remote
     ? machines.find((entry) => entry.environmentId === remote.environmentId)
@@ -46,11 +45,11 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
   const project = useSyncExternalStore(
     subscribeTabGroupLabels,
     () =>
-      looksLikeProject(cwd)
+      hasProject
         ? resolveTabGroupLabel(projectKey(cwd), loadTabGroupLabels(), basename(cwd))
         : null,
     () =>
-      looksLikeProject(cwd)
+      hasProject
         ? resolveTabGroupLabel(projectKey(cwd), loadTabGroupLabels(), basename(cwd))
         : null,
   );
@@ -72,22 +71,12 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
               <BrandMark />
               <BrandMark variant="wordmark" className="bycoda-brand-lettering" />
             </div>
-            <div className="bycoda-task-brief pointer-events-auto">
-              {project ? <Heading size="page">{project}</Heading> : null}
-              {project ? <p className="bycoda-task-path">{projectLocation}</p> : null}
-              {project ? null : (
-                <div className="bycoda-entry-actions bycoda-arc">
-                  <Button
-                    variant="primary"
-                    size="md"
-                    startIcon={<FolderOpen />}
-                    onClick={() => runGuideAction("open-project")}
-                  >
-                    {t("Open a project")}
-                  </Button>
-                </div>
-              )}
-            </div>
+            {project ? (
+              <div className="bycoda-task-brief pointer-events-auto">
+                <Heading size="page">{project}</Heading>
+                <p className="bycoda-task-path">{projectLocation}</p>
+              </div>
+            ) : null}
           </div>
 
           <div className="bycoda-entry-composer pointer-events-auto w-full">{composer}</div>

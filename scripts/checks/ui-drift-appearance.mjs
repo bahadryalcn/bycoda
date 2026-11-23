@@ -854,9 +854,11 @@ const partTokens = new Map(
  * declaration (CSS) or the class (TSX) the finding points at.
  */
 export function isBespokePart(file, rule, { selectors = [], text = "" } = {}) {
-  const inheritedRule = rule === "radius-size" ||
+  const inheritedRule =
+    rule === "radius-size" ||
     (rule === "theme-palette-literal" && /^(?:background|border|outline|box-shadow)\b/.test(text))
-    ? "surface-style" : null;
+      ? "surface-style"
+      : null;
   return bespokeParts.some(
     (part) =>
       part.file === file &&
@@ -869,8 +871,7 @@ export function isBespokePart(file, rule, { selectors = [], text = "" } = {}) {
 }
 
 /** The class token a TSX finding starts at, variants included. */
-export const classTokenAt = (source, offset) =>
-  /^[^\s"'`<]*/.exec(source.slice(offset))[0];
+export const classTokenAt = (source, offset) => /^[^\s"'`<]*/.exec(source.slice(offset))[0];
 
 // Variant prefixes may carry `/` (named containers/groups: @max-[950px]/main-row:) and `(` `)`
 // (arbitrary values: has-(--x):); a narrower charset lets those classes escape every Tailwind rule.
@@ -883,24 +884,32 @@ export const tw = (body, flags = "g") => new RegExp(variant + body, flags);
 
 const value = String.raw`[\w\[(]`;
 const stateVariant = String.raw`(?:(?:group|peer)-)?(?:hover|active|focus(?:-visible|-within)?|aria-selected)(?:\/[\w-]+)?:`;
-const spacingUtility = /^(?:p[xysetblr]?|m[xysetblr]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left|start|end|translate-[xy])$/;
+const spacingUtility =
+  /^(?:p[xysetblr]?|m[xysetblr]?|gap(?:-[xy])?|space-[xy]|inset(?:-[xy])?|top|right|bottom|left|start|end|translate-[xy])$/;
 const sizingUtility = /^(?:(?:min-|max-)?[hw]|basis|size)$/;
 const radiusUtility = /^rounded(?:-[a-z]{1,2})?$/;
-const spacingProperty = /^(?:gap|row-gap|column-gap|(?:padding|margin|inset)(?:-[a-z-]+)?|top|right|bottom|left)$/;
+const spacingProperty =
+  /^(?:gap|row-gap|column-gap|(?:padding|margin|inset)(?:-[a-z-]+)?|top|right|bottom|left)$/;
 const sizingProperty = /^(?:(?:min-|max-)?(?:height|width|block-size|inline-size)|flex-basis)$/;
 const radiusProperty = /^border(?:-[a-z]+)*-radius$/;
 const typeProperty = /^(?:font-size|line-height)$/;
-const paintProperty = /^(?:color|(?:background|border|outline)(?:-[a-z-]+)?|(?:text-decoration|text-emphasis|caret|accent|column-rule)-color|fill|stroke|(?:box|text)-shadow)$/;
-const literalColor = /(?<![\w-])(?:#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{4}|[\da-f]{3})\b|(?:rgba?|hsla?|oklch|oklab|lch|lab|hwb|color)\(|(?:red|blue|green|yellow|orange|purple|pink|black|white|gray|grey|rebeccapurple|tomato|coral|navy|teal|aqua|cyan|olive|gold|silver|maroon|lime|fuchsia|magenta)(?![\w-]))/i;
-const tailwindColor = /^(?:black|white|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950))(?:\/.*)?$/;
-const paintUtility = /^(?:bg|text|border(?:-[trblxyse])?|divide|ring(?:-offset)?|outline|decoration|accent|caret|fill|stroke|from|via|to|shadow)-(.+)$/;
+const paintProperty =
+  /^(?:color|(?:background|border|outline)(?:-[a-z-]+)?|(?:text-decoration|text-emphasis|caret|accent|column-rule)-color|fill|stroke|(?:box|text)-shadow)$/;
+const literalColor =
+  /(?<![\w-])(?:#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{4}|[\da-f]{3})\b|(?:rgba?|hsla?|oklch|oklab|lch|lab|hwb|color)\(|(?:red|blue|green|yellow|orange|purple|pink|black|white|gray|grey|rebeccapurple|tomato|coral|navy|teal|aqua|cyan|olive|gold|silver|maroon|lime|fuchsia|magenta)(?![\w-]))/i;
+const tailwindColor =
+  /^(?:black|white|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950))(?:\/.*)?$/;
+const paintUtility =
+  /^(?:bg|text|border(?:-[trblxyse])?|divide|ring(?:-offset)?|outline|decoration|accent|caret|fill|stroke|from|via|to|shadow)-(.+)$/;
 const rawLength = /^(?:[+-]?(?:\d*\.\d+|\d+)(?:px|r?em|pt|pc|in|mm|cm|ch|ex|cap|ic|lh|rlh))$/i;
 const zeroLength = /^[+-]?0+(?:\.0+)?(?:[a-z]+|%)?$/i;
 const rawFixedLength = (value) => rawLength.test(value) && !zeroLength.test(value);
 const privateSize = (value) => rawFixedLength(value) && /(?:px|rem|pt|pc|in|mm|cm)$/i.test(value);
-const bareValues = (value) => value.replace(/[\w-]+\((?:[^()]|\([^()]*\))*\)/g, " ").split(/[\s/_]+/);
+const bareValues = (value) =>
+  value.replace(/[\w-]+\((?:[^()]|\([^()]*\))*\)/g, " ").split(/[\s/_]+/);
 const hasLiteralPaint = (property, value) =>
-  paintProperty.test(property) && !radiusProperty.test(property) &&
+  paintProperty.test(property) &&
+  !radiusProperty.test(property) &&
   literalColor.test(value.replace(/url\((?:"[^"]*"|'[^']*'|[^)]*)\)/gi, ""));
 
 /** Order matters: a class reported by an earlier rule is not reported again by a later one. */
@@ -994,7 +1003,11 @@ const outlineRemoved = (property, value) =>
   /^(?:none\b|(?:0(?:px|rem)?)(?:\s|$))/.test(value.trim());
 const ringPaint = /^(?:outline(?!-offset)(?:-|$)|ring(?:-|$)|shadow(?:-|$))/;
 const focusExempt = (selectors) =>
-  selectors.some((selector) => /forced-colors\s*:\s*active|data-(?:ui-)?(?:input-)?modality\s*=\s*["']?keyboard/.test(selector));
+  selectors.some((selector) =>
+    /forced-colors\s*:\s*active|data-(?:ui-)?(?:input-)?modality\s*=\s*["']?keyboard/.test(
+      selector,
+    ),
+  );
 const focusPaint = (property, value) =>
   (property.startsWith("outline") && property !== "outline-offset") ||
   (property === "box-shadow" && /(?:^|\s)(?:0(?:px)?\s+){2}/.test(value.trim()));
@@ -1006,18 +1019,27 @@ const focusUtility = (utility) =>
 export function focusRuleOfDeclaration({ property, value, selectors }, sharedSlot = false) {
   if (focusExempt(selectors)) return null;
   if (property === "@apply")
-    return value.trim().split(/\s+/).some((token) =>
-      utilityRule(token, sharedSlot || targetsControl(selectors.at(-1) ?? "")) === "focus-outline-removed")
-      ? "focus-outline-removed" : null;
+    return value
+      .trim()
+      .split(/\s+/)
+      .some(
+        (token) =>
+          utilityRule(token, sharedSlot || targetsControl(selectors.at(-1) ?? "")) ===
+          "focus-outline-removed",
+      )
+      ? "focus-outline-removed"
+      : null;
   if (outlineRemoved(property, value)) return "focus-outline-removed";
   const selector = selectors.filter((item) => !item.startsWith("@")).join(" ");
   const pointerFocus = selector.split(",").some((branch) => {
     const positive = branch.replace(/:not\([^()]*\)/g, "");
-    return /:focus(?![\w-])/.test(positive) && !/:focus-visible\b/.test(positive) &&
-      (sharedSlot || targetsControl(branch));
+    return (
+      /:focus(?![\w-])/.test(positive) &&
+      !/:focus-visible\b/.test(positive) &&
+      (sharedSlot || targetsControl(branch))
+    );
   });
-  if (pointerFocus && focusPaint(property, value) &&
-      !/^\s*(?:none|transparent)\b/.test(value))
+  if (pointerFocus && focusPaint(property, value) && !/^\s*(?:none|transparent)\b/.test(value))
     return "focus-outline-removed";
   return null;
 }
@@ -1025,22 +1047,34 @@ export function focusRuleOfDeclaration({ property, value, selectors }, sharedSlo
 /** One narrow diagnostic per token. Generic appearance rules yield to these. */
 function utilityRule(token, sharedControl = false) {
   const { utility, variants } = utilityParts(token);
-  const focusAllowed = variants.some((variant) =>
-    variant === "forced-colors" || /focus-visible|data-(?:ui-)?(?:input-)?modality.*keyboard/.test(variant));
-  if ((!variants.includes("forced-colors") && /^outline-(?:none|0)$/.test(utility)) ||
-      (!focusAllowed && sharedControl &&
-        variants.some((variant) => variant === "focus" || /:focus(?![\w-])/.test(variant)) &&
-        focusUtility(utility) && !/^ring-0$/.test(utility)))
+  const focusAllowed = variants.some(
+    (variant) =>
+      variant === "forced-colors" ||
+      /focus-visible|data-(?:ui-)?(?:input-)?modality.*keyboard/.test(variant),
+  );
+  if (
+    (!variants.includes("forced-colors") && /^outline-(?:none|0)$/.test(utility)) ||
+    (!focusAllowed &&
+      sharedControl &&
+      variants.some((variant) => variant === "focus" || /:focus(?![\w-])/.test(variant)) &&
+      focusUtility(utility) &&
+      !/^ring-0$/.test(utility))
+  )
     return "focus-outline-removed";
   const arbitraryProperty = /^\[([\w-]+):(.+)\]$/.exec(utility);
   if (arbitraryProperty) {
     const [, property, value] = arbitraryProperty;
     if (typeProperty.test(property) && !value.startsWith("var(")) return "feature-typography";
-    if (spacingProperty.test(property) && bareValues(value).some(rawFixedLength)) return "arbitrary-spacing";
-    if ((radiusProperty.test(property) && bareValues(value).some(rawFixedLength)) ||
-        (sizingProperty.test(property) && bareValues(value).some(privateSize))) return "radius-size";
+    if (spacingProperty.test(property) && bareValues(value).some(rawFixedLength))
+      return "arbitrary-spacing";
+    if (
+      (radiusProperty.test(property) && bareValues(value).some(rawFixedLength)) ||
+      (sizingProperty.test(property) && bareValues(value).some(privateSize))
+    )
+      return "radius-size";
     if (hasLiteralPaint(property, value)) return "theme-palette-literal";
-    if (!variants.includes("forced-colors") && outlineRemoved(property, value)) return "focus-outline-removed";
+    if (!variants.includes("forced-colors") && outlineRemoved(property, value))
+      return "focus-outline-removed";
     return null;
   }
   const arbitraryValue = /^-?([a-z-]+)-\[/.exec(utility);
@@ -1050,21 +1084,34 @@ function utilityRule(token, sharedControl = false) {
     const stop = balancedEnd(utility, open, "[", "]");
     const value = utility.slice(open + 1, stop - 1);
     const typeValue = value.replace(/^(?:length|size):/, "");
-    if ((name === "text" && !/^var\(\s*--(?:ui-)?text-/.test(typeValue) &&
-          (rawLength.test(typeValue) || /^(?:length|size):/.test(value) ||
-            /^(?:calc|clamp|min|max)\(/.test(typeValue))) ||
-        (name === "leading" && !value.startsWith("var("))) return "feature-typography";
-    if (spacingUtility.test(name) && bareValues(value).some(rawFixedLength)) return "arbitrary-spacing";
-    if ((radiusUtility.test(name) && bareValues(value).some(rawFixedLength)) ||
-        (sizingUtility.test(name) && bareValues(value).some(privateSize)))
+    if (
+      (name === "text" &&
+        !/^var\(\s*--(?:ui-)?text-/.test(typeValue) &&
+        (rawLength.test(typeValue) ||
+          /^(?:length|size):/.test(value) ||
+          /^(?:calc|clamp|min|max)\(/.test(typeValue))) ||
+      (name === "leading" && !value.startsWith("var("))
+    )
+      return "feature-typography";
+    if (spacingUtility.test(name) && bareValues(value).some(rawFixedLength))
+      return "arbitrary-spacing";
+    if (
+      (radiusUtility.test(name) && bareValues(value).some(rawFixedLength)) ||
+      (sizingUtility.test(name) && bareValues(value).some(privateSize))
+    )
       return "radius-size";
-    if (paintUtility.test(utility) && hasLiteralPaint("background", value)) return "theme-palette-literal";
+    if (paintUtility.test(utility) && hasLiteralPaint("background", value))
+      return "theme-palette-literal";
     return null;
   }
-  if (/^text-(?:xs|sm|base|lg|xl|\d+xl)(?:\/.*)?$/.test(utility) ||
-      /^text-\(length:(?!--(?:ui-)?text-)/.test(utility)) return "feature-typography";
+  if (
+    /^text-(?:xs|sm|base|lg|xl|\d+xl)(?:\/.*)?$/.test(utility) ||
+    /^text-\(length:(?!--(?:ui-)?text-)/.test(utility)
+  )
+    return "feature-typography";
   const spacing = /^-?([a-z-]+)-(\d+(?:\.\d+)?|px)$/.exec(utility);
-  if (spacing && spacingUtility.test(spacing[1]) && !spacingSteps.has(spacing[2])) return "spacing-step";
+  if (spacing && spacingUtility.test(spacing[1]) && !spacingSteps.has(spacing[2]))
+    return "spacing-step";
   if (tailwindColor.test(paintUtility.exec(utility)?.[1] ?? "")) return "theme-palette-literal";
   return null;
 }
@@ -1185,8 +1232,13 @@ export function scanAppearanceTsx(source, add) {
         const offset = start + match.index;
         if (seen.has(offset) || (match.index > 0 && !/\s/.test(text[match.index - 1]))) continue;
         const { variants, utility } = utilityParts(classTokenAt(source, offset));
-        if ((ringPaint.test(utility) || focusUtility(utility)) &&
-            variants.some((variant) => /focus-visible|forced-colors|data-(?:ui-)?(?:input-)?modality.*keyboard/.test(variant))) continue;
+        if (
+          (ringPaint.test(utility) || focusUtility(utility)) &&
+          variants.some((variant) =>
+            /focus-visible|forced-colors|data-(?:ui-)?(?:input-)?modality.*keyboard/.test(variant),
+          )
+        )
+          continue;
         if (
           rule === "feature-motion" &&
           /^motion-reduce:animate-none$/.test(classTokenAt(source, offset))
@@ -1212,8 +1264,12 @@ export function scanPaletteReferences(file, source, add) {
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
   const names = new Set(["themePalette"]);
   for (const item of tree.statements) {
-    if (!ts.isImportDeclaration(item) || !ts.isStringLiteral(item.moduleSpecifier) ||
-        !/shared\/theme\/palette(?:\.[jt]s)?$/.test(item.moduleSpecifier.text)) continue;
+    if (
+      !ts.isImportDeclaration(item) ||
+      !ts.isStringLiteral(item.moduleSpecifier) ||
+      !/shared\/theme\/palette(?:\.[jt]s)?$/.test(item.moduleSpecifier.text)
+    )
+      continue;
     const imports = item.importClause?.namedBindings;
     if (imports && ts.isNamedImports(imports))
       for (const entry of imports.elements)
@@ -1222,11 +1278,16 @@ export function scanPaletteReferences(file, source, add) {
   const owner = authoredPalette.get(file);
   const visit = (node) => {
     if (owner && ts.isVariableDeclaration(node) && node.name.getText(tree) === owner) return;
-    if ((ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
-        ts.isIdentifier(node.expression) && names.has(node.expression.text)) {
-      const name = ts.isPropertyAccessExpression(node) ? node.name.text
+    if (
+      (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+      ts.isIdentifier(node.expression) &&
+      names.has(node.expression.text)
+    ) {
+      const name = ts.isPropertyAccessExpression(node)
+        ? node.name.text
         : node.argumentExpression && ts.isStringLiteralLike(node.argumentExpression)
-          ? node.argumentExpression.text : "";
+          ? node.argumentExpression.text
+          : "";
       if (/^(?:hex|rgb|hsl|oklch)[0-9A-Za-z]/.test(name))
         add("theme-palette-literal", node.getStart(tree));
     }
@@ -1236,22 +1297,38 @@ export function scanPaletteReferences(file, source, add) {
 }
 
 function scanInlineStyles(source, add) {
-  const tree = ts.createSourceFile("style.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const tree = ts.createSourceFile(
+    "style.tsx",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
   const visit = (node) => {
-    const value = ts.isJsxAttribute(node) && node.name.getText(tree) === "style" &&
-      node.initializer && ts.isJsxExpression(node.initializer) && node.initializer.expression;
+    const value =
+      ts.isJsxAttribute(node) &&
+      node.name.getText(tree) === "style" &&
+      node.initializer &&
+      ts.isJsxExpression(node.initializer) &&
+      node.initializer.expression;
     if (value && ts.isObjectLiteralExpression(value)) {
-      const properties = value.properties.filter((item) =>
-        item.name && (ts.isIdentifier(item.name) || ts.isStringLiteralLike(item.name)) &&
-        !item.name.text.startsWith("--"));
+      const properties = value.properties.filter(
+        (item) =>
+          item.name &&
+          (ts.isIdentifier(item.name) || ts.isStringLiteralLike(item.name)) &&
+          !item.name.text.startsWith("--"),
+      );
       let uncovered;
       for (const item of properties) {
         const property = item.name.text.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
         const raw = ts.isPropertyAssignment(item) && item.initializer;
         const string = raw && ts.isStringLiteralLike(raw);
-        const number = raw && (ts.isNumericLiteral(raw) ||
-          (ts.isPrefixUnaryExpression(raw) && raw.operator === ts.SyntaxKind.MinusToken &&
-            ts.isNumericLiteral(raw.operand)));
+        const number =
+          raw &&
+          (ts.isNumericLiteral(raw) ||
+            (ts.isPrefixUnaryExpression(raw) &&
+              raw.operator === ts.SyntaxKind.MinusToken &&
+              ts.isNumericLiteral(raw.operand)));
         if (!string && !number) {
           uncovered ??= item;
           continue;
@@ -1261,7 +1338,8 @@ function scanInlineStyles(source, add) {
         let rule;
         if (outlineRemoved(property, text)) rule = "focus-outline-removed";
         else if (hasLiteralPaint(property, text)) rule = "theme-palette-literal";
-        else if (typeProperty.test(property) && !text.trim().startsWith("var(")) rule = "feature-typography";
+        else if (typeProperty.test(property) && !text.trim().startsWith("var("))
+          rule = "feature-typography";
         else if (radiusProperty.test(property) && (length || bareValues(text).some(rawFixedLength)))
           rule = "radius-size";
         else if ((spacingProperty.test(property) || sizingProperty.test(property)) && length)
@@ -1309,8 +1387,10 @@ export function appearanceRuleOfDeclaration(declaration) {
     }
     return null;
   }
-  if (focusPaint(property, raw) &&
-      (focusExempt(selectors) || selectors.some((selector) => /:focus-visible\b/.test(selector))))
+  if (
+    focusPaint(property, raw) &&
+    (focusExempt(selectors) || selectors.some((selector) => /:focus-visible\b/.test(selector)))
+  )
     return null;
   // Pseudo-element ink and type belong to generated decoration, not text hierarchy.
   if (
@@ -1327,13 +1407,15 @@ export function appearanceRuleOfDeclaration(declaration) {
   if (hasLiteralPaint(property, raw)) return "theme-palette-literal";
   if (radiusProperty.test(property) && bareValues(raw).some(rawFixedLength)) return "radius-size";
   if (spacingProperty.test(property) && bareValues(raw).some(offScale)) return "spacing-step";
-  if (typeProperty.test(property) && !/^(?:inherit|normal|unset|revert(?:-layer)?|var\(\s*--(?:ui-)?text-)/.test(raw.trim()))
+  if (
+    typeProperty.test(property) &&
+    !/^(?:inherit|normal|unset|revert(?:-layer)?|var\(\s*--(?:ui-)?text-)/.test(raw.trim())
+  )
     return "feature-typography";
   // One finding per declaration: a state block is reported as a state, not as its contents.
   if (selectors.some((selector) => stateSelector.test(selector))) return "interaction-state";
   if (typeProperty.test(property)) return null;
-  if (/^(?:font-weight|letter-spacing|color|font)$/.test(property))
-    return "feature-typography";
+  if (/^(?:font-weight|letter-spacing|color|font)$/.test(property)) return "feature-typography";
   if (/^(?:text-overflow|-webkit-line-clamp|line-clamp)$/.test(property)) return "text-truncation";
   if (
     /^(?:border(?!-collapse|-spacing)|outline|background|box-shadow)/.test(property) &&
@@ -1343,7 +1425,8 @@ export function appearanceRuleOfDeclaration(declaration) {
   if (/^(?:transition|animation)/.test(property)) return "feature-motion";
   if (property.startsWith("scrollbar-")) return "scrollbar-style";
   if (
-    sizingProperty.test(property) && bareValues(raw).some(privateSize) &&
+    sizingProperty.test(property) &&
+    bareValues(raw).some(privateSize) &&
     targetsControl(selectors.at(-1) ?? "")
   )
     return "fixed-control-size";
@@ -1353,15 +1436,24 @@ export function appearanceRuleOfDeclaration(declaration) {
 /** Visual changes to a shared slot. Outer placement and responsive constraints are public. */
 export function restylesSharedSlot({ property, value }) {
   if (property === "@apply")
-    return value.trim().split(/\s+/).some((token) => {
-      const { utility } = utilityParts(token);
-      const arbitrary = /^\[([\w-]+):(.+)\]$/.exec(utility);
-      if (arbitrary) return restylesSharedSlot({ property: arbitrary[1], value: arbitrary[2] });
-      if (/^text-(?:left|center|right|justify|start|end|wrap|nowrap|balance|pretty)$/.test(utility))
-        return false;
-      return /^(?:p[xysetblr]?-|gap-|h-|min-h-|size-|bg-|border(?:-|$)|rounded(?:-|$)|ring(?:-|$)|outline(?:-|$)|shadow(?:-|$)|text-|font-|leading-|tracking-|opacity-|transition(?:-|$)|animate-)/.test(utility);
-    });
-  return /^(?:padding(?:-|$)|(?:row-|column-)?gap$|(?:min-|max-)?(?:height|block-size)$|color$|background(?:-|$)|border(?:-|$)|outline(?:-|$)|box-shadow$|font(?:-|$)|letter-spacing$|line-height$|(?:fill|stroke|opacity|filter)$|(?:animation|transition)(?:-|$)|--(?:button|control|dropdown|field|modal|popover|sheet|surface|ui-control)-)/.test(property);
+    return value
+      .trim()
+      .split(/\s+/)
+      .some((token) => {
+        const { utility } = utilityParts(token);
+        const arbitrary = /^\[([\w-]+):(.+)\]$/.exec(utility);
+        if (arbitrary) return restylesSharedSlot({ property: arbitrary[1], value: arbitrary[2] });
+        if (
+          /^text-(?:left|center|right|justify|start|end|wrap|nowrap|balance|pretty)$/.test(utility)
+        )
+          return false;
+        return /^(?:p[xysetblr]?-|gap-|h-|min-h-|size-|bg-|border(?:-|$)|rounded(?:-|$)|ring(?:-|$)|outline(?:-|$)|shadow(?:-|$)|text-|font-|leading-|tracking-|opacity-|transition(?:-|$)|animate-)/.test(
+          utility,
+        );
+      });
+  return /^(?:padding(?:-|$)|(?:row-|column-)?gap$|(?:min-|max-)?(?:height|block-size)$|color$|background(?:-|$)|border(?:-|$)|outline(?:-|$)|box-shadow$|font(?:-|$)|letter-spacing$|line-height$|(?:fill|stroke|opacity|filter)$|(?:animation|transition)(?:-|$)|--(?:button|control|dropdown|field|modal|popover|sheet|surface|ui-control)-)/.test(
+    property,
+  );
 }
 
 /** Shared controls that take their size from a `size` prop, never from classes. */

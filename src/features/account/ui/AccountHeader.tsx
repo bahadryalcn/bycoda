@@ -44,7 +44,8 @@ export function AccountHeader({
 
   return (
     <header className={styles.header}>
-      <Surface variant="card" padding="md" className={styles.identityCard}>
+      <Surface variant="card" padding="md">
+        <div className={styles.identityCard}>
         <AccountAvatar user={user} size="lg" />
         <div className={styles.identity}>
           <Heading size="section" truncate>
@@ -53,9 +54,9 @@ export function AccountHeader({
           <Text size="caption" tone="secondary" leading="inherit" className={styles.email}>
             <PrivateEmail email={user.email} />
           </Text>
-          <Text size="caption" tone="secondary" leading="inherit" className={styles.facts}>
+          <div className={styles.facts}>
             <Badge tone="accent">{planLabel(entitlements.planTier)}</Badge>
-          </Text>
+          </div>
         </div>
         <Button
           variant="secondary"
@@ -65,6 +66,7 @@ export function AccountHeader({
         >
           {t("Sign out")}
         </Button>
+        </div>
       </Surface>
       {stale ? (
         <InlineMessage tone="neutral">

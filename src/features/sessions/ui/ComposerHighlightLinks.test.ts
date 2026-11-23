@@ -264,7 +264,8 @@ it("re-renders on a caret move only when it enters or leaves a link", () => {
       field.setSelectionRange(position, position);
       document.dispatchEvent(new Event("selectionchange"));
     });
-  const openBadges = () => host.querySelectorAll("[data-composer-link-token] [data-reference-face]").length;
+  const openBadges = () =>
+    host.querySelectorAll("[data-composer-link-token] [data-reference-face]").length;
 
   moveCaret(1);
   const settled = skillParts.mock.calls.length;

@@ -86,9 +86,11 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                   ? t("Sessions")
                   : t("Jobs")}
             {count !== undefined && (
-              <Text as="span" weight="regular" tone="muted" leading="inherit">
-                {count}
-              </Text>
+              <span className={styles.collectionCount}>
+                <Text weight="regular" tone="muted" leading="inherit">
+                  {count}
+                </Text>
+              </span>
             )}
           </Heading>
           <SearchInput

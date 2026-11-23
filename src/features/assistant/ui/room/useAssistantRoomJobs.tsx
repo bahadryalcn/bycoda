@@ -1,5 +1,5 @@
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
-import { Text } from "../../../../shared/ui/Text";
+import { Text, textAttributes } from "../../../../shared/ui/Text";
 import type {
   AssistantJob,
   AssistantRequest,
@@ -136,7 +136,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
                   p0: review.tasks.length,
                 })}
               </p>
-              <Text as="ul" tone="inherit" leading="inherit" className={jobStyles.deleteTasks}>
+              <ul {...textAttributes({ tone: "inherit", leading: "inherit" }, jobStyles.deleteTasks)}>
                 {review.tasks.map((task) => (
                   <li key={task.id}>
                     <Text
@@ -151,7 +151,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
                     <span>· {projectName(task.projectId)}</span>
                   </li>
                 ))}
-              </Text>
+              </ul>
             </>
           ) : reviewError ? (
             <InlineError>{t(reviewError)}</InlineError>

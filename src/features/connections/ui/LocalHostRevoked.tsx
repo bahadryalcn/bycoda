@@ -60,8 +60,7 @@ export function LocalHostRevokedNotice({ machine }: { machine: RemoteMachine }) 
       title={t("This computer's connection to its Host was revoked.")}
       action={{ label: t("Reconnect"), onClick: () => void reconnect(), pending }}
     >
-      {error ??
-        t("Tasks, sessions and sync on this computer are unavailable until you reconnect.")}
+      {error ?? t("Tasks, sessions and sync on this computer are unavailable until you reconnect.")}
     </Alert>
   );
 }

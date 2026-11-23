@@ -233,7 +233,7 @@ function VoiceWakeMenu({
         iconOnly
         size="xs"
         stretch={!docked}
-        className={docked ? styles.dockedWakeTrigger : undefined}
+        className={docked ? "my-auto shrink-0" : undefined}
         variant="ghost"
         label={label}
         tooltipSide="top"
@@ -254,9 +254,9 @@ function VoiceWakeMenu({
           kind="dialog"
           size="sm"
           aria-label={label}
-          className={styles.wakeMenu}
           onDismiss={() => setOpen(false)}
         >
+          <div className={styles.wakeMenu}>
           <Switch
             label={t("Wake and sleep phrases")}
             labelPosition="start"
@@ -281,6 +281,7 @@ function VoiceWakeMenu({
               {t("Set up voice")}
             </Button>
           )}
+          </div>
         </Popover>
       )}
     </>

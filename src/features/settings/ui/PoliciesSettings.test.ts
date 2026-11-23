@@ -31,7 +31,9 @@ afterEach(async () => {
 
 async function openPolicy(id = POLICIES[0].id) {
   await act(async () =>
-    root.render(createElement(RevealedSetting.Provider, { value: id }, createElement(PoliciesSettings))),
+    root.render(
+      createElement(RevealedSetting.Provider, { value: id }, createElement(PoliciesSettings)),
+    ),
   );
 }
 it("opens privacy by default and replaces the inline reader with each full offline document", async () => {
@@ -40,7 +42,9 @@ it("opens privacy by default and replaces the inline reader with each full offli
   for (const policy of POLICIES) {
     expect(searchSettings(policy.title).some((result) => result.section === "policies")).toBe(true);
     await openPolicy(policy.id);
-    expect(container.querySelector(`#setting-${policy.id}`)?.getAttribute("aria-label")).toBe(policy.title);
+    expect(container.querySelector(`#setting-${policy.id}`)?.getAttribute("aria-label")).toBe(
+      policy.title,
+    );
     expect(document.querySelectorAll("article")).toHaveLength(1);
     expect(document.querySelector("article")?.textContent).toContain(policy.en);
     expect(document.querySelector("article")?.lang).toBe("en");

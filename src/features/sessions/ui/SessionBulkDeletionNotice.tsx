@@ -33,9 +33,7 @@ export function SessionBulkDeletionNotice({
   return (
     <InlineMessage
       tone={error && !progress ? "danger" : "neutral"}
-      icon={
-        progress ? <Spinner /> : success ? <Check className="icon-sm" /> : undefined
-      }
+      icon={progress ? <Spinner /> : success ? <Check className="icon-sm" /> : undefined}
       data-session-delete-status
       aria-label={
         progress

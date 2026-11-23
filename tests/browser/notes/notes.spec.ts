@@ -49,7 +49,9 @@ test("fills the note workspace and exposes each pane's remaining content", async
   await expect(panes).toHaveCount(2);
   for (const pane of await panes.all()) {
     expect(
-      await pane.locator(".note-pane-scroll").evaluate((node) => node.scrollHeight - node.clientHeight),
+      await pane
+        .locator(".note-pane-scroll")
+        .evaluate((node) => node.scrollHeight - node.clientHeight),
     ).toBeGreaterThan(0);
   }
   for (const width of [1440, 1024, 768, 390]) {
@@ -847,7 +849,9 @@ for (const theme of ["light", "dark"])
       await page.getByRole("textbox", { name: "Add note tag" }).focus();
       await writingArea.click({ position: { x: 36, y: 220 } });
       await expect(writingArea).toBeFocused();
-      await expect(panel.getByRole("button", { name: "Delete note", exact: true })).toBeInViewport();
+      await expect(
+        panel.getByRole("button", { name: "Delete note", exact: true }),
+      ).toBeInViewport();
       await expect(panel.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
       await panel.screenshot({
         path: `temp/verification/notes-session-writing/blank-${theme}-${width}.png`,

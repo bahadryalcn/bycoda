@@ -14,7 +14,7 @@ import { SOCIAL_PLATFORM_NAMES, type SocialAccount } from "../../model/social";
 import type { SocialList } from "../../model/audience";
 import type { ImportResult } from "../../model/socialActions";
 import type { SocialClient } from "../../model/socialClient";
-import { LabeledSelect } from "./LabeledSelect";
+import { Select } from "../../../../shared/ui/Select";
 import { PlatformIcon } from "../common/PlatformIcon";
 import { errorMessage } from "./audienceModel";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
@@ -227,7 +227,7 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                 })}
               </InlineMessage>
             ) : null}
-            <LabeledSelect
+            <Select
               label={t("Account")}
               value={accountId}
               disabled={importing}
@@ -239,9 +239,9 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                   label: `${SOCIAL_PLATFORM_NAMES[account.platform]} · ${account.name}`,
                 })),
               ]}
-              onChange={setAccountId}
+              onValueChange={setAccountId}
             />
-            <LabeledSelect
+            <Select
               label={t("Add them to")}
               value={listId}
               disabled={importing}
@@ -251,11 +251,11 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                   .filter((list) => list.kind === "static")
                   .map((list) => ({ value: list.id, label: list.name })),
               ]}
-              onChange={setListId}
+              onValueChange={setListId}
             />
             <FieldGroup legend={t("Columns")} gap="sm">
               {IMPORT_FIELDS.map((field) => (
-                <LabeledSelect
+                <Select
                   key={field}
                   label={
                     REQUIRED.includes(field)
@@ -271,7 +271,7 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                       label: header,
                     })),
                   ]}
-                  onChange={(column) =>
+                  onValueChange={(column) =>
                     setMapping((current) => ({
                       ...current,
                       [field]: column || undefined,

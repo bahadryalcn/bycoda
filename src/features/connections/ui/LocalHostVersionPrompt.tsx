@@ -50,10 +50,7 @@ export function LocalHostVersionPrompt({
           title: t("Update this computer's host now?"),
           body: <UpdateImpact target="local-host" />,
           message: versions,
-          consequences: [
-            sameVersion,
-            ...hostRestartConsequences(),
-          ],
+          consequences: [sameVersion, ...hostRestartConsequences()],
           confirmLabel: t("Stop and update"),
           danger: true,
           cancelLabel: t("Not now"),

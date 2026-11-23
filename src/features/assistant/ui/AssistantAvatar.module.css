@@ -11,12 +11,6 @@
   gap: var(--ui-space-2);
   min-inline-size: 0;
 }
-/* Tile size only: the group owns the gap and wrapping, and the selected ring is drawn inside. */
-.tile {
-  inline-size: 40px;
-  block-size: 40px;
-  padding: 2px;
-}
 .tileImage {
   display: block;
   inline-size: 100%;

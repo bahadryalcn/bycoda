@@ -187,10 +187,10 @@ it("retains commits while refreshing and after a failed refresh, then retries", 
   await graph();
   const request = deferred<Awaited<ReturnType<typeof gitHistory>>>();
   vi.mocked(gitHistory).mockReturnValueOnce(request.promise);
-  await click("Refresh commit graph");
+  // There is no refresh button: a Git change re-reads the graph.
+  const changed = vi.mocked(subscribeGitChanged).mock.calls.at(-1)![0];
+  await act(async () => changed(null));
   expect(container.textContent).not.toContain("Refreshing commit graph…");
-  expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
-  expect(container.querySelector('button[aria-busy="true"]')).not.toBeNull();
   expect(container.textContent).toContain("Existing commit");
   await act(async () => request.reject(new Error("Permission denied")));
   expect(container.textContent).toContain("Couldn’t load commit graph");

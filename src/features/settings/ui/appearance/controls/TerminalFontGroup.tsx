@@ -99,39 +99,39 @@ export function TerminalFontGroup({ appearance: a }: { appearance: AppearanceSet
         />
       </Row>
       <AdvancedSettings settingIds={["terminal-font-weight", "terminal-line-height"]}>
-      <Row
-        id="terminal-font-weight"
-        label={t("Terminal font weight")}
-        modified={p.terminalWeight !== d.terminalWeight}
-        onReset={() => a.onPreferences({ ...p, terminalWeight: d.terminalWeight })}
-      >
-        <Segmented
+        <Row
+          id="terminal-font-weight"
           label={t("Terminal font weight")}
-          value={terminalWeightChoice(p.terminalWeight)}
-          options={[
-            { value: "300", label: t("Light") },
-            { value: "400", label: t("Regular") },
-            { value: "700", label: t("Bold") },
-          ]}
-          onChange={(value) => a.onPreferences({ ...p, terminalWeight: Number(value) })}
-        />
-      </Row>
-      <Row
-        id="terminal-line-height"
-        label={t("Terminal line spacing")}
-        modified={p.terminalLineHeight !== d.terminalLineHeight}
-        onReset={() => a.onPreferences({ ...p, terminalLineHeight: d.terminalLineHeight })}
-      >
-        <Segmented
+          modified={p.terminalWeight !== d.terminalWeight}
+          onReset={() => a.onPreferences({ ...p, terminalWeight: d.terminalWeight })}
+        >
+          <Segmented
+            label={t("Terminal font weight")}
+            value={terminalWeightChoice(p.terminalWeight)}
+            options={[
+              { value: "300", label: t("Light") },
+              { value: "400", label: t("Regular") },
+              { value: "700", label: t("Bold") },
+            ]}
+            onChange={(value) => a.onPreferences({ ...p, terminalWeight: Number(value) })}
+          />
+        </Row>
+        <Row
+          id="terminal-line-height"
           label={t("Terminal line spacing")}
-          value={String(p.terminalLineHeight)}
-          options={[1, 1.15, 1.35, 1.5].map((value) => ({
-            value: String(value),
-            label: `${value}×`,
-          }))}
-          onChange={(value) => a.onPreferences({ ...p, terminalLineHeight: Number(value) })}
-        />
-      </Row>
+          modified={p.terminalLineHeight !== d.terminalLineHeight}
+          onReset={() => a.onPreferences({ ...p, terminalLineHeight: d.terminalLineHeight })}
+        >
+          <Segmented
+            label={t("Terminal line spacing")}
+            value={String(p.terminalLineHeight)}
+            options={[1, 1.15, 1.35, 1.5].map((value) => ({
+              value: String(value),
+              label: `${value}×`,
+            }))}
+            onChange={(value) => a.onPreferences({ ...p, terminalLineHeight: Number(value) })}
+          />
+        </Row>
       </AdvancedSettings>
     </Group>
   );

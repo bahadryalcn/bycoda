@@ -204,7 +204,10 @@ export function ModelBrowser({
                     className="absolute -end-2.5 -inset-bs-1.5"
                   />
                   {defaultMark?.harness === harness && account?.accountNumber === undefined ? (
-                    <StatusDot data-model-default-provider className="absolute -inset-bs-0.5 -end-1" />
+                    <StatusDot
+                      data-model-default-provider
+                      className="absolute -inset-bs-0.5 -end-1"
+                    />
                   ) : null}
                 </span>
               </ProviderTabButton>

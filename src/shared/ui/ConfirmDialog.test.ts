@@ -54,6 +54,16 @@ it("uses the standard padded Modal body and Cancel before the destructive action
   expect(actions).toEqual(["Cancel", "Delete"]);
 });
 
+it.each([undefined, ""])(
+  "omits the message paragraph for title-only confirmation (%s)",
+  async (message) => {
+    const settle = await render({ title: "Delete branch?", message, confirmLabel: "Delete" });
+    expect(document.querySelector("[data-modal-scroll] p")).toBeNull();
+    await click(button("Delete"));
+    expect(settle).toHaveBeenCalledWith(true);
+  },
+);
+
 it("renders updated caller content without resetting an open confirmation", async () => {
   let open!: () => Promise<boolean>;
   const request = (message: string): ConfirmRequest => ({

@@ -111,6 +111,8 @@ export type SelectProps = Omit<
   /** Only used with the field composition above. */
   fieldVariant?: FieldVariant;
   fieldSize?: "sm" | "md";
+  /** Compact value width for a short selector in a settings row or toolbar. */
+  controlWidth?: "compact";
   ref?: Ref<HTMLButtonElement>;
 };
 
@@ -135,6 +137,7 @@ export function Select({
   error,
   fieldVariant = "form",
   fieldSize,
+  controlWidth,
   className,
   ref,
   onKeyDown,
@@ -241,6 +244,7 @@ export function Select({
       <OverflowTooltip label={expanded ? undefined : (selected?.label ?? value)}>
         <SelectTrigger
           {...triggerProps}
+          controlWidth={controlWidth}
           id={composed ? triggerId : triggerProps.id}
           aria-invalid={error ? true : triggerProps["aria-invalid"]}
           aria-describedby={fieldDescribedBy(
@@ -322,7 +326,8 @@ export function Select({
           {options.map((option, index) => {
             const isSelected = option.value === value;
             const highlighted = index === active;
-            const reason = highlighted && option.disabled ? option.disabledReason?.trim() : undefined;
+            const reason =
+              highlighted && option.disabled ? option.disabledReason?.trim() : undefined;
             const descriptionId = reason ? `${listId}-opt-${index}-reason` : undefined;
             return (
               <SelectOption

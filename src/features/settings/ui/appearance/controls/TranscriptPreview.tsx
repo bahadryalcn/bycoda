@@ -78,9 +78,9 @@ export function TranscriptPreview({
       >
         {art}
         <div className={`transcript-content ${styles.scene}`} inert>
-          <Text size="caption" data-chat-message-surface="user" className={styles.bubble}>
-            {t("Run the tests and fix what fails.")}
-          </Text>
+          <div data-chat-message-surface="user" className={styles.bubble}>
+            <Text size="caption">{t("Run the tests and fix what fails.")}</Text>
+          </div>
           <div data-transcript-reply="" className={styles.reply}>
             <Disclosure variant="step" chevron="end" summary={t("Worked for 14s")} />
             <Disclosure

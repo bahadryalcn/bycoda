@@ -28,10 +28,6 @@
   inline-size: 100%;
   min-inline-size: 0;
 }
-.recoveryId {
-  min-inline-size: 0;
-  font-variant-numeric: tabular-nums;
-}
 @container assistant-room (max-width: 540px) {
   .recoveryRow {
     grid-template-columns: minmax(0, 1fr) auto;

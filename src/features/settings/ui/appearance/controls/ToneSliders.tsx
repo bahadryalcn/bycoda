@@ -35,63 +35,63 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
     <>
       <CanvasBackgroundRow appearance={appearance} />
       <Row id="hue" label={t("Hue")}>
-          <div className="theme-hue-field" style={HUE_TRACK_STYLE}>
-            <DraftSlider
-              label={t("Hue")}
-              className="theme-hue-slider"
-              value={hue}
-              format={(next) => `${next}°`}
-              min={THEME_HUE_MIN}
-              max={THEME_HUE_MAX}
-              apply={(next) => applyThemeTint(next, saturation)}
-              commit={(next) => appearance.onTint(next, saturation)}
-            />
-          </div>
-        </Row>
-        <Row id="saturation" label={t("Saturation")}>
+        <div className="theme-hue-field" style={HUE_TRACK_STYLE}>
           <DraftSlider
-            label={t("Saturation")}
-            value={saturation}
-            format={(next) => `${next}%`}
-            min={THEME_SATURATION_MIN}
-            max={THEME_SATURATION_MAX}
-            apply={(next) => applyThemeTint(hue, next)}
-            commit={(next) => appearance.onTint(hue, next)}
+            label={t("Hue")}
+            className="theme-hue-slider"
+            value={hue}
+            format={(next) => `${next}°`}
+            min={THEME_HUE_MIN}
+            max={THEME_HUE_MAX}
+            apply={(next) => applyThemeTint(next, saturation)}
+            commit={(next) => appearance.onTint(next, saturation)}
+          />
+        </div>
+      </Row>
+      <Row id="saturation" label={t("Saturation")}>
+        <DraftSlider
+          label={t("Saturation")}
+          value={saturation}
+          format={(next) => `${next}%`}
+          min={THEME_SATURATION_MIN}
+          max={THEME_SATURATION_MAX}
+          apply={(next) => applyThemeTint(hue, next)}
+          commit={(next) => appearance.onTint(hue, next)}
+        />
+      </Row>
+      {light ? null : (
+        <Row id="dark-lightness" label={t("Depth")}>
+          <DraftSlider
+            label={t("Depth")}
+            value={depth}
+            format={String}
+            min={THEME_DARK_LIGHTNESS_MIN}
+            max={THEME_DARK_LIGHTNESS_MAX}
+            apply={applyThemeDarkLightness}
+            commit={appearance.onDarkLightness}
           />
         </Row>
-        {light ? null : (
-          <Row id="dark-lightness" label={t("Depth")}>
-            <DraftSlider
-              label={t("Depth")}
-              value={depth}
-              format={String}
-              min={THEME_DARK_LIGHTNESS_MIN}
-              max={THEME_DARK_LIGHTNESS_MAX}
-              apply={applyThemeDarkLightness}
-              commit={appearance.onDarkLightness}
-            />
-          </Row>
-        )}
-        <Row
-          id="surface-contrast"
+      )}
+      <Row
+        id="surface-contrast"
+        label={t("Surface contrast")}
+        description={t("How strongly cards, fields and dialogs lift off the canvas.")}
+      >
+        <DraftSlider
           label={t("Surface contrast")}
-          description={t("How strongly cards, fields and dialogs lift off the canvas.")}
-        >
-          <DraftSlider
-            label={t("Surface contrast")}
-            value={surfaceContrast}
-            format={(next) => `${next}%`}
-            min={APPEARANCE_RANGES.surfaceContrast.min}
-            max={APPEARANCE_RANGES.surfaceContrast.max}
-            step={5}
-            apply={(next) =>
-              applyAppearancePreferences({ ...appearance.preferences, surfaceContrast: next })
-            }
-            commit={(next) =>
-              appearance.onPreferences({ ...appearance.preferences, surfaceContrast: next })
-            }
-          />
-        </Row>
+          value={surfaceContrast}
+          format={(next) => `${next}%`}
+          min={APPEARANCE_RANGES.surfaceContrast.min}
+          max={APPEARANCE_RANGES.surfaceContrast.max}
+          step={5}
+          apply={(next) =>
+            applyAppearancePreferences({ ...appearance.preferences, surfaceContrast: next })
+          }
+          commit={(next) =>
+            appearance.onPreferences({ ...appearance.preferences, surfaceContrast: next })
+          }
+        />
+      </Row>
     </>
   );
 }

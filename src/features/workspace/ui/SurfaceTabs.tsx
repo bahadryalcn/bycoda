@@ -734,9 +734,7 @@ export function SurfaceTabs({
                   ) : (
                     <FileTypeIcon name={iconName} isDir={false} size="sm" />
                   )}
-                  <TabLabel className={`flex-1 ${file.preview ? "italic" : ""}`}>
-                    {label}
-                  </TabLabel>
+                  <TabLabel className={`flex-1 ${file.preview ? "italic" : ""}`}>{label}</TabLabel>
                   {errors ? (
                     <CircleAlert
                       aria-hidden

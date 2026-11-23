@@ -474,14 +474,12 @@ export function GitChangesPanel({
       onContextMenu={embedded ? undefined : preferences.onContextMenu}
     >
       {preferences.menu}
-      <Text
-        as="header"
-        size="inherit"
-        tone={repository ? "primary" : "inherit"}
+      <header
         className={repository ? styles.header : styles.branchHeader}
         data-current-checkout={repository?.current || undefined}
         {...(repository ? actionHostAttributes({ hoverReveal: true }, styles.header) : {})}
       >
+        <Text as="div" size="inherit" tone={repository ? "primary" : "inherit"} className="contents">
         {repository ? (
           <Button
             size="sm"
@@ -598,7 +596,8 @@ export function GitChangesPanel({
             ) : null}
           </div>
         </div>
-      </Text>
+        </Text>
+      </header>
       {repository && operation && !detailsOpen ? (
         <InlineMessage tone="warning" live="off" inset="row">
           {operation}
@@ -1388,97 +1387,97 @@ function ChangedFiles({
       <div {...surfaceAttributes({ frame: fill ? "pane" : undefined, edge: "bottom" }, "shrink-0")}>
         {/* No repository data yet or a failed first read: there is nothing to commit, so no form. */}
         {index ? (
-        <div className="flex flex-col gap-1.5 p-2">
-          <div className="relative min-w-0">
-            <TextareaField
-              label={t("Commit message")}
-              hideLabel
-              fieldClassName={styles.messageField}
-              textSize="caption"
-              ref={messageRef}
-              fieldSize="sm"
-              minRows={1}
-              maxRows={8}
-              autosize
-              value={message}
-              placeholder={
-                amend
-                  ? t("Amend message ({p0}↩ to amend)", { p0: MOD })
-                  : t("Message ({p0}↩ to commit)", { p0: MOD })
-              }
-              disabled={!canEditMessage}
-              onChange={(event) => setMessage(event.target.value)}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canCommit) {
-                  event.preventDefault();
-                  void commit(false);
+          <div className="flex flex-col gap-1.5 p-2">
+            <div className="relative min-w-0">
+              <TextareaField
+                label={t("Commit message")}
+                hideLabel
+                fieldClassName={styles.messageField}
+                textSize="caption"
+                ref={messageRef}
+                fieldSize="sm"
+                minRows={1}
+                maxRows={8}
+                autosize
+                value={message}
+                placeholder={
+                  amend
+                    ? t("Amend message ({p0}↩ to amend)", { p0: MOD })
+                    : t("Message ({p0}↩ to commit)", { p0: MOD })
                 }
-              }}
-              className={styles.message}
-              endAdornment={
-                <GitCommitGenerationActions
-                  key={cwd}
-                  cwd={cwd}
-                  preferred={textHarness}
-                  choice={commitGenerationChoice}
-                  onChange={setCommitGenerationChoice}
-                  canGenerate={canGenerate}
-                  generating={generating}
-                  generate={() => void generate()}
-                  cancel={cancelGenerate}
-                />
-              }
-            />
+                disabled={!canEditMessage}
+                onChange={(event) => setMessage(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canCommit) {
+                    event.preventDefault();
+                    void commit(false);
+                  }
+                }}
+                className={styles.message}
+                endAdornment={
+                  <GitCommitGenerationActions
+                    key={cwd}
+                    cwd={cwd}
+                    preferred={textHarness}
+                    choice={commitGenerationChoice}
+                    onChange={setCommitGenerationChoice}
+                    canGenerate={canGenerate}
+                    generating={generating}
+                    generate={() => void generate()}
+                    cancel={cancelGenerate}
+                  />
+                }
+              />
+            </div>
+            <div className="min-w-0">
+              <GitCommitActions
+                index={index ?? null}
+                pr={pr}
+                busy={busy}
+                pending={pending}
+                hasRemote={hasRemote}
+                hasOpenPr={hasOpenPr}
+                onDefault={onDefault}
+                amend={amend}
+                commitIntent={commitIntent}
+                canCommit={canCommit}
+                blockedReason={blockedMessage}
+                canCommitPush={canCommitPush}
+                canCommitPushPr={canCommitPushPr}
+                canSync={canSync}
+                canPublish={canPublish}
+                canCreatePr={canCreatePr}
+                canViewPr={canViewPr}
+                canOpenMenu={canOpenMenu}
+                menuOpen={menuOpen}
+                onMenuOpenChange={setMenuOpen}
+                onCommit={(push, createPr) => void commit(push, createPr)}
+                onToggleAmend={() => void toggleAmend()}
+                onSync={() => void sync()}
+                onCreatePr={() => void createPr()}
+                onViewPr={() => {
+                  if (pr?.url)
+                    openUrlSafely(pr.url, (error) =>
+                      setGitFeedback(cwd, {
+                        kind: "error",
+                        get title() {
+                          return t("Could not open the link");
+                        },
+                        detail: presentRemoteError(error, { explicit: true }),
+                      }),
+                    );
+                }}
+              />
+            </div>
+            {generationResult && (
+              <GitCommitGenerationNotice
+                result={generationResult}
+                onUse={useGeneratedMessage}
+                onDismiss={dismissGenerationResult}
+                disabled={!canEditMessage}
+              />
+            )}
           </div>
-          <div className="min-w-0">
-            <GitCommitActions
-              index={index ?? null}
-              pr={pr}
-              busy={busy}
-              pending={pending}
-              hasRemote={hasRemote}
-              hasOpenPr={hasOpenPr}
-              onDefault={onDefault}
-              amend={amend}
-              commitIntent={commitIntent}
-              canCommit={canCommit}
-              blockedReason={blockedMessage}
-              canCommitPush={canCommitPush}
-              canCommitPushPr={canCommitPushPr}
-              canSync={canSync}
-              canPublish={canPublish}
-              canCreatePr={canCreatePr}
-              canViewPr={canViewPr}
-              canOpenMenu={canOpenMenu}
-              menuOpen={menuOpen}
-              onMenuOpenChange={setMenuOpen}
-              onCommit={(push, createPr) => void commit(push, createPr)}
-              onToggleAmend={() => void toggleAmend()}
-              onSync={() => void sync()}
-              onCreatePr={() => void createPr()}
-              onViewPr={() => {
-                if (pr?.url)
-                  openUrlSafely(pr.url, (error) =>
-                    setGitFeedback(cwd, {
-                      kind: "error",
-                      get title() {
-                        return t("Could not open the link");
-                      },
-                      detail: presentRemoteError(error, { explicit: true }),
-                    }),
-                  );
-              }}
-            />
-          </div>
-          {generationResult && (
-            <GitCommitGenerationNotice
-              result={generationResult}
-              onUse={useGeneratedMessage}
-              onDismiss={dismissGenerationResult}
-              disabled={!canEditMessage}
-            />
-          )}
-        </div>
         ) : null}
         {notices}
       </div>

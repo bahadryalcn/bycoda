@@ -6,11 +6,6 @@ import { expect, it } from "vitest";
  * The element stays on screen so the state still reads; nothing is removed or hidden. */
 const PAUSED_LOOPS: Array<{ path: string; selector: RegExp }> = [
   {
-    path: "src/features/voice/ui/VoiceCompanion.module.css",
-    selector:
-      /:global\(html:is\(\[data-decorative-motion="off"\],\s*\[data-window-focus="off"\]\)\)\s+\.launcherAvatar\s+\.launcherDot\s*\{\s*animation-play-state: paused;\s*\}/,
-  },
-  {
     path: "src/shared/ui/arc/expanding-button-group/expanding-button-group.module.css",
     selector:
       /:global\(html:is\(\[data-decorative-motion="off"\],\s*\[data-window-focus="off"\]\)\)\s+\.item\[aria-busy="true"\]\s+\.icon\s*\{\s*animation-play-state: paused;\s*\}/,
@@ -30,12 +25,16 @@ it.each(PAUSED_LOOPS)("$path pauses its decorative loop for window blur", ({ pat
   expect(pauseBlock).not.toMatch(/animation:\s*none|display:\s*none|visibility:\s*hidden/);
 });
 
-it("keeps the reduced-motion and decorative-off stops that the pause rules sit beside", () => {
+it("keeps the voice launcher status visible as a static shared dot", () => {
   const voice = readFileSync("src/features/voice/ui/VoiceCompanion.module.css", "utf8");
-  expect(voice).toMatch(
-    /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.launcherAvatar \.launcherDot\s*\{\s*animation: none;/,
-  );
+  const launcher = readFileSync("src/features/voice/ui/companion/VoiceLauncher.tsx", "utf8");
+  const dot = launcher.match(/<StatusDot\s+className=\{styles\.launcherDot\}[^>]*\/>/)?.[0];
+  expect(dot).toContain("tone={tone}");
+  expect(dot).toContain('appearance="solid"');
+  expect(voice).not.toMatch(/\.launcherDot[^{]*\{[^}]*\banimation(?:-[\w-]+)?\s*:/);
+});
 
+it("keeps the line chart's decorative-off stop beside its blur pause", () => {
   const chart = readFileSync("src/shared/ui/arc/line-chart/line-chart.module.css", "utf8");
   expect(chart).toMatch(
     /html\[data-decorative-motion="off"\]\) \.chart\[data-loading\] \.series,\s*:global\(html\[data-decorative-motion="off"\]\) \.skeleton\s*\{\s*animation: none;/,

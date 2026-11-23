@@ -25,10 +25,7 @@ export function SourceControlSettings() {
   return (
     <div className="source-control-settings settings-topics">
       <Group title={t("Source Control")}>
-        <Row
-          id="git-generation-default"
-          label={t("Model")}
-        >
+        <Row id="git-generation-default" label={t("Model")}>
           <Button variant="link" onClick={() => openModelsSettings("roles")}>
             {t("Manage models")}
           </Button>

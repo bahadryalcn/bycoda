@@ -89,11 +89,14 @@ it.each([
   },
 );
 
-it("does not overwrite an unsaved GitLab target when checking saved configuration", async () => {
-  vi.mocked(invoke).mockResolvedValue({ connected: false, url: "https://saved.example.com" });
+it("does not overwrite an unsaved GitLab target when retrying the saved configuration read", async () => {
+  // The status row appears only after a failed read; its Retry rereads the saved configuration.
+  vi.mocked(invoke)
+    .mockRejectedValueOnce(new Error("Host unavailable"))
+    .mockResolvedValue({ connected: false, url: "https://saved.example.com" });
   await act(async () => root.render(createElement(GitlabSettings)));
   await fill("GitLab URL", "https://draft.example.com");
-  await click("Check saved configuration");
+  await click("Retry");
   expect(container.querySelector<HTMLInputElement>('input[type="url"]')?.value).toBe(
     "https://draft.example.com",
   );
@@ -227,7 +230,7 @@ it("separates a Linear team read failure from saved credentials and offers retry
     throw new Error(`Unexpected command: ${command}`);
   });
   await act(async () => root.render(createElement(LinearSettings)));
-  expect(container.textContent).toContain("Configured");
+  expect(container.textContent).toContain("API key saved on this computer");
   // Reading saved credentials never claims the provider accepted them.
   expect(container.querySelector('[data-state="verified"]')).toBeNull();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Teams unavailable");
@@ -280,7 +283,7 @@ it.each([false, true])(
   },
 );
 
-it("preserves drafts across provider tabs, supports keyboard navigation, and reveals searched providers", async () => {
+it("preserves drafts across services, offers every provider in the picker, and reveals searched providers", async () => {
   vi.mocked(invoke).mockResolvedValue({
     connected: false,
     installed: true,
@@ -288,26 +291,37 @@ it("preserves drafts across provider tabs, supports keyboard navigation, and rev
   });
   const render = (revealed: string | null) =>
     createElement(RevealedSetting.Provider, { value: revealed }, createElement(IntegrationsPage));
+  const trigger = () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Services:"]')!;
+  const options = () => [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+  const open = () => act(async () => trigger().click());
+  const choose = (id: string) =>
+    act(async () => options().find((option) => option.dataset.value === id)!.click());
+  const pick = async (id: string) => {
+    await open();
+    await choose(id);
+  };
+  const gitlabToken = () =>
+    container.querySelector<HTMLInputElement>('input[aria-label="GitLab access token"]');
   await act(async () => root.render(render(null)));
-  const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-  // One tab per offered integration; paused messaging providers have none.
-  expect(tabs).toHaveLength(INTEGRATIONS.length);
-  const last = tabs[tabs.length - 1]!;
-  await act(async () => tabs[1].click());
-  await fill("GitLab access token", "unsaved-draft");
-  await act(async () => tabs[3].click());
-  expect(container.querySelectorAll('[role="tabpanel"]:not([hidden])')).toHaveLength(1);
-  await act(async () => tabs[1].click());
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="GitLab access token"]')?.value,
-  ).toBe("unsaved-draft");
-  await act(async () =>
-    tabs[1].dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
+  // One choice per offered integration; paused messaging providers have none.
+  await open();
+  expect(options().map((option) => option.dataset.value)).toEqual(
+    INTEGRATIONS.map((item) => item.id),
   );
-  expect(last.getAttribute("aria-selected")).toBe("true");
-  expect(document.activeElement).toBe(last);
+  await choose("gitlab");
+  await fill("GitLab access token", "unsaved-draft");
+  await pick("jira");
+  // The previous provider keeps its draft but is hidden, so only one service shows.
+  expect(gitlabToken()?.closest("[hidden]")).not.toBeNull();
+  await pick("gitlab");
+  expect(gitlabToken()?.closest("[hidden]")).toBeNull();
+  expect(gitlabToken()?.value).toBe("unsaved-draft");
+  const lastId = INTEGRATIONS[INTEGRATIONS.length - 1]!;
+  await pick(lastId.id);
+  expect(trigger().getAttribute("aria-label")).toContain(lastId.name);
   await act(async () => root.render(render("jira")));
-  expect(tabs[3].getAttribute("aria-selected")).toBe("true");
+  expect(trigger().getAttribute("aria-label")).toContain("Jira");
 });
 
 it.each([

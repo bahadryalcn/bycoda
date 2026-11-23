@@ -71,7 +71,8 @@ it.each([true, false])(
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 550));
     });
-    expect(container.textContent).toContain("Loading Tasks");
+    // The route name sits in the header; the card says only that it is loading.
+    expect(container.textContent).toContain("Loading…");
     expect(container.textContent).not.toContain("Whole workspace hidden");
     await act(async () => container.querySelectorAll("button")[2]!.click());
     expect(container.textContent).toContain("Workspace content");
@@ -106,7 +107,7 @@ it("explains a slow load and clears its timer when the page arrives", async () =
   await act(async () => vi.advanceTimersByTime(3_000));
   const card = container.querySelector("[data-loading-card]")!;
   expect(card.textContent).toContain("taking longer to load");
-  const back = [...card.querySelectorAll("button")].find((button) =>
+  const back = [...container.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Back to workspace"),
   )!;
   await act(async () => back.click());
@@ -133,8 +134,8 @@ it("localizes the route name in the loading header and copy", async () => {
       await new Promise((resolve) => setTimeout(resolve, 550));
     });
     expect(container.querySelector("h1")!.textContent).toBe("Görevler");
-    expect(container.textContent).toContain("Görevler yükleniyor…");
-    expect(container.textContent).not.toContain("Loading Tasks");
+    expect(container.textContent).toContain("Yükleniyor…");
+    expect(container.textContent).not.toContain("Loading…");
     expect(container.textContent).not.toContain("Tasks");
   } finally {
     await setLanguagePreference("en");

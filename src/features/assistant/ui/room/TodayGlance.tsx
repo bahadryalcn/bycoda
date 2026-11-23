@@ -96,12 +96,7 @@ export function TodayGlance({
           onOpen={onOpenHistory}
         />
       </StatRow>
-      <Disclosure
-        summary={t("Charts")}
-        variant="row"
-        textSize="secondary"
-        tone="secondary"
-      >
+      <Disclosure summary={t("Charts")} variant="row" textSize="secondary" tone="secondary">
         <div className={styles.charts}>
           <ChartBlock title={t("Recent activity")} caption={t("Last 7 days")}>
             {hasActivity ? (
@@ -138,11 +133,7 @@ export function TodayGlance({
                 }))}
               />
             ) : (
-              <EmptyState
-                size="inline"
-                kind="empty"
-                description={t("No jobs yet")}
-              />
+              <EmptyState size="inline" kind="empty" description={t("No jobs yet")} />
             )}
           </ChartBlock>
         </div>
