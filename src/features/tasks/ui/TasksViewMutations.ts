@@ -33,7 +33,7 @@ export function useTaskMutations({
   ops,
   put,
   machines,
-  visibleTasks,
+  displayedTasks,
   setDraft,
   currentSprint,
   sprintBoard,
@@ -46,15 +46,15 @@ export function useTaskMutations({
     remove: (task: BoardTask) => void;
   };
   machines: RemoteMachine[];
-  visibleTasks: readonly BoardTask[];
+  displayedTasks: readonly BoardTask[];
   setDraft: (draft: TaskDraft | null) => void;
   currentSprint: { id: string } | undefined;
   sprintBoard: SprintBoardController;
   addPlanningRecovery: (item: PlanningRecovery) => void;
 }) {
-  const { setError, saving, setSaving, acting, act, refresh, confirm } = ops;
+  const { setError, reportError, saving, setSaving, acting, act, refresh, confirm } = ops;
   const { task: putTask, tasks: putTasks, remove: removeTask } = put;
-  const report = (reason: unknown) => setError(presentRemoteError(reason, { explicit: true }));
+  const report = (reason: unknown) => reportError(reason);
 
   const actOnTask = (task: BoardTask, action: () => Promise<BoardTask>) =>
     act(task, action, putTask);
@@ -118,18 +118,16 @@ export function useTaskMutations({
     }
     if (!task.workspaceControlsSupported) return;
     if (column !== "todo" && column !== "queued") return;
-    const ordered = tasksInColumn(visibleTasks, column).filter(
-      (item) => item.machineId === task.machineId && item.id !== task.id,
+    const ordered = tasksInColumn(displayedTasks, column).filter(
+      (item) => item.machineId === task.machineId && item.status === task.status,
     );
+    const from = ordered.findIndex((item) => item.id === task.id);
+    if (from < 0 || before?.id === task.id || ordered.some((item) => item.stale)) return;
+    if (before && (before.machineId !== task.machineId || before.status !== task.status)) return;
+    const [moving] = ordered.splice(from, 1);
     const index = before ? ordered.findIndex((item) => item.id === before.id) : ordered.length;
-    if (
-      before &&
-      (before.machineId !== task.machineId ||
-        before.status !== task.status ||
-        before.id === task.id)
-    )
-      return;
-    ordered.splice(index < 0 ? ordered.length : index, 0, task);
+    if (index < 0 || index === from || !moving) return;
+    ordered.splice(index, 0, moving);
     await act(task, () => reorderTasks(ordered), putTasks);
   };
 

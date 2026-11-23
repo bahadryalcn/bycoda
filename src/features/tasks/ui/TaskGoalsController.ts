@@ -37,6 +37,7 @@ type GoalScope = {
   projectFilter: string;
   lock: LockSnapshot;
   machines: RemoteMachine[];
+  machineId?: string;
   selectedProject?: TaskProjectScope;
   scopedCwd?: string;
   currentSprint?: { id: string; name: string };
@@ -70,7 +71,8 @@ export function useTaskGoals({
   openSession: (target: BackgroundSessionTarget) => void;
 }) {
   const { saving, setSaving, setError, refresh, act, confirm } = ops;
-  const { cwd, recents, projectFilter, lock, machines, selectedProject, scopedCwd } = scope;
+  const { cwd, recents, projectFilter, lock, machines, machineId, selectedProject, scopedCwd } =
+    scope;
   const { currentSprint, sprintBoard } = scope;
   const report = (reason: unknown) => setError(presentRemoteError(reason, { explicit: true }));
   const [draft, setDraft] = useState<GoalDraft | null>(null);
@@ -81,6 +83,7 @@ export function useTaskGoals({
     () =>
       stored.filter(
         (goal) =>
+          (!machineId || goal.machineId === machineId) &&
           !goal.projects.some((project) => isProjectLockedIn(lock, project.cwd)) &&
           goal.projects.some((project) =>
             taskMatchesProject(
@@ -90,7 +93,7 @@ export function useTaskGoals({
             ),
           ),
       ),
-    [lock, stored, projectFilter, machines],
+    [lock, stored, projectFilter, machines, machineId],
   );
 
   const begin = () => {
@@ -126,9 +129,10 @@ export function useTaskGoals({
       looksLikeProject(project)
         ? {
             ...next,
-            machineId: selectedProject?.machineId ?? backgroundMachineFor(capable, project)?.id,
+            machineId:
+              selectedProject?.machineId ?? machineId ?? backgroundMachineFor(capable, project)?.id,
           }
-        : { ...next, cwds: [], leadCwd: "" },
+        : { ...next, cwds: [], leadCwd: "", machineId },
     );
   };
 

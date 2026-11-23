@@ -35,6 +35,7 @@ import { TASK_PREFLIGHT_CAPABILITY, type TaskPreflightRequirement } from "./task
 import { projectKey } from "../../../shared/lib/paths";
 import { t } from "../../../shared/i18n";
 import { taskClientErrors } from "./taskClientErrors";
+import { resolveTaskTitle } from "./taskTitle";
 import {
   HOST_TASKS,
   HOST_TASK_ACCOUNTS,
@@ -301,7 +302,7 @@ export function hostTaskFromDraft(
         ? { reviewerConfig: null }
         : {}),
     ...(draft.crewDefinitionId ? { crewDefinitionId: draft.crewDefinitionId } : {}),
-    title: draft.title,
+    title: draft.id ? draft.title.trim() : resolveTaskTitle(draft.title, draft.prompt),
     prompt: draft.prompt,
     projectId,
     harness: draft.harness,

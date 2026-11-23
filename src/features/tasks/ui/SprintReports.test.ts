@@ -67,3 +67,22 @@ it("lets the owner choose an existing sprint from the empty report", () => {
   expect(host.querySelector('button[aria-label^="Sprint"], [aria-label="Sprint"]')).not.toBeNull();
   expect(button("Open sprints")).toBeDefined();
 });
+
+it("embeds in the sprint page without its own heading, sprint choice or Refresh", () => {
+  act(() =>
+    root.render(
+      createElement(SprintReports, {
+        board: controller([{ id: "s1", name: "Sprint one" }]),
+        sprintId: "s1",
+        embedded: true,
+        onChooseSprint: vi.fn(),
+        onOpenSprints: vi.fn(),
+      }),
+    ),
+  );
+  expect(host.querySelector("[data-embedded]")).not.toBeNull();
+  expect(button("Refresh")).toBeUndefined();
+  expect(button("Open sprints")).toBeUndefined();
+  expect(host.querySelector('[aria-label="Sprint"]')).toBeNull();
+  expect(host.querySelector("h2")).toBeNull();
+});

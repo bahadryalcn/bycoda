@@ -1,73 +1,50 @@
-import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { SprintBoardController } from "../model/sprintClient";
 import "./sprints.css";
 
 /**
- * One slim row for the planning Host (when several can plan), with the errors the board
- * or the last action reported directly under it.
+ * The server a new sprint is saved on. It is offered only when several servers can plan, or when
+ * the remembered one cannot be read (it then stays visible as a disabled entry).
  */
+export function sprintServerChoice(
+  board: Pick<
+    SprintBoardController,
+    "machines" | "coordinator" | "coordinatorEnvironmentId" | "setCoordinatorEnvironmentId"
+  >,
+  unavailableLabel: string,
+) {
+  const machines = [
+    ...new Map(board.machines.map((machine) => [machine.environmentId, machine])).values(),
+  ];
+  const missing = !board.coordinator && !!board.coordinatorEnvironmentId;
+  return {
+    show: machines.length > 1 || missing,
+    value: board.coordinatorEnvironmentId,
+    options: [
+      ...(missing
+        ? [{ value: board.coordinatorEnvironmentId, label: unavailableLabel, disabled: true }]
+        : []),
+      ...machines.map((machine) => ({ value: machine.environmentId, label: machine.name })),
+    ],
+    onChange: board.setCoordinatorEnvironmentId,
+  };
+}
+
+/** The errors the board or the last action reported, shown once under the page header. */
 export function SprintHostBar({
   board,
-  busy,
   error,
-  onCoordinatorChange,
 }: {
-  board: SprintBoardController;
-  busy: boolean;
+  board: Pick<SprintBoardController, "syncErrors">;
   error: string | null;
-  onCoordinatorChange?: () => void;
 }) {
   const t = useT();
-  // Several Hosts can plan; with one, the choice would only be noise.
-  const hostChoices = new Set(board.machines.map((machine) => machine.environmentId));
-  const showHost = hostChoices.size > 1 || (!board.coordinator && !!board.coordinatorEnvironmentId);
-  const message = error || board.error;
   return (
     <>
-      {showHost || message ? (
-        <Text as="div" size="inherit" tone="secondary" className="sprint-context">
-          {showHost ? (
-            <div className="sprint-source">
-              <SearchableSelect
-                hideLabel
-                label={t("Sprint server")}
-                tooltip={t("Sprint records are saved on this server. Tasks can run on any server.")}
-                value={board.coordinatorEnvironmentId}
-                options={[
-                  ...(!board.coordinator && board.coordinatorEnvironmentId
-                    ? [
-                        {
-                          value: board.coordinatorEnvironmentId,
-                          label: t("Selected Host is unavailable"),
-                          disabled: true,
-                        },
-                      ]
-                    : []),
-                  ...[
-                    ...new Map(
-                      board.machines.map((machine) => [machine.environmentId, machine]),
-                    ).values(),
-                  ].map((machine) => ({
-                    value: machine.environmentId,
-                    label: machine.name,
-                  })),
-                ]}
-                onChange={(value) => {
-                  board.setCoordinatorEnvironmentId(value);
-                  onCoordinatorChange?.();
-                }}
-                disabled={busy}
-              />
-            </div>
-          ) : null}
-          {message ? <InlineError className="sprint-host-error">{message}</InlineError> : null}
-        </Text>
-      ) : null}
+      {error ? <InlineError>{error}</InlineError> : null}
       {board.syncErrors.length ? (
-        <InlineError className="sprint-host-error" details={board.syncErrors.join("\n")}>
+        <InlineError details={board.syncErrors.join("\n")}>
           {t("Some machines need synchronization")}
         </InlineError>
       ) : null}

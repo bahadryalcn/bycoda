@@ -151,7 +151,10 @@ it("does not send edits from a stale machine", async () => {
 
 it("accepts goal concurrency above eight and preserves zero as machine inheritance", async () => {
   const onChange = vi.fn();
-  await act(async () => root.render(createElement(GoalConcurrencyOption, { value: 99, onChange })));
+  const onValidityChange = vi.fn();
+  await act(async () =>
+    root.render(createElement(GoalConcurrencyOption, { value: 99, onChange, onValidityChange })),
+  );
   expect(input().value).toBe("99");
   expect(input().max).toBe("");
   await type("123");
@@ -161,5 +164,9 @@ it("accepts goal concurrency above eight and preserves zero as machine inheritan
   onChange.mockClear();
   await type(String(Number.MAX_SAFE_INTEGER + 1));
   expect(onChange).not.toHaveBeenCalled();
+  expect(onValidityChange).toHaveBeenLastCalledWith(false);
   expect(input().getAttribute("aria-invalid")).toBe("true");
+  await type("0");
+  expect(onValidityChange).toHaveBeenLastCalledWith(true);
+  expect(input().hasAttribute("aria-invalid")).toBe(false);
 });

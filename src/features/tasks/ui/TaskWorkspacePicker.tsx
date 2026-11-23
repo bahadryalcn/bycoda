@@ -5,7 +5,15 @@ import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { remoteRequest } from "../../connections/public/connections";
@@ -23,19 +31,26 @@ type Inventory = { projectId: string; trees: Tree[]; branches: string[]; current
  * derives validity from these and the draft's own workspace value. */
 export type WorkspaceChecks = {
   trees?: readonly { path: string; branch: string | null }[];
+  scope?: string;
   pendingBranch: boolean;
 };
 
 export const INITIAL_WORKSPACE_CHECKS: WorkspaceChecks = { pendingBranch: false };
+
+export function taskWorkspaceScope(machine: RemoteMachine | undefined, cwd: string) {
+  return JSON.stringify([machine?.id, machine?.endpoint, machine?.environmentId, cwd]);
+}
 
 /** A workspace is usable when no branch name is waiting to be created and any
  * chosen branch or checkout is one of the project's loaded worktrees. */
 export function isWorkspaceValid(
   value: TaskWorkspace | undefined,
   checks: WorkspaceChecks,
+  scope?: string,
 ): boolean {
   if (checks.pendingBranch) return false;
   if (!value?.baseBranch && !value?.checkoutCwd) return true;
+  if (scope !== undefined && checks.scope !== scope) return false;
   return Boolean(
     checks.trees?.some(
       (tree) =>
@@ -68,6 +83,7 @@ export function TaskWorkspacePicker({
   onBusyChange,
   onChecksChange,
   headingHidden = false,
+  render,
 }: {
   machine?: RemoteMachine;
   cwd: string;
@@ -82,9 +98,11 @@ export function TaskWorkspacePicker({
   /** The owner already shows the "Working branch and worktree" heading (a disclosure
    * summary); the legend stays as the group's accessible name only. */
   headingHidden?: boolean;
+  /** Mount fields in a caller's popover while keeping controller state here. */
+  render?: (fields: ReactNode) => ReactNode;
 }) {
   useLocale();
-  const [inventory, setInventory] = useState<Inventory>();
+  const [loadedInventory, setInventory] = useState<{ scope: string; data: Inventory }>();
   const [error, setError] = useState("");
   const [newName, setNewName] = useState("");
   const [creation, setCreation] = useState<"existing" | "new" | null>(null);
@@ -95,34 +113,48 @@ export function TaskWorkspacePicker({
   const creating = useRef(false);
   const [revision, setRevision] = useState(0);
   const [supported, setSupported] = useState<boolean | null>(null);
-  const machineId = machine?.id;
-  const context = useRef("");
-  const currentContext = `${machineId ?? ""}\0${cwd}`;
+  const context = useRef<symbol | undefined>(undefined);
+  const latestChange = useRef(onChange);
+  const currentContext = taskWorkspaceScope(machine, cwd);
+  const inventory = loadedInventory?.scope === currentContext ? loadedInventory.data : undefined;
   const loadKey = `${currentContext}\0${revision}`;
   const fetching = Boolean(machine && cwd) && fetchedKey !== loadKey;
-  // Committed before the inventory effect below compares it with the loaded one.
-  useEffect(() => {
-    context.current = currentContext;
-  });
+  // Retire writes from the previous target, including a switch away and back.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- swaps the write token when the Host/project target changes so late replies from the old target are dropped
+  useLayoutEffect(() => {
+    context.current = Symbol();
+    return () => {
+      context.current = undefined;
+    };
+  }, [currentContext]);
+  // Apply an asynchronous creation to the latest draft so concurrent typing survives.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the latest draft callback for worktree creation replies that resolve after a re-render
+  useLayoutEffect(() => {
+    latestChange.current = onChange;
+  }, [onChange]);
   const reportChecks = useEffectEvent((patch: Partial<WorkspaceChecks>) => onChecksChange?.(patch));
   const changeNewName = (name: string) => {
     setNewName(name);
     onChecksChange?.({ pendingBranch: Boolean(name.trim()) });
   };
+  // Reload only the current Host and project inventory, retiring responses from older reads.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- loads the Host worktree inventory for the current target and ignores replies from older targets
   useEffect(() => {
     let live = true;
-    if (fetchedContext.current !== context.current) {
+    if (fetchedContext.current !== currentContext) {
       setInventory(undefined);
       setError("");
       setSupported(null);
       // A fresh mount starts with an empty branch name; a new project keeps it.
       reportChecks(
         fetchedContext.current === ""
-          ? { trees: undefined, pendingBranch: false }
-          : { trees: undefined },
+          ? { trees: undefined, scope: currentContext, pendingBranch: false }
+          : { trees: undefined, scope: currentContext },
       );
+    } else {
+      reportChecks({ trees: undefined, scope: currentContext });
     }
-    fetchedContext.current = context.current;
+    fetchedContext.current = currentContext;
     if (!machine || !cwd) return;
     (async () => {
       if (!(await machineCapabilities(machine)).includes(HOST_TASK_WORKSPACES)) {
@@ -142,8 +174,11 @@ export function TaskWorkspacePicker({
       if (live) {
         const present = trees.worktrees.filter((tree) => !tree.missing);
         setError("");
-        setInventory({ projectId: project.id, trees: present, ...branches });
-        reportChecks({ trees: present });
+        setInventory({
+          scope: currentContext,
+          data: { projectId: project.id, trees: present, ...branches },
+        });
+        reportChecks({ trees: present, scope: currentContext });
       }
     })()
       .catch((reason) => {
@@ -156,7 +191,11 @@ export function TaskWorkspacePicker({
     return () => {
       live = false;
     };
-  }, [machineId, cwd, revision]);
+  }, [currentContext, revision]);
+
+  const select = (next: TaskWorkspace) => {
+    onChange(next.baseBranch || next.checkoutCwd || next.branchName ? next : undefined);
+  };
 
   const create = async (existing: boolean) => {
     if (!machine || !inventory || busy || disabled || fetching || creating.current) return;
@@ -181,11 +220,12 @@ export function TaskWorkspacePicker({
         true,
       );
       if (context.current !== origin) return;
-      onChange({ ...value, checkoutCwd: tree.path, baseBranch: tree.branch ?? branch });
+      onChecksChange?.({ trees: undefined });
+      latestChange.current({ ...value, checkoutCwd: tree.path, baseBranch: tree.branch ?? branch });
       changeNewName("");
       setRevision((count) => count + 1);
     } catch (reason) {
-      setError(presentRemoteError(reason, { explicit: true }));
+      if (context.current === origin) setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       creating.current = false;
       setCreation(null);
@@ -193,7 +233,7 @@ export function TaskWorkspacePicker({
     }
   };
 
-  return (
+  const fields = (
     <Text as="div" size="caption" tone="inherit" leading="inherit" className="contents">
       <FieldGroup
         legend={t("Working branch and worktree")}
@@ -230,7 +270,7 @@ export function TaskWorkspacePicker({
                 ...inventory.branches.map((branch) => ({ value: branch, label: branch })),
               ]}
               onChange={(branch) =>
-                onChange({
+                select({
                   ...value,
                   baseBranch: branch || undefined,
                   checkoutCwd: branch
@@ -245,13 +285,15 @@ export function TaskWorkspacePicker({
               value={value?.checkoutCwd ?? ""}
               options={[
                 { value: "", label: t("Project checkout") },
-                ...inventory.trees.map((tree) => ({
-                  value: tree.path,
-                  label: `${tree.branch ?? t("Detached")} · ${tree.path}`,
-                })),
+                ...inventory.trees
+                  .filter((tree) => tree.branch)
+                  .map((tree) => ({
+                    value: tree.path,
+                    label: `${tree.branch ?? t("Detached")} · ${tree.path}`,
+                  })),
               ]}
               onChange={(path) =>
-                onChange({
+                select({
                   ...value,
                   checkoutCwd: path || undefined,
                   baseBranch: path
@@ -298,23 +340,22 @@ export function TaskWorkspacePicker({
                 )}
               </InfoPopover>
             )}
-            {branchName ? (
-              <TextField
-                label={t("Task branch name (optional)")}
-                value={value?.branchName ?? ""}
-                disabled={disabled || busy || fetching}
-                onChange={(event) =>
-                  onChange({ ...value, branchName: event.target.value || undefined })
-                }
-                placeholder="mc/…"
-                spellCheck={false}
-              />
-            ) : null}
           </>
-        ) : supported && !error ? (
+        ) : fetching && !error ? (
           <LoadingText />
+        ) : null}
+        {branchName && supported ? (
+          <TextField
+            label={t("Task branch name (optional)")}
+            value={value?.branchName ?? ""}
+            disabled={disabled || busy || fetching}
+            onChange={(event) => select({ ...value, branchName: event.target.value || undefined })}
+            placeholder="mc/…"
+            spellCheck={false}
+          />
         ) : null}
       </FieldGroup>
     </Text>
   );
+  return render ? render(fields) : fields;
 }

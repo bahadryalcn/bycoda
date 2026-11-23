@@ -1,13 +1,11 @@
-import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import type { RemoteMachine } from "../../connections";
-import { BadgeList } from "../../../shared/ui/BadgeList";
-import { Button } from "../../../shared/ui/Button";
+import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Surface } from "../../../shared/ui/Surface";
 import { sprintProjectKey, type HostSprint } from "../model/hostSprints";
-import { displayDate } from "../model/sprintDates";
+import { sprintDateRange } from "./sprintDateRange";
 import { SprintStatusBadge } from "./SprintStatusBadge";
 import "./sprints.css";
 
@@ -62,52 +60,35 @@ export function SprintList({
         />
       ) : null}
       <Surface as="ul" variant="card" padding="none" dividers="pane" className="sprint-collection">
-        {shown.map((sprint) => (
-          <li className="sprint-row" key={sprint.catalogKey ?? sprint.id}>
-            <div className="sprint-row-main">
-              <Button
-                variant="link"
-                align="start"
-                disabled={sprint.unavailable}
-                onClick={() => onSelect(sprint.catalogKey ?? sprint.id)}
-              >
-                {sprint.name}
-              </Button>
-              {sprint.serverName && (manyServers || sprint.unavailable) ? (
-                <Text size="caption" tone="secondary">
-                  {sprint.serverName}
-                  {sprint.unavailable ? ` (${t("Offline")})` : ""}
-                </Text>
-              ) : null}
-              {sprint.startsAt !== undefined || sprint.endsAt !== undefined ? (
-                <Text tone="muted" size="caption" leading="inherit" className="sprint-row-dates">
-                  {sprint.startsAt !== undefined && sprint.endsAt !== undefined
-                    ? `${displayDate(sprint.startsAt, "")} · ${displayDate(sprint.endsAt, "")}`
-                    : sprint.startsAt !== undefined
-                      ? t("From {p0}", { p0: displayDate(sprint.startsAt, "") })
-                      : t("Until {p0}", { p0: displayDate(sprint.endsAt, "") })}
-                </Text>
-              ) : null}
-            </div>
-            <BadgeList
-              label={t("Projects")}
-              size="xs"
-              className="sprint-row-projects"
-              items={sprint.projects
+        {shown.map((sprint) => {
+          // Each project once, by name; the server is named once below, not per project.
+          const names = [
+            ...new Set(
+              sprint.projects
                 .filter((project) => accessible.has(sprintProjectKey(project)))
-                .map((project, index) => {
-                  const machine = manyServers
-                    ? machines.find((entry) => entry.environmentId === project.environmentId)
-                    : undefined;
-                  return {
-                    id: `${index}:${project.name}`,
-                    label: machine ? `${project.name} / ${machine.name}` : project.name,
-                  };
-                })}
-            />
-            <SprintStatusBadge state={sprint.state} />
-          </li>
-        ))}
+                .map((project) => project.name),
+            ),
+          ];
+          const projectNames =
+            names.length > 2 ? [t("{p0} projects", { p0: names.length })] : names;
+          const server =
+            sprint.serverName && (manyServers || sprint.unavailable)
+              ? `${sprint.serverName}${sprint.unavailable ? ` (${t("Offline")})` : ""}`
+              : "";
+          return (
+            <li key={sprint.catalogKey ?? sprint.id}>
+              <CollectionRow
+                title={sprint.name}
+                secondary={[sprintDateRange(sprint, t), projectNames.join(", "), server]
+                  .filter(Boolean)
+                  .join(" · ")}
+                trailing={<SprintStatusBadge state={sprint.state} />}
+                primary={{ disabled: sprint.unavailable }}
+                onOpen={() => onSelect(sprint.catalogKey ?? sprint.id)}
+              />
+            </li>
+          );
+        })}
       </Surface>
     </>
   );

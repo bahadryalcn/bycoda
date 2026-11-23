@@ -3,13 +3,14 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
+import { Modal } from "../../../shared/ui/Modal";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Plus, Trash2 } from "../../../shared/ui/icons";
+import { Pencil, Plus, Trash2 } from "../../../shared/ui/icons";
 import { taskMatchesProject, type TaskProjectScope } from "../model/taskBoardScope";
 import { HostModelSource } from "../../connections/public/HostModelSource";
 import { t, useLocale } from "../../../shared/i18n";
-import { type FormEvent, useMemo, useState } from "react";
-import { backgroundMachineFor } from "../../automations/model/hostAutomationClient";
+import { type FormEvent, useState } from "react";
+import { backgroundMachineFor } from "../../automations/public/hostMachines";
 import type { RemoteMachine } from "../../connections";
 import { isProjectLockedIn, type LockSnapshot } from "../../group-lock/public/lockState";
 import { looksLikeProject, type RecentProject } from "../../projects/public/recents";
@@ -88,10 +89,7 @@ function StewardsPanel({
   return (
     <section
       aria-label={t("Stewards")}
-      {...surfaceAttributes(
-        { frame: "pane", edge: "block-end" },
-        `task-ops-panel ${draft ? "max-h-[80%]" : "max-h-[45%]"}`,
-      )}
+      {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "task-ops-panel max-h-[45%]")}
     >
       <div className="task-ops-head">
         <div className="task-ops-head-text">
@@ -99,9 +97,7 @@ function StewardsPanel({
             count={stewards.length}
             actions={
               <InfoPopover>
-                {t(
-                  "A steward reads its project on a schedule and suggests the next work as To do items. Nothing runs until you start it.",
-                )}
+                {t("A steward scans its project on a schedule and suggests work.")}
               </InfoPopover>
             }
           >
@@ -110,6 +106,7 @@ function StewardsPanel({
         </div>
         <Button
           variant="secondary"
+          size="xs"
           type="button"
           onClick={onAdd}
           disabled={draft != null}
@@ -119,17 +116,26 @@ function StewardsPanel({
         </Button>
       </div>
       {draft ? (
-        <StewardForm
-          draft={draft}
-          recents={recents}
-          machine={machine}
-          target={target}
-          saving={saving}
-          error={error}
-          onChange={onChange}
-          onCancel={onCancel}
-          onSubmit={onSubmit}
-        />
+        <Modal
+          key={draft.id ?? "new"}
+          padding="none"
+          title={draft.id ? t("Edit steward") : t("New steward")}
+          scroll="none"
+          closeDisabled={saving}
+          onClose={onCancel}
+        >
+          <StewardForm
+            draft={draft}
+            recents={recents}
+            machine={machine}
+            target={target}
+            saving={saving}
+            error={error}
+            onChange={onChange}
+            onCancel={onCancel}
+            onSubmit={onSubmit}
+          />
+        </Modal>
       ) : null}
       {stewards.length > 0 ? (
         <ul
@@ -150,7 +156,6 @@ function StewardsPanel({
                   menuOpen={menu?.key === key}
                   onToggle={onToggle}
                   onRunNow={onRunNow}
-                  onEdit={onEdit}
                   onOpenMenu={(target, anchor) =>
                     setMenu({ key: `${target.machineId}:${target.id}`, anchor })
                   }
@@ -169,6 +174,13 @@ function StewardsPanel({
           items={[
             {
               kind: "item",
+              id: "edit",
+              label: t("Edit"),
+              disabled: menuBusy,
+              icon: <Pencil className="icon-xs" />,
+            },
+            {
+              kind: "item",
               id: "delete",
               label: t("Delete"),
               danger: true,
@@ -177,8 +189,10 @@ function StewardsPanel({
             },
           ]}
           onClose={() => setMenu(null)}
-          onPick={() => {
-            if (!menuBusy) onDelete(menuSteward);
+          onPick={(id) => {
+            if (menuBusy) return;
+            if (id === "edit") onEdit(menuSteward);
+            else if (id === "delete") onDelete(menuSteward);
           }}
         />
       ) : null}
@@ -218,14 +232,9 @@ export function useTaskStewards({
   const [draft, setDraft] = useState<StewardDraft | null>(null);
   const [open, setOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const stewards = useMemo(
-    () =>
-      stored.filter(
-        (steward) =>
-          !isProjectLockedIn(lock, steward.cwd) &&
-          taskMatchesProject(steward, projectFilter, machines),
-      ),
-    [lock, stored, projectFilter, machines],
+  const stewards = stored.filter(
+    (steward) =>
+      !isProjectLockedIn(lock, steward.cwd) && taskMatchesProject(steward, projectFilter, machines),
   );
 
   const begin = () => {
@@ -254,7 +263,6 @@ export function useTaskStewards({
       void refresh();
     } catch (reason: unknown) {
       const message = presentRemoteError(reason, { explicit: true });
-      setError(message);
       setSaveError(message);
       // The draft stays open with its edits; the board shows what the other client saved.
       if (isConfigurationConflict(reason)) void refresh();
@@ -305,6 +313,7 @@ export function useTaskStewards({
     },
     cancel: () => {
       if (saving) return;
+      if (saveError) setError(saveError);
       setSaveError(null);
       setDraft(null);
     },

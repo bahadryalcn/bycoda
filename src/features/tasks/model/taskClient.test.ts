@@ -174,6 +174,22 @@ describe("task board", () => {
     ).toThrow(taskClientErrors.agent());
   });
 
+  it("derives new titles at the wire boundary while preserving the prompt and edit titles", () => {
+    const prompt = "/review\n## Fix **parser**\nKeep these extra instructions.";
+    const draft = { ...newTaskDraft("G:/app", "claude", "claude:test"), prompt };
+    expect(hostTaskFromDraft(draft, "receipt", "project-1")).toMatchObject({
+      id: "receipt",
+      title: "Fix parser",
+      prompt,
+    });
+    expect(draft.title).toBe("");
+    expect(
+      hostTaskFromDraft({ ...draft, id: "existing", title: " Existing " }, "existing", "project-1")
+        .title,
+    ).toBe("Existing");
+    expect(hostTaskFromDraft({ ...draft, id: "existing" }, "existing", "project-1").title).toBe("");
+  });
+
   it("pins the selected host and refuses mismatched or disconnected destinations", () => {
     expect(taskMachineFor([mac, local], "G:/app", local.id)).toBe(local);
     expect(taskMachineFor([local, mac], "remote://env-mac/app", mac.id)).toBe(mac);

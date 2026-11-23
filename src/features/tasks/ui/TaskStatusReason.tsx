@@ -5,7 +5,6 @@ import { Alert, type AlertTone } from "../../../shared/ui/Alert";
 import { TASK_INPUT_REQUIRED, type HostTask } from "../model/hostTasks";
 import { taskRequiresInstructions, taskReviewFailureCount } from "../model/taskRules";
 import type { TaskStatusLine, TaskStatusTone } from "../model/taskStatusLine";
-import { TaskStatusText } from "./TaskStatusLine";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 
 const ALERT_TONE: Record<TaskStatusTone, AlertTone> = {
@@ -32,13 +31,23 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 
 /** The single place in the detail panel that says why a task stopped or what
  * it waits for: the status line's reason, the next step, and every recorded
- * host message behind one disclosure. */
+ * host message behind one disclosure. The state's name is the header badge's, not repeated here. */
 export function TaskStatusReason({ task, status }: { task: HostTask; status: TaskStatusLine }) {
   useLocale();
   const stopped = task.status === "blocked" || status.kind === "delivery_blocked";
   if (!stopped) {
     // Running work stays calm: one muted line, no alarm.
-    return status.detail ? <TaskStatusText status={status} /> : null;
+    return status.detail ? (
+      <Text
+        as="p"
+        size="caption"
+        tone="secondary"
+        data-task-status-line={status.kind}
+        className="break-words"
+      >
+        {status.detail}
+      </Text>
+    ) : null;
   }
   const nextStep = taskRequiresInstructions(task)
     ? t(TASK_INPUT_REQUIRED)
@@ -63,7 +72,7 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
   const unseen = (message: string | undefined) => (message === status.detail ? undefined : message);
   fact("error", t("Reason"), unseen(task.error));
   fact("merge", t("Delivery"), unseen(task.mergeError));
-  fact("stop", t("Automatic correction"), task.repairStop?.message);
+  fact("stop", t("Automatic correction"), unseen(task.repairStop?.message));
   fact("budget", t("Run budget"), task.budgetStop);
   fact("blocker", t("Blocker"), task.blockedTakeover?.blocker);
   fact("note", t("Latest finding"), task.repairNote);
@@ -73,7 +82,6 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
   return (
     <Alert
       tone={ALERT_TONE[status.tone]}
-      title={status.label}
       data-task-status-reason={status.kind}
       className="break-words"
     >

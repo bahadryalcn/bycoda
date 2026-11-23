@@ -106,6 +106,28 @@ it("retains ordinary arrow selection", async () => {
   expect(change).toHaveBeenCalledExactlyOnceWith("main");
 });
 
+it("opens controlled chip content without composer mode or base controls", async () => {
+  await act(async () =>
+    root.render(
+      createElement(WorkspacePicker, {
+        presentation: "chip",
+        label: "Automatic",
+        content: createElement("div", null, "Task checkout controls"),
+      }),
+    ),
+  );
+  const trigger = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Workspace Automatic"]',
+  )!;
+  expect(trigger).not.toBeNull();
+  await act(async () => trigger.click());
+  expect(document.querySelector('[role="dialog"][aria-label="Workspace"]')?.textContent).toContain(
+    "Task checkout controls",
+  );
+  expect(input()).toBeNull();
+  expect(change).not.toHaveBeenCalled();
+});
+
 it("dismisses with a non-composition Escape without selecting", async () => {
   await act(async () => {
     press("Escape");

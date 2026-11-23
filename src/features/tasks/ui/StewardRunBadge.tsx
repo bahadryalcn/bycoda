@@ -12,5 +12,9 @@ function runTone(status: StewardRunStatus): StatusTextTone {
 
 export function StewardRunBadge({ status }: { status: StewardRunStatus }) {
   const t = useT();
-  return <StatusText tone={runTone(status)}>{t(STEWARD_STATUS_LABELS[status])}</StatusText>;
+  return (
+    <StatusText tone={runTone(status)} wrap>
+      {t(STEWARD_STATUS_LABELS[status])}
+    </StatusText>
+  );
 }

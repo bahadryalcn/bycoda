@@ -7,11 +7,7 @@ import { TASK_COLUMNS, unfinishedDependencies } from "../model/hostTasks";
 import { resolveTabGroupLabel } from "../../workspace/public/tabGroups";
 
 /** Per-machine task lists, column peers and neighbour order keys used by the board. */
-export function useBoardIndexes(
-  storedTasks: readonly BoardTask[],
-  tasks: readonly BoardTask[],
-  visibleTasks: readonly BoardTask[],
-) {
+export function useBoardIndexes(storedTasks: readonly BoardTask[], tasks: readonly BoardTask[]) {
   return useMemo(() => {
     const machineTasks = new Map<string, BoardTask[]>();
     const peers = new Map<string, BoardTask[]>();
@@ -22,7 +18,7 @@ export function useBoardIndexes(
     }
     const columns = new Map(TASK_COLUMNS.map((column) => [column, tasksInColumn(tasks, column)]));
     for (const column of TASK_COLUMNS)
-      for (const task of tasksInColumn(visibleTasks, column)) {
+      for (const task of columns.get(column) ?? []) {
         const key = task.machineId + ":" + column,
           list = peers.get(key) ?? [];
         list.push(task);
@@ -37,7 +33,7 @@ export function useBoardIndexes(
         ),
       );
     return { machineTasks, peers, columns, orders };
-  }, [storedTasks, tasks, visibleTasks]);
+  }, [storedTasks, tasks]);
 }
 
 /** Project, goal and waiting-for context of every task, keyed by `machineId:taskId`. */

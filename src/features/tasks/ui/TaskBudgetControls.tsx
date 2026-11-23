@@ -6,13 +6,16 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { NumberField } from "../../../shared/ui/NumberField";
 import type { TaskRunBudget, TaskRunBudgetUsage } from "../model/taskBudget";
+import { TaskFormRow } from "./TaskFormFields";
 
 export function TaskBudgetControls({
   budget,
   onChange,
+  compact = false,
 }: {
   budget?: TaskRunBudget;
   onChange: (budget: TaskRunBudget | undefined) => void;
+  compact?: boolean;
 }) {
   useLocale();
   const update = (key: keyof TaskRunBudget, text: string) => {
@@ -22,37 +25,63 @@ export function TaskBudgetControls({
       Object.values(next).some((entry) => entry !== undefined && entry > 0) ? next : undefined,
     );
   };
+  const help = t(
+    "Includes planning, workers, reviewers and correction runs. Empty or zero means unlimited. Token limits depend on provider reporting.",
+  );
+  const fields = (
+    <div className={compact ? "task-budget-compact" : "task-form-grid"}>
+      <NumberField
+        label={t("Agent minutes")}
+        hideLabel={compact}
+        placeholder={compact ? t("Minutes") : undefined}
+        fieldVariant={compact ? "compact" : undefined}
+        steppers={!compact}
+        min={0}
+        step={0.1}
+        value={budget?.maxAgentMinutes ?? ""}
+        onChange={(event) => update("maxAgentMinutes", event.target.value)}
+      />
+      <NumberField
+        label={t("Maximum agent runs")}
+        hideLabel={compact}
+        placeholder={compact ? t("Runs") : undefined}
+        fieldVariant={compact ? "compact" : undefined}
+        steppers={!compact}
+        min={0}
+        step={1}
+        value={budget?.maxAttempts ?? ""}
+        onChange={(event) => update("maxAttempts", event.target.value)}
+      />
+      <NumberField
+        label={t("Reported token limit")}
+        hideLabel={compact}
+        placeholder={compact ? t("Tokens") : undefined}
+        fieldVariant={compact ? "compact" : undefined}
+        steppers={!compact}
+        min={0}
+        step={1}
+        value={budget?.maxTokens ?? ""}
+        onChange={(event) => update("maxTokens", event.target.value)}
+      />
+    </div>
+  );
+  if (compact)
+    return (
+      <TaskFormRow
+        label={
+          <span className="inline-flex items-center gap-1">
+            {t("Run budget")} <InfoPopover>{help}</InfoPopover>
+          </span>
+        }
+      >
+        {fields}
+      </TaskFormRow>
+    );
   return (
     <Disclosure variant="row" summary={t("Total run budget")}>
       <div className="task-form-section-body">
-        <div className="task-form-grid">
-          <NumberField
-            label={t("Agent minutes")}
-            min={0}
-            step={0.1}
-            value={budget?.maxAgentMinutes ?? ""}
-            onChange={(event) => update("maxAgentMinutes", event.target.value)}
-          />
-          <NumberField
-            label={t("Maximum agent runs")}
-            min={0}
-            step={1}
-            value={budget?.maxAttempts ?? ""}
-            onChange={(event) => update("maxAttempts", event.target.value)}
-          />
-          <NumberField
-            label={t("Reported token limit")}
-            min={0}
-            step={1}
-            value={budget?.maxTokens ?? ""}
-            onChange={(event) => update("maxTokens", event.target.value)}
-          />
-        </div>
-        <InfoPopover>
-          {t(
-            "Includes planning, workers, reviewers and correction runs. Empty or zero means unlimited. Token limits depend on provider reporting.",
-          )}
-        </InfoPopover>
+        {fields}
+        <InfoPopover>{help}</InfoPopover>
       </div>
     </Disclosure>
   );

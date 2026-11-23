@@ -3,25 +3,27 @@ import { useT } from "../../../shared/i18n";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import "./sprints.css";
 
+/** The sprint goal: one short paragraph, or a closed disclosure when it is long. */
 export function SprintGoalDescription({ goal }: { goal: string }) {
   const t = useT();
   if (goal.length <= 180 && !/\n\s*\n/.test(goal))
     return (
-      <Text as="p" size="inherit" tone="secondary" className="sprint-goal-copy">
+      <Text as="p" size="inherit" tone="secondary" wrap="preserve-lines">
         {goal}
       </Text>
     );
   return (
-    <Disclosure summary={t("Sprint goal")} className="sprint-goal-disclosure">
+    <Disclosure summary={t("Goal")} variant="compact">
       <Text
         as="p"
         size="inherit"
         tone="secondary"
-        className="sprint-goal-copy sprint-goal-scroll"
+        wrap="preserve-lines"
+        className="sprint-goal-scroll"
         role="region"
         // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Scrollable goal text must remain keyboard-focusable.
         tabIndex={0}
-        aria-label={t("Sprint goal")}
+        aria-label={t("Goal")}
       >
         {goal}
       </Text>

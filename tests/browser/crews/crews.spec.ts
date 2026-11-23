@@ -181,20 +181,13 @@ for (const theme of ["light", "dark"] as const)
       await capture("task");
       await task
         .locator("summary")
-        .filter({ hasText: /^Advanced$/ })
+        .filter({ hasText: /^More options/ })
         .click();
-      await task
-        .locator("summary")
-        .filter({ hasText: /^Workflow$/ })
-        .click();
-      await task
-        .getByRole("button", { name: "Apply workflow", exact: true })
-        .scrollIntoViewIfNeeded();
+      // Templates are one menu in the footer; applying one never starts work.
+      await task.getByRole("button", { name: /^Template/ }).click();
+      await expect(page.getByRole("menu", { name: "Template", exact: true })).toBeVisible();
       await capture("task-workflow");
-      await task
-        .locator("summary")
-        .filter({ hasText: /^Total run budget$/ })
-        .click();
+      await page.keyboard.press("Escape");
       await task
         .getByRole("spinbutton", { name: "Agent minutes", exact: true })
         .scrollIntoViewIfNeeded();
@@ -202,7 +195,7 @@ for (const theme of ["light", "dark"] as const)
       await expect(task.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
       await task.getByRole("button", { name: "Cancel", exact: true }).click();
       await editCrew(page);
-      const editor = page.getByRole("dialog", { name: "Edit crew", exact: true });
+      const editor = crewEditor(page);
       await expect(editor.getByRole("textbox", { name: "Crew name", exact: true })).toBeVisible();
       await capture("editor");
       await editor
@@ -224,11 +217,14 @@ for (const theme of ["light", "dark"] as const)
       await custom.focus();
       await custom.press("Space");
       await member.getByRole("button", { name: /^Host tools:/ }).scrollIntoViewIfNeeded();
+      // The profile's description sits behind its info button, not inline.
+      await member.getByRole("button", { name: "Tool profile", exact: true }).click();
       await expect(
-        member.getByText("Choose the Host tools, MCP servers and skills yourself.", {
+        page.getByText("Choose the Host tools, MCP servers and skills yourself.", {
           exact: true,
         }),
       ).toBeVisible();
+      await page.keyboard.press("Escape");
       await capture("member-custom-tools");
       await member.getByRole("radio", { name: "Full access", exact: true }).focus();
       await member.getByRole("radio", { name: "Full access", exact: true }).press("Space");
@@ -254,8 +250,17 @@ async function editCrew(page: Page, name = "Website Crew") {
   await openCrewEditorFromTeam(page, name);
 }
 
+/** The crew editor dialog is titled by the crew's own name; it is the first (outermost) dialog while it is open. */
+function crewEditor(page: Page) {
+  return page.getByRole("dialog").first();
+}
+
 async function openCrewEditorFromTeam(page: Page, name: string) {
-  await page.getByRole("button", { name: `${name} options`, exact: true }).click();
+  // The sidebar rail lists the same crew; the Teams tab owns this menu.
+  await page
+    .getByRole("tabpanel", { name: "Teams" })
+    .getByRole("button", { name: `${name} options`, exact: true })
+    .click();
   await page.getByRole("menuitem", { name: "Edit crew", exact: true }).click();
 }
 
@@ -418,14 +423,14 @@ test("uncertain start keeps its receipt when closed and reopened", async ({ page
   await start
     .getByRole("combobox", { name: "Description", exact: true })
     .fill("Check the narrow layout.");
-  await start.getByRole("button", { name: "Start with crew", exact: true }).click();
+  await start.getByRole("button", { name: "Start", exact: true }).click();
   await expect(start.getByText("Start response unavailable. Delivery unknown.")).toBeVisible();
   await start.getByRole("button", { name: "Close", exact: true }).click();
   start = await openStart(page);
   await expect(start.getByRole("textbox", { name: "Task title", exact: true })).toHaveValue(
     "Review mobile navigation",
   );
-  await start.getByRole("button", { name: "Start with crew", exact: true }).click();
+  await start.getByRole("button", { name: "Start", exact: true }).click();
   await expect(start).toHaveCount(0);
   await expect(page.getByLabel("Started work")).toHaveText("1");
   const ids = await page.evaluate(
@@ -468,6 +473,11 @@ test("the start dialog starts the work with the access chosen for this task and 
 }) => {
   await page.goto("/tests/browser/crews/crews.html?taskStart");
   const start = await openStart(page);
+  // A crew task keeps its own Access under More options.
+  await start
+    .locator("summary")
+    .filter({ hasText: /^More options/ })
+    .click();
   await start.getByRole("button", { name: "Supervised", exact: true }).click();
   await page.getByRole("option", { name: /Auto-accept edits/ }).click();
   await start
@@ -476,7 +486,7 @@ test("the start dialog starts the work with the access chosen for this task and 
   await start
     .getByRole("combobox", { name: "Description", exact: true })
     .fill("Check the narrow layout.");
-  await start.getByRole("button", { name: "Start with crew", exact: true }).click();
+  await start.getByRole("button", { name: "Start", exact: true }).click();
   await expect(page.getByLabel("Started work")).toHaveText("1");
   const calls = await page.evaluate(
     () => (window as unknown as { crewFixtureOperations: string[] }).crewFixtureOperations,
@@ -504,12 +514,18 @@ test("an externally deleted crew cannot start new work", async ({ page }) => {
   await page.evaluate(() =>
     (window as unknown as { simulateCrewDelete: () => void }).simulateCrewDelete(),
   );
-  await expect(
-    start.getByText("Connect an updated host and choose an available crew."),
-  ).toBeVisible({
+  // While More options is closed the footer sends the owner there; open, the crew row says why.
+  await expect(start.getByText("Choose an available crew in More options.")).toBeVisible({
     timeout: 12000,
   });
-  await expect(start.getByRole("button", { name: "Start with crew", exact: true })).toBeDisabled();
+  await start
+    .locator("summary")
+    .filter({ hasText: /^More options/ })
+    .click();
+  await expect(
+    start.getByText("Connect an updated host and choose an available crew."),
+  ).toBeVisible();
+  await expect(start.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
   await start.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByLabel("Started work")).toHaveText("0");
 });
@@ -667,7 +683,7 @@ async function openWork(page: Page, runId = "run") {
 async function deleteSelectedWork(_page: Page, work: ReturnType<Page["locator"]>) {
   await work.getByRole("button", { name: "Delete work", exact: true }).click();
 }
-const editor = (page: Page) => page.getByRole("dialog", { name: /New crew|Edit crew/ });
+const editor = crewEditor;
 for (const theme of ["light", "dark"] as const) {
   test(`bycoda defaults stay editable with independent library profiles in ${theme} theme`, async ({
     page,
@@ -682,10 +698,7 @@ for (const theme of ["light", "dark"] as const) {
     await expect(content.getByRole("button", { name: /^Edit / })).toHaveCount(17);
     await content.getByRole("tab", { name: "Teams", exact: true }).click();
     await openCrewEditorFromTeam(page, "bycoda Product Team");
-    const team = page.getByRole("dialog", {
-      name: "Edit crew",
-      exact: true,
-    });
+    const team = crewEditor(page);
     await expect(team.locator("[data-member-row]")).toHaveCount(17);
     await expect(team).not.toContainText("Responsibilities");
     for (const width of [1280, 800]) {
@@ -736,10 +749,7 @@ for (const theme of ["light", "dark"] as const) {
     });
     await content.getByRole("tab", { name: "Teams", exact: true }).click();
     await openCrewEditorFromTeam(page, "bycoda Product Team");
-    const saved = page.getByRole("dialog", {
-      name: "Edit crew",
-      exact: true,
-    });
+    const saved = crewEditor(page);
     await expect(saved.getByRole("region", { name: "Specialists", exact: true })).toContainText(
       "Our mobile engineer",
     );
@@ -854,10 +864,12 @@ test("opens ongoing work from the rail and starts new work once from the same cr
   await row.hover();
   await row.getByRole("button", { name: "New work with Website Crew" }).click();
   const start = page.getByRole("dialog", { name: "New task" });
-  // The crew is preselected in the task form; the team roster lives in the crew editor.
-  await expect(
-    start.getByRole("button", { name: "Worker: Website Crew", exact: true }),
-  ).toBeVisible();
+  // The crew is preselected in the task form (under More options); the team roster lives in the crew editor.
+  await start
+    .locator("summary")
+    .filter({ hasText: /^More options/ })
+    .click();
+  await expect(start.getByRole("button", { name: /^Crew: Website Crew/ })).toBeVisible();
   const originalClass = await page.evaluate(() => document.documentElement.className);
   const originalViewport = page.viewportSize();
   try {
@@ -887,7 +899,7 @@ test("opens ongoing work from the rail and starts new work once from the same cr
   await start
     .getByRole("combobox", { name: "Description", exact: true })
     .fill("Build mobile sign-in.");
-  await start.getByRole("button", { name: "Start with crew", exact: true }).dblclick();
+  await start.getByRole("button", { name: "Start", exact: true }).dblclick();
   await expect(start).toHaveCount(0);
   await expect(page.getByLabel("Started work")).toHaveText("1");
 });
@@ -991,7 +1003,7 @@ test("work management returns from crew editing without starting another deliver
   await page.goto("/tests/browser/crews/crews.html");
   const management = await openWork(page);
   await management.getByRole("button", { name: "Edit crew", exact: true }).click();
-  const form = page.getByRole("dialog", { name: "Edit crew", exact: true });
+  const form = crewEditor(page);
   await expect(form.getByRole("textbox", { name: "Crew name" })).toBeVisible();
   await form.getByRole("button", { name: "Close", exact: true }).click();
   await expect(
@@ -1037,7 +1049,7 @@ test("editing is one page: roster first, advanced settings one disclosure away, 
 }, testInfo) => {
   await page.goto("/tests/browser/crews/crews.html?theme=light");
   await editCrew(page);
-  const dialog = page.getByRole("dialog", { name: "Edit crew" });
+  const dialog = crewEditor(page);
   await expect(dialog.getByRole("region", { name: "Coordinator" })).toBeVisible();
   await dialog.getByRole("button", { name: "UI", exact: true }).click();
   // The expanded member uses the same provider/model picker as the roster.
@@ -1109,7 +1121,7 @@ test("conflicting edits can be preserved as a new crew or replaced by the latest
 test("task creation can pick a saved crew", async ({ page }) => {
   await page.goto("/tests/browser/crews/crews.html");
   await page.getByRole("button", { name: "Task crew selection" }).click();
-  await page.getByRole("button", { name: /Worker:/ }).click();
+  await page.getByRole("button", { name: /^Crew:/ }).click();
   await page.getByRole("option", { name: /Website Crew/ }).click();
   await expect(page.getByLabel("Selected crew")).toHaveText("crew");
 });
@@ -1281,9 +1293,9 @@ test("wide windows keep the work list beside the selected work", async ({ page }
 test("access is set once for every member, model rules open on demand, and edits autosave", async ({
   page,
 }) => {
-  await page.goto("/tests/browser/crews/crews.html");
+  await page.goto("/tests/browser/crews/crews.html?taskStart");
   await editCrew(page);
-  const dialog = page.getByRole("dialog", { name: "Edit crew" });
+  const dialog = crewEditor(page);
   // Access for the whole crew is one row at the top of the page, not inside Advanced.
   const access = dialog.getByRole("region", {
     name: "Access for every member",
@@ -1309,10 +1321,9 @@ test("access is set once for every member, model rules open on demand, and edits
       tabs.push((event as CustomEvent<string>).detail);
     });
   });
-  await dialog
-    .getByRole("region", { name: "Models", exact: true })
-    .getByRole("button", { name: "Manage models", exact: true })
-    .click();
+  // The default model choice offers the link to the shared model order.
+  await dialog.getByRole("radio", { name: "Default", exact: true }).check();
+  await dialog.getByRole("button", { name: "Manage models", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(() => (window as Window & { crewModelsTabs?: string[] }).crewModelsTabs),
@@ -1324,7 +1335,7 @@ test("access is set once for every member, model rules open on demand, and edits
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await openCrewEditorFromTeam(page, "Website Crew");
-  const reopened = page.getByRole("dialog", { name: "Edit crew" });
+  const reopened = crewEditor(page);
   await expect(
     reopened
       .getByRole("region", { name: "Access for every member" })
@@ -1340,9 +1351,7 @@ test("access is set once for every member, model rules open on demand, and edits
 test("an unsupported Host hides the access picker but keeps the grants", async ({ page }) => {
   await page.goto("/tests/browser/crews/crews.html?noAccess");
   await editCrew(page);
-  const access = page
-    .getByRole("dialog", { name: "Edit crew" })
-    .getByRole("region", { name: "Access for every member" });
+  const access = crewEditor(page).getByRole("region", { name: "Access for every member" });
   await expect(access.getByRole("button", { name: "Supervised", exact: true })).toHaveCount(0);
   await expect(
     access.getByRole("switch", {
@@ -1354,7 +1363,7 @@ test("an unsupported Host hides the access picker but keeps the grants", async (
 test("one model with its options can be applied to chosen members at once", async ({ page }) => {
   await page.goto("/tests/browser/crews/crews.html");
   await editCrew(page);
-  const dialog = page.getByRole("dialog", { name: "Edit crew" });
+  const dialog = crewEditor(page);
   const apply = dialog.getByRole("button", { name: /^Apply to / });
   const stored = () =>
     page.evaluate(() =>
@@ -1373,11 +1382,7 @@ test("one model with its options can be applied to chosen members at once", asyn
   await dialog.getByRole("checkbox", { name: "Select all" }).check();
   await expect(apply).toHaveText(/^Apply to \d+ members$/);
   await apply.click();
-  // Applying to several members asks first; the confirmation names the selection.
-  const confirm = page.getByRole("dialog", { name: "Apply model choice", exact: true });
-  await expect(confirm.getByText("Apply this model choice to 3 selected members?")).toBeVisible();
-  await confirm.getByRole("button", { name: "Apply", exact: true }).click();
-  await expect(dialog.getByText("Model choice applied.", { exact: true })).toBeVisible();
+  // A model choice applies at once to the selection and says nothing more; the stored members show it.
   const assigned = ["coordinator", "ui", "review"].map((id) =>
     expect.objectContaining({
       id,
@@ -1404,7 +1409,7 @@ test("one model with its options can be applied to chosen members at once", asyn
 test("a failed save stays visible, keeps the draft and starts nothing", async ({ page }) => {
   await page.goto("/tests/browser/crews/crews.html?saveError&longRoster");
   await editCrew(page);
-  const dialog = page.getByRole("dialog", { name: "Edit crew" });
+  const dialog = crewEditor(page);
   await dialog.getByRole("textbox", { name: "Crew name", exact: true }).fill("Website Crew v2");
   // The autosave fails: the error and Retry stay in the footer, the draft stays as typed.
   await expect(
@@ -1424,7 +1429,7 @@ test("a long roster scrolls under an opaque header and keeps the footer actions"
   await page.setViewportSize({ width: 1280, height: 560 });
   await page.goto("/tests/browser/crews/crews.html?longRoster");
   await editCrew(page);
-  const dialog = page.getByRole("dialog", { name: "Edit crew" });
+  const dialog = crewEditor(page);
   await expect(dialog.locator("[data-member-row]")).toHaveCount(15);
   await dialog.getByRole("textbox", { name: "Crew name", exact: true }).fill("Website Crew v2");
   await dialog.getByRole("region", { name: "Advisors" }).scrollIntoViewIfNeeded();
@@ -1561,10 +1566,7 @@ for (const theme of ["light", "dark"] as const) {
       await noOverflow();
       await content.getByRole("tab", { name: "Teams", exact: true }).click();
       await openCrewEditorFromTeam(page, "Website Crew");
-      const dialog = page.getByRole("dialog", {
-        name: "Edit crew",
-        exact: true,
-      });
+      const dialog = crewEditor(page);
       // A member that no longer follows its library profile shows a quiet icon, not a badge.
       await expect(
         dialog.getByRole("img", { name: "Not following library profile" }).first(),
@@ -1582,30 +1584,8 @@ for (const theme of ["light", "dark"] as const) {
       await dialog.getByRole("textbox", { name: /^Handle/ }).scrollIntoViewIfNeeded();
       await shot("member-form-identity");
       await noOverflow();
-      // Shared routing is managed centrally; the crew retains a link to its model order.
-      await page.evaluate(() => {
-        const requests: string[] = [];
-        (window as Window & { crewHubModelsTabs?: string[] }).crewHubModelsTabs = requests;
-        window.addEventListener("bycoda:open-models-settings", (event) => {
-          requests.push((event as CustomEvent<string>).detail);
-        });
-      });
-      await dialog
-        .locator("summary")
-        .filter({ hasText: /^Advanced$/ })
-        .last()
-        .click();
-      await dialog
-        .getByRole("region", { name: "Models", exact: true })
-        .getByRole("button", { name: "Manage models", exact: true })
-        .click();
-      await expect
-        .poll(() =>
-          page.evaluate(
-            () => (window as Window & { crewHubModelsTabs?: string[] }).crewHubModelsTabs,
-          ),
-        )
-        .toEqual(["order"]);
+      // This Host reports only legacy pools, so there is no model order to open from the crew; the
+      // link to it is covered where the Host reports routing (access is set once for every member).
       await shot("models-tab");
       await page.keyboard.press("Escape");
       // Members tab: the whole list is one page scroll, not an inner scroll box.
@@ -1687,7 +1667,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect(page.locator(".settings-collection").first()).toBeVisible();
       await shot("library");
       await editCrew(page);
-      const dialog = page.getByRole("dialog", { name: "Edit crew", exact: true });
+      const dialog = crewEditor(page);
       await expect(dialog.getByRole("checkbox", { name: "Select all", exact: true })).toBeVisible();
       await expect(dialog.getByText("All changes saved", { exact: true })).toBeVisible();
       await shot("editor");
@@ -1774,7 +1754,7 @@ for (const theme of ["light", "dark"] as const) {
         });
       await page.goto(`/tests/browser/crews/crews.html?longRoster&saveError&theme=${theme}`);
       await editCrew(page);
-      let dialog = page.getByRole("dialog", { name: "Edit crew", exact: true });
+      let dialog = crewEditor(page);
       const search = dialog.getByRole("textbox", {
         name: "Search members by name, role, model or group",
         exact: true,
@@ -1793,7 +1773,7 @@ for (const theme of ["light", "dark"] as const) {
       await shot("footer-error");
       await page.goto(`/tests/browser/crews/crews.html?library=empty&theme=${theme}`);
       await editCrew(page);
-      dialog = page.getByRole("dialog", { name: "Edit crew", exact: true });
+      dialog = crewEditor(page);
       await dialog.getByRole("button", { name: "Add members", exact: true }).click();
       await dialog.getByRole("tab", { name: /^Library/ }).click();
       await expect(dialog.getByText("Your member library is empty", { exact: true })).toBeVisible();

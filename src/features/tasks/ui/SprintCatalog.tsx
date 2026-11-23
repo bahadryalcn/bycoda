@@ -92,6 +92,13 @@ export function SprintCatalog({
           </InlineError>
         ) : null,
       )}
+      {/* The planning server's own read error shows here unless its catalog read already failed. */}
+      {board.error &&
+      !failures.some(
+        (source) => source.error && source.machine.environmentId === board.coordinatorEnvironmentId,
+      ) ? (
+        <InlineError>{board.error}</InlineError>
+      ) : null}
     </>
   );
 }

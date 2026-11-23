@@ -1,22 +1,18 @@
-import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
-import { ModelLabel } from "../../sessions/public/ModelLabel";
-import { Tooltip } from "../../../shared/ui/Tooltip";
-import { Text } from "../../../shared/ui/Text";
+import { ActionHost, InlineMoreAction, InlineTextAction } from "../../../shared/ui/ActionHost";
 import { Heading } from "../../../shared/ui/Heading";
-import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
-import { Badge } from "../../../shared/ui/Badge";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Switch } from "../../../shared/ui/Switch";
-import { Bot, Pencil, Play } from "../../../shared/ui/icons";
+import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { automationScheduleLabel, nextRunPreview } from "../../automations/public/automations";
+import { projectDisplayName } from "../../projects/public/projectNames";
 import { type BoardSteward, stewardProjectName } from "../model/stewardClient";
 import { formatTaskSpan } from "../model/taskClient";
 import { StewardRunBadge } from "./StewardRunBadge";
 import "./task-ops.css";
 
-/** One steward: project, status, schedule and last run, with its actions at the
- * right. Delete lives in the overflow menu the panel opens. */
+/** A project steward with a schedule and two direct actions. */
 export function StewardRow({
   steward,
   acting,
@@ -24,7 +20,6 @@ export function StewardRow({
   menuOpen,
   onToggle,
   onRunNow,
-  onEdit,
   onOpenMenu,
 }: {
   steward: BoardSteward;
@@ -33,112 +28,76 @@ export function StewardRow({
   menuOpen: boolean;
   onToggle: (steward: BoardSteward) => void;
   onRunNow: (steward: BoardSteward) => void;
-  onEdit: (steward: BoardSteward) => void;
   onOpenMenu: (steward: BoardSteward, anchor: HTMLButtonElement) => void;
 }) {
   useLocale();
   const busy = acting != null;
   const pending = acting === `steward:${steward.machineId}:${steward.id}`;
-  const running = steward.run != null;
-  const failedOrSkipped = steward.lastRunStatus === "failed" || steward.lastRunStatus === "skipped";
+  const project = stewardProjectName(steward);
+  const name = projectDisplayName(steward.cwd);
+  const status = steward.run ? "running" : steward.lastRunStatus;
+  const lastRunError =
+    status === "failed" || status === "skipped" ? steward.lastRunError : undefined;
+  const machine =
+    steward.stale && !steward.pendingRefresh
+      ? t("on {p0} (offline, last known)", { p0: steward.machineName })
+      : t("on {p0}", { p0: steward.machineName });
+
   return (
     <ActionHost
       as="article"
-      aria-label={t("Steward for {p0}", { p0: stewardProjectName(steward) })}
-      data-steward-status={steward.lastRunStatus}
+      aria-label={t("Steward for {p0}", { p0: project })}
+      data-steward-status={status}
       aria-busy={pending || undefined}
       className="task-ops-row"
     >
       <div className="task-ops-row-text">
-        <div className="task-ops-title-line">
-          <Bot className="icon-sm shrink-0" tone="secondary" />
-          <Tooltip label={steward.focus || undefined} asChild>
-            <Heading size="section" level={3} leading="inherit" truncate>
-              {stewardProjectName(steward)}
-            </Heading>
-          </Tooltip>
-          {!steward.enabled ? <Badge size="xs">{t("Paused")}</Badge> : null}
-        </div>
-        <Text as="p" size="caption" tone="secondary">
-          {steward.modelChoice && steward.modelChoice.kind !== "fixed" ? (
-            <>
-              <TaskModelChoiceLabel choice={steward.modelChoice} machineId={steward.machineId} />{" "}
-              ·{" "}
-            </>
-          ) : null}
-          <ModelLabel harness={steward.harness} model={steward.model} />
+        <Heading size="item" level={3} leading="inherit" className="break-words">
+          {name}
+        </Heading>
+        <Text size="caption" tone="secondary" wrap="anywhere">
+          {name !== project ? `${project} · ` : null}
+          {automationScheduleLabel(steward)} · {machine}
+          {steward.enabled && !steward.run ? ` · ${nextRunPreview(steward.nextRunAt)}` : ""}
         </Text>
-        <Text as="p" size="caption" tone="secondary" leading="inherit" className="task-ops-caption">
-          {steward.stale && !steward.pendingRefresh
-            ? t("on {p0} (offline, last known)", { p0: steward.machineName })
-            : t("on {p0}", { p0: steward.machineName })}{" "}
-          · {automationScheduleLabel(steward)}
-        </Text>
-        <Text
-          as="p"
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          className="task-ops-caption flex flex-wrap items-center gap-1"
-        >
-          {steward.lastRunStatus ? (
-            <>
-              {t("Last run: ")}
-              <StewardRunBadge status={steward.lastRunStatus} />
-              {steward.lastRunAt
-                ? t(" {p0} ago", { p0: formatTaskSpan(now - steward.lastRunAt) })
-                : ""}
-              {steward.lastRunStatus === "succeeded" && steward.lastProposed !== undefined
-                ? t(
-                    steward.lastProposed === 1
-                      ? " · {p0} new suggestion"
-                      : " · {p0} new suggestions",
-                    { p0: steward.lastProposed },
-                  )
-                : ""}
-            </>
-          ) : (
-            t("Has not run yet")
-          )}
-          {steward.enabled ? ` · ${nextRunPreview(steward.nextRunAt)}` : ""}
-        </Text>
-        {steward.lastRunError && failedOrSkipped ? (
-          <Text
-            as="p"
-            size="caption"
-            tone={steward.lastRunStatus === "failed" ? "danger" : "secondary"}
-            leading="inherit"
-            className="task-ops-caption"
-            data-tone={steward.lastRunStatus === "failed" ? "danger" : undefined}
-          >
-            {steward.lastRunError}
-          </Text>
+        {status ? (
+          <div className="task-ops-run">
+            <StewardRunBadge status={status} />
+            {status !== "running" ? (
+              <Text size="caption" tone="secondary">
+                {steward.lastRunAt
+                  ? t(" {p0} ago", { p0: formatTaskSpan(now - steward.lastRunAt) })
+                  : null}
+                {status === "succeeded" && steward.lastProposed !== undefined
+                  ? t(
+                      steward.lastProposed === 1
+                        ? " · {p0} new suggestion"
+                        : " · {p0} new suggestions",
+                      { p0: steward.lastProposed },
+                    )
+                  : null}
+              </Text>
+            ) : null}
+          </div>
         ) : null}
+        {lastRunError &&
+          (status === "failed" ? (
+            <InlineError live="off">{lastRunError}</InlineError>
+          ) : (
+            <InlineMessage live="off">{lastRunError}</InlineMessage>
+          ))}
       </div>
       <div className="task-ops-actions">
-        {pending ? <Spinner size="xs" tone="secondary" className="mx-1.5" /> : null}
+        {pending ? <Spinner size="xs" tone="secondary" /> : null}
         <Switch
           aria-label={t("Enabled")}
           checked={steward.enabled}
           disabled={busy}
           onCheckedChange={() => onToggle(steward)}
         />
-        <InlineAction
-          reveal="always"
-          label={t("Run now")}
-          disabled={busy || running}
-          onClick={() => onRunNow(steward)}
-        >
-          <Play className="icon-xs" />
-        </InlineAction>
-        <InlineAction
-          reveal="always"
-          label={t("Edit")}
-          disabled={busy}
-          onClick={() => onEdit(steward)}
-        >
-          <Pencil className="icon-xs" />
-        </InlineAction>
+        <InlineTextAction disabled={busy || Boolean(steward.run)} onClick={() => onRunNow(steward)}>
+          {t("Run now")}
+        </InlineTextAction>
         <InlineMoreAction
           reveal="always"
           label={t("More actions")}

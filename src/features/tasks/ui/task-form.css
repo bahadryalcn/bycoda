@@ -1,32 +1,16 @@
-/* New/edit task dialog (shared with the goal dialog): target pickers, settings-style
-   rows and the grouped option blocks. Container frames are hairlines on the canvas. */
-
-.task-form-targets {
-  display: grid;
-  gap: 0.25rem;
-  min-inline-size: 0;
-}
-.task-form-description {
-  display: grid;
-  gap: 0.25rem;
-  min-inline-size: 0;
-}
-.task-form-targets-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
-  min-inline-size: 0;
-  align-items: start;
-  gap: 0.5rem;
-}
-.task-form-targets-note {
+/* Shared by the task and planning forms. */
+.task-target-chips {
   display: flex;
   min-inline-size: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--ui-space-1);
+}
+.task-target-chips > * {
+  min-inline-size: 0;
+  max-inline-size: 100%;
 }
 
-/* Settings row: title and one-line description left, the control right. */
 .task-form-rows {
   display: grid;
   min-inline-size: 0;
@@ -36,10 +20,9 @@
   min-inline-size: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding-block: 0.5rem;
+  gap: var(--ui-space-2);
+  padding-block: var(--ui-space-2);
 }
-/* A Checkbox row: the box stays first in the DOM (label order) and sits at the end edge. */
 .task-form-check {
   flex-direction: row-reverse;
   cursor: pointer;
@@ -51,54 +34,62 @@
 }
 .task-form-row-control {
   display: flex;
-  flex: none;
-  max-inline-size: 60%;
+  flex: 0 1 auto;
+  max-inline-size: 65%;
   min-inline-size: 0;
   align-items: center;
 }
-
+.task-form-row-control > * {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
 .task-form-summary-hint {
-  margin-inline-start: 0.5rem;
+  margin-inline-start: var(--ui-space-1);
   min-inline-size: 0;
-  overflow: hidden;
-
-  white-space: nowrap;
 }
 
-.task-form-agent {
+.task-more-options,
+.task-resource-fields {
   display: grid;
-  gap: 0.5rem;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
-.task-form-agent-picks {
+.task-resource-fields {
+  padding-block-end: var(--ui-space-2);
+}
+.task-resource-row {
   display: flex;
   min-inline-size: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--ui-space-1);
 }
-
-/* Number inputs fit the dialog width, not the viewport width. */
+.task-resource-row > :nth-child(2) {
+  flex: 1 1 8rem;
+  min-inline-size: 0;
+}
+.task-budget-compact {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ui-space-1);
+  inline-size: 15rem;
+  min-inline-size: 0;
+}
+.task-form-row:has(.task-budget-compact) {
+  flex-wrap: wrap;
+}
+.task-form-row-control:has(.task-budget-compact) {
+  margin-inline-start: auto;
+  max-inline-size: 100%;
+}
 .task-form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-  gap: 0.5rem;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 
-/* Advanced groups: each block (check command, branch, workflow, budget) breathes between hairlines. */
-.task-form-advanced > div > * {
-  padding-block: 0.5rem;
-}
-.task-form-advanced > div > :first-child {
-  padding-block-start: 0;
-}
-.task-form-advanced > div > :last-child {
-  padding-block-end: 0;
-}
-
-/* One form language for the new/edit task and new goal dialogs: the dialog
-   owns one scroll region (.task-form-body), the footer stays in view. */
+/* The body scrolls independently of the dialog footer. */
 .task-form {
   display: flex;
   flex: 1 1 auto;
@@ -111,52 +102,33 @@
   min-block-size: 0;
   overflow-y: auto;
   overscroll-behavior: none;
-  padding: 0.75rem 1rem;
+  padding: var(--ui-space-3) var(--ui-space-4);
 }
 .task-form-fields {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
-  margin: 0;
-  padding: 0;
-}
-.task-form-context {
-  display: flex;
-  min-inline-size: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-.task-workflow-pick {
-  display: flex;
-  min-inline-size: 0;
-  align-items: center;
-  gap: 0.5rem;
-}
-.task-form-section {
-  min-inline-size: 0;
-  padding-block: 0.375rem;
 }
 .task-form-section-body {
   display: grid;
-  gap: 0.75rem;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
-  padding-block-end: 0.5rem;
+  padding-block-end: var(--ui-space-2);
 }
 .task-form-limit {
   display: grid;
-  gap: 0.25rem;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
-  padding: 0.5rem 0.75rem;
+  padding: var(--ui-space-2) var(--ui-space-3);
 }
 .task-form-limit-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--ui-space-2);
 }
 
-/* Long descriptions scroll inside a viewport-relative cap so the form actions stay in reach. */
+/* Cap the description while leaving space for the other controls. */
 [data-task-prompt] textarea {
   max-block-size: clamp(10rem, 28dvh, 20rem);
 }

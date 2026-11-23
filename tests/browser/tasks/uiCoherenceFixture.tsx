@@ -88,6 +88,7 @@ export function UiCoherenceFixture() {
           onUpdateHost={ignore}
           onReconnect={ignore}
           onToggleMenu={ignore}
+          onToggleDetails={ignore}
           onSyncNow={ignore}
         />
       </div>

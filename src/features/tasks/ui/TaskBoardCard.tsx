@@ -14,8 +14,8 @@ import { t, useLocale } from "../../../shared/i18n";
 import { memo, useState } from "react";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { Bot, GripVertical } from "../../../shared/ui/icons";
-import { taskStatusLine, QUIET_TASK_STATUS } from "../model/taskStatusLine";
-import { TaskStatusText } from "./TaskStatusLine";
+import { QUIET_TASK_STATUS } from "../model/taskStatusLine";
+import { TaskStatusText, taskDisplayStatus } from "./TaskStatusLine";
 import { unreadReviewNotes } from "../model/taskReviewNotes";
 import { resolveModel } from "../../sessions/public/models";
 import { TaskActions, type TaskActionHandlers } from "./TaskCardActions";
@@ -23,9 +23,8 @@ import { VerificationSummary } from "./TaskCardVerification";
 import { taskCardKeyIntent } from "./taskCardKeys";
 import "./task-board.css";
 
-export { TaskActions, VerificationSummary };
-export type { TaskActionHandlers };
-
+/** A board card: the same content as a list row (state when it adds information, project, model,
+ * elapsed time, one lead action and an overflow), compact, in the column that names its state. */
 export const TaskCard = memo(function TaskCard({
   task,
   timeLabel,
@@ -86,15 +85,7 @@ function TaskCardBody({
   const model = resolveModel(task.harness, task.model);
   const unread = unreadReviewNotes(task.reviewNotes);
   // Exceptional state leads the card; execution metadata stays in the detail panel.
-  const currentStatus = taskStatusLine(task);
-  const status =
-    taskWorkspaceState(task).needsRenewedApproval && !task.mergeError
-      ? {
-          ...currentStatus,
-          label: t("Review changes"),
-          detail: t("Automatic merge is suspended. Review changes to renew approval."),
-        }
-      : currentStatus;
+  const status = taskDisplayStatus(task);
   const hasFailureDetails = Boolean(
     task.error || task.mergeError || task.budgetStop || task.repairStop || task.verification,
   );
@@ -215,7 +206,7 @@ function TaskCardBody({
           </span>
         ) : null}
       </Text>
-      <TaskActions task={task} compact {...actions} />
+      <TaskActions task={task} className="task-card-actions" {...actions} />
       {failureOpen ? (
         <div onClick={(event) => event.stopPropagation()}>
           <Modal title={t("Task details")} onClose={() => setFailureOpen(false)}>

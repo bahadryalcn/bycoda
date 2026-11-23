@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { Button } from "../../../shared/ui/Button";
+import { Button, type ButtonProps } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
@@ -13,7 +13,7 @@ import {
   type PickerOption,
 } from "../../../shared/ui/picker";
 import { t, useLocale } from "../../../shared/i18n";
-import { useNativePopoverHost } from "../../../shared/ui/Popover";
+import { Popover, useNativePopoverHost } from "../../../shared/ui/Popover";
 import {
   useCallback,
   useEffect,
@@ -60,22 +60,83 @@ export function isWorkspaceModeShortcut(event: {
   );
 }
 
-export function WorkspacePicker({
-  cwd,
-  mode,
-  base,
-  enabled = true,
-  onModeChange,
-  onBaseChange,
-  onSelectWorktree,
-  onOpenSettings,
-  onClose,
-  onOpenChange,
-  popoverSide = "top",
-  initialPicker,
-  alignBase = "inline",
-  children,
-}: {
+type WorkspaceChipProps = {
+  presentation: "chip";
+  label: string;
+  content: ReactNode;
+  enabled?: boolean;
+  worktree?: boolean;
+};
+
+export function WorkspacePicker(props: ComposerWorkspaceProps | WorkspaceChipProps) {
+  if (props.presentation === "chip") return <WorkspaceChip {...props} />;
+  return <ComposerWorkspacePicker {...props} />;
+}
+
+function WorkspaceTrigger({
+  label,
+  worktree,
+  ...props
+}: Omit<ButtonProps, "label" | "iconOnly"> & {
+  label: string;
+  worktree: boolean;
+}) {
+  const Icon = worktree ? FolderTree : Folder;
+  return (
+    <Button
+      {...props}
+      variant="chip"
+      motion="none"
+      type="button"
+      aria-label={t("Workspace {p0}", { p0: label })}
+      aria-haspopup="dialog"
+      className="flex min-w-0 max-w-48 items-center gap-1.5"
+    >
+      <Icon aria-hidden className="icon-sm shrink-0" />
+      <Text size="inherit" tone="inherit" truncate>
+        {label}
+      </Text>
+    </Button>
+  );
+}
+
+/** The caller owns checkout data and keeps its controller mounted outside the popover. */
+function WorkspaceChip({ label, content, enabled = true, worktree = false }: WorkspaceChipProps) {
+  useLocale();
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  if (!enabled && open) setOpen(false);
+  return (
+    <div className="relative flex min-w-0">
+      <WorkspaceTrigger
+        ref={anchor}
+        label={label}
+        worktree={worktree}
+        disabled={!enabled}
+        expanded={open}
+        onClick={() => setOpen(!open)}
+      />
+      {enabled && open ? (
+        <Popover
+          anchor={anchor}
+          side="bottom"
+          size="md"
+          maxHeight={400}
+          flow="scroll"
+          kind="dialog"
+          aria-label={t("Workspace")}
+          onDismiss={() => setOpen(false)}
+          className="grid min-w-0 gap-2"
+        >
+          {content}
+        </Popover>
+      ) : null}
+    </div>
+  );
+}
+
+type ComposerWorkspaceProps = {
+  presentation?: "composer";
   children?: ReactNode;
   alignBase?: "inline" | "end";
   initialPicker?: "workspace" | "base";
@@ -90,7 +151,24 @@ export function WorkspacePicker({
   onClose?: () => void;
   onOpenChange?: (open: boolean) => void;
   popoverSide?: "top" | "bottom";
-}) {
+};
+
+function ComposerWorkspacePicker({
+  cwd,
+  mode,
+  base,
+  enabled = true,
+  onModeChange,
+  onBaseChange,
+  onSelectWorktree,
+  onOpenSettings,
+  onClose,
+  onOpenChange,
+  popoverSide = "top",
+  initialPicker,
+  alignBase = "inline",
+  children,
+}: ComposerWorkspaceProps) {
   useLocale();
   const [modeOpen, setModeOpen] = useState(false);
   const [baseOpen, setBaseOpen] = useState(false);
@@ -261,7 +339,6 @@ function WorkspaceModePicker({
     "Composer: Toggle Workspace",
     "Meta+Shift+G Control+Shift+G",
   );
-  const Icon = mode === "worktree" ? FolderTree : Folder;
 
   // "Existing worktree…" is an action row of the kit list (it opens the flyout instead of
   // changing the mode); the flyout anchors to that row, found again by its option id.
@@ -306,17 +383,14 @@ function WorkspaceModePicker({
   return (
     <div ref={anchor} className="relative flex min-w-0 shrink-0">
       {!host ? (
-        <Button
-          variant="chip"
-          motion="none"
-          type="button"
+        <WorkspaceTrigger
+          label={label}
+          worktree={mode === "worktree"}
           disabled={!enabled}
           disabledReason={disabledReason}
           tooltip={t("Workspace")}
           shortcut={shortcut}
-          aria-label={t("Workspace {p0}", { p0: label })}
           aria-keyshortcuts={shortcutTokens ?? undefined}
-          aria-haspopup="dialog"
           data-composer-chip="checkout"
           expanded={open}
           onMouseDown={(event) => event.preventDefault()}
@@ -327,13 +401,7 @@ function WorkspaceModePicker({
             }
             setOpen(true);
           }}
-          className="flex min-w-0 max-w-48 items-center gap-1.5"
-        >
-          <Icon className="icon-sm shrink-0" />
-          <Text size="inherit" tone="inherit" truncate>
-            {label}
-          </Text>
-        </Button>
+        />
       ) : null}
       <PickerPopover
         open={open}

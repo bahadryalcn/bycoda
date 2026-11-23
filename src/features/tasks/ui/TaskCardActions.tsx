@@ -1,7 +1,6 @@
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { Spinner } from "../../../shared/ui/Spinner";
-import { InlineAction } from "../../../shared/ui/ActionHost";
+import { InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
 import type { BoardTask } from "../model/taskClient";
@@ -68,48 +67,61 @@ export type TaskActionHandlers = {
   onFinishWithFindings?: () => void;
 };
 
-/** What the owner can do with a task, as the card and the detail panel both
- * offer it. Clicks stay on the buttons rather than opening the panel. */
-export function TaskActions({
-  task,
-  busy,
-  onStart,
-  onDelivery,
-  onPauseMerge,
-  onEarlier,
-  onLater,
-  onMove,
-  onReviewWorkspace,
-  onEdit,
-  onDelete,
-  onDecline,
-  onOpenSession,
-  openingWorkerSession,
-  onOpenReviewSession,
-  openingReviewSession,
-  onRecheckReview,
-  onFinishWithFindings,
-  compact = false,
-}: { task: BoardTask; compact?: boolean } & TaskActionHandlers) {
-  useLocale();
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+type TaskAction = {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  run: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  danger?: boolean;
+};
+
+/** What a task offers the owner. The one `lead` action is the next step for the task's state;
+ * everything else sits in the `overflow`, regular actions first and destructive ones last. */
+type TaskActionPlan = {
+  lead: TaskAction | undefined;
+  overflow: readonly TaskAction[];
+  reviewError: string | null;
+};
+
+/** Lead candidates per state, strongest first. A task that waits for instructions leads with
+ * its edit action; a task in review leads with its review of the changes. */
+function leadOrder(task: BoardTask): readonly string[] {
+  if (taskRequiresInstructions(task)) return ["edit", "review-workspace"];
+  if (task.status === "review") return ["review-workspace", "done", "queued"];
+  return ["queued", "start-now", "blocked", "done", "review-workspace"];
+}
+
+function useTaskActionPlan(
+  task: BoardTask,
+  {
+    busy,
+    onStart,
+    onDelivery,
+    onPauseMerge,
+    onEarlier,
+    onLater,
+    onMove,
+    onReviewWorkspace,
+    onEdit,
+    onDelete,
+    onDecline,
+    onOpenSession,
+    openingWorkerSession,
+    onOpenReviewSession,
+    openingReviewSession,
+    onRecheckReview,
+    onFinishWithFindings,
+  }: TaskActionHandlers,
+): TaskActionPlan {
   const [reviewPending, setReviewPending] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const can = (to: TaskStatus) =>
     canMoveTask(task.status, to, task.crewRunId ?? task.crewDefinitionId);
-  type Action = {
-    id: string;
-    label: string;
-    icon: ReactNode;
-    run: () => void;
-    disabled?: boolean;
-    loading?: boolean;
-    danger?: boolean;
-  };
-  const primary: Action[] = [],
-    secondary: Action[] = [];
+  const actions: TaskAction[] = [];
   if (task.branch || taskWorkspaceState(task).workspaceId)
-    primary.push({
+    actions.push({
       id: "review-workspace",
       label: t("Review changes"),
       icon: <GitBranch className="icon-xs" />,
@@ -124,49 +136,16 @@ export function TaskActions({
           .finally(() => setReviewPending(false));
       },
     });
-  if (onEarlier)
-    primary.push({
-      id: "earlier",
-      label: t("Move earlier"),
-      icon: <ChevronUp className="icon-xs" />,
-      run: onEarlier,
-      disabled: busy,
-    });
-  if (onLater)
-    primary.push({
-      id: "later",
-      label: t("Move later"),
-      icon: <ChevronDown className="icon-xs" />,
-      run: onLater,
-      disabled: busy,
-    });
   if (task.status === "queued" && task.workspaceControlsSupported)
-    primary.push({
+    actions.push({
       id: "start-now",
       label: t("Start now"),
       icon: <Play className="icon-xs" />,
       run: onStart,
       disabled: busy,
     });
-  if (task.status === "review" && hasUnmergedBranch(task) && task.workspaceControlsSupported) {
-    secondary.push({
-      id: "delivery",
-      label: t("Choose delivery target"),
-      icon: <GitBranch className="icon-xs" />,
-      run: onDelivery,
-      disabled: busy,
-    });
-    if (task.autoMerge || task.deliveryRequested)
-      secondary.push({
-        id: "pause-merge",
-        label: t("Pause automatic merge"),
-        icon: <Square className="icon-xs" />,
-        run: onPauseMerge,
-        disabled: busy,
-      });
-  }
   if (can("done"))
-    primary.push({
+    actions.push({
       id: "done",
       label: hasUnmergedBranch(task)
         ? t("Mark finished")
@@ -178,7 +157,7 @@ export function TaskActions({
       disabled: busy,
     });
   if (can("queued") && !taskRequiresInstructions(task) && !canTakeOverBlockedTask(task))
-    primary.push({
+    actions.push({
       id: "queued",
       label:
         task.status === "todo"
@@ -195,6 +174,39 @@ export function TaskActions({
       run: () => onMove("queued"),
       disabled: busy,
     });
+  if (can("blocked"))
+    actions.push({
+      id: "blocked",
+      label: t("Stop"),
+      icon: <Square className="icon-xs" />,
+      run: () => onMove("blocked"),
+      disabled: busy,
+    });
+  if (canEditTask(task.status))
+    actions.push({
+      id: "edit",
+      label: taskRequiresInstructions(task) ? t("Update instructions") : t("Edit"),
+      icon: <Pencil className="icon-xs" />,
+      run: onEdit,
+      disabled: busy,
+    });
+  if (task.status === "review" && hasUnmergedBranch(task) && task.workspaceControlsSupported) {
+    actions.push({
+      id: "delivery",
+      label: t("Choose delivery target"),
+      icon: <GitBranch className="icon-xs" />,
+      run: onDelivery,
+      disabled: busy,
+    });
+    if (task.autoMerge || task.deliveryRequested)
+      actions.push({
+        id: "pause-merge",
+        label: t("Pause automatic merge"),
+        icon: <Square className="icon-xs" />,
+        run: onPauseMerge,
+        disabled: busy,
+      });
+  }
   if (
     task.status === "blocked" &&
     !taskRequiresInstructions(task) &&
@@ -203,7 +215,7 @@ export function TaskActions({
     task.verification?.review?.verdict === "fail" &&
     task.sessionId
   )
-    secondary.push({
+    actions.push({
       id: "recheck",
       label: t("Recheck review"),
       icon: <RefreshCw className="icon-xs" />,
@@ -211,31 +223,15 @@ export function TaskActions({
       disabled: busy,
     });
   if (task.finishWithFindingsSupported && onFinishWithFindings && canFinishTaskWithFindings(task))
-    secondary.push({
+    actions.push({
       id: "finish-with-findings",
       label: t("Finish with findings"),
       icon: <Check className="icon-xs" />,
       run: onFinishWithFindings,
       disabled: busy,
     });
-  if (can("todo"))
-    secondary.push({
-      id: "todo",
-      label: task.status === "done" ? t("Reopen") : t("Move to To do"),
-      icon: <Undo2 className="icon-xs" />,
-      run: () => onMove("todo"),
-      disabled: busy,
-    });
-  if (can("blocked"))
-    primary.push({
-      id: "blocked",
-      label: t("Stop"),
-      icon: <Square className="icon-xs" />,
-      run: () => onMove("blocked"),
-      disabled: busy,
-    });
   if (onOpenSession)
-    primary.push({
+    actions.push({
       id: "worker",
       label: t("Open worker session"),
       icon: <MessageSquare className="icon-xs" />,
@@ -244,7 +240,7 @@ export function TaskActions({
       loading: openingWorkerSession,
     });
   if (onOpenReviewSession)
-    primary.push({
+    actions.push({
       id: "review",
       label: t("Open review session"),
       icon: <MessageSquare className="icon-xs" />,
@@ -252,16 +248,32 @@ export function TaskActions({
       disabled: openingReviewSession,
       loading: openingReviewSession,
     });
-  if (canEditTask(task.status))
-    (taskRequiresInstructions(task) ? primary : secondary).push({
-      id: "edit",
-      label: taskRequiresInstructions(task) ? t("Update instructions") : t("Edit"),
-      icon: <Pencil className="icon-xs" />,
-      run: onEdit,
+  if (onEarlier)
+    actions.push({
+      id: "earlier",
+      label: t("Move earlier"),
+      icon: <ChevronUp className="icon-xs" />,
+      run: onEarlier,
+      disabled: busy,
+    });
+  if (onLater)
+    actions.push({
+      id: "later",
+      label: t("Move later"),
+      icon: <ChevronDown className="icon-xs" />,
+      run: onLater,
+      disabled: busy,
+    });
+  if (can("todo"))
+    actions.push({
+      id: "todo",
+      label: task.status === "done" ? t("Reopen") : t("Move to To do"),
+      icon: <Undo2 className="icon-xs" />,
+      run: () => onMove("todo"),
       disabled: busy,
     });
   if (isStewardProposal(task))
-    secondary.push({
+    actions.push({
       id: "decline",
       label: t("Decline"),
       icon: <X className="icon-xs" />,
@@ -270,7 +282,7 @@ export function TaskActions({
       danger: true,
     });
   else if (task.status !== "running" && task.status !== "verifying")
-    secondary.push({
+    actions.push({
       id: "delete",
       label: t("Delete"),
       icon: <Trash2 className="icon-xs" />,
@@ -278,103 +290,100 @@ export function TaskActions({
       disabled: busy,
       danger: true,
     });
-  const all = [...primary, ...secondary];
-  const destructive = all.filter((action) => action.danger);
-  const regular = all.filter((action) => !action.danger);
-  // The card offers one lead action; the detail panel keeps the full set.
-  const leadOrder =
-    task.status === "review"
-      ? ["review-workspace", "done", "queued"]
-      : ["queued", "start-now", "blocked", "done", "review-workspace"];
-  const lead = compact
-    ? ((taskRequiresInstructions(task)
-        ? primary.find((action) => action.id === "edit")
-        : undefined) ??
-      leadOrder
-        .map((id) => primary.find((action) => action.id === id))
-        .find((action) => action !== undefined))
-    : undefined;
-  const reviewAction = primary.find((action) => action.id === "review-workspace");
-  const visible = (compact ? (lead ? [lead] : []) : regular).filter(
-    (action) => action !== reviewAction,
-  );
-  const overflow = compact
-    ? all.filter((action) => action !== lead && action !== reviewAction)
-    : [];
-  const overflowRegular = overflow.filter((action) => !action.danger);
-  const overflowDanger = overflow.filter((action) => action.danger);
-  const pickOverflow = (id: string) => overflow.find((action) => action.id === id)?.run();
+  const lead = leadOrder(task)
+    .map((id) => actions.find((action) => action.id === id))
+    .find((action) => action !== undefined);
+  const rest = actions.filter((action) => action !== lead);
+  return {
+    lead,
+    overflow: [
+      ...rest.filter((action) => !action.danger),
+      ...rest.filter((action) => action.danger),
+    ],
+    reviewError,
+  };
+}
+
+/**
+ * What the owner can do with a task, as a row, a card and the detail header offer it: the one
+ * action that moves the task's current state forward, and everything else in an overflow menu.
+ * Clicks stay on the buttons rather than opening the task.
+ *
+ * `standalone` marks a placement outside an `ActionHost` row (the detail header), where the
+ * overflow is a plain icon button.
+ */
+export function TaskActions({
+  task,
+  standalone = false,
+  className,
+  ...handlers
+}: { task: BoardTask; standalone?: boolean; className?: string } & TaskActionHandlers) {
+  useLocale();
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const { lead, overflow, reviewError } = useTaskActionPlan(task, handlers);
+  const regular = overflow.filter((action) => !action.danger);
+  const danger = overflow.filter((action) => action.danger);
   return (
     // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Isolation only: keeps action clicks and keys from opening the card; the buttons inside own interaction.
     <div
       role="group"
       aria-label={t("Task actions")}
-      className={`task-card-actions mt-1.5 flex min-w-0 items-center gap-1 ${compact ? "flex-nowrap" : "flex-wrap"}`}
+      className={["task-actions flex min-w-0 flex-wrap items-center gap-1", className]
+        .filter(Boolean)
+        .join(" ")}
       data-no-drag=""
       onClick={(event) => event.stopPropagation()}
       onKeyDown={(event) => event.stopPropagation()}
     >
-      {reviewAction ? (
+      {lead ? (
         <Button
           truncate
-          variant="secondary"
+          variant={lead.id === "blocked" ? "ghost" : "secondary"}
           size="sm"
-          startIcon={<GitBranch className="icon-xs" />}
-          loading={reviewPending}
-          disabled={busy || reviewPending}
-          onClick={reviewAction.run}
+          startIcon={lead.icon}
+          loading={lead.loading}
+          disabled={lead.disabled}
+          onClick={lead.run}
         >
-          {t("Review changes")}
+          {lead.label}
         </Button>
       ) : null}
-      {visible.map((action) => (
-        <Button
-          truncate
-          key={action.id}
-          variant="secondary"
-          size="sm"
-          startIcon={action.loading ? <Spinner size="xs" /> : action.icon}
-          disabled={action.disabled}
-          onClick={action.run}
-        >
-          {action.label}
-        </Button>
-      ))}
-      {reviewError ? (
-        <InlineError className={compact ? "order-last w-full shrink-0" : "basis-full"}>
-          {reviewError}
-        </InlineError>
-      ) : null}
-      {compact && overflow.length > 0 ? (
+      {overflow.length > 0 ? (
         <>
-          {/* A compact action inside the card: the card keeps its own hover, the action only
-              adds a transparent overlay instead of an opaque square. */}
-          <InlineAction
-            reveal="always"
-            label={t("More actions")}
-            aria-haspopup="menu"
-            aria-expanded={!!menuAnchor}
-            className="ms-auto"
-            onClick={(event) => setMenuAnchor(event.currentTarget)}
-          >
-            <MoreHorizontal />
-          </InlineAction>
+          {standalone ? (
+            <Button
+              iconOnly
+              variant="ghost"
+              size="sm"
+              label={t("More actions")}
+              aria-haspopup="menu"
+              aria-expanded={!!menuAnchor}
+              onClick={(event) => setMenuAnchor(event.currentTarget)}
+            >
+              <MoreHorizontal className="icon-sm" />
+            </Button>
+          ) : (
+            <InlineMoreAction
+              reveal="always"
+              label={t("More actions")}
+              expanded={!!menuAnchor}
+              onOpen={setMenuAnchor}
+            />
+          )}
           {menuAnchor ? (
             <DropdownMenu
               anchor={menuAnchor}
               label={t("Task actions")}
               items={[
-                ...overflowRegular.map((action) => ({
+                ...regular.map((action) => ({
                   kind: "item" as const,
                   id: action.id,
                   label: action.label,
                   icon: action.icon,
                   disabled: action.disabled,
                 })),
-                ...(overflowDanger.length > 0 && overflowRegular.length > 0
-                  ? [{ kind: "sep" as const }]
-                  : []),
-                ...overflowDanger.map((action) => ({
+                ...(danger.length > 0 && regular.length > 0 ? [{ kind: "sep" as const }] : []),
+                ...danger.map((action) => ({
                   kind: "item" as const,
                   id: action.id,
                   label: action.label,
@@ -384,27 +393,12 @@ export function TaskActions({
                 })),
               ]}
               onClose={() => setMenuAnchor(null)}
-              onPick={pickOverflow}
+              onPick={(id) => overflow.find((action) => action.id === id)?.run()}
             />
           ) : null}
         </>
       ) : null}
-      {!compact
-        ? destructive.map((action) => (
-            <Button
-              truncate
-              key={action.id}
-              variant="ghost"
-              tone="danger"
-              className="ms-auto"
-              disabled={action.disabled}
-              startIcon={action.icon}
-              onClick={action.run}
-            >
-              {action.label}
-            </Button>
-          ))
-        : null}
+      {reviewError ? <InlineError className="basis-full">{reviewError}</InlineError> : null}
     </div>
   );
 }

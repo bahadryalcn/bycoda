@@ -69,7 +69,7 @@ export function TasksViewDraftDialog({
         values={draft.modelSettings}
       >
         <TaskForm
-          key={draft.id ?? "new"}
+          key={draft.id ?? draft.creation?.id ?? "new"}
           draft={draft}
           recents={recents}
           machines={machines}

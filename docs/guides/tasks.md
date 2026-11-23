@@ -4,15 +4,17 @@ List view scrolls through all loaded tasks without numbered pages. Bulk selectio
 and the open task remain selected while offscreen rows are recycled. Search and
 project, sprint and status filters retain their own list position.
 
-Backlog and a selected sprint both offer List and Board views. The first visit uses
-the list; the chosen view is retained. Empty board lanes stay compact, and narrower
-work areas stack lanes with a status picker. Crew role instructions remain in the
-task detail and editor rather than repeating as list and card previews.
+Tasks and a selected sprint both offer List and Board views. The first visit uses
+the list; the chosen view is retained. The list groups tasks under Needs you, Blocked,
+Running, To do and Done. The counts above it filter the list when clicked; a count of
+zero is hidden. Empty board lanes stay compact, and narrower work areas stack lanes
+with a status picker. Crew role instructions remain in the task detail and editor
+rather than repeating as list and card previews.
 
 Sprints shows sprint collections until a sprint is selected. Selecting a sprint opens
-its scoped tasks. The toolbar refresh updates both task data and sprint planning on
-the Sprints and Reports tabs. Sprint capacity and project budgets are optional;
-expand Capacity in the sprint editor to change them.
+its scoped tasks, with its report (completed tasks and points, capacity and burndown)
+under **Report**. The board refreshes on its own. Sprint capacity and project budgets
+are optional; expand Capacity in the sprint editor to change them.
 
 Bulk actions show the number of eligible selected tasks before execution. An action
 with no eligible tasks is disabled with a reason. Inactive crew assignments can be
@@ -22,14 +24,18 @@ revisions and unmerged branches retain their Host protections. Successful deleti
 leave the selection; failures remain available for Retry failed tasks. Identical
 failure reasons share one explanation with the affected task names.
 
-Tasks opens on the current project's Host. Select All projects to include other machines. During a brief interruption, the board keeps loaded data and retries in the background. Connection details and optional data warnings appear for sustained interruptions or a failure that needs attention. Retry refreshes the selected scope.
+Tasks opens on the current project's Host. Select All projects under **Filter** to include other machines. During a brief interruption, the board keeps loaded data and retries in the background. For a sustained interruption or a failure that needs attention, a status chip appears in the toolbar; it names the affected machine, offers **Retry** (which refreshes the selected scope) and keeps the original error under **Technical details**.
 
 Local project options can appear while other sources are still loading. Sprint data appears as soon as its planning Host answers; source history synchronization can continue afterward. Actions that require current history still wait for that synchronization. Repeated refresh ticks do not accumulate an unlimited queue.
+
+## Creating a task
+
+**New task** needs a description. The title is optional: an empty title is taken from the description's first line. The chips under the description choose the machine (when more than one is connected), project, model, access and working copy, as in a conversation. **Start** saves the task and queues it; **Add to To do** saves it without starting. **More options** holds the time limit, check command, subagents, run budget, required resources, crew and reviewer. **Template** applies a saved setup to the draft at once and can save the current one. **New epic** is in the menu beside **New task**.
 
 ## Model selection
 
 Tasks, epics and stewards choose **Default**, **Any model** or **Fixed** for each model
-role. Default follows the matching role in **Settings > Models > Background work**. Any model uses
+role from the model chip. Default follows the matching role in **Settings > Models > Background work**. Any model uses
 **Any model, in order** or a named group (an ordered subset); Fixed keeps the selected model. **Manage models** opens
 the shared model order and limits. Workers, reviewers and planners resolve when their
 run starts; changing settings never switches an existing session. If every model
@@ -57,11 +63,11 @@ Open **Goal** beside the current work above the message input to see the provide
 
 ## Retry safely
 
-Tasks open across all projects and servers. Use **Server** to narrow tasks, sprint projects and report totals; **All servers** restores the shared view. The sprint list includes records saved on each connected server and identifies their owning server. Opening a sprint keeps actions on that server, even when another server uses the same sprint ID. Unavailable servers keep their last known catalog with an error and disabled actions.
+Tasks open across all projects and servers. Use **Server** under **Filter** to narrow tasks, sprint projects and report totals; **All servers** restores the shared view. The sprint list includes records saved on each connected server and identifies their owning server. Opening a sprint keeps actions on that server, even when another server uses the same sprint ID. Unavailable servers keep their last known catalog with an error and disabled actions.
 
-In the sprint form, project choices include server names. **Sprint server** is where the record is saved; its tasks can run on other servers. Dates and **Work estimates** are optional. Capacity is a planning target in points. Two task estimates of 3 and 5 points total 8 points. Points do not represent hours or limit concurrent execution. Leave capacity blank when not estimating work.
+In the sprint form, project choices include server names. **Save on** (shown when more than one server can plan) is where the record is saved; its tasks can run on other servers. Dates and **Capacity** are optional. Capacity is a planning target in points. Two task estimates of 3 and 5 points total 8 points. Points do not represent hours or limit concurrent execution. Leave capacity blank when not estimating work.
 
-The project picker keeps **All projects** above the scrolling results, including while searching. Finished epic details collapse under **Details** so task lists stay visible. Expand them to inspect run usage, the plan and completed acceptance evidence.
+The project picker keeps **All projects** above the scrolling results, including while searching. Epic details stay collapsed so task lists stay visible, and open on their own when an epic needs you (a plan awaiting approval, a blocked epic, a failed final acceptance). Expand them to inspect run usage, the plan and completed acceptance evidence.
 
 Task and epic deletion wait for Host confirmation. A rejected deletion keeps its confirmation open with the Host's reason and a retry action; the item stays on the board. Cancelling leaves it unchanged. Unmerged work still requires explicit discard confirmation. A cancelled epic never presents an unfinished final acceptance as queued or offers to restart that acceptance.
 
@@ -74,7 +80,7 @@ leaves the task waiting with its reason; it does not silently skip consultation.
 Capacity waits and advice taking more than one minute retain the same queued
 consultation across scheduler ticks. The repair allowance is consumed only after
 nonempty successful advice.
-Under Advanced, **Allow subagents** enables Automatic delegation; disabling it
+Under **More options**, **Allow subagents** enables Automatic delegation; disabling it
 keeps subagents off for that task, including after changing its model.
 
 Eligible blocked tasks offer **Finish with findings** in card actions and task

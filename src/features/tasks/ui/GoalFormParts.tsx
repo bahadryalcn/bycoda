@@ -1,160 +1,121 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
 import { useState, type ReactNode } from "react";
 import { t } from "../../../shared/i18n";
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { NumberField } from "../../../shared/ui/NumberField";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Select } from "../../../shared/ui/Select";
-import { Checkbox } from "../../../shared/ui/Checkbox";
-import "./task-goals.css";
+import { Text } from "../../../shared/ui/Text";
+import type { RemoteMachine } from "../../connections";
+import type { GoalDraft } from "../model/goalClient";
+import { TaskFormRow, TaskFormSwitch } from "./TaskFormFields";
+import {
+  INITIAL_WORKSPACE_CHECKS,
+  isWorkspaceValid,
+  taskWorkspaceScope,
+  type WorkspaceChecks,
+} from "./TaskWorkspacePicker";
 
-/** A titled group of goal settings. Option rows sit in one hairline frame; other content is `framed={false}`. */
-export function GoalSection({
-  title,
-  framed = true,
+/** Each selected project must validate its own checkout on the selected Host. */
+export function goalWorkspacesValid(
+  draft: Pick<GoalDraft, "cwds" | "workspaces">,
+  machine: RemoteMachine | undefined,
+  checks: Readonly<Record<string, WorkspaceChecks>>,
+): boolean {
+  return draft.cwds.every((cwd) => {
+    const scope = taskWorkspaceScope(machine, cwd);
+    return isWorkspaceValid(
+      draft.workspaces?.[cwd],
+      checks[scope] ?? INITIAL_WORKSPACE_CHECKS,
+      scope,
+    );
+  });
+}
+
+export function TaskMoreOptions({
+  summary,
   children,
 }: {
-  title: string;
-  framed?: boolean;
+  summary: readonly (string | false | undefined)[];
   children: ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
+  const hint = summary.filter(Boolean).join(" · ");
   return (
-    <section className="goal-section" aria-label={title}>
-      <SectionLabel as="h3">{title}</SectionLabel>
-      <div
-        {...surfaceAttributes(
-          framed ? { frame: "card", edge: "all", radius: "card", dividers: "card" } : {},
-          framed ? "goal-section-rows" : "goal-section-pad",
-        )}
-      >
-        {children}
-      </div>
-    </section>
+    <Disclosure
+      variant="compact"
+      open={open}
+      onOpenChange={setOpen}
+      summary={
+        <>
+          {t("More options")}
+          {!open && hint ? (
+            <Text truncate size="caption" tone="muted" className="task-form-summary-hint">
+              · {hint}
+            </Text>
+          ) : null}
+        </>
+      }
+    >
+      <div className="task-more-options">{children}</div>
+    </Disclosure>
   );
 }
 
-/** A settings-style row: title and one muted line on the left, the control on the right. */
-export function GoalOption({
-  title,
-  description,
-  reason,
-  disabled,
-  children,
-}: {
-  title: string;
-  description?: string;
-  /** Why the row is unavailable; stays visible while `disabled`. */
-  reason?: string;
-  disabled?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className="goal-option" data-disabled={disabled || undefined}>
-      <span className="goal-option-text">
-        <Text as="span" size="secondary" tone={disabled ? "disabled" : "primary"} leading="inherit">
-          {title}
-        </Text>
-        {description ? (
-          <Text size="micro" tone="secondary" leading="inherit" className="goal-option-description">
-            {description}
-          </Text>
-        ) : null}
-        {disabled && reason ? (
-          <Text size="micro" tone="muted" leading="inherit" className="goal-option-reason">
-            {reason}
-          </Text>
-        ) : null}
-      </span>
-      <span className="goal-option-control">{children}</span>
-    </div>
-  );
-}
-
-/** A choice saved with the form (Plan it / Save): a Checkbox at the end of a shared form row. */
-export function GoalCheckOption({
-  title,
-  description,
+export function GoalContinueSwitch({
   checked,
   onChange,
 }: {
-  title: string;
-  description?: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <GoalOption title={title} description={description}>
-      <Checkbox
-        aria-label={title}
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-    </GoalOption>
+    <TaskFormSwitch
+      label={t("Keep fixing until done")}
+      help={t("Keeps correcting while progress is made; asks for input when needed.")}
+      checked={checked}
+      onChange={onChange}
+    />
   );
 }
 
-/** `0` is the machine's own limit; the rest cap this goal's running tasks. */
+/** Zero uses the machine limit. Keep incomplete input while retaining the last valid value. */
 export function GoalConcurrencyOption({
   value,
   onChange,
+  onValidityChange,
 }: {
   value: number;
   onChange: (value: number) => void;
+  onValidityChange: (valid: boolean) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const text = draft ?? String(value);
-  const valid = text.trim() !== "" && Number.isSafeInteger(Number(text)) && Number(text) >= 0;
+  const label = t("Concurrent tasks in this epic");
   return (
-    <GoalOption title={t("Concurrent tasks in this epic")}>
+    <TaskFormRow
+      label={
+        <span className="inline-flex items-center gap-1">
+          {label}
+          <InfoPopover>{t("0 = use machine limit")}</InfoPopover>
+        </span>
+      }
+    >
       <NumberField
         hideLabel
-        label={t("Concurrent tasks in this epic")}
-        description={t("Use machine limit")}
+        label={label}
+        fieldVariant="compact"
+        fieldClassName="w-24"
         min={0}
         step={1}
-        value={text}
-        aria-invalid={!valid || undefined}
+        value={draft ?? String(value)}
+        aria-invalid={draft !== null || undefined}
         onChange={(event) => {
-          const next = event.currentTarget.value;
-          if (next.trim() !== "" && Number.isSafeInteger(Number(next)) && Number(next) >= 0) {
-            setDraft(null);
-            onChange(Number(next));
-          } else {
-            setDraft(next);
-          }
+          const text = event.currentTarget.value;
+          const count = Number(text);
+          const valid = text.trim() !== "" && Number.isSafeInteger(count) && count >= 0;
+          setDraft(valid ? null : text);
+          onValidityChange(valid);
+          if (valid) onChange(count);
         }}
       />
-    </GoalOption>
-  );
-}
-
-export function GoalExecutionModeOption({
-  isolate,
-  description,
-  disabled,
-  onChange,
-}: {
-  isolate?: boolean;
-  description?: string;
-  disabled?: boolean;
-  onChange: (isolate: boolean | undefined) => void;
-}) {
-  return (
-    <GoalOption title={t("Execution mode")} description={description} disabled={disabled}>
-      <Select
-        hideLabel
-        disabled={disabled}
-        label={t("Execution mode")}
-        value={isolate === undefined ? "automatic" : isolate ? "isolated" : "shared"}
-        options={[
-          { value: "automatic", label: t("Automatic") },
-          { value: "shared", label: t("Shared checkout") },
-          { value: "isolated", label: t("Separate worktree") },
-        ]}
-        onValueChange={(value) =>
-          onChange(value === "automatic" ? undefined : value === "isolated")
-        }
-      />
-    </GoalOption>
+    </TaskFormRow>
   );
 }

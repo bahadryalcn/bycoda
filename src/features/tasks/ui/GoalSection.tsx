@@ -1,14 +1,15 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useRef } from "react";
 import { t } from "../../../shared/i18n";
-import { Disclosure } from "../../../shared/ui/Disclosure";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { approveGoal, goalKey, recheckGoalFinalReview, replanGoal } from "../model/goalClient";
 import type { BoardTask } from "../model/taskClient";
 import { GoalCard } from "./GoalCard";
 import { ALL_GOALS, type TaskGoalsController } from "./TaskGoalsController";
 import "./task-goals.css";
 
-/** Goals above the board, filtered to the one the owner is looking at. */
+/** Epics above the tasks as compact cards, filtered to the one the owner is looking at. An epic
+ * that needs the owner opens its details by itself, so nothing hides behind a closed heading. */
 export function GoalList({
   goals,
   filter,
@@ -22,33 +23,20 @@ export function GoalList({
   acting: string | null;
   revealKey?: string;
 }) {
-  const disclosure = useRef<HTMLDetailsElement>(null);
+  const section = useRef<HTMLElement>(null);
+  // A reveal request (a notification or the epic filter) brings the epics into view.
   useEffect(() => {
-    if (revealKey && disclosure.current) {
-      disclosure.current.open = true;
-      disclosure.current.scrollIntoView?.({ block: "nearest" });
-    }
+    if (revealKey) section.current?.scrollIntoView?.({ block: "nearest" });
   }, [revealKey]);
-  // An epic that is blocked, waiting for approval or failed final acceptance is the owner's next
-  // step, so it must not hide behind a closed heading; finished epics stay collapsed.
-  const needsOwner = goals.goals.some(
-    (goal) =>
-      goal.status === "blocked" ||
-      goal.status === "awaiting-approval" ||
-      (goal.status !== "cancelled" && goal.finalAcceptance?.status === "failed"),
-  );
-  useEffect(() => {
-    if (needsOwner && disclosure.current) disclosure.current.open = true;
-  }, [needsOwner]);
   return (
-    <Disclosure
-      ref={disclosure}
-      variant="row"
-      size="sm"
-      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "task-goals-disclosure")}
-      summary={t("Epics")}
-      count={goals.goals.length}
+    <section
+      ref={section}
+      aria-label={t("Epics")}
+      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "task-goals-section")}
     >
+      <SectionLabel as="h2" count={goals.goals.length}>
+        {t("Epics")}
+      </SectionLabel>
       <ul aria-label={t("Epics")} className="goal-list">
         {goals.goals
           .filter((goal) => filter === ALL_GOALS || goalKey(goal.machineId, goal.id) === filter)
@@ -78,6 +66,6 @@ export function GoalList({
             );
           })}
       </ul>
-    </Disclosure>
+    </section>
   );
 }

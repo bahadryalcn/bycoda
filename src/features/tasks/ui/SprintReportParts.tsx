@@ -1,12 +1,11 @@
 import { Progress } from "../../../shared/ui/Progress";
 import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
-import { Surface } from "../../../shared/ui/Surface";
 import { Meter, type MeterTone } from "../../../shared/ui/Meter";
 import { SortableDataTable, type DataColumn } from "../../../shared/ui/SortableDataTable";
-import "./sprints.css";
+import { StatTile } from "../../../shared/ui/StatTile";
 
-/** A thin-framed figure: caption, heading-size tabular value, optional bounded meter and detail line. */
+/** One headline figure (a StatTile) with its optional bounded measure and detail line. */
 export function SprintKpi({
   label,
   value,
@@ -20,20 +19,7 @@ export function SprintKpi({
 }) {
   const Measure = meter?.kind === "capacity" ? Meter : Progress;
   return (
-    <Surface variant="card" padding="md" className="sprint-kpi">
-      <Text tone="secondary" size="caption" leading="inherit" className="sprint-kpi-label">
-        {label}
-      </Text>
-      <Text
-        as="span"
-        size="heading"
-        tone="inherit"
-        weight="medium"
-        leading="tight"
-        className="sprint-kpi-value"
-      >
-        {value}
-      </Text>
+    <StatTile label={label} value={value}>
       {meter && meter.max > 0 ? (
         <Measure
           aria-label={label}
@@ -44,11 +30,11 @@ export function SprintKpi({
         />
       ) : null}
       {detail ? (
-        <Text tone="danger" size="caption" leading="inherit" className="sprint-kpi-detail">
+        <Text tone="danger" size="caption" leading="inherit">
           {detail}
         </Text>
       ) : null}
-    </Surface>
+    </StatTile>
   );
 }
 

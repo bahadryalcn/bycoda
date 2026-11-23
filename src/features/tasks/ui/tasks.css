@@ -32,15 +32,6 @@
   min-inline-size: 0;
   overflow-wrap: anywhere;
 }
-.task-goals-disclosure {
-  flex-shrink: 0;
-  min-inline-size: 0;
-}
-.task-create-sprint-context {
-  padding: 0.5rem 1rem 0;
-
-  overflow-wrap: anywhere;
-}
 .task-row-select {
   display: inline-flex;
   align-items: center;

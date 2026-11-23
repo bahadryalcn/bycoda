@@ -23,12 +23,12 @@ type HostCall = {
   };
 };
 
-// Project and Server scope live in the toolbar's Scope popover; open it when it is closed.
-async function openScope(page: Page) {
-  if (await page.getByRole("dialog", { name: "Scope", exact: true }).count()) return;
+// Project, server, and task filters share one toolbar popover.
+async function openFilter(page: Page) {
+  if (await page.getByRole("dialog", { name: "Filter", exact: true }).count()) return;
   await page
     .locator("header.task-board-toolbar")
-    .getByRole("button", { name: "Scope", exact: true })
+    .getByRole("button", { name: "Filter", exact: true })
     .click();
 }
 for (const width of [1280, 800])
@@ -44,7 +44,7 @@ for (const width of [1280, 800])
         theme === "light",
       );
       await page.getByRole("tab", { name: "Sprints", exact: true }).click();
-      await openScope(page);
+      await openFilter(page);
       await page.getByRole("button", { name: /^Project:/ }).click();
       await page.getByRole("option", { name: "All projects", exact: true }).click();
       const captures = "temp/verification/tasks-actions-20261114";
@@ -58,32 +58,34 @@ for (const width of [1280, 800])
           animations: "disabled",
         });
       };
-      await openScope(page);
+      await openFilter(page);
       await page.getByRole("button", { name: /^Project:/ }).click();
       await page.getByRole("combobox").fill("no-matching-project");
       await expect(page.getByRole("option", { name: "All projects", exact: true })).toBeVisible();
       await capture("project-filter");
       await page.getByRole("option", { name: "All projects", exact: true }).click();
+      await page.keyboard.press("Escape");
       await expect(page.getByRole("button", { name: "New sprint", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "New task", exact: true })).toHaveCount(0);
       await expect(page.locator('[data-task-column="todo"]')).toBeHidden();
       await capture("sprints-empty");
       await page.getByRole("button", { name: "New sprint", exact: true }).click();
       const sprint = page.getByRole("dialog", { name: "New sprint", exact: true });
-      await sprint.getByLabel("Sprint name", { exact: true }).fill("Release confidence");
+      await sprint.getByLabel("Name", { exact: true }).fill("Release confidence");
       await expect(sprint.getByLabel("Sprint capacity (points)", { exact: true })).toBeHidden();
       await capture("sprint-form");
       await sprint
         .locator("summary")
-        .filter({ hasText: /^Work estimates$/ })
+        .filter({ hasText: /^Capacity · optional$/ })
         .click();
       await sprint.getByLabel("Sprint capacity (points)", { exact: true }).fill("13");
       await capture("sprint-capacity");
       await sprint.getByRole("button", { name: "Cancel", exact: true }).click();
-      await page.getByRole("tab", { name: "Backlog", exact: true }).click();
-      await openScope(page);
+      await page.getByRole("tab", { name: "Tasks", exact: true }).click();
+      await openFilter(page);
       await page.getByRole("button", { name: /^Project:/ }).click();
       await page.getByRole("option", { name: /^local-project / }).click();
+      await page.keyboard.press("Escape");
       await page.getByRole("radio", { name: "List view", exact: true }).check();
       await expect(
         page.getByRole("button", { name: "Repair standalone packaging", exact: true }),
@@ -98,13 +100,23 @@ for (const width of [1280, 800])
       const detail = page.getByRole("complementary", { name: "Task details", exact: true });
       await expect(detail).toContainText("Responsibilities");
       await expect(detail.locator("summary").filter({ hasText: /^Error details$/ })).toBeVisible();
-      const errorDetails = detail.locator("details").filter({ hasText: "Error details" });
+      const errorDetails = detail
+        .locator("summary")
+        .filter({ hasText: /^Error details$/ })
+        .locator("..");
       await expect(errorDetails).not.toHaveAttribute("open", "");
       await capture("detail");
       await errorDetails.locator("summary").click();
       await expect(errorDetails).toHaveAttribute("open", "");
       await capture("error-details");
       await errorDetails.locator("summary").click();
+      const estimate = detail.getByRole("button", { name: /^Points:/ });
+      await choose(page, estimate, "3");
+      await expect(estimate).toHaveAccessibleName("Points: 3");
+      await expect(detail.getByRole("button", { name: "Save planning", exact: true })).toHaveCount(
+        0,
+      );
+      await capture("detail-planning");
       await detail.getByRole("button", { name: "Edit title and description", exact: true }).click();
       await expect(detail.getByLabel("Description", { exact: true })).toHaveValue(
         /Responsibilities/,
@@ -156,14 +168,14 @@ for (const width of [1280, 800])
       await page.getByRole("tab", { name: "Sprints", exact: true }).click();
       await page.getByRole("button", { name: "New sprint", exact: true }).click();
       const createSprint = page.getByRole("dialog", { name: "New sprint", exact: true });
-      await createSprint.getByLabel("Sprint name", { exact: true }).fill("Release confidence");
-      await createSprint.getByRole("button", { name: "Save sprint", exact: true }).click();
+      await createSprint.getByLabel("Name", { exact: true }).fill("Release confidence");
+      await createSprint.getByRole("button", { name: "Create sprint", exact: true }).click();
       await expect(createSprint).toBeHidden();
       await expect(
         page.getByRole("heading", { name: "No tasks in this sprint", exact: true }),
       ).toBeVisible();
       await capture("sprint-selected-empty");
-      await page.getByRole("button", { name: "Backlog", exact: true }).click();
+      await page.getByRole("button", { name: "Browse tasks", exact: true }).click();
       await page.getByRole("button", { name: "More actions", exact: true }).first().click();
       await page.getByRole("menuitemcheckbox", { name: "Select tasks", exact: true }).click();
       await page.getByRole("checkbox", { name: "Select all results", exact: true }).check();
@@ -175,7 +187,7 @@ for (const width of [1280, 800])
       await bulk.getByRole("button", { name: "Finish selection", exact: true }).click();
       await page.getByRole("tab", { name: "Sprints", exact: true }).click();
       await capture("sprint-list");
-      await page.getByRole("button", { name: "Release confidence", exact: true }).click();
+      await page.getByRole("button", { name: /^Release confidence\b/ }).click();
       await expect(
         page.getByRole("article", { name: "Repair standalone packaging", exact: true }),
       ).toBeVisible();
@@ -204,6 +216,7 @@ for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
     test(`shared server sprints ${width} ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
+      await page.clock.install();
       await page.goto(`${fixture}?sprints&sharedServers`);
       await page.evaluate(
         (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -220,7 +233,7 @@ for (const width of [1280, 800])
           animations: "disabled",
         });
       };
-      await openScope(page);
+      await openFilter(page);
       await expect(
         page.getByRole("button", { name: "Project: All projects", exact: true }),
       ).toBeVisible();
@@ -228,30 +241,34 @@ for (const width of [1280, 800])
         page.getByRole("button", { name: "Server: All servers", exact: true }),
       ).toBeVisible();
       await capture("tasks-all-servers");
-      await expect(page.locator(".task-board-summary")).toContainText("1 running");
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("button", { name: "Running · 1", exact: true })).toBeVisible();
       await page.getByRole("tab", { name: "Sprints", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Desktop sprint", exact: true })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Mac sprint", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Desktop sprint\b/ })).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Mac sprint\b/ })).toBeVisible();
       await capture("sprint-catalog");
-      await openScope(page);
+      await openFilter(page);
       await page.getByRole("button", { name: "Server: All servers", exact: true }).click();
       await page.getByRole("option", { name: "Demo MacBook", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Desktop sprint", exact: true })).toHaveCount(
-        0,
-      );
-      await expect(page.getByRole("button", { name: "Mac sprint", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("button", { name: /^Desktop sprint\b/ })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^Mac sprint\b/ })).toBeVisible();
       await capture("sprint-server-filter");
-      await page.getByRole("button", { name: /^Filters/ }).click();
-      const filters = page.getByRole("dialog", { name: "Filters", exact: true });
+      await openFilter(page);
+      const filters = page.getByRole("dialog", { name: "Filter", exact: true });
       await filters.getByRole("button", { name: /^Status:/ }).click();
       await page.getByRole("option", { name: "Done", exact: true }).click();
-      await filters.getByRole("button", { name: "Reset", exact: true }).click();
-      await openScope(page);
       await expect(
-        page.getByRole("button", { name: "Server: Demo MacBook", exact: true }),
+        filters.getByRole("button", { name: "Server: Demo MacBook", exact: true }),
       ).toBeVisible();
+      await page.getByRole("button", { name: "Reset filters", exact: true }).click();
+      await openFilter(page);
+      await expect(
+        filters.getByRole("button", { name: "Server: All servers", exact: true }),
+      ).toBeVisible();
+      await choose(page, filters.getByRole("button", { name: /^Server:/ }), "Demo MacBook");
       await page.keyboard.press("Escape");
-      await page.getByRole("button", { name: "Mac sprint", exact: true }).click();
+      await page.getByRole("button", { name: /^Mac sprint\b/ }).click();
       await expect(page.getByRole("heading", { name: "Mac sprint", exact: true })).toBeVisible();
       await expect(
         page.getByRole("button", { name: "MacBook checkout", exact: true }),
@@ -267,48 +284,52 @@ for (const width of [1280, 800])
         ),
       ).toBe(true);
       await capture("remote-sprint");
-      await expect(page.locator(".task-board-summary")).not.toContainText("running");
-      await page.getByRole("button", { name: "New sprint", exact: true }).click();
+      await expect(page.getByRole("button", { name: /^Running ·/ })).toHaveCount(0);
+      const sprints = page.getByRole("region", { name: "Sprints", exact: true });
+      await taskMenuAction(page, sprints, "New sprint");
       const form = page.getByRole("dialog", { name: "New sprint", exact: true });
-      await form.getByLabel("Sprint name", { exact: true }).fill("Shared rollout");
-      await expect(form).toContainText("A sprint can include projects from different servers.");
+      await form.getByLabel("Name", { exact: true }).fill("Shared rollout");
       await form.getByRole("button", { name: /^Projects:/ }).click();
-      await expect(
-        page.getByRole("option", { name: /local-project.*Renamed development PC/ }),
-      ).toBeVisible();
-      await expect(
-        page.getByRole("option", { name: /remote-project.*Demo MacBook/ }),
-      ).toBeVisible();
+      const desktopProject = page.getByRole("option", {
+        name: /local-project.*Renamed development PC/,
+      });
+      const macProject = page.getByRole("option", { name: /remote-project.*Demo MacBook/ });
+      await desktopProject.click();
+      await macProject.click();
+      await expect(desktopProject).toHaveAttribute("aria-selected", "true");
+      await expect(macProject).toHaveAttribute("aria-selected", "true");
       await capture("sprint-project-servers");
       await page.keyboard.press("Escape");
       await form
         .locator("summary")
-        .filter({ hasText: /^Work estimates$/ })
+        .filter({ hasText: /^Capacity · optional$/ })
         .click();
-      await expect(form).toContainText("Points are not hours and do not limit tasks.");
+      await expect(form).toContainText("Points are not hours and do not limit running tasks.");
       await capture("sprint-estimates");
       await form.getByRole("button", { name: "Cancel", exact: true }).click();
       await page.getByRole("button", { name: "All sprints", exact: true }).click();
-      await openScope(page);
-      await page.getByRole("button", { name: "Server: Demo MacBook", exact: true }).click();
-      await page.getByRole("option", { name: "All servers", exact: true }).click();
-      await page.getByRole("button", { name: "Sprint server: Demo MacBook", exact: true }).click();
-      await page.getByRole("option", { name: "Renamed development PC", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Desktop sprint", exact: true })).toBeVisible();
+      await openFilter(page);
+      await choose(page, page.getByRole("button", { name: /^Server:/ }), "All servers");
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "New sprint", exact: true }).click();
+      const saveOn = page.getByRole("dialog", { name: "New sprint", exact: true });
+      await choose(
+        page,
+        saveOn.getByRole("button", { name: /^Save on:/ }),
+        "Renamed development PC",
+      );
+      await saveOn.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(page.getByRole("button", { name: /^Desktop sprint\b/ })).toBeVisible();
       await page.evaluate(() =>
         (
           window as unknown as { taskFixtureDisconnectSprintServer: () => void }
         ).taskFixtureDisconnectSprintServer(),
       );
-      await page.getByRole("button", { name: "Refresh", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Mac sprint", exact: true })).toBeDisabled();
-      await expect(
-        page
-          .locator(".sprint-row")
-          .filter({ hasText: "Mac sprint" })
-          .locator('[data-sprint-state="active"]'),
-      ).toBeVisible();
-      await expect(page.getByRole("button", { name: "Desktop sprint", exact: true })).toBeEnabled();
+      await page.clock.fastForward(16_000);
+      const offlineSprint = page.getByRole("button", { name: /^Mac sprint\b/ });
+      await expect(offlineSprint).toBeDisabled();
+      await expect(offlineSprint.locator('[data-sprint-state="active"]')).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Desktop sprint\b/ })).toBeEnabled();
       await expect(page.getByText(/Fixture sprint server offline/)).toBeVisible();
       await capture("sprint-server-offline");
     });
@@ -330,7 +351,7 @@ for (const width of [1280, 800])
           animations: "disabled",
         });
       };
-      await openScope(page);
+      await openFilter(page);
       await page.getByRole("button", { name: /^Project:/ }).click();
       const allProjects = page.getByRole("option", { name: "All projects", exact: true });
       await page.getByRole("listbox").evaluate((list) => {
@@ -339,14 +360,15 @@ for (const width of [1280, 800])
       await expect(allProjects).toBeInViewport();
       await capture("projects-scrolled");
       await allProjects.click();
-      await page.locator(".task-goals-disclosure > summary").click();
+      await page.keyboard.press("Escape");
+      await openGoals(page);
       const epic = page.getByRole("article", { name: "Mobile workspace refresh", exact: true });
       await expect(epic).toBeVisible();
-      const details = epic.locator("details");
-      await expect(details).not.toHaveAttribute("open", "");
-      await expect(epic).not.toContainText("Final epic acceptance");
+      const details = epic.getByRole("button", { name: "Details", exact: true });
+      await expect(details).toHaveAttribute("aria-expanded", "false");
+      await expect(epic.getByText("Final epic acceptance", { exact: true })).toBeHidden();
       await capture("epic-collapsed");
-      await details.locator("summary").click();
+      await details.click();
       await expect(epic.getByText("Run usage", { exact: true })).toBeVisible();
       await capture("epic-details");
       await epic.getByRole("button", { name: "More actions", exact: true }).click();
@@ -397,6 +419,7 @@ for (const width of [1280, 800])
         const configure = page.getByRole("button", { name: "Configure", exact: true });
         const actionBounds = await configure.boundingBox();
         expect(actionBounds?.x).toBeGreaterThanOrEqual(0);
+        await expect(page.getByRole("region", { name: "Addresses", exact: true })).toBeVisible();
         await mkdir("temp/verification/2026-11-13-ui-coherence/workbench", { recursive: true });
         await page.screenshot({
           path: `temp/verification/2026-11-13-ui-coherence/workbench/${process.env.BYCODA_UI_BEFORE ? "before" : "after"}-${width}-${theme}-${zoom}.png`,
@@ -411,7 +434,7 @@ for (const width of [1280, 800])
           await status.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
         ).toBe(true);
         const endpoint = page.getByText(
-          "https://research-development-workstation.northwind-industries-holdings.example.com:3774",
+          "research-development-workstation.northwind-industries-holdings.example.com",
           { exact: true },
         );
         await expect(endpoint).toBeVisible();
@@ -452,8 +475,9 @@ for (const width of [1280, 800])
       await page.getByRole("button", { name: "Inspect delayed worker", exact: true }).click();
       const details = page.getByRole("complementary", { name: "Task details", exact: true });
       await expect(details.locator("[data-task-status-line=stalled]")).toContainText(
-        "Running · no recent output",
+        "The task is still running.",
       );
+      await expect(details.getByText("Running · no recent output", { exact: true })).toBeVisible();
       await page.screenshot({
         path: `temp/verification/arif-assistant-stalls/${theme}-${width}-detail.png`,
       });
@@ -484,12 +508,8 @@ for (const width of [1280, 800])
       for (const kind of ["task", "goal"] as const) {
         await openCreate(page, kind);
         const form = formDialog(page, `New ${kind === "goal" ? "epic" : "task"}`);
-        if (kind === "task")
-          await form.locator("details.task-form-agent-disclosure > summary").click();
-        const preference = form.getByRole("checkbox", { name: /^Merge automatically/ });
-        await expect(preference).toBeDisabled();
-        await preference.scrollIntoViewIfNeeded();
-        await expect(form).toContainText("Review changes to renew approval");
+        await openOptions(form);
+        await expect(form.getByText("Merge automatically", { exact: true })).toHaveCount(0);
         await page.screenshot({
           path: `temp/verification/s5/${kind}-suspended-merge-${width}-${theme}.png`,
           animations: "disabled",
@@ -497,33 +517,24 @@ for (const width of [1280, 800])
         await form.getByRole("button", { name: "Cancel", exact: true }).click();
       }
       await openGoals(page);
-      await page.getByRole("button", { name: "Edit epic settings", exact: true }).click();
+      await openEpicSettings(page);
       const settings = formDialog(page, "Edit epic settings");
-      await expect(settings).toContainText("Delivery requires approval");
-      const existing = settings.getByRole("checkbox", { name: /^Merge automatically/ });
-      await expect(existing).toBeChecked();
-      await existing.focus();
-      await page.keyboard.press("Space");
-      await expect(existing).not.toBeChecked();
-      await expect(existing).toBeDisabled();
+      await openOptions(settings);
+      await expect(settings.getByText("Merge automatically", { exact: true })).toHaveCount(0);
+      await settings.getByRole("button", { name: "About epic settings" }).click();
+      await expect(page.getByText(/Delivery requires approval/)).toBeVisible();
       await page.screenshot({
         path: `temp/verification/s5/goal-settings-suspended-merge-${width}-${theme}.png`,
         animations: "disabled",
       });
+      await page.keyboard.press("Escape");
       await settings.getByRole("button", { name: "Cancel", exact: true }).click();
       await page.getByRole("button", { name: "More actions", exact: true }).first().click();
       await page.getByRole("menuitemcheckbox", { name: "Stewards", exact: true }).click();
       await page.getByRole("button", { name: "Add steward", exact: true }).click();
-      const steward = page.getByRole("form", { name: "New steward", exact: true });
-      const preference = steward.getByRole("checkbox", { name: /^Merge automatically/ });
-      await expect(preference).toBeDisabled();
-      await preference.evaluate((node) =>
-        node.closest("label")?.scrollIntoView({ block: "center" }),
-      );
-      const section = page.getByRole("region", { name: "Stewards", exact: true });
-      await section.evaluate((node) => {
-        node.scrollTop = node.scrollHeight;
-      });
+      const steward = formDialog(page, "New steward");
+      await openOptions(steward);
+      await expect(steward.getByText("Merge automatically", { exact: true })).toHaveCount(0);
       await page.screenshot({
         path: `temp/verification/s5/steward-suspended-merge-${width}-${theme}.png`,
         animations: "disabled",
@@ -555,9 +566,9 @@ for (const width of [1280, 800])
         .getByRole("button", { name: "Finished implementation awaiting delivery", exact: true })
         .focus();
       await page.keyboard.press("Enter");
-      await expect(
-        page.getByRole("complementary", { name: "Task details", exact: true }),
-      ).toContainText("Not delivered");
+      const detail = page.getByRole("complementary", { name: "Task details", exact: true });
+      await openDetailDisclosure(detail);
+      await expect(detail.getByText("Not delivered", { exact: true })).toBeVisible();
     });
   }
 for (const width of [1280, 800])
@@ -589,13 +600,15 @@ for (const width of [1280, 800])
       });
       await task.click();
       const details = page.getByRole("complementary", { name: "Task details", exact: true });
-      await expect(details).toContainText("Completion");
-      await expect(details).toContainText("Not delivered");
+      await openDetailDisclosure(details);
+      await expect(details.getByText("Completion", { exact: true })).toBeVisible();
+      await expect(details.getByText("Not delivered", { exact: true })).toBeVisible();
       await page.screenshot({
         path: `temp/verification/i2a/task-detail-delivery-${width}-${theme}.png`,
         animations: "disabled",
       });
-      await details.getByRole("button", { name: "Mark finished", exact: true }).click();
+      await details.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Mark finished", exact: true }).click();
       const calls = () =>
         page.evaluate(
           () => (window as unknown as { taskFixtureCalls: HostCall[] }).taskFixtureCalls,
@@ -611,40 +624,6 @@ for (const width of [800, 1280])
     test(`task operations visual acceptance ${width} ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.addInitScript(() => {
-        localStorage.setItem(
-          "bycoda.tasks.dailySummary.v1",
-          JSON.stringify({
-            since: 1700000000000,
-            until: 1700086400000,
-            autoMerged: 0,
-            finished: [
-              {
-                key: "machine-local:first",
-                machineName: "Local",
-                project: "Project",
-                title: "Completed work",
-              },
-            ],
-            blocked: [
-              {
-                key: "machine-local:second",
-                machineName: "Local",
-                project: "Project",
-                title: "Waiting for review",
-                detail: "Check results",
-              },
-            ],
-            waiting: [],
-            suggestions: [],
-            goals: [{ title: "Ship release", machineName: "Local", done: 2, total: 4 }],
-            goalsFinished: [],
-            usage: [],
-            unreachable: [],
-            outdated: [],
-          }),
-        );
-      });
       await openTasks(page, `${fixture}?boardControls&visualSteward`);
       await page.evaluate(
         (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -659,25 +638,25 @@ for (const width of [800, 1280])
         path: `temp/verification/task-ops-visual/${theme}-${width}-stewards.png`,
         animations: "disabled",
       });
-      await page.getByRole("button", { name: "More actions", exact: true }).first().click();
-      await page.getByRole("menuitemcheckbox", { name: "Summary", exact: true }).click();
-      const summary = page.getByRole("region", { name: "Summary", exact: true });
-      await expect(summary.getByText("Completed work")).toBeVisible();
-      await summary.screenshot({
-        path: `temp/verification/task-ops-visual/${theme}-${width}-summary.png`,
+      const counts = page.getByRole("region", { name: "Task counts", exact: true });
+      await expect(counts).toBeVisible();
+      await counts.getByRole("button", { name: /^Agent time today ·/ }).click();
+      const breakdown = page.getByRole("dialog", { name: "Agent time today", exact: true });
+      await expect(breakdown).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/task-ops-visual/${theme}-${width}-counts.png`,
         animations: "disabled",
       });
     });
   }
-/** Legacy workflow checks explicitly choose the global board; the product now opens a project backlog. */
+/** Choose all projects and Board view for cases that exercise the board across projects. */
 async function openTasks(page: Page, url: string) {
   await page.goto(url);
-  await page.getByRole("tab", { name: "Sprints", exact: true }).click();
-  await openScope(page);
+  await openFilter(page);
   const projectScope = page.getByRole("button", { name: /^Project:/ });
   await projectScope.click();
   await page.getByRole("option", { name: "All projects", exact: true }).click();
-  await page.getByRole("tab", { name: "Backlog", exact: true }).click();
+  await page.keyboard.press("Escape");
   const boardView = page.getByRole("radio", { name: "Board view", exact: true });
   if (await boardView.count()) await boardView.check();
   // boardControls seeds an existing goal through asynchronous Host reads. A
@@ -686,25 +665,19 @@ async function openTasks(page: Page, url: string) {
 }
 
 async function openGoals(page: Page) {
-  const goals = page.locator("details.task-goals-disclosure");
-  await expect(goals).toBeVisible();
-  if (!(await goals.evaluate((node: HTMLDetailsElement) => node.open)))
-    await goals.locator("summary").first().click();
-  await expect(goals).toHaveJSProperty("open", true);
+  await expect(page.getByRole("region", { name: "Epics", exact: true })).toBeVisible();
 }
 test("worktree creation keeps the active button visible and focused", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 950 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   const form = await start(page, "goal", "?slowOperation=git.worktreeCreate");
   await fillGoal(form);
-  const workspaceDisclosure = form
-    .locator("summary")
-    .filter({ hasText: "Working branch and worktree" });
-  await workspaceDisclosure.focus();
-  await workspaceDisclosure.press("Enter");
-  const branch = form.getByPlaceholder("goal/settings", { exact: true });
+  await workspaceChip(form).focus();
+  await page.keyboard.press("Enter");
+  const workspace = page.getByRole("dialog", { name: "Workspace", exact: true });
+  const branch = workspace.getByPlaceholder("goal/settings", { exact: true });
   await branch.fill("ui-feedback");
-  const create = form.getByRole("button", { name: "Create a separate worktree", exact: true });
+  const create = workspace.getByRole("button", { name: "Create a separate worktree", exact: true });
   await create.focus();
   await create.press("Enter");
   await expect(create).toHaveAttribute("aria-busy", "true");
@@ -743,7 +716,7 @@ for (const kind of ["task", "goal"] as const) {
       if (kind === "task") await fillTask(form);
       else await fillGoal(form);
       const action = form.getByRole("button", {
-        name: kind === "task" ? "Add and start" : "Plan it",
+        name: kind === "task" ? "Start" : "Plan it",
         exact: true,
       });
       await action.focus();
@@ -808,12 +781,13 @@ for (const { width, theme } of [
     await fillTask(form);
     const objective = "Keep this exact user objective while reusing the workflow.";
     await form.getByRole("combobox", { name: "Description", exact: true }).fill(objective);
-    await openAdvanced(form);
-    const summary = form.locator("summary").filter({ hasText: /^Workflow$/ });
-    await summary.focus();
+    const template = form.getByRole("button", { name: /^Template(?:[: ]|$)/ });
+    await template.focus();
     await page.keyboard.press("Enter");
-    await choose(page, form.getByRole("button", { name: /^Workflow:/ }), "Source research");
-    await form.getByRole("button", { name: "Apply workflow", exact: true }).click();
+    const templates = page.getByRole("menu", { name: "Template", exact: true });
+    await templates.getByRole("menuitemradio", { name: "Source research", exact: true }).click();
+    await expect(templates).toBeHidden();
+    await expect(template).toBeFocused();
     const applied = JSON.parse(
       await form.getByRole("combobox", { name: "Description", exact: true }).inputValue(),
     );
@@ -821,18 +795,14 @@ for (const { width, theme } of [
     expect(applied.acceptance).toContain(
       "Factual claims are checked against opened primary sources",
     );
-    await form.locator("details.task-form-agent-disclosure > summary").click();
-    const reviewer = form.locator("details.task-form-reviewer");
-    await reviewer.locator("summary").click();
-    await reviewer
-      .getByRole("checkbox", { name: "Use a separate reviewer profile", exact: true })
-      .check();
+    const review = form.getByRole("switch", { name: "Review with a second agent", exact: true });
+    if (!(await review.isChecked())) await review.click();
+    await expect(review).toBeChecked();
+    await openOptions(form);
     const reviewerInstructions = "Check every source and preserve unresolved acceptance evidence.";
-    await reviewer
-      .getByRole("textbox", { name: "Reviewer instructions", exact: true })
-      .fill(reviewerInstructions);
-    await reviewer.getByRole("button", { name: /^Claude Code/ }).click();
+    await form.getByRole("button", { name: "Same as worker", exact: true }).click();
     const modelPanel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+    await modelPanel.getByRole("option", { name: /Demo agent/ }).click();
     const high = modelPanel
       .locator("[data-model-settings]")
       .getByRole("radiogroup", { name: /^(Effort|Reasoning)$/ })
@@ -843,28 +813,28 @@ for (const { width, theme } of [
     await page.keyboard.press("Escape");
     await expect(modelPanel).toHaveCount(0);
     await expect(form).toBeVisible();
-    await form
-      .locator("summary")
-      .filter({ hasText: /^Required resources/ })
-      .click();
+    await form.getByRole("button", { name: "Add resource", exact: true }).scrollIntoViewIfNeeded();
     await form.getByRole("button", { name: "Add resource", exact: true }).click();
     await form
       .getByRole("textbox", { name: "Resource reference", exact: true })
       .fill("sources/report.md");
-    await form.getByRole("button", { name: "Check preparation", exact: true }).click();
+    await form
+      .getByRole("textbox", { name: "Reviewer instructions", exact: true })
+      .fill(reviewerInstructions);
     await expect(form).toContainText("Checked by the in-memory fixture");
     expect(await mutations(page)).toHaveLength(0);
-    await form
-      .locator("summary")
-      .filter({ hasText: /^Save or refresh workflows$/ })
-      .click();
-    await form.getByRole("textbox", { name: "Workflow name", exact: true }).fill("My checked flow");
-    await form.getByRole("button", { name: "Save workflow", exact: true }).click();
-    await expect(form).toContainText("Workflow saved for this project.");
-    await form
-      .locator("summary")
-      .filter({ hasText: /^Total run budget$/ })
-      .click();
+    await template.click();
+    await templates.getByRole("menuitem", { name: "Save as template", exact: true }).click();
+    await page.getByRole("textbox", { name: "Template name", exact: true }).fill("My checked flow");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(
+      templates.getByRole("menuitemradio", { name: "My checked flow", exact: true }),
+    ).toBeChecked();
+    await page.screenshot({
+      path: testInfo.outputPath("template-menu.png"),
+      animations: "disabled",
+    });
+    await template.click();
     await form.getByRole("spinbutton", { name: "Agent minutes", exact: true }).fill("15.5");
     await form.getByRole("spinbutton", { name: "Maximum agent runs", exact: true }).fill("12");
     await form
@@ -899,34 +869,28 @@ for (const { width, theme } of [
     await openTasks(page, page.url());
     await openCreate(page, "task");
     const reopened = formDialog(page, "New task");
-    await openAdvanced(reopened);
-    await reopened
-      .locator("summary")
-      .filter({ hasText: /^Workflow$/ })
-      .click();
-    await choose(page, reopened.getByRole("button", { name: /^Workflow:/ }), "My checked flow");
-    await reopened.getByRole("button", { name: "Apply workflow", exact: true }).click();
+    await reopened.getByRole("button", { name: "Template", exact: true }).click();
+    await templates.getByRole("menuitemradio", { name: "My checked flow", exact: true }).click();
+    await expect(templates).toBeHidden();
+    await expect(
+      reopened.getByRole("button", { name: "Template: My checked flow", exact: true }),
+    ).toBeFocused();
+    await openOptions(reopened);
     const restored = JSON.parse(
       await reopened.getByRole("combobox", { name: "Description", exact: true }).inputValue(),
     );
     expect(restored.acceptance).toContain(
       "Factual claims are checked against opened primary sources",
     );
-    await reopened.locator("details.task-form-agent-disclosure > summary").click();
-    const restoredReviewer = reopened.locator("details.task-form-reviewer");
-    await restoredReviewer.locator("summary").click();
     await expect(
-      restoredReviewer.getByRole("checkbox", {
-        name: "Use a separate reviewer profile",
-        exact: true,
-      }),
+      reopened.getByRole("switch", { name: "Review with a second agent", exact: true }),
     ).toBeChecked();
     await expect(
-      restoredReviewer.getByRole("textbox", { name: "Reviewer instructions", exact: true }),
+      reopened.getByRole("textbox", { name: "Reviewer instructions", exact: true }),
     ).toHaveValue(reviewerInstructions);
     await expect(
-      restoredReviewer.getByRole("button", { name: /^Claude Code/ }),
-    ).toHaveAccessibleName(/effort High/);
+      reviewerRow(page, reopened).getByRole("button", { name: /^Claude Code.*effort High/ }),
+    ).toBeVisible();
     expect(await mutations(page)).toHaveLength(0);
   });
 
@@ -981,7 +945,12 @@ for (const { width, theme } of [
     await page.getByRole("menuitem", { name: "Compare accepted results", exact: true }).click();
     const comparison = page.getByRole("dialog", { name: "Compare accepted results", exact: true });
     await expect(comparison).toContainText("Demo agent");
-    await expect(comparison).toContainText("not a controlled model benchmark");
+    const help = comparison.getByRole("button", { name: "Help", exact: true });
+    await help.click();
+    await expect(page.getByRole("dialog", { name: "Help", exact: true })).toContainText(
+      "not a controlled model benchmark",
+    );
+    await help.click();
     await expect(comparison).toContainText("2.5");
     expect(await comparison.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
     await mkdir(harnessCaptures, { recursive: true });
@@ -1051,18 +1020,16 @@ test("editing a saved custom reviewer can restore the worker profile", async ({
   const card = page.getByRole("article", { name: "First queued task", exact: true });
   await taskMenuAction(page, card, "Edit");
   const form = formDialog(page, "Edit task");
-  await form.locator("details.task-form-agent-disclosure > summary").click();
-  const reviewer = form.locator("details.task-form-reviewer");
-  await reviewer.locator("summary").click();
-  const separate = reviewer.getByRole("checkbox", {
-    name: "Use a separate reviewer profile",
-    exact: true,
-  });
-  await expect(separate).toBeChecked();
-  await expect(
-    reviewer.getByRole("textbox", { name: "Reviewer instructions", exact: true }),
-  ).toHaveValue("Stored custom reviewer instructions.");
-  await separate.uncheck();
+  await openOptions(form);
+  const instructions = form.getByRole("textbox", { name: "Reviewer instructions", exact: true });
+  await expect(instructions).toHaveValue("Stored custom reviewer instructions.");
+  await reviewerRow(page, form)
+    .getByRole("button", { name: /^Claude Code/ })
+    .click();
+  const modelPanel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+  await modelPanel.getByRole("button", { name: "Same as worker", exact: true }).click();
+  if (await modelPanel.isVisible()) await page.keyboard.press("Escape");
+  await expect(instructions).toBeDisabled();
   await form.getByRole("button", { name: "Save", exact: true }).click();
   await expect(form).toHaveCount(0);
   await expect.poll(() => mutations(page)).toHaveLength(1);
@@ -1072,12 +1039,9 @@ test("editing a saved custom reviewer can restore the worker profile", async ({
     reviewerConfig: null,
   });
   await taskMenuAction(page, card, "Edit");
-  await form.locator("details.task-form-agent-disclosure > summary").click();
-  await reviewer.locator("summary").click();
-  await expect(separate).not.toBeChecked();
-  await expect(
-    reviewer.getByRole("textbox", { name: "Reviewer instructions", exact: true }),
-  ).toHaveCount(0);
+  await openOptions(form);
+  await expect(form.getByRole("button", { name: "Same as worker", exact: true })).toBeVisible();
+  await expect(instructions).toBeDisabled();
   const captures = resolve(
     "temp/verification/2026-10-24-task-harness-local/browser/current-captures",
   );
@@ -1176,9 +1140,12 @@ for (const width of [390, 1440]) {
       await expect(evidence.locator('[data-acceptance-verdict="verified"]')).toHaveCount(1);
       await expect(evidence.locator('[data-acceptance-verdict="unresolved"]')).toHaveCount(1);
       await expect(evidence).toContainText("Physical-device acceptance has not been performed.");
-      await expect(evidence).toContainText(
+      const help = evidence.getByRole("button", { name: "Help", exact: true });
+      await help.click();
+      await expect(page.getByRole("dialog", { name: "Help", exact: true })).toContainText(
         "Recorded reviewer evidence. Files may have changed since this review.",
       );
+      await help.click();
       await expect(evidence.locator("time")).toHaveAttribute(
         "datetime",
         "2026-10-24T09:30:00.000Z",
@@ -1273,15 +1240,17 @@ test("compact goal filters retain scope, reset and keyboard menu focus", async (
   await page.setViewportSize({ width: 390, height: 800 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openTasks(page, `${fixture}?boardControls&uiFilters`);
-  const filters = page.getByRole("button", { name: "Filters", exact: true });
+  const filters = page.getByRole("button", { name: "Filter", exact: true });
   await filters.focus();
   await page.keyboard.press("Enter");
-  const popover = page.getByRole("dialog", { name: "Filters", exact: true });
+  const popover = page.getByRole("dialog", { name: "Filter", exact: true });
   await choose(page, popover.getByRole("button", { name: /^Show epic:/ }), "Settings goal");
-  await expect(filters).toHaveAttribute("aria-pressed", "true");
+  await expect(filters).toHaveAttribute("aria-expanded", "true");
+  await expect(filters.locator("..")).toHaveAttribute("data-filter-active", "");
   await expect(page.getByRole("article", { name: "Independent task", exact: true })).toHaveCount(0);
-  await popover.getByRole("button", { name: "Reset", exact: true }).click();
-  await expect(filters).toHaveAttribute("aria-pressed", "false");
+  await page.getByRole("button", { name: "Reset filters", exact: true }).click();
+  await expect(filters.locator("..")).not.toHaveAttribute("data-filter-active", "");
+  await openFilter(page);
   await expect(page.getByRole("article", { name: "Independent task", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(filters).toBeFocused();
@@ -1307,15 +1276,13 @@ for (const width of [390, 768, 1440]) {
         (theme) => document.documentElement.classList.toggle("theme-light", theme === "light"),
         theme,
       );
-      const edit = page.getByRole("button", { name: "Edit epic settings", exact: true });
-      await edit.click();
+      const edit = await openEpicSettings(page);
       const form = formDialog(page, "Edit epic settings");
       await expect(form).toBeVisible();
-      await expect(form).toContainText("Applies to existing unfinished tasks.");
-      const merge = form.getByRole("checkbox", { name: /^Merge automatically/ });
-      await merge.focus();
-      await page.keyboard.press("Space");
-      await expect(merge).not.toBeChecked();
+      await form.getByRole("button", { name: "About epic settings" }).click();
+      await expect(page.getByText(/Applies to existing unfinished tasks/)).toBeVisible();
+      await page.keyboard.press("Escape");
+      await openOptions(form);
       await form
         .getByRole("spinbutton", { name: "Concurrent tasks in this epic", exact: true })
         .fill("3");
@@ -1340,7 +1307,7 @@ for (const width of [390, 768, 1440]) {
         params: {
           goalId: "controls-goal",
           expectedUpdatedAt: 1,
-          settings: { autoMerge: false, maxRunningTasks: 3, maxRunMinutes: 25 },
+          settings: { autoMerge: true, maxRunningTasks: 3, maxRunMinutes: 25 },
         },
       });
       await expect(edit).toBeFocused();
@@ -1353,19 +1320,14 @@ test("execution mode is selectable in task and goal dialogs", async ({ page }, t
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const kind of ["task", "goal"] as const) {
     const form = await start(page, kind);
-    if (kind === "task") {
-      await openAdvanced(form);
-      await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
-    }
-    const mode = form.getByRole("button", { name: /^Execution mode:/ });
+    const settings = kind === "task" ? await openWorkspace(page, form) : form;
+    if (kind === "goal") await openOptions(form);
+    const mode = settings.getByRole("button", { name: /^Execution mode:/ });
     await expect(mode).toHaveAccessibleName("Execution mode: Automatic");
     await choose(page, mode, "Separate worktree");
     await expect(mode).toHaveAccessibleName("Execution mode: Separate worktree");
-    if (kind === "task") await form.locator("details.task-form-agent-disclosure > summary").click();
-    const merge = form.getByRole("checkbox", { name: /^Merge automatically/ });
-    await expect(merge).toBeDisabled();
     await choose(page, mode, "Shared checkout");
-    await expect(merge).toBeDisabled();
+    await expect(mode).toHaveAccessibleName("Execution mode: Shared checkout");
     await page.screenshot({
       path: testInfo.outputPath(`${kind}-execution-mode.png`),
       animations: "disabled",
@@ -1395,6 +1357,7 @@ for (const viewport of [
     await page.keyboard.press("Escape");
     await expect(settings).toHaveCount(0);
     await expect(form).toBeVisible();
+    await openOptions(form);
     await form.getByRole("button", { name: /^Time limit:/ }).click();
     await page.getByRole("option", { name: "No limit", exact: true }).click();
     await expect(form).toBeVisible();
@@ -1408,21 +1371,19 @@ test("goal dialog keeps workspace, manual start and concurrency choices together
   const dialog = page.getByRole("dialog", { name: "New epic", exact: true });
   await expect(dialog).toBeVisible();
   await fillGoal(form);
-  await choose(
-    page,
-    form.getByRole("button", { name: /^Start planned tasks:/ }),
-    "Manually from To do",
-  );
+  await openOptions(form);
+  await form.getByRole("switch", { name: "Start planned tasks manually" }).click();
   await form
     .getByRole("spinbutton", { name: "Concurrent tasks in this epic", exact: true })
     .fill("3");
-  await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
-  await form
+  const workspace = await openWorkspace(page, form);
+  await workspace
     .getByRole("textbox", { name: "New integration branch", exact: true })
     .fill("goal/settings");
   await expect(form.getByRole("button", { name: "Plan it", exact: true })).toBeDisabled();
-  await form.getByRole("button", { name: "Create a separate worktree", exact: true }).click();
-  await expect(form.getByRole("button", { name: /^Worktree:/ })).toContainText("goal/settings");
+  await workspace.getByRole("button", { name: "Create a separate worktree", exact: true }).click();
+  await expect(workspaceChip(form)).toContainText("goal/settings");
+  await page.keyboard.press("Escape");
   const screenshots = resolve("temp/verification/2026-10-16-ui-system/W4b-TASKS-captures");
   await mkdir(screenshots, { recursive: true });
   await page.screenshot({
@@ -1494,10 +1455,11 @@ test("board cards support reorder, explicit start and reviewed delivery choices"
 
 test("a goal lists its created session links", async ({ page }) => {
   await openTasks(page, `${fixture}?boardControls`);
-  await page
-    .getByRole("article", { name: "Settings goal", exact: true })
-    .getByRole("button", { name: "Task sessions", exact: true })
-    .click();
+  await taskMenuAction(
+    page,
+    page.getByRole("article", { name: "Settings goal", exact: true }),
+    "Task sessions",
+  );
   const dialog = page.getByRole("dialog", { name: "Task sessions", exact: true });
   await expect(dialog).toContainText("Session will appear when this task starts.");
   await dialog.getByRole("button", { name: /^Open worker session/ }).click();
@@ -1527,11 +1489,38 @@ type OpenedSession = {
 };
 const machine = (form: Locator) => form.getByRole("button", { name: /^Machine:/ });
 const project = (form: Locator) => form.getByRole("button", { name: /^Project:/ });
-/** Advanced starts closed: check command, working branch, workflow and budget live inside it. */
-async function openAdvanced(form: Locator) {
-  const advanced = form.locator("details.task-form-advanced");
-  if (!(await advanced.evaluate((node) => (node as HTMLDetailsElement).open)))
-    await advanced.locator(":scope > summary").click();
+/** Open optional form settings while retaining the current draft. */
+async function openOptions(form: Locator) {
+  const summary = form.locator("summary").filter({ hasText: /^More options/ });
+  if (!(await summary.locator("..").evaluate((node: HTMLDetailsElement) => node.open)))
+    await summary.click();
+}
+
+const workspaceChip = (form: Locator) =>
+  form.getByRole("button", { name: /^Workspace(?:[:· ]|$)/ });
+
+async function openWorkspace(page: Page, form: Locator) {
+  await workspaceChip(form).click();
+  const popup = page.getByRole("dialog", { name: "Workspace", exact: true });
+  await expect(popup).toBeVisible();
+  return popup;
+}
+
+const reviewerRow = (page: Page, form: Locator) =>
+  form.locator(".task-form-row").filter({ has: page.getByText("Reviewer", { exact: true }) });
+
+async function openDetailDisclosure(detail: Locator) {
+  await detail
+    .locator("summary")
+    .filter({ hasText: /^Details$/ })
+    .click();
+}
+
+async function openEpicSettings(page: Page) {
+  const epic = page.getByRole("article", { name: "Settings goal", exact: true });
+  const edit = epic.getByRole("button", { name: "More actions", exact: true });
+  await taskMenuAction(page, epic, "Edit");
+  return edit;
 }
 async function choose(page: Page, trigger: Locator, name: string) {
   await trigger.click();
@@ -1550,7 +1539,7 @@ async function mutations(page: Page) {
 }
 async function openCreate(page: Page, kind: "task" | "goal") {
   if (kind === "goal") {
-    await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+    await page.getByRole("button", { name: "More creation options", exact: true }).click();
     await page.getByRole("menuitem", { name: "New epic", exact: true }).click();
   } else await page.getByRole("button", { name: "New task", exact: true }).click();
 }
@@ -1573,7 +1562,7 @@ async function fillGoal(form: Locator) {
     .getByRole("textbox", { name: "Epic title", exact: true })
     .fill("Finish the selected projects");
   await form
-    .getByRole("textbox", { name: "Main job", exact: true })
+    .getByRole("textbox", { name: "Objective", exact: true })
     .fill("Plan and complete the selected projects on this machine.");
 }
 
@@ -1582,8 +1571,11 @@ test("a task defaults locally from a remote workspace and saves on the local hos
 }) => {
   const form = await start(page, "task");
   await expect(machine(form)).toHaveAccessibleName("Machine: This computer");
-  await fillTask(form);
-  await form.getByRole("button", { name: "Add and start", exact: true }).click();
+  await expect(form.getByRole("textbox", { name: "Task title", exact: true })).toBeEmpty();
+  await form
+    .getByRole("combobox", { name: "Description", exact: true })
+    .fill("Finish the fixture task without stopping.");
+  await form.getByRole("button", { name: "Start", exact: true }).click();
   await expect.poll(() => mutations(page)).toHaveLength(1);
   expect((await mutations(page))[0].args).toMatchObject({
     machineId: "machine-local",
@@ -1592,6 +1584,7 @@ test("a task defaults locally from a remote workspace and saves on the local hos
       task: {
         projectId: "local-project",
         status: "queued",
+        title: "Finish the fixture task without stopping.",
         continueUntilDone: true,
       },
     },
@@ -1607,7 +1600,7 @@ test("an explicit remote task discovers remote projects and sends the remote pro
   await choose(page, project(form), "remote-api");
   await expect(machine(form)).toHaveAccessibleName("Machine: Demo MacBook");
   await fillTask(form);
-  await form.getByRole("button", { name: "Add and start", exact: true }).click();
+  await form.getByRole("button", { name: "Start", exact: true }).click();
   await expect.poll(() => mutations(page)).toHaveLength(1);
   expect((await mutations(page))[0].args).toMatchObject({
     machineId: "machine-remote",
@@ -1665,12 +1658,12 @@ test("a local goal creates on the local host", async ({ page }) => {
 test("an unavailable local host does not silently start a task remotely", async ({ page }) => {
   const form = await start(page, "task", "?noLocal");
   await fillTask(form);
-  await expect(form.getByRole("button", { name: "Add and start", exact: true })).toBeDisabled();
+  await expect(form.getByRole("button", { name: "Start", exact: true })).toBeDisabled();
   await expect(form.getByRole("button", { name: "Add to To do", exact: true })).toBeDisabled();
   expect(await mutations(page)).toEqual([]);
   await choose(page, machine(form), "Demo MacBook");
   await choose(page, project(form), "remote-api");
-  await form.getByRole("button", { name: "Add and start", exact: true }).click();
+  await form.getByRole("button", { name: "Start", exact: true }).click();
   await expect.poll(() => mutations(page)).toHaveLength(1);
   expect((await mutations(page))[0].args.machineId).toBe("machine-remote");
 });
@@ -1720,13 +1713,9 @@ test("task and goal controls stay inside a narrow viewport", async ({ page }, te
     for (const kind of ["task", "goal"] as const) {
       await openTasks(page, fixture);
       await expect(page.getByRole("region", { name: "Tasks", exact: true })).toBeVisible();
-      await expect(
-        page
-          .locator("header.task-board-toolbar")
-          .getByRole("button", { name: "Refresh", exact: true }),
-      ).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeEnabled();
       await expect(page.getByText("No task board", { exact: true })).toHaveCount(0);
-      for (const label of ["More actions", "New task"]) {
+      for (const label of ["More actions", "New task", "More creation options"]) {
         const control = page.getByRole("button", { name: label, exact: true });
         await expect(control).toBeVisible();
         const bounds = await control.boundingBox();
@@ -1854,7 +1843,7 @@ for (const method of ["environment.describe", "goals.list"]) {
     page.on("dialog", (dialog) => dialog.accept());
     await openTasks(page, `${fixture}?slowRemote=${method}&changes`);
     await expect(page.locator('[data-remote-data-state="refreshing"]')).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Backlog", exact: true })).toHaveAttribute(
+    await expect(page.getByRole("tab", { name: "Tasks", exact: true })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -1869,7 +1858,7 @@ for (const method of ["environment.describe", "goals.list"]) {
     ).toBe(false);
     await page.getByRole("button", { name: "New task", exact: true }).click();
     const form = formDialog(page, "New task");
-    await expect(machine(form)).toHaveAccessibleName("Machine: This computer");
+    await expect(project(form)).toHaveAccessibleName("Project: local-project");
     await fillTask(form);
     await form.getByRole("button", { name: "Add to To do", exact: true }).click();
     await expect.poll(() => mutations(page)).toHaveLength(1);
@@ -2051,10 +2040,11 @@ test("compact task form keeps advanced choices and long instructions manageable"
   await page.setViewportSize({ width: 390, height: 800 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   const form = await start(page, "task");
-  await expect(form.locator("details.task-form-advanced")).not.toHaveAttribute("open", "");
-  const advanced = form.locator("details.task-advanced-options");
+  const advanced = form
+    .locator("summary")
+    .filter({ hasText: /^More options/ })
+    .locator("..");
   await expect(advanced).not.toHaveAttribute("open", "");
-  await expect(form.locator("details.task-form-agent-disclosure")).not.toHaveAttribute("open", "");
   await machine(form).click();
   await expect(page.getByRole("option", { name: "Demo MacBook", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
@@ -2072,11 +2062,12 @@ test("compact task form keeps advanced choices and long instructions manageable"
     path: resolve("temp/verification/2026-10-18-tasks-redesign/form-390-dark.png"),
     animations: "disabled",
   });
-  await openAdvanced(form);
-  await advanced.locator("summary").click();
-  await expect(form.getByRole("button", { name: /^Execution mode:/ })).toBeVisible();
-  await choose(page, form.getByRole("button", { name: /^Base branch:/ }), "main");
-  await expect(form.getByRole("button", { name: /^Base branch:/ })).toContainText("main");
+  await openOptions(form);
+  await expect(form.getByRole("textbox", { name: "Check command", exact: true })).toBeVisible();
+  const workspace = await openWorkspace(page, form);
+  await expect(workspace.getByRole("button", { name: /^Execution mode:/ })).toBeVisible();
+  await choose(page, workspace.getByRole("button", { name: /^Base branch:/ }), "main");
+  await expect(workspace.getByRole("button", { name: /^Base branch:/ })).toContainText("main");
 });
 
 for (const width of [1280, 800]) {
@@ -2093,11 +2084,12 @@ for (const width of [1280, 800]) {
           (light) => document.documentElement.classList.toggle("theme-light", light),
           theme === "light",
         );
-        if (kind === "task") {
-          await openAdvanced(form);
-          await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
-        }
-        const mode = form.getByRole("button", { name: "Execution mode: Automatic", exact: true });
+        const settings = kind === "task" ? await openWorkspace(page, form) : form;
+        if (kind === "goal") await openOptions(form);
+        const mode = settings.getByRole("button", {
+          name: "Execution mode: Automatic",
+          exact: true,
+        });
         await expect(mode).toBeVisible();
         await mode.scrollIntoViewIfNeeded();
         const bounds = (await mode.boundingBox())!;
@@ -2108,8 +2100,11 @@ for (const width of [1280, 800]) {
           animations: "disabled",
         });
         if (kind === "task") {
-          await form.locator("summary").filter({ hasText: "Agent settings" }).click();
-          const rows = form.locator(".task-form-rows");
+          await page.keyboard.press("Escape");
+          await openOptions(form);
+          const rows = form
+            .locator(".task-form-rows")
+            .filter({ has: page.getByRole("textbox", { name: "Check command", exact: true }) });
           await rows.scrollIntoViewIfNeeded();
           await expect(rows).toBeVisible();
           await expect(rows.locator(":scope > *").first()).toHaveCSS("border-bottom-width", "1px");
@@ -2134,7 +2129,7 @@ for (const width of [800, 1280])
         theme === "light",
       );
       await mkdir("temp/verification/task-goal-empty-visual", { recursive: true });
-      await expect(page.locator("details.task-goals-disclosure")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Epics", exact: true })).toBeVisible();
       await page.screenshot({
         path: `temp/verification/task-goal-empty-visual/${theme}-${width}-goal.png`,
         animations: "disabled",
@@ -2237,10 +2232,11 @@ for (const width of [800, 1280])
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",
       );
-      await page
-        .getByRole("article", { name: "Settings goal", exact: true })
-        .getByRole("button", { name: "Task sessions", exact: true })
-        .click();
+      await taskMenuAction(
+        page,
+        page.getByRole("article", { name: "Settings goal", exact: true }),
+        "Task sessions",
+      );
       const dialog = page.getByRole("dialog", { name: "Task sessions", exact: true });
       const rows = dialog.locator(".goal-session-task");
       await expect(rows).toHaveCount(3);

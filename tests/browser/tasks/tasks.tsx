@@ -693,6 +693,7 @@ Object.assign(window, {
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args: structuredClone(args) });
       if (command === "remote_machines") return structuredClone(machines);
+      if (command === "remote_machine_routes") return { routes: [], prefer: "saved" };
       if (command === "local_host_connect")
         return machines.find((machine) => machine.localHost) ?? null;
       if (command === "plugin:event|listen") return 1;
@@ -878,7 +879,7 @@ Object.assign(window, {
         case "host.settings.get":
           return {
             ...(limits.get(machineId) ?? { maxRunningTasks: 2, dailyAgentMinutes: 0 }),
-            usedMinutes: 0,
+            usedMinutes: query.has("visualSteward") && machineId === "machine-local" ? 12 : 0,
             limitReached: false,
           };
         case "host.settings.save": {

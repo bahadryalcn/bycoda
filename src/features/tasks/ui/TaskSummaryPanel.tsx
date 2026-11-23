@@ -1,261 +1,181 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
+import { useEffect, useRef, useState, type Ref } from "react";
+import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { getLocale, t, useLocale } from "../../../shared/i18n";
-import { useCallback, useEffect, useState } from "react";
-import { RefreshCw } from "../../../shared/ui/icons";
-import { EmptyState } from "../../../shared/ui/EmptyState";
-import { InlineError } from "../../../shared/ui/InlineError";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import {
-  DAILY_SUMMARY_OPEN_EVENT,
-  DAILY_SUMMARY_STORED_EVENT,
-  gatherDailySummary,
-  loadStoredDailySummary,
-  takeSummaryPanelRequest,
-} from "../model/dailySummaryClient";
-import type { DailySummary, SummaryTask } from "../model/dailySummary";
+import { Popover } from "../../../shared/ui/Popover";
+import { Text } from "../../../shared/ui/Text";
+import { Gauge } from "../../../shared/ui/icons";
+import { DAILY_SUMMARY_OPEN_EVENT, takeSummaryPanelRequest } from "../model/dailySummaryClient";
 import { formatAgentMinutes } from "../model/hostSettings";
-import "./task-ops.css";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import type { MachineLimits } from "../model/settingsClient";
+import type { BoardTask } from "../model/taskClient";
+import { TASK_GROUPS, taskGroupLabel } from "../model/taskGroups";
+import { matchesTaskCount, type TaskCountFilter } from "./TasksViewFilter";
 
-/** Day and time in the app language, never the system's: an English UI must not
- * show another language's weekday names. */
-const summaryTime = (at: number) =>
-  new Date(at).toLocaleString(getLocale(), {
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+const countFilters = [
+  ...TASK_GROUPS.filter((group) => group !== "done" && group !== "blocked"),
+  "blocked",
+  "doneToday",
+] satisfies TaskCountFilter[];
 
-/** What the agents did over a period, across every machine. */
-export function SummaryPanel({
-  summary,
-  busy,
-  error,
-  onRefresh,
-  onOpenTask,
+/** Both live and pending notification requests reveal the counts. */
+export function useTaskCountsRequest(onOpen: () => void) {
+  // The notification can be clicked before Tasks is mounted.
+  useEffect(() => {
+    const openRequested = () => {
+      if (takeSummaryPanelRequest()) onOpen();
+    };
+    openRequested();
+    window.addEventListener(DAILY_SUMMARY_OPEN_EVENT, openRequested);
+    return () => window.removeEventListener(DAILY_SUMMARY_OPEN_EVENT, openRequested);
+  }, [onOpen]);
+}
+
+export function TaskCountChips({
+  tasks,
+  now,
+  selected,
+  onSelect,
+  incomplete,
+  limits,
+  missingUsage,
+  focusRef,
 }: {
-  summary: DailySummary | null;
-  busy: boolean;
-  error: string | null;
-  onRefresh: () => void;
-  onOpenTask: (key: string) => void;
+  tasks: readonly BoardTask[];
+  now: number;
+  selected: TaskCountFilter | null;
+  onSelect: (filter: TaskCountFilter) => void;
+  incomplete: boolean;
+  limits: readonly MachineLimits[];
+  missingUsage: readonly string[];
+  focusRef: Ref<HTMLElement>;
 }) {
-  useLocale();
-  const taskSection = (label: string, items: readonly SummaryTask[], note = "") =>
-    items.length ? (
-      <section aria-label={label} className="task-ops-section">
-        <SectionLabel count={items.length}>
-          {label}
-          {note}
-        </SectionLabel>
-        <ul
-          {...surfaceAttributes(
-            { frame: "card", radius: "card", dividers: "card" },
-            "task-ops-frame",
-          )}
-        >
-          {items.map((item) => (
-            <li key={item.key} className="task-ops-row">
-              <Button
-                variant="ghost"
-                type="button"
-                onClick={() => onOpenTask(item.key)}
-                truncate
-                className="max-w-full text-left"
-              >
-                {item.title}
-              </Button>
-              <Text size="caption" tone="secondary" leading="inherit" className="task-ops-caption">
-                {item.project} · {item.machineName}
-                {item.detail ? ` · ${item.detail}` : ""}
-              </Text>
-            </li>
-          ))}
-        </ul>
-      </section>
-    ) : null;
-  const goalSection = (label: string, goals: DailySummary["goals"]) =>
-    goals.length ? (
-      <section aria-label={label} className="task-ops-section">
-        <SectionLabel count={goals.length}>{label}</SectionLabel>
-        <ul
-          {...surfaceAttributes(
-            { frame: "card", radius: "card", dividers: "card" },
-            "task-ops-frame",
-          )}
-        >
-          {goals.map((goal) => (
-            <li key={`${goal.machineName}:${goal.title}`} className="task-ops-row">
-              <Text as="span" size="body" weight="medium" tone="primary" leading="inherit" truncate>
-                {goal.title}
-              </Text>
-              <Text
-                size="caption"
-                tone="secondary"
-                leading="inherit"
-                className="task-ops-caption task-ops-num"
-              >
-                {t("{p0} of {p1} tasks done", { p0: goal.done, p1: goal.total })} ·{" "}
-                {goal.machineName}
-              </Text>
-            </li>
-          ))}
-        </ul>
-      </section>
-    ) : null;
-  const empty =
-    summary != null &&
-    !summary.finished.length &&
-    !summary.blocked.length &&
-    !summary.waiting.length &&
-    !summary.suggestions.length &&
-    !summary.goals.length &&
-    !summary.goalsFinished.length;
+  const t = useT();
+  const { formatNumber } = useFormat();
+  const chip = (filter: TaskCountFilter) => {
+    const count = tasks.filter((task) => matchesTaskCount(task, filter, now)).length;
+    // A zero count is noise: the chip stays only while it is the active filter.
+    if (!count && filter !== selected) return null;
+    const label =
+      filter === "doneToday"
+        ? t("Done today")
+        : filter === "suggestions"
+          ? t("New suggestions")
+          : taskGroupLabel(filter);
+    const amount = formatNumber(count);
+    return (
+      <Button
+        key={filter}
+        variant="chip"
+        size="sm"
+        pressed={filter === selected}
+        trailing={amount}
+        aria-label={`${label} · ${amount}`}
+        onClick={() => onSelect(filter)}
+      >
+        {label}
+      </Button>
+    );
+  };
   return (
     <section
-      aria-label={t("Summary")}
-      {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "task-ops-panel max-h-[45%]")}
+      ref={focusRef}
+      tabIndex={-1}
+      aria-label={t("Task counts")}
+      className="task-count-chips"
     >
-      <div className="task-ops-head">
-        <Text
-          as="p"
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          className="task-ops-caption task-ops-head-text"
-        >
-          {summary
-            ? t("From {p0} to {p1}", {
-                p0: summaryTime(summary.since),
-                p1: summaryTime(summary.until),
-              })
-            : t("No summary yet. One is sent every day at the time set in Settings.")}
+      {countFilters.map(chip)}
+      <TaskAgentTime limits={limits} missingUsage={missingUsage} />
+      {chip("suggestions")}
+      {incomplete ? (
+        <Text size="caption" tone="secondary">
+          {t("Task counts may be incomplete.")}
         </Text>
-        <Button
-          reserveLabels={[t("Refreshing…")]}
-          variant="secondary"
-          type="button"
-          onClick={onRefresh}
-          disabled={busy}
-          loading={busy}
-          startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} />}
-        >
-          {busy ? t("Refreshing…") : t("Refresh now")}
-        </Button>
-      </div>
-      {error ? <InlineError>{error}</InlineError> : null}
-      {summary ? (
-        <>
-          {empty ? <EmptyState size="inline" description={t("No background activity.")} /> : null}
-          {taskSection(
-            t("Finished"),
-            summary.finished,
-            summary.autoMerged
-              ? ` · ${t("{p0} merged automatically", { p0: summary.autoMerged })}`
-              : "",
-          )}
-          {taskSection(t("Blocked"), summary.blocked)}
-          {taskSection(t("Waiting for you"), summary.waiting)}
-          {taskSection(t("New suggestions"), summary.suggestions)}
-          {goalSection(t("Epics in progress"), summary.goals)}
-          {goalSection(t("Epics finished"), summary.goalsFinished)}
-          {summary.usage.length ? (
-            <section aria-label={t("Agent time")} className="task-ops-section">
-              <SectionLabel>{t("Agent time today")}</SectionLabel>
-              <ul
-                {...surfaceAttributes(
-                  { frame: "card", radius: "card", dividers: "card" },
-                  "task-ops-frame",
-                )}
-              >
-                {summary.usage.map((entry) => (
-                  <li key={entry.machineName} className="task-ops-row">
-                    <Text
-                      as="span"
-                      size="body"
-                      weight="medium"
-                      tone="primary"
-                      leading="inherit"
-                      truncate
-                    >
-                      {entry.machineName}
-                    </Text>
-                    <Text
-                      size="caption"
-                      tone="secondary"
-                      leading="inherit"
-                      className="task-ops-caption task-ops-num"
-                    >
-                      {entry.dailyAgentMinutes
-                        ? t("{p0} of {p1}", {
-                            p0: formatAgentMinutes(entry.usedMinutes),
-                            p1: formatAgentMinutes(entry.dailyAgentMinutes),
-                          })
-                        : formatAgentMinutes(entry.usedMinutes)}
-                      {entry.usageUncertain ? ` · ${t("Incomplete")}` : ""}
-                    </Text>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-          {summary.unreachable.length || summary.outdated.length ? (
-            <Text
-              as="p"
-              size="caption"
-              tone="secondary"
-              leading="inherit"
-              className="task-ops-caption"
-            >
-              {t("Not included:")}{" "}
-              {[
-                ...summary.unreachable.map((name) => t("{p0} (not reachable)", { p0: name })),
-                ...summary.outdated.map((name) => t("{p0} (host needs an update)", { p0: name })),
-              ].join(", ")}
-            </Text>
-          ) : null}
-        </>
       ) : null}
     </section>
   );
 }
 
-/** The daily summary panel: the last summary sent, or a fresh one built on
- * request. A click on the summary notification opens the panel, also when the
- * view was not showing yet. */
-export function useDailySummaryPanel() {
+function TaskAgentTime({
+  limits,
+  missingUsage,
+}: {
+  limits: readonly MachineLimits[];
+  missingUsage: readonly string[];
+}) {
+  const t = useT();
+  const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [stored, setStored] = useState(loadStoredDailySummary);
-  const [fresh, setFresh] = useState<DailySummary | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    const openRequested = () => {
-      if (takeSummaryPanelRequest()) setOpen(true);
-    };
-    const storedChanged = () => setStored(loadStoredDailySummary());
-    openRequested();
-    window.addEventListener(DAILY_SUMMARY_OPEN_EVENT, openRequested);
-    window.addEventListener(DAILY_SUMMARY_STORED_EVENT, storedChanged);
-    return () => {
-      window.removeEventListener(DAILY_SUMMARY_OPEN_EVENT, openRequested);
-      window.removeEventListener(DAILY_SUMMARY_STORED_EVENT, storedChanged);
-    };
-  }, []);
-  const toggle = useCallback(() => setOpen((value) => !value), []);
-  const refresh = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const at = Date.now();
-      setFresh(await gatherDailySummary(at - 24 * 60 * 60 * 1000, at));
-    } catch (cause) {
-      setError(presentRemoteError(cause, { explicit: true }));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { open, toggle, summary: fresh ?? stored, busy, error, refresh };
+  const current = limits.filter((entry) => !entry.stale);
+  const minutes = current.reduce((sum, entry) => sum + entry.usedMinutes, 0);
+  const partial = Boolean(
+    missingUsage.length || limits.some((entry) => entry.stale || entry.usageUncertain),
+  );
+  const amount = current.length
+    ? partial
+      ? t("{p0} (incomplete)", { p0: formatAgentMinutes(minutes) })
+      : formatAgentMinutes(minutes)
+    : t("Unavailable");
+  const label = t("Agent time today");
+  // Nothing measured and nothing missing: no chip until there is time to show.
+  if (current.length && !minutes && !partial) return null;
+  return (
+    <>
+      <Button
+        ref={trigger}
+        variant="chip"
+        size="sm"
+        startIcon={<Gauge className="icon-sm" />}
+        trailing={amount}
+        aria-label={`${label} · ${amount}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {label}
+      </Button>
+      {open ? (
+        <Popover
+          anchor={trigger}
+          kind="dialog"
+          aria-label={label}
+          width={320}
+          flow="scroll"
+          variant="panel"
+          onDismiss={() => setOpen(false)}
+        >
+          <ul className="task-usage-list">
+            {limits.map((entry) => (
+              <li key={entry.machineId}>
+                <Text as="span" wrap="anywhere">
+                  {entry.machineName}
+                </Text>
+                <Text as="span" tone="secondary" size="caption">
+                  {entry.stale
+                    ? t("Unavailable")
+                    : entry.usageUncertain
+                      ? t("{p0} (incomplete)", { p0: formatAgentMinutes(entry.usedMinutes) })
+                      : formatAgentMinutes(entry.usedMinutes)}
+                </Text>
+              </li>
+            ))}
+            {missingUsage.map((name) => (
+              <li key={name}>
+                <Text as="span" wrap="anywhere">
+                  {name}
+                </Text>
+                <Text as="span" tone="secondary" size="caption">
+                  {t("Unavailable")}
+                </Text>
+              </li>
+            ))}
+          </ul>
+          {limits.length === 0 && missingUsage.length === 0 ? (
+            <Text as="p" size="caption" tone="secondary">
+              {t("Agent time is unavailable.")}
+            </Text>
+          ) : null}
+        </Popover>
+      ) : null}
+    </>
+  );
 }

@@ -7,7 +7,6 @@ import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { BadgeList } from "../../../shared/ui/BadgeList";
-import { Alert } from "../../../shared/ui/Alert";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
 import { Button } from "../../../shared/ui/Button";
@@ -17,11 +16,15 @@ import { TextField } from "../../../shared/ui/TextField";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { type BoardTask, taskTimeLabel } from "../model/taskClient";
 import { canEditTask, type TaskStatus } from "../model/hostTasks";
-import { taskStatusLine } from "../model/taskStatusLine";
-import { TaskOutcomeSummary, TaskOwnerNotices } from "./TaskStatusLine";
+import {
+  MetaLine,
+  TaskOutcomeSummary,
+  TaskOwnerNotices,
+  taskDisplayStatus,
+} from "./TaskStatusLine";
 import { TaskStatusReason } from "./TaskStatusReason";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
-import { type FormEvent, type ReactNode, useRef, useState } from "react";
+import { Fragment, type FormEvent, type ReactNode, useRef, useState } from "react";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { Pencil, Sparkles, X } from "../../../shared/ui/icons";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -35,7 +38,8 @@ import { resolveModel } from "../../sessions/public/models";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { TaskDetailInstructions } from "./TaskDetailInstructions";
 import "./task-detail.css";
-import { type TaskActionHandlers, TaskActions, VerificationSummary } from "./TaskBoardCard";
+import { TaskActions, type TaskActionHandlers } from "./TaskCardActions";
+import { VerificationSummary } from "./TaskCardVerification";
 import { RUN_TIME_LIMIT_OPTIONS } from "./TaskFormFields";
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -57,9 +61,9 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
   return <DescriptionItem term={label}>{children}</DescriptionItem>;
 }
 
-/** A task in full, beside the board: its description, where and how it runs,
- * and everything the host recorded about it. The title and description can be
- * edited in place while the task may be edited at all. */
+/** A task in full, beside the board: its state and next action, the instructions, what came out
+ * of the runs, the attempts, and the technical facts behind one "Details" disclosure. The title
+ * and description can be edited in place while the task may be edited at all. */
 export function TaskDetail({
   task,
   now,
@@ -87,7 +91,7 @@ export function TaskDetail({
   const [prompt, setPrompt] = useState(task.prompt);
   const [saving, setSaving] = useState(false);
   const model = resolveModel(task.harness, task.model);
-  const status = taskStatusLine(task);
+  const status = taskDisplayStatus(task);
   const editable = canEditTask(task.status);
   const canSave =
     title.trim().length > 0 && (task.status === "todo" || prompt.trim().length > 0) && !saving;
@@ -120,6 +124,21 @@ export function TaskDetail({
       setSaving(false);
     }
   };
+  const workspace = taskWorkspaceState(task);
+  const elapsed = taskTimeLabel(task, now);
+  // Who runs it and where, on one line; the dated and technical facts are under Details.
+  const meta = [
+    project,
+    task.machineName,
+    task.modelChoice && task.modelChoice.kind !== "fixed" ? (
+      <Fragment key="model">
+        <TaskModelChoiceLabel choice={task.modelChoice} machineId={task.machineId} /> · {model.name}
+      </Fragment>
+    ) : (
+      model.name
+    ),
+    elapsed,
+  ].filter(Boolean);
 
   return (
     <OverlayParent.Provider value={overlayId}>
@@ -135,7 +154,7 @@ export function TaskDetail({
         <div
           {...surfaceAttributes(
             { frame: "pane", edge: "bottom" },
-            "flex h-9 shrink-0 items-center gap-2 px-3",
+            "flex min-h-9 shrink-0 items-center gap-2 px-3 py-1",
           )}
         >
           {actions.pending ? <Spinner size="xs" label={t("Loading…")} /> : null}
@@ -155,6 +174,12 @@ export function TaskDetail({
               {t("Suggested")}
             </Badge>
           ) : null}
+          <TaskActions
+            task={task}
+            standalone
+            className="task-detail-actions ml-auto justify-end"
+            {...actions}
+          />
           <Button
             iconOnly
             label={t("Close details")}
@@ -162,7 +187,6 @@ export function TaskDetail({
             variant="ghost"
             type="button"
             onClick={onClose}
-            className="ml-auto"
           >
             <X className="icon-sm" />
           </Button>
@@ -209,7 +233,7 @@ export function TaskDetail({
               </div>
             </form>
           ) : (
-            <>
+            <div className="task-detail-head">
               <div className="flex items-start gap-2">
                 <Heading size="section" className="min-w-0 flex-1 break-words">
                   {task.title}
@@ -226,65 +250,51 @@ export function TaskDetail({
                   </Button>
                 ) : null}
               </div>
-              <DescriptionList
-                size="sm"
-                {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "task-detail-facts")}
+              <Text
+                as="p"
+                size="caption"
+                tone="muted"
+                className="flex min-w-0 flex-wrap items-center gap-x-1"
               >
-                <DescriptionItem term={t("Project")} truncate>
-                  {project}
-                </DescriptionItem>
-                <DescriptionItem term={t("Machine")} truncate>
-                  {task.machineName}
-                </DescriptionItem>
-                <DescriptionItem term={t("Agent")} truncate>
-                  <HarnessIcon harness={task.harness} className="icon-sm mr-1 inline shrink-0" />
-                  {task.modelChoice && task.modelChoice.kind !== "fixed" ? (
-                    <>
-                      <TaskModelChoiceLabel choice={task.modelChoice} machineId={task.machineId} />{" "}
-                      ·{" "}
-                    </>
-                  ) : null}
-                  {model.name}
-                </DescriptionItem>
-                <DescriptionItem term={t("Created")} truncate>
-                  {formatTime(task.createdAt)}
-                </DescriptionItem>
-              </DescriptionList>
-            </>
+                <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
+                <MetaLine parts={meta} />
+              </Text>
+              {goal ? (
+                <Text
+                  as="p"
+                  size="caption"
+                  tone="secondary"
+                  className="flex min-w-0 items-center gap-1"
+                >
+                  <Sparkles className="icon-xs shrink-0" />
+                  <Text truncate size="inherit" tone="inherit" className="min-w-0">
+                    {t("Part of the epic “")}
+                    {goal}”
+                  </Text>
+                </Text>
+              ) : null}
+            </div>
           )}
           <TaskStatusReason task={task} status={status} />
           <TaskOwnerNotices task={task} />
-          <TaskOutcomeSummary task={task} />
           {task.deliveryNote ? (
             <Text as="p" size="caption" tone="warning" role="status" className="break-words">
               {task.deliveryNote}
             </Text>
           ) : null}
-          {taskWorkspaceState(task).needsRenewedApproval ? (
-            <Alert tone="warning">
-              {t("Automatic merge is suspended. Review changes to renew approval.")}
-            </Alert>
-          ) : null}
           {isEditing ? null : <TaskDetailInstructions prompt={task.prompt} />}
-          {task.verification ? <VerificationSummary verification={task.verification} /> : null}
           {planning ? (
             <section className="task-detail-section">
               <SectionLabel as="h3">{t("Planning")}</SectionLabel>
               {planning}
             </section>
           ) : null}
+          {/* Results: what the runs produced and how it was checked. */}
+          <TaskOutcomeSummary task={task} />
+          {task.verification ? <VerificationSummary verification={task.verification} /> : null}
           <TaskAcceptanceEvidence
             task={task}
             onOpenReview={actions.onOpenReview}
-            isOpeningSession={actions.isOpeningSession}
-          />
-          <TaskBudgetUsage usage={task.budgetUsage} stop={task.budgetStop} budget={task.budget} />
-          {actions.onSaveEvaluation ? (
-            <TaskRunInsights task={task} onSaveEvaluation={actions.onSaveEvaluation} />
-          ) : null}
-          <TaskAttemptHistory
-            task={task}
-            onOpenSession={actions.onOpenReview}
             isOpeningSession={actions.isOpeningSession}
           />
           {task.reviewNotes ? (
@@ -298,29 +308,30 @@ export function TaskDetail({
               isOpeningSession={actions.isOpeningSession}
             />
           ) : null}
-          {goal ? (
-            <Text
-              as="p"
-              size="caption"
-              tone="secondary"
-              className="flex min-w-0 items-center gap-1"
-            >
-              <Sparkles className="icon-xs shrink-0" />
-              <Text truncate size="inherit" tone="inherit" className="min-w-0">
-                {t("Part of the epic “")}
-                {goal}”
-              </Text>
-            </Text>
+          <TaskBudgetUsage usage={task.budgetUsage} stop={task.budgetStop} budget={task.budget} />
+          {actions.onSaveEvaluation ? (
+            <TaskRunInsights task={task} onSaveEvaluation={actions.onSaveEvaluation} />
           ) : null}
+          {/* History: every attempt and its review. */}
+          <TaskAttemptHistory
+            task={task}
+            onOpenSession={actions.onOpenReview}
+            isOpeningSession={actions.isOpeningSession}
+          />
           <Disclosure summary={t("Details")}>
             <DescriptionList size="sm">
-              <DetailRow label={t("Completion")}>
-                {t(taskWorkspaceState(task).completion)}
-              </DetailRow>
-              <DetailRow label={t("Delivery")}>{t(taskWorkspaceState(task).delivery)}</DetailRow>
-              <DetailRow label={t("Execution")}>
-                {task.continueUntilDone ? t("Continue until complete") : t("Standard")}
-              </DetailRow>
+              <DetailRow label={t("Created")}>{formatTime(task.createdAt)}</DetailRow>
+              {task.startedAt ? (
+                <DetailRow label={t("Started")}>{formatTime(task.startedAt)}</DetailRow>
+              ) : null}
+              {task.completedAt ? (
+                <DetailRow label={t("Completed")}>{formatTime(task.completedAt)}</DetailRow>
+              ) : null}
+              <DetailRow label={t("Completion")}>{t(workspace.completion)}</DetailRow>
+              <DetailRow label={t("Delivery")}>{t(workspace.delivery)}</DetailRow>
+              {task.continueUntilDone ? (
+                <DetailRow label={t("Execution")}>{t("Keep fixing until done")}</DetailRow>
+              ) : null}
               <DetailRow label={t("Access")}>{t(RUNTIME_MODE_LABEL[task.runtimeMode])}</DetailRow>
               <DetailRow label={t("Time limit")}>
                 {task.inheritMaxRunMinutes && task.runtimeLimitResolvedAt === undefined
@@ -363,36 +374,26 @@ export function TaskDetail({
                   />
                 </DetailRow>
               ) : null}
-              {task.startedAt ? (
-                <DetailRow label={t("Started")}>{formatTime(task.startedAt)}</DetailRow>
-              ) : null}
-              {task.completedAt ? (
-                <DetailRow label={t("Completed")}>{formatTime(task.completedAt)}</DetailRow>
-              ) : null}
-              <DetailRow label={t("Duration")}>{taskTimeLabel(task, now)}</DetailRow>
               {task.verifyCommand ? (
                 <DetailRow label={t("Check command")}>
                   <Code size="micro">{task.verifyCommand}</Code>
                 </DetailRow>
               ) : null}
             </DescriptionList>
+            {task.diffStat ? (
+              <OutputBlock
+                aria-label={t("Diff stat")}
+                size="micro"
+                tone="secondary"
+                frame="none"
+                scroll
+                wrap={false}
+                {...surfaceAttributes({ radius: "sm", variant: "card" }, "max-h-48 px-2 py-1.5")}
+              >
+                {task.diffStat}
+              </OutputBlock>
+            ) : null}
           </Disclosure>
-          {task.diffStat ? (
-            <OutputBlock
-              aria-label={t("Diff stat")}
-              size="micro"
-              tone="secondary"
-              frame="none"
-              scroll
-              wrap={false}
-              {...surfaceAttributes({ radius: "sm", variant: "card" }, "max-h-48 px-2 py-1.5")}
-            >
-              {task.diffStat}
-            </OutputBlock>
-          ) : null}
-        </div>
-        <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "task-detail-footer")}>
-          <TaskActions task={task} {...actions} />
         </div>
       </aside>
     </OverlayParent.Provider>

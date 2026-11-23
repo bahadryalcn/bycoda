@@ -91,6 +91,39 @@
   margin-block-start: 0.25rem;
 }
 
+/* Task actions (card, row and detail header): the lead action shrinks to its label and the
+   overflow keeps its place on the same line. */
+.task-actions > button:not([aria-haspopup]) {
+  min-inline-size: 0;
+  max-inline-size: calc(100% - 2rem);
+}
+.task-actions > [aria-haspopup] {
+  flex-shrink: 0;
+}
+
+/* List rows: a title over one muted meta line, then the row's actions. */
+.task-row-text {
+  display: grid;
+  min-inline-size: 0;
+  flex: 1;
+}
+.task-row-actions {
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+/* A row's lead action keeps its whole label (a percentage cap would collapse the actions
+   block to its overflow width); the title and meta line truncate instead. */
+.task-row-actions > button:not([aria-haspopup]) {
+  max-inline-size: none;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.task-list-heading {
+  padding-inline: var(--ui-list-gutter);
+  padding-block-start: 0.75rem;
+}
+
 /* The drag handle shows on hover and focus, only for cards that can move. */
 .task-drag-grip {
   display: none;
@@ -100,14 +133,6 @@
   position: absolute;
   inset-block-start: 0.75rem;
   inset-inline-end: 0.5rem;
-}
-/* Actions stay on one line: the primary button shrinks, the overflow action stays. */
-.task-card-actions > button:not([aria-haspopup]) {
-  min-inline-size: 0;
-  max-inline-size: 100%;
-}
-.task-card-actions > [aria-haspopup] {
-  flex-shrink: 0;
 }
 @container task-card (max-width: 13rem) {
   .task-card-footer {

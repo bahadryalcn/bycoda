@@ -1,15 +1,15 @@
-import { Text } from "../../../shared/ui/Text";
-import { useEffect, useRef, useState } from "react";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Disclosure } from "../../../shared/ui/Disclosure";
-import { TextField } from "../../../shared/ui/TextField";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Badge } from "../../../shared/ui/Badge";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { X } from "../../../shared/ui/icons";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { ChevronDown, X } from "../../../shared/ui/icons";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Text } from "../../../shared/ui/Text";
+import { TextField } from "../../../shared/ui/TextField";
+import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import {
   applyTaskWorkflow,
   BUILTIN_TASK_WORKFLOWS,
@@ -20,8 +20,6 @@ import {
   type TaskWorkflowScope,
 } from "../model/taskWorkflows";
 import type { TaskPreflightReport, TaskPreflightRequirement } from "../model/taskPreflight";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
-import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import {
   alignRequirementRowKeys,
   appendRequirementRowKey,
@@ -29,407 +27,368 @@ import {
   removeRequirementRowKey,
 } from "../model/taskRequirementRows";
 
-type Props = {
+type TemplateProps = {
   scope: TaskWorkflowScope;
   draft: TaskWorkflowDraft;
-  onApply: (
-    draft: TaskWorkflowDraft,
-    profile?: Pick<TaskWorkflowProfile, "id" | "updatedAt">,
-  ) => void | Promise<void>;
-  preflight?: TaskPreflightReport;
-  onCheck?: () => void | Promise<void>;
-  busy?: boolean;
+  templateId?: string;
+  busy: boolean;
+  onApply: (draft: TaskWorkflowDraft, profile: TaskWorkflowProfile) => void;
 };
 
-/** Profiles prepare a draft only. Applying or saving one never starts work or grants permissions. */
-export function TaskWorkflowControls(props: Props) {
+/** Applying or saving a template changes the draft only. */
+export function TaskTemplateMenu(props: TemplateProps) {
+  return <ScopedTemplateMenu key={JSON.stringify(props.scope)} {...props} />;
+}
+
+function readTemplates(scope: TaskWorkflowScope) {
+  if (!scope.machineId || !scope.projectId) return [];
+  try {
+    return loadTaskWorkflows(scope);
+  } catch {
+    throw new Error(t("Saved templates could not be read. Existing saved data was preserved."));
+  }
+}
+
+function ScopedTemplateMenu({ scope, draft, templateId, busy, onApply }: TemplateProps) {
+  useLocale();
+  const anchor = useRef<HTMLButtonElement>(null);
+  const initial = () => {
+    try {
+      return readTemplates(scope);
+    } catch {
+      return [];
+    }
+  };
+  const [profiles, setProfiles] = useState(initial);
+  const [open, setOpen] = useState(false);
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const [nameOwner, setNameOwner] = useState<string>();
+  const [error, setError] = useState("");
+  const all = [...BUILTIN_TASK_WORKFLOWS, ...profiles];
+  const custom = profiles.find((profile) => profile.id === templateId);
+  const profileName = (profile: TaskWorkflowProfile) =>
+    BUILTIN_TASK_WORKFLOWS.includes(profile) ? t(profile.name) : profile.name;
+  const selected = all.find((profile) => profile.id === templateId);
+  const close = () => {
+    setOpen(false);
+    setNaming(false);
+  };
+  const attempt = (operation: () => void) => {
+    setError("");
+    try {
+      operation();
+    } catch (failure) {
+      setError(
+        failure instanceof Error ? failure.message : t("The template could not be updated."),
+      );
+    }
+  };
+  const latestForEdit = () => {
+    const latest = readTemplates(scope);
+    if (
+      custom &&
+      JSON.stringify(latest.find((entry) => entry.id === custom.id)) !== JSON.stringify(custom)
+    )
+      throw new Error(t("This template changed in another window. Reopen the menu before saving."));
+    return latest;
+  };
+  const save = () =>
+    attempt(() => {
+      const latest = latestForEdit();
+      const now = Date.now();
+      const createdAt = custom?.createdAt ?? now;
+      const updatedAt = Math.max(now, createdAt, custom ? custom.updatedAt + 1 : now);
+      if (
+        !Number.isSafeInteger(now) ||
+        now < 0 ||
+        !Number.isSafeInteger(updatedAt) ||
+        updatedAt > 8_640_000_000_000_000
+      )
+        throw new Error(t("The template could not be updated."));
+      const profile: TaskWorkflowProfile = {
+        schema: "bycoda.task-workflow.v1",
+        id: custom?.id ?? crypto.randomUUID(),
+        name: name.trim(),
+        draft,
+        createdAt,
+        updatedAt,
+      };
+      const next = custom
+        ? latest.map((entry) => (entry.id === custom.id ? profile : entry))
+        : [...latest, profile];
+      try {
+        saveTaskWorkflows(scope, next);
+      } catch {
+        throw new Error(t("The template could not be updated."));
+      }
+      setProfiles(next);
+      onApply(draft, profile);
+      setNaming(false);
+      setName("");
+      setNameOwner(undefined);
+    });
+  const remove = () =>
+    attempt(() => {
+      const next = latestForEdit().filter((profile) => profile.id !== custom?.id);
+      try {
+        saveTaskWorkflows(scope, next);
+      } catch {
+        throw new Error(t("The template could not be updated."));
+      }
+      setProfiles(next);
+      setNaming(false);
+      setName("");
+      setNameOwner(undefined);
+    });
+  const items: DropdownMenuItem[] = [
+    ...all.map((profile): DropdownMenuItem => ({
+      kind: "item",
+      id: `template:${profile.id}`,
+      label: profileName(profile),
+      selectionRole: "radio",
+      checked: profile.id === templateId,
+      closeOnSelect: false,
+    })),
+    { kind: "sep" },
+    {
+      kind: "item",
+      id: "save",
+      label: t("Save as template"),
+      disabled: !scope.machineId || !scope.projectId,
+      closeOnSelect: false,
+    },
+    ...(custom
+      ? [
+          {
+            kind: "item" as const,
+            id: "remove",
+            label: t("Remove template"),
+            danger: true,
+            closeOnSelect: false,
+          },
+        ]
+      : []),
+    ...(naming
+      ? [
+          {
+            kind: "content" as const,
+            id: "name",
+            node: (
+              <div className="flex min-w-0 items-end gap-2">
+                <TextField
+                  label={t("Template name")}
+                  autoFocus
+                  value={name}
+                  maxLength={120}
+                  onChange={(event) => setName(event.target.value)}
+                />
+                <Button type="button" disabled={!name.trim()} onClick={save}>
+                  {t("Save")}
+                </Button>
+              </div>
+            ),
+          },
+        ]
+      : []),
+    ...(error
+      ? [{ kind: "content" as const, id: "error", node: <InlineError>{error}</InlineError> }]
+      : []),
+  ];
   return (
-    <ScopedTaskWorkflowControls
-      key={JSON.stringify([props.scope.machineId, props.scope.projectId])}
-      {...props}
-    />
+    <>
+      <Button
+        ref={anchor}
+        type="button"
+        variant="ghost"
+        className="min-w-0 max-w-full"
+        disabled={busy}
+        aria-haspopup="menu"
+        expanded={open && !busy}
+        endIcon={<ChevronDown className="icon-xs" aria-hidden />}
+        onClick={() => {
+          if (open) {
+            close();
+            return;
+          }
+          attempt(() => setProfiles(readTemplates(scope)));
+          setOpen(true);
+        }}
+      >
+        <Text truncate size="inherit" tone="inherit">
+          {selected ? t("Template: {p0}", { p0: profileName(selected) }) : t("Template")}
+        </Text>
+      </Button>
+      {open && !busy ? (
+        <DropdownMenu
+          anchor={anchor}
+          label={t("Template")}
+          size="md"
+          side="top"
+          align="start"
+          onClose={close}
+          items={items}
+          onPick={(id) => {
+            if (id === "save") {
+              const owner = templateId ?? "";
+              if (nameOwner !== owner) {
+                setName(custom?.name ?? "");
+                setNameOwner(owner);
+              }
+              setNaming(true);
+            } else if (id === "remove") {
+              remove();
+            } else {
+              const profile = all.find((entry) => `template:${entry.id}` === id);
+              if (profile)
+                attempt(() => {
+                  onApply(applyTaskWorkflow(profile, draft), profile);
+                  close();
+                  anchor.current?.focus();
+                });
+            }
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
-function ScopedTaskWorkflowControls({
-  scope,
-  draft,
-  onApply,
-  preflight,
-  onCheck,
-  busy = false,
-}: Props) {
+export type PreparationState = {
+  pending?: boolean;
+  error?: string;
+  report?: TaskPreflightReport;
+  retry?: () => void;
+};
+
+export function TaskResourceFields({
+  requirements,
+  onChange,
+  preparation,
+}: {
+  requirements: readonly TaskPreflightRequirement[];
+  onChange: (requirements: TaskPreflightRequirement[]) => void;
+  preparation: PreparationState;
+}) {
   useLocale();
-  const [profiles, setProfiles] = useState<TaskWorkflowProfile[]>([]);
-  const [selected, setSelected] = useState(BUILTIN_TASK_WORKFLOWS[0].id);
-  const [name, setName] = useState("");
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  // The preparation state is only worth showing once a workflow, a resource or a check exists.
-  const [picked, setPicked] = useState(false);
-  const [activeOperation, setActiveOperation] = useState<string | null>(null);
-  const working = activeOperation !== null;
-  const operationGate = useRef(false);
   const [rowKeys, setRowKeys] = useState(EMPTY_REQUIREMENT_ROW_KEYS);
-  useEffect(() => {
-    if (!scope.machineId || !scope.projectId) return;
-    let current = true;
-    queueMicrotask(() => {
-      if (!current) return;
-      try {
-        setProfiles(loadTaskWorkflows(scope));
-      } catch {
-        setError(t("Saved workflows could not be read. Existing saved data was preserved."));
-      }
-    });
-    return () => {
-      current = false;
-    };
-  }, [scope.machineId, scope.projectId]);
-  const all = [...BUILTIN_TASK_WORKFLOWS, ...profiles];
-  const chosen = all.find((profile) => profile.id === selected);
-  const custom = profiles.find((profile) => profile.id === selected);
-  const blocked = busy || working;
-  const run = async (key: string, operation: () => void | Promise<void>) => {
-    if (blocked || operationGate.current) return;
-    operationGate.current = true;
-    setActiveOperation(key);
-    setError("");
-    setMessage("");
-    try {
-      await operation();
-    } catch (failure) {
-      setError(
-        failure instanceof Error
-          ? presentRemoteError(failure, { explicit: true })
-          : t("The workflow could not be updated."),
-      );
-    } finally {
-      operationGate.current = false;
-      setActiveOperation(null);
-    }
-  };
-  const requirements = draft.requirements ?? [];
   const rows = alignRequirementRowKeys(rowKeys, requirements.length);
-  const kindOptions = [
+  const options = [
     { value: "source", label: t("Source") },
     { value: "skill", label: t("Skill") },
     { value: "connection", label: t("Connection") },
     { value: "tool", label: t("Tool") },
   ];
-  const updateRequirement = (index: number, patch: Partial<TaskPreflightRequirement>) =>
-    onApply({
-      ...draft,
-      requirements: requirements.map((entry, at) =>
-        at === index ? { ...entry, ...patch } : entry,
-      ),
-    });
+  const update = (index: number, patch: Partial<TaskPreflightRequirement>) =>
+    onChange(requirements.map((entry, at) => (at === index ? { ...entry, ...patch } : entry)));
+  const { report, pending, error, retry } = preparation;
   return (
-    <Disclosure variant="row" summary={t("Workflow")}>
-      <div className="task-form-section-body">
-        <div className="task-workflow-pick">
-          <div className="min-w-0 flex-1">
-            <SearchableSelect
-              label={t("Workflow")}
-              value={selected}
-              options={all.map((profile) => ({
-                value: profile.id,
-                label: profiles.includes(profile) ? profile.name : t(profile.name),
-              }))}
-              disabled={blocked}
-              onChange={(value) => {
-                setSelected(value);
-                setPicked(true);
-                setName(profiles.find((profile) => profile.id === value)?.name ?? "");
-                setMessage("");
-              }}
-            />
-          </div>
-          <InfoPopover label={t("About workflows")} className="shrink-0">
-            <p>
-              {t(
-                "Keeps your current objective. Applying a workflow does not start work or authorize publication.",
-              )}
-            </p>
-          </InfoPopover>
-          <Button
-            disabled={blocked || !chosen}
-            loading={activeOperation === "apply"}
-            onClick={() =>
-              void run("apply", async () => {
-                if (chosen) await onApply(applyTaskWorkflow(chosen, draft), chosen);
-                setPicked(true);
-                setMessage(t("Workflow applied to this draft."));
-              })
-            }
-          >
-            {t("Apply workflow")}
-          </Button>
-        </div>
-        <Disclosure
-          className="task-workflow-manage"
-          size="sm"
-          summary={t("Save or refresh workflows")}
-        >
-          <div className="task-form-section-body">
-            <div className="flex min-w-0 flex-wrap items-end gap-2">
-              <div className="min-w-0 flex-1">
-                <TextField
-                  label={t("Workflow name")}
-                  value={name}
-                  disabled={blocked}
-                  maxLength={120}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </div>
-              <Button
-                disabled={blocked || !name.trim() || !scope.machineId || !scope.projectId}
-                loading={activeOperation === "save"}
-                onClick={() =>
-                  void run("save", () => {
-                    const now = Date.now();
-                    const createdAt = custom?.createdAt ?? now;
-                    const updatedAt = Math.max(now, createdAt, custom ? custom.updatedAt + 1 : now);
-                    if (
-                      !Number.isSafeInteger(now) ||
-                      now < 0 ||
-                      !Number.isSafeInteger(updatedAt) ||
-                      updatedAt > 8_640_000_000_000_000
-                    )
-                      throw new Error(t("The workflow could not be updated."));
-                    const profile: TaskWorkflowProfile = {
-                      schema: "bycoda.task-workflow.v1",
-                      id: custom?.id ?? crypto.randomUUID(),
-                      name: name.trim(),
-                      draft,
-                      createdAt,
-                      updatedAt,
-                    };
-                    const latest = loadTaskWorkflows(scope);
-                    if (
-                      custom &&
-                      JSON.stringify(latest.find((entry) => entry.id === custom.id)) !==
-                        JSON.stringify(custom)
-                    )
-                      throw new Error(
-                        t("This workflow changed in another window. Reopen it before saving."),
-                      );
-                    const next = custom
-                      ? latest.map((entry) => (entry.id === custom.id ? profile : entry))
-                      : [...latest, profile];
-                    saveTaskWorkflows(scope, next);
-                    setProfiles(next);
-                    setSelected(profile.id);
-                    setMessage(t("Workflow saved for this project."));
-                  })
-                }
-              >
-                {t("Save workflow")}
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={blocked || !scope.machineId || !scope.projectId}
-                loading={activeOperation === "refresh"}
-                onClick={() =>
-                  void run("refresh", () => {
-                    let latest: TaskWorkflowProfile[];
-                    try {
-                      latest = loadTaskWorkflows(scope);
-                    } catch {
-                      throw new Error(
-                        t("Saved workflows could not be read. Existing saved data was preserved."),
-                      );
-                    }
-                    setProfiles(latest);
-                    if (
-                      !BUILTIN_TASK_WORKFLOWS.some((profile) => profile.id === selected) &&
-                      !latest.some((profile) => profile.id === selected)
-                    ) {
-                      setSelected(BUILTIN_TASK_WORKFLOWS[0].id);
-                      setName("");
-                    }
-                    setMessage(t("Workflows refreshed."));
-                  })
-                }
-              >
-                {t("Refresh workflows")}
-              </Button>
-              {custom ? (
-                <Button
-                  tone="danger"
-                  variant="ghost"
-                  disabled={blocked}
-                  loading={activeOperation === "remove"}
-                  onClick={() =>
-                    void run("remove", () => {
-                      const latest = loadTaskWorkflows(scope);
-                      if (
-                        JSON.stringify(latest.find((entry) => entry.id === custom.id)) !==
-                        JSON.stringify(custom)
-                      )
-                        throw new Error(
-                          t("This workflow changed in another window. Reopen it before saving."),
-                        );
-                      const next = latest.filter((profile) => profile.id !== custom.id);
-                      saveTaskWorkflows(scope, next);
-                      setProfiles(next);
-                      setSelected(BUILTIN_TASK_WORKFLOWS[0].id);
-                      setName("");
-                      setMessage(t("Saved workflow removed."));
-                    })
-                  }
-                >
-                  {t("Remove workflow")}
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </Disclosure>
-        <Disclosure
-          className="min-w-0"
-          size="sm"
-          summary={
-            <>
-              {t("Required resources")}
-              {requirements.length ? ` · ${requirements.length}` : ""}
-            </>
-          }
-        >
-          {requirements.map((requirement, index) => {
-            const kindName =
-              kindOptions.find((option) => option.value === requirement.kind)?.label ??
-              requirement.kind;
-            const reference = requirement.id.trim();
-            const shownReference = reference
-              ? truncateGraphemes(reference, 60)
-              : t("No reference yet");
-            return (
-              <div
-                key={rows.keys[index]}
-                role="group"
-                aria-label={t("{p1}: {p2}", { p1: kindName, p2: shownReference })}
-                className="flex min-w-0 flex-wrap items-end gap-2"
-              >
-                <SearchableSelect
-                  label={t("Resource type")}
-                  value={requirement.kind}
-                  searchable={false}
-                  disabled={blocked}
-                  options={kindOptions}
-                  onChange={(kind) =>
-                    void updateRequirement(index, {
-                      kind: kind as TaskPreflightRequirement["kind"],
-                    })
-                  }
-                />
-                <div className="min-w-0 basis-full sm:basis-48 sm:flex-1">
-                  <TextField
-                    label={t("Resource reference")}
-                    value={requirement.id}
-                    disabled={blocked}
-                    maxLength={2000}
-                    onChange={(event) => void updateRequirement(index, { id: event.target.value })}
-                  />
-                </div>
-                <Checkbox
-                  className="items-center gap-1"
-                  size="caption"
-                  label={t("Required")}
-                  checked={requirement.required !== false}
-                  disabled={blocked}
-                  onChange={(event) =>
-                    void updateRequirement(index, { required: event.target.checked })
-                  }
-                />
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t("Remove {p1}: {p2}", { p1: kindName, p2: shownReference })}
-                  disabled={blocked}
-                  onClick={() => {
-                    setRowKeys(removeRequirementRowKey(rowKeys, requirements.length, index));
-                    void onApply({
-                      ...draft,
-                      requirements: requirements.filter((_, at) => at !== index),
-                    });
-                  }}
-                >
-                  <X aria-hidden className="icon-sm" strokeWidth={1.75} />
-                </Button>
-              </div>
-            );
-          })}
-          <Button
-            variant="ghost"
-            disabled={blocked || requirements.length >= 40}
-            onClick={() => {
-              setRowKeys(appendRequirementRowKey(rowKeys, requirements.length));
-              void onApply({
-                ...draft,
-                requirements: [...requirements, { kind: "source", id: "", required: true }],
-              });
-            }}
-          >
-            {t("Add resource")}
-          </Button>
-        </Disclosure>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {picked || requirements.length > 0 || preflight ? (
-            <Badge
+    <div className="task-resource-fields">
+      <div className="task-form-row">
+        <Text size="secondary">{t("Required resources")}</Text>
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          {pending ? (
+            <LoadingText>{t("Checking preparation…")}</LoadingText>
+          ) : report ? (
+            <InlineMessage
               tone={
-                preflight?.state === "ready"
+                report.state === "ready"
                   ? "success"
-                  : preflight?.state === "blocked"
-                    ? "danger"
+                  : report.state === "blocked"
+                    ? "warning"
                     : "neutral"
               }
             >
-              {preflight?.state === "ready"
-                ? t("Ready")
-                : preflight?.state === "blocked"
-                  ? t("Preparation blocked")
-                  : t("Preparation not verified")}
-            </Badge>
-          ) : (
-            <span />
-          )}
-          {onCheck ? (
-            <Button
-              variant="ghost"
-              disabled={blocked}
-              loading={activeOperation === "check"}
-              onClick={() => void run("check", onCheck)}
-            >
-              {t("Check preparation")}
-            </Button>
+              {t(
+                report.state === "ready"
+                  ? "Ready"
+                  : report.state === "blocked"
+                    ? "Preparation blocked"
+                    : "Preparation not verified",
+              )}
+            </InlineMessage>
           ) : null}
+          <Button
+            type="button"
+            size="xs"
+            aria-label={t("Add resource")}
+            disabled={requirements.length >= 40}
+            onClick={() => {
+              setRowKeys(appendRequirementRowKey(rowKeys, requirements.length));
+              onChange([...requirements, { kind: "source", id: "", required: true }]);
+            }}
+          >
+            {t("Add")}
+          </Button>
         </div>
-        {preflight ? (
-          <Text as="ul" size="micro" tone="inherit" className="space-y-1">
-            {preflight.items.map((item) => (
-              <li key={item.key} className="min-w-0 break-words">
-                <Text weight="medium" size="inherit" tone="inherit">
-                  {t(item.label)}
-                </Text>
-                {": "}
-                {item.state === "ready"
-                  ? t("Ready")
-                  : item.state === "blocked"
-                    ? t("Unavailable")
-                    : t("Not checked")}
-                {!item.required ? ` (${t("Optional")})` : ""}
-                {item.detail ? ` · ${item.detail}` : ""}
-              </li>
-            ))}
-          </Text>
-        ) : null}
-        {message ? (
-          <Text as="p" size="micro" tone="secondary" role="status">
-            {message}
-          </Text>
-        ) : null}
-        {error ? <InlineError>{error}</InlineError> : null}
       </div>
-    </Disclosure>
+      {requirements.map((resource, index) => {
+        const kind =
+          options.find((option) => option.value === resource.kind)?.label ?? resource.kind;
+        const reference = resource.id.trim()
+          ? truncateGraphemes(resource.id.trim(), 60)
+          : t("No reference yet");
+        return (
+          <div
+            key={rows.keys[index]}
+            role="group"
+            aria-label={t("{p1}: {p2}", { p1: kind, p2: reference })}
+            className="task-resource-row"
+          >
+            <SearchableSelect
+              hideLabel
+              label={t("Resource type")}
+              searchable={false}
+              options={options}
+              value={resource.kind}
+              onChange={(value) =>
+                update(index, { kind: value as TaskPreflightRequirement["kind"] })
+              }
+            />
+            <TextField
+              hideLabel
+              label={t("Resource reference")}
+              placeholder={t("Resource reference")}
+              fieldVariant="compact"
+              maxLength={2000}
+              value={resource.id}
+              onChange={(event) => update(index, { id: event.target.value })}
+            />
+            <Checkbox
+              size="caption"
+              label={t("Required")}
+              checked={resource.required !== false}
+              onChange={(event) => update(index, { required: event.target.checked })}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              iconOnly
+              label={t("Remove {p1}: {p2}", { p1: kind, p2: reference })}
+              onClick={() => {
+                setRowKeys(removeRequirementRowKey(rowKeys, requirements.length, index));
+                onChange(requirements.filter((_, at) => at !== index));
+              }}
+            >
+              <X aria-hidden className="icon-sm" />
+            </Button>
+          </div>
+        );
+      })}
+      {error ? (
+        <InlineError retry={retry ? { onRetry: retry } : undefined}>{error}</InlineError>
+      ) : null}
+      {report?.items
+        .filter((item) => item.state !== "ready" || item.detail)
+        .map((item) => (
+          <Text as="div" size="caption" tone="secondary" key={item.key} className="break-words">
+            {t(item.label)}
+            {!item.required ? ` (${t("Optional")})` : ""}
+            {item.detail
+              ? ` · ${item.detail}`
+              : ` · ${t(item.state === "blocked" ? "Unavailable" : "Not checked")}`}
+          </Text>
+        ))}
+    </div>
   );
 }

@@ -44,6 +44,8 @@ export function TaskConcurrencyField({
     <NumberField
       label={label}
       hideLabel={hideLabel}
+      fieldVariant="compact"
+      fieldClassName="w-24"
       min={1}
       step={1}
       value={text}

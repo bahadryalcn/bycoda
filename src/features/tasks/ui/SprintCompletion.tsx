@@ -107,7 +107,7 @@ export function SprintCompletion({
                 </InfoPopover>
               }
             >
-              {t("Tasks")}
+              {t("Unfinished tasks")}
             </SectionLabel>
             <ul className="sprint-complete-tasks">
               {unfinished.map((task) => {
@@ -132,7 +132,7 @@ export function SprintCompletion({
             </ul>
           </section>
         ) : (
-          <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
+          <Text as="p" size="inherit" tone="secondary">
             {t("The sprint report will be frozen.")}
           </Text>
         )}

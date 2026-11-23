@@ -15,6 +15,7 @@ export {
   attachmentDraftTokens,
   findTokens,
   rewriteTokenMatches,
+  splitNamedAttachmentReferences,
   stripAttachmentTokens,
 } from "../model/attachmentTokens";
 export type { Attachment } from "../model/session";
