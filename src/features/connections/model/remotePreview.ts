@@ -1,5 +1,4 @@
 import type { Block } from "../../sessions";
-import { readBinaryFile } from "../../../platform/tauri/fs";
 import { bytesToBase64 } from "../../../shared/lib/base64";
 import { isRemoteProjectPath } from "../../../shared/lib/paths";
 
@@ -119,6 +118,8 @@ export function restoreLocalFiles(local: Block, host: Block): Block {
       merged.loadPreview =
         mine.loadPreview ??
         (async () => {
+          // Transcript comparison also runs on the headless Host. Only the desktop opens this reader.
+          const { readBinaryFile } = await import("../../../platform/tauri/fs");
           const bytes = await readBinaryFile(path).catch(() => undefined);
           return bytes?.byteLength === file.size ? bytesToBase64(bytes) : hostReader();
         });
