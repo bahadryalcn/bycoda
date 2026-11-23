@@ -20,6 +20,7 @@ pub(crate) mod account_routes;
 pub(crate) mod host_proof;
 pub(crate) mod protocol;
 pub(crate) mod response_limit;
+mod window_lists;
 
 #[path = "remote_changes.rs"]
 mod changes;
@@ -71,6 +72,7 @@ pub struct RemoteConnections {
     pub(crate) tunnels: Tunnels,
     jobs: Mutex<HashMap<String, Arc<Job>>>,
     ws: HostWsBroker,
+    window_lists: window_lists::WindowLists,
     native_profile_ws: crate::host_ws::native_profile::NativeProfileBroker,
     native_service_ws: crate::host_ws::native_profile::NativeProfileBroker,
     native_service_channel: Mutex<Option<Arc<NativeServiceChannel>>>,
@@ -176,6 +178,7 @@ impl RemoteConnections {
     }
     pub fn detach_window(&self, label: &str) {
         self.ws.detach(label);
+        self.ws.detach(&window_lists::owner(label));
     }
 
     pub(crate) fn invalidate_ws(&self, machine_id: &str) {
@@ -2300,6 +2303,12 @@ fn remote_request_blocking(
     // Background polling must respect the owner's automatic reconnect setting.
     let allow = fresh == Some(true) || allow_connect != Some(false);
     let disclosure = Mutex::new(None);
+    let list_read = state
+        .window_lists
+        .begin(&state.ws, &machine.id, window.label(), &method);
+    let consumer = list_read
+        .as_ref()
+        .map_or(window.label(), |read| read.owner.as_str());
     let send = |params| {
         machine_rpc_for_consumer(
             state,
@@ -2307,7 +2316,7 @@ fn remote_request_blocking(
             &method,
             params,
             allow,
-            Some((app, window.label())),
+            Some((app, consumer)),
             Some(&disclosure),
         )
     };
@@ -2516,7 +2525,9 @@ pub fn host_connection_detach(
     state: State<'_, RemoteConnections>,
     machine_id: String,
 ) {
-    state.ws.detach_machine(&machine_id, window.label());
+    state
+        .window_lists
+        .detach_stream(&state.ws, &machine_id, window.label());
 }
 
 #[tauri::command]
