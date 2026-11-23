@@ -93,7 +93,8 @@ test("hides the confirmed copy across refreshes while preserving the record", as
   await page.getByRole("button", { name: "Refresh copies", exact: true }).click();
   await expect(page.getByRole("button", { name: "Refresh copies", exact: true })).toBeEnabled();
   await expect(sourceRow(page)).toHaveCount(0);
-  await page.getByRole("radio", { name: /All copies/ }).click();
+  // Every remaining copy is unsaved, so the filter is not offered and this list already shows all copies.
+  await expect(page.getByRole("radio", { name: /All copies/ })).toHaveCount(0);
   await expect(sourceRow(page)).toHaveCount(0);
   await sourceUntouched(page);
   expect((await snapshot(page)).disk).toBe(state.disk);
@@ -140,7 +141,13 @@ test("file-only recovery persists a separate permanent tab, preserves an existin
   await page.keyboard.insertText("Existing unsaved view\n");
   await expect(existing).toContainText("Existing unsaved view");
   await openCatalog(page);
-  await expect(page.getByRole("region", { name: "File drafts", exact: true })).toBeVisible();
+  // With file drafts only there is no tab set; the dialog title names the one section.
+  await expect(page.getByRole("dialog", { name: "Recovered work" }).getByRole("tab")).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("region", { name: "File recovery copies", exact: true }),
+  ).toBeVisible();
   await openCopy(page);
   const state = await snapshot(page);
   expect(state.tabs).toHaveLength(2);

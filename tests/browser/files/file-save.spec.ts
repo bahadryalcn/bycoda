@@ -35,7 +35,13 @@ test("Ctrl+S distinguishes a saved source from a failed format without claiming 
   await page.keyboard.press("Control+s");
   await expect(page.getByLabel("Disk writes")).toContainText("1: ");
   const warning = page.getByRole("alert");
-  await expect(warning).toContainText("Saved, but formatting failed: NATIVE_DELIVERY_CAPACITY");
+  // The plain message stays in the row; the raw cause sits behind Details.
+  await expect(warning).toContainText("Saved, but formatting failed.");
+  await warning.getByRole("button", { name: /^Details/ }).click();
+  await expect(page.getByRole("dialog", { name: /^Details/ })).toContainText(
+    "NATIVE_DELIVERY_CAPACITY",
+  );
+  await page.keyboard.press("Escape");
   for (const width of [1280, 800]) {
     await page.setViewportSize({ width, height: 800 });
     for (const light of [false, true]) {

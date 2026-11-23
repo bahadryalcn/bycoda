@@ -150,7 +150,11 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
                         {row.windowLabel} · {formatRelative(row.updatedAt, now)}
                       </Text>
                       {failed ? (
-                        <InlineError>{t("The copy could not be opened.")}</InlineError>
+                        <InlineError>
+                          {t(
+                            "The copy could not be opened. Retry uses the same prepared copy; refresh if the source changed.",
+                          )}
+                        </InlineError>
                       ) : null}
                     </div>
                   </div>
