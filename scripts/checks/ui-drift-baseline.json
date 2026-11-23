@@ -50,6 +50,9 @@
     "src/features/sessions/ui/AgentTabView.tsx": {
       "surface-style": 1
     },
+    "src/features/sessions/ui/AttachmentChip.module.css": {
+      "shared-internal-selector": 1
+    },
     "src/features/sessions/ui/LocalMedia.tsx": {
       "transcript-reply-fill": 1
     },
@@ -72,6 +75,7 @@
       "surface-style": 1
     },
     "src/features/sessions/ui/chat-controls.css": {
+      "fixed-control-size": 1,
       "shared-internal-selector": 2
     },
     "src/features/sessions/ui/crewCharacters.ts": {
