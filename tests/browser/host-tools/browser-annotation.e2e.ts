@@ -209,7 +209,7 @@ test("real DOM hit-test blocks button/link actions and binds a reviewable draft 
     await composer.getByText("Inspect browser element", { exact: true }).click();
     await expect(composer.getByText("Please reduce the padding.")).toBeVisible();
     await expect(composer.locator("textarea")).toHaveValue(
-      /^Please adjust this \[Image\s1\s·\s[\d.]+\sKB\]$/,
+      /^Please adjust this \[Image\s1\s·\sbrowser-element\.jpg\s·\s[\d.]+\sKB\]$/,
     );
     expect(
       await page.evaluate(
