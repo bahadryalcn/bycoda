@@ -52,6 +52,9 @@ beforeEach(() => {
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command === "remote_machines") return [machine];
     const method = (args as { method?: string } | undefined)?.method;
+    // A cold SSH machine is discovered once before its first list read; the Host answers that at once.
+    if (command === "remote_request" && method === "environment.describe")
+      return { capabilities: [] };
     if (command === "remote_request" && method === "sessions.list")
       return new Promise((resolve, reject) => {
         answer = resolve;
@@ -124,6 +127,13 @@ it("says it is loading a remote project's sessions until they arrive", async () 
   });
   expect(document.body.textContent).toContain("Loading sessions from MacBook…");
   expect(document.body.textContent).not.toContain("isn’t connected");
+  // The cold SSH route is discovered once, and only then is the first list read sent.
+  const methods = vi
+    .mocked(invoke)
+    .mock.calls.filter(([command]) => command === "remote_request")
+    .map(([, args]) => (args as { method: string }).method);
+  expect(methods.indexOf("environment.describe")).toBeGreaterThanOrEqual(0);
+  expect(methods.indexOf("environment.describe")).toBeLessThan(methods.indexOf("sessions.list"));
 
   await act(async () =>
     answer([
