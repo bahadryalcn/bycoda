@@ -9,6 +9,7 @@ import {
   assertDesktopControlReceipts,
   requiresDesktopControlReceipts,
 } from "./desktopControlCapability";
+import { isColdRouteRead, runColdRouteRead } from "./coldRouteReads";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RemoteDataState } from "./remoteDataState";
 import {
@@ -36,7 +37,7 @@ import {
   type RemoteRailSession,
 } from "./remoteRailSessions";
 import { blocksSending } from "./remoteConnection";
-import { classifyRemoteError } from "./remoteFailure";
+import { classifyRemoteError, isMachineConnectingRefusal } from "./remoteFailure";
 import { isMachineEnabled, startNativeDisabledMachinesSync } from "./machineEnabled";
 import { subscribeMachineFocused } from "./machineFocus";
 import { monotonicNow } from "../../../shared/lib/time/timestamps";
@@ -195,6 +196,9 @@ const capabilityFetchedAt = new Map<string, number>();
 /** An `environment.describe` answer this young is reused; the machine status
  * watcher refreshes it every 15 s anyway. */
 export const REMOTE_CAPABILITIES_TTL_MS = 20_000;
+/** Waits before asking a machine for its capabilities again after the native slot refused a read
+ * because another dial was in progress (about 20 s in all, the native reconnect budget). */
+const CONNECTING_RETRY_MS = [250, 500, 1_000, 2_000, 4_000, 4_000, 4_000, 4_000];
 
 /** Forces the next `loadRemoteCapabilities` to ask the machine again, for a
  * machine that was edited, reconnected or removed. The last answer stays
@@ -243,12 +247,33 @@ export function loadRemoteCapabilities(environmentId: string): Promise<string[] 
   const lookup = (async () => {
     const machine = await remoteMachineFor(environmentId);
     if (!machine) return undefined;
-    const host = await remoteRequest<{ capabilities?: unknown }>(
-      machine.id,
-      "environment.describe",
-    );
-    recordRemoteCapabilities(environmentId, host.capabilities);
-    return cachedRemoteCapabilities(environmentId);
+    const generation = captureConnectionGeneration(environmentId);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const host = await remoteRequest<{ capabilities?: unknown }>(
+          machine.id,
+          "environment.describe",
+        );
+        recordRemoteCapabilities(environmentId, host.capabilities);
+        return cachedRemoteCapabilities(environmentId);
+      } catch (reason) {
+        // Another dial is in progress and the request was never sent: asking again is safe.
+        // Any other failure, and every failure once the budget is spent, is the caller's.
+        const wait = CONNECTING_RETRY_MS[attempt];
+        if (wait === undefined || !isMachineConnectingRefusal(reason)) throw reason;
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        // The route may have changed, been paused or lost its automatic dialing while it waited.
+        const same = cachedMachines.some(
+          (entry) => entry.id === machine.id && entry.environmentId === environmentId,
+        );
+        if (
+          !same ||
+          readRemoteLifecycle(environmentId).generation !== generation ||
+          !mayStartTunnel(machine.id, false, false)
+        )
+          throw reason;
+      }
+    }
   })().finally(() => capabilityLookups.delete(environmentId));
   capabilityLookups.set(environmentId, lookup);
   return lookup;
@@ -518,20 +543,26 @@ export function remoteRequest<T>(
       return send();
     });
   }
-  // Restored projects all need the same SSH tunnel. Discover the cold route once
-  // before their independent list reads instead of racing the first dial.
+  // Restored panes all need the same SSH tunnel. Discover the cold route once before their
+  // independent idempotent reads instead of racing the first dial (a request that meets a dial
+  // in progress is refused with SSH_CONNECTING). Writes, owner actions, recovery probes and a
+  // machine that may not be dialed automatically never wait here, so none is replayed or delayed.
   if (
-    (method === "sessions.list" || method === "projects.list") &&
+    isColdRouteRead(method, params) &&
     machine?.ssh &&
     expectedEnvironment === machine.environmentId &&
     !fresh &&
     !userInitiated &&
-    !cachedRemoteCapabilities(machine.environmentId)
+    !cachedRemoteCapabilities(machine.environmentId) &&
+    mayStartTunnel(machineId, fresh, userInitiated)
   )
-    return loadRemoteCapabilities(machine.environmentId).then(() => {
-      if (!current()) throw superseded();
-      return send();
-    });
+    return loadRemoteCapabilities(machine.environmentId).then(() =>
+      // The route is checked again when this read's turn comes, after discovery and the queue.
+      runColdRouteRead(machine.id, () => {
+        if (!current()) throw superseded();
+        return send();
+      }),
+    );
   return send();
 }
 
