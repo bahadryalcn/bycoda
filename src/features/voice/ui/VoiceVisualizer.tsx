@@ -206,28 +206,16 @@ export function VoiceVisualizer({
       frame = undefined;
       step = undefined;
       const calm = prefersReducedMotion() || !motion;
-      const running =
-        !disposed &&
-        !document.hidden &&
-        visible &&
-        windowVisible &&
-        !calm &&
-        (preview || !STATIC_STATES.has(state));
+      const onScreen = !disposed && !document.hidden && visible && windowVisible;
+      const running = onScreen && !calm && (preview || !STATIC_STATES.has(state));
       element!.dataset.animating = String(running);
       paint(1300, true);
       if (running) frame = requestAnimationFrame(tick);
       // Reduced motion keeps an input meter, without decorative time-based motion.
-      if (
-        !disposed &&
-        !document.hidden &&
-        visible &&
-        calm &&
-        !preview &&
-        (state === "listening" || state === "user")
-      )
+      if (onScreen && calm && !preview && (state === "listening" || state === "user"))
         meter = setInterval(() => paint(1300, true), 120);
       // Without decorative motion, connecting steps one dot at a time instead of spinning.
-      if (!disposed && !document.hidden && visible && calm && !preview && state === "connecting") {
+      if (onScreen && calm && !preview && state === "connecting") {
         step = 0;
         paint(1300, true);
         meter = setInterval(() => {

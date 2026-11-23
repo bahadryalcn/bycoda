@@ -106,25 +106,35 @@ it("stops frame work for static states, offscreen surfaces and reduced motion", 
   expect(cancelFrame).toHaveBeenCalledTimes(2);
   expect(container.firstElementChild?.getAttribute("aria-hidden")).toBe("true");
 });
-it("holds a still frame while the window is behind another application and resumes on focus", async () => {
+it("keeps animating across blur and resumes after hiding without focus", async () => {
   await render("listening");
   expect(requestFrame).toHaveBeenCalledTimes(1);
   const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
   try {
     await act(async () => {
       window.dispatchEvent(new Event("blur"));
     });
+    expect(cancelFrame).not.toHaveBeenCalled();
+    expect(container.firstElementChild?.getAttribute("data-animating")).toBe("true");
+    frameCallback(700);
+    expect(requestFrame).toHaveBeenCalledTimes(2);
+    hidden.mockReturnValue(true);
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
     expect(cancelFrame).toHaveBeenCalledWith(42);
     expect(container.firstElementChild?.getAttribute("data-animating")).toBe("false");
     expect(container.firstElementChild?.getAttribute("data-state")).toBe("listening");
-    expect(requestFrame).toHaveBeenCalledTimes(1);
-    hasFocus.mockReturnValue(true);
-    await act(async () => {
-      window.dispatchEvent(new Event("focus"));
-    });
     expect(requestFrame).toHaveBeenCalledTimes(2);
+    hidden.mockReturnValue(false);
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(requestFrame).toHaveBeenCalledTimes(3);
     expect(container.firstElementChild?.getAttribute("data-animating")).toBe("true");
   } finally {
+    hidden.mockRestore();
     hasFocus.mockRestore();
   }
 });
