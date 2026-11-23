@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.21]
+
+### Added
+
+- Copies of one repository on several machines share one project row. Add a project to another machine by cloning it over SSH or HTTPS, optionally with its ignored files.
+- Project terminals can run on the machine that hosts the project.
+- The device panel streams Android video with live touch input. Browser and device panels take control on their own while they are visible.
+- Long pasted text becomes a text attachment card in the message box.
+- Voice workflows, a usage report and dashboard intents. Assistant permission levels, desktop control and draft recovery have more options.
+- Cancel a pending MCP sign-in without losing saved credentials.
+
+### Changed
+
+- The Tasks screens are simpler:
+  - A new task uses one form with the same machine, project, model, access and working copy choices as the message box. The title is optional and comes from the description when left empty.
+  - The page has Tasks and Sprints tabs, one Filter button and count chips that filter the list.
+  - Tasks are grouped into Needs you, Blocked, Running, To do and Done.
+  - Each sprint page has its report.
+- The interface follows one design system:
+  - Toasts, alerts and the notification center share one feedback language.
+  - Unavailable actions say why.
+  - Optional help sits behind info buttons instead of paragraphs.
+  - Tooltips appear only when they add something.
+- Renamed projects keep their names in Tasks, Search and Notes.
+
+### Fixed
+
+- Voice animations keep running when the window loses focus.
+- Sessions without a project open and list correctly.
+- The new task form no longer shows a "Merge automatically" option that had no effect.
+
 ## [0.7.20]
 
 ### Changed
