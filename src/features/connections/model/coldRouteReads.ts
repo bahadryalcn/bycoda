@@ -4,12 +4,11 @@ import { WS_LIMITS } from "../../../shared/model/host-contracts";
  * (measured on 0.7.20: each was refused with SSH_CONNECTING). */
 const COLD_ROUTE_METHODS = new Set(["sessions.list", "projects.list", "goals.list"]);
 
-/** The measured startup `workspace.run` reads (0.7.20 Mac boot, then the second candidate on
- * Windows for `git_diff_stats`), and only those. This is deliberately not a
- * general read-only classification: any other command, every write and every unknown command
- * is sent once, when its caller asks, and is never held or replayed. */
+/** Read-only workspace commands seen during SSH startup on macOS and Windows.
+ * Other commands keep their caller's dispatch timing. */
 const STARTUP_WORKSPACE_READS = new Set([
   "read_file_info",
+  "stat_files",
   "read_text_file",
   "list_project_files",
   "list_dir",

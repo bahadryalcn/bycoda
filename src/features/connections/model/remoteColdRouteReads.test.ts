@@ -24,6 +24,7 @@ const coldReads = [
   ["workspace.run", { command: "git_submodules", args: { cwd: "/srv" } }],
   ["workspace.run", { command: "git_file_diff", args: { cwd: "/srv" } }],
   ["workspace.run", { command: "git_diff_stats", args: { cwd: "/srv" } }],
+  ["workspace.run", { command: "stat_files", args: { paths: ["/srv/file"] } }],
   ["workspace.run", { command: "git_branches", args: { cwd: "/srv" } }],
   ["workspace.run", { command: "skill_policy_get", args: {} }],
   ["projects.list", {}],
