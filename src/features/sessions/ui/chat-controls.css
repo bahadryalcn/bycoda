@@ -117,6 +117,35 @@
   }
 }
 
+/* At phone widths the idle controls stay on one row. A wrapping row drops Send under the toolbar
+   as soon as a wide font adds a few pixels; instead the model name truncates to the room left. */
+@container chat-composer (inline-size < 24rem) {
+  [data-composer]:not([data-composer-reading]) .composer-controls:not([data-busy]) {
+    flex-wrap: nowrap;
+  }
+
+  [data-composer]:not([data-composer-reading])
+    .composer-controls:not([data-busy])
+    .composer-toolbar {
+    min-inline-size: 0;
+  }
+
+  [data-composer]:not([data-composer-reading])
+    .composer-controls:not([data-busy])
+    .composer-toolbar
+    > div {
+    flex-wrap: nowrap;
+  }
+
+  [data-composer]:not([data-composer-reading])
+    .composer-controls:not([data-busy])
+    .composer-toolbar
+    > div
+    > * {
+    min-inline-size: 0;
+  }
+}
+
 [data-jump-to-bottom] {
   min-inline-size: 2rem;
   min-block-size: 2rem;

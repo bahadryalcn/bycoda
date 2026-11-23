@@ -1645,6 +1645,45 @@ test("composer shows the account name when it fits and keeps narrow controls ali
   }
 });
 
+test("narrow composer keeps Add and Send on the model row when text is wider than the fixture font", async ({
+  page,
+}) => {
+  await initializeChatLayout(page);
+  for (const width of [320, 360, 420]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(
+      `/tests/browser/chat/composer-extras.html?chat-layout&accounts&workspace-footer&theme=dark${width === 320 ? "&long-account" : ""}`,
+    );
+    // Wider glyphs on every platform, as a Linux system font renders the same labels.
+    await page.addStyleTag({ content: "[data-composer-box] { letter-spacing: 0.08em; }" });
+    const box = page.locator("[data-composer-box]");
+    const trigger = box.locator("[data-composer-model-controls] button[aria-haspopup]").first();
+    await expect(trigger.locator("[data-model-trigger-name]")).toHaveText("Sonnet 5");
+    const add = box.getByRole("button", { name: "Add files or skills" });
+    const send = box.getByRole("button", { name: "Send", exact: true });
+    await expect(send).toBeInViewport();
+    const centers = async () =>
+      Promise.all(
+        [trigger, add, send].map(async (item) => {
+          const bounds = (await item.boundingBox())!;
+          return bounds.y + bounds.height / 2;
+        }),
+      );
+    await expect
+      .poll(async () => {
+        const [model, addY, sendY] = await centers();
+        return Math.max(Math.abs(addY - model), Math.abs(sendY - model));
+      })
+      .toBeLessThanOrEqual(1);
+    // One row: the model name gives way before Send does.
+    const rows = await box.locator(".composer-controls").evaluate((row) => row.clientHeight);
+    expect(rows).toBeLessThanOrEqual(40);
+    expect(await box.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(
+      1,
+    );
+  }
+});
+
 test("model picker names and selects accounts and session shows its active agent", async ({
   page,
 }, testInfo) => {
