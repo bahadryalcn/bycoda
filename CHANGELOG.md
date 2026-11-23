@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Refreshing an open Git review after a file becomes clean clears the diff and preserves the baseline needed to stage subsequent edits.
 - Restoring projects waits for the initial Host connection before listing sessions. Background session discovery no longer fetches attachment previews before they are needed.
+- Restored workspace panels share SSH discovery and stagger their initial file and Git reads. A connection already in progress no longer triggers account route recovery.
+- Worktree removal detects unsaved files opened through alternate paths, including Windows short directory names.
 - Switching streams preserves pending project and session lists. Browser annotations retain their details beside inline images.
 - Reopened sessions can use their original desktop attachment when a Host copy is unavailable. A temporary Codex catalog failure keeps previously loaded models available.
 - On macOS and Linux, cancelling a Git operation also stops its helper processes. Worktree removal recognizes active sessions opened through an alternate path.
