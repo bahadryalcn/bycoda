@@ -29,9 +29,11 @@
   height: 100%;
   overflow: clip;
 }
+/* The card owns the tile height; the button's own 1px border must not add to its content height. */
 .file .thumbnail {
   display: flex;
   height: auto;
+  border-width: 0;
   align-items: center;
   justify-content: center;
 }

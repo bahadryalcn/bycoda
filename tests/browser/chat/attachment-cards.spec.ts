@@ -192,7 +192,8 @@ test("attachment cards and inline references retain kind tones and the selected 
         const transcriptToken = document.querySelector(
           `[aria-label="Message"] span[data-attachment-kind="${kind}"]`,
         )!;
-        const name = card.querySelector('[data-truncate="true"]');
+        // File cards wrap the name instead of truncating it; it is the card's inherited-tone medium text.
+        const name = card.querySelector('[data-tone="inherit"][data-weight="medium"]');
         return {
           kind,
           expectedCard,
@@ -414,56 +415,39 @@ test("real Composer accepts pasted files, decorates native tokens and renumbers 
           new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }),
         );
       });
-      await expect(page.locator("[data-attachment-chip]")).toHaveCount(3);
-      await expect(message).toHaveValue(
+      // Tokens in the draft render as inline references; the card strip only holds the rest.
+      const editor = page.locator("[data-composer-inline-input]");
+      const references = editor.locator('[data-inline-reference="attachment"]');
+      await expect(references).toHaveCount(3);
+      await expect(page.locator("[data-attachment-chip]")).toHaveCount(0);
+      // The underlying field keeps the plain-text draft the Host receives.
+      const draft = page.locator("[data-composer] textarea");
+      await expect(draft).toHaveValue(
         /^Review references and retain this existing draft\. \[Image\u00a01\u00a0·[^\]]+\] \[Image\u00a02\u00a0·[^\]]+\] \[File\u00a01\u00a0·[^\]]+\]$/,
       );
-      await expect(page.locator('[data-composer-attachment-kind="image"]')).toHaveCount(2);
-      await expect(page.locator('[data-composer-attachment-kind="markdown"]')).toHaveCount(1);
-      const geometry = await message.evaluate((element: HTMLTextAreaElement) => {
-        const overlay = element.parentElement!.querySelector(".composer-highlight")!;
-        const inputBox = element.getBoundingClientRect();
-        const overlayBox = overlay.getBoundingClientRect();
-        const inputStyle = getComputedStyle(element);
-        const overlayStyle = getComputedStyle(overlay);
-        return {
-          width: inputBox.width,
-          overlayWidth: overlayBox.width,
-          x: inputBox.x,
-          overlayX: overlayBox.x,
-          font: inputStyle.font,
-          overlayFont: overlayStyle.font,
-          inputHeight: element.scrollHeight,
-          overlayHeight: overlay.scrollHeight,
-        };
-      });
-      expect(geometry.overlayWidth).toBe(geometry.width);
-      expect(geometry.overlayX).toBe(geometry.x);
-      expect(geometry.overlayFont).toBe(geometry.font);
-      expect(Math.abs(geometry.overlayHeight - geometry.inputHeight)).toBeLessThanOrEqual(1);
+      await expect(
+        editor.locator('[data-inline-reference][data-attachment-kind="image"]'),
+      ).toHaveCount(2);
+      await expect(
+        editor.locator('[data-inline-reference][data-attachment-kind="markdown"]'),
+      ).toHaveCount(1);
       await page
         .locator("[data-composer-box]")
         .screenshot({ path: `${captures}/real-composer-${theme}-${width}.png` });
-      await page.getByRole("button", { name: "Remove first-reference.png", exact: true }).click();
-      await expect(page.locator("[data-attachment-chip]")).toHaveCount(2);
-      await expect(message).toHaveValue(
+      await references.filter({ hasText: "first-reference.png" }).click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Remove first-reference.png", exact: true }).click();
+      await expect(references).toHaveCount(2);
+      await expect(draft).toHaveValue(
         /^Review references and retain this existing draft\. \[Image\u00a01\u00a0·[^\]]+\] \[File\u00a01\u00a0·[^\]]+\]$/,
       );
-      const remainingImage = page.locator('[data-attachment-chip="image"]');
-      await expect(remainingImage).toHaveCount(1);
-      const preview = remainingImage.getByRole("button", {
-        name: "Open second-reference.png full screen",
-        exact: true,
-      });
-      await expect(preview).toBeVisible();
-      await preview.hover();
-      await expect(page.getByRole("tooltip")).toContainText(
-        /Image\s1\s·\s\d+\sB · second-reference\.png/,
+      const remainingImage = editor.locator(
+        '[data-inline-reference][data-attachment-kind="image"]',
       );
-      await message.focus();
-      await message.press("Home");
-      await page.getByRole("button", { name: /^Insert \[Image\s1\s·/ }).click();
-      await expect(message).toBeFocused();
-      expect(await message.inputValue()).toMatch(/^\[Image\u00a01\u00a0·/);
+      await expect(remainingImage).toHaveCount(1);
+      await expect(remainingImage).toHaveAccessibleName("Open second-reference.png");
+      await remainingImage.click();
+      await expect(page.getByRole("dialog").locator("img")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(remainingImage).toBeFocused();
     }
 });

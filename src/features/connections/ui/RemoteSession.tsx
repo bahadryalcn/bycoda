@@ -3011,8 +3011,15 @@ function ConnectedRemoteSession({
   };
 
   const catalogFailure = catalog?.errors[configuration.harness] ?? catalogError;
+  // A Codex probe that only timed out keeps the retained models usable; it is not an owner-facing failure.
+  const retainedCodexProbeTimeout =
+    configuration.harness === "codex" &&
+    !!catalog?.models.codex?.length &&
+    !!catalogFailure &&
+    (/\btimed out\b/i.test(catalogFailure) ||
+      classifyRemoteError(catalogFailure).kind === "temporary");
   const { visibleError: catalogProblem } = useGracedFailure({
-    error: catalogFailure,
+    error: retainedCodexProbeTimeout ? "" : catalogFailure,
     retry: refreshCatalog,
     loading: catalogLoading,
     scope: questionDraftScope,
