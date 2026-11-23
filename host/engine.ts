@@ -954,6 +954,9 @@ export class HostEngine {
       async (sessionId, generation) => {
         await store.assertAuthority(sessionId, generation);
       },
+      // A workspace can contain the Host's own storage; turn history never captures it
+      // (the checkpoint root itself is always excluded).
+      store.ownedPaths,
     );
     this.ready = this.initialize();
   }
