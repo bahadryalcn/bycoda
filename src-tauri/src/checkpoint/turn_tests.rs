@@ -517,16 +517,18 @@ fn same_session_begin_waits_for_interrupted_turn_then_starts_clean() {
     let begin = {
         let (store, cwd) = (store.clone(), cwd.clone());
         std::thread::spawn(move || {
-            let result = store.coordinated("session", &[&cwd], |s| {
+            store.coordinated("session", &[&cwd], |s| {
+                // Reached only after the recovery wait and the gates: this is the release
+                // event. The Git work of begin_turn below is load-dependent and not measured.
+                tx.send(()).unwrap();
                 s.begin_turn("session", &cwd, "next")
-            });
-            tx.send(()).unwrap();
-            result
+            })
         })
     };
     std::thread::sleep(std::time::Duration::from_millis(200));
-    assert!(
-        rx.try_recv().is_err(),
+    assert_eq!(
+        rx.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty),
         "begin ran before the interrupted turn settled"
     );
     plan.run();
