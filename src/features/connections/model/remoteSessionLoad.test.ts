@@ -5,6 +5,8 @@ import type { HostSession } from "./protocol";
 import { loadRemoteHistoryPage, loadRemoteSession } from "./connections";
 import { canApplyRemotePreview } from "./remotePreviewBinding";
 import { canCacheRemoteSnapshot } from "./remoteHistoryGeneration";
+import { desktopCopyOf } from "./adoptedSessions";
+import { getSession, upsertSession } from "../../sessions/data/sessionStore";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 beforeEach(() => vi.clearAllMocks());
 
@@ -37,6 +39,57 @@ const snapshot = (): HostSession => ({
       },
     ],
   },
+});
+
+it("keeps an adopted reader live after upsert and restores it when switching back", async () => {
+  const host = snapshot();
+  const id = "adopted-upsert-image";
+  host.session.id = id;
+  const machine = {
+    id: "adopted-local",
+    environmentId: "adopted-env",
+    localHost: true,
+    endpoint: "http://127.0.0.1:3776",
+  };
+  let stored: typeof host.session | undefined;
+  const reads: unknown[] = [];
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    const args = input as {
+      session: typeof host.session;
+      sessionId: string;
+      method: string;
+      params: unknown;
+    };
+    if (command === "remote_machines") return [machine];
+    if (command === "remote_request" && args.method === "sessions.sync")
+      return { kind: "snapshot", value: host };
+    if (command === "remote_request" && args.method === "attachments.read") {
+      reads.push(args.params);
+      return { data: "YWJj", offset: 3, size: 3 };
+    }
+    if (command === "session_upsert") {
+      stored = JSON.parse(JSON.stringify(args.session));
+      return { ...stored, id, updatedAt: 1, transcriptRevision: 1 };
+    }
+    if (command === "session_get_page") {
+      const session =
+        args.sessionId === id ? stored : { ...host.session, id: "other-adopted", blocks: [] };
+      return { session, totalBlocks: session?.blocks.length ?? 0, revision: 1 };
+    }
+    return [];
+  });
+  const lazy = await loadRemoteSession(machine.id, id, undefined, { deferPreviews: true });
+  const copy = desktopCopyOf(lazy, "/tmp", (a, b) => a === b);
+  expect(await upsertSession(copy)).toBeTruthy();
+  expect(stored?.blocks[0]?.attachments?.[0]?.loadPreview).toBeUndefined();
+  expect(reads).toHaveLength(0);
+  await expect(copy.blocks[0]!.attachments![0]!.loadPreview!()).resolves.toBe("YWJj");
+  await getSession("other-adopted", { deferHistory: true });
+  const reopened = await getSession(id, { deferHistory: true });
+  await expect(reopened!.blocks[0]!.attachments![0]!.loadPreview!()).resolves.toBe("YWJj");
+  expect(reads).toEqual(
+    Array(2).fill({ sessionId: id, id: host.session.blocks[0]!.attachments![0]!.id, offset: 0 }),
+  );
 });
 
 it("publishes text and running status without waiting for an image RPC", async () => {
