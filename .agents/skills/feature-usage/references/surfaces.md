@@ -12,6 +12,12 @@ Paths are repository-relative. Read the affected subsection only; reports and ru
 - Reports retain source/truncation/estimate provenance. Keep exact intervals, zero-hour rows, local sort/search/page semantics, dynamic chart accessible names and session coverage.
 - CSV exports the actual selected export scope, not every displayed drilldown by implication; preserve formula-safe cells and privacy before options/aggregation/export.
 
+## Read-only report and dashboard intent
+
+- `model/usageReport.ts` builds the bounded report with the dashboard's own sample, filter, lock and duration functions; `data/usageSources.ts` is the one loader both the dashboard and the report use; `model/usageWindows.ts` owns the preset, month-to-date and calendar-month windows.
+- `model/usageViewIntent.ts` carries window, filters, metric and granularity to the dashboard, which applies it on mount or while open. `ui/UsageReportView.tsx` draws a report as OpenUI charts (months, providers, models, bounded tail) with a reopen button.
+- Voice tools `workspace.usage.report` and `workspace.usage.open` live in `src/features/voice/model/voiceWorkspaceUsage.ts`; their ports are in `src/app/workspace/bridges/voiceInspectPorts.ts`. Tests: `usageReport.test.ts`, `usageViewIntent.test.ts`, `UsageReportView.test.ts`, `voiceUsage.test.ts`.
+
 ## Quotas and local rules
 
 - Footer details: `src/app/shell/UsageProviderChip.tsx` shares compact, unframed quota-window groups across providers. Keep both used/remaining values, countdown/exact-date tooltips and freshness/source labels. Codex banked-reset rows retain per-credit confirmation, disabled/loading/error/outcome states and expiry tooltips; mascot geometry must not enlarge the section header.

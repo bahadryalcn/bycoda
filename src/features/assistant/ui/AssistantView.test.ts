@@ -2259,9 +2259,10 @@ it("shows only measured worker cache counters and percentage coverage", async ()
   };
   await render({ initialTab: "settings" });
   expect(document.body.textContent).toContain("Some usage is unavailable.");
+  expect(document.body.textContent).not.toContain("Cache read tokens: 120");
+  await click("Usage details");
   expect(document.body.textContent).toContain("Cache read tokens: 120");
   expect(document.body.textContent).toContain("Mean reported cache hit: 25%");
-  await click("About usage");
   expect(document.body.textContent).toContain("Partial cache usage");
   expect(document.body.textContent).toContain("Cache write tokens: Unavailable");
   expect(document.body.textContent).toContain("2 of 4 worker turns measured");

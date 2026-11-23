@@ -1,5 +1,51 @@
 import { describe, expect, it } from "vitest";
-import { classifyVoiceFailure, recentVoiceContext, VOICE_RECONNECT_DELAYS } from "./voiceReconnect";
+import {
+  classifyVoiceFailure,
+  recentVoiceContext,
+  VOICE_RECONNECT_DELAYS,
+  voiceLostSpeechNotice,
+  voiceResumeTurns,
+} from "./voiceReconnect";
+
+describe("voice conversation resume", () => {
+  const user = (text: string) => ({ role: "user" as const, text });
+  const assistant = (text: string) => ({ role: "assistant" as const, text });
+
+  it("restores accepted turns the Host has not stored, once and in order", () => {
+    expect(
+      voiceResumeTurns(
+        [user("ilk"), assistant("yanıt")],
+        [user("ilk"), assistant("yanıt"), user("son istek")],
+      ),
+    ).toEqual([user("ilk"), assistant("yanıt"), user("son istek")]);
+  });
+
+  it("keeps a repeated sentence that really was said twice", () => {
+    expect(voiceResumeTurns([user("tamam")], [user("tamam"), user("tamam")])).toEqual([
+      user("tamam"),
+      user("tamam"),
+    ]);
+  });
+
+  it("matches a locally tail-trimmed turn against its full stored text", () => {
+    const full = `${"a".repeat(5000)}son`;
+    expect(voiceResumeTurns([user(full)], [user(full.slice(-4000))])).toEqual([user(full)]);
+  });
+
+  it("keeps the six-turn bound", () => {
+    const local = Array.from({ length: 8 }, (_, index) => user(`turn ${index}`));
+    expect(voiceResumeTurns([], local)).toEqual(local.slice(-6));
+  });
+
+  it("asks once for only the lost speech and never replays an action", () => {
+    const alone = voiceLostSpeechNotice();
+    expect(alone).toContain("ask them once to repeat only");
+    expect(alone).toContain("do not repeat any action");
+    const withRequest = voiceLostSpeechNotice(`  ${"x".repeat(400)}  `);
+    expect(withRequest).toContain("last received request");
+    expect(withRequest).not.toContain("x".repeat(301));
+  });
+});
 
 describe("voice reconnection admission", () => {
   it.each([

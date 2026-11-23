@@ -726,6 +726,54 @@ fn recovery_request(owner: &NativeBufferOwner, source: DraftRecoverySource) -> R
 }
 
 #[test]
+fn hiding_recovery_keeps_the_payload_and_only_hides_the_selected_revision() {
+    let directory = Directory::new();
+    let db = directory.0.join("native.db");
+    let disk = directory.0.join("preserved-editor.txt");
+    std::fs::write(&disk, b"disk contents").unwrap();
+    let mut f = Fixture::new();
+    f.store = SessionStore::open(db.clone()).unwrap();
+    let capture = |revision, expected, text| PutDraft {
+        path: disk.to_string_lossy().into_owned(),
+        ..capture(revision, expected, text)
+    };
+    let original = f.put(capture(1, None, "original draft")).unwrap().record;
+    f.run(|owner| hide_recovery(&f.store, owner, recovery_source(&original)))
+        .unwrap();
+    assert!(all(&f.store).records.is_empty());
+    assert_eq!(f.read().record.unwrap().metadata, original);
+    let latest = f.put(capture(2, Some(1), "new edits")).unwrap().record;
+    f.run(|owner| {
+        assert_eq!(
+            hide_recovery(&f.store, owner, recovery_source(&original)),
+            Err(failure("REVISION_CONFLICT")),
+        );
+        assert_eq!(all(&f.store).records, vec![latest.clone()]);
+        hide_recovery(&f.store, owner, recovery_source(&latest))?;
+        hide_recovery(&f.store, owner, recovery_source(&latest))?;
+        assert!(all(&f.store).records.is_empty());
+        Ok(())
+    })
+    .unwrap();
+    drop(f);
+    let reopened = SessionStore::open(db).unwrap();
+    assert!(all(&reopened).records.is_empty());
+    let resources = test_buffer_resources(&WindowBarrier::new(), "main");
+    let (owner, operation) = test_buffer_owner(&resources, reopened.native_instance_id()).unwrap();
+    let record = operation
+        .finish(read_recovery(
+            &reopened,
+            &owner,
+            recovery_request(&owner, recovery_source(&latest)),
+        ))
+        .unwrap()
+        .record;
+    assert_eq!(record.metadata, latest);
+    assert_eq!(record.payload.text, "new edits");
+    assert_eq!(std::fs::read(disk).unwrap(), b"disk contents");
+}
+
+#[test]
 fn recovery_read_discloses_exact_active_foreign_record_without_mutation_or_retirement() {
     let f = Fixture::new();
     let origin = f.put(capture(1, None, "origin\n漢🦀")).unwrap().record;

@@ -7,10 +7,17 @@ import { hasControlCharacters } from "../../src/shared/lib/controlCharacters";
 type ActRequest = Extract<DesktopControlRequest, { op: "act" }>;
 
 /** Actions that always need the explicit physical-input grant (real keys, cursor or window focus). */
-const PHYSICAL_ONLY = ["press", "double-click", "hover", "drag", "focus-window"];
+export const PHYSICAL_ONLY_DESKTOP_ACTIONS = [
+  "press",
+  "double-click",
+  "hover",
+  "drag",
+  "focus-window",
+];
 const TEXT_ACTIONS = ["set-value", "type", "select", "press"];
 
-export const isPhysicalOnlyDesktopAction = (action: string) => PHYSICAL_ONLY.includes(action);
+export const isPhysicalOnlyDesktopAction = (action: string) =>
+  PHYSICAL_ONLY_DESKTOP_ACTIONS.includes(action);
 
 /** Validates that action, text and scroll/drag parameters agree. Throws before anything is journaled. */
 export function validateDesktopAct(input: ActRequest, refs: ReadonlySet<string>) {
@@ -41,8 +48,13 @@ export function validateDesktopAct(input: ActRequest, refs: ReadonlySet<string>)
 export function desktopActArgs(
   input: ActRequest,
   snapshot: { app: string; windowId: string },
+  expectedPid?: number,
 ): string[] {
   const head = [...(input.headed ? ["--headed"] : []), input.action];
+  const exactProcess =
+    expectedPid === undefined
+      ? []
+      : [`--expected-pid=${expectedPid}`, `--observed-ref=${input.ref}`];
   switch (input.action) {
     case "press":
       return [
@@ -53,11 +65,12 @@ export function desktopActArgs(
         snapshot.app,
         "--window-id",
         snapshot.windowId,
+        ...exactProcess,
         "--",
         input.text!,
       ];
     case "focus-window":
-      return [...head, "--app", snapshot.app, "--window-id", snapshot.windowId];
+      return [...head, "--app", snapshot.app, "--window-id", snapshot.windowId, ...exactProcess];
     case "drag":
       return [...head, "--timeout-ms", "5000", "--from", input.ref, "--to", input.toRef!];
     case "scroll":

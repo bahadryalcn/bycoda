@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import { AGENT_DESKTOP_PROTOCOL } from "../../src/shared/model/host-contracts/desktop-control";
 import type { DesktopRunner } from "./desktop-control-runner";
 import { sameDesktopApp } from "./desktop-control-permission";
-import type { CuaDriverClient, CuaToolResult } from "./cua-driver-client";
+import { CuaDriverRestarted, type CuaDriverClient, type CuaToolResult } from "./cua-driver-client";
 
 /**
  * Serves the agent-desktop command lines HostDesktopControl builds through cua-driver's MCP tools
@@ -57,6 +57,7 @@ const UNSUPPORTED: Record<string, string> = {
   "scroll-to":
     "cua-driver scrolls an element into view on its own when acting on it; use scroll for manual scrolling.",
 };
+export const CUA_DRIVER_UNSUPPORTED_ACTIONS = Object.keys(UNSUPPORTED);
 const KEY_ALIASES: Record<string, string> = {
   enter: "return",
   esc: "escape",
@@ -145,7 +146,8 @@ export function cuaActionEnvelope(command: string, result: CuaToolResult): Envel
       command,
       error: {
         code: escalation.reason,
-        message: `${text(result)} Take a fresh snapshot before retrying; physical input can deliver it in the foreground.`,
+        message:
+          "Foreground input may be required. Observe the target effect before considering another action.",
         disposition: { delivery: "delivery_uncertain", retry: "unsafe" },
       },
     };
@@ -240,8 +242,14 @@ export function createCuaDriverRunner(
 
   return async (binary, rawArgs, options) => {
     const signal = AbortSignal.any([options.signal, AbortSignal.timeout(options.timeoutMs)]);
+    let expectedGeneration: number | undefined;
+    const actionToken = (ref: string) => {
+      const value = token(ref);
+      expectedGeneration = client.generation;
+      return value;
+    };
     const call = async (name: string, input: Record<string, unknown>) =>
-      client.call(binary, name, input, { signal });
+      client.call(binary, name, input, { signal, expectedGeneration });
     const observe = async (name: string, input: Record<string, unknown>) => {
       const result = await call(name, input);
       if (result.isError)
@@ -251,7 +259,13 @@ export function createCuaDriverRunner(
     // The driver's `app` filter matches localized display names; match the executable here.
     const windowsOf = async (app: string) => {
       const result = await observe("list_windows", {});
-      return ((result.structuredContent?.windows ?? []) as Window[]).filter(
+      const windows = result.structuredContent?.windows;
+      if (!Array.isArray(windows))
+        throw new CommandError(
+          "window_inventory_unavailable",
+          "The desktop helper returned no window inventory.",
+        );
+      return (windows as Window[]).filter(
         (window) => sameDesktopApp(window.app_name, app, platform) && window.title.trim() !== "",
       );
     };
@@ -295,10 +309,14 @@ export function createCuaDriverRunner(
         );
       return { launch_path: [...paths][0] };
     };
-    const windowOf = async (app: string, windowId?: string) => {
+    const windowOf = async (app: string, windowId?: string, expectedPid?: string) => {
       const windows = await windowsOf(app);
       if (windowId) {
-        const window = windows.find((item) => String(item.window_id) === windowId);
+        const window = windows.find(
+          (item) =>
+            String(item.window_id) === windowId &&
+            (expectedPid === undefined || String(item.pid) === expectedPid),
+        );
         if (!window)
           throw new CommandError("window_not_found", "The selected desktop window is unavailable.");
         return window;
@@ -527,8 +545,14 @@ export function createCuaDriverRunner(
         case "clipboard-clear":
           return cuaActionEnvelope(command, await call("clipboard_write", { text: "" }));
         case "press": {
-          const window = await windowOf(flag(rest, "app")!, flag(rest, "window-id"));
+          const window = await windowOf(
+            flag(rest, "app")!,
+            flag(rest, "window-id"),
+            flag(rest, "expected-pid"),
+          );
           const keys = cuaKeys(positional(rest)[0] ?? "");
+          const ref = flag(rest, "observed-ref");
+          if (ref) actionToken(ref);
           if (!keys.length) throw new CommandError("invalid_key", "No key was given.");
           const target = { pid: window.pid, window_id: window.window_id };
           const mode = headed ? { delivery_mode: "foreground" } : {};
@@ -540,7 +564,13 @@ export function createCuaDriverRunner(
           );
         }
         case "focus-window": {
-          const window = await windowOf(flag(rest, "app")!, flag(rest, "window-id"));
+          const window = await windowOf(
+            flag(rest, "app")!,
+            flag(rest, "window-id"),
+            flag(rest, "expected-pid"),
+          );
+          const ref = flag(rest, "observed-ref");
+          if (ref) actionToken(ref);
           return cuaActionEnvelope(
             command,
             await call("bring_to_front", { pid: window.pid, window_id: window.window_id }),
@@ -550,7 +580,9 @@ export function createCuaDriverRunner(
       if (UNSUPPORTED[command]) throw new CommandError("unsupported_action", UNSUPPORTED[command]);
       const mode = headed ? { delivery_mode: "foreground" } : {};
       if (command === "drag") {
-        const from = located(flag(rest, "from") ?? "");
+        const fromRef = flag(rest, "from") ?? "";
+        actionToken(fromRef);
+        const from = located(fromRef);
         const to = located(flag(rest, "to") ?? "");
         if (from.pid !== to.pid || from.windowId !== to.windowId)
           throw new CommandError("cross_window_drag", "Both drag ends must be in one window.");
@@ -570,7 +602,7 @@ export function createCuaDriverRunner(
         );
       }
       const [ref, value] = positional(rest);
-      const element_token = token(ref);
+      const element_token = actionToken(ref);
       switch (command) {
         case "hover": {
           const target = located(ref);
@@ -672,14 +704,18 @@ export function createCuaDriverRunner(
     try {
       result = await run();
     } catch (error) {
-      if (!(error instanceof CommandError)) throw error;
+      const failure =
+        error instanceof CuaDriverRestarted && !["drag", "hover"].includes(command)
+          ? new CommandError("stale_element_token", error.message)
+          : error;
+      if (!(failure instanceof CommandError)) throw error;
       result = {
         version: AGENT_DESKTOP_PROTOCOL,
         ok: false,
         command,
         error: {
-          code: error.code,
-          message: error.message,
+          code: failure.code,
+          message: failure.message,
           disposition: { delivery: "not_delivered", retry: "safe" },
         },
       };

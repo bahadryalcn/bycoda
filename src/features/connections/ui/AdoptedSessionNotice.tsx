@@ -202,6 +202,7 @@ export function AdoptedSessionNotice({
     <div className={NOTICE_SLOT}>
       <Alert
         tone={attention ? "warning" : "info"}
+        actionsAlign={choosing ? "center" : undefined}
         {...noticeActions}
         extra={noticeActions.extra ?? failureDetails}
       >

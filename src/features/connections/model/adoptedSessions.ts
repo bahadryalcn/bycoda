@@ -21,6 +21,7 @@ import { keepFullTranscript, restoreLocalFiles, sameRemoteBlock } from "./remote
 import {
   blockDigest,
   conversationHead,
+  isDigestBlock,
   transcriptDigests,
 } from "../../sync/model/conversationDigest";
 import {
@@ -215,6 +216,14 @@ function transcript(session: Session): string {
 }
 
 const OPEN_TOOL_STATUS = new Set(["in_progress", "pending", "running"]);
+const SETTLED_TOOL_STATUS = new Set([
+  "completed",
+  "done",
+  "failed",
+  "error",
+  "cancelled",
+  "canceled",
+]);
 
 /** Still being written when the host saved it; a desktop quit seals it. */
 function isOpenBlock(block: Block): boolean {
@@ -310,6 +319,38 @@ function localDigests(blocks: readonly Block[], theirs?: readonly string[]): str
   );
 }
 
+/** A copied tool can still show its open status after the Host settles it.
+ * The resulting digest must match the Host, down to the call and its output. */
+function withHostToolStatus(local: Block, host: Block, digest: string): Block | undefined {
+  const status = host.tool?.status;
+  if (
+    local.remoteContent ||
+    !local.tool ||
+    !OPEN_TOOL_STATUS.has(local.tool.status?.toLowerCase() ?? "") ||
+    !status ||
+    !SETTLED_TOOL_STATUS.has(status.toLowerCase())
+  )
+    return undefined;
+  const updated = { ...local, tool: { ...local.tool, status } };
+  return blockDigest(updated) === digest ? updated : undefined;
+}
+
+function matchesAfterToolSettlement(
+  local: readonly Block[],
+  host: readonly Block[],
+  mine: readonly string[],
+  theirs: readonly string[],
+): boolean {
+  if (mine.length > theirs.length) return false;
+  const localBlocks = local.filter(isDigestBlock);
+  const hostBlocks = host.filter(isDigestBlock);
+  return mine.every(
+    (digest, index) =>
+      digest === theirs[index] ||
+      !!withHostToolStatus(localBlocks[index], hostBlocks[index], theirs[index]),
+  );
+}
+
 /** Which side changed since the last agreement (the saved `adoptedBase`), from
  * digests alone; `undefined` when either transcript carries content that cannot
  * be compared. The baseline of this run only says the local copy is unchanged
@@ -328,7 +369,11 @@ function transcriptVerdict(
     const head = conversationHead(baseline.blocks);
     if (head && atHead(mine, head)) base = head;
   }
-  return reconcile(mine, theirs, base);
+  const verdict = reconcile(mine, theirs, base);
+  return verdict === "conflict" &&
+    matchesAfterToolSettlement(local.blocks, host.session.blocks, mine, theirs)
+    ? "hostAhead"
+    : verdict;
 }
 
 /** The host's blocks with this desktop's full block kept wherever the host sent
@@ -346,7 +391,7 @@ function keepFullByDigest(local: readonly Block[], host: Block[]): Block[] {
     const kept =
       !mine.remoteContent && blockDigest(mine) === blockDigest(block)
         ? mine
-        : restoreLocalFiles(mine, block);
+        : (withHostToolStatus(mine, block, blockDigest(block)) ?? restoreLocalFiles(mine, block));
     if (kept !== block) changed = true;
     return kept;
   });

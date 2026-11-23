@@ -56,10 +56,7 @@ const resultActions = new Set([
   "tasks.create",
   "tasks.update",
   "workspace.projects.create",
-  "workspace.projects.select",
   "workspace.sessions.create",
-  "workspace.sessions.open",
-  "workspace.views.open",
 ]);
 const actionStatus = { returned: "done", failed: "failed", uncertain: "interrupted" } as const;
 

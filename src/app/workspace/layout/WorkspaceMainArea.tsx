@@ -5,6 +5,7 @@ import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ToolsWorkspace } from "../../../features/host-tools/ToolsWorkspace";
+import type { VoiceWorkspaceOutlet } from "../../../features/voice/ui/VoiceCompanion";
 import { PaneTree } from "../../../features/workspace/ui/PaneTree";
 import type { EditorPane, WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ProjectTerminalDock as ProjectTerminal } from "../../../features/projects/model/projectTerminal";
@@ -62,6 +63,7 @@ export type WorkspaceSessionPaneProps = Omit<
 >;
 
 export interface WorkspaceMainAreaProps {
+  voiceWorkspaceOutlet?: VoiceWorkspaceOutlet;
   // Project terminal dock (markup only; dock state lives in Workspace)
   dockGridRef: RefObject<HTMLDivElement | null>;
   projectCwd: string;
@@ -145,6 +147,7 @@ function hasLiveBlock(blocks: Block[]): boolean {
 }
 
 function WorkspaceMainAreaComponent({
+  voiceWorkspaceOutlet,
   dockGridRef,
   projectCwd,
   projectTerminals,
@@ -253,6 +256,11 @@ function WorkspaceMainAreaComponent({
         </Heading>
       )}
       <ToolsWorkspace
+        outlet={voiceWorkspaceOutlet?.kind === "tools" ? voiceWorkspaceOutlet.element : undefined}
+        outletOverlayParent={voiceWorkspaceOutlet?.overlay}
+        outletPanelId={
+          voiceWorkspaceOutlet?.kind === "tools" ? voiceWorkspaceOutlet.panelId : undefined
+        }
         followEligible={!routeOpen}
         activeConversation={activeToolsConversation}
         accessibleSessions={toolsSessions}
@@ -310,6 +318,11 @@ function WorkspaceMainAreaComponent({
                       {isHibernated(tab) ? null : (
                         <PaneTree
                           {...sessionPaneProps}
+                          sessionOutlet={
+                            voiceWorkspaceOutlet?.kind === "session"
+                              ? voiceWorkspaceOutlet
+                              : undefined
+                          }
                           visible={tab.id === activeTabId && !inboxViewOpen}
                           layout={tab.layout}
                           maximizedPaneId={

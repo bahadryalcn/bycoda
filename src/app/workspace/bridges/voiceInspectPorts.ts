@@ -21,6 +21,12 @@ import {
   type VoiceInspectSearchHit,
   VoiceWorkspaceInspectDeps,
 } from "../../../features/voice/model/voiceWorkspaceInspect";
+import {
+  openUsageDashboard,
+  readUsageReport,
+  usageIntentFor,
+  usageIntentForRequest,
+} from "../../../features/usage/public/usageReport";
 import { requestAppUi, type AppUiInput } from "../../model/appUiControl";
 
 const SEARCH_OWNER = "voice-workspace-search";
@@ -65,18 +71,30 @@ const toHit = (hit: AppSearchHit): VoiceInspectSearchHit | null => {
 export function createVoiceInspectPorts(latest: Latest): VoiceWorkspaceInspectDeps {
   const visible = (path: string) =>
     latest().projects.some((item) => sameProjectPath(item.path, path));
+  // Reuses the `ui.workspace.open` navigator with the calling window's active conversation.
+  const navigate: NonNullable<VoiceWorkspaceInspectDeps["navigate"]> = async (view, section) => {
+    const current = latest();
+    const source = current.sessions.find((entry) => entry.id === current.activeId);
+    if (!source || !visible(source.cwd))
+      throw new Error("Open a conversation in an unlocked project to navigate.");
+    await requestAppUi(
+      { cwd: source.cwd, sessionId: source.id, title: source.title },
+      "ui.workspace.open",
+      { view, ...(section ? { section } : {}) } as AppUiInput,
+    );
+  };
   return {
-    // Reuses the `ui.workspace.open` navigator with the calling window's active conversation.
-    navigate: async (view, section) => {
-      const current = latest();
-      const source = current.sessions.find((entry) => entry.id === current.activeId);
-      if (!source || !visible(source.cwd))
-        throw new Error("Open a conversation in an unlocked project to navigate.");
-      await requestAppUi(
-        { cwd: source.cwd, sessionId: source.id, title: source.title },
-        "ui.workspace.open",
-        { view, ...(section ? { section } : {}) } as AppUiInput,
-      );
+    navigate,
+    usage: {
+      read: (request) => readUsageReport(request),
+      // Settings opens through the workspace opener, so no conversation is borrowed; filters follow confirmation.
+      open: async ({ request, report }) => {
+        const fallback = report ? undefined : usageIntentForRequest(request, Date.now());
+        const { filtersApplied } = await openUsageDashboard(
+          report ? usageIntentFor(report) : fallback?.intent,
+        );
+        return { filtersApplied, skipped: fallback?.skipped ?? [] };
+      },
     },
     search: async (query) => {
       const current = latest();

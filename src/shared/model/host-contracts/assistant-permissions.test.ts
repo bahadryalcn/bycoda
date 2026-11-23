@@ -19,6 +19,9 @@ describe("assistant permission profile mirrors", () => {
     expect(
       AssistantProfilePatchSchema.parse({ permissionLevel: "projects", permissionProjectIds: [] }),
     ).toEqual({ permissionLevel: "projects", permissionProjectIds: [] });
+    expect(AssistantProfilePatchSchema.parse({ permissionLevel: "ask" })).toEqual({
+      permissionLevel: "ask",
+    });
     expect(AssistantProfilePatchSchema.safeParse({ permissionLevel: "full" }).success).toBe(false);
     expect(AssistantProfilePatchSchema.safeParse({ permissionProjectIds: [""] }).success).toBe(
       false,

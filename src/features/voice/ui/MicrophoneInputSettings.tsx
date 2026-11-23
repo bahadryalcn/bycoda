@@ -26,6 +26,9 @@ export function MicrophoneInputSettings() {
   const dictations = useActiveDictations();
   const microphoneInUse = companion || dictations.length > 0;
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  // Browsers list microphones without ids until capture permission is granted; the test is the
+  // only path that asks for it, so an unknown list must not look like an unplugged device.
+  const [unidentified, setUnidentified] = useState(false);
   const [state, setState] = useState<MicrophoneRecordingState>("idle");
   const [error, setError] = useState("");
   const recording = useRef<MicrophoneRecording | undefined>(undefined);
@@ -36,8 +39,10 @@ export function MicrophoneInputSettings() {
       void navigator.mediaDevices
         ?.enumerateDevices?.()
         .then((all) => {
-          if (live)
-            setDevices(all.filter((device) => device.kind === "audioinput" && device.deviceId));
+          if (!live) return;
+          const inputs = all.filter((device) => device.kind === "audioinput");
+          setDevices(inputs.filter((device) => device.deviceId));
+          setUnidentified(inputs.some((device) => !device.deviceId));
         })
         .catch(() => {
           if (live) setDevices([]);
@@ -72,7 +77,9 @@ export function MicrophoneInputSettings() {
   }, [microphoneInUse]);
   const busy = state === "requesting" || state === "recording" || state === "playing";
   const missing =
-    settings.microphoneId && !devices.some((device) => device.deviceId === settings.microphoneId);
+    settings.microphoneId &&
+    !unidentified &&
+    !devices.some((device) => device.deviceId === settings.microphoneId);
   return (
     <>
       <Row id="voice-microphone-input" label={t("Input device")}>

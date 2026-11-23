@@ -5,10 +5,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useEditorDraftRecovery, editorDraftRecoveryKey } from "./useEditorDraftRecovery";
 import type { EditorDraftRecoveryMetadata } from "../../../features/files/data/editorDraftRecovery";
 
-const bridge = vi.hoisted(() => ({ list: vi.fn(), prepare: vi.fn() }));
+const bridge = vi.hoisted(() => ({ list: vi.fn(), prepare: vi.fn(), hide: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("../../../features/files/data/editorDraftRecovery", () => ({
   listEditorDraftRecovery: bridge.list,
+  hideEditorDraftRecovery: bridge.hide,
   prepareEditorDraftRestore: bridge.prepare,
 }));
 const row = (id = "source") =>
@@ -60,6 +61,7 @@ beforeEach(() => {
   allowed = true;
   openTargets = new Set();
   bridge.list.mockReset().mockResolvedValue(page());
+  bridge.hide.mockReset().mockResolvedValue(undefined);
   bridge.prepare
     .mockReset()
     .mockImplementation(async (_source, { documentId }) => prepared(documentId));
@@ -104,6 +106,26 @@ it("refuses duplicate inventory identities instead of fabricating a complete lis
   await mount();
   expect(result.error).toBe(true);
   expect(result.records).toHaveLength(0);
+});
+
+it("only hides an allowed copy after Native acknowledges the exact revision", async () => {
+  await mount();
+  allowed = false;
+  await expect(result.hide(row())).rejects.toThrow("Recovery copy unavailable");
+  expect(bridge.hide).not.toHaveBeenCalled();
+
+  allowed = true;
+  bridge.hide.mockRejectedValueOnce(new Error("revision conflict"));
+  await act(async () => {
+    await expect(result.hide(row())).rejects.toThrow("revision conflict");
+  });
+  expect(result.records).toEqual([row()]);
+
+  await act(async () => result.hide(row()));
+  const { ownerId, documentId, revision, payloadDigest } = row();
+  expect(bridge.hide).toHaveBeenLastCalledWith({ ownerId, documentId, revision, payloadDigest });
+  expect(result.records).toEqual([]);
+  expect(result.pendingKeys.size).toBe(0);
 });
 it("uses the same target ID for unknown-ACK retry and deduplicates a pending click", async () => {
   await mount();

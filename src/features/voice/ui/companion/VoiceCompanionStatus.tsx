@@ -13,7 +13,6 @@ import { elapsedSince, monotonicNow } from "../../../../shared/lib/time/timestam
 import { subscribeVoiceSecond } from "../../model/voicePresentationTimers";
 import type { VoiceVisualState } from "../../model/voiceVisualState";
 import { VoiceCallScene } from "./VoiceCallScene";
-import { VoiceCore } from "./VoiceCore";
 import { voiceStatusTone } from "./VoiceLauncher";
 import type { VoiceCallArtworkState } from "./voiceCallArtwork";
 import styles from "./VoiceCompanionParts.module.css";
@@ -35,8 +34,6 @@ export function VoiceCompanionStatus({
   privacy,
   workspace,
   globalScope,
-  name,
-  avatar,
   stage,
   caption,
   onScopeChange,
@@ -57,9 +54,6 @@ export function VoiceCompanionStatus({
   privacy: string;
   workspace: boolean;
   globalScope: boolean;
-  /** Assistant name; empty before setup, when there is no avatar to show. */
-  name: string;
-  avatar: string | undefined;
   /** Show the large call stage. */
   stage: boolean;
   /** The latest spoken line, shown under the status on the large stage. */
@@ -76,11 +70,13 @@ export function VoiceCompanionStatus({
       data-full-call={fullScreen || undefined}
     >
       <div className={styles.status}>
-        {stage ? (
-          <VoiceCallScene part="orb" state={artwork} level={audioLevel} expanded={fullScreen} />
-        ) : (
-          <VoiceCore state={visualState} level={audioLevel} name={name} avatar={avatar} />
-        )}
+        <VoiceCallScene
+          part="orb"
+          state={artwork}
+          level={audioLevel}
+          expanded={fullScreen}
+          size={stage ? "stage" : "strip"}
+        />
         <div className={styles.statusText}>
           <div className={styles.statusLine}>
             {tone && <StatusDot tone={tone} size="fixed" appearance="solid" />}

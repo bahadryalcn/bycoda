@@ -28,7 +28,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function render(sizes: number[]) {
+function render(sizes: number[], element?: HTMLElement) {
   const noop = vi.fn();
   const layout: LayoutNode = {
     type: "split",
@@ -48,7 +48,10 @@ function render(sizes: number[]) {
       editorPanes: [],
       dirtyFileIds: new Set(),
       fileErrorCounts: new Map(),
-      focusedId: "a",
+      focusedId: "b",
+      sessionOutlet: element
+        ? { element, sessionId: "b", projectPath: "/project", overlay: null }
+        : undefined,
       composerFocused: false,
       recents: [],
     } as Record<string, unknown>,
@@ -78,4 +81,22 @@ it("lets a layer that mounts later adopt its leaf's placement", () => {
   syncPaneBackground(leaf, late);
 
   expect(left(late)).toBe("-100%");
+});
+
+it("clears split placement in the outlet and restores it at home", () => {
+  const outlet = document.createElement("div");
+  document.body.append(outlet);
+  try {
+    render([0.5, 0.5]);
+    const layer = layers()[1];
+    expect(left(layer)).toBe("-100%");
+    render([0.5, 0.5], outlet);
+    expect(outlet.contains(layer)).toBe(true);
+    expect(left(layer)).toBe("");
+    render([0.25, 0.75]);
+    expect(layers()[1]).toBe(layer);
+    expect(left(layer)).toBe(`${(-0.25 / 0.75) * 100}%`);
+  } finally {
+    outlet.remove();
+  }
 });

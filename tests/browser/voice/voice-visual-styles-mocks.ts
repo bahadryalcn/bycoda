@@ -90,6 +90,8 @@ export const selectSessionById = (sessions: readonly { id: string }[], id: strin
   id === undefined ? undefined : sessions.find((session) => session.id === id);
 export const subscribeSessionCommits = () => () => {};
 export const useSession = () => undefined;
+export * from "../../../src/features/sessions/model/sessionsStore.ts";
+export * from "../../../src/features/assistant/model/assistantClient.ts";
 export const converseWithSession = () =>
   new URLSearchParams(location.search).has("remote")
     ? Promise.resolve({ action: "reply", reply: "Here is the remote status." })
@@ -133,12 +135,28 @@ export function captureRemoteVoiceHistory(path: string) {
         fixtureVoice.remoteAckLost = false;
         throw new Error("Synthetic remote acknowledgement lost");
       }
-      return { message: { id: input.idempotencyKey, threadId: input.threadId } };
+      return { message: fixtureTranscriptReceipt(input) };
     }
     throw new Error("Unexpected remote fixture history operation");
   };
   return { key: `remote-fixture:${path}`, remote: true, request };
 }
+function fixtureTranscriptReceipt(input: {
+  idempotencyKey: string;
+  threadId: string;
+  role: string;
+  via: string;
+  text: string;
+}) {
+  return {
+    id: input.idempotencyKey,
+    threadId: input.threadId,
+    role: input.role,
+    via: input.via,
+    text: input.text,
+  };
+}
+
 /** Only the focused global-voice fixture aliases this assistant transport. */
 export async function converseWithAssistant(input: {
   transcript: string;
@@ -171,7 +189,53 @@ export async function converseWithAssistant(input: {
     fixtureVoice.observations.push(result);
     return { action: "reply", reply: "The selected assistant job was deleted." };
   }
-  if (input.transcript === "show live results") {
+  if (
+    input.transcript === "Show this month's usage." ||
+    input.transcript === "Show the last 30 days of usage."
+  ) {
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.usage.report",
+      input: {
+        period: input.transcript.startsWith("Show this") ? "month-to-date" : "last-30-days",
+        metric: "cost",
+      },
+      requestId: input.transcript.startsWith("Show this")
+        ? "fixture-usage-month"
+        : "fixture-usage-empty",
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "The usage report is ready." };
+  }
+  if (
+    input.transcript === "Open the second project's session beside Arif." ||
+    input.transcript === "Open the second project's session in the project workspace."
+  ) {
+    const surface = input.transcript.endsWith("beside Arif.") ? "voice" : "project";
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.sessions.open",
+      input: { projectPath: "/fixture-next", sessionId: "fixture-next", surface },
+      requestId: `fixture-explicit-project-session-${surface}`,
+    });
+    fixtureVoice.observations.push(result);
+    return { action: "reply", reply: "The second project's session is open." };
+  }
+  const presentInFullScreen = input.transcript === "show live results full screen";
+  const view = presentInFullScreen
+    ? "fullscreen"
+    : /^switch voice view to (fullscreen|window|mini)$/.exec(input.transcript)?.[1];
+  if (view) {
+    const result = await input.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.voice.set_view",
+      input: { mode: view },
+      requestId: `fixture-view-${view}`,
+    });
+    fixtureVoice.observations.push(result);
+    if (!presentInFullScreen) return { action: "reply", reply: "The view has changed." };
+  }
+  if (presentInFullScreen || input.transcript === "show live results") {
     const result = await input.execute("app_tool_call", {
       family: "workspace",
       action: "workspace.live_work.present",
@@ -286,6 +350,7 @@ export const assistantIdentity = () => ({
   setupComplete: true,
   voiceSetupComplete: true,
 });
+export const useAssistantIdentity = assistantIdentity;
 export async function captureAssistantHostRead(expectedEnvironmentId?: string) {
   const environmentId = "fixture-host";
   if (expectedEnvironmentId && expectedEnvironmentId !== environmentId)
@@ -303,12 +368,12 @@ export async function captureAssistantHostRead(expectedEnvironmentId?: string) {
       (await assistantRequest({ op: "snapshot", limit: 100 }, environmentId)).snapshot,
   });
 }
-// Finite synthetic storage for the navigation fixture. The production transcript
+// Finite synthetic storage for local voice fixtures. The production transcript
 // and causal-context validators consume these exact receipts without bypasses.
 const navigationThreads = new Map<string, any>(),
   navigationMessages = new Map<string, { input: string; message: any }>(),
   navigationContexts = new Map<string, any>();
-function navigationHistoryRequest(input: any): any | undefined {
+function fixtureHistoryRequest(input: any): any | undefined {
   const now = Date.now();
   const knownProjects = ["fixture-project", "fixture-next-project"];
   if (input.op === "threads.open") {
@@ -432,10 +497,8 @@ export async function assistantRequest(input: any, expectedEnvironmentId?: strin
   if (input.op === "profile.update" && new URLSearchParams(location.search).has("setup-wizard")) {
     return { profile: { ...fixtureAssistant.profile, ...input.patch } };
   }
-  if (new URLSearchParams(location.search).has("navigation")) {
-    const result = navigationHistoryRequest(input);
-    if (result !== undefined) return result;
-  }
+  const history = fixtureHistoryRequest(input);
+  if (history !== undefined) return history;
   if (input.op === "snapshot")
     return { snapshot: { ...fixtureAssistant, jobs: fixtureVoice.jobs } };
   if (input.op === "projects.list")
@@ -447,12 +510,6 @@ export async function assistantRequest(input: any, expectedEnvironmentId?: strin
           : []),
       ],
     };
-  if (input.op === "threads.open") return { thread: { id: "fixture-thread", summary: "" } };
-  if (input.op === "threads.messages") return { messages: [] };
-  if (input.op === "threads.append") {
-    fixtureVoice.transcripts.push(input);
-    return { message: { id: input.idempotencyKey } };
-  }
   if (input.op === "jobs.create") {
     const job = { ...input, id: input.idempotencyKey, status: "queued", version: 1 };
     fixtureVoice.jobs.push(job);

@@ -250,6 +250,8 @@ export class RealtimeVoice {
     epoch: number;
     committedAt: number;
     itemId?: string;
+    /** The provider confirmed this commit, possibly without naming its item. */
+    acknowledged?: boolean;
     activate?: () => void;
     timer: ReturnType<typeof setTimeout>;
   };
@@ -740,6 +742,18 @@ export class RealtimeVoice {
       case "conversation.item.added": {
         const id = (event.item as { id?: unknown } | undefined)?.id ?? event.item_id;
         if (typeof id !== "string" || !id) return;
+        // Commits are serialized, so a new owner audio item belongs to the pending commit.
+        // Client-created seed, status and image items carry text or image content instead.
+        if (
+          !this.conversation.experimentalSemanticVad &&
+          this.pendingInput &&
+          !this.pendingInput.itemId &&
+          !this.createdItems.has(id) &&
+          ownerAudioItem(event.item)
+        ) {
+          this.pendingInput.itemId = id;
+          this.pendingInput.acknowledged = true;
+        }
         this.rememberCreatedItem(id);
         this.deleteDiscardedInput();
         break;
@@ -847,6 +861,7 @@ export class RealtimeVoice {
           this.activateCandidate = undefined;
           break;
         }
+        if (this.pendingInput) this.pendingInput.acknowledged = true;
         if (typeof event.item_id === "string" && this.pendingInput && !this.pendingInput.itemId)
           this.pendingInput.itemId = event.item_id;
         break;
@@ -1001,6 +1016,11 @@ export class RealtimeVoice {
       // can still be accepted until a delete was actually sent; otherwise only
       // confirmed deletion or a fresh provider session can release the fence.
       if (pending.itemId) return this.rejectPending(true);
+      // Confirmed audio with no item identity cannot be deleted; only a fresh session is clean.
+      if (pending.acknowledged) {
+        this.fail("Voice connection is too slow. Start voice again.", "audio-transcript-missing");
+        return;
+      }
       // The wait includes the upload: a long utterance on a slow link is still
       // being sent, so wait again while the backlog keeps shrinking.
       const buffered = this.socket?.bufferedAmount ?? 0;
@@ -1086,6 +1106,13 @@ export class RealtimeVoice {
         timer: this.transcriptDeadline(),
       };
     }
+    if (
+      id &&
+      this.pendingInput?.acknowledged &&
+      !this.pendingInput.itemId &&
+      !this.createdItems.has(id)
+    )
+      this.pendingInput.itemId = id;
     if (!id || id !== this.pendingInput?.itemId) return;
     if (event.type === "conversation.item.input_audio_transcription.completed") {
       // A matching final transcript refers to the committed user item itself;
@@ -1117,6 +1144,8 @@ export class RealtimeVoice {
       this.flushUpdates();
       return;
     }
+    // Record what the owner already heard before this turn moves the conversation on.
+    this.settleElapsedPlayback();
     if (this.callbacks.interceptTranscript?.(text)) {
       this.discardInput(id);
       this.commitCandidate();
@@ -1439,6 +1468,31 @@ export class RealtimeVoice {
     else this.callbacks.replyDiscarded?.(id);
   }
 
+  /** A completed response whose scheduled audio has elapsed was played, even if `ended` is late. */
+  private settleElapsedPlayback() {
+    const now = this.output?.currentTime ?? 0;
+    for (const [id, playback] of this.replyPlayback) {
+      if (!playback.done || !playback.hasAudio || !playback.pending) continue;
+      const entries = [...this.playout.values()].filter((entry) => entry.responseId === id);
+      if (
+        !entries.length ||
+        entries.some((entry) => entry.chunks.some((chunk) => chunk.start + chunk.duration > now))
+      )
+        continue;
+      playback.pending = 0;
+      this.finishPlayback(id);
+    }
+  }
+
+  /** Captured owner audio on this microphone epoch that never became an accepted transcript. */
+  private hasLostSpeech() {
+    return (
+      this.pendingInput?.epoch === this.inputEpoch ||
+      this.discardedInput?.awaitingTranscript?.epoch === this.inputEpoch ||
+      this.candidates.some((candidate) => candidate.epoch === this.inputEpoch)
+    );
+  }
+
   /** Explicitly yield the turn, including responses that have not been created yet. */
   pause() {
     this.pendingTurn = false;
@@ -1615,8 +1669,10 @@ export class RealtimeVoice {
 
   private fail(message: string, code?: string) {
     if (!this.closed) {
+      const speechLost = this.hasLostSpeech();
       this.close();
-      this.callbacks.error(message, true, classifyVoiceFailure(message, code));
+      const failure = classifyVoiceFailure(message, code);
+      this.callbacks.error(message, true, speechLost ? { ...failure, speechLost } : failure);
     }
   }
 
@@ -1643,6 +1699,7 @@ export class RealtimeVoice {
   }
   close() {
     if (this.closed) return;
+    this.settleElapsedPlayback();
     this.closed = true;
     this.lifetime.abort();
     this.clearResponseTimer();
@@ -1689,6 +1746,17 @@ export class RealtimeVoice {
     ).then(() => {});
     void this.audioClosure.catch(() => {});
   }
+}
+
+function ownerAudioItem(item: unknown) {
+  const { role, content } = (item ?? {}) as { role?: unknown; content?: unknown };
+  return (
+    role === "user" &&
+    (!Array.isArray(content) ||
+      !content.some((part: { type?: unknown } | null) =>
+        ["input_text", "input_image"].includes(String(part?.type)),
+      ))
+  );
 }
 
 function errorMessage(event: VoiceEvent) {

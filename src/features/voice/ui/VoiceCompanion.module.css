@@ -94,6 +94,9 @@
   block-size: 100%;
   pointer-events: none;
 }
+.panel:has(> .body[data-call-chat]) > .stageLight {
+  opacity: 0.62;
+}
 @media (forced-colors: active) {
   .stageLight {
     visibility: hidden;
@@ -167,6 +170,14 @@
   justify-self: center;
   padding: var(--space-2) var(--space-4);
   --voice-core-stage-size: clamp(5.5rem, min(51dvh, 86cqi), 33rem);
+}
+.panel[data-full-screen] > .body:has(> .decision) {
+  --voice-core-stage-size: clamp(5.5rem, min(29dvh, 65cqi), 16rem);
+}
+.decision {
+  inline-size: min(100%, 42rem);
+  align-self: center;
+  margin-block-start: var(--space-2);
 }
 /* Auto margins center the stage when there is room and collapse before the body needs to scroll. */
 .panel[data-full-screen] > .body > :first-child {
@@ -294,21 +305,22 @@
   min-inline-size: 0;
 }
 .panel[data-compact] {
-  inline-size: min(380px, calc(100vw - 16px));
+  inline-size: min(25rem, calc(100dvw - 2 * var(--space-2)));
   block-size: auto;
   grid-template-rows: auto;
+  overflow: clip;
 }
 .panel[data-compact] .header {
-  gap: var(--ui-space-1, 0.25rem);
-  padding: var(--ui-space-1, 0.25rem);
+  gap: var(--ui-space-1);
+  padding: var(--ui-space-1) var(--ui-space-2) var(--ui-space-1) var(--ui-space-1);
 }
 .panel[data-compact] .drag {
   inline-size: auto;
   flex-shrink: 0;
 }
 :global([data-drag-handle]) [data-small] {
-  inline-size: 40px;
-  block-size: 32px;
+  inline-size: var(--ui-control-height-sm);
+  block-size: var(--ui-control-height-sm);
 }
 @media (pointer: coarse) {
   .header {

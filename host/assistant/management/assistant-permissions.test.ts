@@ -23,6 +23,25 @@ const call = (action = "files.write", projectId?: string): RoomManagementCall =>
 });
 
 describe("explicit assistant authority", () => {
+  it("honors full access for server starts and preserves spend and opaque-command exclusions", () => {
+    const start = { action: "devServers.start", input: { command: "npx --yes serve -l 4173 ." } };
+    expect(assistantCriticalApprovalRequired({ criticalExclusions: [] }, start)).toBe(false);
+    expect(assistantCriticalApprovalRequired({ criticalExclusions: ["sendMessages"] }, start)).toBe(
+      true,
+    );
+    expect(
+      assistantCriticalApprovalRequired(
+        { criticalExclusions: ["spend"] },
+        { action: "tasks.start" },
+      ),
+    ).toBe(true);
+    expect(
+      assistantCriticalApprovalRequired(
+        { criticalExclusions: ["spend"] },
+        { action: "tasks.reorder" },
+      ),
+    ).toBe(false);
+  });
   it("critical mirror restrictions use the reviewed push destination", () => {
     const profile = {
       criticalExclusions: ["pushMain", "sendMessages"] as ("pushMain" | "sendMessages")[],
@@ -73,6 +92,8 @@ describe("explicit assistant authority", () => {
       ),
     ).toBe(false);
     expect(assistantProjectMutationAllowed({ permissionLevel: "everything" }, [])).toBe(true);
+    // "ask" is no mirror restriction: native authority prompts for every operation.
+    expect(assistantProjectMutationAllowed({ permissionLevel: "ask" }, ["p"])).toBe(true);
   });
   it("Watch allows known reads and denies mutations and unknown tools", () => {
     expect(

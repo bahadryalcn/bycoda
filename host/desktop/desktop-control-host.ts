@@ -1,6 +1,6 @@
 import { nativeRun, type DesktopRunner } from "./desktop-control-runner";
 import { CuaDriverClient } from "./cua-driver-client";
-import { createCuaDriverRunner } from "./cua-driver-runner";
+import { createCuaDriverRunner, CUA_DRIVER_UNSUPPORTED_ACTIONS } from "./cua-driver-runner";
 export type { DesktopRunner } from "./desktop-control-runner";
 import {
   SNAPSHOT_PAGE_DEFAULT_CHARS,
@@ -15,6 +15,7 @@ import {
 import {
   desktopActArgs,
   isPhysicalOnlyDesktopAction,
+  PHYSICAL_ONLY_DESKTOP_ACTIONS,
   validateDesktopAct,
 } from "./desktop-act-command";
 import { DesktopStatusChanges } from "./desktop-status-changes";
@@ -360,6 +361,32 @@ export class HostDesktopControl {
     if (input.op !== "status") this.tail = run.catch(() => undefined);
     return run;
   }
+  async actReceipt(
+    input: Extract<DesktopControlRequest, { op: "act" }>,
+    principal: DesktopControlPrincipal,
+    authorized: () => boolean | Promise<boolean>,
+  ) {
+    await this.ready;
+    return this.requestAuthorities.run(authorized, async () => {
+      await this.authorize(principal);
+      const receipt = await this.readReceipt(`${principal.id}:${input.requestId}`, input);
+      await this.authorize(principal);
+      return receipt;
+    });
+  }
+
+  private async readReceipt(receiptId: string, input: DesktopControlRequest) {
+    const previous = await this.store.db
+      .prepare("SELECT value FROM desktop_control_receipts WHERE id=?")
+      .get(receiptId);
+    if (!previous) return undefined;
+    const receipt = JSON.parse(previous.value) as Receipt;
+    if (receipt.fingerprint !== createHash("sha256").update(JSON.stringify(input)).digest("hex"))
+      throw new Error("A desktop retry must preserve the original request.");
+    this.scheduleAuditDrain();
+    return receipt.operation;
+  }
+
   private async authorize(principal: DesktopControlPrincipal) {
     if (!((await this.requestAuthorities.getStore()?.()) ?? true))
       throw new Error("Desktop request authority was revoked.");
@@ -531,7 +558,7 @@ export class HostDesktopControl {
     configuration: DesktopControlConfiguration,
     app: string,
     principal: DesktopControlPrincipal,
-    pid: number,
+    pid?: number,
   ) {
     const envelope = await this.invoke(
       configuration,
@@ -552,7 +579,9 @@ export class HostDesktopControl {
       .parse(envelope.data);
     if (
       windows.some(
-        (window) => !sameDesktopApp(window.app_name, app, this.platform) || window.pid !== pid,
+        (window) =>
+          !sameDesktopApp(window.app_name, app, this.platform) ||
+          (pid !== undefined && configuration.driver !== "cua-driver" && window.pid !== pid),
       )
     )
       throw new Error("Desktop inventory contained a foreign application process.");
@@ -572,20 +601,31 @@ export class HostDesktopControl {
   ) {
     if (
       !(await this.windows(configuration, app, principal, pid)).some(
-        (window) => window.id === windowId,
+        (window) => window.id === windowId && window.pid === pid,
       )
     )
       throw new Error("The selected desktop window is unavailable or changed.");
-    if ((await this.appProcess(configuration, app, principal)) !== pid)
+    if (
+      configuration.driver !== "cua-driver" &&
+      (await this.appProcess(configuration, app, principal)) !== pid
+    )
       throw new Error("The selected desktop application process changed.");
   }
   private async appProcess(
     configuration: DesktopControlConfiguration,
     app: string,
     principal: DesktopControlPrincipal,
+    windowId?: string,
   ) {
     if (!isDesktopAppAllowed(configuration, app, this.platform))
       throw new Error("The owner has not approved this app for computer use.");
+    if (windowId && configuration.driver === "cua-driver") {
+      const windows = await this.windows(configuration, app, principal);
+      const matches = windows.filter((window) => window.id === windowId);
+      if (matches.length !== 1)
+        throw new Error("The selected desktop window is unavailable or ambiguous.");
+      return matches[0].pid;
+    }
     const data = this.requireData(
       await this.invoke(configuration, ["list-apps", "--app", app], principal),
     );
@@ -597,12 +637,20 @@ export class HostDesktopControl {
       throw new Error("The allowed app is missing or ambiguous; choose a single running app.");
     return apps[0].pid;
   }
-  /** Whether exactly one instance of the app already runs; inventory failures count as no. */
+  /** Identify an existing window before launching. The Cua Driver inventory is window-based. */
   private async runningWindowsApp(
     configuration: DesktopControlConfiguration,
     app: string,
     principal: DesktopControlPrincipal,
   ) {
+    if (configuration.driver === "cua-driver") {
+      const result = await this.invoke(configuration, ["list-windows", `--app=${app}`], principal);
+      if (!result.ok) throw new Error("Desktop window inventory is unavailable.");
+      return z
+        .array(z.object({ app_name: z.string() }))
+        .parse(result.data)
+        .some((window) => sameDesktopApp(window.app_name, app, this.platform));
+    }
     try {
       const data = this.requireData(
         await this.invoke(configuration, ["list-apps", "--app", app], principal),
@@ -626,16 +674,8 @@ export class HostDesktopControl {
   ): Promise<DesktopControlResponse> {
     const receiptId = `${principal.id}:${input.requestId}`;
     const fingerprint = createHash("sha256").update(JSON.stringify(input)).digest("hex");
-    const previous = await this.store.db
-      .prepare("SELECT value FROM desktop_control_receipts WHERE id=?")
-      .get(receiptId);
-    if (previous) {
-      const receipt = JSON.parse(previous.value) as Receipt;
-      if (receipt.fingerprint !== fingerprint)
-        throw new Error("A desktop retry must preserve the original request.");
-      this.scheduleAuditDrain();
-      return { operation: receipt.operation };
-    }
+    const previous = await this.readReceipt(receiptId, input);
+    if (previous) return { operation: previous };
     if (input.op === "launch") {
       if (
         !isPlainDesktopAppName(input.app) ||
@@ -705,17 +745,31 @@ export class HostDesktopControl {
       if (input.op === "clipboard" && !(await this.sensitiveAuthorities.getStore()?.()))
         throw new Error("Clipboard approval expired before dispatch.");
       let envelope: Envelope | undefined;
+      let windowReused = false;
       if (input.op === "launch" && this.platform === "win32") {
-        // The helper attaches by process name and refuses multi-process apps such as
-        // Chrome (AMBIGUOUS_TARGET); one running app needs no launch.
-        if (await this.runningWindowsApp(configuration, input.app, principal))
+        const running = await this.runningWindowsApp(configuration, input.app, principal).catch(
+          () => undefined,
+        );
+        if (running === undefined) {
+          envelope = {
+            version: AGENT_DESKTOP_PROTOCOL,
+            ok: false,
+            command: "launch",
+            error: {
+              code: "window_inventory_unavailable",
+              message: "Could not verify whether this app already has an open window.",
+              disposition: { delivery: "not_delivered", retry: "safe" },
+            },
+          };
+        } else if (running) {
+          windowReused = configuration.driver === "cua-driver";
           envelope = {
             version: AGENT_DESKTOP_PROTOCOL,
             ok: true,
             command: "launch",
             data: { disposition: { delivery: "not_delivered", retry: "safe" } },
           };
-        else {
+        } else {
           const path = await resolveWindowsAppPath(input.app, this.ports.run ?? nativeRun);
           if (path) args = ["launch", "--timeout", "10000", "--", path];
         }
@@ -734,6 +788,7 @@ export class HostDesktopControl {
         ok: envelope.ok,
         delivery: disposition.success ? disposition.data.delivery : "unknown",
         retry: disposition.success ? disposition.data.retry : "unknown",
+        ...(windowReused ? { outcome: "window_reused" as const } : {}),
         ...(envelope.error
           ? {
               errorCode: envelope.error.code,
@@ -826,7 +881,7 @@ export class HostDesktopControl {
     input: { app: string; windowId?: string; maxChars?: number },
     principal: DesktopControlPrincipal,
   ) {
-    const pid = await this.appProcess(configuration, input.app, principal);
+    const pid = await this.appProcess(configuration, input.app, principal, input.windowId);
     const args = [
       "snapshot",
       "--app",
@@ -844,6 +899,8 @@ export class HostDesktopControl {
       (input.windowId && observed.window.id !== input.windowId)
     )
       throw new Error("Desktop observation resolved to a different app or window.");
+    if (configuration.driver === "cua-driver")
+      await this.window(configuration, input.app, observed.window.id, principal, pid);
     if (JSON.stringify(observed.tree).length > 500000)
       throw new Error("Desktop snapshot is too large; narrow the target window.");
     const { text, refs } = renderSnapshotTree(observed.tree, observed.snapshot_id);
@@ -904,6 +961,13 @@ export class HostDesktopControl {
             enabled: configuration.enabled,
             stopped: this.halted,
             active: !!this.active,
+            capabilities: {
+              driver: configuration.driver ?? "agent-desktop",
+              ready: verified && configuration.enabled && !this.halted,
+              physicalInputEnabled: configuration.allowPhysicalInput,
+              physicalOnlyActions: PHYSICAL_ONLY_DESKTOP_ACTIONS,
+              unsupportedActions: cua ? CUA_DRIVER_UNSUPPORTED_ACTIONS : [],
+            },
             permissions,
             ...(this.currentAction ? { currentAction: { ...this.currentAction } } : {}),
             upstreamRef: cua ? CUA_DRIVER_RELEASE : AGENT_DESKTOP_UPSTREAM_REF,
@@ -989,6 +1053,11 @@ export class HostDesktopControl {
         this.halted = generation !== this.stopGeneration;
         return { ok: true, configuration: await this.configuration() };
       case "windows.list": {
+        if (configuration.driver === "cua-driver") {
+          if (!isDesktopAppAllowed(configuration, input.app, this.platform))
+            throw new Error("The owner has not approved this app for computer use.");
+          return { windows: await this.windows(configuration, input.app, principal) };
+        }
         const pid = await this.appProcess(configuration, input.app, principal);
         const windows = await this.windows(configuration, input.app, principal, pid);
         if ((await this.appProcess(configuration, input.app, principal)) !== pid)
@@ -999,7 +1068,7 @@ export class HostDesktopControl {
       case "clipboard":
         return this.journalCommand(input, configuration, principal);
       case "screenshot": {
-        const pid = await this.appProcess(configuration, input.app, principal);
+        const pid = await this.appProcess(configuration, input.app, principal, input.windowId);
         await this.window(configuration, input.app, input.windowId, principal, pid);
         const data = this.requireData(
           await this.invoke(
@@ -1022,7 +1091,7 @@ export class HostDesktopControl {
         };
       }
       case "find": {
-        const pid = await this.appProcess(configuration, input.app, principal);
+        const pid = await this.appProcess(configuration, input.app, principal, input.windowId);
         await this.window(configuration, input.app, input.windowId, principal, pid);
         const data = this.requireData(
           await this.invoke(
@@ -1118,26 +1187,44 @@ export class HostDesktopControl {
       case "act": {
         const receiptId = `${principal.id}:${input.requestId}`;
         const fingerprint = createHash("sha256").update(JSON.stringify(input)).digest("hex");
-        const previous = await this.store.db
-          .prepare("SELECT value FROM desktop_control_receipts WHERE id=?")
-          .get(receiptId);
-        if (previous) {
-          const receipt = JSON.parse(previous.value) as Receipt;
-          if (receipt.fingerprint !== fingerprint)
-            throw new Error("A desktop retry must preserve the original request.");
-          this.scheduleAuditDrain();
-          return { operation: receipt.operation };
+        const previous = await this.readReceipt(receiptId, input);
+        if (previous) return { operation: previous };
+        const rejectInput = (errorCode: string, refsExpired = false): DesktopControlResponse => ({
+          operation: {
+            requestId: input.requestId,
+            state: "settled",
+            ok: false,
+            errorCode,
+            delivery: "not_delivered",
+            retry: "safe",
+          },
+          ...(refsExpired ? { refsExpired: true } : {}),
+        });
+        let snapshot: Snapshot;
+        try {
+          snapshot = this.liveSnapshot(input, configuration, principal, "Stale desktop snapshot.");
+        } catch {
+          return rejectInput("stale_snapshot", true);
         }
-        const snapshot = this.liveSnapshot(
-          input,
-          configuration,
-          principal,
-          "The desktop ref is stale or outside this caller's observed snapshot.",
-        );
-        if ((await this.appProcess(configuration, snapshot.app, principal)) !== snapshot.pid)
-          throw new Error("The observed app process changed; take a fresh snapshot.");
+        let currentPid: number | undefined;
+        try {
+          currentPid = await this.appProcess(
+            configuration,
+            snapshot.app,
+            principal,
+            snapshot.windowId,
+          );
+        } catch {
+          return rejectInput("target_unavailable", true);
+        }
+        if (currentPid !== snapshot.pid) return rejectInput("target_changed", true);
         if (isPhysicalOnlyDesktopAction(input.action) && !input.headed)
-          throw new Error("This action requires an explicit physical-input grant.");
+          return rejectInput("foreground_required");
+        if (
+          configuration.driver === "cua-driver" &&
+          CUA_DRIVER_UNSUPPORTED_ACTIONS.includes(input.action)
+        )
+          return rejectInput("unsupported_action");
         if (
           input.headed &&
           (!configuration.allowPhysicalInput ||
@@ -1152,7 +1239,7 @@ export class HostDesktopControl {
                 })))
             ))
         )
-          throw new Error("Physical input is not granted for this exact request.");
+          return rejectInput("physical_input_not_granted");
         validateDesktopAct(input, snapshot.refs);
         await this.available(configuration, principal);
         let operation: DesktopControlOperation = {
@@ -1161,6 +1248,7 @@ export class HostDesktopControl {
           ok: false,
           delivery: "unknown",
           retry: "unknown",
+          errorCode: "helper_outcome_unknown",
         };
         const audit = (value: DesktopControlOperation): DesktopOperationAudit => ({
           id: desktopOperationAuditId(principal, input.requestId, value.state),
@@ -1191,7 +1279,11 @@ export class HostDesktopControl {
               .run(receiptId, JSON.stringify(receipt)),
           "critical",
         );
-        const args = desktopActArgs(input, snapshot);
+        const args = desktopActArgs(
+          input,
+          snapshot,
+          configuration.driver === "cua-driver" ? snapshot.pid : undefined,
+        );
         this.currentAction = { app: snapshot.app, action: input.action };
         this.statusChanged();
         try {

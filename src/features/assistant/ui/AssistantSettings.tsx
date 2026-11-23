@@ -1,10 +1,8 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { validWorkerContextSettings } from "../../../shared/model/assistantContext";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  AssistantStandingConsentFields,
-  DEFAULT_CRITICAL_EXCLUSIONS,
-} from "./settings/AssistantStandingConsentFields";
+import { AssistantStandingConsentFields } from "./settings/AssistantStandingConsentFields";
 import { scrollAreaAttributes } from "../../../shared/ui/ScrollArea";
 import {
   useCallback,
@@ -66,7 +64,12 @@ import settingsStyles from "./AssistantSettings.module.css";
 import {
   assistantAccessMode,
   assistantAccessPatch,
+  DEFAULT_CRITICAL_EXCLUSIONS,
+  effectiveConsent,
+  nativeConsentFromGrant,
   type AssistantAccessChoice,
+  type NativeConsent,
+  type NativeConsentGrant,
 } from "./settings/assistantAccess";
 import type { FoldersDraftState } from "./settings/folders/useAssistantFolders";
 import { useDefaultWorkerExecution } from "./settings/defaultWorkerExecution";
@@ -83,6 +86,31 @@ const pages = [
   ["access", "Access", Shield],
   ["advanced", "Advanced", SlidersHorizontal],
 ] as const;
+
+function permissionLevelLabel(level: NonNullable<AssistantProfilePatch["permissionLevel"]>) {
+  if (level === "ask") return t("Ask for each operation");
+  if (level === "watch") return t("Watch");
+  if (level === "projects") return t("Selected projects");
+  return t("Everything");
+}
+
+/** What the native app enforces on this device for the selected Host, not the Host mirror. */
+function nativeConsentDescription(native: NativeConsent, changed: boolean) {
+  if (changed) return t("Save to apply the permission you chose on this device.");
+  if (native.state === "loading") return t("Reading the permission saved on this device.");
+  if (native.state === "failed")
+    return t("The permission saved on this device could not be read. Reopen settings.");
+  if (native.state === "missing")
+    return t("No standing permission is saved on this device. Every operation asks first.");
+  if (native.state === "other-credentials")
+    return t(
+      "The saved permission belongs to other Host credentials, so every operation asks first. Renew it on Save to use it again.",
+    );
+  return t(
+    "Standing permission on this device: {p0}. It stays with the selected Host until changed.",
+    { p0: permissionLevelLabel(native.permissionLevel) },
+  );
+}
 
 function RefreshButton({
   onClick,
@@ -134,19 +162,25 @@ export function AssistantSettings({
   const consentRevision = useRef<number | null>(null);
   const consentChanged = useRef(false);
   const [consentDirty, setConsentDirty] = useState(false);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Loads the native consent revision for this mounted environment and discards results after unmount.
+  const [nativeConsent, setNativeConsent] = useState<NativeConsent>({
+    state: consentEnvironment ? "loading" : "failed",
+  });
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Loads the native consent grant for this mounted environment and discards results after unmount.
   useEffect(() => {
     let current = true;
     consentRevision.current = null;
     if (consentEnvironment) {
-      void invoke<{ revision: number } | null>("assistant_consent_get", {
+      void invoke<NativeConsentGrant | null>("assistant_consent_get", {
         environmentId: consentEnvironment,
       })
         .then((consent) => {
-          if (current) consentRevision.current = consent?.revision ?? 0;
+          if (!current) return;
+          consentRevision.current = consent?.revision ?? 0;
+          setNativeConsent(nativeConsentFromGrant(consent));
         })
         .catch(() => {
-          /* Saving remains blocked until an authoritative native revision is available. */
+          // Saving remains blocked until an authoritative native revision is available.
+          if (current) setNativeConsent({ state: "failed" });
         });
     }
     return () => {
@@ -171,6 +205,7 @@ export function AssistantSettings({
     computerState.access,
     foldersState.runWithoutAsking,
     foldersState.allowChangesWithoutAsking,
+    effectiveConsent(nativeConsent, draft, consentDirty),
   );
   const { guard, dialog: leaveDialog } = useLeaveGuard();
   const [formKey, setFormKey] = useState(0);
@@ -227,12 +262,13 @@ export function AssistantSettings({
   const showPermissionControls = customAccessOpen || access === "custom";
   function chooseAccess(choice: string) {
     if (choice === "custom") {
-      if (!busy && access !== "loading") setCustomAccessOpen(true);
+      if (!busy) setCustomAccessOpen(true);
       return;
     }
     if (
       (choice !== "ask" && choice !== "full") ||
       busy ||
+      access === "loading" ||
       !computerAccess.current ||
       !foldersAccess.current
     )
@@ -251,6 +287,9 @@ export function AssistantSettings({
     setCustomAccessOpen(false);
     computerAccess.current(next);
     foldersAccess.current(next === "full");
+    // The preset also replaces the native grant on Save: full grants everything, ask drops it.
+    consentChanged.current = true;
+    setConsentDirty(true);
     setError("");
     setSavedNotice(false);
   }
@@ -284,7 +323,7 @@ export function AssistantSettings({
       if (!consentEnvironment) throw new Error(t("Selected Host is unavailable."));
       if (consentRevision.current === null)
         throw new Error(t("Permission is unavailable. Reopen settings before saving permissions."));
-      const consent = await invoke<{ revision: number }>("assistant_consent_set", {
+      const consent = await invoke<NativeConsentGrant>("assistant_consent_set", {
         environmentId: consentEnvironment,
         expectedRevision: consentRevision.current,
         permissionLevel: draft.permissionLevel,
@@ -294,6 +333,7 @@ export function AssistantSettings({
       consentRevision.current = consent.revision;
       consentChanged.current = false;
       setConsentDirty(false);
+      setNativeConsent(nativeConsentFromGrant(consent));
       nativeSaved = true;
     }
     try {
@@ -333,8 +373,12 @@ export function AssistantSettings({
   /** True only after every dirty section was acknowledged; the first failure keeps the draft. */
   async function save(): Promise<boolean> {
     if (busy) return false;
-    setPending(true);
     setError("");
+    if (profileDirty && !validWorkerContextSettings(draft)) {
+      setPage("advanced");
+      return false;
+    }
+    setPending(true);
     setSavedNotice(false);
     // Folders show their own save error inline; the footer would repeat it.
     let shownInline = false;
@@ -569,17 +613,16 @@ export function AssistantSettings({
                         setDraft((current) => ({ ...current, ...patch }));
                       }}
                     />
-                    {draft.permissionLevel && (
-                      <Row
-                        label={t("Computer access")}
-                        description={t(
-                          "This permission stays with this installation and the selected Host until changed. Host credential changes ask again.",
-                        )}
-                      >
+                    <Row
+                      label={t("Computer access")}
+                      descriptionVisible
+                      description={nativeConsentDescription(nativeConsent, consentDirty)}
+                    >
+                      {draft.permissionLevel && (
                         <Button
                           type="button"
                           variant="ghost"
-                          disabled={busy}
+                          disabled={busy || nativeConsent.state === "loading"}
                           onClick={() => {
                             consentChanged.current = true;
                             setConsentDirty(true);
@@ -588,8 +631,8 @@ export function AssistantSettings({
                         >
                           {t("Renew on Save")}
                         </Button>
-                      </Row>
-                    )}
+                      )}
+                    </Row>
                     <Row
                       label={t("Access presets")}
                       stacked
@@ -618,7 +661,7 @@ export function AssistantSettings({
                             value: "custom",
                             label: t("Custom"),
                             icon: <SlidersHorizontal className="icon-sm" />,
-                            disabled: busy || access === "loading",
+                            disabled: busy,
                           },
                         ]}
                       />
@@ -722,6 +765,7 @@ export function AssistantSettings({
                       value={retention}
                       disabled={pending}
                       usage={snapshot.usage}
+                      dailyBudget={snapshot.profile.dailyTokenBudget}
                       onChange={(days) => {
                         setSavedNotice(false);
                         setRetention(days);

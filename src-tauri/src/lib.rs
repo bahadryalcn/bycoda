@@ -588,6 +588,7 @@ pub fn run() {
             native_editor_drafts::native_editor_draft_open,
             native_editor_drafts::native_editor_draft_read_current,
             native_editor_drafts::native_editor_draft_read_recovery,
+            native_editor_drafts::native_editor_draft_hide_recovery,
             native_editor_drafts::native_editor_draft_inventory,
             native_editor_drafts::native_editor_draft_clear_saved,
             remote::remote_machines,

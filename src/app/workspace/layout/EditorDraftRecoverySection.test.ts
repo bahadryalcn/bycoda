@@ -74,8 +74,9 @@ describe("file recovery pane summaries", () => {
     await render([row("a.ts", true)]);
     expect(container.querySelector("input")).toBeNull();
     await render(many(9));
-    const labels = [...container.querySelectorAll("[aria-label]")].map((node) =>
-      node.getAttribute("aria-label"),
+    // Per-row actions repeat by design; landmarks and fields carry one label each.
+    const labels = [...container.querySelectorAll("[aria-label]:not(button, [role='img'])")].map(
+      (node) => node.getAttribute("aria-label"),
     );
     expect(new Set(labels).size).toBe(labels.length);
     const search = container.querySelector("input")!;

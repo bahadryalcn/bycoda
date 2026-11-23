@@ -35,12 +35,14 @@ Read only the section needed for the change. Source owners remain in [the surfac
 - Explicit conversation deletion is durable across restart. Native and Host deletion markers reject late saves/adoption; boot removes confirmed deleted IDs from saved layouts, in-flight references and recovery entries before claiming them. A failed deletion lookup remains unknown and retains the restore retry. Never expire renderer deletion guards on a timer.
 
 - Retain serialized journal writes/rollback, pending duplicate guards and lock/privacy rechecks. Conversation maintenance cannot clear original file copies; unknown file-open/save outcomes retain their original identity.
+- Hiding a file copy requires confirmation and a Native match on the exact owner, document, revision and digest. Store visibility independently of the recovery payload and apply it before inventory pagination. New revisions can appear again.
 
 - Native editor copies may carry exact `serializedText` for mixed line endings. Validate its normalized text, digest and byte charge through capture, recovery and checkpoint proof; missing legacy values retain their original uniform-EOL interpretation. Existing record limits still apply, and rejected captures cannot claim durable recovery or a completed save.
 
 ## Presentation
 
-Show tabs only for non-empty content; conversations alone need no strip. Reports
+Show tabs for non-empty content. Keep the selected file view open if its last copy
+is hidden. Conversations alone need no strip. Reports
 share file copies because manual listing establishes their count. Search appears
 above eight rows and the list menu above one row, containing only applicable
 actions. Put scope/consequence copy in `InfoPopover`, not a footer paragraph.

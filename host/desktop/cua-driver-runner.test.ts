@@ -157,6 +157,20 @@ it("acts on the driver token and refuses refs from an earlier driver run", async
     code: "stale_element_token",
     disposition: { delivery: "not_delivered", retry: "safe" },
   });
+  const staleKey = await run(client, [
+    "--headed",
+    "press",
+    "--app=notepad",
+    "--window-id=42",
+    "--observed-ref=@c1-s0000000a:2",
+    "--",
+    "return",
+  ]);
+  expect(client.calls.slice(calls).map((call) => call.name)).toEqual(["list_windows"]);
+  expect(staleKey.envelope.error).toMatchObject({
+    code: "stale_element_token",
+    disposition: { delivery: "not_delivered", retry: "safe" },
+  });
 });
 
 it("refuses unmapped actions without dispatching anything", async () => {

@@ -194,6 +194,15 @@ execution permissions, folders and commands, computer use, manual session
 supervision and the 24/7 readiness list. **Advanced** holds cost and context
 limits and conversation retention.
 
+Worker context is automatic by default. Arif compacts at 50% of the model's
+context window or 150,000 tokens and starts a fresh session at 80% or 300,000
+tokens, whichever threshold comes first for each action. Existing custom
+limits stay editable under **Advanced worker context limits**. Use **Restore
+defaults** on the worker context row and save to return to automatic settings.
+**Today's usage** shows usage against the saved daily budget. Open **Usage details** for the
+supervisor, worker and cache figures. Cache reads already count at one tenth
+in that budget total.
+
 The readiness list shows unresolved checks and their explanations immediately,
 including phone notifications and Host availability after sign-out. **All checks**
 also shows the ready items. Unknown status remains unknown; opening settings does
@@ -202,11 +211,20 @@ not grant permissions or make a check ready.
 Manual supervision shows the selected project names. Saving this project scope
 does not enroll conversations; choose each conversation in **Sessions**.
 
-**Access > Permission** applies one choice to jobs, commands and computer use.
-**Full access** also permits changes without another confirmation in the configured
-Assistant folders. **Custom** opens individual controls without changing grants;
-mixed existing grants show **Custom**, not Full access. Selecting a preset changes
-drafts; **Save** applies them through their existing versioned owners. Existing
+**Access > Permission** applies one choice to jobs, commands, computer use and the
+standing permission this computer keeps for the selected Host. **Full access** also
+permits changes without another confirmation in the configured Assistant folders and
+grants **Everything** with no critical exclusions; exclusions you tick afterwards are
+kept and the choice then shows **Custom**. **Work and ask** removes any broad
+standing permission and asks before every operation. **Computer access** states what
+this computer enforces: the saved level, no saved permission, a permission that
+belongs to other Host credentials (every operation asks until you renew it on
+**Save**), or that it could not be read. Presets stay unavailable until it is read.
+**Custom** opens individual controls without changing grants;
+mixed existing grants, or a Host profile that claims more than this computer grants,
+show **Custom**, not Full access. Selecting a preset changes
+drafts; **Save** applies them through their existing versioned owners. Opening
+settings or saving unrelated changes never grants or renews a permission. Existing
 command-only grants do not gain permission to write files automatically. Folder
 scope, operating-system permissions, account authorization and project privacy
 remain effective. Stop and revocation remain available.

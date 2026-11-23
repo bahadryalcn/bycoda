@@ -37,11 +37,16 @@ copies** also includes reported saves and copies that match their captured disk
 baseline. Copies are ordered by their latest recorded update. Refresh the list
 when another window has edited the source.
 
-**Open copy in new tab** first prepares a separate Native recovery row and then
+**Open** first prepares a separate Native recovery row and then
 opens a permanent, unsaved editor tab. Existing tabs at the same path keep their
 edits. The source copy stays intact, including when its original window is still
 working. An uncertain acknowledgment or failed tab opening retries the same
 prepared target. Recovery itself never writes the file or submits a chat turn.
+
+Use **Hide from list** to dismiss an individual recovery copy from both list
+views. The recovery record stays saved under the usual retention rules.
+Refreshing or restarting keeps that copy hidden. A newer revision can appear
+again.
 
 A changed or unreadable disk file keeps the explicit reload/overwrite choice.
 Background watcher reads cannot silently clear that decision. A pending or newer
