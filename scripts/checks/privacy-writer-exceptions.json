@@ -273,6 +273,20 @@
       "writer": "carryAssignments",
       "expression": "carryAssignments(previous, owners)",
       "count": 1
+    },
+    {
+      "file": "src/features/projects/model/projectGroups.ts",
+      "owner": "unlinkProjectGroup",
+      "writer": "updateProjectGroup",
+      "expression": "updateProjectGroup(id, (group) => { const { workspaceFile: _file, workspaceFolders: _folders, ...rest } = group; return { ...rest, syncedWorkspace: null }; })",
+      "count": 1
+    },
+    {
+      "file": "src/features/sync/model/syncGroups.ts",
+      "owner": "applyWorkspaceLayouts",
+      "writer": "saveProjectGroups",
+      "expression": "saveProjectGroups(groups)",
+      "count": 1
     }
   ]
 }

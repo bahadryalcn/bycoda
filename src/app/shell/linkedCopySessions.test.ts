@@ -14,7 +14,7 @@ import {
 } from "./linkedCopySessions";
 import type { SessionListRow } from "./sessionListWindow";
 
-const PC = "G:\Projects\clinic";
+const PC = "G:\\Projects\\clinic";
 const MAC = "remote://mac-env/Users/me/clinic";
 const links = projectLinks([PC, MAC], {
   [pathKey(PC)]: "github.com/owner/clinic",
@@ -47,7 +47,7 @@ describe("otherProjectCopies", () => {
 
   it("leaves out locked copies, unlinked projects and the no-project view", () => {
     expect(otherProjectCopies(links, PC, (path) => path === MAC)).toEqual([]);
-    expect(otherProjectCopies(links, "G:\Projects\other", () => false)).toEqual([]);
+    expect(otherProjectCopies(links, "G:\\Projects\\other", () => false)).toEqual([]);
     expect(otherProjectCopies(links, "~", () => false)).toEqual([]);
   });
 });
@@ -84,7 +84,7 @@ describe("copySessions", () => {
         local("mine", 3),
         local("crew-member", 4, { orchestrationLeadId: "lead" }),
         local("unsent", 5, { draft: true }),
-        local("other", 6, { cwd: "G:\Projects\other" }),
+        local("other", 6, { cwd: "G:\\Projects\\other" }),
       ],
     );
     expect(result.sessions.map((session) => session.id)).toEqual(["mine"]);

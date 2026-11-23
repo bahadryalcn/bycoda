@@ -11,7 +11,9 @@ All excludes archived conversations from both title and message results. Use the
 archive filter in Conversations to include them.
 
 Ctrl+P opens Go to File with the current project name above the search field and
-one close button. Its file index includes workspace packages, nested Git repositories
+one close button. If you press Enter while Go to File is still searching, it opens
+the first match for that query when ready. Typing again cancels the pending selection.
+Its file index includes workspace packages, nested Git repositories
 and initialized submodules inside the current directory. Each repository keeps its
 own ignore rules; ignored dependencies and files outside that directory are excluded.
 Results keep their paths relative to the current directory, so equal filenames in

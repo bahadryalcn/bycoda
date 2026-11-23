@@ -307,6 +307,7 @@ function ProjectTerminalDockComponent({
               ) : null}
               {onAddTerminalWithProfile ? (
                 <div ref={profileButton} className="terminal-profile-trigger">
+                  {/* ui-drift-ignore: hand-rolled-disclosure -- this chevron opens a popup menu, not an inline panel. */}
                   <Button
                     variant="ghost"
                     size="sm"

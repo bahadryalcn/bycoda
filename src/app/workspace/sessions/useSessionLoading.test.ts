@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { newSession } from "../../../features/sessions/model/session";
+import { useSessionComposerDraft } from "../../../features/sessions/ui/useSessionComposerDraft";
 import { useSessionLoading, type SessionLoadingDeps } from "./useSessionLoading";
 
 const mocks = vi.hoisted(() => ({ reserve: vi.fn(), get: vi.fn() }));
@@ -86,8 +87,14 @@ function retryHarness(initial: ReturnType<typeof newSession>) {
     refreshHistory: async () => {},
   };
   let actions!: ReturnType<typeof useSessionLoading>;
+  let draft!: ReturnType<typeof useSessionComposerDraft>;
   function Harness() {
     actions = useSessionLoading(deps);
+    draft = useSessionComposerDraft(
+      initial.id,
+      initial.storedHistory?.revision,
+      actions.ensureSessionHistoryForExecution,
+    );
     return null;
   }
   const root = createRoot(document.createElement("div"));
@@ -95,6 +102,8 @@ function retryHarness(initial: ReturnType<typeof newSession>) {
     refs,
     mount: () => act(async () => root.render(createElement(Harness))),
     retry: (id: string) => act(async () => actions.onRetrySessionHistory(id)),
+    edit: (text: string) => act(async () => draft.change(text)),
+    prepareSend: () => actions.ensureSessionHistoryForExecution(initial.id),
     unmount: () => act(async () => root.unmount()),
   };
 }
@@ -105,6 +114,74 @@ const failedTail = () => ({
   historyLoading: true,
   historyLoadError: "Earlier messages could not be loaded. Reopen this chat to retry.",
 });
+
+it.each([true, false])(
+  "reads on edit, publishes only on send, and reuses the read (immediate: %s)",
+  async (immediate) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const tail = {
+      ...failedTail(),
+      historyLoadError: undefined,
+      storedHistory: { before: 27, revision: 1 },
+    };
+    const complete = {
+      ...tail,
+      historyLoading: false,
+      storedHistory: undefined,
+      blocks: [{ id: "old", role: "assistant" as const, text: "Earlier" }, ...tail.blocks],
+    };
+    const read = Promise.withResolvers<typeof complete>();
+    mocks.get.mockReset().mockReturnValueOnce(read.promise);
+    const view = retryHarness(tail);
+    try {
+      await view.mount();
+      expect(mocks.get).not.toHaveBeenCalled();
+      await view.edit("reply");
+      expect(mocks.get).toHaveBeenCalledExactlyOnceWith(tail.id);
+      const waitingSend = immediate ? view.prepareSend() : undefined;
+      expect(view.refs.current[0].blocks).toBe(tail.blocks);
+      read.resolve(complete);
+      await act(async () => {});
+      if (!immediate) expect(view.refs.current[0].blocks).toBe(tail.blocks);
+      await expect(waitingSend ?? view.prepareSend()).resolves.toBe(true);
+      expect(view.refs.current[0].blocks).toEqual(complete.blocks);
+      await expect(view.prepareSend()).resolves.toBe(true);
+      expect(mocks.get).toHaveBeenCalledTimes(1);
+    } finally {
+      await view.unmount();
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
+it.each(["read failed", "tail replaced"])(
+  "reads again on send when the draft warm-up cannot be used: %s",
+  async (reason) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const tail = {
+      ...failedTail(),
+      historyLoadError: undefined,
+      storedHistory: { before: 27, revision: 1 },
+    };
+    const complete = { ...tail, historyLoading: false, storedHistory: undefined };
+    mocks.get.mockReset();
+    if (reason === "read failed") mocks.get.mockRejectedValueOnce(new Error("offline"));
+    else mocks.get.mockResolvedValueOnce(complete);
+    mocks.get.mockResolvedValueOnce(complete);
+    const view = retryHarness(tail);
+    try {
+      await view.mount();
+      await view.edit("reply");
+      if (reason === "tail replaced") view.refs.current = [{ ...tail, blocks: [...tail.blocks] }];
+      expect(view.refs.current[0].historyLoading).toBe(true);
+      await expect(view.prepareSend()).resolves.toBe(true);
+      expect(mocks.get).toHaveBeenCalledTimes(2);
+    } finally {
+      await view.unmount();
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("retries a failed history read in place and keeps the loaded turns until the pages arrive", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

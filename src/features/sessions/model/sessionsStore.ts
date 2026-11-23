@@ -1,7 +1,12 @@
 import { useLayoutEffect, useReducer, useRef } from "react";
 import { createStore } from "zustand/vanilla";
 import type { Block, Session } from "./session";
-import { sameBlocksIgnoringStreamingText, sameSessionIgnoringStreamingText } from "./stableBlocks";
+import {
+  onlyRunningToolOutputChanged,
+  streamingBlockUpdate,
+  sameBlocksIgnoringStreamingText,
+  sameSessionIgnoringStreamingText,
+} from "./stableBlocks";
 
 /**
  * Every session of this window. It lives outside `Workspace` so that a
@@ -171,10 +176,8 @@ export function useSession(id: string | undefined): Session | undefined {
 }
 
 /**
- * True when `next` differs from `shell` only by the streamed text of the last
- * block of some sessions: same length, and every session is the same object or
- * differs solely in a `blocks` array that passes
- * `sameBlocksIgnoringStreamingText`.
+ * The shell can keep its snapshot while the transcript and open details sheet
+ * follow streamed prose and tool output. Other block and session changes publish.
  */
 export function isTextOnlyChange(shell: readonly Session[], next: readonly Session[]): boolean {
   if (shell === next) return true;
@@ -191,13 +194,20 @@ export function isTextOnlyChange(shell: readonly Session[], next: readonly Sessi
       }
     }
     if (
-      !sameBlocksIgnoringStreamingText(a.blocks, b.blocks) &&
+      !sameBlocksIgnoringStreamedContent(a.blocks, b.blocks) &&
       !sameBlocksIgnoringLiveToolOutput(a.blocks, b.blocks)
     ) {
       return false;
     }
   }
   return true;
+}
+
+function sameBlocksIgnoringStreamedContent(previous: Block[], next: Block[]): boolean {
+  return (
+    streamingBlockUpdate(previous, next)?.kind === "tool-output" ||
+    sameBlocksIgnoringStreamingText(previous, next)
+  );
 }
 
 /**
@@ -217,24 +227,7 @@ function sameBlocksIgnoringLiveToolOutput(previous: Block[], next: Block[]): boo
     changed = index;
   }
   if (changed < 0) return true;
-  const a = previous[changed];
-  const b = next[changed];
-  if (a.role !== "tool" || b.role !== "tool" || !a.tool || !b.tool) return false;
-  if (a.id !== b.id || !a.streaming || !b.streaming) return false;
-  return (
-    sameFieldsExcept(a, b, "tool") && sameFieldsExcept(a.tool, b.tool, "detail", "outputTruncated")
-  );
-}
-
-function sameFieldsExcept<T extends object>(a: T, b: T, ...ignored: string[]): boolean {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const key of ignored) keys.delete(key);
-  for (const key of keys) {
-    if (!Object.is((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) {
-      return false;
-    }
-  }
-  return true;
+  return onlyRunningToolOutputChanged(previous[changed], next[changed]);
 }
 
 // The shell view: the last array handed to `Workspace`. It is compared against
@@ -288,13 +281,13 @@ export function usePaneSession(
   );
 }
 
-/** `usePaneSession` equality for a pane that keeps its last value across streamed-text frames. */
+/** A pane's transcript and open details sheet follow streamed content independently. */
 export function sameOptionalSessionIgnoringStreamingText(
   a: Session | undefined,
   b: Session | undefined,
 ): boolean {
   if (a === undefined || b === undefined) return a === b;
-  return sameSessionIgnoringStreamingText(a, b);
+  return sameSessionIgnoringStreamingText(a, b, sameBlocksIgnoringStreamedContent);
 }
 
 /**

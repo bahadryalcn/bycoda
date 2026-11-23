@@ -119,7 +119,8 @@ import {
   type RefreshFailure,
 } from "./fileTreeSupport";
 import { useFileTreeExternalDrop } from "./useFileTreeExternalDrop";
-import { rowPath, useFileTreeKeyboard } from "./useFileTreeKeyboard";
+import { FileTreeSiblings, mountedTreeRow, rowPath, visibleTreePaths } from "./FileTreeSiblings";
+import { useFileTreeKeyboard } from "./useFileTreeKeyboard";
 import { transferVerdict, useFileTreeOperations } from "./useFileTreeOperations";
 import { useFileTreePolling } from "./useFileTreePolling";
 import { copyAsyncWithFeedback, copyText } from "./clipboard";
@@ -398,9 +399,7 @@ function FileTreeInner({
 
   const onSelect = (path: string, modifiers: TreeSelectionModifiers = {}) => {
     const visible = modifiers.shiftKey
-      ? visibleRows()
-          .map((row) => rowPath(row))
-          .filter((value) => value !== cwd)
+      ? visibleTreePaths(rootRef.current).filter((value) => value !== cwd)
       : [];
     const anchor = selectionAnchor.current;
     setSelectedPaths((current) =>
@@ -576,7 +575,7 @@ function FileTreeInner({
       const blocked = verdict !== "ok";
       setDropFeedback(blocked ? "blocked" : "move", { clientX: lastX, clientY: lastY }, label);
       setDropIndicator(
-        visibleRows().find((row) => rowPath(row) === target) ?? null,
+        mountedTreeRow(rootRef.current, target) ?? null,
         blocked ? "blocked" : "inside",
       );
       showingTarget = true;
@@ -791,12 +790,6 @@ function FileTreeInner({
     openMenu({ path: cwd, isDir: true, isRoot: true }, e.clientX, e.clientY);
   };
 
-  const visibleRows = () =>
-    Array.from(
-      rootRef.current?.querySelectorAll<HTMLElement>("[data-explorer-root], [role='treeitem']") ??
-        [],
-    );
-
   // Toolbar and header menu share one create owner (startCreate) with the context menu and keyboard.
   const runHeaderAction = (id: string) => {
     if (id === "new-file" || id === "new-folder") {
@@ -859,7 +852,6 @@ function FileTreeInner({
     onSelect,
     commitSelectedPath,
     actionPaths,
-    visibleRows,
     openMenu,
     copyPathText,
     setClipboard,
@@ -1390,13 +1382,15 @@ function TreeChildren({
   // Without an active row the first root row is the tree's Tab stop.
   const firstRootPath = depth === 0 ? (folders[0] ?? files[0])?.path : undefined;
   const pad = { paddingLeft: 28 + depth * 12 };
-  const renderNode = (child: FsEntry) => {
+  const renderNode = (child: FsEntry, index: number) => {
     const open = ctx.expanded.has(child.path);
     return (
       <TreeNode
         key={child.path}
         entry={child}
         depth={depth}
+        position={index + 1}
+        setSize={shown.length}
         open={open}
         selected={ctx.selectedPaths.has(child.path)}
         tabStop={ctx.tabStop === null ? child.path === firstRootPath : ctx.tabStop === child.path}
@@ -1411,6 +1405,28 @@ function TreeChildren({
     );
   };
 
+  // Small directories and the initial page stay directly mounted. Continued siblings can
+  // scroll out together unless one owns focus, an edit, a drop highlight or an expanded folder.
+  const renderSiblings = (siblings: FsEntry[], offset: number) => {
+    const eager =
+      visible.length <= TREE_WINDOW_CHUNK * 2
+        ? siblings.length
+        : Math.max(0, TREE_WINDOW_CHUNK - offset);
+    return (
+      <FileTreeSiblings
+        entries={siblings}
+        eager={eager}
+        offset={offset}
+        renderRow={renderNode}
+        isPinned={(path) =>
+          ctx.expanded.has(path) ||
+          ctx.tabStop === path ||
+          ctx.renaming === path ||
+          ctx.dragOverPath === path
+        }
+      />
+    );
+  };
   return (
     <>
       {error ? (
@@ -1441,9 +1457,9 @@ function TreeChildren({
         </Text>
       ) : null}
       {show && ctx.creating?.isDir ? row : null}
-      {folders.map(renderNode)}
+      {renderSiblings(folders, 0)}
       {show && ctx.creating && !ctx.creating.isDir ? row : null}
-      {files.map(renderNode)}
+      {renderSiblings(files, folders.length)}
       {hidden > 0 ? (
         <Text as="p" size="caption" tone="secondary" className="flex gap-3 pr-2" style={pad}>
           <Button
@@ -1475,6 +1491,8 @@ function TreeChildren({
 const TreeNode = memo(function TreeNode({
   entry,
   depth,
+  position,
+  setSize,
   open,
   selected,
   tabStop,
@@ -1485,6 +1503,8 @@ const TreeNode = memo(function TreeNode({
 }: {
   entry: FsEntry;
   depth: number;
+  position: number;
+  setSize: number;
   open: boolean;
   selected: boolean;
   tabStop: boolean;
@@ -1594,6 +1614,8 @@ const TreeNode = memo(function TreeNode({
           title={entry.path}
           aria-selected={selected}
           aria-level={depth + 1}
+          aria-posinset={position}
+          aria-setsize={setSize}
           aria-expanded={entry.isDir ? open : undefined}
           tabStop={tabStop}
           onFocus={() => onRowFocus(entry.path)}

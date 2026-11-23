@@ -120,12 +120,19 @@ export function UnifiedDiffView({
   fill = true,
   fileLayout = "stacked",
   initialExpansion = "all",
-  onStageFile,
-  onDiscardFile,
-  onStageHunk,
-  onSectionNeeded,
+  onStageFile: onStageFileProp,
+  onDiscardFile: onDiscardFileProp,
+  onStageHunk: onStageHunkProp,
+  onSectionNeeded: onSectionNeededProp,
 }: Props) {
   useLocale();
+  // Callers rebuild these whenever their file list changes. A new identity wakes every
+  // loaded section (rows, layout and overview marks are rebuilt), so sections get stable
+  // wrappers that call the latest handler and keep its presence.
+  const onStageFile = useStableCallback(onStageFileProp);
+  const onDiscardFile = useStableCallback(onDiscardFileProp);
+  const onStageHunk = useStableCallback(onStageHunkProp);
+  const onSectionNeeded = useStableCallback(onSectionNeededProp);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const colorScheme = useColorScheme();
   const [open, setOpen] = useState<Set<string>>(() => initiallyOpenFiles(files, initialExpansion));
@@ -381,7 +388,7 @@ const FileSection = memo(function FileSection({
   const name = basename(file.path);
   const sectionRef = useRef<HTMLElement | null>(null);
   const [near, setNear] = useState(false);
-  // Latched: once the section has been expanded near the viewport it keeps highlighting.
+  // Keep highlighting and text selection mounted after the reader first reaches the patch.
   const [highlightReady, setHighlightReady] = useState(false);
   if (!highlightReady && expanded && near) setHighlightReady(true);
   const [tokens, setTokens] = useState<Map<UnifiedLine, SyntaxToken[]> | null>(null);
@@ -433,6 +440,24 @@ const FileSection = memo(function FileSection({
     observer.observe(section);
     return () => observer.disconnect();
   }, [expanded, scrollerRef]);
+
+  const body = expanded ? (
+    <FileBody
+      file={file}
+      reveals={reveals}
+      near={near}
+      tokens={tokens}
+      diffLayout={diffLayout}
+      rowMetrics={rowMetrics}
+      scrollerRef={scrollerRef}
+      onReveal={(foldId, direction) => {
+        const block = file.blocks.find((entry) => entry.kind === "fold" && entry.id === foldId);
+        const total = block?.kind === "fold" ? block.lines.length : 0;
+        onReveal(file.id, foldId, total, direction);
+      }}
+      onStageHunk={onStageHunk}
+    />
+  ) : null;
 
   return (
     <section
@@ -498,27 +523,18 @@ const FileSection = memo(function FileSection({
           </InlineAction>
         ) : null}
       </ActionHost>
-      {expanded ? (
+      {body &&
+      (highlightReady ||
+        file.binary ||
+        file.tooLarge ||
+        file.emptyMessage ||
+        file.blocks.length === 0) ? (
         <SurfaceSelection context={`@${file.path}`} contentVersion={file.blocks}>
-          <FileBody
-            file={file}
-            reveals={reveals}
-            near={near}
-            tokens={tokens}
-            diffLayout={diffLayout}
-            rowMetrics={rowMetrics}
-            scrollerRef={scrollerRef}
-            onReveal={(foldId, direction) => {
-              const block = file.blocks.find(
-                (entry) => entry.kind === "fold" && entry.id === foldId,
-              );
-              const total = block?.kind === "fold" ? block.lines.length : 0;
-              onReveal(file.id, foldId, total, direction);
-            }}
-            onStageHunk={onStageHunk}
-          />
+          {body}
         </SurfaceSelection>
-      ) : null}
+      ) : (
+        body
+      )}
     </section>
   );
 }, equalFileSectionProps);
@@ -650,15 +666,10 @@ function VirtualRows({
   const markedHoverNodes = useRef<HTMLElement[]>([]);
   const pinnedRows = useRef<{ start: number; end: number } | null>(null);
   const [commentTarget, setCommentTarget] = useState<DiffCommentDraft | null>(null);
+  const stageRows = !!canStageHunk && !!onStageHunk;
   const rows = useMemo(
-    () =>
-      flattenVisibleRows(
-        blocks,
-        (foldId) => reveals[foldId],
-        !!canStageHunk && !!onStageHunk,
-        rowMetrics,
-      ),
-    [blocks, canStageHunk, fileId, onStageHunk, reveals, rowMetrics],
+    () => flattenVisibleRows(blocks, (foldId) => reveals[foldId], stageRows, rowMetrics),
+    [blocks, fileId, reveals, rowMetrics, stageRows],
   );
   const splitRows = useMemo(
     () => (split ? buildSplitRows(rows, rowMetrics) : null),

@@ -1,4 +1,4 @@
-import { projectDisplayNameFrom } from "../projects/model/projectNames";
+import { projectDisplayNameFrom } from "../projects/public/projectNames";
 import { looksLikeProject } from "../projects/model/recents";
 import { loadTabGroupLabels } from "../workspace/public/tabGroups";
 import { pathKey } from "../../shared/lib/paths";

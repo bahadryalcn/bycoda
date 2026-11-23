@@ -48,6 +48,7 @@ export class TranscriptTurnCache {
     if (
       !settled &&
       live?.key === key &&
+      tail !== oldTail &&
       tail?.role === "assistant" &&
       !!tail.text.trim() &&
       !!oldTail?.text.trim() &&

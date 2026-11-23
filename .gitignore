@@ -22,6 +22,7 @@ dist-ssr/
 target/
 gen/schemas/
 coverage/
+.vitest/
 .vite/
 .turbo/
 *.tsbuildinfo

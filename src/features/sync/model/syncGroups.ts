@@ -7,7 +7,7 @@ import {
   saveProjectGroupAssignments,
   saveProjectGroups,
   type ProjectGroup,
-} from "../../projects/model/projectGroups";
+} from "../../projects/public/projectGroups";
 import { knownProjectPaths } from "../../projects/model/recents";
 import { pathKey } from "../../../shared/lib/paths";
 import { localPathKeyForProjectId, localProjectIdsByPath } from "./syncProjects";

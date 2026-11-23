@@ -347,6 +347,7 @@ desktop catches up automatically. You can read the conversation while the latest
 messages arrive. Reopening a long conversation loads the older local pages needed
 to compare its history and bring in new Host messages. If the desktop cannot finish syncing, **Sync conversation**
 retries the read. If both copies changed, the desktop asks which version to keep.
+When a turn starts on this desktop, the working indicator takes over from the automatic sync spinner.
 Syncing preserves your draft and queued messages and does not resend a turn.
 
 ## Connect through SSH
@@ -467,6 +468,8 @@ progress. If every address is silent, SSH still tries the preferred address.
 1. In the project rail, click **+** next to Projects and choose **Open folder on a machine…**.
 2. Choose the machine, browse to an existing checkout (or type its absolute path, such as `/home/me/code/my-app`), and click **Open**.
 3. Send a message. The first message creates the session on the host with the model, reasoning effort, and permission mode shown in the composer.
+
+If the folder list fails to load, use **Retry loading folders** in the folder picker.
 
 Remote projects show a server icon in the project rail. Hover or focus the project to see its machine, folder path, and connection status. Remote sessions show the server icon beside the provider icons.
 The new session screen shows the saved machine name and the folder path on that machine. If the name is unavailable, it shows **Remote computer** beside the path.

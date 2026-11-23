@@ -176,7 +176,7 @@ import type { UserQuestionPrompt, UserQuestionReply } from "../model/userQuestio
 import { historyKey, type HistoryBrowse } from "../model/composerHistory";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
-import { capturePastedTextAttachment, replacePastedText } from "./pastedTextAttachment";
+import { capturePastedTextAttachment, replacePastedText } from "../model/pastedTextAttachment";
 import {
   createBlankSkill,
   dollarTokenAt,

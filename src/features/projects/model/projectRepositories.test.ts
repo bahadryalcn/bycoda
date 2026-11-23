@@ -22,7 +22,7 @@ import {
 } from "./projectRepositories";
 import { pathKey } from "../../../shared/lib/paths";
 
-const PC = "G:\Projects\clinic";
+const PC = "G:\\Projects\\clinic";
 const MAC = "remote://mac-env/Users/me/clinic";
 const repositories = (entries: Record<string, string>) =>
   Object.fromEntries(Object.entries(entries).map(([path, id]) => [pathKey(path), id]));
@@ -42,7 +42,7 @@ describe("repositoryIdFromUrl", () => {
   it("links nothing through a local remote", () => {
     for (const url of [
       "C:/repos/clinic",
-      "C:\repos\clinic",
+      "C:\\repos\\clinic",
       "/srv/git/clinic.git",
       "file:///srv/clinic",
       "",
@@ -65,7 +65,7 @@ describe("projectLinks", () => {
   });
 
   it("keeps two clones on one machine as separate rows", () => {
-    const second = "G:\Projects\clinic-2";
+    const second = "G:\\Projects\\clinic-2";
     const links = projectLinks(
       [PC, second, MAC],
       repositories({ [PC]: "h/o/clinic", [second]: "h/o/clinic", [MAC]: "h/o/clinic" }),

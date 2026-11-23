@@ -356,9 +356,11 @@
 }
 
 ::highlight(bycoda-tool-diff-added) {
+  /* ui-drift-ignore: feature-typography -- ::highlight paints a text range and cannot host Text. */
   color: var(--color-diff-add-fg);
 }
 ::highlight(bycoda-tool-diff-removed) {
+  /* ui-drift-ignore: feature-typography -- ::highlight paints a text range and cannot host Text. */
   color: var(--color-diff-del-fg);
 }
 

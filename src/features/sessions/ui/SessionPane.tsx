@@ -48,7 +48,7 @@ import "./session-notes-layout.css";
 import { ProjectQuickActions } from "../../projects/public/ProjectQuickActions";
 import type { ExpandingButtonGroupItem } from "../../../shared/ui/ButtonGroup";
 import type { ProjectAction } from "../../projects";
-import type { OpenFileFn } from "../../search/model/search";
+import type { OpenFileFn } from "../../search";
 import {
   sessionProviderAccountId,
   subscribeProviderAccounts,
@@ -230,7 +230,7 @@ export type SessionPaneProps = {
   /** Reads this conversation's stored history again after it failed to load. */
   onRetrySessionHistory?: (sessionId: string) => void;
   onLoadSessionHistory?: (sessionId: string) => Promise<number>;
-  onPrepareSessionHistory?: (sessionId: string) => Promise<boolean>;
+  onPrepareSessionHistory?: (sessionId: string, mode?: "prefetch") => Promise<boolean>;
   onWorkspaceModeChange: (sessionId: string, mode: WorkspaceMode, base?: string) => void;
   onWorktreeBaseChange: (sessionId: string, base: string) => void;
   onManageWorktrees?: () => void;
@@ -1065,7 +1065,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
     initialDraft: composerDraftSeed,
     text: composerDraftText,
     change: setComposerDraftState,
-  } = useSessionComposerDraft(session.id);
+  } = useSessionComposerDraft(
+    session.id,
+    visible && !remoteSession && !session.busy && session.historyLoading
+      ? session.storedHistory?.revision
+      : undefined,
+    onPrepareSessionHistory,
+  );
   const parentChanged = useParentInputClosure({
     kind: "session-parent",
     sessionId: session.id,
@@ -2160,6 +2166,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           cwd={workCwd}
           native={{
             block: subagentSheet.block,
+            liveSessionId: remote ? undefined : session.id,
             relay: subagentRelay,
             blockedReason: subagentRelayBlockedReason,
             close: closeSubagentSheet,

@@ -106,13 +106,16 @@ import { ModelSourceContext, type ModelSource } from "../../sessions/public/mode
 import {
   cachedDescriptors,
   cachedSessionSnapshots,
+  captureDescriptorValidation,
+  invalidateValidatedDescriptors,
   rememberSessionSnapshot,
+  rememberValidatedDescriptor,
   snapshotKey,
+  validatedDescriptor,
 } from "../model/remoteSessionSnapshotCache";
 import { buildRemoteModelSource } from "../model/remoteModelSource";
 import type { Configuration, OptimisticTurn } from "../model/remoteSessionTypes";
 import { notifyGitChanged } from "../../../platform/tauri/fs";
-import { boundedSet } from "../../../shared/lib/store";
 import type { Worktree } from "../../source-control";
 import { useProjectBranchesState } from "../../source-control/public/useProjectBranches";
 import {
@@ -439,9 +442,10 @@ function ConnectedRemoteSession({
     visibleRef.current = visible;
     wake.current();
   }, [visible]);
-  const [descriptor, setDescriptor] = useState<HostDescriptor | undefined>(() =>
-    cachedDescriptors.get(machine.id),
-  );
+  const [descriptor, setDescriptor] = useState<HostDescriptor | undefined>(() => {
+    const cached = cachedDescriptors.get(machine.id);
+    return cached?.environmentId === machine.environmentId ? cached : undefined;
+  });
   const canSelectProviderAccount =
     descriptor?.capabilities.includes(SESSION_PROVIDER_ACCOUNT) === true;
   const [attachmentOwner] = useState(() => attachmentOwnerId("desktop-composer", shell.id));
@@ -867,7 +871,8 @@ function ConnectedRemoteSession({
     const token = bindingGen.capture(bindingKey, sessionId);
     const stale = () => disposed || bindingGen.isStale(token);
     // Every request carries the expected host identity; describe again only
-    // after a failure, when the host may have been replaced.
+    // when this connection has not proved it or after a failure, when the host
+    // may have been replaced.
     let described = false;
     const verifiedProjects = new Set([project.projectId]);
     const poll = async (application?: { isCurrent(): boolean }) => {
@@ -888,19 +893,23 @@ function ConnectedRemoteSession({
       let readGeneration = ownerResetGeneration;
       try {
         if (!described) {
-          const host = requireHostDescriptor(
-            await ownerRequest<HostDescriptor>("environment.describe", {
-              supportedProviders: REMOTE_PROVIDERS,
-            }),
-          );
-          if (host.environmentId !== machine.environmentId)
-            // The code, not the translated text, tells the classifier this is an identity refusal.
-            throw Object.assign(
-              new Error(t("Host identity changed. Reconnect this machine before continuing.")),
-              { code: "RPC_WS_IDENTITY" },
+          let host = validatedDescriptor(machine.id, machine.environmentId);
+          if (!host) {
+            const validation = captureDescriptorValidation(machine.environmentId);
+            host = requireHostDescriptor(
+              await ownerRequest<HostDescriptor>("environment.describe", {
+                supportedProviders: REMOTE_PROVIDERS,
+              }),
             );
-          if (stale() || application?.isCurrent() === false) return;
-          boundedSet(cachedDescriptors, machine.id, host);
+            if (host.environmentId !== machine.environmentId)
+              // The code, not the translated text, tells the classifier this is an identity refusal.
+              throw Object.assign(
+                new Error(t("Host identity changed. Reconnect this machine before continuing.")),
+                { code: "RPC_WS_IDENTITY" },
+              );
+            if (stale() || application?.isCurrent() === false) return;
+            rememberValidatedDescriptor(machine.id, validation, host);
+          }
           setDescriptor(host);
           described = true;
         }
@@ -1279,6 +1288,7 @@ function ConnectedRemoteSession({
           reportRemoteMachineStatus(machine.id, false, reason);
         } else recordRemoteConnection(machine.environmentId, reason); // a timeout here is counted by the request path
         described = false;
+        invalidateValidatedDescriptors(machine.environmentId);
       } finally {
         polling = false;
         contentRefreshInFlight.current = false;

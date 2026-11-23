@@ -1,4 +1,5 @@
 import { pathKey } from "../../../shared/lib/paths";
+import { createStore } from "../../../shared/lib/store";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
 import {
   loadProjectGroupAssignments,
@@ -45,21 +46,28 @@ const KNOWN_PATHS_KEY = "bycoda.sync.remoteProjectPaths.v2";
 const REMOTE_GROUPS_KEY = "bycoda.projectRemoteGroups";
 const HOST_ENVIRONMENT_KEY = "bycoda.sync.localHostEnvironmentId";
 const RAIL_LAYOUT_ID = "rail";
+const hostEnvironmentChanges = createStore();
 
 /** Records which host serves this machine's filesystem: it names this
  * machine's folders in their project ids, and another desktop connected to
  * that host can open them remotely. The last known value is kept while the
  * local host is briefly unreachable. */
 export function setLocalHostEnvironmentId(environmentId: string): void {
+  let changed = false;
   try {
-    if (localStorage.getItem(HOST_ENVIRONMENT_KEY) !== environmentId)
+    if (localStorage.getItem(HOST_ENVIRONMENT_KEY) !== environmentId) {
       localStorage.setItem(HOST_ENVIRONMENT_KEY, environmentId);
+      changed = true;
+    }
   } catch {
     // ignored; folders keep their machine-based ids until it can be stored
   }
+  if (changed) hostEnvironmentChanges.notify();
 }
 
-function localHostEnvironmentId(): string | undefined {
+export const subscribeLocalHostEnvironment = hostEnvironmentChanges.subscribe;
+
+export function localHostEnvironmentId(): string | undefined {
   try {
     return localStorage.getItem(HOST_ENVIRONMENT_KEY) || undefined;
   } catch {
@@ -93,14 +101,20 @@ function saveProjectIds(ids: Record<string, string>): void {
  * machines stay two projects. A desktop without a host of its own names its
  * folders by its machine id until it has one. */
 export function projectIdForPath(path: string): string | undefined {
+  return projectIdOn(path, localHostEnvironmentId(), localMachineId);
+}
+
+/** `projectIdForPath` over identities the caller already holds, safe during render. */
+export function projectIdOn(
+  path: string,
+  environmentId: string | undefined,
+  machineId: () => string,
+): string | undefined {
   if (isRemoteProjectPath(path)) {
     const remote = parseRemotePath(path);
     return remote ? hostProjectId(remote.environmentId, remote.hostPath) : undefined;
   }
-  const environmentId = localHostEnvironmentId();
-  return environmentId
-    ? hostProjectId(environmentId, path)
-    : machineProjectId(localMachineId(), path);
+  return environmentId ? hostProjectId(environmentId, path) : machineProjectId(machineId(), path);
 }
 
 export type RemoteOnlyProject = {

@@ -430,26 +430,18 @@ function AddRemoteProjectForm({
               </Button>
             </div>
           ) : null}
-          <RemoteDataStatus
-            label={t("folders")}
-            state={{
-              phase: loading
-                ? directory
-                  ? "refreshing"
-                  : "loading"
-                : browseError
-                  ? "error"
-                  : directory
-                    ? directory.entries.length
-                      ? "ready"
-                      : "empty"
-                    : "loading",
-              error: browseError,
-              updatedAt: verifiedAt,
-            }}
-            onRefresh={() => void browse(browseError ? requestedPath.current : directory?.path)}
-            disabled={opening || creating}
-          />
+          {loading || browseError ? (
+            <RemoteDataStatus
+              label={t("folders")}
+              state={{
+                phase: loading ? (directory ? "refreshing" : "loading") : "error",
+                error: browseError,
+                updatedAt: verifiedAt,
+              }}
+              onRefresh={() => void browse(requestedPath.current)}
+              disabled={opening || creating}
+            />
+          ) : null}
           {directory && (loading || browseError) ? (
             <InlineMessage tone="neutral" icon={null}>
               {t("Showing last loaded folder: ")}

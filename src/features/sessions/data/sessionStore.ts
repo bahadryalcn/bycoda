@@ -1390,11 +1390,15 @@ async function loadStoredSession(
     }
   }
   let page: StoredTranscriptPage | null;
+  let queueRead: Promise<unknown> | undefined;
   try {
-    page = await invoke<StoredTranscriptPage | null>("session_get_page", {
+    const pageRead = invoke<StoredTranscriptPage | null>("session_get_page", {
       sessionId,
       limit: options.deferHistory ? STORED_HISTORY_INITIAL_BLOCKS : 80,
     });
+    // Opening a recent tail also restores its queue. Check attachment paths only after the page exists.
+    if (options.deferHistory) queueRead = readStoredQueue(sessionId).catch(() => []);
+    page = await pageRead;
   } catch (error) {
     finish();
     throw error;
@@ -1419,7 +1423,7 @@ async function loadStoredSession(
   }
   session.historyLoading = page.before != null;
   finish({ blocks: session.blocks.length, revision: page.revision });
-  if (session.storedHistory) return withStoredQueue(session);
+  if (session.storedHistory) return withStoredQueue(session, queueRead);
   if (!session.historyLoading)
     persistenceBaselines.set(sessionId, {
       blocks: incrementalBlocks(session),
@@ -1479,6 +1483,7 @@ async function loadStoredSession(
               record.updatedAt,
               record.transcriptRevision,
               background,
+              queueRead,
             );
             if (!deletedSessionIds.has(sessionId)) options.onHydrated?.(complete, hydrated);
             background.confirmRecovery();
@@ -1500,11 +1505,12 @@ async function hydrateStoredSession(
   expectedUpdatedAt: number,
   expectedRevision?: number,
   work?: PersistenceWork,
+  queueRead?: Promise<unknown>,
 ): Promise<Session> {
   const session = { ...original };
   const [repaired, queued] = await Promise.all([
     repairStoredSession(session, expectedUpdatedAt, expectedRevision, work),
-    withStoredQueue(session),
+    withStoredQueue(session, queueRead),
   ]);
   return repairSessionModelIdentity({
     ...repaired,
@@ -1528,9 +1534,9 @@ export async function existingPaths(paths: string[]): Promise<Set<string>> {
  * session is idle after a restart, so the queue waits for the user instead of
  * sending into a chat nobody has looked at yet.
  */
-async function withStoredQueue(session: Session): Promise<Session> {
+async function withStoredQueue(session: Session, queueRead?: Promise<unknown>): Promise<Session> {
   try {
-    const queue = await loadStoredQueue(session.id);
+    const queue = await loadStoredQueue(session.id, queueRead);
     if (queue.length === 0) return session;
     return { ...session, queuedMessages: queue, queueStatus: "restored" };
   } catch {
@@ -1540,9 +1546,16 @@ async function withStoredQueue(session: Session): Promise<Session> {
 }
 
 /** The saved queue for a session id, with attachments whose file is gone flagged. */
-export async function loadStoredQueue(sessionId: string): Promise<QueuedMessage[]> {
-  const raw = await invoke<unknown>("session_get_queue", { sessionId });
+export async function loadStoredQueue(
+  sessionId: string,
+  queueRead = readStoredQueue(sessionId),
+): Promise<QueuedMessage[]> {
+  const raw = await queueRead;
   return markMissingAttachments(restoreQueuedMessages(raw), existingPaths);
+}
+
+function readStoredQueue(sessionId: string) {
+  return invoke<unknown>("session_get_queue", { sessionId });
 }
 
 /** Write the session's queue through to disk; an empty queue removes it. */

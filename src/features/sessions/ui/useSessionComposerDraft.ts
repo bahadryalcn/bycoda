@@ -23,9 +23,14 @@ function authorityOf(sessionId: string): DraftAuthority {
  * stays idle while the composer owns the text. The latest text is read through
  * `text()`, never from render state. Another session starts from its own cache.
  */
-export function useSessionComposerDraft(sessionId: string) {
+export function useSessionComposerDraft(
+  sessionId: string,
+  partialRevision?: number,
+  prepareHistory?: (id: string, mode: "prefetch") => Promise<boolean>,
+) {
   const [state, setState] = useState(() => authorityOf(sessionId));
   const latest = useRef<{ sessionId: string; text: string } | null>(null);
+  const prepared = useRef<{ sessionId: string; revision: number } | null>(null);
   let current = state;
   if (state.sessionId !== sessionId) {
     // A reused pane must not offer the previous session's seed or presence.
@@ -39,6 +44,19 @@ export function useSessionComposerDraft(sessionId: string) {
     text: (): string | undefined =>
       latest.current?.sessionId === sessionId ? latest.current.text : current.seed,
     change(value: string) {
+      const previousText =
+        latest.current?.sessionId === sessionId ? latest.current.text : current.seed;
+      if (
+        prepareHistory &&
+        partialRevision !== undefined &&
+        value &&
+        value !== previousText &&
+        (prepared.current?.sessionId !== sessionId || prepared.current.revision !== partialRevision)
+      ) {
+        prepared.current = { sessionId, revision: partialRevision };
+        // Send shares the pending read. A failed warm-up is retried by the normal send path.
+        void prepareHistory(sessionId, "prefetch").catch(() => {});
+      }
       latest.current = { sessionId, text: value };
       setState((previous) =>
         previous.sessionId === sessionId && previous.present && previous.initialDraft === undefined

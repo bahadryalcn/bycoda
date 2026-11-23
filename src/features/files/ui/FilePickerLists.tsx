@@ -116,6 +116,7 @@ export function FileList({
     <PickerList
       label={t("Files")}
       controller={list}
+      windowed={files.length > 30}
       checkPlacement="none"
       pointerHighlight="movement"
       className="max-h-[min(380px,50vh)] overflow-y-auto overscroll-none"

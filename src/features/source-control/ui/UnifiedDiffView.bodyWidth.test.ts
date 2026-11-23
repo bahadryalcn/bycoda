@@ -40,6 +40,56 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it.each(["workspace", "embedded PR"])(
+  "installs text selection on rendered %s patches and leaves unvisited placeholders inert",
+  async (surface) => {
+    const visibility = new Map<Element, (entries: unknown[]) => void>();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(private notifyIntersection: (entries: unknown[]) => void) {}
+        observe(node: Element) {
+          visibility.set(node, this.notifyIntersection);
+        }
+        disconnect() {}
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return new DOMRect(0, this.dataset.diffFile === "far" ? 10000 : 0, 600, 600);
+    });
+    const diff = buildUnifiedFile("old", "new");
+    await act(async () =>
+      root.render(
+        createElement(UnifiedDiffView, {
+          files: ["near", "far"].map((path) => ({ ...diff, id: path, label: path, path })),
+          ...(surface === "embedded PR"
+            ? { fill: false, fileLayout: "cards" as const, initialExpansion: "first" as const }
+            : {}),
+        }),
+      ),
+    );
+    const far = container.querySelector<HTMLElement>('[data-diff-file="far"]')!;
+    if (surface === "embedded PR") {
+      await act(async () =>
+        far.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click(),
+      );
+    }
+    expect(
+      container.querySelector('[data-diff-file="near"] [data-selectable-agent-response]'),
+    ).not.toBeNull();
+    expect(far.querySelector("[data-selectable-agent-response]")).toBeNull();
+    await act(async () => visibility.get(far)?.([{ isIntersecting: true }]));
+    const selection = far.querySelector("[data-selectable-agent-response]");
+    expect(selection?.querySelector("[data-diff-body]")).not.toBeNull();
+    await act(async () => visibility.get(far)?.([{ isIntersecting: false }]));
+    expect(far.querySelector("[data-selectable-agent-response]")).toBe(selection);
+    await act(async () => visibility.get(far)?.([{ isIntersecting: true }]));
+    expect(far.querySelector("[data-selectable-agent-response]")).toBe(selection);
+  },
+);
+
 it("rewrites --unified-body-width only when the body width changed", async () => {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
     new DOMRect(0, 0, 600, 600),

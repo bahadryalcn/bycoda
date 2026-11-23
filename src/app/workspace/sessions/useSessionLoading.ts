@@ -229,8 +229,20 @@ export function useSessionLoading({
   );
 
   const historyForExecution = useRef(new Map<string, Promise<boolean>>());
+  // Only the most recently edited tail is warmed. Closing or replacing that session can release
+  // the full transcript, even when the user never sends the draft.
+  const warmedHistory = useRef(
+    new WeakMap<
+      Session,
+      {
+        privacy: ReturnType<typeof getGroupLockView>;
+        epoch: number;
+        read: Promise<Session | null>;
+      }
+    >(),
+  );
   const ensureSessionHistoryForExecution = useCallback(
-    (sessionId: string): Promise<boolean> => {
+    (sessionId: string, mode?: "prefetch"): Promise<boolean> => {
       const pending = historyForExecution.current.get(sessionId);
       if (pending) return pending;
       const original = sessionsRef.current.find((session) => session.id === sessionId);
@@ -242,7 +254,28 @@ export function useSessionLoading({
       )
         return Promise.resolve(false);
       const epoch = sessionLoadEpochs.current.get(sessionId) ?? 0;
-      const loading = getSession(sessionId)
+      const cached = warmedHistory.current.get(original);
+      const warm = cached?.privacy === privacy && cached.epoch === epoch ? cached.read : undefined;
+      if (mode === "prefetch") {
+        if (original.busy || removingSessionIds.current.has(sessionId))
+          return Promise.resolve(false);
+        if (warm) return warm.then(Boolean);
+        const read = getSession(sessionId);
+        const cache = new WeakMap([[original, { privacy, epoch, read }]]);
+        warmedHistory.current = cache;
+        return read.then(
+          (session) => {
+            if (!session) cache.delete(original);
+            return !!session;
+          },
+          () => {
+            cache.delete(original);
+            return false;
+          },
+        );
+      }
+      warmedHistory.current.delete(original);
+      const loading = (warm ?? getSession(sessionId))
         .then((hydrated) => {
           const current = sessionsRef.current.find((session) => session.id === sessionId);
           if (

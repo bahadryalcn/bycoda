@@ -8,7 +8,7 @@ import {
   presentRemoteError,
 } from "../../connections/public/remoteFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
-import { projectFilesTruncated } from "../../../platform/tauri/fs";
+import { projectFilesTruncated, type ProjectFile } from "../../../platform/tauri/fs";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Modal } from "../../../shared/ui/Modal";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -20,20 +20,20 @@ import {
   useEffect,
   useId,
   useMemo,
-  useDeferredValue,
+  useEffectEvent,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
   peekProjectFiles,
-  rankProjectFiles,
   recentOpenedFiles,
   rememberOpenedFile,
   revalidateProjectFiles,
   type RankedFile,
 } from "../model/fileIndex";
 import { fuzzyMatch } from "../../../shared/lib/fuzzy";
+import { useFileRanking } from "../hooks/useFileRanking";
 import { isRemoteProjectPath, looksLikeProject } from "../../projects/public/recents";
 import type { OpenFileFn } from "../../search/model/search";
 import { ActionList, FileList, type Action, type RankedAction } from "./FilePickerLists";
@@ -178,10 +178,13 @@ type Props = {
   onClose: () => void;
 };
 
+const NO_OPEN_PATHS: string[] = [];
+const NO_FILES: ProjectFile[] = [];
+
 export function FilePicker({
   open,
   cwd,
-  openPaths = [],
+  openPaths = NO_OPEN_PATHS,
   initialQuery = "",
   stopBackgroundWork = false,
   arrangeLayout = false,
@@ -195,14 +198,27 @@ export function FilePicker({
   const peekFiles = () => peekProjectFiles(cwd);
   const search = useRef<HTMLInputElement>(null);
   const listId = useId();
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const [query, setQuery] = useState(initialQuery);
-  const [files, setFiles] = useState(() => peekFiles() ?? []);
+  const [files, setFiles] = useState(() => peekFiles() ?? NO_FILES);
   const [loading, setLoading] = useState(() => peekFiles() == null);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [retrying, setRetrying] = useState(false);
+
+  // Retarget before ranking so the old project's listing never reaches the new worker.
+  const sessionKey = open ? `${cwd}|${initialQuery}` : null;
+  const [seenSessionKey, setSeenSessionKey] = useState(sessionKey);
+  if (seenSessionKey !== sessionKey) {
+    setSeenSessionKey(sessionKey);
+    if (sessionKey !== null) {
+      const cached = peekFiles();
+      setFiles(cached ?? NO_FILES);
+      setLoading(cached === null && looksLikeProject(cwd));
+      setQuery(initialQuery);
+      setRetrying(false);
+      setError(null);
+    }
+  }
 
   const recents = useMemo(() => {
     const out: string[] = [];
@@ -217,11 +233,12 @@ export function FilePicker({
   const paletteMode = query.trim().startsWith(">");
   const actionQuery = paletteMode ? query.trim().slice(1).trim() : "";
 
-  // Ranking the whole index is the costly part of a keystroke; let typing win.
-  const deferredQuery = useDeferredValue(query);
-  const results = useMemo(
-    () => (paletteMode ? [] : rankProjectFiles(files, deferredQuery, recents)),
-    [files, paletteMode, deferredQuery, recents],
+  const { results, pending: rankingPending } = useFileRanking(
+    open && !paletteMode,
+    cwd,
+    files,
+    query,
+    recents,
   );
   const actionResults = useMemo((): RankedAction[] => {
     if (!paletteMode) return [];
@@ -241,20 +258,9 @@ export function FilePicker({
       .sort((a, b) => b.score - a.score);
   }, [actionQuery, paletteMode, cwd, stopBackgroundWork, arrangeLayout, recoveryAvailable]);
   const optionCount = paletteMode ? actionResults.length : results.length;
-  // Opening (or retargeting) the picker restarts it from the initial query and
-  // the first row; a shrinking result list clamps the highlighted row.
-  const sessionKey = open ? `${cwd}|${initialQuery}` : null;
-  const [seenSessionKey, setSeenSessionKey] = useState<string | null>(null);
-  if (seenSessionKey !== sessionKey) {
-    setSeenSessionKey(sessionKey);
-    if (sessionKey !== null) {
-      setQuery(initialQuery);
-      setRetrying(false);
-      setError(null);
-    }
-  }
   const [activeIndex, setActive] = useKeyedActiveIndex(sessionKey ?? "closed", optionCount);
-  const rankingPending = !paletteMode && deferredQuery !== query;
+  const pendingPick = useRef<{ sessionKey: string | null; query: string } | null>(null);
+  const waitingForResults = rankingPending || (loading && files.length === 0);
 
   useEffect(() => {
     if (!open) return;
@@ -264,7 +270,7 @@ export function FilePicker({
       setFiles(cached);
       setLoading(false);
     } else {
-      setFiles([]);
+      setFiles(NO_FILES);
       setLoading(searchable);
     }
     if (!searchable) {
@@ -306,13 +312,27 @@ export function FilePicker({
   }, [open]);
 
   const errorShownCentrally = useConnectionErrorShownCentrally(error);
-  if (!open) return null;
-
   const pick = (file: RankedFile) => {
+    pendingPick.current = null;
     rememberOpenedFile(cwd, file.path);
     onOpenFile(file.path, undefined, { exact: true });
     onClose();
   };
+  const finishPendingPick = useEffectEvent(() => {
+    const pending = pendingPick.current;
+    if (!pending) return;
+    if (open && sessionKey === pending.sessionKey && query === pending.query && !paletteMode) {
+      if (waitingForResults) return;
+      if (results[0]) pick(results[0]);
+    }
+    pendingPick.current = null;
+  });
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Complete the user's pending open-file action when its worker or disk results arrive.
+  useEffect(() => {
+    finishPendingPick();
+  }, [open, sessionKey, query, waitingForResults, results]);
+
+  if (!open) return null;
   const runAction = (action: RankedAction) => {
     onRunAction(action.id);
     onClose();
@@ -337,12 +357,10 @@ export function FilePicker({
       if (paletteMode) {
         const action = actionResults[activeIndex];
         if (action) runAction(action);
+      } else if (waitingForResults) {
+        pendingPick.current = { sessionKey, query };
       } else {
-        // A pending deferred render may still show the previous query's list.
-        const file =
-          deferredQuery === query
-            ? results[activeIndex]
-            : rankProjectFiles(files, query, recents)[0];
+        const file = results[activeIndex];
         if (file) pick(file);
       }
       return;
@@ -413,6 +431,7 @@ export function FilePicker({
               autoCapitalize="off"
               className="min-w-0 flex-1"
               onChange={(e) => {
+                pendingPick.current = null;
                 setQuery(e.target.value);
                 setActive(0);
               }}
@@ -451,7 +470,7 @@ export function FilePicker({
               : t("File index completeness is unknown; some files may not appear.")}
           </Text>
         ) : null}
-        {empty && !(error && !files.length) ? (
+        {empty && !rankingPending && !(error && !files.length) ? (
           <Text role="status" as="p" size="caption" tone="secondary" className="px-3 pb-3 pt-1">
             {empty}
           </Text>
@@ -473,7 +492,9 @@ export function FilePicker({
             active={activeIndex}
             query={query}
             onActive={setActive}
-            onPick={pick}
+            onPick={(file) => {
+              if (!waitingForResults) pick(file);
+            }}
           />
         )}
       </div>

@@ -55,6 +55,48 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("progressive stored history", () => {
+  it("starts the queue read with the first page and restores it once", async () => {
+    const id = "parallel-tail-queue";
+    const page = deferred<unknown>();
+    const queue = [
+      {
+        id: "q1",
+        text: "Keep this attachment",
+        attachments: [
+          {
+            id: "a1",
+            name: "a.txt",
+            path: "/tmp/a.txt",
+            kind: "file",
+            mimeType: "text/plain",
+            size: 8,
+          },
+        ],
+      },
+    ];
+    vi.mocked(invoke).mockImplementation((command) => {
+      if (command === "session_get_page") return page.promise as ReturnType<typeof invoke>;
+      return Promise.resolve(command === "session_get_queue" ? queue : []) as ReturnType<
+        typeof invoke
+      >;
+    });
+    const opening = getSession(id, { deferHistory: true });
+    await vi.advanceTimersByTimeAsync(0);
+    const pendingReads = vi.mocked(invoke).mock.calls.map(([command]) => command);
+    page.resolve({ session: record(id, []), before: 20, totalBlocks: 20, revision: 7 });
+    const tail = await opening;
+    expect(pendingReads).toEqual(expect.arrayContaining(["session_get_page", "session_get_queue"]));
+    expect(pendingReads).not.toContain("inspect_paths");
+    expect(tail?.storedHistory).toEqual({ before: 20, revision: 7 });
+    expect(tail?.queueStatus).toBe("restored");
+    expect(tail?.queuedMessages?.[0]).toMatchObject({
+      id: "q1",
+      attachments: [{ id: "a1", missing: true }],
+    });
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "session_get_queue"),
+    ).toHaveLength(1);
+  });
   it("rebinds metadata-only image attachments on both pages of an adopted transcript", async () => {
     const id = "adopted-images";
     const machine = {
