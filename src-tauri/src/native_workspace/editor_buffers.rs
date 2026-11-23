@@ -6,7 +6,9 @@
 //! local editor drafts are the safety net for that gap.
 use super::BufferState;
 use crate::session_store::project_path_key;
+use crate::worktree_lifecycle::canonical_workspace_path;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Mutex;
 
 #[derive(Default)]
@@ -49,9 +51,27 @@ impl EditorBuffers {
             .windows()
             .values()
             .flatten()
-            .filter(|buffer| buffer.dirty && is_within(&root, &project_path_key(&buffer.path)))
+            .filter(|buffer| buffer.dirty)
             .map(|buffer| buffer.path.clone())
             .collect();
+        // Reports keep their original spelling. Resolve aliases only on a lexical miss,
+        // outside the registry lock. Unsaved files may only have an existing ancestor.
+        let canonical_key = |path: &str| {
+            let path = Path::new(path);
+            if !path.is_absolute() {
+                return None;
+            }
+            canonical_workspace_path(path)
+                .ok()
+                .map(|path| project_path_key(&path.to_string_lossy()))
+        };
+        let canonical_root = std::cell::LazyCell::new(|| canonical_key(path));
+        found.retain(|candidate| {
+            is_within(&root, &project_path_key(candidate))
+                || canonical_root.as_ref().is_some_and(|root| {
+                    canonical_key(candidate).is_some_and(|candidate| is_within(root, &candidate))
+                })
+        });
         found.sort();
         found.dedup();
         found

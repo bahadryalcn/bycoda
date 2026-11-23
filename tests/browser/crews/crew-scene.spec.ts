@@ -106,7 +106,7 @@ test("crew ages only used seats and keeps assigned names above each member", asy
     await expect
       .poll(() =>
         page.locator("[data-live-scene] .crew-scene__stage").evaluate((stage) => {
-          const canvas = stage.querySelector("canvas")!;
+          const canvas = stage.querySelector("canvas:not(.crew-scene__still)")!;
           const pixels = canvas
             .getContext("2d")!
             .getImageData(0, 0, canvas.width, canvas.height).data;

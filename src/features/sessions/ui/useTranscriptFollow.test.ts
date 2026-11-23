@@ -133,3 +133,60 @@ describe("rememberScroll", () => {
     }
   });
 });
+
+describe("reader input", () => {
+  it("stays the reader's while one wheel's animated scroll keeps moving up past the input window", () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    let now = 1000;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    let follow: TranscriptFollow | undefined;
+    function Probe() {
+      follow = useTranscriptFollow({ visible: true, lastUserId: undefined });
+      return null;
+    }
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const scroller = document.createElement("div");
+    let top = 2000;
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => {
+        top = value;
+      },
+    });
+    vi.spyOn(scroller, "clientHeight", "get").mockReturnValue(400);
+    vi.spyOn(scroller, "scrollHeight", "get").mockReturnValue(2400);
+    document.body.append(scroller);
+    const scrollTo = (value: number, at: number) => {
+      now = at;
+      top = value;
+      scroller.dispatchEvent(new Event("scroll"));
+    };
+    try {
+      act(() => root.render(createElement(Probe)));
+      act(() => follow!.setScroller(scroller as HTMLDivElement));
+      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -2400 }));
+      // WebKit animates the long delta: it is still far from the top after the input window.
+      for (let step = 1; step <= 20; step += 1) scrollTo(2000 - step * 100, 1000 + step * 100);
+      expect(top).toBe(0);
+      expect(now).toBeGreaterThan(1000 + 1000);
+      expect(follow!.hasReaderInput()).toBe(true);
+      // Once the motion stops, the window is no longer renewed and runs out.
+      scrollTo(0, 3100);
+      now = 4200;
+      expect(follow!.hasReaderInput()).toBe(false);
+      // A later upward scroll with no new input (a programmatic move) is not the reader's.
+      scrollTo(600, 4300);
+      scrollTo(500, 4400);
+      expect(follow!.hasReaderInput()).toBe(false);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      scroller.remove();
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    }
+  });
+});

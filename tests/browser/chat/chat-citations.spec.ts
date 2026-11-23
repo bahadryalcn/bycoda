@@ -28,10 +28,10 @@ test("interrupted recovery keeps Continue on the right above a distinct composer
       expect(b.y + b.height).toBeLessThanOrEqual(n.y + n.height + 1);
       expect(b.x + b.width).toBeLessThanOrEqual(n.x + n.width + 1);
       {
-        // The composer paints the composer surface token, distinct from the page behind it.
+        // Inside the chat pane the composer paints the shared glass fill, over the opaque composer surface fallback.
         const surface = await page.locator("[data-composer-box]").evaluate((element) => {
           const probe = document.createElement("div");
-          probe.style.background = "var(--ui-composer-surface)";
+          probe.style.background = "var(--ui-chat-glass-fill, var(--ui-composer-surface))";
           element.parentElement!.append(probe);
           const expected = getComputedStyle(probe).backgroundColor;
           probe.remove();
@@ -107,6 +107,8 @@ for (const width of [1280, 800]) {
       });
       const prompt = page.getByRole("textbox", { name: "Message", exact: true });
       await expect(prompt).toHaveValue("Keep my existing draft.");
+      // Once references render inline, the role-textbox is the inline editor; the plain-text draft lives in the field.
+      const draft = page.locator("[data-composer] textarea");
 
       await selectReply(page, "citation-user");
       await expect(page.getByRole("button", { name: "Reprompt", exact: true })).toBeVisible();
@@ -152,10 +154,12 @@ for (const width of [1280, 800]) {
       await page.screenshot({ path: `${captures}/${theme}-${width}-comment.png` });
       await comment.getByRole("button", { name: "Add to chat", exact: true }).click();
       // The quote lands as an inline token the sentence can refer to, like `[image1]`.
-      await expect(prompt).toHaveValue("Keep my existing draft. [quote1] ");
+      await expect(draft).toHaveValue("Keep my existing draft. [quote1] ");
       const composer = page.getByTestId("composer-pane");
-      // Face token: the hidden `[quote1]` source keeps the textarea advance; `quote1` is the visible face.
-      await expect(composer.locator("[data-composer-citation-token]")).toHaveText("[quote1]quote1");
+      // The `[quote1]` source stays in the plain-text field; the inline editor shows it as a `quote1` reference.
+      await expect(
+        composer.locator('[data-composer-inline-input] [data-inline-reference="quote"]'),
+      ).toHaveText("quote1");
       const chip = composer.getByRole("button", {
         name: "Bunu daha kompakt hale getirelim.",
         exact: true,
@@ -179,7 +183,7 @@ for (const width of [1280, 800]) {
         .toContain("bycoda-citation:");
       await page.evaluate(() => window.__chatCitationFixture.remount());
       await expect(chip).toBeVisible();
-      await expect(prompt).toHaveValue("Keep my existing draft. [quote1] ");
+      await expect(draft).toHaveValue("Keep my existing draft. [quote1] ");
       await composer.getByRole("button", { name: "Edit citation comment", exact: true }).click();
       const edit = page.getByRole("dialog", { name: "Edit citation comment", exact: true });
       await edit
@@ -200,7 +204,7 @@ for (const width of [1280, 800]) {
       ).toBeVisible();
       await composer.getByRole("button", { name: "Remove citation", exact: true }).click();
       await expect(composer.getByRole("group", { name: "Quoted reply" })).toHaveCount(0);
-      await expect(prompt).toHaveValue("Keep my existing draft. ");
+      await expect(draft).toHaveValue("Keep my existing draft. ");
 
       await selectReply(page);
       await page.getByRole("button", { name: "Translate to English", exact: true }).click();

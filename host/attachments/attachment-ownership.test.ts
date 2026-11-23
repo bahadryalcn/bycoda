@@ -146,7 +146,10 @@ it("waits out start-up, runs hourly collection, then removes its timers on close
   expect(existsSync(attachmentPath(store, ids[0]))).toBe(false);
   await upload(ids[1], "partial", false);
   clock.now += ATTACHMENT_GRACE_MS + 10000;
-  await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+  // Advance only to the hourly tick (start-up + 5 min + 55 min), then join that sweep. The
+  // database scope deadline is a faked timer too, so jumping further while the sweep still
+  // waits on the real worker would fire the deadline without real time passing.
+  await vi.advanceTimersByTimeAsync(55 * 60 * 1000);
   await ownership.collect();
   expect(existsSync(attachmentPath(store, ids[1]))).toBe(false);
   await ownership.close();

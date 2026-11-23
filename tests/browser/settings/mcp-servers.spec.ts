@@ -25,6 +25,11 @@ for (const theme of ["light", "dark"])
         sheet.getByRole("switch", { name: /Start firebase with every session/ }),
       ).toBeChecked();
       const editors = sheet.getByRole("textbox");
+      // Provider JSON loads only when its disclosure opens; one editor per provider entry.
+      await expect(editors).toHaveCount(0);
+      const disclosures = sheet.getByText("Edit provider JSON", { exact: true });
+      await expect(disclosures).toHaveCount(2);
+      for (const disclosure of await disclosures.all()) await disclosure.click();
       await expect(editors).toHaveCount(2);
       await editors
         .first()

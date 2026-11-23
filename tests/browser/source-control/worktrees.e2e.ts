@@ -722,6 +722,7 @@ for (const theme of ["light", "dark"])
 
       // Every worktree status the page can show is reachable.
       for (const text of [
+        "Clean",
         "Uncommitted changes",
         "Missing folder",
         "Publication unknown",
@@ -854,6 +855,7 @@ test("populated source control for a remote project keeps restrictions visible",
       exact: false,
     }),
   ).toBeVisible();
+  // Creation routes through the connected machine's Host; only deletion stays restricted.
   await expect(repo.getByRole("button", { name: "Create worktree", exact: true })).toBeEnabled();
   const remoteTrees = repo.getByRole("list", {
     name: "Worktrees",

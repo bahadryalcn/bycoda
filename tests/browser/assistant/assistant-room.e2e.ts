@@ -73,13 +73,16 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
       });
       await answer.getByRole("button", { name: "Delete message", exact: true }).click();
-      await expect(answer).toHaveCount(0);
-      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      await expect(page.getByRole("dialog")).toContainText("Delete message?");
+      await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(answer).toBeVisible();
     });
   }
 
-const setupTitles = [
+// A new assistant's voice setup: one voice check per step, Speaker and Microphone optional.
+const voiceSetupTitles = ["Identity", "Voice provider", "Speaker", "Microphone", "Review"];
+// Review offers Work mode, which adds the detailed work and presence steps before Review.
+const detailedSetupTitles = [
   "Identity",
   "Voice provider",
   "Speaker",
@@ -94,8 +97,11 @@ test("an untouched discovered worker becomes explicit only after choosing a work
   await page.goto("/tests/browser/assistant/assistant-room.html?real-controls&setup=core&fresh");
   const dialog = page.getByRole("dialog");
   await expect(dialog).toHaveAccessibleName("Set up");
-  await expect(dialog.getByRole("textbox", { name: "Assistant name" })).toBeVisible();
-  await expect(dialog.locator('[aria-current="step"]')).toHaveCount(0);
+  await expect(dialog.locator('[aria-current="step"]')).toContainText("Identity");
+  await expect.poll(async () => (await setupDraft(page))?.patch.execution ?? null).toBeNull();
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(dialog).toHaveAccessibleName("Set up");
+  await expect(dialog.locator('[aria-current="step"]')).toContainText("Work mode");
   await expect.poll(async () => (await setupDraft(page))?.patch.execution ?? null).toBeNull();
   const workAndAsk = dialog.getByRole("radio", { name: /^Work and ask/ });
   await expect(workAndAsk).toBeVisible();
@@ -115,7 +121,12 @@ test("an untouched discovered worker becomes explicit only after choosing a work
       ),
     ),
   ).toEqual([]);
+  await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(dialog).toHaveAccessibleName("Set up");
+  await expect(dialog.locator('[aria-current="step"]')).toContainText("Review");
+  await expect(dialog).toContainText("Fixture worker");
   await dialog.getByRole("button", { name: "Start", exact: true }).click();
+  await finishSetup(page);
   await expect(dialog).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).__setupProfile.execution)).toMatchObject({
     harness: "codex",
@@ -125,6 +136,11 @@ test("an untouched discovered worker becomes explicit only after choosing a work
 });
 async function setupDraft(page: Page) {
   return page.evaluate(() => JSON.parse(localStorage.getItem("bycoda.assistant.setup-draft")!));
+}
+async function finishSetup(page: Page, title = "Ready for 24/7") {
+  const ready = page.getByRole("dialog", { name: title, exact: true });
+  await expect(ready).toBeVisible();
+  await ready.getByRole("button", { name: "Done", exact: true }).click();
 }
 async function chooseSetupValue(page: Page, label: string, option: string) {
   const field = page
@@ -176,12 +192,14 @@ for (const theme of ["light", "dark"])
         y: number;
       }> = [];
       const dialog = page.getByRole("dialog");
-      const capture = async (index: number) => {
+      let titles = voiceSetupTitles;
+      const capture = async (title: string) => {
+        const index = titles.indexOf(title);
         await expect(dialog).toHaveAccessibleName("Voice setup");
         await expect(
           dialog.getByRole("group", { name: "Set up", exact: true }).getByRole("listitem"),
-        ).toHaveCount(setupTitles.length);
-        await expect(dialog.locator('[aria-current="step"]')).toContainText(setupTitles[index]);
+        ).toHaveCount(titles.length);
+        await expect(dialog.locator('[aria-current="step"]')).toContainText(title);
         const box = (await dialog.boundingBox())!;
         expect(box.x).toBeGreaterThanOrEqual(0);
         expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
@@ -192,17 +210,20 @@ for (const theme of ["light", "dark"])
         );
         await expect(
           dialog.getByRole("button", {
-            name: index === setupTitles.length - 1 ? "Start" : "Next",
+            name: index === titles.length - 1 ? "Start" : "Next",
             exact: true,
           }),
         ).toBeVisible();
         await page.screenshot({
           animations: "disabled",
-          path: join(output, `setup-${theme}-${width}-${String(index + 1).padStart(2, "0")}.png`),
+          path: join(
+            output,
+            `setup-${theme}-${width}-${String(frames.length + 1).padStart(2, "0")}.png`,
+          ),
         });
         frames.push({
           step: index + 1,
-          title: setupTitles[index],
+          title,
           width: box.width,
           height: box.height,
           x: box.x,
@@ -218,16 +239,8 @@ for (const theme of ["light", "dark"])
       await dialog
         .getByRole("textbox", { name: "Assistant name", exact: true })
         .fill("Setup fixture");
+      await capture("Identity");
       await chooseSetupValue(page, "Language", "English");
-      await expect.poll(async () => (await setupDraft(page))?.patch.name).toBe("Setup fixture");
-      // Preserve coverage of the optional detailed voice setup carried by saved drafts.
-      await page.evaluate(() => {
-        const key = "bycoda.assistant.setup-draft";
-        const draft = JSON.parse(localStorage.getItem(key)!);
-        localStorage.setItem(key, JSON.stringify({ ...draft, detailedVoice: true }));
-      });
-      await page.reload();
-      await capture(0);
       await dialog.getByRole("button", { name: "Close", exact: true }).click();
       await expect(dialog).toHaveCount(0);
       await page.getByRole("button", { name: "Reopen setup", exact: true }).focus();
@@ -241,33 +254,38 @@ for (const theme of ["light", "dark"])
       await expect(
         dialog.getByRole("button", { name: "Language: English", exact: true }),
       ).toBeVisible();
-      await capture(0);
+      await capture("Identity");
       await next();
+      // The provider check gates Next; nothing opens the microphone yet.
       await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
       expect(await page.evaluate(() => (window as any).setupVoice.microphoneStarts)).toBe(0);
       await dialog.getByRole("radio", { name: "On this computer", exact: true }).click();
       await dialog.getByRole("button", { name: "Check connection", exact: true }).click();
       await expect(dialog.getByRole("status").filter({ hasText: "Ready" }).first()).toBeVisible();
-      await capture(1);
+      await capture("Voice provider");
       await next();
+      // Speaker and Microphone are optional checks: Next stays available.
+      await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
       await dialog.getByRole("button", { name: "Listen", exact: true }).click();
       await expect(dialog.getByRole("status").filter({ hasText: "Ready" }).first()).toBeVisible();
       await dialog.getByRole("button", { name: "Stop", exact: true }).click();
-      await capture(2);
+      await capture("Speaker");
       await next();
-      await dialog.getByRole("button", { name: "Record test", exact: true }).click();
-      await expect
-        .poll(() => page.evaluate(() => (window as any).setupVoice.microphoneStarts))
-        .toBe(1);
+      await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+      expect(await page.evaluate(() => (window as any).setupVoice.microphoneStarts)).toBe(0);
+      // The optional microphone test records only on request; opening the step captures nothing.
       await expect(
-        dialog.getByRole("meter", { name: "Microphone level", exact: true }),
-      ).toHaveAttribute("value", "0.35");
-      await page.evaluate(() => (window as any).setupVoice.transcript());
-      await expect(
-        dialog.getByRole("status").filter({ hasText: "This is a synthetic microphone sentence." }),
-      ).toBeVisible();
-      await capture(3);
+        dialog
+          .getByRole("group", { name: "Microphone test", exact: true })
+          .getByRole("button", { name: "Record test", exact: true }),
+      ).toBeEnabled();
+      expect(await page.evaluate(() => (window as any).setupVoice.microphoneStarts)).toBe(0);
+      await capture("Microphone");
       await next();
+      await capture("Review");
+      // Review offers the detailed work mode and presence steps before Start.
+      await dialog.getByRole("button", { name: "Work mode", exact: true }).click();
+      titles = detailedSetupTitles;
       for (const name of ["Only watch", "Work freely", "Work and ask"]) {
         const mode = dialog.getByRole("radio", { name: new RegExp(`^${name}`) });
         await expect(mode).toBeVisible();
@@ -283,7 +301,7 @@ for (const theme of ["light", "dark"])
           allowRoutineQuestions: true,
         });
       expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
-      await capture(4);
+      await capture("Work mode");
       await next();
       // "Work hours" is on while a range is set; off means all day.
       const workHours = dialog.getByRole("switch", { name: "Work hours", exact: true });
@@ -313,14 +331,14 @@ for (const theme of ["light", "dark"])
         })
         .toBe(true);
       await quiet.click();
-      await capture(5);
+      await capture("Presence and hours");
       await dialog
         .getByRole("textbox", { name: "Anything I should know?", exact: true })
         .fill("Keep my drafts intact.");
-      await capture(5);
+      await capture("Presence and hours");
       await next();
-      await expect(dialog).toContainText("The microphone opens only when you choose to talk.");
-      await capture(6);
+      await expect(dialog).toContainText("2,000,000");
+      await capture("Review");
       expect(
         await page.evaluate(() =>
           (window as any).__setupRequests.filter(
@@ -329,6 +347,7 @@ for (const theme of ["light", "dark"])
         ),
       ).toEqual([]);
       await dialog.getByRole("button", { name: "Start", exact: true }).click();
+      await finishSetup(page, "Voice is ready");
       await expect(dialog).toHaveCount(0);
       expect(await page.evaluate(() => (window as any).__setupProfile)).toMatchObject({
         name: "Setup fixture",
@@ -342,7 +361,7 @@ for (const theme of ["light", "dark"])
       expect(await page.evaluate(() => (window as any).setupVoice)).toMatchObject({
         inspections: 1,
         previews: 1,
-        microphoneStarts: 1,
+        microphoneStarts: 0,
         forbiddenMediaRequests: 0,
       });
       expect(
@@ -965,10 +984,6 @@ for (const theme of ["light", "dark"])
         path: join(output, `automation-review-${theme}-${width}.png`),
       });
       await review
-        .locator("summary")
-        .filter({ hasText: /^Limits$/ })
-        .click();
-      await review
         .getByRole("spinbutton", { name: "Run time limit (minutes)", exact: true })
         .fill("45");
       await review.getByRole("spinbutton", { name: "Runs per day", exact: true }).fill("2");
@@ -1332,9 +1347,9 @@ for (const theme of ["light", "dark"])
         `/tests/browser/assistant/assistant-room.html?theme=${theme}&briefing=1&language-unknown=1`,
       );
       const card = page.getByRole("region", { name: "While you were away", exact: true });
-      await expect(card.getByRole("button", { name: "Listen", exact: true })).toHaveCount(0);
+      await expect(card.getByRole("button", { name: "Listen", exact: true })).toBeDisabled();
       await expect(
-        card.getByRole("button", { name: "Choose language", exact: true }),
+        card.getByText("Speak once or choose a language before listening.", { exact: true }),
       ).toBeVisible();
       await page.screenshot({
         animations: "disabled",
@@ -2009,6 +2024,10 @@ for (const theme of ["light", "dark"])
       await page.getByText("Task notification recovery", { exact: true }).click();
       await page.getByRole("button", { name: /^Project\b/ }).click();
       await page.getByRole("option", { name: "Fixture project", exact: true }).click();
+      await page.getByRole("button", { name: "Check notifications", exact: true }).click();
+      await expect(
+        page.getByRole("button", { name: "Check notifications", exact: true }),
+      ).toBeDisabled();
       await page.screenshot({
         path: `${output}/${theme}-${width}-recovery-loading.png`,
         animations: "disabled",
@@ -2048,7 +2067,7 @@ for (const theme of ["light", "dark"])
       for (const [name, text] of [
         ["draft", "Fixture draft unavailable"],
         ["trash", "Recently deleted"],
-        ["folders", "The folder list could not be read."],
+        ["folders", "Fixture folders unavailable"],
       ]) {
         await page.goto(
           `/tests/browser/assistant/assistant-room.html?theme=${theme}&${name}-state-fixture`,

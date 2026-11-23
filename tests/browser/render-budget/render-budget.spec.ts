@@ -137,22 +137,33 @@ test("native Goal states preserve drafts and long objectives remain readable", a
     await setGoal(status);
     await expect(goal).toHaveAttribute("data-provider-goal", status);
     await expect(box).toHaveValue(draft);
-    await expect(goal).toContainText(objective);
+    // The compact Goal control keeps the long objective in its popover, not in the stack.
+    await expect(goal).not.toContainText(objective);
+    await goal.click();
+    const details = page.getByRole("dialog", { name: "Goal", exact: true });
+    await expect(details).toContainText(objective);
+    await expect(box).toHaveValue(draft);
+    await details.press("Escape");
+    await expect(details).toHaveCount(0);
   }
   await setGoal("active", "different-native-owner");
   await expect(goal).toHaveCount(0);
   await expect(box).toHaveValue(draft);
   await setGoal("blocked");
-  const expand = goal.getByRole("button", { name: "Show more", exact: true });
-  await expand.focus();
-  await expand.press("Enter");
-  await expect(goal.getByRole("button", { name: "Show less", exact: true })).toBeFocused();
-  await expect(goal.getByRole("button", { name: "Show less", exact: true })).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
+  await goal.focus();
+  await goal.press("Enter");
+  await expect(goal).toHaveAttribute("aria-expanded", "true");
+  const details = page.getByRole("dialog", { name: "Goal", exact: true });
+  await expect(details).toContainText(objective);
+  // A long objective scrolls inside the popover instead of leaving the viewport.
+  const detailsBox = await details.boundingBox();
+  expect(detailsBox).not.toBeNull();
+  expect(detailsBox!.y).toBeGreaterThanOrEqual(0);
+  expect(detailsBox!.y + detailsBox!.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
   await expect(box).toHaveValue(draft);
-  await goal.getByRole("button", { name: "Show less", exact: true }).press("Enter");
+  await details.press("Escape");
+  await expect(goal).toHaveAttribute("aria-expanded", "false");
+  await expect(goal).toBeFocused();
 
   for (const width of [1280, 800])
     for (const theme of ["light", "dark"] as const) {
@@ -166,7 +177,7 @@ test("native Goal states preserve drafts and long objectives remain readable", a
       expect(paneBox).not.toBeNull();
       expect(composerBox).not.toBeNull();
       // The Goal docks in the composer notice stack: it stays inside the pane, above the
-      // draft, and a long objective is clamped instead of taking over the transcript.
+      // draft, and a long objective stays in the popover instead of taking over the transcript.
       expect(headerBox!.y).toBeGreaterThanOrEqual(paneBox!.y);
       expect(headerBox!.y + headerBox!.height).toBeLessThanOrEqual(composerBox!.y + 1);
       expect(headerBox!.x).toBeGreaterThanOrEqual(paneBox!.x);
@@ -208,33 +219,51 @@ test("native Goal states preserve drafts and long objectives remain readable", a
     const zoomBox = zoomPage.locator("textarea").first();
     await zoomBox.fill(draft);
     const zoomGoal = zoomPage.locator("[data-provider-goal]");
-    // A blocked Goal also offers Continue and Clear; the expander is the one with aria-expanded.
-    const zoomExpand = zoomGoal.locator("button[aria-expanded]");
-    await zoomExpand.focus();
-    await zoomExpand.press("Enter");
-    await expect(zoomExpand).toHaveAttribute("aria-expanded", "true");
-    await zoomExpand.press("Enter");
+    // The compact Goal control opens its details popover from the keyboard and closes on Escape.
+    await zoomGoal.focus();
+    await zoomGoal.press("Enter");
+    await expect(zoomGoal).toHaveAttribute("aria-expanded", "true");
+    await zoomPage.getByRole("dialog", { name: "Hedef", exact: true }).press("Escape");
+    await expect(zoomGoal).toHaveAttribute("aria-expanded", "false");
     await expect(zoomBox).toHaveValue(draft);
     const send = zoomPage.getByRole("button", { name: /^Gönder/ });
     await send.focus();
     await expect(send).toBeFocused();
-    const sendBounds = await send.boundingBox();
-    expect(sendBounds).not.toBeNull();
-    expect(sendBounds!.y).toBeGreaterThanOrEqual(0);
-    expect(sendBounds!.y + sendBounds!.height).toBeLessThanOrEqual(401);
-    expect(
-      await zoomPage.locator("[data-session-composer]").evaluate((node) => node.scrollTop),
-    ).toBeGreaterThan(0);
-    expect(await zoomPage.locator("[data-session-body]").evaluate((node) => node.scrollTop)).toBe(
-      0,
-    );
-    // The Goal lives in the scrolling composer stack: at this size focus moves it away, so it must stay reachable by scrolling.
-    await zoomPage.locator("[data-provider-goal]").scrollIntoViewIfNeeded();
-    await expect(zoomPage.locator("[data-provider-goal]")).toBeInViewport();
+    const composer = zoomPage.locator("[data-session-composer]");
+    const body = zoomPage.locator("[data-session-body]");
+    // Focus keeps Send in view and never moves the transcript. Whether Goal and Send also share the
+    // view depends on the system font, so Goal is reached by scrolling when it is not.
+    await expect(send).toBeInViewport({ ratio: 1 });
+    expect(await body.evaluate((node) => node.scrollTop)).toBe(0);
+    await zoomGoal.scrollIntoViewIfNeeded();
+    await expect(zoomGoal).toBeInViewport({ ratio: 1 });
+    await send.scrollIntoViewIfNeeded();
+    await expect(send).toBeInViewport({ ratio: 1 });
+    expect(await body.evaluate((node) => node.scrollTop)).toBe(0);
     await zoomPage.screenshot({
       path: testInfo.outputPath("native-goal-dark-800-rtl-200pct-equivalent.png"),
       scale: "device",
     });
+    // Intentionally too short for the stack: the composer must scroll, and focus plus scrolling
+    // must still reach Send and the Goal without moving the transcript.
+    await zoomPage.setViewportSize({ width: 400, height: 200 });
+    await composer.evaluate((node) => {
+      node.scrollTop = 0;
+    });
+    expect(await composer.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+    await expect(send).not.toBeInViewport({ ratio: 1 });
+    await send.blur();
+    await send.focus();
+    await expect(send).toBeFocused();
+    await expect(send).toBeInViewport({ ratio: 1 });
+    expect(await composer.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    expect(await body.evaluate((node) => node.scrollTop)).toBe(0);
+    // The Goal lives in the scrolling composer stack and stays reachable by scrolling back up.
+    await zoomGoal.scrollIntoViewIfNeeded();
+    await expect(zoomGoal).toBeInViewport({ ratio: 1 });
+    // ...and back down: scrolling alone, without focus, reaches Send again.
+    await send.scrollIntoViewIfNeeded();
+    await expect(send).toBeInViewport({ ratio: 1 });
   } finally {
     await zoomContext.close();
   }

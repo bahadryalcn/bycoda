@@ -52,7 +52,7 @@ beforeEach(() => {
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command === "remote_machines") return [machine];
     const method = (args as { method?: string } | undefined)?.method;
-    // The machine's capability read precedes its session list.
+    // A cold SSH machine is discovered once before its first list read; the Host answers that at once.
     if (command === "remote_request" && method === "environment.describe")
       return { capabilities: [] };
     if (command === "remote_request" && method === "sessions.list")
@@ -127,6 +127,13 @@ it("says it is loading a remote project's sessions until they arrive", async () 
   });
   expect(document.body.textContent).toContain("Loading sessions from MacBook…");
   expect(document.body.textContent).not.toContain("isn’t connected");
+  // The cold SSH route is discovered once, and only then is the first list read sent.
+  const methods = vi
+    .mocked(invoke)
+    .mock.calls.filter(([command]) => command === "remote_request")
+    .map(([, args]) => (args as { method: string }).method);
+  expect(methods.indexOf("environment.describe")).toBeGreaterThanOrEqual(0);
+  expect(methods.indexOf("environment.describe")).toBeLessThan(methods.indexOf("sessions.list"));
 
   await act(async () =>
     answer([
@@ -169,14 +176,14 @@ const freshSession = {
 it("refreshes within the cache TTL, retains rows on failure and retries to a verified empty list", async () => {
   await renderRemoteProject();
   await act(async () => answer([freshSession]));
-  expect(document.body.querySelector('[data-remote-data-state="ready"]')).toBeNull();
-  await act(async () => refreshRemoteProjectSessions());
+  expect(document.body.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
+  const refreshButton = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Refresh sessions from MacBook"]',
+  )!;
+  await act(async () => refreshButton.click());
   expect(document.body.querySelector('[data-remote-data-state="refreshing"]')).not.toBeNull();
   expect(document.body.textContent).toContain("Current conversation");
-  expect(
-    container.querySelector<HTMLButtonElement>('button[aria-label="Refresh sessions from MacBook"]')
-      ?.disabled,
-  ).toBe(true);
+  expect(refreshButton.disabled).toBe(true);
   await act(async () => refuse(new Error("permission denied reading sessions")));
   expect(document.body.querySelector('[data-remote-data-state="error"]')).not.toBeNull();
   expect(document.body.textContent).toContain("Showing last loaded data");
@@ -187,7 +194,7 @@ it("refreshes within the cache TTL, retains rows on failure and retries to a ver
       .click(),
   );
   await act(async () => answer([]));
-  expect(document.body.querySelector('[data-remote-data-state="empty"]')).toBeNull();
+  expect(document.body.querySelector('[data-remote-data-state="empty"]')).not.toBeNull();
   expect(document.body.textContent).not.toContain("Current conversation");
   expect(document.body.textContent).not.toContain("permission denied");
 });
@@ -222,7 +229,7 @@ it("labels cached rows as unverified while the initial owner read is pending", a
   expect(document.body.querySelector('[data-remote-data-state="refreshing"]')).not.toBeNull();
   expect(document.body.textContent).toContain("Showing last loaded data");
   await act(async () => answer([freshSession]));
-  expect(document.body.querySelector('[data-remote-data-state="ready"]')).toBeNull();
+  expect(document.body.querySelector('[data-remote-data-state="ready"]')).not.toBeNull();
 });
 
 it("keeps the loaded session list when the machine goes offline", async () => {

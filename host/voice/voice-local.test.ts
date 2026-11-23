@@ -16,7 +16,156 @@ import {
   LocalVoiceService,
   validateVoiceAudio,
 } from "./voice-local";
+import * as gpuDetection from "./voice-gpu";
 import * as runtime from "./voice-runtime";
+import { perfMetrics } from "../diagnostics/perf-metrics";
+
+function startInternals(service: LocalVoiceService) {
+  return service as unknown as {
+    ensureWorker: () => Promise<{ model: string; device: string; turn: boolean }>;
+    speech: { start: (config: unknown) => Promise<void> };
+  };
+}
+const workerInfo = { model: "small", device: "cpu", turn: false };
+const metricCount = (name: string) =>
+  perfMetrics.snapshot().metrics.find((metric) => metric.name === name)?.count ?? 0;
+
+it("loads CPU speech alongside the recognizer", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const internals = startInternals(service);
+  let finishWorker!: (value: typeof workerInfo) => void;
+  vi.spyOn(internals, "ensureWorker").mockReturnValue(
+    new Promise((resolve) => {
+      finishWorker = resolve;
+    }),
+  );
+  const speech = vi.spyOn(internals.speech, "start").mockResolvedValue();
+  try {
+    const starting = service.start({ natural: true });
+    await vi.waitFor(() => expect(speech).toHaveBeenCalledOnce());
+    finishWorker(workerInfo);
+    await expect(starting).resolves.toMatchObject({ model: "small" });
+  } finally {
+    inspect.mockRestore();
+    service.close();
+  }
+});
+
+it("keeps GPU speech behind the recognizer so both never allocate at once", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python", ttsPath: "tts" });
+  const internals = startInternals(service);
+  let finishWorker!: (value: typeof workerInfo) => void;
+  const worker = vi.spyOn(internals, "ensureWorker").mockReturnValue(
+    new Promise((resolve) => {
+      finishWorker = resolve;
+    }),
+  );
+  const speech = vi.spyOn(internals.speech, "start").mockResolvedValue();
+  try {
+    const starting = service.start({ natural: true, engine: "voxcpm2" });
+    await vi.waitFor(() => expect(worker).toHaveBeenCalledOnce());
+    expect(speech).not.toHaveBeenCalled();
+    finishWorker(workerInfo);
+    await starting;
+    expect(speech).toHaveBeenCalledOnce();
+  } finally {
+    inspect.mockRestore();
+    service.close();
+  }
+});
+
+it("grants no lease and unloads when speech fails during a parallel start", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const internals = startInternals(service);
+  vi.spyOn(internals, "ensureWorker").mockResolvedValue(workerInfo);
+  vi.spyOn(internals.speech, "start").mockRejectedValue(new Error("speech failed"));
+  const close = vi.spyOn(service, "close");
+  try {
+    await expect(service.start({ natural: true })).rejects.toThrow("speech failed");
+    expect(close).toHaveBeenCalled();
+    expect(service.isActive).toBe(false);
+  } finally {
+    inspect.mockRestore();
+    service.close();
+  }
+});
+
+it("reuses a ready probe until startup fails or the installation changes", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const internals = startInternals(service);
+  const worker = vi.spyOn(internals, "ensureWorker").mockResolvedValue(workerInfo);
+  try {
+    await service.start({ natural: false });
+    service.close();
+    await service.start({ natural: false });
+    service.close();
+    expect(inspect).toHaveBeenCalledOnce();
+
+    worker.mockRejectedValueOnce(new Error("worker failed"));
+    await expect(service.start({ natural: false })).rejects.toThrow("worker failed");
+    await service.start({ natural: false });
+    service.close();
+    expect(inspect).toHaveBeenCalledTimes(2);
+
+    service.forgetRuntime();
+    await service.start({ natural: false });
+    expect(inspect).toHaveBeenCalledTimes(3);
+  } finally {
+    inspect.mockRestore();
+    service.close();
+  }
+});
+
+it("records inspect, worker and speech phases only for work a start performs", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const internals = startInternals(service);
+  const before = ["inspect", "worker", "speech"].map((part) =>
+    metricCount(`voice.local.start.${part}`),
+  );
+  vi.spyOn(internals, "ensureWorker").mockResolvedValue(workerInfo);
+  vi.spyOn(internals.speech, "start").mockResolvedValue();
+  try {
+    await service.start({ natural: true });
+    expect(
+      ["inspect", "worker", "speech"].map((part) => metricCount(`voice.local.start.${part}`)),
+    ).toEqual(before.map((count) => count + 1));
+  } finally {
+    inspect.mockRestore();
+    service.close();
+  }
+});
+
+it("waits for GPU detection during start only when the owner requires the GPU", async () => {
+  const detect = vi.spyOn(gpuDetection, "detectNvidiaGpu").mockResolvedValue(undefined);
+  try {
+    await runtime.inspectVoiceRuntime({ python: "bycoda-missing-python" }, { readinessOnly: true });
+    expect(detect).not.toHaveBeenCalled();
+    const required = await runtime.inspectVoiceRuntime(
+      { python: "bycoda-missing-python", device: "gpu" },
+      { readinessOnly: true },
+    );
+    expect(detect).toHaveBeenCalledOnce();
+    expect(required.missing).toContain("NVIDIA GPU");
+  } finally {
+    detect.mockRestore();
+  }
+});
+
 it("makes an explicit Whisper selection exact and rejects model paths as IDs", () => {
   expect(runtime.voiceRuntimeConfig({ whisperModel: "small", whisperExact: false })).toEqual({
     whisperModel: "small",

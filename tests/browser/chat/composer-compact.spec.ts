@@ -777,13 +777,21 @@ async function readHistory(page: Page, deltaY = -1800) {
   // Let the dock motion settle before measuring.
   await page.waitForTimeout(350);
 }
+// Upper bound for the load waits in open(). The transcript paints a few turns and grows to its
+// 20-turn window in a low-priority transition, which takes about 1 s on a free machine and
+// longer than the 5 s default on a starved CI runner. It only bounds the wait.
+const LOAD_WAIT = 20_000;
 async function open(page: Page, query: Record<string, string> = {}, light = false) {
   await page.goto(url(query, light));
-  await expect(field(page)).toBeVisible();
+  await expect(field(page)).toBeVisible({ timeout: LOAD_WAIT });
   // The fixture has 40 turns. Wait for the full initial 20-turn window. The
   // first, shorter paint can also hold the same scroll height for two samples.
-  await expect(scroller(page).locator('[data-transcript-turn="user-20"]')).toBeAttached();
-  await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
+  await expect(scroller(page).locator('[data-transcript-turn="user-20"]')).toBeAttached({
+    timeout: LOAD_WAIT,
+  });
+  await expect
+    .poll(async () => (await state(page)).distance, { timeout: LOAD_WAIT })
+    .toBeLessThan(2);
 }
 
 for (const light of [false, true]) {
@@ -833,8 +841,13 @@ for (const light of [false, true]) {
     test("one mounted textarea keeps its draft, caret and size to its content", async ({
       page,
     }) => {
+      // Four full page loads, each about 2.3 s on a free machine (see LOAD_WAIT, plus the
+      // reading-mode dock motion). The 30 s default left no margin on a CI runner that is 2-3x
+      // slower, which timed out inside open(). The expectations are unchanged.
+      test.slow();
       await page.setViewportSize({ width: 1280, height: 800 });
       const heights: Record<string, number> = {};
+      let long: Awaited<ReturnType<typeof state>> | undefined;
       for (const draft of ["none", "short", "multi", "long"]) {
         await open(page, { draft }, light);
         await page.evaluate(() => {
@@ -846,6 +859,7 @@ for (const light of [false, true]) {
         await readHistory(page);
         const compact = await state(page);
         heights[draft] = compact.field;
+        if (draft === "long") long = compact;
         expect(compact.field).toBeLessThanOrEqual(full.field);
         await capture(page, `${theme}-1280-4-reading-draft-${draft}`);
         await field(page).focus();
@@ -870,12 +884,10 @@ for (const light of [false, true]) {
       expect(heights.none).toBe(heights.short);
       expect(heights.multi).toBeGreaterThan(heights.short + 20);
       expect(heights.long).toBeGreaterThanOrEqual(heights.multi);
-      // A very long draft is capped and scrolls inside the field.
-      await open(page, { draft: "long" }, light);
-      await readHistory(page);
-      const long = await state(page);
-      expect(long.field).toBeLessThanOrEqual(132 + 2);
-      expect(long.fieldScrolls).toBe(true);
+      // A very long draft is capped and scrolls inside the field. Its compact state was read in
+      // the loop above after the same fresh load and history read.
+      expect(long!.field).toBeLessThanOrEqual(132 + 2);
+      expect(long!.fieldScrolls).toBe(true);
     });
 
     test("does not toggle back and forth after compacting", async ({ page }) => {

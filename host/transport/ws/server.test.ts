@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { once } from "node:events";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocket, type ClientOptions } from "ws";
@@ -1287,9 +1288,12 @@ describe("WS framing and orderly disposal", () => {
       });
       mockQueue(1_000);
       const client = host.connect({ autoPong: false });
-      await client.opened;
-      expect(await client.hello("hello-draining")).toHaveProperty("result");
-      const ping = await new Promise<Buffer>((resolve) => client.socket.once("ping", resolve));
+      // The heartbeat can arrive before hello or in the same socket read.
+      const [[ping], hello] = await Promise.all([
+        once(client.socket, "ping", { signal: AbortSignal.timeout(2_000) }),
+        client.opened.then(() => client.hello("hello-draining")),
+      ]);
+      expect(hello).toHaveProperty("result");
       // Three full response windows with no pong: the old deadline would have closed this socket.
       await new Promise((resolve) => setTimeout(resolve, 130));
       expect(client.socket.readyState).toBe(WebSocket.OPEN);

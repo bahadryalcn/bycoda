@@ -25,6 +25,8 @@ export type RemoteFailure = { kind: RemoteFailureKind; message: string };
 /** Messages from `remote.rs`, `remote_ssh.rs`, `remoteCommands.ts` and the host. */
 const UNREACHABLE =
   /RPC_HOST_UNAVAILABLE|RPC_CONNECTION_INTERRUPTED|RPC_DNS|RPC_PROXY|Machine is unreachable|Host is not running on the machine|SSH connection failed|SSH timed out|Could not start OpenSSH|Machine is no longer connected|machine isn.t connected on this computer|Connect this project.s machine|Connection ?(reset|aborted)|ConnectionReset|ConnectionAborted|ConnectionRefused|TimedOut|forcibly closed|os error 10(053|054|060)|Broken pipe/i;
+/** The native SSH slot refused the request before sending anything: another dial is in progress. */
+const MACHINE_CONNECTING = "Machine is unreachable right now: a connection attempt is in progress.";
 /** A request whose connection was replaced mid-flight: not an outage, its outcome is unknown. */
 const SUPERSEDED = /Connection changed while the request was running/;
 /** `TimeoutError` after it was turned into text (`String(error)`). */
@@ -162,8 +164,7 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
   }
   if (SUPERSEDED.test(text) || LOCAL_TIMEOUT.test(text)) return { kind: "temporary", message };
   // The native SSH slot has a dial in progress; no remote operation or failed dial occurred.
-  if (message === "Machine is unreachable right now: a connection attempt is in progress.")
-    return { kind: "temporary", message };
+  if (message === MACHINE_CONNECTING) return { kind: "temporary", message };
   if (UNREACHABLE.test(text)) return { kind: "unreachable", message };
   if (TEMPORARY.test(text)) return { kind: "temporary", message };
   return { kind: "other", message };
@@ -329,4 +330,10 @@ export function describeLocalError(error: unknown, summary: string): string {
  * many requests in a row have failed. Each ask can cost an SSH attempt. */
 export function unreachablePollDelay(failures: number): number {
   return failures <= 1 ? 15_000 : 30_000;
+}
+
+/** Exactly the native refusal of a request that met a dial in progress. It proves the request was
+ * never sent, so an idempotent read may ask again; no other failure qualifies. */
+export function isMachineConnectingRefusal(error: unknown): boolean {
+  return remoteErrorText(error).replace(/^Error: /, "") === MACHINE_CONNECTING;
 }

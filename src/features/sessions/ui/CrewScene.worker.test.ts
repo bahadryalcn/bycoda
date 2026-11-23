@@ -288,7 +288,7 @@ it.each(["constructor", "init-timeout", "paint-timeout", "crash"])(
     expect(fallback.draw).toHaveBeenCalled();
     expect(fallback.canvas.isConnected).toBe(true);
     expect(fallback.canvas.style.display).toBe("");
-    expect(container.querySelectorAll("canvas")).toHaveLength(2);
+    expect(container.querySelectorAll("canvas:not(.crew-scene__still)")).toHaveLength(2);
     await show();
     await show({ paused: true });
     advance(3_000);
@@ -302,7 +302,7 @@ it.each(["session", "theme", "growth", "switch", "unmount"])(
   async (mode) => {
     await show({ sessionId: "first" });
     const worker = start();
-    const transferred = container.querySelectorAll("canvas")[1];
+    const transferred = container.querySelectorAll("canvas:not(.crew-scene__still)")[1];
     if (mode === "session") await show({ sessionId: "second" });
     if (mode === "theme") await act(async () => saveCrewTheme("star-wars"));
     if (mode === "growth") await act(async () => saveCrewGrowthEnabled(false));
@@ -312,7 +312,9 @@ it.each(["session", "theme", "growth", "switch", "unmount"])(
     expect(worker.terminate).toHaveBeenCalledOnce();
     expect(worker.onmessage).toBeNull();
     expect(transferred.isConnected).toBe(false);
-    expect(container.querySelectorAll("canvas")).toHaveLength(mode === "unmount" ? 0 : 1);
+    expect(container.querySelectorAll("canvas:not(.crew-scene__still)")).toHaveLength(
+      mode === "unmount" ? 0 : 1,
+    );
   },
 );
 

@@ -16,14 +16,17 @@ for (const width of [1280, 800])
         "/tests/browser/workspace/workspace-rewind.html?remoteRewind&codexCatalog=retained",
       );
       await setTheme();
+      // The second read is the catalog poller's 1 s backoff after the first pending answer; slow WebKit starts need headroom.
       await expect
-        .poll(() =>
-          page.evaluate(
-            () =>
-              (
-                window as unknown as { rewindFixtureCalls: { method: string }[] }
-              ).rewindFixtureCalls.filter((call) => call.method === "models.list").length,
-          ),
+        .poll(
+          () =>
+            page.evaluate(
+              () =>
+                (
+                  window as unknown as { rewindFixtureCalls: { method: string }[] }
+                ).rewindFixtureCalls.filter((call) => call.method === "models.list").length,
+            ),
+          { timeout: 15_000 },
         )
         .toBeGreaterThan(1);
       const picker = page.locator("[data-model-picker-presentation]").first();

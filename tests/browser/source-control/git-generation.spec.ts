@@ -171,7 +171,7 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
     await choice.click();
     if (name === "Subagents") {
       await expect(choice).toHaveAttribute("aria-selected", "true");
-      await picker.getByRole("button", { name: "Done", exact: true }).click();
+      await picker.getByRole("button", { name: "Apply", exact: true }).click();
     }
     await expect(picker).toHaveCount(0);
   };

@@ -89,11 +89,9 @@ it("reuses a worker and returns text and binary output with cwd, stdin and env o
     },
   );
   expect(stdout).toEqual(Buffer.from([0, 255, 10]));
-  expect(JSON.parse(stderr.toString())).toEqual([
-    await realpath(directory),
-    "inherited",
-    "override",
-  ]);
+  const [childDirectory, ...environment] = JSON.parse(stderr.toString());
+  expect(await realpath(childDirectory)).toBe(await realpath(directory));
+  expect(environment).toEqual(["inherited", "override"]);
   expect(process.env.BYCODA_POOL_OVERRIDE_TEST).toBe("original");
 });
 

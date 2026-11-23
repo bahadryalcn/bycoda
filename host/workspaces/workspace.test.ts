@@ -938,7 +938,9 @@ it("looks up one file's status without the full index", async () => {
     windowsHide: true,
     input: `0 ${"0".repeat(blob.length)}\ttracked.txt\n100644 ${blob} 2\ttracked.txt\n100644 ${blob} 3\ttracked.txt\n`,
   });
-  await expect(hostFileDiff(root, "tracked.txt", false)).rejects.toThrow("unresolved Git conflicts");
+  await expect(hostFileDiff(root, "tracked.txt", false)).rejects.toThrow(
+    "unresolved Git conflicts",
+  );
 });
 
 it("reports a staged rename's status the same way as the full index", async () => {
