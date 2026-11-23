@@ -229,23 +229,41 @@ test("native Goal states preserve drafts and long objectives remain readable", a
     const send = zoomPage.getByRole("button", { name: /^Gönder/ });
     await send.focus();
     await expect(send).toBeFocused();
-    const sendBounds = await send.boundingBox();
-    expect(sendBounds).not.toBeNull();
-    expect(sendBounds!.y).toBeGreaterThanOrEqual(0);
-    expect(sendBounds!.y + sendBounds!.height).toBeLessThanOrEqual(401);
-    expect(
-      await zoomPage.locator("[data-session-composer]").evaluate((node) => node.scrollTop),
-    ).toBeGreaterThan(0);
-    expect(await zoomPage.locator("[data-session-body]").evaluate((node) => node.scrollTop)).toBe(
-      0,
-    );
-    // The Goal lives in the scrolling composer stack: at this size focus moves it away, so it must stay reachable by scrolling.
-    await zoomPage.locator("[data-provider-goal]").scrollIntoViewIfNeeded();
-    await expect(zoomPage.locator("[data-provider-goal]")).toBeInViewport();
+    const composer = zoomPage.locator("[data-session-composer]");
+    const body = zoomPage.locator("[data-session-body]");
+    // Focus keeps Send in view and never moves the transcript. Whether Goal and Send also share the
+    // view depends on the system font, so Goal is reached by scrolling when it is not.
+    await expect(send).toBeInViewport({ ratio: 1 });
+    expect(await body.evaluate((node) => node.scrollTop)).toBe(0);
+    await zoomGoal.scrollIntoViewIfNeeded();
+    await expect(zoomGoal).toBeInViewport({ ratio: 1 });
+    await send.scrollIntoViewIfNeeded();
+    await expect(send).toBeInViewport({ ratio: 1 });
+    expect(await body.evaluate((node) => node.scrollTop)).toBe(0);
     await zoomPage.screenshot({
       path: testInfo.outputPath("native-goal-dark-800-rtl-200pct-equivalent.png"),
       scale: "device",
     });
+    // Intentionally too short for the stack: the composer must scroll, and focus plus scrolling
+    // must still reach Send and the Goal without moving the transcript.
+    await zoomPage.setViewportSize({ width: 400, height: 200 });
+    await composer.evaluate((node) => {
+      node.scrollTop = 0;
+    });
+    expect(await composer.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+    await expect(send).not.toBeInViewport({ ratio: 1 });
+    await send.blur();
+    await send.focus();
+    await expect(send).toBeFocused();
+    await expect(send).toBeInViewport({ ratio: 1 });
+    expect(await composer.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+    expect(await body.evaluate((node) => node.scrollTop)).toBe(0);
+    // The Goal lives in the scrolling composer stack and stays reachable by scrolling back up.
+    await zoomGoal.scrollIntoViewIfNeeded();
+    await expect(zoomGoal).toBeInViewport({ ratio: 1 });
+    // ...and back down: scrolling alone, without focus, reaches Send again.
+    await send.scrollIntoViewIfNeeded();
+    await expect(send).toBeInViewport({ ratio: 1 });
   } finally {
     await zoomContext.close();
   }
