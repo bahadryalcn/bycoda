@@ -50,6 +50,12 @@ beforeEach(() => {
             ssh: { target: "me@host", port: null, remotePort: 3774 },
           },
         ];
+      // A cold SSH machine is discovered once before its first list read; the Host answers that at once.
+      if (
+        command === "remote_request" &&
+        (args as { method?: string })?.method === "environment.describe"
+      )
+        return { capabilities: [] };
       if (command === "remote_request" && (args as { method?: string })?.method === "sessions.list")
         return hostSessions;
       return undefined;
