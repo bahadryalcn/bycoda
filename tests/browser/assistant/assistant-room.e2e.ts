@@ -137,8 +137,8 @@ test("an untouched discovered worker becomes explicit only after choosing a work
 async function setupDraft(page: Page) {
   return page.evaluate(() => JSON.parse(localStorage.getItem("bycoda.assistant.setup-draft")!));
 }
-async function finishSetup(page: Page) {
-  const ready = page.getByRole("dialog", { name: "Ready for 24/7", exact: true });
+async function finishSetup(page: Page, title = "Ready for 24/7") {
+  const ready = page.getByRole("dialog", { name: title, exact: true });
   await expect(ready).toBeVisible();
   await ready.getByRole("button", { name: "Done", exact: true }).click();
 }
@@ -216,7 +216,10 @@ for (const theme of ["light", "dark"])
         ).toBeVisible();
         await page.screenshot({
           animations: "disabled",
-          path: join(output, `setup-${theme}-${width}-${String(frames.length + 1).padStart(2, "0")}.png`),
+          path: join(
+            output,
+            `setup-${theme}-${width}-${String(frames.length + 1).padStart(2, "0")}.png`,
+          ),
         });
         frames.push({
           step: index + 1,
@@ -344,7 +347,7 @@ for (const theme of ["light", "dark"])
         ),
       ).toEqual([]);
       await dialog.getByRole("button", { name: "Start", exact: true }).click();
-      await finishSetup(page);
+      await finishSetup(page, "Voice is ready");
       await expect(dialog).toHaveCount(0);
       expect(await page.evaluate(() => (window as any).__setupProfile)).toMatchObject({
         name: "Setup fixture",
