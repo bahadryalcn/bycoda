@@ -23,6 +23,7 @@ const coldReads = [
   ["workspace.run", { command: "git_worktrees", args: { cwd: "/srv" } }],
   ["workspace.run", { command: "git_submodules", args: { cwd: "/srv" } }],
   ["workspace.run", { command: "git_file_diff", args: { cwd: "/srv" } }],
+  ["workspace.run", { command: "git_diff_stats", args: { cwd: "/srv" } }],
   ["workspace.run", { command: "git_branches", args: { cwd: "/srv" } }],
   ["workspace.run", { command: "skill_policy_get", args: {} }],
   ["projects.list", {}],
@@ -287,4 +288,34 @@ it("stops retrying the discovery when automatic dialing is turned off or the rou
   await replaced;
   expect(requestsOf().filter((r) => r.method === "environment.describe")).toHaveLength(2);
   expect(requestsOf().filter((r) => r.method === "projects.list")).toHaveLength(0);
+});
+
+it("fails an explicit receipt-checked command at once while startup reads wait in backoff", async () => {
+  vi.useFakeTimers();
+  const machine = coldMachine();
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command !== "remote_request") return;
+    if ((args as { method: string }).method === "environment.describe") throw connecting;
+    return [];
+  });
+  const restore = remoteRequest(machine.id, "projects.list").catch((error: unknown) => error);
+  await vi.advanceTimersByTimeAsync(10); // the first probe was refused; the restore is now sleeping
+  expect(requestsOf().map((r) => r.method)).toEqual(["environment.describe"]);
+
+  const explicit = remoteRequest(machine.id, "commands.dispatch", {
+    type: "cancel",
+    runId: "desktop",
+    sessionId: "s1",
+  }).catch((error: unknown) => error);
+  // No timer advance: the command has to fail without waiting for the restore's backoff.
+  expect(String(await explicit)).toBe(connecting);
+  expect(requestsOf().map((r) => r.method)).toEqual([
+    "environment.describe",
+    "environment.describe",
+  ]);
+  expect(requestsOf().some((r) => r.method === "commands.dispatch")).toBe(false);
+
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(String(await restore)).toBe(connecting);
+  expect(requestsOf().some((r) => r.method === "commands.dispatch")).toBe(false);
 });

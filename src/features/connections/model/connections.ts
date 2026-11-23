@@ -237,7 +237,8 @@ export function recordRemoteCapabilities(environmentId: string, advertised: unkn
   capabilityListeners.forEach((listener) => listener());
 }
 
-/** Asks a machine for its capabilities, to learn whether its host is new enough. */
+/** Asks a machine for its capabilities, to learn whether its host is new enough. One attempt:
+ * a refusal reaches every caller at once, so an explicit command never waits on a retry. */
 export function loadRemoteCapabilities(environmentId: string): Promise<string[] | undefined> {
   const fetchedAt = capabilityFetchedAt.get(environmentId);
   if (fetchedAt !== undefined && Date.now() - fetchedAt < REMOTE_CAPABILITIES_TTL_MS)
@@ -247,36 +248,56 @@ export function loadRemoteCapabilities(environmentId: string): Promise<string[] 
   const lookup = (async () => {
     const machine = await remoteMachineFor(environmentId);
     if (!machine) return undefined;
-    const generation = captureConnectionGeneration(environmentId);
+    const host = await remoteRequest<{ capabilities?: unknown }>(
+      machine.id,
+      "environment.describe",
+    );
+    recordRemoteCapabilities(environmentId, host.capabilities);
+    return cachedRemoteCapabilities(environmentId);
+  })().finally(() => capabilityLookups.delete(environmentId));
+  capabilityLookups.set(environmentId, lookup);
+  return lookup;
+}
+
+const startupDiscoveries = new Map<string, Promise<string[] | undefined>>();
+/**
+ * The shared first discovery of startup reads only. When the native slot refuses the probe
+ * unsent because another dial is in progress, it asks again after a bounded backoff. The sleep
+ * lives here, outside `loadRemoteCapabilities`: an explicit command that checks capabilities can
+ * join an attempt in flight but never this wait, and fails at once on that refusal.
+ */
+function discoverStartupRoute(machine: {
+  id: string;
+  environmentId: string;
+}): Promise<string[] | undefined> {
+  const { id, environmentId } = machine;
+  const existing = startupDiscoveries.get(environmentId);
+  if (existing) return existing;
+  const generation = captureConnectionGeneration(environmentId);
+  const discovery = (async () => {
     for (let attempt = 0; ; attempt++) {
       try {
-        const host = await remoteRequest<{ capabilities?: unknown }>(
-          machine.id,
-          "environment.describe",
-        );
-        recordRemoteCapabilities(environmentId, host.capabilities);
-        return cachedRemoteCapabilities(environmentId);
+        return await loadRemoteCapabilities(environmentId);
       } catch (reason) {
-        // Another dial is in progress and the request was never sent: asking again is safe.
-        // Any other failure, and every failure once the budget is spent, is the caller's.
+        // Only the unsent refusal of a describe is asked again; nothing that writes is replayed.
         const wait = CONNECTING_RETRY_MS[attempt];
         if (wait === undefined || !isMachineConnectingRefusal(reason)) throw reason;
         await new Promise((resolve) => setTimeout(resolve, wait));
         // The route may have changed, been paused or lost its automatic dialing while it waited.
         const same = cachedMachines.some(
-          (entry) => entry.id === machine.id && entry.environmentId === environmentId,
+          (entry) => entry.id === id && entry.environmentId === environmentId,
         );
         if (
           !same ||
           readRemoteLifecycle(environmentId).generation !== generation ||
-          !mayStartTunnel(machine.id, false, false)
+          !mayStartTunnel(id, false, false)
         )
           throw reason;
       }
     }
-  })().finally(() => capabilityLookups.delete(environmentId));
-  capabilityLookups.set(environmentId, lookup);
-  return lookup;
+  })().finally(() => startupDiscoveries.delete(environmentId));
+  startupDiscoveries.set(environmentId, discovery);
+  return discovery;
 }
 const TAB_KEY = "bycoda.remote-tabs.v2";
 export const REMOTE_TAB_BINDING_CHANGE = "bycoda:remote-tab-binding";
@@ -556,7 +577,7 @@ export function remoteRequest<T>(
     !cachedRemoteCapabilities(machine.environmentId) &&
     mayStartTunnel(machineId, fresh, userInitiated)
   )
-    return loadRemoteCapabilities(machine.environmentId).then(() =>
+    return discoverStartupRoute(machine).then(() =>
       // The route is checked again when this read's turn comes, after discovery and the queue.
       runColdRouteRead(machine.id, () => {
         if (!current()) throw superseded();
