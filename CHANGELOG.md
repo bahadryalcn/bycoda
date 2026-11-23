@@ -7,15 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.20]
+
 ### Changed
 
 - The local Host now runs with the desktop app and stops when you quit, after listing running sessions and stopping them gracefully. Turn on "Keep this computer reachable when bycoda is closed" under Settings → Connections → Computers to keep it running as a login service.
 
 ### Improved
 
+- Remote session synchronization uses fewer database write-queue admissions, and large sync responses reuse their encoded payload.
+- Long referenced message drafts keep their selection and undo history when a very long wrapped line switches to the native text field.
+- Windows login-service Hosts use normal scheduling priority.
+- Starting local voice reuses a recent successful runtime check. Compatible speech and recognition workers can start together.
+- Typing in a long draft pauses background scene rendering and keeps the current frame visible.
 - Native buffer reads reuse one long-lived git reader instead of starting three git processes per read.
 - The Host no longer checks the desktop database files with blocking disk calls, so a stalled disk (a restore point, an antivirus scan) cannot freeze it.
 - Social audit records are kept for 30 days, and the notification poller's old read records are removed.
+
+### Fixed
+
+- Refreshing an open Git review after a file becomes clean clears the diff and preserves the baseline needed to stage subsequent edits.
+- Restoring projects waits for the initial Host connection before listing sessions. Background session discovery no longer fetches attachment previews before they are needed.
+- Switching streams preserves pending project and session lists. Browser annotations retain their details beside inline images.
+- Reopened sessions can use their original desktop attachment when a Host copy is unavailable. A temporary Codex catalog failure keeps previously loaded models available.
+- On macOS and Linux, cancelling a Git operation also stops its helper processes. Worktree removal recognizes active sessions opened through an alternate path.
 
 ## [0.7.15]
 
