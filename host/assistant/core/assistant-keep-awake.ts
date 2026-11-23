@@ -151,8 +151,8 @@ export class HostAssistantKeepAwake {
   }
   /**
    * Records current demand without waiting for the helper, so an optional power request never
-   * holds the Assistant queue. `active` stays false until the helper acknowledges; `onChange`
-   * reports the outcome. Unchanged demand starts no second attempt.
+   * holds the Assistant queue. `active` stays false until the helper acknowledges, and the
+   * next status read reports the outcome. Unchanged demand starts no second attempt.
    */
   sync(enabled: boolean): KeepAwakeStatus {
     if (this.closing) return this.status;
