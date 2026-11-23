@@ -100,6 +100,9 @@ export function voiceRuntimeConfig(value: unknown): VoiceRuntimeConfig {
   return result;
 }
 
+/** How long a ready lower-priority interpreter waits for a better candidate to answer. */
+const VOICE_PROBE_PRIORITY_GRACE_MS = 1500;
+
 const probe = String.raw`
 import os, sys, json, importlib.util
 os.environ['HF_HUB_OFFLINE'] = '1'
@@ -224,7 +227,8 @@ function inspect(
  * because installation does not need the key. */
 export async function inspectVoiceRuntime(
   value?: unknown,
-  options: { cloudKey?: VoiceCloudKeyStatus } = {},
+  /** `readinessOnly` (voice start) skips the display-only GPU name unless the GPU is required. */
+  options: { cloudKey?: VoiceCloudKeyStatus; readinessOnly?: boolean } = {},
 ): Promise<VoiceRuntimeStatus> {
   const config = voiceRuntimeConfig(value);
   if (config.whisperModel) {
@@ -280,33 +284,58 @@ export async function inspectVoiceRuntime(
     for (const version of ["3.12", "3.11", "3.10"])
       probes.push({ python: "py", args: [`-${version}`] });
   let best: VoiceRuntimeStatus | undefined;
-  const gpu = config.device === "cpu" ? undefined : detectNvidiaGpu().catch(() => undefined);
+  const gpu =
+    config.device === "cpu" || (options.readinessOnly && config.device !== "gpu")
+      ? undefined
+      : detectNvidiaGpu().catch(() => undefined);
   const controller = new AbortController();
   // A per-interpreter timeout must not multiply into minutes of settings UI
   // waiting. Bound the entire scan and stop outstanding probes once ready.
   const timer = setTimeout(() => controller.abort(), 12_000);
   let next = 0;
+  // Candidates are in priority order: the first ready one wins, not the fastest to answer.
+  // Bycoda's own environment imports several times faster than a crowded system Python.
+  let readyAt = probes.length;
+  let grace: ReturnType<typeof setTimeout> | undefined;
+  const finished = new Set<number>();
+  const settleReady = () => {
+    if (readyAt === probes.length) return;
+    for (let index = 0; index < readyAt; index++) {
+      if (finished.has(index)) continue;
+      // A stalled better candidate may delay the choice only briefly.
+      grace ??= setTimeout(() => controller.abort(), VOICE_PROBE_PRIORITY_GRACE_MS);
+      return;
+    }
+    controller.abort();
+  };
   const scan = async () => {
-    while (!controller.signal.aborted && next < probes.length) {
-      const candidate = probes[next++];
+    while (!controller.signal.aborted && next < readyAt) {
+      const index = next++;
+      const candidate = probes[index];
       const status = await inspect(candidate.python, config, controller.signal, candidate.args);
-      if (!status) continue;
-      // A working interpreter with missing packages is more useful than an
-      // incompatible system Python that happens to have more packages installed.
-      if (
-        !best ||
-        (status.python && !best.python) ||
-        (Boolean(status.python) === Boolean(best.python) &&
-          status.missing.length < best.missing.length)
+      finished.add(index);
+      if (status?.ready && index < readyAt) {
+        readyAt = index;
+        best = status;
+      } else if (
+        status &&
+        !best?.ready &&
+        // A working interpreter with missing packages is more useful than an
+        // incompatible system Python that happens to have more packages installed.
+        (!best ||
+          (status.python && !best.python) ||
+          (Boolean(status.python) === Boolean(best.python) &&
+            status.missing.length < best.missing.length))
       )
         best = status;
-      if (status.ready) controller.abort();
+      settleReady();
     }
   };
   try {
     await Promise.all(Array.from({ length: Math.min(4, probes.length) }, scan));
   } finally {
     clearTimeout(timer);
+    if (grace) clearTimeout(grace);
     controller.abort();
   }
   const status: VoiceRuntimeStatus = best ?? {
