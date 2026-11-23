@@ -900,13 +900,45 @@ it("looks up one file's status without the full index", async () => {
     current: "new\n",
   });
   expect(await hostFileDiff(root, "fresh.txt", false)).toMatchObject({ status: "untracked" });
-  await expect(hostFileDiff(root, "other.txt", false)).rejects.toThrow("no uncommitted changes");
+  for (const staged of [false, true]) {
+    expect(await hostFileDiff(root, "other.txt", staged)).toMatchObject({
+      status: "unchanged",
+      original: "x\n",
+      current: "x\n",
+    });
+  }
   await expect(hostGitAction(root, "discard", "other.txt")).rejects.toThrow(
     "no changes to discard",
   );
   await hostGitAction(root, "discard", "tracked.txt");
   expect(readFileSync(join(root, "tracked.txt"), "utf8")).toBe("old\n");
+  expect(await hostFileDiff(root, "tracked.txt", false)).toMatchObject({
+    status: "unchanged",
+    original: "old\n",
+    current: "old\n",
+  });
   expect((await hostGitIndex(root)).files).toMatchObject([{ relative: "fresh.txt", additions: 2 }]);
+  rmSync(join(root, "fresh.txt"));
+  expect(await hostFileDiff(root, "fresh.txt", false)).toMatchObject({
+    status: "unlisted",
+    original: "",
+    current: "",
+  });
+  writeFileSync(join(root, ".gitignore"), "ignored.txt\n");
+  writeFileSync(join(root, "ignored.txt"), "excluded contents");
+  expect(await hostFileDiff(root, "ignored.txt", false)).toMatchObject({
+    status: "unlisted",
+    original: "",
+    current: "",
+  });
+  await expect(hostFileDiff(root, "../other.txt", false)).rejects.toThrow("outside the workspace");
+  const blob = reviewGit(root, "rev-parse", "HEAD:tracked.txt");
+  execFileSync("git", ["update-index", "--index-info"], {
+    cwd: root,
+    windowsHide: true,
+    input: `0 ${"0".repeat(blob.length)}\ttracked.txt\n100644 ${blob} 2\ttracked.txt\n100644 ${blob} 3\ttracked.txt\n`,
+  });
+  await expect(hostFileDiff(root, "tracked.txt", false)).rejects.toThrow("unresolved Git conflicts");
 });
 
 it("reports a staged rename's status the same way as the full index", async () => {

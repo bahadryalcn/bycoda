@@ -1304,15 +1304,17 @@ async function cachedHostNumstat(root: string, head: string, status: string): Pr
   }
 }
 
-async function gitBlob(root: string, spec: string) {
+async function gitBlob(root: string, spec: string, required = false) {
   try {
     const text = await git(root, ["show", spec], MAX_FILE + 1024);
     return { text, binary: text.includes("\0"), tooLarge: false };
   } catch (error) {
+    const tooLarge = (error as NodeJS.ErrnoException).code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+    if (required && !tooLarge) throw error;
     return {
       text: "",
       binary: false,
-      tooLarge: String(error).includes("maxBuffer"),
+      tooLarge,
     };
   }
 }
@@ -1327,7 +1329,27 @@ export async function hostFileDiff(
   const file = (await hostChangedEntries(root, [relativePath])).find(
     (entry) => entry.relative === relativePath,
   );
-  if (!file) throw new Error("File has no uncommitted changes");
+  if (!file) {
+    // A status row can disappear between opening Changes and reading the diff.
+    // Use the index blob for both sides so a draft still has its real baseline.
+    const entries = await git(root, ["ls-files", "--stage", "-z", "--", relativePath]);
+    const entry = entries
+      .split("\0")
+      .find((row) => row.slice(row.indexOf("\t") + 1) === relativePath);
+    const base = entry?.match(/^([0-7]{6}) ([\da-f]+) (\d)\t/);
+    if (base && base[3] !== "0") throw new Error("File has unresolved Git conflicts");
+    const blob = base && base[1] !== "160000" ? await gitBlob(root, base[2], true) : undefined;
+    const text = blob && !blob.binary ? blob.text : "";
+    return {
+      path: relativePath,
+      relative: relativePath,
+      status: blob ? "unchanged" : "unlisted",
+      original: text,
+      current: text,
+      binary: blob?.binary ?? false,
+      tooLarge: blob?.tooLarge ?? false,
+    };
+  }
   const prefix = (await git(root, ["rev-parse", "--show-prefix"])).trim();
   const repositoryPath = `${prefix}${relativePath}`;
   const originalPath = staged

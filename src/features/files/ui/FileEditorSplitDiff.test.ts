@@ -204,6 +204,31 @@ describe("split diff layout in the file editor", () => {
     expect(after().state.doc.toString()).toBe("one\ntwo\n");
   });
 
+  it("uses the clean listing until an unsaved edit needs the Git baseline", async () => {
+    base = "one\n";
+    disk = base;
+    const reads = vi.fn();
+    const answer = bridge.invoke;
+    bridge.invoke = (command, args) => {
+      if (command === "git_diff_files") return { repository: true, files: [] };
+      if (command === "git_file_diff") reads();
+      return answer(command, args);
+    };
+    await render();
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(reads).not.toHaveBeenCalled();
+    expect(before().state.doc.toString()).toBe(base);
+    await act(async () => {
+      after().dispatch({ changes: { from: 0, insert: "draft\n" } });
+    });
+    await vi.waitFor(() => expect(reads).toHaveBeenCalled());
+    expect(before().state.doc.toString()).toBe(base);
+    expect(after().state.doc.toString()).toBe("draft\none\n");
+    expect(dirty.at(-1)).toBe(true);
+  });
+
   it("keeps unsaved edits and the caret when switching back to inline", async () => {
     base = "one\ntwo\n";
     disk = "one\ntwo\n";

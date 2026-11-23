@@ -190,14 +190,18 @@ export function FileEditor({
   const [draftActionError, setDraftActionError] = useState<string | null>(null);
   const editorRootRef = useRef<HTMLDivElement>(null);
   const manualSaveRef = useRef(false);
-  const [gitBase, setGitBase] = useState<{
-    path: string;
-    original: string;
-    originalRaw: string;
-    kind: GitFileDiffKind;
-    lineEnding: LineEnding;
-    eolOnly: boolean;
-  } | null>(null);
+  const [gitBase, setGitBase] = useState<
+    | { path: string; kind: "disk" }
+    | {
+        path: string;
+        original: string;
+        originalRaw: string;
+        kind: GitFileDiffKind;
+        lineEnding: LineEnding;
+        eolOnly: boolean;
+      }
+    | null
+  >(null);
   const markdown = isMarkdownPath(path);
   const svg = isSvgPath(path);
   const html = /\.html?$/i.test(basename(path));
@@ -757,8 +761,13 @@ export function FileEditor({
     setGitBase(null);
 
     const listed = async () => {
-      const { files } = await gitDiffFiles(cwd);
-      return files.find((entry) => entry.relative === relative);
+      const index = await gitDiffFiles(cwd);
+      return {
+        file: index.files.find((entry) => entry.relative === relative),
+        comparable:
+          index.repository !== false &&
+          !index.conflicts?.some((entry) => entry.relative === relative),
+      };
     };
 
     // Until a diff has arrived, a load takes the side the Changes panel named
@@ -771,7 +780,17 @@ export function FileEditor({
       const first = !shown;
       return (async () => {
         const opened = changeKindRef.current;
-        let file = first && opened ? undefined : await listed();
+        const listing = first && opened ? undefined : await listed();
+        if (cancelled || request !== generation) return;
+        let file = listing?.file;
+        if (listing && !file && (!listing.comparable || !dirtyRef.current)) {
+          shown = true;
+          // A successful listing already settled the clean view. Fetch the Git
+          // baseline if the user edits, before enabling selective staging.
+          setGitBase(listing.comparable ? { path, kind: "disk" } : null);
+          setGitSettledPath(path);
+          return;
+        }
         const kind: GitFileDiffKind =
           first && opened
             ? opened
@@ -785,7 +804,7 @@ export function FileEditor({
         const diff = await gitFileDiff(cwd, relative, kind);
         if (cancelled || request !== generation) return;
         shown = true;
-        if (diff.binary || diff.tooLarge) {
+        if (diff.binary || diff.tooLarge || diff.status === "unlisted") {
           setGitBase(null);
           setGitSettledPath(path);
           return;
@@ -796,7 +815,7 @@ export function FileEditor({
         const eolDiffers =
           diff.original !== diff.current && original === normalizeLineBreaks(diff.current);
         if (eolDiffers && first && opened) {
-          file = await listed();
+          file = (await listed()).file;
           if (cancelled || request !== generation) return;
         }
         setGitBase({
@@ -879,8 +898,12 @@ export function FileEditor({
     reloadGitRef.current?.();
   }, [changeKind]);
 
-  const gitDiff = gitBase?.path === path ? gitBase : null;
-  const gitOriginal = gitDiff?.original ?? null;
+  const currentBase = gitBase?.path === path ? gitBase : null;
+  const gitDiff = currentBase?.kind === "disk" ? null : currentBase;
+  const gitOriginal =
+    currentBase?.kind === "disk" && loadState.status === "ready"
+      ? loadState.content
+      : (gitDiff?.original ?? null);
 
   useEffect(() => {
     if (loadState.status !== "ready") return;
@@ -1132,7 +1155,9 @@ export function FileEditor({
 
   const dirtyChange = useCallback(
     (dirty: boolean) => {
+      const needsGitBase = dirty && !dirtyRef.current && currentBase?.kind === "disk";
       dirtyRef.current = dirty;
+      if (needsGitBase) reloadGitRef.current?.();
       setDirty(dirty);
       onDirtyChange(path, dirty);
       if (dirty) {
@@ -1144,7 +1169,7 @@ export function FileEditor({
         void reloadFromDisk();
       }
     },
-    [onDirtyChange, path, reloadFromDisk],
+    [currentBase, onDirtyChange, path, reloadFromDisk],
   );
 
   const errorCountChange = useCallback(

@@ -1,6 +1,8 @@
 # Source control review
 
 A clean working tree shows a centered check icon above its empty-state message.
+If a file is committed or restored while its diff is open, the comparison clears
+and the editor keeps any unsaved text.
 If the branch has diverged, the panel keeps the divergence message and uses a branch icon.
 
 The sidebar's **Changes** tab opens source control. **Generate commit message**
