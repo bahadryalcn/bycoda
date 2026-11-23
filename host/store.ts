@@ -347,6 +347,12 @@ export class HostStore {
   private closePromise?: Promise<void>;
   environmentId = "";
   readonly attachmentDir: string;
+  /**
+   * The database, its SQLite sidecars and the attachment folder. Only SQLite may open the database
+   * files: a plain open and close of one in this process drops every POSIX lock SQLite holds on it,
+   * and another process can then rebuild the WAL index under a live mapping (SIGBUS).
+   */
+  readonly ownedPaths: readonly string[];
   // This process is the only session writer, so recently used snapshots are
   // served from memory instead of re-parsing whole transcripts. Callers must
   // treat returned values as immutable.
@@ -599,6 +605,10 @@ export class HostStore {
   constructor(path: string) {
     this.sessionReadPath = path;
     this.attachmentDir = join(dirname(path), "attachments");
+    this.ownedPaths =
+      path === ":memory:"
+        ? [this.attachmentDir]
+        : [path, `${path}-wal`, `${path}-shm`, `${path}-journal`, this.attachmentDir];
     this.db = new StoreDatabase(path);
     this.db.onMutation = (sql) => this.externalMutation(sql);
     this.db.onMutationFault = () => {

@@ -134,59 +134,180 @@ describe("rememberScroll", () => {
   });
 });
 
-describe("reader input", () => {
-  it("stays the reader's while one wheel's animated scroll keeps moving up past the input window", () => {
+describe("reader motion", () => {
+  // Paints frames only when the test says so: Linux WebKit painted no frame for seconds
+  // while a wheel's animated scroll was under way.
+  function harness() {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     let now = 1000;
     vi.spyOn(performance, "now").mockImplementation(() => now);
+    let frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
     let follow: TranscriptFollow | undefined;
+    let onJumpToBottomChange = () => {};
     function Probe() {
-      follow = useTranscriptFollow({ visible: true, lastUserId: undefined });
+      follow = useTranscriptFollow({ visible: true, lastUserId: undefined, onJumpToBottomChange });
       return null;
     }
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
     const scroller = document.createElement("div");
-    let top = 2000;
-    Object.defineProperty(scroller, "scrollTop", {
-      configurable: true,
-      get: () => top,
-      set: (value: number) => {
-        top = value;
-      },
-    });
-    vi.spyOn(scroller, "clientHeight", "get").mockReturnValue(400);
-    vi.spyOn(scroller, "scrollHeight", "get").mockReturnValue(2400);
+    let top = 762;
+    Object.defineProperty(scroller, "scrollTop", { configurable: true, get: () => top });
+    vi.spyOn(scroller, "clientHeight", "get").mockReturnValue(646);
+    vi.spyOn(scroller, "scrollHeight", "get").mockReturnValue(1408);
     document.body.append(scroller);
-    const scrollTo = (value: number, at: number) => {
-      now = at;
-      top = value;
-      scroller.dispatchEvent(new Event("scroll"));
+    act(() => root.render(createElement(Probe)));
+    act(() => follow!.setScroller(scroller as HTMLDivElement));
+    return {
+      follow: () => follow!,
+      scroller,
+      pending: () => frames.size,
+      at: (ms: number) => {
+        now = ms;
+      },
+      // One painted frame: the scroll event (when the offset moved) precedes frame callbacks.
+      paint: (nextTop?: number) => {
+        if (nextTop !== undefined && nextTop !== top) {
+          top = nextTop;
+          scroller.dispatchEvent(new Event("scroll"));
+        }
+        const due = frames;
+        frames = new Map();
+        for (const callback of due.values()) callback(now);
+      },
+      move: (nextTop: number) => {
+        top = nextTop;
+      },
+      wheel: (init: WheelEventInit) => scroller.dispatchEvent(new WheelEvent("wheel", init)),
+      rerender: () => {
+        onJumpToBottomChange = () => {};
+        act(() => root.render(createElement(Probe)));
+      },
+      dispose: () => {
+        act(() => root.unmount());
+        container.remove();
+        scroller.remove();
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+      },
     };
+  }
+
+  it("credits the CI wheel: one frame, nothing painted for seconds, then the top", () => {
+    const h = harness();
     try {
-      act(() => root.render(createElement(Probe)));
-      act(() => follow!.setScroller(scroller as HTMLDivElement));
-      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -2400 }));
-      // WebKit animates the long delta: it is still far from the top after the input window.
-      for (let step = 1; step <= 20; step += 1) scrollTo(2000 - step * 100, 1000 + step * 100);
-      expect(top).toBe(0);
-      expect(now).toBeGreaterThan(1000 + 1000);
-      expect(follow!.hasReaderInput()).toBe(true);
-      // Once the motion stops, the window is no longer renewed and runs out.
-      scrollTo(0, 3100);
-      now = 4200;
-      expect(follow!.hasReaderInput()).toBe(false);
-      // A later upward scroll with no new input (a programmatic move) is not the reader's.
-      scrollTo(600, 4300);
-      scrollTo(500, 4400);
-      expect(follow!.hasReaderInput()).toBe(false);
+      h.wheel({ deltaY: -2400 });
+      h.paint(720);
+      // Linux WebKit: the next frame came 4.3s later and landed on the top.
+      h.at(1000 + 4300);
+      h.move(0);
+      // React's onScroll runs before the motion listener has seen this event.
+      expect(h.follow().hasReaderInput()).toBe(true);
+      h.paint(0);
+      expect(h.follow().hasReaderInput()).toBe(true);
     } finally {
-      act(() => root.unmount());
-      container.remove();
-      scroller.remove();
-      vi.restoreAllMocks();
-      vi.unstubAllGlobals();
+      h.dispose();
+    }
+  });
+
+  it("credits a first frame that arrives seconds after the wheel", () => {
+    const h = harness();
+    try {
+      h.wheel({ deltaY: -100 });
+      h.at(1000 + 2900);
+      h.paint(0);
+      expect(h.follow().hasReaderInput()).toBe(true);
+    } finally {
+      h.dispose();
+    }
+  });
+
+  it("ends after painted frames without movement, stops its frame loop and ignores later moves up", () => {
+    const h = harness();
+    try {
+      h.wheel({ deltaY: -100 });
+      h.paint(700);
+      h.at(2500);
+      for (let frame = 0; frame < 3; frame += 1) h.paint();
+      expect(h.pending()).toBe(0);
+      expect(h.follow().hasReaderInput()).toBe(false);
+      // A later programmatic move up is not the reader's.
+      h.paint(500);
+      expect(h.follow().hasReaderInput()).toBe(false);
+      expect(h.pending()).toBe(0);
+    } finally {
+      h.dispose();
+    }
+  });
+
+  it("ends when the page is hidden and after the absolute cap", () => {
+    const h = harness();
+    const hidden = vi.spyOn(document, "hidden", "get");
+    try {
+      h.wheel({ deltaY: -100 });
+      h.at(2500);
+      hidden.mockReturnValue(true);
+      document.dispatchEvent(new Event("visibilitychange"));
+      expect(h.pending()).toBe(0);
+      h.paint(300);
+      expect(h.follow().hasReaderInput()).toBe(false);
+      hidden.mockReturnValue(false);
+      h.at(3000);
+      h.wheel({ deltaY: -100 });
+      h.at(3000 + 10_001);
+      h.move(100);
+      expect(h.follow().hasReaderInput()).toBe(false);
+    } finally {
+      hidden.mockRestore();
+      h.dispose();
+    }
+  });
+
+  it("never starts from downward or horizontal wheels, typing or a nested scroller", () => {
+    const h = harness();
+    try {
+      h.wheel({ deltaY: 100 });
+      h.wheel({ deltaX: -100 });
+      const field = document.createElement("textarea");
+      document.body.append(field);
+      field.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+      field.remove();
+      const inner = document.createElement("pre");
+      Object.defineProperty(inner, "scrollHeight", { value: 900 });
+      Object.defineProperty(inner, "clientHeight", { value: 100 });
+      Object.defineProperty(inner, "scrollTop", { value: 400 });
+      inner.style.overflowY = "auto";
+      h.scroller.append(inner);
+      inner.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true }));
+      expect(h.pending()).toBe(0);
+      h.at(3000);
+      h.paint(200);
+      expect(h.follow().hasReaderInput()).toBe(false);
+    } finally {
+      h.dispose();
+    }
+  });
+
+  it("ends when the offset moves down and survives a listener reinstall", () => {
+    const h = harness();
+    try {
+      h.wheel({ deltaY: -100 });
+      h.paint(600);
+      h.rerender();
+      h.at(4000);
+      h.paint(100);
+      expect(h.follow().hasReaderInput()).toBe(true);
+      h.paint(400);
+      expect(h.follow().hasReaderInput()).toBe(false);
+    } finally {
+      h.dispose();
     }
   });
 });

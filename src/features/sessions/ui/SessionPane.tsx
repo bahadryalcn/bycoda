@@ -184,6 +184,7 @@ import { SessionMachinePicker } from "../../connections/public/SessionMachinePic
 import { remoteExecutionEnvironment } from "../../connections/public/sessionMachineTarget";
 import { isBlankSession } from "../../projects/public/projectReturn";
 import { sameOptionalSessionIgnoringStreamingText, usePaneSession } from "../model/sessionsStore";
+import { FLAT_TRANSCRIPT_GLASS } from "../model/transcriptGlass";
 import {
   LiveSessionBackground,
   LiveSessionBlocks,
@@ -1739,6 +1740,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       data-session-visible={visible}
       data-session-empty={isEmpty}
       data-session-streaming={streamingReplyLength(session) >= 0 ? "true" : undefined}
+      data-transcript-glass={FLAT_TRANSCRIPT_GLASS ? "flat" : undefined}
       data-project-chat-background={!!projectBackground}
       data-project-background-effect={projectBackground?.effect}
       data-project-background-scope={projectBackground?.scope}

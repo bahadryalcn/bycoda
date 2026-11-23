@@ -176,6 +176,14 @@ html[data-performance-no-blur] {
   --transcript-surface-filter: none;
 }
 
+/* Per-message blur is skipped on Linux WebKit (data-transcript-glass, an engine fallback, not a GPU
+   probe; set from transcriptGlass.ts), where one blur layer per message made scroll frames take
+   seconds. Fill and edge stay; the composer and floating panels keep their one glass layer. */
+[data-transcript-glass="flat"] {
+  --transcript-surface-filter: none;
+  --transcript-reply-filter: none;
+}
+
 /* Message actions: "hover" shows the row on reply hover or focus; the live turn, keyboard focus
    and touch (no hover) always show it. "hidden" is not offered, so Copy stays reachable. */
 @media (hover: hover) {

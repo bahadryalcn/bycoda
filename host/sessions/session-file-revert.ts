@@ -11,7 +11,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { hostGitExec } from "../git/git-exec-pool";
 import { safeGitPath } from "../workspaces/workspace";
 import { writeFileAtomic } from "../storage/atomic-write";
@@ -242,7 +242,44 @@ export class SessionFileRevert {
     private root: string,
     private budget = MAX_HISTORY,
     private readonly authority?: FileRevertAuthority,
+    /** Host storage (database files and folders) that a workspace may contain; never captured. */
+    private readonly hostOwned: readonly string[] = [],
   ) {}
+  private hostOwnedCanonical?: Promise<string[]>;
+  /** Canonical Host-owned paths; a sidecar that does not exist yet resolves by its folder. */
+  private ownedPaths(): Promise<string[]> {
+    this.hostOwnedCanonical ??= Promise.all(
+      [this.root, ...this.hostOwned].map((path) =>
+        realpath(path).catch(() =>
+          realpath(dirname(path)).then(
+            (folder) => join(folder, basename(path)),
+            () => resolve(path),
+          ),
+        ),
+      ),
+    );
+    return this.hostOwnedCanonical;
+  }
+  /** True for a workspace path that is, or lies inside, the Host's own storage. */
+  async isHostOwned(cwd: string, path: string): Promise<boolean> {
+    const key = pathKey(join(cwd, path));
+    return (await this.ownedPaths()).some((owned) => {
+      const root = pathKey(owned);
+      return key === root || key.startsWith(`${root}/`);
+    });
+  }
+  /** Host-owned paths inside `cwd`, relative with forward slashes (for Git pathspec excludes). */
+  async hostOwnedWithin(cwd: string): Promise<string[]> {
+    const base = pathKey(cwd);
+    return (await this.ownedPaths())
+      .filter((owned) => pathKey(owned).startsWith(`${base}/`))
+      .map((owned) => relative(cwd, owned).replace(/\\/g, "/"));
+  }
+  private async withoutHostOwned(cwd: string, paths: string[]): Promise<string[]> {
+    const kept: string[] = [];
+    for (const path of paths) if (!(await this.isHostOwned(cwd, path))) kept.push(path);
+    return kept;
+  }
   private path(session: string) {
     return join(this.root, validId(session), "file-history.json");
   }
@@ -528,6 +565,8 @@ export class SessionFileRevert {
     await this.writeIndex(session, history.cwd, entries, previous);
   }
   private async paths(cwd: string): Promise<string[]> {
+    // A workspace inside the Host's own storage has nothing to capture.
+    if (await this.isHostOwned(cwd, "")) return [];
     try {
       const result = await hostGitExec.exec(
         "git",
@@ -540,15 +579,17 @@ export class SessionFileRevert {
           timeout: 15_000,
         },
       );
-      return [...new Set(result.stdout.split("\0").filter(Boolean))];
+      return this.withoutHostOwned(cwd, [...new Set(result.stdout.split("\0").filter(Boolean))]);
     } catch (error) {
       if (!String((error as { stderr?: string }).stderr).includes("not a git repository"))
         throw error;
       const paths: string[] = [];
+      const owned = new Set((await this.ownedPaths()).map(pathKey));
       const walk = async (dir: string) => {
         for (const entry of await readdir(dir, { withFileTypes: true })) {
           if ([".git", "node_modules", "temp", "target"].includes(entry.name)) continue;
           const path = join(dir, entry.name);
+          if (entry.isDirectory() && owned.has(pathKey(path))) continue;
           if (entry.isFile()) paths.push(relative(cwd, path).replace(/\\/g, "/"));
           else if (entry.isDirectory()) {
             if (
@@ -564,7 +605,7 @@ export class SessionFileRevert {
         }
       };
       await walk(cwd);
-      return paths;
+      return this.withoutHostOwned(cwd, paths);
     }
   }
   async begin(session: string, cwd: string, turnId: string, userBlockId = turnId) {
@@ -626,6 +667,8 @@ export class SessionFileRevert {
     if (!active || active.turn.id !== turnId || active.cwd !== (await realpath(cwd))) return;
     for (const path of paths) {
       const normalized = relative(active.cwd, await filePath(active.cwd, path)).replace(/\\/g, "/");
+      // Host storage is never read here, even when a provider names it.
+      if (await this.isHostOwned(active.cwd, normalized)) continue;
       const before = await image(active.cwd, normalized);
       if (active.claimed.has(normalized) && !same(active.claimed.get(normalized)!, before))
         active.conflicts.add(normalized);
@@ -637,6 +680,7 @@ export class SessionFileRevert {
     if (!active || active.turn.id !== turnId || active.cwd !== (await realpath(cwd))) return;
     for (const path of paths) {
       const normalized = relative(active.cwd, await filePath(active.cwd, path)).replace(/\\/g, "/");
+      if (await this.isHostOwned(active.cwd, normalized)) continue;
       active.claimed.set(normalized, await image(active.cwd, normalized));
     }
   }
@@ -671,6 +715,7 @@ export class SessionFileRevert {
           /\\/g,
           "/",
         );
+        if (await this.isHostOwned(active.cwd, path)) continue;
         if (
           typeof change.contents !== "string" ||
           Buffer.byteLength(change.contents) > MAX_FILE ||
@@ -852,6 +897,8 @@ export class SessionFileRevert {
     return { files, unavailable };
   }
   private async conflict(cwd: string, path: string, revision: FileRevision) {
+    // History recorded before this guard can name Host storage; it is never read or restored.
+    if (await this.isHostOwned(cwd, path)) return "Host storage is never reverted";
     if (revision.conflict) return revision.conflict;
     try {
       if (!same(await image(cwd, path), revision.after)) return "File changed outside this session";
