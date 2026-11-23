@@ -1835,6 +1835,15 @@ html.chat-background-layer-off .gradient-blur-background-strong {
   background-color: color-mix(in srgb, var(--color-accent) 62%, transparent);
 }
 
+/* Added and removed lines in a tool's inline diff (ToolInspectionPanel). */
+::highlight(bycoda-tool-diff-added) {
+  color: var(--color-diff-add-fg);
+}
+
+::highlight(bycoda-tool-diff-removed) {
+  color: var(--color-diff-del-fg);
+}
+
 /* Match the Mono transcript's soft edge fade on overflowing tab text. */
 .tab-label[data-overflow="true"] {
   --tab-label-mask: linear-gradient(

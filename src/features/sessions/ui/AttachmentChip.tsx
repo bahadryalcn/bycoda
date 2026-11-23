@@ -129,7 +129,11 @@ export function AttachmentChip({ attachment, onRemove, draft, token, onInsertTok
   };
   const fileBody = (
     <span className={styles.fileBody}>
-      <span className={styles.fileIcon}>
+      <span
+        {...(pastedText
+          ? surfaceAttributes({ variant: "inset", radius: "control" }, styles.fileIcon)
+          : { className: styles.fileIcon })}
+      >
         <AttachmentIdentity attachment={attachment} size={pastedText ? 16 : undefined} />
       </span>
       <Text as="span" tone="inherit" weight="medium" className={styles.name}>

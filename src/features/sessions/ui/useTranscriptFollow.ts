@@ -159,6 +159,7 @@ export function useTranscriptFollow({
     [publishReading, retention, virtualization],
   );
 
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- syncPinned and the returned API list it as a dependency next to the hook's other baselined scroll callbacks
   const hasReaderInput = useCallback(() => {
     const input = readerInput.current;
     const now = performance.now();

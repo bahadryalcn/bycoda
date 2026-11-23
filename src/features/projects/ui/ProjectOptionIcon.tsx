@@ -1,4 +1,4 @@
-import { useResolvedTabGroupLogo } from "../../workspace/model/tabGroups";
+import { useResolvedTabGroupLogo } from "../../workspace/public/tabGroups";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { ProjectMascot } from "./ProjectMascot";
 
@@ -12,7 +12,7 @@ export function ProjectOptionIcon({
   logos,
   mascot,
   color,
-  logoClassName = "icon-sm rounded-sm",
+  logoClassName = "icon-sm",
   mascotClassName = "icon-sm",
 }: {
   project: string;

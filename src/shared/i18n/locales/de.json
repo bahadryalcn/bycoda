@@ -13004,5 +13004,12 @@
   "Looking for ignored files…": "Ignorierte Dateien werden gesucht…",
   "Locate folder": "Ordner suchen",
   "Clone": "Klonen",
-  "{p0} files could not be copied.": "{p0} Dateien konnten nicht kopiert werden."
+  "{p0} files could not be copied.": "{p0} Dateien konnten nicht kopiert werden.",
+  "Could not confirm command status.": "Der Befehlsstatus konnte nicht bestätigt werden.",
+  "Could not read command output.": "Die Befehlsausgabe konnte nicht gelesen werden.",
+  "Could not load terminal profiles.": "Terminalprofile konnten nicht geladen werden.",
+  "Could not create session.": "Sitzung konnte nicht erstellt werden.",
+  "No terminal is open.": "Kein Terminal ist geöffnet.",
+  "No active terminal.": "Kein aktives Terminal.",
+  "Only one terminal is open.": "Nur ein Terminal ist geöffnet."
 }

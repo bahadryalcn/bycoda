@@ -13004,5 +13004,12 @@
   "Looking for ignored files…": "正在查找被忽略的文件…",
   "Locate folder": "定位文件夹",
   "Clone": "克隆",
-  "{p0} files could not be copied.": "有 {p0} 个文件无法复制。"
+  "{p0} files could not be copied.": "有 {p0} 个文件无法复制。",
+  "Could not confirm command status.": "无法确认命令状态。",
+  "Could not read command output.": "无法读取命令输出。",
+  "Could not load terminal profiles.": "无法加载终端配置文件。",
+  "Could not create session.": "无法创建会话。",
+  "No terminal is open.": "没有打开的终端。",
+  "No active terminal.": "没有活动的终端。",
+  "Only one terminal is open.": "只打开了一个终端。"
 }

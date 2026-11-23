@@ -13004,5 +13004,12 @@
   "Looking for ignored files…": "Yok sayılan dosyalar aranıyor…",
   "Locate folder": "Klasörü bul",
   "Clone": "Klonla",
-  "{p0} files could not be copied.": "{p0} dosya kopyalanamadı."
+  "{p0} files could not be copied.": "{p0} dosya kopyalanamadı.",
+  "Could not confirm command status.": "Komut durumu doğrulanamadı.",
+  "Could not read command output.": "Komut çıktısı okunamadı.",
+  "Could not load terminal profiles.": "Terminal profilleri yüklenemedi.",
+  "Could not create session.": "Oturum oluşturulamadı.",
+  "No terminal is open.": "Açık terminal yok.",
+  "No active terminal.": "Etkin terminal yok.",
+  "Only one terminal is open.": "Yalnızca bir terminal açık."
 }

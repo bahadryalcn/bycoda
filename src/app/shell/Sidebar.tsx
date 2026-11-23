@@ -3827,11 +3827,10 @@ function SidebarComponent({
       }
     };
     const activeTools = selectionMode || filtersActive || searchQuery.trim().length > 0;
-    const sessionItems: DropdownMenuItem[] = [
-      ...(createSession && chooseNewSessionProject
+    const sessionItems: DropdownMenuItem[] =
+      createSession && chooseNewSessionProject
         ? [{ kind: "item" as const, id: "project", label: t("Choose project") }]
-        : []),
-    ];
+        : [];
     const sessionOptions =
       projectless && (sessionItems.length || toolbarItems.length) ? (
         <SessionOptions
@@ -5676,11 +5675,9 @@ function WorkspaceNewSessionButton({
   const t = useT();
   const shortcut = useKeybindingShortcut("Tab: New");
   const label = onNew ? t("New session") : t("Choose project");
-  const actions = [
-    ...(onChooseProject
-      ? [{ id: "project", label: t("Choose project"), onSelect: onChooseProject }]
-      : []),
-  ];
+  const actions = onChooseProject
+    ? [{ id: "project", label: t("Choose project"), onSelect: onChooseProject }]
+    : [];
   if (onNew && actions.length > 0)
     return (
       <SplitButton

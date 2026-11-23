@@ -145,8 +145,8 @@ import { RailBrand } from "./RailBrand";
 import {
   dismissRemoteProjects,
   type RemoteOnlyProject,
-  projectIdForPath,
 } from "../../features/sync/model/syncProjects";
+import { useProjectIdForPath } from "../../features/sync/model/useProjectIdForPath";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
 import {
   remoteOnlyProjectHint,
@@ -1824,6 +1824,7 @@ function ProjectGroupSection({
   const t = useT();
   const headerBackground = useRailBackground(group.id, "header");
   const bodyBackground = useRailBackground(group.id, "body");
+  const projectIdForPath = useProjectIdForPath();
   const { members, sortable } = useProjectGroupMembers(
     group,
     items.map((item) => item.path),

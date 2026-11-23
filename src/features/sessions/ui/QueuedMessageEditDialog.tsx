@@ -21,7 +21,7 @@ import { FilePlus } from "../../../shared/ui/icons";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
-import { capturePastedTextAttachment, replacePastedText } from "./pastedTextAttachment";
+import { capturePastedTextAttachment, replacePastedText } from "../model/pastedTextAttachment";
 import { droppedFileCount } from "../../../shared/lib/externalDrop";
 import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFeedback";
 import { attachmentDropVerdict } from "../model/attachmentDrop";

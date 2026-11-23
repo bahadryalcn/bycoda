@@ -69,7 +69,7 @@
   max-inline-size: 100%;
   min-block-size: 3.25rem;
   gap: 0;
-  --chip-ink: var(--ui-text-primary);
+  --chip-ink: var(--color-content);
 }
 .file[data-pasted-text-attachment] .thumbnail {
   flex: 1;
@@ -88,8 +88,6 @@
   grid-row: span 2;
   inline-size: 2rem;
   block-size: 2rem;
-  border-radius: var(--ui-radius-control);
-  background: var(--ui-fill-subtle);
 }
 .pastedAction {
   flex-shrink: 0;

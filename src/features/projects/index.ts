@@ -17,6 +17,7 @@ export type * as modelNewProjectFolderApi from "./public/newProjectFolder";
 export type * as modelProjectChatBackgroundApi from "./public/projectChatBackground";
 export type * as modelProjectGroupsApi from "./public/projectGroups";
 export type * as modelProjectNamesApi from "./public/projectNames";
+export type * as hooksProjectRepositoriesApi from "./public/projectRepositories";
 export type * as modelProjectReturnApi from "./public/projectReturn";
 export type * as modelRecentsApi from "./public/recents";
 export type * as uiCwdPickerApi from "./public/CwdPicker";

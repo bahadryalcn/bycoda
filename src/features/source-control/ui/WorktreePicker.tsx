@@ -184,7 +184,7 @@ export function WorktreePicker({
             }
           />
           {worktreeRemoved ? (
-            <InlineMessage tone="warning" className="shrink-0 px-2 py-2">
+            <InlineMessage tone="warning" inset="row" className="shrink-0">
               {t("This session’s worktree was deleted. Select a worktree to continue.")}
             </InlineMessage>
           ) : null}

@@ -1,7 +1,7 @@
 import { captureDraft, insertRestoredText } from "../../../shared/lib/draftRestore";
-import { MAX_EMBED_BYTES } from "../model/attachments";
-import { PASTED_TEXT_FILENAME } from "../model/attachmentPresentation";
-import { insertAtSelection, type TextSelection } from "../model/attachmentTokens";
+import { MAX_EMBED_BYTES } from "./attachments";
+import { PASTED_TEXT_FILENAME } from "./attachmentPresentation";
+import { insertAtSelection, type TextSelection } from "./attachmentTokens";
 
 const MIN_PASTED_TEXT_LENGTH = 8_000;
 

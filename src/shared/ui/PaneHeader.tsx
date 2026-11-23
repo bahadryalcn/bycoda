@@ -69,6 +69,8 @@ export type PaneHeaderProps = Omit<ComponentPropsWithRef<"div">, "title"> & {
   tabs?: ReactNode;
   /** Bottom hairline (`--ui-pane-border`). Default true. */
   bordered?: boolean;
+  /** Let the actions group shrink below its content width (default: fixed), for a header whose actions wrap. */
+  shrinkActions?: boolean;
   /** `div` (default) or `header`. A `header` outside a section reads as a page banner. */
   as?: "div" | "header";
 };
@@ -110,6 +112,7 @@ export function PaneHeader({
   chromeInset = false,
   dragRegion = false,
   bordered = true,
+  shrinkActions = false,
   as: Root = "div",
   className,
   children,
@@ -156,7 +159,12 @@ export function PaneHeader({
         </div>
       ) : null}
       {actions != null || primaryAction != null || overflow != null ? (
-        <div className={styles.actions} data-pane-header-actions data-tauri-drag-region={noDrag}>
+        <div
+          className={styles.actions}
+          data-pane-header-actions
+          data-shrink={shrinkActions || undefined}
+          data-tauri-drag-region={noDrag}
+        >
           {primaryAction}
           {actions != null && overflow != null ? (
             <div className={styles.secondary} data-pane-header-secondary>

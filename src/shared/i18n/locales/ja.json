@@ -13004,5 +13004,12 @@
   "Looking for ignored files…": "無視されたファイルを検索中…",
   "Locate folder": "フォルダーを指定",
   "Clone": "クローン",
-  "{p0} files could not be copied.": "{p0} 個のファイルをコピーできませんでした。"
+  "{p0} files could not be copied.": "{p0} 個のファイルをコピーできませんでした。",
+  "Could not confirm command status.": "コマンドの状態を確認できませんでした。",
+  "Could not read command output.": "コマンドの出力を読み取れませんでした。",
+  "Could not load terminal profiles.": "ターミナルプロファイルを読み込めませんでした。",
+  "Could not create session.": "セッションを作成できませんでした。",
+  "No terminal is open.": "開いているターミナルはありません。",
+  "No active terminal.": "アクティブなターミナルはありません。",
+  "Only one terminal is open.": "開いているターミナルは1つだけです。"
 }

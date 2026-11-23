@@ -78,12 +78,14 @@ export function AddProjectToMachineDialog({
   }, []);
 
   const machineId = machine?.id;
+  const environmentId = machine?.environmentId;
+  const remote = target.kind === "remote";
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- loads the target machine's default clone folder once it is known
   useEffect(() => {
-    if (target.kind === "remote" && !machineId) return;
+    if (remote && !machineId) return;
     let current = true;
     defaultCloneParent(
-      machine ? { id: machine.id, environmentId: machine.environmentId } : undefined,
+      machineId && environmentId !== undefined ? { id: machineId, environmentId } : undefined,
     )
       .then((home) => {
         if (current) setParent(home);
@@ -97,7 +99,7 @@ export function AddProjectToMachineDialog({
     return () => {
       current = false;
     };
-  }, [machineId]);
+  }, [remote, machineId, environmentId]);
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- lists the source checkout's git-ignored files for the copy choices
   useEffect(() => {

@@ -1400,6 +1400,7 @@ function DevicePanelSurface({
                     motion="none"
                     layout="media"
                     className="device-panel-preview-control"
+                    data-device-screen
                     style={
                       screenSize.height
                         ? ({

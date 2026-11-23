@@ -73,7 +73,7 @@
 .device-panel-stage[data-rail] .device-panel-canvas {
   padding-inline-end: var(--device-rail-clearance);
 }
-.device-panel-preview-control[data-button-layout="media"] {
+.device-panel-preview-control[data-device-screen] {
   --button-hover: transparent;
   --button-pressed: transparent;
   --button-disabled-surface: transparent;

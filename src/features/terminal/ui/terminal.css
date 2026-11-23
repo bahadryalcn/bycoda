@@ -11,10 +11,6 @@
   padding-block: var(--space-1);
   background: var(--ui-workspace-panel);
 }
-.terminal-header [data-pane-header-actions] {
-  flex-shrink: 1;
-  min-inline-size: 0;
-}
 .terminal-body {
   position: relative;
   display: flex;

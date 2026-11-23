@@ -73,6 +73,10 @@
 .actions {
   margin-inline-start: auto;
 }
+.actions[data-shrink] {
+  flex-shrink: 1;
+  min-inline-size: 0;
+}
 .icon {
   display: inline-flex;
   flex: none;

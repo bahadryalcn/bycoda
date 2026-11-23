@@ -13004,5 +13004,12 @@
   "Looking for ignored files…": "Looking for ignored files…",
   "Locate folder": "Locate folder",
   "Clone": "Clone",
-  "{p0} files could not be copied.": "{p0} files could not be copied."
+  "{p0} files could not be copied.": "{p0} files could not be copied.",
+  "Could not confirm command status.": "Could not confirm command status.",
+  "Could not read command output.": "Could not read command output.",
+  "Could not load terminal profiles.": "Could not load terminal profiles.",
+  "Could not create session.": "Could not create session.",
+  "No terminal is open.": "No terminal is open.",
+  "No active terminal.": "No active terminal.",
+  "Only one terminal is open.": "Only one terminal is open."
 }

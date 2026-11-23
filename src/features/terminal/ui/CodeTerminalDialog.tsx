@@ -163,17 +163,17 @@ function CodeTerminalPresentation({
                 ? t("Command status unknown")
                 : t("Command exited with code {p0}", { p0: state.exitCode });
   const starting = state.phase === "starting";
-  const stopCommand = async () => {
+  const stopCommand = () => {
     setStopping(true);
-    try {
-      await controller.stop();
-      const result = controller.snapshot();
-      return (
-        !result.actionError && (!result.error || (options.native && result.phase === "unknown"))
-      );
-    } finally {
-      setStopping(false);
-    }
+    return controller
+      .stop()
+      .then(() => {
+        const result = controller.snapshot();
+        return (
+          !result.actionError && (!result.error || (options.native && result.phase === "unknown"))
+        );
+      })
+      .finally(() => setStopping(false));
   };
   const closeDialog = () => {
     if (!onClose || starting || stopping) return;

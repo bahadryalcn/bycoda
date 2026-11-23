@@ -290,6 +290,7 @@ function ProjectTerminalDockComponent({
       <PaneHeader
         as="header"
         className="terminal-header"
+        shrinkActions
         actions={
           <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
             <div className="flex items-center">
