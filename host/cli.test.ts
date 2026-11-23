@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { processIsAlive } from "./execution/process.test-support";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { createServer, type AddressInfo } from "node:net";
@@ -91,22 +92,6 @@ it("drains an app-owned Host when its parent exits", async () => {
     rmSync(directory, { recursive: true, force: true });
   }
 }, 45_000);
-
-// An exited Host stays a zombie until its reaper collects it. Minimal container
-// inits reap lazily (about 2s), and kill(pid, 0) still succeeds for a zombie.
-function processIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-  } catch {
-    return false;
-  }
-  try {
-    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-    return stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3) !== "Z";
-  } catch {
-    return true;
-  }
-}
 
 it(
   "starts detached, authenticates a device, revokes it, and stops independently of the launcher",

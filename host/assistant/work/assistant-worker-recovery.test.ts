@@ -27,6 +27,7 @@ async function fixture() {
     store = new HostStore(join(directory, "host.db"));
   await store.ready;
   const project = await store.addProject(directory, "Recovery fixture"),
+    providerStarted = Promise.withResolvers<void>(),
     clock = { now: Date.now() + 20 * 60000 },
     turns: { input: SendTurnInput; finish: () => void; fail: (reason: Error) => void }[] = [],
     notes: AssistantNote[] = [];
@@ -37,6 +38,7 @@ async function fixture() {
         new Promise<void>((finish, fail) => {
           turns.push({ input, finish, fail });
           input.onAccepted?.();
+          providerStarted.resolve();
         }),
     ),
     steer: vi.fn(async () => {}),
@@ -127,7 +129,8 @@ async function fixture() {
     sessionId,
     text: "Finish the existing work",
   });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await providerStarted.promise;
+  expect(turns).toHaveLength(1);
   const session = await store.session(sessionId);
   await store.save(
     {
@@ -454,9 +457,13 @@ it("fences replacement source, questions and pause during a queued cancellation 
     await hold.promise;
   });
   await entered.promise;
+  const command = vi.spyOn(f.engine, "command");
   const pending = f.nudge("stop-during-cancel");
-  await vi.waitFor(async () =>
-    expect((await readAssistantRecovery(f.store, "canonical-task"))?.state).toBe("cancelling"),
+  // The durable intent precedes submission; stop after the exact cancel reached the engine.
+  await vi.waitFor(() =>
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "cancel", runId: f.first.runId }),
+    ),
   );
   f.managed.stop();
   hold.resolve();
@@ -753,9 +760,12 @@ it("admits an owner job Pause while recovery waits for the engine queue and pres
     await hold.promise;
   });
   await entered.promise;
+  const command = vi.spyOn(f.engine, "command");
   const pending = f.nudge("owner-pause-pending");
-  await vi.waitFor(async () =>
-    expect((await readAssistantRecovery(f.store, "canonical-task"))?.state).toBe("cancelling"),
+  await vi.waitFor(() =>
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "cancel", runId: f.first.runId }),
+    ),
   );
   const job = (await f.service.request({ op: "snapshot" }, "owner")).snapshot!.jobs.find(
     (value) => value.id === f.job.id,
@@ -790,14 +800,17 @@ it("never revives a queued supervisor request when a job is paused then resumed 
     await hold.promise;
   });
   await entered.promise;
+  const command = vi.spyOn(f.engine, "command");
   const first = f.nudge("old-job-epoch"),
     second = f.nudge("queued-old-job-epoch");
   const secondResult = second.then(
     () => "unexpected success",
     (error) => String(error),
   );
-  await vi.waitFor(async () =>
-    expect((await readAssistantRecovery(f.store, "canonical-task"))?.state).toBe("cancelling"),
+  await vi.waitFor(() =>
+    expect(command).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "cancel", runId: f.first.runId }),
+    ),
   );
   f.managed.pauseJob(f.job.id);
   f.managed.resumeJob(f.job.id);

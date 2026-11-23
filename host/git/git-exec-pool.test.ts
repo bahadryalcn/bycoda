@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { afterEach, expect, it, vi } from "vitest";
 import { GitExecPool } from "./git-exec-pool";
+import { processIsAlive } from "../execution/process.test-support";
 
 const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
 vi.mock("../diagnostics/logger", () => ({ createLogger: () => ({ warn }) }));
@@ -62,7 +63,7 @@ function waitForPid(marker: string) {
 }
 
 function expectStopped(pid: number) {
-  expect(() => process.kill(pid, 0)).toThrow(/ESRCH/);
+  expect(processIsAlive(pid)).toBe(false);
 }
 
 it("reuses a worker and returns text and binary output with cwd, stdin and env overrides", async () => {
@@ -88,7 +89,11 @@ it("reuses a worker and returns text and binary output with cwd, stdin and env o
     },
   );
   expect(stdout).toEqual(Buffer.from([0, 255, 10]));
-  expect(JSON.parse(stderr.toString())).toEqual([directory, "inherited", "override"]);
+  expect(JSON.parse(stderr.toString())).toEqual([
+    await realpath(directory),
+    "inherited",
+    "override",
+  ]);
   expect(process.env.BYCODA_POOL_OVERRIDE_TEST).toBe("original");
 });
 
@@ -106,6 +111,28 @@ it("preserves the native maxBuffer error and truncated output", async () => {
     stdout: "1234",
     stderr: "",
   });
+});
+
+it("bounds Unicode output by bytes and stops the whole tree on overflow without a runtime deadline", async () => {
+  pool = new GitExecPool(1);
+  const marker = join(await markerDirectory(), "overflow-child");
+  const child =
+    'process.on("SIGTERM", () => {}); process.send("ready"); setInterval(() => {}, 1000)';
+  const parent = `
+    process.on("SIGTERM", () => {});
+    const helper = require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(child)}], { stdio: ["ignore", "ignore", "ignore", "ipc"] });
+    helper.once("message", () => {
+      require("node:fs").writeFileSync(${JSON.stringify(marker)}, String(helper.pid));
+      process.stdout.write("é😀x");
+    });
+    setInterval(() => {}, 1000);
+  `;
+  const overflow = node(parent, { maxBuffer: 3, timeout: 0, nativeTimeout: true });
+  await expect(overflow).rejects.toMatchObject({
+    code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+    stdout: "é",
+  });
+  await expectTreeStopped(await waitForPid(marker));
 });
 
 it("kills active commands at their deadline and releases the slot", async () => {
@@ -314,7 +341,7 @@ it("rate limits queue expiry warnings and logs only safe command labels", async 
 });
 
 function treeChild(parentMarker: string, grandchildMarker: string) {
-  const grandchild = `require("node:fs").writeFileSync(${JSON.stringify(grandchildMarker)}, String(process.pid)); setTimeout(() => {}, 30_000)`;
+  const grandchild = `process.on("SIGTERM", () => {}); require("node:fs").writeFileSync(${JSON.stringify(grandchildMarker)}, String(process.pid)); setTimeout(() => {}, 30_000)`;
   return `
     const { spawn } = require("node:child_process");
     spawn(process.execPath, ["-e", ${JSON.stringify(grandchild)}], { stdio: "ignore" });

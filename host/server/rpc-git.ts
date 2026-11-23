@@ -11,7 +11,11 @@ import {
 } from "../git/git-worktrees";
 import { inManagedWorkspace } from "../managed/managed-workspace-runtime";
 import { fingerprintSource } from "../workspace-cleanup";
-import { canonicalWorkspaceEntry, workspacePathKey } from "../workspaces/workspace-paths";
+import {
+  canonicalWorkspaceDirectory,
+  canonicalWorkspaceEntry,
+  workspacePathKey,
+} from "../workspaces/workspace-paths";
 import { handleSessionsRpc } from "./rpc-sessions";
 
 type GitRemovalBindings = Pick<
@@ -57,12 +61,23 @@ async function worktreeRemoval(deps: GitRemovalBindings, request: OwnerRpcReques
           deps.engine.store.startupStates(),
           deps.desktop.listSnapshotAsync(cwd, projectId, deps.providers),
         ]);
-        const native = desktop.sessions.filter((session) =>
-          inManagedWorkspace(session.worktreeCwd || session.cwd || "", target),
-        );
-        const linked = states.filter((s) =>
-          inManagedWorkspace(s.worktreeCwd || s.cwd || "", target),
-        );
+        // Git returns canonical paths; stored sessions may use a symlinked ancestor or an 8.3 name.
+        const sessionPath = (session: { worktreeCwd?: string | null; cwd?: string | null }) =>
+          session.worktreeCwd || session.cwd || "";
+        const linkedPaths = new Set<string>();
+        for (const path of new Set([
+          ...desktop.sessions.map(sessionPath),
+          ...states.map(sessionPath),
+        ])) {
+          if (
+            path &&
+            (inManagedWorkspace(path, target) ||
+              inManagedWorkspace(await canonicalWorkspaceDirectory(path), target))
+          )
+            linkedPaths.add(path);
+        }
+        const native = desktop.sessions.filter((session) => linkedPaths.has(sessionPath(session)));
+        const linked = states.filter((session) => linkedPaths.has(sessionPath(session)));
         const sessionIds = [
           ...new Set([...linked.map((s) => s.id), ...native.map((s) => s.id)]),
         ].sort();

@@ -57,7 +57,8 @@ vi.mock("./providers/provider-accounts", async (original) => {
     hostProviderAccounts: (roots?: string[]) => module.hostProviderAccounts(roots ?? []),
   };
 });
-vi.mock("../src/integrations/harness/providers/codex/codexCatalog", () => ({
+vi.mock("../src/integrations/harness/providers/codex/codexCatalog", async (original) => ({
+  ...(await original<typeof import("../src/integrations/harness/providers/codex/codexCatalog")>()),
   discoverCodexModels: modelProbe,
   refreshCodexCatalog: async () => {},
 }));
