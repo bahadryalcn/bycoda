@@ -57,7 +57,7 @@ it("shows the effective terminal size and resets only through its owner callback
         ?.textContent?.trim(),
     ).toBe("19px");
     const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-      (node) => node.getAttribute("aria-label") === "Reset text size",
+      (node) => node.textContent === "Reset text size",
     )!;
     await act(async () => button.click());
     expect(reset).toHaveBeenCalledOnce();
@@ -108,17 +108,18 @@ it("requests a startup review explicitly without writing terminal input and bloc
     );
     expect(review).not.toHaveBeenCalled();
     await openTools(host);
-    const button = document.querySelector<HTMLButtonElement>(
-      '[aria-label="Review startup scripts"]',
-    )!;
-    await act(async () => {
-      button.click();
-      button.click();
-    });
+    const startupItem = () =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (node) => node.textContent === "Review startup scripts",
+      )!;
+    await act(async () => startupItem().click());
     expect(review).toHaveBeenCalledTimes(1);
-    expect(button.getAttribute("aria-disabled")).toBe("true");
+    await openTools(host);
+    expect(startupItem().getAttribute("aria-disabled")).toBe("true");
+    await act(async () => startupItem().click());
+    expect(review).toHaveBeenCalledTimes(1);
     await act(async () => finish());
-    expect(button.getAttribute("aria-disabled")).not.toBe("true");
+    expect(startupItem().getAttribute("aria-disabled")).not.toBe("true");
     expect(paste).not.toHaveBeenCalled();
     expect(input).not.toHaveBeenCalled();
   } finally {
@@ -162,19 +163,14 @@ it("opens PowerShell suggestions only from an explicit alternative without termi
     );
     expect(enable).not.toHaveBeenCalled();
     await openTools(host);
-    const help = document.querySelector<HTMLButtonElement>(
-      '[aria-label="About shell suggestions"]',
-    )!;
-    expect(help.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => help.click());
+    const menuItem = (label: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')].find((element) =>
+        element.textContent?.includes(label),
+      )!;
+    await act(async () => menuItem("About shell suggestions").click());
     expect(document.body.textContent).toContain("PSReadLine 2.4+");
-    await act(async () => help.click());
-    await act(async () =>
-      document.querySelector<HTMLButtonElement>('[aria-label="Shell suggestions"]')!.click(),
-    );
-    const option = [...document.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]')].find(
-      (element) => element.textContent?.includes("PowerShell suggestions"),
-    )!;
+    await openTools(host);
+    const option = menuItem("PowerShell suggestions");
     await act(async () => option.click());
     expect(enable).toHaveBeenCalledExactlyOnceWith("powershell");
     expect(paste).not.toHaveBeenCalled();

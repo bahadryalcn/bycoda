@@ -2,7 +2,8 @@ import { Surface } from "../../../shared/ui/Surface";
 import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { useT } from "../../../shared/i18n";
 import { Text } from "../../../shared/ui/Text";
-import { Button } from "../../../shared/ui/Button";
+import { useEffect, useRef } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Code } from "../../../shared/ui/Code";
 import { ChevronRight, Server, StickyNote, UsersRound } from "../../../shared/ui/icons";
 import type { RankedFile } from "../../files";
@@ -68,16 +69,45 @@ export function FileMentionPicker({
   );
   const includesMentions =
     includeWorkItems || workItemsScoped || includeServers || serversScoped || scope;
+  const fileSearch = !workItemsScoped && !serversScoped && !scope;
+  const hasQuery = Boolean(query.trim());
+  const retry = useStableCallback(onRetry);
+  const retried = useRef(false);
+  // Give the file index one refresh per picker opening when a settled search misses.
+  useEffect(() => {
+    if (
+      retried.current ||
+      !fileSearch ||
+      !hasQuery ||
+      files.length ||
+      loading ||
+      failed ||
+      !indexNotice ||
+      !retry
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      retried.current = true;
+      retry();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [fileSearch, query, hasQuery, files.length, loading, failed, indexNotice, retry]);
+  const indexMessage =
+    indexNotice === "incomplete"
+      ? t("File index is incomplete; some files may not appear.")
+      : indexNotice === "unknown"
+        ? t("File index completeness is unknown; some files may not appear.")
+        : undefined;
   // Without a query the list reads as the project tree: root files first, then folders, then
   // notes. Headers only appear when the ranking really keeps each band together.
   const treeRank = (file: RankedFile) =>
     isNoteMentionPath(file.path) ? 2 : file.relative.includes("/") ? 1 : 0;
   const treeGroups =
     !includesMentions &&
-    !query.trim() &&
+    !hasQuery &&
+    files.length >= 8 &&
     files.every((file, index) => index === 0 || treeRank(files[index - 1]) <= treeRank(file));
-  // A search that finds nothing offers a rescan, since the index may simply be stale.
-  const showRescan = !includesMentions && files.length === 0 && !!query.trim() && !!onRetry;
   const list = usePickerList({
     options: files.map((file) => {
       const crew = crewMentionOf(file);
@@ -126,7 +156,9 @@ export function FileMentionPicker({
         ) : (
           <FileTypeIcon name={file.name} isDir={Boolean(file.isDir)} size="md" />
         ),
-        group: workItem
+        group: !includesMentions && !hasQuery && files.length < 8
+          ? undefined
+          : workItem
           ? workItemsScoped
             ? WORK_ITEM_PROVIDER_NAMES[workItem.provider]
             : t("Work items")
@@ -209,7 +241,7 @@ export function FileMentionPicker({
         }
         onRetry={onRetry}
         emptyLabel={
-          includesMentions
+          indexMessage ?? (includesMentions
             ? workItemsFailure
               ? workItemSearchNotice(workItemsFailure.error, workItemsFailure.machine, t, now)
               : t("No matches")
@@ -219,37 +251,15 @@ export function FileMentionPicker({
                 : t("No matching files or folders")
               : includeNotes
                 ? t("No files or notes found")
-                : t("No files or folders found")
+                : t("No files or folders found"))
         }
         listHeight="standard"
         className="overflow-y-auto overscroll-none"
       />
-      {(indexNotice || showRescan) && !loading && !failed ? (
-        <div
-          className="flex items-start justify-between gap-2 px-3 py-2"
-          data-mention-index-notice=""
-        >
-          <Text as="p" size="caption" tone="secondary" className="min-w-0 break-words">
-            {indexNotice === "incomplete"
-              ? t("File index is incomplete; some files may not appear.")
-              : indexNotice === "unknown"
-                ? t("File index completeness is unknown; some files may not appear.")
-                : t("Not finding it? Rescan the project files.")}
-          </Text>
-          {onRetry ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              className="shrink-0"
-              // Keep focus in the composer while the action is pressed.
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={onRetry}
-            >
-              {t("Rescan files")}
-            </Button>
-          ) : null}
-        </div>
+      {indexMessage && files.length > 0 && !loading && !failed ? (
+        <Text as="p" size="caption" tone="secondary" className="break-words px-3 py-2">
+          {indexMessage}
+        </Text>
       ) : null}
     </Surface>
   );

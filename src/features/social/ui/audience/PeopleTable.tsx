@@ -6,7 +6,6 @@ import { Timestamp } from "../../../../shared/ui/Timestamp";
 import { Button } from "../../../../shared/ui/Button";
 import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
 import { SortableDataTable, type DataColumn } from "../../../../shared/ui/SortableDataTable";
-import { Meter } from "../../../../shared/ui/Meter";
 import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
 import type { SocialPerson } from "../../model/audience";
 import { stageLabel, stageTone, visibleTags } from "./audienceModel";
@@ -64,13 +63,7 @@ function PersonCell({ person, onOpen }: { person: SocialPerson; onOpen: (id: str
         </OverflowTooltip>
         {caption ? (
           <OverflowTooltip label={caption}>
-            <Text
-              size="caption"
-              tone="muted"
-              leading="inherit"
-              truncate
-              className="audience-ellipsis"
-            >
+            <Text size="caption" tone="muted" leading="inherit" truncate>
               {caption}
             </Text>
           </OverflowTooltip>
@@ -85,21 +78,14 @@ function AccountsCell({ person }: { person: SocialPerson }) {
   return platforms.length ? (
     <PlatformMarks platforms={platforms} size="xs" />
   ) : (
-    <Text as="span" tone="muted" leading="inherit">
-      {t("No account")}
-    </Text>
+    "–"
   );
 }
 
+/** The score as a number only; the person panel is where a score is read in detail. */
 function ScoreCell({ person }: { person: SocialPerson }) {
   return person.score ? (
-    <span className="audience-score">
-      <Meter
-        className="audience-score-bar"
-        label={t("Interest score")}
-        value={person.score.value}
-        tone="accent"
-      />
+    <span className="audience-score" aria-label={t("Interest score")}>
       {formatNumber(person.score.value)}
     </span>
   ) : (
@@ -243,18 +229,13 @@ export function PeopleTable({
       activeKey={activePersonId}
       footer={
         hasMore ? (
-          <>
-            <Text size="caption" tone="muted">
-              {t("Load all people to sort.")}
-            </Text>
-            <CollectionFooter
-              standalone
-              hasMore
-              onLoadMore={onLoadMore}
-              loadMoreLabel={t("Load more people")}
-              loadMoreButtonProps={{ variant: "secondary", loading: loadingMore }}
-            />
-          </>
+          <CollectionFooter
+            standalone
+            hasMore
+            onLoadMore={onLoadMore}
+            loadMoreLabel={t("Load more people")}
+            loadMoreButtonProps={{ variant: "secondary", loading: loadingMore }}
+          />
         ) : null
       }
     />

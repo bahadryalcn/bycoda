@@ -1,7 +1,5 @@
-import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
 import { Alert } from "../../shared/ui/Alert";
-import { Text } from "../../shared/ui/Text";
 import {
   NEW_LOCAL_HOST_SESSION,
   newLocalHostSession,
@@ -23,7 +21,6 @@ import {
   ArrowDownCircle,
   ArrowUp,
   BellOff,
-  ArrowDown,
   CheckList,
   ChevronDown,
   ExternalLink,
@@ -173,6 +170,11 @@ export function useProjectMenu({
   isProjectBusy,
 }: Options) {
   const t = useT();
+  const projectMenuErrors = {
+    selectionChanged: t("Selection changed or a project is working. Close this dialog and review your selection."),
+    save: t("Could not save project changes. Try again."),
+    privacy: t("Could not save group privacy. Please try again."),
+  };
   useProjectKindsSync();
   const format = useFormat();
   const [projectMenu, setProjectMenu] = useState<
@@ -365,7 +367,7 @@ export function useProjectMenu({
         if (!projectPath) captureTrigger();
         setGroupMenu({ x, y, id: group.id });
       })
-      .catch(() => setMenuError(t("Could not save project changes. Try again.")));
+      .catch(() => setMenuError(projectMenuErrors.save));
   };
 
   const close = () => {
@@ -401,10 +403,10 @@ export function useProjectMenu({
     }
     void makeGroupLockable(groupId)
       .then(async (saved) => {
-        if (!saved) throw new Error("Could not save group privacy.");
+        if (!saved) throw new Error(projectMenuErrors.privacy);
         if (lockNow) await lockGroup(groupId);
       })
-      .catch(() => setMenuError(t("Could not save group privacy. Please try again.")));
+      .catch(() => setMenuError(projectMenuErrors.privacy));
   };
 
   /** The padlock on a group header: lock an open group, ask to open a locked one. */
@@ -451,7 +453,7 @@ export function useProjectMenu({
       createGroup(projectMenu.x, projectMenu.y, path);
     } else if (action === "project-group:none") {
       void withRoomPrivacyMutation(() => setProjectGroupAssignment(path, null)).catch(() =>
-        setMenuError(t("Could not save project changes. Try again.")),
+        setMenuError(projectMenuErrors.save),
       );
     } else if (action.startsWith("project-group:")) {
       const groupId = action.slice("project-group:".length);
@@ -463,7 +465,7 @@ export function useProjectMenu({
           throw new Error("Project group is unavailable.");
         const currentId = projectGroupIdForPath(path, loadProjectGroupAssignments());
         return setProjectGroupAssignment(path, currentId === groupId ? null : groupId);
-      }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
+      }).catch(() => setMenuError(projectMenuErrors.save));
     } else if (pickKindAction(action, { path })) {
       // Saved by the tag store; the menu closes like any other pick.
     } else if (action === "mute:custom") {
@@ -587,7 +589,6 @@ export function useProjectMenu({
                 get label() {
                   return t("Resume notifications");
                 },
-                description: menuMuteStatus,
                 icon: BellOff,
               }
             : undefined
@@ -611,16 +612,13 @@ export function useProjectMenu({
           ...(projectMenu.move
             ? [
                 {
-                  id: "move-project-up",
-                  label: t("Move up"),
+                  id: "reorder-project",
+                  label: t("Reorder"),
                   icon: ArrowUp,
-                  disabled: !projectMenu.move.up,
-                },
-                {
-                  id: "move-project-down",
-                  label: t("Move down"),
-                  icon: ArrowDown,
-                  disabled: !projectMenu.move.down,
+                  submenu: [
+                    { kind: "item" as const, id: "move-project-up", label: t("Move up"), disabled: !projectMenu.move.up },
+                    { kind: "item" as const, id: "move-project-down", label: t("Move down"), disabled: !projectMenu.move.down },
+                  ],
                 },
               ]
             : []),
@@ -647,7 +645,6 @@ export function useProjectMenu({
           ),
           projectKindItem(projectMenu.path),
         ]}
-        nameLabel={t("Project name")}
         info={
           menuChange ? <ProjectGitChangeRow data-project-menu-git="" change={menuChange} /> : null
         }
@@ -717,9 +714,6 @@ export function useProjectMenu({
               id: "make-lockable",
               get label() {
                 return t("Make lockable");
-              },
-              get description() {
-                return t("Ask for the password once it is locked");
               },
               icon: Lock,
             },
@@ -795,9 +789,6 @@ export function useProjectMenu({
                   get label() {
                     return t("Unlink from workspace file");
                   },
-                  get description() {
-                    return t("Projects stay in the group");
-                  },
                   icon: Ungroup,
                 },
               ]
@@ -806,9 +797,6 @@ export function useProjectMenu({
             id: "fetch-all",
             get label() {
               return t("Fetch all");
-            },
-            get description() {
-              return t("Run git fetch in each project");
             },
             icon: ArrowDownCircle,
             sepBefore: true,
@@ -847,7 +835,6 @@ export function useProjectMenu({
       {
         id: "hide-group",
         label: t("Hide group"),
-        description: t("Restore from Settings → Group privacy → Hidden groups"),
         icon: EyeOff,
       },
       ...lockItems.filter((item) => item.id !== "lock-group" && item.id !== "unlock-group"),
@@ -1011,7 +998,7 @@ export function useProjectMenu({
               setProjectGroupAssignment(workspaceRoot, destination);
               if (destination)
                 updateProjectGroup(targetId, (current) => ({ ...current, collapsed: false }));
-            }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
+            }).catch(() => setMenuError(projectMenuErrors.save));
             return;
           }
           if (action === "hide-group") {
@@ -1084,10 +1071,10 @@ export function useProjectMenu({
             void withRoomPrivacyMutation(() => {
               if (getGroupLockView().lock.lockedGroupIds.has(group.id))
                 throw new Error("Project group is locked.");
-              if (!deleteProjectGroup(group.id)) throw new Error("Could not save project changes.");
+              if (!deleteProjectGroup(group.id)) throw new Error(projectMenuErrors.save);
             })
               .then(() => setGroupMenu(null))
-              .catch(() => setMenuError(t("Could not save project changes. Try again.")));
+              .catch(() => setMenuError(projectMenuErrors.save));
             return false;
           }
           if (action === "add-project-to-group") {
@@ -1120,7 +1107,7 @@ export function useProjectMenu({
                 throw new Error("Project group is locked.");
               unlinkProjectGroup(group.id);
               setLinkedGroupStatus(group.id, null);
-            }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
+            }).catch(() => setMenuError(projectMenuErrors.save));
           }
         }}
       />
@@ -1166,11 +1153,6 @@ export function useProjectMenu({
           variant="panel"
           className="space-y-1"
         >
-          <OverflowTooltip label={notificationMenu.project.name}>
-            <Text as="p" truncate size="caption" tone="primary" weight="medium" className="px-1">
-              {notificationMenu.project.name}
-            </Text>
-          </OverflowTooltip>
           <NotificationMuteDatePicker
             projectIds={[notificationMenu.project.id]}
             onCancel={closeNotificationMenu}
@@ -1189,12 +1171,7 @@ export function useProjectMenu({
             restoreFocus();
           }}
           onConfirm={async () => {
-            if (!groupRemovalValid(removingGroup))
-              throw new Error(
-                t(
-                  "Selection changed or a project is working. Close this dialog and review your selection.",
-                ),
-              );
+            if (!groupRemovalValid(removingGroup)) throw new Error(projectMenuErrors.selectionChanged);
             const ordered = [...removingGroup.paths].sort(
               (a, b) =>
                 Number(sameProjectPath(a, activeProject ?? "")) -
@@ -1209,11 +1186,7 @@ export function useProjectMenu({
                   getGroupLockView().lock.lockedGroupIds.has(removingGroup.id) ||
                   projectGroupIdForPath(path, loadProjectGroupAssignments()) !== removingGroup.id
                 ) {
-                  throw new Error(
-                    t(
-                      "Selection changed or a project is working. Close this dialog and review your selection.",
-                    ),
-                  );
+                  throw new Error(projectMenuErrors.selectionChanged);
                 }
                 await context.onRemoveProject(path, { purgeData: true });
                 await withRoomPrivacyMutation(() => {
@@ -1226,17 +1199,13 @@ export function useProjectMenu({
               // New members must never be removed by an older confirmation.
               const assignments = loadProjectGroupAssignments();
               if (Object.values(assignments).includes(removingGroup.id))
-                throw new Error(
-                  t(
-                    "Selection changed or a project is working. Close this dialog and review your selection.",
-                  ),
-                );
+                throw new Error(projectMenuErrors.selectionChanged);
               await withRoomPrivacyMutation(() => {
                 if (
                   Object.values(loadProjectGroupAssignments()).includes(removingGroup.id) ||
                   !deleteProjectGroup(removingGroup.id)
                 )
-                  throw new Error(t("Could not save project changes. Try again."));
+                  throw new Error(projectMenuErrors.save);
               });
               setRemovingGroup(null);
               restoreFocus();
@@ -1306,10 +1275,10 @@ export function useProjectMenu({
           onDone={() => {
             void makeGroupLockable(lockDialog.groupId)
               .then(async (saved) => {
-                if (!saved) throw new Error("Could not save group privacy.");
+                if (!saved) throw new Error(projectMenuErrors.privacy);
                 if (lockDialog.lockNow) await lockGroup(lockDialog.groupId);
               })
-              .catch(() => setMenuError(t("Could not save group privacy. Please try again.")));
+              .catch(() => setMenuError(projectMenuErrors.privacy));
           }}
           onClose={() => {
             setLockDialog(null);

@@ -151,12 +151,12 @@ export function MessageThreadView({
           className="mt-0.5 block icon-sm shrink-0"
         />
         <div className="min-w-0 flex-1">
-          <Tooltip label={thread.title} asChild>
+          <Tooltip label={thread.title} when="overflow" asChild>
             <Heading size="section" level={2} truncate dir="auto">
               {thread.title || t("(No subject)")}
             </Heading>
           </Tooltip>
-          <Tooltip label={thread.participants.join(", ")} asChild>
+          <Tooltip label={thread.participants.join(", ")} when="overflow" asChild>
             <Text as="p" size="micro" tone="secondary" truncate>
               {thread.participants.length > 0
                 ? t("{p0} · {p1}", { p0: thread.participants.join(", "), p1: accountLine })

@@ -211,7 +211,8 @@ it("reviews the saved revision/effective target, invalidates edits, and dispatch
   expect(document.body.textContent).toContain("effective@server.invalid:22");
   await input("SSH script", "changed");
   expect(button("Approve and run")).toBeUndefined();
-  expect(button("Review execution").disabled).toBe(true);
+  // A disabled action with a reason stays focusable, so it is marked rather than natively disabled.
+  expect(button("Review execution").hasAttribute("data-disabled")).toBe(true);
   await input("SSH script", book.script);
   await act(async () => button("Review execution").click());
   await act(async () => {
@@ -549,7 +550,7 @@ it("initializes from completed native intent loads, preserves manual edits on re
   await act(async () => root.render(createElement(SshRunbooks, props("intent-a", book.id))));
   expect(field("Runbook name").value).toBe(book.name);
   await input("Runbook name", "Unsubmitted local draft");
-  await act(async () => button("Refresh").click());
+  await act(async () => root.render(createElement(SshRunbooks, props("intent-a", book.id))));
   expect(field("Runbook name").value).toBe("Unsubmitted local draft");
   await act(async () => root.render(createElement(SshRunbooks, props("intent-b", second.id))));
   expect(field("Runbook name").value).toBe(second.name);

@@ -1,6 +1,5 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Text } from "../../../shared/ui/Text";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -135,25 +134,23 @@ export function LocalSessionReferenceLink({
 
   return (
     <span data-local-session-reference className="inline">
-      <Tooltip label={t("Open local session")}>
-        <Link
-          href={href}
-          className={className}
-          aria-busy={!!opening || undefined}
-          aria-describedby={error || opening ? id : undefined}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            void open();
-          }}
-          onAuxClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-        >
-          {children}
-        </Link>
-      </Tooltip>
+      <Link
+        href={href}
+        className={className}
+        aria-busy={!!opening || undefined}
+        aria-describedby={error || opening ? id : undefined}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void open();
+        }}
+        onAuxClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      >
+        {children}
+      </Link>
       <Button
         ref={trigger}
         iconOnly

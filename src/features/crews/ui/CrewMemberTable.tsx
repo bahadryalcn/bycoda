@@ -212,7 +212,8 @@ export function CrewMemberTable({
             onChange={(event) => onQueryChange(event.target.value)}
           />
           {queryActive ? (
-            <Text className="tabular-nums">
+            // The same text is announced once by the status line below.
+            <Text className="tabular-nums" aria-hidden="true">
               {t("{p0} of {p1} members shown", {
                 p0: matchCount,
                 p1: agents.length,
@@ -235,7 +236,7 @@ export function CrewMemberTable({
                 {section.title}
               </Heading>
               <Text className="min-w-0 flex-1 tabular-nums">
-                {queryActive ? `${shown.length}/${all.length}` : all.length}
+                {queryActive ? `${shown.length}/${all.length}` : all.length > 1 ? all.length : ""}
               </Text>
               {all.length > 0 && (section.role === "specialist" || section.role === "advisor") ? (
                 <Button

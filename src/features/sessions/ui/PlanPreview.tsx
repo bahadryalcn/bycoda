@@ -63,7 +63,7 @@ export function PlanPreview({
               fullWidth
               variant="item"
               type="button"
-              className="block w-full text-left"
+              className="block w-full text-start"
               tooltip={title}
               tooltipWhen="overflow"
               onClick={onOpen}

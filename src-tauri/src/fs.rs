@@ -1000,11 +1000,44 @@ pub struct ProjectFileListing {
     truncated: bool,
 }
 
+/// Resolve reserved scratch paths without applying the legacy bare-home folder override.
+pub(crate) fn resolve_scratch_cwd(cwd: &str) -> Result<Option<PathBuf>, String> {
+    cwd.starts_with("~/.bycoda-host/scratch/session-")
+        .then(|| crate::session_folder::resolve_session_cwd(cwd))
+        .transpose()
+}
+
+#[cfg(test)]
+pub(crate) fn isolated_scratch_test_home(test: &str) -> Option<PathBuf> {
+    const CHILD_HOME: &str = "BYCODA_TEST_SCRATCH_HOME";
+    if let Some(home) = std::env::var_os(CHILD_HOME) {
+        return Some(home.into());
+    }
+    // A child can override home without changing environment variables for parallel tests.
+    let home = tempfile::tempdir().unwrap();
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    crate::hide_window_console(&mut command);
+    command
+        .args(["--exact", test, "--nocapture"])
+        .env(CHILD_HOME, home.path())
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path());
+    let result = output_with_timeout(&mut command, Duration::from_secs(30)).unwrap();
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        result.status.success() && stdout.contains("1 passed"),
+        "{stdout}\n{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    None
+}
+
 fn project_file_listing(cwd: &str) -> Result<ProjectFileListing, String> {
+    let root = resolve_scratch_cwd(cwd)?.unwrap_or_else(|| expand_home(cwd));
     let truncated = AtomicBool::new(false);
-    let files = list_project_files_inner(cwd, None, &truncated)?;
+    let files = list_project_files_inner(&root, None, &truncated)?;
     Ok(ProjectFileListing {
-        root: path_to_js(&expand_home(cwd)),
+        root: path_to_js(&root),
         truncated: truncated.load(Ordering::Relaxed),
         files: files
             .into_iter()
@@ -1052,26 +1085,25 @@ pub(crate) fn list_project_files_with_completeness(
     cancel: Option<&AtomicBool>,
 ) -> Result<(Vec<ProjectFile>, bool), String> {
     let truncated = AtomicBool::new(false);
-    let files = list_project_files_inner(cwd, cancel, &truncated)?;
+    let files = list_project_files_inner(&expand_home(cwd), cancel, &truncated)?;
     Ok((files, truncated.load(Ordering::Relaxed)))
 }
 
 fn list_project_files_inner(
-    cwd: &str,
+    root: &Path,
     cancel: Option<&AtomicBool>,
     truncated: &AtomicBool,
 ) -> Result<Vec<ProjectFile>, String> {
-    let root = expand_home(cwd);
     if !root.is_dir() {
         return Err(format!("{}: Not a directory", root.display()));
     }
-    if !is_indexable_root(&root) {
+    if !is_indexable_root(root) {
         return Ok(Vec::new());
     }
     if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
         return Ok(Vec::new());
     }
-    if let Some(files) = git_ls_files_inner(&root, cancel, truncated) {
+    if let Some(files) = git_ls_files_inner(root, cancel, truncated) {
         return Ok(files);
     }
     // `git_ls_files` returns `None` for "not a git repo", truncation, and
@@ -1080,7 +1112,7 @@ fn list_project_files_inner(
     if cancel.is_some_and(|token| token.load(Ordering::Acquire)) {
         return Ok(Vec::new());
     }
-    Ok(walk_project_files_inner(&root, cancel.into(), truncated))
+    Ok(walk_project_files_inner(root, cancel.into(), truncated))
 }
 
 /// `git check-ignore` queues behind the Windows spawn gate, and the tree
@@ -10514,6 +10546,39 @@ mod tests {
         assert!(files.is_empty());
         assert!(list_project_files_sync("~").unwrap().is_empty());
         assert!(!is_indexable_root(Path::new("/")));
+    }
+
+    #[test]
+    fn file_index_creates_scratch_before_provider_launch() {
+        let Some(home) = isolated_scratch_test_home(
+            "fs::tests::file_index_creates_scratch_before_provider_launch",
+        ) else {
+            return;
+        };
+        let scratch = home.join(".bycoda-host").join("scratch");
+        let folder = scratch.join("session-file-index");
+        let cwd = "~/.bycoda-host/scratch/session-file-index";
+        assert!(!folder.exists());
+        let listing = project_file_listing(cwd).unwrap();
+        assert!(folder.is_dir());
+        assert_eq!(listing.root, path_to_js(&folder));
+        assert!(listing.files.is_empty());
+        assert!(!listing.truncated);
+
+        std::fs::write(folder.join("output.txt"), "keep").unwrap();
+        let listing = project_file_listing(cwd).unwrap();
+        assert_eq!(listing.root, path_to_js(&folder));
+        assert_eq!(listing.files.len(), 1);
+        assert_eq!(listing.files[0].relative, "output.txt");
+        assert_eq!(
+            crate::session_folder::resolve_session_cwd(cwd).unwrap(),
+            folder
+        );
+
+        let occupied = scratch.join("session-occupied");
+        std::fs::write(&occupied, "keep").unwrap();
+        assert!(project_file_listing("~/.bycoda-host/scratch/session-occupied").is_err());
+        assert_eq!(std::fs::read_to_string(occupied).unwrap(), "keep");
     }
 
     #[test]

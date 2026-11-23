@@ -1,7 +1,6 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
-import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { fetchCheckDetails } from "../model/prChecks";
@@ -220,7 +219,6 @@ export function CheckRepairForm({
               label={t("Close fix picker")}
               variant="ghost"
               type="button"
-              aria-label={t("Close fix picker")}
               onClick={() => dismiss(true)}
               className="shrink-0"
             >
@@ -242,26 +240,17 @@ export function CheckRepairForm({
       footer={
         <>
           {error ? <Alert tone="danger">{presentCiRepairError(error.reason)}</Alert> : null}
-          {/* Always mounted so the message is announced when the fix becomes blocked. */}
-          <LiveText
-            size="caption"
-            tone="secondary"
-            className="block px-3.5 pb-3 empty:hidden"
-            text={blocked && !busy ? t("Wait for the latest checks before starting a fix.") : ""}
-          />
           <PickerFooter align="between" className="gap-3 px-3 py-2.5">
-            <Text as="div" size="micro" tone="inherit" className="min-w-0">
-              <Text as="p" size="inherit" tone="secondary" className="break-words">
-                {selectedTitle}
-              </Text>
-              <Text as="p" size="inherit" tone="secondary">
-                {t("CI details included")}
-              </Text>
+            <Text as="p" size="micro" tone="secondary" className="min-w-0 break-words">
+              {selectedTitle}
             </Text>
             <Button
               variant="ghost"
               type="button"
               disabled={blocked || accountChanged}
+              disabledReason={
+                blocked && !busy ? t("Wait for the latest checks before starting a fix.") : undefined
+              }
               loading={busy}
               loadingLabel={t("Preparing…")}
               onClick={() => void start()}

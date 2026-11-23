@@ -27,13 +27,11 @@ export function ModelRolePreview({ preview, helper }: { preview: RolePreview; he
         {t("No model")}
       </Badge>
     );
+  // A failed read is stated once by the list, and a pending read shows no line at all.
+  if (preview.isError || !result) return null;
   return (
     <Text as="p" tone="secondary">
-      {preview.isError ? (
-        t("Current model could not be checked. You can still edit this choice.")
-      ) : !result ? (
-        t("Checking current model…")
-      ) : result.ok ? (
+      {result.ok ? (
         <span className="inline-flex items-center gap-1">
           {t("Now uses")}
           <ModelLabel model={result.target.model} harness={result.target.harness} />

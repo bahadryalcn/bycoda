@@ -19,7 +19,6 @@ import { t, useFormat } from "../../../shared/i18n";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
-import { TextField } from "../../../shared/ui/TextField";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
@@ -92,14 +91,12 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
   const [catalog, setCatalog] = useState<ProjectCatalog>({ groups: [], recents: [] });
   const [writeError, setError] = useState("");
   const [editor, setEditor] = useState<UsageBudget | "new" | null>(null);
-  const [saved, setSaved] = useState(false);
   const addButton = useRef<HTMLButtonElement>(null);
   // Project storage is read here, in the handler, so the editor opens with
   // current targets without a storage read on every render.
   const openEditor = (next: UsageBudget | "new") => {
     setCatalog(readProjectCatalog());
     setEditor(next);
-    setSaved(false);
   };
   useEffect(() => subscribeUsageBudgets(() => setVersion((v) => v + 1)), []);
   // Hidden tabs skip the minute tick; becoming visible re-reads once so the
@@ -177,7 +174,6 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
   const remove = (id: string) => {
     try {
       deleteUsageBudget(id);
-      setSaved(false);
       setError("");
     } catch (cause) {
       setError(t("Usage budget settings could not be saved."));
@@ -200,6 +196,11 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             <p>
               {t(
                 "Local rules can overlap. Their readings are not added together and provider quota percentages are never pooled.",
+              )}
+            </p>
+            <p>
+              {t(
+                "Supported local Codex and Claude usage. Missing, unsupported or private data stays unknown; a blocking rule refuses new turns until usage can be verified.",
               )}
             </p>
             <ul className="list-disc space-y-1 pl-4">
@@ -248,7 +249,6 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
         />
       ) : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      {saved ? <Alert tone="info">{t("Budget saved")}</Alert> : null}
       {editor && editorVisible ? (
         <BudgetEditor
           key={editor === "new" ? "new" : editor.id}
@@ -263,8 +263,8 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             addButton.current?.focus();
           }}
           onSave={() => {
+            // The saved card appearing in the list is the confirmation.
             setEditor(null);
-            setSaved(true);
             setError("");
             addButton.current?.focus();
           }}
@@ -355,13 +355,11 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 </Text>
               </>
             ) : (
-              <Alert tone="info">
-                {t(
-                  pending
-                    ? "Checking budget usage…"
-                    : "Usage unavailable. No zero usage is assumed.",
-                )}
-              </Alert>
+              // Unknown usage is a muted dash, never a zero; the section's aria-busy covers loading.
+              <Text as="p" tone="muted">
+                <span aria-hidden="true">—</span>
+                <span className="sr-only">{t("Usage unavailable. No zero usage is assumed.")}</span>
+              </Text>
             )}
             {budget.metric === "accountPercent" ? (
               <Text as="p">
@@ -398,7 +396,6 @@ function BudgetEditor({
     budget?.scope ?? "project",
   );
   const [target, setTarget] = useRetainedState(`${draftKey}:target`, budget?.target ?? "");
-  const [label, setLabel] = useRetainedState(`${draftKey}:label`, budget?.label ?? "");
   const [metric, setMetric] = useRetainedState<UsageBudget["metric"]>(
     `${draftKey}:metric`,
     budget?.metric ?? "tokens",
@@ -437,18 +434,10 @@ function BudgetEditor({
     targets.push({ value: budget.target, label: budget.label });
   }
   const selectedAccount = accounts.find((a) => `${a.provider}:${a.id}` === account);
-  const effectiveLimit =
-    Number(capacity) > 0 &&
-    Number(percent) > 0 &&
-    Number(percent) <= 100 &&
-    Number.isFinite(Number(capacity) * Number(percent))
-      ? formatUsageTokens((Number(capacity) * Number(percent)) / 100)
-      : "—";
   const clearDraft = (saved?: UsageBudget) => {
     const value = budget ? (saved ?? budget) : undefined;
     setScope(value?.scope ?? "project");
     setTarget(value?.target ?? "");
-    setLabel(value?.label ?? "");
     setMetric(value?.metric ?? "tokens");
     setPeriod(value?.period ?? "weekly");
     setCapacity(String(value?.capacity ?? 1_000_000));
@@ -466,7 +455,11 @@ function BudgetEditor({
           scope,
           target,
           project: sessions.find((s) => s.id === target)?.cwd ?? budget?.project,
-          label: label.trim() || targets.find((o) => o.value === target)?.label,
+          // The name follows the target; a budget keeps its saved name while its target is unchanged.
+          label:
+            budget && budget.scope === scope && budget.target === target
+              ? budget.label
+              : targets.find((o) => o.value === target)?.label,
           metric,
           period,
           capacity: metric === "tokens" ? Number(capacity) : 100,
@@ -497,22 +490,6 @@ function BudgetEditor({
       <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
         <BudgetSelect
           label={t("Scope")}
-          info={
-            scope === "machine" ? (
-              <InfoPopover label={t("About machine budgets")}>
-                <p>
-                  {t(
-                    "Supported local Codex and Claude usage. Missing, unsupported or private data stays unknown; a blocking rule refuses new turns until usage can be verified.",
-                  )}
-                </p>
-                <p>
-                  {t(
-                    "Multiple profiles of one provider may share logs; common usage remains unknown until their sources can be verified.",
-                  )}
-                </p>
-              </InfoPopover>
-            ) : undefined
-          }
           value={scope}
           onChange={(v) => {
             setScope(v as BudgetScope);
@@ -527,20 +504,21 @@ function BudgetEditor({
           onChange={setTarget}
           options={targets}
         />
-        <BudgetSelect
-          label={t("Measurement")}
-          value={metric}
-          onChange={(v) => {
-            setMetric(v as UsageBudget["metric"]);
-            if (v === "accountPercent" && period === "all") setPeriod("weekly");
-          }}
-          options={[
-            { value: "tokens", label: t("Token allocation") },
-            ...(scope === "machine"
-              ? []
-              : [{ value: "accountPercent", label: t("Provider account threshold (%)") }]),
-          ]}
-        />
+        {/* A machine budget can only count tokens, so there is nothing to choose. */}
+        {scope === "machine" ? null : (
+          <BudgetSelect
+            label={t("Measurement")}
+            value={metric}
+            onChange={(v) => {
+              setMetric(v as UsageBudget["metric"]);
+              if (v === "accountPercent" && period === "all") setPeriod("weekly");
+            }}
+            options={[
+              { value: "tokens", label: t("Token allocation") },
+              { value: "accountPercent", label: t("Provider account threshold (%)") },
+            ]}
+          />
+        )}
         {metric === "tokens" ? (
           <NumberField
             label={t("Token capacity")}
@@ -595,25 +573,9 @@ function BudgetEditor({
             ) : undefined
           }
         />
-        <TextField
-          label={t("Budget name (optional)")}
-          placeholder={
-            targets.find((option) => option.value === target)?.label ?? t("Budget target")
-          }
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          maxLength={200}
-        />
       </div>
       {error ? <Alert tone="danger">{error}</Alert> : null}
-      <div className="flex flex-wrap items-center gap-2">
-        <Text as="p" size="secondary">
-          {metric === "tokens"
-            ? `${t("Effective token limit")}: ${effectiveLimit}`
-            : `${t("Account usage threshold (%)")}: ${percent}%`}
-          {" · "}
-          {t(action === "block" ? "Block new turns" : "Monitor only")}
-        </Text>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <Button type="submit" variant="primary">
           {t("Save budget")}
         </Button>
@@ -630,18 +592,14 @@ function BudgetEditor({
   );
 }
 
+/** A budget field: the shared labelled select, with an optional note under it. */
 function BudgetSelect({
-  info,
   note,
   ...props
-}: ComponentProps<typeof SearchableSelect> & { info?: ReactNode; note?: ReactNode }) {
+}: ComponentProps<typeof SearchableSelect> & { note?: ReactNode }) {
   return (
     <div className="space-y-1">
-      <Text tone="inherit" weight="medium" className="flex items-center gap-1">
-        {props.label}
-        {info}
-      </Text>
-      <SearchableSelect hideLabel {...props} />
+      <SearchableSelect {...props} />
       {note}
     </div>
   );

@@ -78,7 +78,7 @@ it("places collapsed Activity below Projects and the recovery icon directly befo
     expect(footer.contains(recovery)).toBe(true);
     expect(ledger.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(ledger.contains(preview)).toBe(false);
-    expect(recovery.nextElementSibling?.getAttribute("aria-label")).toBe("Settings");
+    expect(footer.querySelector('button[aria-label="Settings"]')).not.toBeNull();
     expect(recovery.querySelector('[data-variant="count"][aria-hidden="true"]')?.textContent).toBe(
       "28",
     );

@@ -10,7 +10,7 @@ import { dateTimeFormat, getLocale, t, useLocale } from "../../../shared/i18n";
 import { formatDays, formatDuration } from "../../../shared/i18n/format";
 import { errorText } from "../../../shared/lib/errors";
 import { Button } from "../../../shared/ui/Button";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Group, Row } from "../../../shared/ui/settings";
 import { AnonymousUsageSetting } from "./AnonymousUsageSetting";
@@ -116,8 +116,6 @@ function DataExportRow() {
       feedback={
         error || follow.isError ? (
           <InlineError>{error || t("Could not check the export.")}</InlineError>
-        ) : save.isSuccess ? (
-          <InlineMessage tone="success">{t("Download started.")}</InlineMessage>
         ) : undefined
       }
     >

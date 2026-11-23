@@ -1,28 +1,16 @@
-.statusRow,
-.actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-}
-.statusRow > :first-child {
-  flex: 1;
-  min-width: 0;
-}
 .detail {
   margin: 0;
   overflow-wrap: anywhere;
 }
 .locations {
   display: grid;
-  gap: 12px;
+  gap: var(--ui-space-3, 0.75rem);
   min-width: 0;
 }
 .path {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2, 0.5rem);
   min-width: 0;
   width: 100%;
 }

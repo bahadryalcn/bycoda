@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { t } from "../../../shared/i18n/technical";
+import { errorText } from "../../../shared/lib/errors";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -20,7 +21,7 @@ export function HtmlPreviewSecurityActions({ path }: { path: string }) {
       const { openPathWithDefaultApp } = await import("../../../platform/tauri/fs");
       await openPathWithDefaultApp(path);
     } catch (cause) {
-      setError(String(cause));
+      setError(errorText(cause));
     } finally {
       pending.current = false;
       setOpening(false);
@@ -42,9 +43,7 @@ export function HtmlPreviewSecurityActions({ path }: { path: string }) {
           iconOnly
           label={t("Open saved file in default app")}
           loading={opening}
-          onClick={() => {
-            void openSavedFile().catch((cause: unknown) => setError(String(cause)));
-          }}
+          onClick={() => void openSavedFile()}
         >
           <ExternalLink className="icon-sm" aria-hidden />
         </Button>

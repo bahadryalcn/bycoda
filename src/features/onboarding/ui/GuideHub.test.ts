@@ -66,11 +66,12 @@ it("records viewed topics across openings", async () => {
   expect(loadSeenGuideTopics()).toEqual(["projects", "notes"]);
 });
 
-it("names the full tour, the topic tour and the topic's article differently", async () => {
+it("names the full tour and the topic tour differently, and leaves the article to the Wiki tab", async () => {
   await render("/Users/me/code/app");
   expect(button("Take the tour").disabled).toBe(false);
   expect(button("Tour this topic").disabled).toBe(false);
-  expect(button("Read the Projects article").disabled).toBe(false);
+  expect(document.body.textContent).not.toContain("Read the Projects article");
+  expect(document.body.textContent).not.toContain("steps done");
   expect(
     Array.from(document.body.querySelectorAll("button")).filter(
       (element) => element.textContent?.trim() === "Tour",

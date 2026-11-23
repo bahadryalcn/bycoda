@@ -1,4 +1,3 @@
-import { Text } from "../../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
@@ -26,8 +25,8 @@ type Phase =
   | { kind: "done"; identity: string }
   | { kind: "failed"; message: string };
 
-/** Another way to connect, offered under the sign-in and again when sign-in fails. */
-export type SignInFallback = { hint: string; action: string; onSelect: () => void };
+/** Another way to connect when browser sign-in fails. */
+export type SignInFallback = { action: string; onSelect: () => void };
 
 const signInLabel = (purpose: BrowserSignInPurpose) =>
   purpose === "google" ? t("Sign in with Google") : t("Sign in with Slack");
@@ -161,17 +160,6 @@ export function BrowserSignIn({
     setPhase({ kind: "idle" });
   };
 
-  const fallbackAction = fallback ? (
-    <Button variant="link" onClick={fallback.onSelect}>
-      {fallback.action}
-    </Button>
-  ) : null;
-  const fallbackLine =
-    fallback && phase.kind !== "failed" ? (
-      <Text as="p" size="caption" tone="secondary">
-        {fallback.hint} {fallbackAction}
-      </Text>
-    ) : null;
 
   if (phase.kind === "waiting") {
     const { start } = phase;
@@ -187,7 +175,6 @@ export function BrowserSignIn({
           </Button>
           <Button onClick={cancel}>{t("Cancel")}</Button>
         </div>
-        {fallbackLine}
       </div>
     );
   }
@@ -225,7 +212,6 @@ export function BrowserSignIn({
           {phase.message}
         </SettingsFeedback>
       ) : null}
-      {fallbackLine}
     </div>
   );
 }

@@ -1,16 +1,16 @@
 /* Doubled class so the block beats SettingsCollection.css whatever the stylesheet order. */
 .row.row {
   display: block;
-  min-block-size: 46px;
-  padding: 8px 10px 8px 14px;
+  min-block-size: 2.875rem;
+  padding: var(--ui-space-2) var(--ui-space-3);
 }
 
 /* The summary's main content: status dot column, then the identity. */
 .main {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
+  grid-template-columns: var(--ui-space-3) minmax(0, 1fr);
   align-items: center;
-  gap: 6px 10px;
+  gap: var(--ui-space-1) var(--ui-space-3);
   min-inline-size: 0;
   flex: 1 1 auto;
 }
@@ -22,7 +22,7 @@
 .identity {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 
@@ -30,7 +30,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 2px 6px;
+  gap: var(--ui-space-1) var(--ui-space-2);
   min-inline-size: 0;
 }
 
@@ -53,12 +53,12 @@
 
 .row .actions {
   justify-self: end;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 
-/* Aligns the facts with the identity column: status dot (14px) plus its gap (10px). */
+/* Aligns the facts with the identity column: status dot column plus its gap. */
 .details {
   min-inline-size: 0;
-  padding-block-start: 6px;
-  padding-inline-start: 24px;
+  padding-block-start: var(--ui-space-2);
+  padding-inline-start: var(--ui-space-6);
 }

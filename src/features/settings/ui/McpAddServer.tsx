@@ -1,4 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
@@ -136,7 +135,7 @@ export function AddServerModal({
   const [error, setError] = useState("");
   const adding = useRef(false);
   const formId = useId();
-  const nameInJson = serverNameInJson(config);
+  const nameInJson = format === "json" ? serverNameInJson(config) : null;
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -203,7 +202,12 @@ export function AddServerModal({
   return (
     <Modal
       title={editing ? editing.name : t("Add MCP server")}
-      description={machineName ? t("Save on {p0}", { p0: machineName }) : undefined}
+      description={
+        [
+          machineName ? t("Save on {p0}", { p0: machineName }) : null,
+          scope === "user" ? null : t("Selected project: {p0}", { p0: cwd }),
+        ].filter(Boolean).join(" · ") || undefined
+      }
       onClose={() => {
         if (!adding.current) onClose();
       }}
@@ -266,25 +270,17 @@ export function AddServerModal({
             onChange={setScope}
           />
         </div>
-        {scope === "user" ? null : (
-          <Text as="p" size="caption" tone="secondary" className="break-all">
-            {t("Selected project: {p0}", { p0: cwd })}
-          </Text>
-        )}
-        <TextField
-          label={t("Name")}
-          description={
-            nameInJson
-              ? t("The name comes from the JSON configuration.")
-              : t("Needed when the JSON is a bare server object without an mcpServers entry.")
-          }
-          value={nameInJson ?? name}
-          disabled={busy || added || !!editing || nameInJson !== null}
-          required={format === "url" || provider === "hub"}
-          pattern={provider === "opencode" ? undefined : "[A-Za-z0-9_-]*"}
-          onChange={(event) => setName(event.target.value)}
-          placeholder={t("my-server")}
-        />
+        {nameInJson === null ? (
+          <TextField
+            label={t("Name")}
+            value={name}
+            disabled={busy || added || !!editing}
+            required={format === "url" || provider === "hub"}
+            pattern={provider === "opencode" ? undefined : "[A-Za-z0-9_-]*"}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={t("my-server")}
+          />
+        ) : null}
 
         <McpPicker
           label={t("Setup method")}

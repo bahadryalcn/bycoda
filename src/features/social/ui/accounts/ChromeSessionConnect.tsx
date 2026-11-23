@@ -51,32 +51,34 @@ export function ChromeSessionConnect({
   return (
     <Disclosure summary={t("Use existing Chrome session")} variant="row" size="sm">
       <div className="social-card">
-        <InfoPopover className="self-end shrink-0" width={360}>
-          <p>
-            {t(
-              "Use accounts already signed in to Chrome on this computer. Saved passwords are not imported.",
+        <div className="social-card-head">
+          <Checkbox
+            label={t("Allow access to my Chrome profile")}
+            description={t(
+              "Chrome debugging permission can expose other tabs and profile data. Bycoda uses this connection for the selected social account.",
             )}
-          </p>
-          <p>
-            {t(
-              "In Chrome 144 or newer, open chrome://inspect/#remote-debugging, enable remote debugging, and approve Chrome's connection dialog.",
-            )}
-          </p>
-        </InfoPopover>
-        <Checkbox
-          label={t("Allow access to my Chrome profile")}
-          description={t(
-            "Chrome debugging permission can expose other tabs and profile data. Bycoda uses this connection for the selected social account.",
-          )}
-          checked={allowed}
-          disabled={disabled || busy}
-          onChange={(event) => {
-            setAllowed(event.target.checked);
-            setTabs(undefined);
-            setSelected("");
-            setConnected(false);
-          }}
-        />
+            checked={allowed}
+            disabled={disabled || busy}
+            onChange={(event) => {
+              setAllowed(event.target.checked);
+              setTabs(undefined);
+              setSelected("");
+              setConnected(false);
+            }}
+          />
+          <InfoPopover width={360}>
+            <p>
+              {t(
+                "Use accounts already signed in to Chrome on this computer. Saved passwords are not imported.",
+              )}
+            </p>
+            <p>
+              {t(
+                "In Chrome 144 or newer, open chrome://inspect/#remote-debugging, enable remote debugging, and approve Chrome's connection dialog.",
+              )}
+            </p>
+          </InfoPopover>
+        </div>
         <div className="social-field-row">
           <Button
             variant="secondary"
@@ -115,7 +117,7 @@ export function ChromeSessionConnect({
           ) : null}
         </div>
         {tabs?.length === 0 ? (
-          <InlineMessage tone="info">
+          <InlineMessage tone="warning" live="off">
             {t(
               "No matching platform tabs found. Open the social platform in Chrome, then try again.",
             )}

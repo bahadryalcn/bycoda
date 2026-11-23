@@ -96,14 +96,14 @@ export function VoiceCompanionControls({
         </Button>
         {status !== "idle" && (
           <Button
+            iconOnly
             shape="pill"
             size="lg"
             tone="danger"
-            aria-label={t("Disconnect voice")}
-            startIcon={<PhoneOff className="icon-sm" />}
+            label={t("Disconnect voice")}
             onClick={onClose}
           >
-            {t("Disconnect")}
+            <PhoneOff className="icon-sm" />
           </Button>
         )}
       </div>
@@ -149,14 +149,14 @@ export function VoiceCompanionControls({
           {speakerMuted ? <VolumeX className="icon-sm" /> : <Volume2 className="icon-sm" />}
         </Button>
         <Button
+          iconOnly
           shape="pill"
           size="lg"
           tone="danger"
-          aria-label={t("Disconnect voice")}
-          startIcon={<PhoneOff className="icon-sm" />}
+          label={t("Disconnect voice")}
           onClick={onClose}
         >
-          {t("Disconnect")}
+          <PhoneOff className="icon-sm" />
         </Button>
       </div>
     </div>

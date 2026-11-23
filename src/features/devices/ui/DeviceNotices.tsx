@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { t } from "../../../shared/i18n/technical";
+import { t, useLocale } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Text } from "../../../shared/ui/Text";
@@ -24,6 +24,7 @@ export function DeviceNotices({
   notice?: { error: boolean; display: string; onDismiss: () => void };
   reason?: string;
 }) {
+  useLocale();
   const error = notice?.error ? notice : undefined;
 
   let secondary = null;

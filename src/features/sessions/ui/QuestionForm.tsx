@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { QuestionFields, updateCustomAnswer, nextSelection } from "./QuestionFields";
@@ -342,11 +343,6 @@ function QuestionFormContent({
   const heading = question.header?.trim() || prompt.title?.trim();
   // Providers may repeat the entire question as their header.
   const title = heading && heading !== question.prompt.trim() ? heading : undefined;
-  const unansweredReason = !question.options?.length
-    ? t("Type an answer to continue")
-    : question.multiSelect
-      ? t("Choose at least one option to continue")
-      : t("Choose an option to continue");
   const {
     uncertain,
     capacityMessage,
@@ -449,7 +445,7 @@ function QuestionFormContent({
               size="caption"
               tone="secondary"
               leading="inherit"
-              text={t("Question {p0} of {p1}", { p0: index + 1, p1: total })}
+              text={`${index + 1} / ${total}`}
             />
           ) : null}
         </Text>
@@ -550,14 +546,15 @@ function QuestionFormContent({
               </Text>
             ) : null}
             {prompt.autoResolveAt != null && !transportHeld ? (
-              // The countdown only shows for the last seconds; before that the question is just optional.
-              <Text size="caption" tone="secondary" className="tabular-nums">
-                {prompt.autoResolveAt - now > 10_000
-                  ? t("Optional question")
-                  : t("Continues without an answer in {p0}s", {
-                      p0: Math.max(0, Math.ceil((prompt.autoResolveAt - now) / 1000)),
-                    })}
-              </Text>
+              <Tooltip label={t("Interact to keep this question open.")} asChild>
+                <Text size="caption" tone="secondary" className="tabular-nums">
+                  {prompt.autoResolveAt - now > 60_000
+                    ? t("Optional question")
+                    : t("Continues without an answer in {p0}s", {
+                        p0: Math.max(0, Math.ceil((prompt.autoResolveAt - now) / 1000)),
+                      })}
+                </Text>
+              </Tooltip>
             ) : null}
           </div>
           <div className={styles.actions}>
@@ -598,7 +595,6 @@ function QuestionFormContent({
               size="sm"
               type="submit"
               disabled={!ready || held}
-              disabledReason={!ready && !held ? unansweredReason : undefined}
               loading={sending && !dismissing}
               loadingLabel={pendingLabel}
               startIcon={last || held ? <SubmitIcon /> : undefined}

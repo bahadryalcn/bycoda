@@ -21,20 +21,15 @@ export function MoveRecoveryNotice({ notice }: { notice: CopyNotice }) {
     setError(null);
     return revealPath(notice.recoveryPath);
   };
+  // The recovery and receipt paths stay out of the sidebar: "Show" reveals the copy itself.
   return (
     <Text as="div" size="caption" tone="secondary" className="px-2 py-1">
-      <p role="status">
-        {t("Moved. Recovery copy retained")}: {notice.recoveryPath}
-      </p>
-      <p>
-        {t("Receipt")}: {notice.receiptPath}
-      </p>
+      <p role="status">{t("Moved. Recovery copy kept")}</p>
       <Button
-        type="button"
         variant="link"
         onClick={() => void reveal().catch((reason) => setError(String(reason)))}
       >
-        {t("Show recovery copy")}
+        {t("Show")}
       </Button>
       {notice.warning ? <InlineError>{notice.warning}</InlineError> : null}
       {error ? <InlineError>{error}</InlineError> : null}

@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -82,7 +83,12 @@ export function SummaryPanel({
   };
   if (!open)
     return (
-      <Button size="sm" onClick={() => setOpen(true)} disabled={!provider}>
+      <Button
+        size="sm"
+        onClick={() => setOpen(true)}
+        disabled={!provider}
+        disabledReason={t("Connect a provider to summarize")}
+      >
         {t("Summarize")}
       </Button>
     );
@@ -103,16 +109,18 @@ export function SummaryPanel({
         checked={includeTitles}
         onChange={(event) => setIncludeTitles(event.target.checked)}
       />
-      <TextareaField
-        label={t("Request preview")}
-        hideLabel
-        readOnly
-        value={prompt}
-        minRows={6}
-        maxRows={14}
-        monospace
-        fieldSize="sm"
-      />
+      <Disclosure size="sm" summary={t("Request preview")}>
+        <TextareaField
+          label={t("Request preview")}
+          hideLabel
+          readOnly
+          value={prompt}
+          minRows={6}
+          maxRows={14}
+          monospace
+          fieldSize="sm"
+        />
+      </Disclosure>
       <div className="flex items-center gap-2">
         <Button
           variant="primary"

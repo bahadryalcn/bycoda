@@ -32,14 +32,12 @@ const FACE_SIZE = 28;
 /** The Active tab: every crew member working on any connected host, grouped by project. */
 export function CrewsActive({
   items,
-  truncated,
   known,
   onOpenSession,
   onOpenWork,
   onNewWork,
 }: {
   items: readonly ActiveCrewMemberView[];
-  truncated?: boolean;
   /** The project the page shows; its members' work can open in the Work tab. */
   known?: KnownCrewProject;
   onOpenSession?: (target: ActiveSessionTarget) => void | Promise<void>;
@@ -52,7 +50,6 @@ export function CrewsActive({
       <EmptyState
         context="page"
         title={t("No crew member is working right now")}
-        description={t("Start new work and its members show up here while they work.")}
         action={{ label: t("New work"), onClick: onNewWork }}
       />
     );
@@ -84,11 +81,6 @@ export function CrewsActive({
           </ul>
         </section>
       ))}
-      {truncated ? (
-        <Text as="p" tone="inherit">
-          {t("Only the first members are listed.")}
-        </Text>
-      ) : null}
     </div>
   );
 }

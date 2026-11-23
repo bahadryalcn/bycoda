@@ -103,9 +103,6 @@ export function GuideWiki({
             <Heading size="page" level={2} id="guide-wiki-title" lang="en">
               {active.title}
             </Heading>
-            <Text as="p" size="body" tone="secondary" lang="en">
-              {active.summary}
-            </Text>
             <Link href={`https://bycoda.codes/guide/${active.id}`}>{t("Open in browser")}</Link>
           </header>
           {active.sections.map((section) => (

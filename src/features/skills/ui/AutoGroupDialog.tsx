@@ -122,18 +122,18 @@ export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: Grouping
           footer={
             <ModalActions>
               <Button onClick={() => setProposal(null)}>{t("Cancel")}</Button>
-              <Button variant="secondary" tone="danger" onClick={() => void replace()}>
-                {t("Replace my groups")}
-              </Button>
+              {/* Replacing deletes existing groups, so it is offered only when there are some. */}
+              {listSkillGroups().length ? (
+                <Button variant="ghost" tone="danger" onClick={() => void replace()}>
+                  {t("Replace my groups")}
+                </Button>
+              ) : null}
               <Button variant="primary" onClick={() => apply(true)}>
                 {t("Add as new groups")}
               </Button>
             </ModalActions>
           }
         >
-          <Text as="p" tone="secondary">
-            {t("Review before applying. Installed skills stay unchanged.")}
-          </Text>
           {error ? <Alert tone="danger">{error}</Alert> : null}
           {proposal.map((group, index) => (
             <section key={index}>

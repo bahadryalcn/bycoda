@@ -290,29 +290,25 @@ async function renderTrend(onSelect: (window: { start: number; end: number }) =>
   );
   return host;
 }
-function selectIntervalButton(host: HTMLElement) {
-  return [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "Select interval",
-  ) as HTMLButtonElement;
+/** The chart's wrapper: clicking it (or Enter inside it) selects the active point's interval. */
+function chartArea(host: HTMLElement) {
+  return host.querySelector<HTMLElement>('[data-usage-chart="trend"] > div:not([class])')!;
 }
-it("clears the interval target when the chart reports no active point", async () => {
+it("has no select-interval button and clears the target when the chart reports no active point", async () => {
   const onSelect = vi.fn();
   const host = await renderTrend(onSelect);
-  expect(selectIntervalButton(host).disabled).toBe(true);
-  expect(selectIntervalButton(host).getAttribute("data-disabled-reason")).toBe(
-    "Hover or focus a point first",
+  expect([...host.querySelectorAll("button")].map((button) => button.textContent)).not.toContain(
+    "Select interval",
   );
   await act(async () => chartData.onActiveChange?.(1, { key: "1" }));
-  expect(selectIntervalButton(host).disabled).toBe(false);
   await act(async () => chartData.onActiveChange?.(null, null));
-  expect(selectIntervalButton(host).disabled).toBe(true);
-  await act(async () => selectIntervalButton(host).click());
+  await act(async () => chartArea(host).click());
   expect(onSelect).not.toHaveBeenCalled();
 });
-it("applies the bucket the chart reports for keyboard selection", async () => {
+it("applies the bucket the chart reports when the chart is clicked", async () => {
   const onSelect = vi.fn();
   const host = await renderTrend(onSelect);
   await act(async () => chartData.onActiveChange?.(1, { key: "1" }));
-  await act(async () => selectIntervalButton(host).click());
+  await act(async () => chartArea(host).click());
   expect(onSelect).toHaveBeenCalledWith({ start: dayBucket(1).start, end: dayBucket(1).end });
 });

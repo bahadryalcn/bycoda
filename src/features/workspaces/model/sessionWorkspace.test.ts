@@ -129,6 +129,27 @@ it("prepares a new session from project policy using authoritative IDs and a sta
   expect(requests[0]?.[1]).not.toHaveProperty("choice");
 });
 
+it("skips managed workspace admission for a new projectless session", async () => {
+  const projectless = newSession("codex", "~");
+  expect(projectless.workspaceMode).toBeUndefined();
+  expect(needsSessionWorkspace(projectless)).toBe(false);
+  await expect(prepareSessionWorkspace(projectless)).resolves.toBeNull();
+  expect(getWorkspaceCapabilities).not.toHaveBeenCalled();
+  expect(workspaceRequest).not.toHaveBeenCalled();
+});
+
+it("ignores restored workspace preparation on a projectless session", async () => {
+  const projectless = newSession("codex", "~");
+  projectless.blocks = [
+    { id: "failed", role: "user", text: "First send", workspacePreparationPending: true },
+  ];
+  expect(needsSessionWorkspace(projectless)).toBe(false);
+  expect(needsSessionWorkspace({ ...projectless, workspaceMode: "worktree" })).toBe(false);
+  await expect(prepareSessionWorkspace(projectless)).resolves.toBeNull();
+  expect(getWorkspaceCapabilities).not.toHaveBeenCalled();
+  expect(workspaceRequest).not.toHaveBeenCalled();
+});
+
 it("keeps established conversations in their existing checkout", async () => {
   const old = {
     ...session,

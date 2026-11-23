@@ -198,13 +198,13 @@ export function ModelBrowser({
                 previewOnHover={previewOnHover}
               >
                 <span className="relative block">
-                  <HarnessIcon harness={harness} className="icon-lg" />
+                  <HarnessIcon harness={harness} className="icon-md" />
                   <ModelAccountNumber
                     account={account}
-                    className="absolute -end-2.5 [inset-block-start:-0.375rem]"
+                    className="absolute -end-2.5 -inset-bs-1.5"
                   />
                   {defaultMark?.harness === harness && account?.accountNumber === undefined ? (
-                    <StatusDot data-model-default-provider className="absolute -top-0.5 -right-1" />
+                    <StatusDot data-model-default-provider className="absolute -inset-bs-0.5 -end-1" />
                   ) : null}
                 </span>
               </ProviderTabButton>

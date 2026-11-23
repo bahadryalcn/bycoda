@@ -117,7 +117,6 @@ export function TaskBoardColumns({
               key={status}
               status={status}
               column={columns.get(status)!}
-              showEmptyNote={visibleTasks.length > 0}
               compactSelected={compactColumn === "all" || compactColumn === status}
               drag={drag}
               findTask={findTask}

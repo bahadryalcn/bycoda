@@ -21,7 +21,6 @@ export function GitGraphColumnFilter({
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const keys = field === "date" ? (["after", "before"] as const) : [field];
   const activeCount = keys.filter((key) => filters[key].trim()).length;
-  const active = activeCount > 0;
   const name = t("Filter {p0}", { p0: label });
   return (
     <>
@@ -43,15 +42,10 @@ export function GitGraphColumnFilter({
           width={280}
           kind="dialog"
           aria-label={name}
+          variant="panel"
           onDismiss={() => setAnchor(null)}
         >
-          <div className="flex flex-col gap-3 p-3">
-            <Text as="span" size="caption" tone="inherit" weight="medium">
-              {name}
-            </Text>
-            <Text size="caption" tone="secondary">
-              {t("Filters apply to loaded commits")}
-            </Text>
+          <div className="flex flex-col gap-3">
             {keys.map((key) => (
               <TextField
                 key={key}
@@ -67,16 +61,7 @@ export function GitGraphColumnFilter({
               disabled={!Object.values(filters).some((value) => value.trim())}
               onClick={() => onChange(EMPTY_HISTORY_FILTERS)}
             >
-              {t("Reset all filters")}
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={!active}
-              onClick={() =>
-                onChange({ ...filters, ...Object.fromEntries(keys.map((key) => [key, ""])) })
-              }
-            >
-              {t("Reset filter")}
+              {t("Reset")}
             </Button>
           </div>
         </Popover>

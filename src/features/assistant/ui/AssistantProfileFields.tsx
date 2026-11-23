@@ -5,7 +5,6 @@ import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Text } from "../../../shared/ui/Text";
 import { Select } from "../../../shared/ui/Select";
-import { Switch } from "../../../shared/ui/Switch";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { AdvancedSettings, Row } from "../../../shared/ui/settings";
 import { ProfileSegmented, ProfileSelect } from "./settings/ProfileControls";
@@ -37,29 +36,14 @@ export function AssistantProfileFields({
   value,
   onChange,
   observationTasksAvailable = false,
-  workModeUnchosen = false,
 }: {
   section: ProfileSection;
   value: AssistantProfilePatch;
   observationTasksAvailable?: boolean;
-  /** Work mode only: show no selection instead of "Custom" (first setup, nothing chosen yet). */
-  workModeUnchosen?: boolean;
   onChange: (patch: AssistantProfilePatch) => void;
 }) {
   const rows = useProfileRows();
   if (section === "identity") {
-    const avatar = (
-      <AdvancedSettings title={t("Avatar")} keepMounted>
-        {rows ? (
-          <Row label={null} stacked>
-            <AssistantAvatarPicker value={value.avatar} hideLabel onChange={onChange} />
-          </Row>
-        ) : (
-          <AssistantAvatarPicker value={value.avatar} hideLabel={false} onChange={onChange} />
-        )}
-        <ShowTitle value={value} onChange={onChange} />
-      </AdvancedSettings>
-    );
     return (
       <>
         <ProfileRow label={t("Assistant name")}>
@@ -76,20 +60,33 @@ export function AssistantProfileFields({
             />
           )}
         </ProfileRow>
-        <ProfileRow label={t("How should I address you?")}>
-          {(hideLabel) => (
-            <TextField
-              label={t("How should I address you?")}
-              hideLabel={hideLabel}
-              fieldClassName={hideLabel ? roleStyles.grow : undefined}
-              value={value.addressAs ?? ""}
-              maxLength={100}
-              onChange={(event) => onChange({ addressAs: event.currentTarget.value })}
-            />
-          )}
-        </ProfileRow>
-        {!rows && <AddressFrequency value={value} onChange={onChange} />}
-        {rows ? avatar : <div className={roleStyles.wide}>{avatar}</div>}
+        {/* Setup asks for the name only; address, avatar and title are settings rows. */}
+        {rows && (
+          <>
+            <ProfileRow label={t("How should I address you?")}>
+              {(hideLabel) => (
+                <TextField
+                  label={t("How should I address you?")}
+                  hideLabel={hideLabel}
+                  fieldClassName={roleStyles.grow}
+                  value={value.addressAs ?? ""}
+                  maxLength={100}
+                  onChange={(event) => onChange({ addressAs: event.currentTarget.value })}
+                />
+              )}
+            </ProfileRow>
+            <AdvancedSettings title={t("Avatar")} keepMounted>
+              <Row label={null} stacked>
+                <AssistantAvatarPicker value={value.avatar} onChange={onChange} />
+              </Row>
+              <ProfileSwitch
+                label={t("Show title")}
+                checked={value.showTitle ?? true}
+                onCheckedChange={(showTitle) => onChange({ showTitle })}
+              />
+            </AdvancedSettings>
+          </>
+        )}
       </>
     );
   }
@@ -103,7 +100,7 @@ export function AssistantProfileFields({
   if (section === "personality")
     return (
       <>
-        {rows && <AddressFrequency value={value} onChange={onChange} />}
+        <AddressFrequency value={value} onChange={onChange} />
         <ProfileSelect
           label="Tone"
           value={String(value.tone ?? "friendly")}
@@ -162,21 +159,10 @@ export function AssistantProfileFields({
             onChange({ proactiveSpeech: next as AssistantProfilePatch["proactiveSpeech"] })
           }
         />
-        {!rows && (
-          <Text
-            as="p"
-            size="micro"
-            tone="secondary"
-            leading="inherit"
-            className={`${styles.muted} ${roleStyles.wide}`}
-          >
-            {t("The microphone opens only when you choose to talk.")}
-          </Text>
-        )}
       </>
     );
   if (section === "workmode")
-    return <AssistantWorkModeField value={value} onChange={onChange} unchosen={workModeUnchosen} />;
+    return <AssistantWorkModeField value={value} onChange={onChange} />;
   if (section === "jobs" || section === "budget" || section === "permissions")
     return <AssistantWorkFields value={value} onChange={onChange} part={section} />;
   if (section === "presence" || section === "notifications")
@@ -211,46 +197,6 @@ function AddressFrequency({
         onChange({ addressFrequency: next as AssistantProfilePatch["addressFrequency"] })
       }
     />
-  );
-}
-
-/** "Show title" with a preview of how the name reads once the name is set. */
-function ShowTitle({
-  value,
-  onChange,
-}: {
-  value: AssistantProfilePatch;
-  onChange: (patch: AssistantProfilePatch) => void;
-}) {
-  const name = value.name?.trim();
-  const preview = name ? (
-    <InfoPopover label={t("Preview")}>
-      {" "}
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
-        {value.showTitle ? t("Assistant {p0}", { p0: name }) : name} ·{" "}
-        {t("Room · {p0}", { p0: name })} · {t("{p0} wrote", { p0: name })}
-      </Text>
-    </InfoPopover>
-  ) : undefined;
-  const rows = useProfileRows();
-  if (rows)
-    return (
-      <ProfileSwitch
-        label={t("Show title")}
-        info={preview}
-        checked={value.showTitle ?? true}
-        onCheckedChange={(showTitle) => onChange({ showTitle })}
-      />
-    );
-  return (
-    <div className={roleStyles.inlineControls}>
-      <Switch
-        label={t("Show title")}
-        checked={value.showTitle ?? true}
-        onCheckedChange={(showTitle) => onChange({ showTitle })}
-      />
-      {preview}
-    </div>
   );
 }
 

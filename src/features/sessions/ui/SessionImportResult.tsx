@@ -53,11 +53,6 @@ export function RunningView({ progress }: { progress: ImportProgress }) {
       <Text as="p" size="caption" tone="secondary" truncate>
         {progress.current ?? " "}
       </Text>
-      <Text as="p" size="micro" tone="secondary">
-        {t("Imported: {p0}", { p0: formatNumber(progress.imported) })}
-        {progress.skipped > 0 ? t(" · {p0} skipped", { p0: progress.skipped }) : ""}
-        {progress.failed.length > 0 ? t(" · {p0} failed", { p0: progress.failed.length }) : ""}
-      </Text>
     </div>
   );
 }

@@ -16,30 +16,10 @@ import { appearanceRules } from "./ui-drift-appearance.mjs";
 // The appearance ownership rules have their own tests (ui-drift-appearance.test.mjs).
 const notAppearance = (rule) => !(rule in appearanceRules);
 
-test("view primary guard counts files, separates returns and mutually exclusive branches", () => {
-  const file = "src/features/demo/View.tsx";
-  const primary = '<Button variant="primary" />';
-  const count = (source) =>
-    rulesOf(file, source).filter((rule) => rule === "one-primary-per-view").length;
-  assert.equal(count(`function View() { return <>${primary}${primary}${primary}</>; }`), 1);
-  assert.equal(count(`const View = () => <>${primary}${primary}</>;`), 1);
-  assert.equal(count(`function View() { if (open) return ${primary}; return ${primary}; }`), 0);
-  assert.equal(count(`const View = () => open ? ${primary} : ${primary};`), 0);
-  assert.equal(count(`const View = () => ${primary} || ${primary};`), 0);
-  assert.equal(count(`const View = () => <>{open ? ${primary} : ${primary}}${primary}</>;`), 1);
-  assert.equal(count(`const First = () => ${primary}; const Second = () => ${primary};`), 0);
-  assert.equal(count(`const View = () => <>{items.map(() => ${primary})}${primary}</>;`), 0);
-  assert.equal(
-    count(`// return <>${primary}${primary}</>\nconst sample = '${primary}${primary}';`),
-    0,
-  );
-  assert.equal(count(`const View = () => <>${primary}<Button variant={kind} /></>;`), 0);
-  assert.equal(
-    count(
-      `const View = () => (\n// ui-drift-ignore: one-primary-per-view -- independent actions\n<>${primary}${primary}</>);`,
-    ),
-    0,
-  );
+test("primary actions are no longer counted lexically across independent groups", () => {
+  assert.deepEqual(rulesOf("src/features/demo/View.tsx",
+    'const View = () => <><Group><Button variant="primary" /></Group><Group><Button variant="primary" /></Group></>;'),
+  []);
 });
 
 test("nested card guard follows JSX ancestry including surfaceAttributes spreads", () => {
@@ -113,12 +93,81 @@ test("tooltip guard flags hints that only restate the visible label", () => {
   assert.equal(count('<Button tooltip="Delete" tooltipDetails={[name]}>Delete</Button>'), 0);
   assert.equal(count('<Button tooltip="Delete" tooltipWhen="overflow">Delete</Button>'), 0);
   assert.equal(count('<Tooltip label="Copy" shortcut="Mod+C"><Button>Copy</Button></Tooltip>'), 0);
+  assert.equal(count('<Button tooltip="Copy" shortcut="Mod+C">Copy</Button>'), 0);
+  assert.equal(count('import { Button as Action } from "@/shared/ui/Button"; <Action tooltip="Copy" children="Copy" />;'), 1);
+  assert.equal(count('import { Tooltip as Hint } from "@/shared/ui/Tooltip"; const View = ({ label }) => <Hint label={label}><Button><span>{label}</span></Button></Hint>;'), 1);
+  assert.equal(count('const View = ({ label }) => <Button tooltip={label}><span>{label}</span></Button>;'), 1);
+  for (const source of [
+    'const View = ({ label }) => <Button iconOnly aria-label={label} tooltip={label}><svg /></Button>;',
+    'const View = ({ label }) => <Button tooltip={label}><span className="sr-only md:inline">{label}</span></Button>;',
+    'const View = ({ label }) => <Button tooltip={label}><span className="truncate">{label}</span></Button>;',
+    '<Tooltip label="Copy"><Button><Text truncate>Copy</Text></Button></Tooltip>',
+    '<Tooltip label="Copy"><Button>Copy link</Button></Tooltip>',
+    '<Button tooltip="Copy">{ready ? "Copy" : "Wait"}</Button>',
+  ]) assert.equal(count(source), 0, source);
   assert.equal(
     count(
       '{/* ui-drift-ignore: tooltip-repeats-label -- clipped label */}\n<Button tooltip="Delete">Delete</Button>',
     ),
     0,
   );
+});
+
+test("feedback guard requires one bound failure or matching footer reason", () => {
+  const imports = [
+    'import { useState } from "react";',
+    'import { Alert as Banner } from "@/shared/ui/Alert";',
+    'import { InlineError as ErrorLine } from "@/shared/ui/InlineError";',
+    'import { Toast, toast as notifications } from "@/shared/ui/ToastRegion";',
+    'import { ModalActions as Actions } from "@/shared/ui/Modal";',
+    'import { Button as Action } from "@/shared/ui/Button";',
+  ].join("\n");
+  const findings = (source) => {
+    const file = "src/features/demo/View.tsx";
+    const text = `${imports}\n${source}`;
+    return scanFile(file, text, collectDefinitions(new Map([[file, text]])))
+      .filter((item) => item.rule === "duplicate-feedback-channel");
+  };
+  for (const [source, line] of [
+    [`const View = ({ failure }) => <>
+  <ErrorLine>{failure}</ErrorLine>
+  <Banner>{failure}</Banner>
+  <Toast message={failure} />
+</>;`, "<Banner>{failure}</Banner>"],
+    [`const View = ({ reason }) => <Actions reason={reason}>
+  <Action
+    disabledReason={reason}
+  />
+</Actions>;`, "disabledReason={reason}"],
+    [`const View = () => <Actions reason={t("Required")}><Action disabledReason={t("Required")} /></Actions>;`, "disabledReason"],
+    [`function View() {
+  const [error, setError] = useState(null);
+  function onRetry() {
+    try { retry(); } catch (failure) {
+      setError(failure);
+      notifications.show({
+        message: failure,
+      });
+    }
+  }
+  return <ErrorLine>{error}</ErrorLine>;
+}`, "message: failure"],
+  ]) {
+    const result = findings(source);
+    assert.equal(result.length, 1, source);
+    assert.ok(result[0].text.includes(line), source);
+  }
+  for (const source of [
+    'const View = ({ failure }) => retrying ? <ErrorLine>{failure}</ErrorLine> : <Banner>{failure}</Banner>;',
+    'const View = ({ failure }) => <>{retrying && <ErrorLine>{failure}</ErrorLine>}{!retrying && <Banner>{failure}</Banner>}</>;',
+    'const View = () => <><ErrorLine>{t("Retry failed")}</ErrorLine><Banner>{t("Retry failed")}</Banner></>;',
+    'const View = ({ failure, detail }) => <><ErrorLine>{failure}</ErrorLine><Banner>{detail}</Banner><Toast historyMessage={failure} /></>;',
+    'const View = ({ reason }) => <Actions reason={reason}>{confirming && <Action disabledReason={reason} />}</Actions>;',
+    'const View = ({ reason }) => <Actions reason={reason}><Action {...props} disabledReason={reason} /></Actions>;',
+    'function View() { const [error, setError] = useState(null); function retryA() { setError(t("Retry failed")); } function retryB() { notifications.show({message: t("Retry failed")}); } return <ErrorLine>{error}</ErrorLine>; }',
+    'function View({ failure }) { const [error, setError] = useState(null); function retryA() { setError(failure); } function retryB() { notifications.show({message: failure}); } return <ErrorLine>{error}</ErrorLine>; }',
+    'function View({ failure }) { const [error, setError] = useState(null); function retry() { setError(failure); anotherOperation(); notifications.show({message: failure}); } return <ErrorLine>{error}</ErrorLine>; }',
+  ]) assert.deepEqual(findings(source), [], source);
 });
 
 test("hover reveal guard requires a matching visibility property and independent keyboard path", () => {
@@ -328,7 +377,7 @@ test("only counts above the baseline fail, per file and rule", (t) => {
   write("src/features/demo/A.tsx", '<p className="text-xs" />\n');
   write(
     baselineFile,
-    JSON.stringify({ schemaVersion: 1, counts: { "src/features/demo/A.tsx": { typography: 1 } } }),
+    JSON.stringify({ schemaVersion: 1, counts: { "src/features/demo/A.tsx": { "feature-typography": 1 } } }),
   );
   assert.equal(checkUiDrift({ root }).success, true);
   const added = new Map([["src/features/demo/A.tsx", '<p className="text-xs text-[13px]" />\n']]);
@@ -336,7 +385,7 @@ test("only counts above the baseline fail, per file and rule", (t) => {
   assert.equal(result.success, false);
   assert.deepEqual(
     result.regressions.map(({ rule, baseline, count }) => [rule, baseline, count]),
-    [["typography", 1, 2]],
+    [["feature-typography", 1, 2]],
   );
   const fixed = new Map([["src/features/demo/A.tsx", '<p className="text-ui-caption" />\n']]);
   assert.equal(checkUiDrift({ root, overrides: fixed }).improvements.length, 1);
@@ -348,9 +397,8 @@ test("view guards use existing per-file regression and improvement budgets", (t)
   const file = "src/shared/demo/View.tsx";
   mkdirSync(dirname(join(root, file)), { recursive: true });
   mkdirSync(dirname(join(root, baselineFile)), { recursive: true });
-  const primary = '<Button variant="primary" />';
   const fixtures = [
-    ["one-primary-per-view", `const View = () => <>${primary}${primary}</>;`],
+    ["tooltip-repeats-label", '<Button tooltip="Save">Save</Button>'],
     ["nested-card", '<Surface variant="card"><Surface variant="card" /></Surface>'],
     ["hover-only-reveal", '<div className="opacity-0 hover:opacity-100" />'],
   ];
@@ -753,11 +801,10 @@ test("px and motion literal rules also cover Arc CSS modules", () => {
   assert.deepEqual(rulesOf(file, ".a { transition: opacity var(--motion-duration-fast); }"), []);
 });
 
-test("inline help guard limits findings to long translated secondary text directly below settings labels", () => {
+test("inline help guard flags exact repetition in known settings slots", () => {
   const imports =
-    'import { Row as SettingRow } from "./settingsControls"; import { Text as Copy } from "../../shared/ui/Text"; import { Field } from "../../shared/ui/Field"; import { Heading } from "../../shared/ui/Heading"; import { InfoPopover } from "../../shared/ui/InfoPopover";';
-  const long = "x".repeat(101);
-  const help = `<Copy tone="secondary">{t("${long}")}</Copy>`;
+    'import { Group, Row as SettingRow } from "@/shared/ui/settings"; import { Text as Copy } from "@/shared/ui/Text"; import { Field } from "@/shared/ui/Field"; import { InfoPopover } from "@/shared/ui/InfoPopover";';
+  const help = '<Copy tone="secondary">{t("Mode")}</Copy>';
   const count = (source) =>
     rulesOf("src/features/demo/View.tsx", imports + source).filter(
       (rule) => rule === "inline-help-text",
@@ -765,33 +812,31 @@ test("inline help guard limits findings to long translated secondary text direct
   for (const source of [
     `<SettingRow label="Mode">${help}</SettingRow>`,
     `<Field label="Mode">${help}</Field>`,
-    `<><Heading>Mode</Heading>${help}</>`,
-    `<><h3>Mode</h3><p tone="muted">{t("${long}")}</p></>`,
-    `<><SettingRow label="Mode" />${help}</>`,
-    `<Field label="Mode"><Copy tone={"muted"}>{t('${long}')}</Copy></Field>`,
+    '<Group title={t("Mode")} description={t("Mode")} />',
+    '<SettingRow label="Mode" description="Mode" />',
+    'const View = ({ label }) => <Field label={label} description={label} />;',
   ])
     assert.equal(count(source), 1, source);
   for (const source of [
-    `<Field label="Mode"><Copy tone="muted">{t("${"x".repeat(100)}")}</Copy></Field>`,
+    `<Field label="Mode" description="${"Distinct detail ".repeat(12)}" />`,
+    '<Field label="Mode" error="Mode" />',
+    '<Field label="Mode" description={t("Changing mode restarts existing jobs.")} />',
     `<div>${help}</div>`,
     `<Field label="Mode"><div>${help}</div></Field>`,
-    `<Field label="Mode"><Copy tone="danger">{t("${long}")}</Copy></Field>`,
-    `<Field label="Mode"><Copy tone="muted">{t(key)}</Copy></Field>`,
-    `<Field label="Mode"><Copy tone="muted">${long}</Copy></Field>`,
+    '<Field label="Mode"><Copy tone="danger">{t("Mode")}</Copy></Field>',
+    '<Field label="Mode"><Copy tone="muted">{t(key)}</Copy></Field>',
     `<Field label="Mode"><InfoPopover>${help}</InfoPopover></Field>`,
-    `<InfoPopover><Field label="Mode">${help}</Field></InfoPopover>`,
-    `<Field info={<><Heading>Mode</Heading>${help}</>} />`,
-    `<Field><div slot="info"><Heading>Mode</Heading>${help}</div></Field>`,
-    `<><Heading>Mode</Heading><Button />${help}</>`,
+    `<SettingRow label="Mode" info={${help}} />`,
+    `<><h3>Mode</h3>${help}</>`,
     `<OtherRow>${help}</OtherRow>`,
-    `<Field><Copy tone="muted">{t()}</Copy></Field>`,
-    `<Field><Text tone="secondary">{t("${long}")}</Text></Field>`,
+    `<OtherRow label="Mode" description="Mode" />`,
+    '<Field {...props} label="Mode" description="Mode" />',
     `const example = ${JSON.stringify(`<Field>${help}</Field>`)};`,
   ])
     assert.equal(count(source), 0, source);
   assert.equal(
     count(
-      `<Field>\n{/* ui-drift-ignore: inline-help-text -- required consequence */}\n${help}</Field>`,
+      `<Field label="Mode">\n{/* ui-drift-ignore: inline-help-text -- required consequence */}\n${help}</Field>`,
     ),
     0,
   );
@@ -834,6 +879,60 @@ test("shared-internal-selector flags feature CSS that reaches into shared compon
   );
 });
 
+test("shared CSS-module slots report each visual declaration once", () => {
+  const file = "src/features/demo/View.module.css";
+  const tsxFile = "src/features/demo/View.tsx";
+  const source = [
+    'import { Button as Action } from "@/shared/ui/Button";',
+    'import { Modal as Dialog } from "@/shared/ui/Modal";',
+    'import { Button as Local } from "./Local";',
+    'import styles from "./View.module.css";',
+    'import other from "@/features/demo/Other.module.css";',
+    'const dialogClass = styles.panel;',
+    'const View = () => <><Action className={cn(styles.action, ready && styles["quiet"])} />',
+    '<Dialog panelClassName={dialogClass} />',
+    '<Local className={styles.local} />',
+    '<Action className={compose(styles.unresolved)} />',
+    '<Action className={other.action} /></>;',
+  ].join("\n");
+  const css = [
+    ".action {",
+    "  @apply flex min-w-0 mx-2;",
+    "  margin-inline: 8px;",
+    "  max-inline-size: 100%;",
+    "  &:hover {",
+    "    background: var(--ui-surface);",
+    "  }",
+    "  @media (width > 600px) {",
+    "    padding-inline: 8px;",
+    "  }",
+    "}",
+    ".quiet {",
+    "  @apply font-medium;",
+    "}",
+    ".panel :global(.modal-panel) {",
+    "  padding: 8px;",
+    "}",
+    ".panel :global(.vendor-owned) {",
+    "  box-shadow: 0 0 0 1px currentColor;",
+    "}",
+    ".local, .unresolved, :global(.action), [data-name='.action'] { padding: 8px; }",
+  ].join("\n");
+  const other = "src/features/demo/Other.module.css";
+  const definitions = collectDefinitions(new Map([
+    [tsxFile, source],
+    [file, css],
+    [other, ".action { padding: 8px; }"],
+    ["src/styles/index.css", ":root { --ui-surface: white; }"],
+  ]));
+  assert.deepEqual(scanFile(file, css, definitions).map(({ rule, line }) => [rule, line]),
+    [15, 6, 9, 13, 19].map((line) => ["shared-internal-selector", line]));
+  assert.deepEqual(scanFile(other, ".action { padding: 8px; }", definitions).map(({ rule }) => rule),
+    ["shared-internal-selector"]);
+  const unrelated = "src/features/demo/Unrelated.module.css";
+  assert.deepEqual(scanFile(unrelated, ".action { padding: 8px; }", definitions), []);
+});
+
 test("specificity-doubling flags .x.x and leaves distinct compound classes alone", () => {
   const file = "src/features/demo/Demo.module.css";
   const flagged = (selector) =>
@@ -847,20 +946,23 @@ test("specificity-doubling flags .x.x and leaves distinct compound classes alone
   assert.ok(!flagged(".row .row"));
 });
 
-test("typography and radius-size also read rem lengths in CSS and arbitrary classes", () => {
+test("feature typography replaces the generic typography scanner and preserves Arc ownership", () => {
+  const found = (file, source) =>
+    scanFile(file, source, collectDefinitions(new Map([[file, source]]))).map(({ rule }) => rule);
   const file = "src/features/demo/Demo.module.css";
-  assert.ok(rulesOf(file, ".a { font-size: 0.6875rem; }").includes("typography"));
-  assert.ok(rulesOf(file, ".a { font-size: 12px; }").includes("typography"));
-  assert.ok(!rulesOf(file, ".a { font-size: var(--text-sm); }").includes("typography"));
+  assert.deepEqual(found(file, ".a { font-size: 0.6875rem; line-height: 1.45; }"),
+    ["feature-typography", "feature-typography"]);
+  assert.deepEqual(found(file, ".a { font-size: inherit; line-height: normal; }"), []);
+  assert.deepEqual(found("src/features/demo/Demo.tsx", '<Text className="text-[0.75rem]" />'),
+    ["feature-typography"]);
+});
+
+test("radius-size reads rem lengths and preserves semantic or zero values", () => {
+  const file = "src/features/demo/Demo.module.css";
   assert.ok(rulesOf(file, ".a { border-radius: 0.5rem; }").includes("radius-size"));
   assert.ok(rulesOf(file, ".a { border-top-left-radius: 1rem 2px; }").includes("radius-size"));
   assert.ok(!rulesOf(file, ".a { border-radius: 0; }").includes("radius-size"));
   assert.ok(!rulesOf(file, ".a { border-radius: var(--ui-radius-card); }").includes("radius-size"));
-  assert.ok(
-    rulesOf("src/features/demo/Demo.tsx", '<i className="text-[0.75rem]" />').includes(
-      "typography",
-    ),
-  );
   assert.ok(
     rulesOf("src/features/demo/Demo.tsx", '<i className="h-[2rem] w-[10px]" />').includes(
       "radius-size",

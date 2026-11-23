@@ -176,7 +176,6 @@ export function ModelSettingPicker({
           variant="ghost"
           type="button"
           label={t("Back")}
-          aria-label={t("Back")}
           onClick={onClose}
         >
           <ArrowLeft className="icon-sm" strokeWidth={1.75} />
@@ -191,6 +190,11 @@ export function ModelSettingPicker({
         >
           {label}
         </Text>
+        {multi ? (
+          <Text tone="secondary" size="caption">
+            {t("{p0} selected", { p0: bulk ? modelCount : picked })}
+          </Text>
+        ) : null}
       </div>
       <PopoverSearchHeader
         type="search"
@@ -200,7 +204,7 @@ export function ModelSettingPicker({
         onValueChange={setQuery}
         {...list.searchProps}
       />
-      {bulk ? (
+      {bulk && (accountOptions.length > 1 || shown.length >= 8) ? (
         <div className="flex shrink-0 flex-wrap items-center justify-between gap-1 px-2 py-1">
           {accountOptions.length > 1 ? (
             <Select
@@ -211,27 +215,25 @@ export function ModelSettingPicker({
               onValueChange={setAccountFilter}
             />
           ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={
-              disabled ||
-              !shown.length ||
-              (!clearShown && modelCount >= DELEGATION_LIMITS.subagentModels)
-            }
-            onClick={() =>
-              setDraft((previous) =>
-                (clearShown ? shown : addShown).reduce(
-                  (next, { option }) =>
-                    delegationNextValue(setting, { [setting.id]: next }, option.value),
-                  previous,
-                ),
-              )
-            }
-          >
-            {clearShown ? t("Clear shown selection") : t("Select all shown")}
-          </Button>
+          {shown.length >= 8 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              disabled={disabled || (!clearShown && modelCount >= DELEGATION_LIMITS.subagentModels)}
+              onClick={() =>
+                setDraft((previous) =>
+                  (clearShown ? shown : addShown).reduce(
+                    (next, { option }) =>
+                      delegationNextValue(setting, { [setting.id]: next }, option.value),
+                    previous,
+                  ),
+                )
+              }
+            >
+              {clearShown ? t("Clear shown selection") : t("Select all shown")}
+            </Button>
+          ) : null}
         </div>
       ) : null}
       <PickerList
@@ -242,10 +244,7 @@ export function ModelSettingPicker({
       />
       {multi ? (
         // Stays under the scrolling list, so Done never needs a scroll back up.
-        <PickerFooter align="between">
-          <Text tone="secondary" truncate className="min-w-0 flex-1">
-            {t("{p0} selected", { p0: bulk ? modelCount : picked })}
-          </Text>
+        <PickerFooter align="end">
           {bulk ? (
             <Button variant="ghost" size="sm" type="button" onClick={onClose}>
               {t("Cancel")}

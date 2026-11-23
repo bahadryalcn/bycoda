@@ -1,9 +1,8 @@
 import { optionalTextAttributes, type TextRoles } from "./Text";
-import { surfaceAttributes } from "./Surface";
 import { useLocale, useT, type LanguageDomain } from "../i18n";
 import { useT as useGitT } from "../i18n/git";
 import { useT as useTechnicalT } from "../i18n/technical";
-import { NativePopupHost } from "./NativePopupHost";
+import { floatingFrameClassName, NativePopupHost, PopupBackdrop } from "./NativePopupHost";
 import { PanelHeader } from "./PanelHeader";
 import {
   createContext,
@@ -18,7 +17,6 @@ import {
 import { createPortal } from "react-dom";
 import { useLockOverscroll } from "../hooks/useLockOverscroll";
 import { LAYER } from "../lib/layers";
-import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
 import { OverlayMenuLayer, OverlayParent, overlayContainsTarget, useOverlay } from "./overlay";
 import { Button } from "./Button";
 import { InlineMessage } from "./InlineError";
@@ -47,7 +45,6 @@ const HEIGHT: Record<ModalHeight, string> = {
 
 /** Settings keeps one geometry for every page; only `maximized` and the end-edge peek change it. */
 const SETTINGS_HEIGHT = "h-[min(60rem,calc(100dvh-32px))]";
-const SETTINGS_FRAME = "[--modal-frame-color:var(--ui-dialog-frame)]";
 const SETTINGS_PEEK_WIDTH = "w-[min(380px,100vw)]";
 /** The `minimalHeader` close button's inset from the corner, and the room content leaves for it. */
 const MINIMAL_CLOSE_VARS = "[--modal-close-inset:0.75rem] [--modal-close-clearance:2.75rem]";
@@ -56,7 +53,7 @@ const MINIMAL_CLOSE_VARS = "[--modal-close-inset:0.75rem] [--modal-close-clearan
 export const DIALOG_HEADER_CLASS_NAME = "px-4 pt-2 pb-1";
 export const DIALOG_BODY_PADDING_CLASS_NAME = "px-4 pt-2 pb-4";
 export const DIALOG_FOOTER_CLASS_NAME =
-  "flex shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) px-4 py-3";
+  "flex min-h-0 max-h-[min(12rem,45dvh)] shrink flex-wrap items-center gap-2 overflow-y-auto overscroll-contain border-t border-(--ui-pane-border) px-4 py-3";
 
 const FOOTER_ALIGN = {
   start: "justify-start",
@@ -65,12 +62,12 @@ const FOOTER_ALIGN = {
 } as const;
 
 const TOP: Record<ModalSize, string> = {
-  sm: "top-[22%]",
-  md: "top-[10%]",
-  lg: "top-[8%]",
-  xl: "top-[6%]",
-  full: "inset-bs-4",
-  settings: "top-[8%]",
+  sm: "[--modal-top:22dvh]",
+  md: "[--modal-top:10dvh]",
+  lg: "[--modal-top:8dvh]",
+  xl: "[--modal-top:6dvh]",
+  full: "[--modal-top:1rem]",
+  settings: "[--modal-top:8dvh]",
 };
 
 /**
@@ -111,8 +108,8 @@ type Props = {
   /** Optional line above the title naming what the dialog acts on (project, file, session). */
   context?: ReactNode;
   /**
-   * Width. `settings` is the one geometry of the settings windows (88rem x 60rem, the shared
-   * frame color); with `placement="end"` it is the narrow peek panel.
+   * Width. `settings` is the standard geometry of the settings windows (88rem x 60rem);
+   * with `placement="end"` it is the narrow peek panel.
    */
   size?: ModalSize;
   /** `auto` (default) fits the content; `tall` a fixed working height; `fill` nearly the window height. */
@@ -127,7 +124,7 @@ type Props = {
   minimalHeader?: boolean;
   /** Extra classes on the panel; size and height come from `size` and `height`. */
   className?: string;
-  /** `workspace-panel` gives workspace dialogs an opaque canvas shared by header and body. */
+  /** Workspace panels docked at the end use the workspace panel ground. */
   surface?: "floating" | "workspace-panel";
   /** Keep taller dialogs inside the viewport, scrolling their content. Off: a top-anchored palette capped at 80% of the window. */
   fitViewport?: boolean;
@@ -272,7 +269,7 @@ export function ModalPanel({
   const descriptionId = description ? `${uid}-desc` : undefined;
   const sheet = placement === "end";
   const bottom = placement === "bottom";
-  const workspacePanel = surface === "workspace-panel";
+  const docked = sheet && surface === "workspace-panel";
   const size = maximized ? "full" : requestedSize;
   const settings = requestedSize === "settings";
   const heightClass = maximized
@@ -322,7 +319,7 @@ export function ModalPanel({
                       ? "relative z-[1] mx-auto w-full max-w-4xl"
                       : fitViewport
                         ? `relative z-[1] ${WIDTH[size]}`
-                        : `absolute z-[1] left-1/2 ${TOP[size]} ${WIDTH[size]} -translate-x-1/2`
+                        : `absolute z-[1] left-1/2 inset-bs-(--modal-top) ${TOP[size]} ${WIDTH[size]} -translate-x-1/2`
             }
             style={expanded || popupHost ? undefined : panelStyle}
           >
@@ -341,12 +338,28 @@ export function ModalPanel({
               aria-labelledby={titleId}
               aria-describedby={descriptionId}
               onMouseDown={(event) => event.stopPropagation()}
-              {...surfaceAttributes(
-                { variant: workspacePanel ? undefined : surface },
-                `relative isolate flex flex-col overflow-hidden border-[color:var(--modal-frame-color,var(--ui-pane-border))] shadow-(--ui-elevation-floating) ${workspacePanel ? "bg-(--ui-surface-panel)" : ""} ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${heightClass} ${fitViewport ? "max-h-[calc(100dvh-32px)]" : "max-h-[80dvh]"}`} ${settings ? SETTINGS_FRAME : ""} ${minimalHeader ? MINIMAL_CLOSE_VARS : ""} ${className ?? ""}`,
-              )}
+              data-surface-variant={surface}
+              data-surface-role={surface === "floating" ? surface : undefined}
+              className={[
+                "relative isolate flex min-h-0 flex-col overflow-hidden",
+                popupHost
+                  ? `max-h-[var(--native-popup-max-height,100dvh)] ${sheet || bottom ? "" : heightClass}`
+                  : expanded
+                    ? "h-full rounded-none"
+                    : docked
+                      ? "h-full border-s border-(--ui-pane-border) bg-(--ui-surface-panel)"
+                      : sheet
+                        ? `${floatingFrameClassName} h-full rounded-none border-s`
+                        : bottom
+                          ? `${floatingFrameClassName} max-h-[calc(100dvh-40px)] rounded-b-none border border-b-0`
+                          : `${floatingFrameClassName} border ${heightClass} ${fitViewport ? "max-h-[calc(100dvh-32px)]" : "max-h-[min(80dvh,calc(100dvh-var(--modal-top)))]"}`,
+                minimalHeader && MINIMAL_CLOSE_VARS,
+                className,
+              ]
+                .filter(Boolean)
+                .join(" ")}
             >
-              {workspacePanel ? null : <GlassBackdrop />}
+              {!popupHost && (!docked || expanded) ? <PopupBackdrop /> : null}
               <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
                 <PanelHeader
                   className={
@@ -377,7 +390,7 @@ export function ModalPanel({
                   }}
                   {...optionalTextAttributes(
                     bodyText ?? {},
-                    `min-h-0 flex-1 overscroll-none ${scroll === "none" ? "flex flex-col overflow-hidden" : "overflow-y-auto"} ${(padding ?? (scroll === "none" ? "none" : "md")) === "md" ? DIALOG_BODY_PADDING_CLASS_NAME : ""} ${minimalHeader ? "" : `border-t ${scrolled ? "border-(--ui-tone-neutral-border)" : "border-transparent"}`}`,
+                    `min-h-0 flex-1 overscroll-none ${scroll === "none" ? "flex flex-col overflow-hidden" : "overflow-y-auto"} ${(padding ?? (scroll === "none" ? "none" : "md")) === "md" ? DIALOG_BODY_PADDING_CLASS_NAME : ""} ${minimalHeader ? "" : `border-t ${scrolled ? "border-(--ui-pane-border)" : "border-transparent"}`}`,
                   )}
                 >
                   {children}
@@ -480,7 +493,7 @@ export function ModalFooter({ children }: { children: ReactNode }) {
  * confirm is filled danger: `variant="primary" tone="danger"`. `inline` is only for a form on a
  * page that is not a dialog.
  * @group overlay
- * @use The Cancel and primary actions of a Modal or Sheet footer. A primary that validation can block takes `reason` plus the same text as its `disabledReason`.
+ * @use The Cancel and primary actions of a Modal or Sheet footer. Link a visible blocker to its action with `aria-describedby`. A blocked Button can stay keyboard-focusable with `aria-disabled`. Use `disabledReason` only for a non-obvious cause without an adjacent explanation.
  * @avoid Actions at the end of the scrolling body, or a hand-built footer row.
  *
  * ```tsx
@@ -495,6 +508,7 @@ export function ModalFooter({ children }: { children: ReactNode }) {
 export function ModalActions({
   start,
   reason,
+  reasonId,
   align = "end",
   inline = false,
   className,
@@ -502,11 +516,12 @@ export function ModalActions({
 }: {
   start?: ReactNode;
   /**
-   * Why the primary action is blocked, shown at the start edge as visible text (never only a
-   * tooltip). Pass the same string as the primary Button's `disabledReason`; omit it while the
-   * action is available.
+   * Visible blocker beside the actions. Omit it when a field or other adjacent content already
+   * explains the cause. Omit it while the action is available.
    */
   reason?: string;
+  /** ID for `reason`. Pass it to the blocked action's `aria-describedby`. */
+  reasonId?: string;
   /** Alignment of the closing actions when there is no `start` group. */
   align?: "start" | "end";
   /** For a form on a page that is not in a Modal: adds the spacing above the row. In a Modal use `footer`. */
@@ -529,7 +544,7 @@ export function ModalActions({
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {start}
           {reason ? (
-            <InlineMessage tone="neutral" live="off">
+            <InlineMessage id={reasonId} tone="neutral" live="off">
               {reason}
             </InlineMessage>
           ) : null}

@@ -29,8 +29,7 @@
   flex: 1 1 auto;
   min-inline-size: 0;
 }
-.appearance-generation-launcher,
-.appearance-generation-dock {
+.appearance-generation-launcher {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -48,13 +47,6 @@
   .appearance-generation-short-label {
     display: inline;
   }
-}
-.appearance-generation-dock {
-  position: sticky;
-  inset-block-end: 8px;
-  justify-self: end;
-  max-inline-size: 100%;
-  padding: 4px;
 }
 .appearance-generator-sentinel {
   position: absolute;

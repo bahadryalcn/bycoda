@@ -194,10 +194,6 @@
   margin-block-start: 8px;
   padding-block-start: 8px;
 }
-.device-panel-zoom-label {
-  flex: 1;
-  padding-inline-start: 8px;
-}
 .device-panel-zoom-value {
   min-inline-size: 3.5rem;
 }

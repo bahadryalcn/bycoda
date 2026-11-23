@@ -519,7 +519,7 @@ it("gates an unconfigured core and keeps execution controls unavailable", async 
   mock.snapshot!.profile.setupComplete = false;
   mock.snapshot!.profile.name = "";
   await render();
-  expect(container.textContent).toContain("Choose a name, working permissions and a daily budget");
+  expect(container.textContent).not.toContain("Choose a name, working permissions");
   expect(container.querySelector('[role="tablist"]')).toBeNull();
   expect(mock.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(false);
 });
@@ -2232,8 +2232,8 @@ it("shows the cached daily summary with its timestamp and suppresses hidden cont
     "Yesterday or another return briefing must not appear",
   );
   expect(mock.request.mock.calls.some(([input]) => input.op === "snapshot")).toBe(false);
-  expect(document.body.textContent).toContain("Saved daily summary");
-  expect(document.body.textContent).toContain("Today's summary is reused");
+  expect(document.body.textContent).toContain("Daily summary");
+  expect(document.body.textContent).not.toContain("Today's summary is reused");
   expect(mock.request.mock.calls.some(([input]) => input.op === "notes.save")).toBe(false);
   await render({ initialTab: "notes", visibleProjectPaths: [] });
   expect(document.body.textContent).not.toContain("Exact canonical daily summary");
@@ -2328,7 +2328,7 @@ it("keeps a daily summary request bound to its source after a Host change", asyn
       .filter(([input]) => input.op === "snapshot")
       .every(([, env]) => env === "room-fixture"),
   ).toBe(true);
-  expect(document.body.textContent).not.toContain("Saved daily summary");
+  expect(document.body.textContent).not.toContain("Exact canonical daily summary");
 });
 it("does not let a late closed priority dialog erase a newer retained replan draft", async () => {
   const original = job();

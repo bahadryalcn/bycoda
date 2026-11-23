@@ -40,6 +40,9 @@ type Props = {
   onClose: () => void;
 };
 
+/** Listings shorter than this need no filter field. */
+const SEARCH_THRESHOLD = 15;
+
 async function settleAction(
   action: () => Promise<void>,
   mounted: { current: boolean },
@@ -287,7 +290,6 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               motion="none"
               type="button"
               aria-label={t("Parent folder")}
-              tooltip={t("Parent folder")}
               shortcut="Backspace"
               disabled={busy || !directory || pathKey(parent) === pathKey(directory)}
               onClick={() => navigate(parent)}
@@ -320,7 +322,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               />
             </form>
             <Button
-              variant="secondary"
+              variant="primary"
               motion="none"
               type="button"
               shortcut="Mod+Enter"
@@ -361,31 +363,35 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               </Button>
             ))}
           </nav>
-          <div className="shrink-0 px-3 py-2">
-            <SearchInput
-              standalone
-              aria-label={t("Search folders")}
-              placeholder={t("Search folders")}
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setActive(0);
-              }}
-            />
-          </div>
+          {/* A short folder list needs no filter; it stays while a query is typed. */}
+          {entries.length >= SEARCH_THRESHOLD || query ? (
+            <div className="shrink-0 px-3 py-2">
+              <SearchInput
+                standalone
+                aria-label={t("Search folders")}
+                placeholder={t("Search folders")}
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setActive(0);
+                }}
+              />
+            </div>
+          ) : null}
           <Text id={keyboardHelpId} className="sr-only">
             {t("↑ ↓ Navigate · Enter Open folder · Backspace Parent folder · Esc Close")}
           </Text>
-          <div className="flex h-[min(340px,50dvh)] min-h-0 shrink flex-col px-3 py-2">
+          <div className="relative flex h-[min(340px,50dvh)] min-h-0 shrink flex-col px-3 py-2">
+            {/* Status overlays the list, so the rows never jump while loading. */}
             {loading ? (
-              <LoadingText inset="row" className="shrink-0">
+              <LoadingText inset="row" className="pointer-events-none absolute inset-x-3 top-2 z-1">
                 {t("Loading folders…")}
               </LoadingText>
             ) : visibleEntries.length === 0 && !error ? (
               <EmptyState
                 size="inline"
                 inset="row"
-                className="shrink-0"
+                className="pointer-events-none absolute inset-x-3 top-2 z-1"
                 description={t("No subfolders")}
               />
             ) : null}
@@ -522,7 +528,6 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               variant="secondary"
               motion="none"
               type="button"
-              tooltip={t("Create a folder in the current directory")}
               disabled={busy || loading || !directory}
               onClick={() => {
                 setNewName("");

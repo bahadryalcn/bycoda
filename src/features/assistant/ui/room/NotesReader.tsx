@@ -49,29 +49,28 @@ export function NotesReader({
         </div>
       </header>
       {daily ? (
-        <>
-          <Text
-            as="ol"
-            size="secondary"
-            tone="inherit"
-            leading="normal"
-            {...surfaceAttributes({ dividers: "pane" }, styles.timeline)}
-          >
-            {lines.map((line, index) => (
-              <li key={index} className={styles.entry}>
-                <Text size="caption" tone="muted" leading="inherit" className={styles.entryTime}>
-                  {line.time ?? ""}
-                </Text>
-                <span>{line.text}</span>
-              </li>
-            ))}
-          </Text>
-          {lines.some((line) => line.time) && (
-            <Text as="p" tone="muted" leading="inherit" className={styles.readerMeta}>
-              {t("Times are in UTC.")}
-            </Text>
-          )}
-        </>
+        <Text
+          as="ol"
+          size="secondary"
+          tone="inherit"
+          leading="normal"
+          {...surfaceAttributes({ dividers: "pane" }, styles.timeline)}
+        >
+          {lines.map((line, index) => (
+            <li key={index} className={styles.entry}>
+              <Text
+                size="caption"
+                tone="muted"
+                leading="inherit"
+                className={styles.entryTime}
+                title={line.time ? t("Times are in UTC.") : undefined}
+              >
+                {line.time ?? ""}
+              </Text>
+              <span>{line.text}</span>
+            </li>
+          ))}
+        </Text>
       ) : (
         lines.length > 0 && (
           <Text

@@ -1,4 +1,5 @@
 import { errorText } from "../../../shared/lib/errors";
+import { isMissingPathError } from "../model/checkoutSelection";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
@@ -241,7 +242,8 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
     [models],
   );
 
-  if (!cwd || cwd === "~") {
+  // A folder that no longer exists is the same state as no folder: nothing to retry.
+  if (!cwd || cwd === "~" || (files == null && isMissingPathError(error))) {
     return (
       <div className="grid h-full place-items-center">
         <EmptyState key="no-project" context="panel" description={t("No project folder")} />

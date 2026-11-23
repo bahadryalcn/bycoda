@@ -41,7 +41,6 @@ export function AnnouncementNotices() {
         message={item.body}
         durationMs={null}
         width="lg"
-        action={{ label: t("Dismiss"), onClick: () => dismissAnnouncement(item.id) }}
         actionsPlacement="footer"
         actions={
           item.url

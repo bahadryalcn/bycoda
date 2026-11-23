@@ -26,7 +26,7 @@ export type ActivityRowProps = {
   details?: ReactNode;
   /**
    * Omit when the entry cannot be undone: no Undo button is rendered, so the reason belongs in
-   * `details`. With `blockedReason`, Undo stays visible but disabled, and the tooltip says why.
+   * `details`. With `blockedReason`, Undo stays visible but disabled, and the tooltip says why (once).
    */
   undo?: {
     onUndo: () => void;
@@ -120,17 +120,6 @@ export function ActivityRow({
           ) : null}
         </div>
       </ActionHost>
-      {undo?.blockedReason ? (
-        <Text
-          as="div"
-          size="caption"
-          tone="muted"
-          leading="inherit"
-          className="social-activity-details"
-        >
-          {undo.blockedReason}
-        </Text>
-      ) : null}
       {details ? (
         <Text
           as="div"

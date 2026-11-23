@@ -1,5 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { t } from "../../../shared/i18n";
 import { useRef } from "react";
@@ -112,55 +113,51 @@ export function SshJumpPolicyEditor({
           </div>
           <Disclosure
             size="sm"
-            textSize="caption"
-            tone="muted"
             summary={t("Hop identity and trust references")}
+            summaryActions={
+              <InfoPopover>
+                {t(
+                  "Use absolute paths or ~/ for hop file references. Relative paths are not supported.",
+                )}{" "}
+                {t(
+                  "File references only. Empty identity uses the SSH agent or default identity; empty known-hosts reference uses the existing native trust store.",
+                )}
+              </InfoPopover>
+            }
           >
-            <Text as="div" size="caption" tone="muted">
-              <div className="flex min-w-0 flex-col gap-2">
-                <SshIdentityField
-                  label={`${t("Jump host")} ${index + 1}: ${t("Choose SSH key")}`}
-                  pathLabel={`${t("Jump host")} ${index + 1}: ${t("Identity file")}`}
-                  value={hop.identityFile}
-                  disabled={disabled}
-                  onChange={(value) => update(index, "identityFile", value)}
+            <div className="flex min-w-0 flex-col gap-2">
+              <SshIdentityField
+                label={`${t("Jump host")} ${index + 1}: ${t("Choose SSH key")}`}
+                pathLabel={`${t("Jump host")} ${index + 1}: ${t("Identity file")}`}
+                value={hop.identityFile}
+                disabled={disabled}
+                onChange={(value) => update(index, "identityFile", value)}
+              />
+              {(
+                [
+                  ["certificateFile", "Certificate file"],
+                  ["knownHostsFile", "Known hosts file"],
+                ] as const
+              ).map(([field, label]) => (
+                <TextField
+                  key={field}
+                  label={t(label)}
+                  aria-label={`${t("Jump host")} ${index + 1}: ${t(label)}`}
+                  value={hop[field]}
+                  maxLength={4096}
+                  onChange={(event) => update(index, field, event.target.value)}
                 />
-                {(
-                  [
-                    ["certificateFile", "Certificate file"],
-                    ["knownHostsFile", "Known hosts file"],
-                  ] as const
-                ).map(([field, label]) => (
-                  <TextField
-                    key={field}
-                    label={t(label)}
-                    aria-label={`${t("Jump host")} ${index + 1}: ${t(label)}`}
-                    value={hop[field]}
-                    maxLength={4096}
-                    onChange={(event) => update(index, field, event.target.value)}
-                  />
-                ))}
-                <p>
-                  {t(
-                    "Use absolute paths or ~/ for hop file references. Relative paths are not supported.",
-                  )}
-                </p>
-                <p>
-                  {t(
-                    "File references only. Empty identity uses the SSH agent or default identity; empty known-hosts reference uses the existing native trust store.",
-                  )}
-                </p>
-              </div>
-            </Text>
+              ))}
+            </div>
           </Disclosure>
         </FieldGroup>
       ))}
       <Button
         variant="ghost"
+        startIcon={<Plus className="icon-xs" />}
         disabled={disabled || value.length >= MAX_SSH_JUMP_HOSTS}
         onClick={() => onChange([...value, emptySshJumpPolicyDraft()])}
       >
-        <Plus className="icon-xs" />
         {t("Add jump host")}
       </Button>
       {sshJumpPoliciesFromDrafts(value) === undefined ? (

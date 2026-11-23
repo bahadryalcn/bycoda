@@ -4,7 +4,8 @@ import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import { StatusDot } from "../../../../shared/ui/StatusDot";
-import { OverflowTooltip, Tooltip } from "../../../../shared/ui/Tooltip";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
 import { Globe, MessageMultiple, Square } from "../../../../shared/ui/icons";
 import { t } from "../../../../shared/i18n";
 import { formatDuration } from "../../../../shared/i18n/format";
@@ -152,7 +153,7 @@ export function VoiceCompanionStatus({
 }
 
 /**
- * One quiet line under the status: the engine (its tooltip says where audio goes) and, while
+ * One quiet line under the status: the engine (its info popover says where audio goes) and, while
  * connected, how long this voice session has run. The clock is painted from the shared second
  * timer, so it does not re-render the panel; the voice core already shows the input level.
  */
@@ -172,11 +173,12 @@ function VoiceMeta({ live, engine, privacy }: { live: boolean; engine: string; p
   }, [live]);
   return (
     <div className={styles.meta}>
-      <Tooltip asChild label={privacy}>
-        <Text size="caption" tone="muted" leading="none" truncate tabIndex={0}>
-          {engine}
-        </Text>
-      </Tooltip>
+      <Text size="caption" tone="muted" leading="none" truncate>
+        {engine}
+      </Text>
+      <InfoPopover label={t("Privacy")}>
+        <p>{privacy}</p>
+      </InfoPopover>
       {live ? (
         <Text ref={clock} size="caption" tone="muted" leading="none" className={styles.clock} />
       ) : null}

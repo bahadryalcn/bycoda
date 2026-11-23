@@ -28,9 +28,7 @@ function button(text: string) {
 it("reads the profile only when asked", async () => {
   const xProfileRead = vi.fn(async () => profile);
   const client = { xProfileRead, xProfileUpdate: vi.fn() } as unknown as SocialClient;
-  act(() =>
-    root.render(createElement(XProfileEditor, { client, accountId: "a1", accountName: "Studio" })),
-  );
+  act(() => root.render(createElement(XProfileEditor, { client, accountId: "a1" })));
   expect(xProfileRead).not.toHaveBeenCalled();
   await act(async () => button("Read profile")?.click());
   expect(xProfileRead).toHaveBeenCalledWith("a1");
@@ -42,9 +40,7 @@ it("saves only the fields that changed, with the read-back of the Host", async (
     xProfileRead: vi.fn(async () => profile),
     xProfileUpdate,
   } as unknown as SocialClient;
-  act(() =>
-    root.render(createElement(XProfileEditor, { client, accountId: "a1", accountName: "Studio" })),
-  );
+  act(() => root.render(createElement(XProfileEditor, { client, accountId: "a1" })));
   await act(async () => button("Read profile")?.click());
   const location =
     element.querySelector<HTMLInputElement>(
@@ -72,7 +68,6 @@ function mount(client: Record<string, unknown>) {
       createElement(XProfileEditor, {
         client: client as unknown as SocialClient,
         accountId: "a1",
-        accountName: "Studio",
       }),
     ),
   );
@@ -133,13 +128,13 @@ it("sends one read for a double press and offers a retry after a failed read", a
   expect(control("About").value).toBe("Draft");
 });
 
-it("blocks saving until something changed and says why, then until a name is entered", async () => {
+it("blocks saving until something changed, then until a name is entered", async () => {
   mount({ xProfileRead: vi.fn(async () => profile), xProfileUpdate: vi.fn() });
   await act(async () => button("Read profile")?.click());
   expect(button("Save profile")?.disabled).toBe(true);
-  expect(reasons()).toContain("No changes to save.");
+  expect(reasons()).not.toContain("No changes to save.");
   typeInto("Profile name", "   ");
-  expect(reasons()).toContain("Enter a profile name.");
+  expect(button("Save profile")?.getAttribute("aria-disabled")).toBe("true");
 });
 
 it("does not send a save for an unchanged profile even when the form is submitted", async () => {
@@ -158,7 +153,7 @@ it("shows what the Host read back after a save and treats it as the new saved pr
   await submitProfile();
   expect(xProfileUpdate).toHaveBeenCalledExactlyOnceWith("a1", { name: "studio official" });
   expect(control("Profile name").value).toBe("Studio Official");
-  expect(reasons()).toContain("No changes to save.");
+  expect(button("Save profile")?.disabled).toBe(true);
 });
 
 it("keeps the owner's edits and shows the failure when the profile cannot be verified", async () => {

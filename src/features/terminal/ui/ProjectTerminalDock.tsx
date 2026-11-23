@@ -396,7 +396,6 @@ function ProjectTerminalDockComponent({
                     {onSplitTerminal ? (
                       <InlineAction
                         label={`${t("Split")} — ${terminalTabLabel(file)}`}
-                        tooltip={t("Split")}
                         motion="none"
                         type="button"
                         onClick={() => splitTerminal(file.id)}
@@ -406,7 +405,6 @@ function ProjectTerminalDockComponent({
                     ) : null}
                     <InlineAction
                       label={`${t("Close")} — ${terminalTabLabel(file)}`}
-                      tooltip={t("Close")}
                       motion="none"
                       type="button"
                       onClick={() => onCloseTerminal(file.id)}
@@ -588,13 +586,6 @@ function ProjectTerminalDockComponent({
             },
             { kind: "sep" },
             { kind: "item", id: "close-all", label: t("Close all terminals"), danger: true },
-            { kind: "sep" },
-            {
-              kind: "item",
-              id: "hide",
-              label: t("Hide terminal ({p0}J)", { p0: MOD }),
-              icon: hideIcon(dock.side),
-            },
           ]}
           onPick={(id) => {
             if (!isVisible()) return;
@@ -602,7 +593,6 @@ function ProjectTerminalDockComponent({
               onSideChange(id);
             }
             if (id === "close-all") onCloseTerminals();
-            if (id === "hide") onHide();
             setMenu(null);
           }}
           onClose={() => setMenu(null)}

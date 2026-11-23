@@ -3,7 +3,6 @@ import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react
 import { useT } from "../../../shared/i18n";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
 import { Button } from "../../../shared/ui/Button";
-import { LAYER } from "../../../shared/lib/layers";
 import { Modal } from "../../../shared/ui/Modal";
 import { InboxApprovalPreview } from "./InboxApprovalPreview";
 import {
@@ -36,7 +35,6 @@ function OwnerRequestCard({
         tone="info"
         frame="accent"
         radius="card"
-        elevation="floating"
         padding="md"
       >
         {children}
@@ -70,7 +68,6 @@ export function OwnerApprovalChat({
     () => (visible && sessionId ? registerOwnerApprovalChat(sessionId) : undefined),
     [sessionId, visible],
   );
-  const [reviewing, setReviewing] = useState<string | null>(null);
   return (
     <>
       {children}
@@ -91,16 +88,6 @@ export function OwnerApprovalChat({
                   label: t(request.cancelLabel),
                   onClick: () => settleOwnerApproval(request.id, false),
                 }}
-                actions={
-                  request.inbox
-                    ? [
-                        {
-                          label: t("Review"),
-                          onClick: () => setReviewing(request.id),
-                        },
-                      ]
-                    : undefined
-                }
                 details={
                   request.inbox
                     ? {
@@ -112,9 +99,6 @@ export function OwnerApprovalChat({
                     : undefined
                 }
               />
-              {reviewing === request.id ? (
-                <InboxApprovalDialog request={request} onClose={() => setReviewing(null)} />
-              ) : null}
             </OwnerRequestCard>
           ))}
       {visible &&
@@ -169,7 +153,7 @@ export function OwnerApprovalInbox() {
         <InboxApprovalDialog key={request.id} request={request} onClose={() => defer(request.id)} />
       ) : null}
       {!secret && !request && parked.length > 0 ? (
-        <div className="fixed bottom-3 end-3" style={{ zIndex: LAYER.toast }}>
+        <div className="fixed bottom-3 end-3 z-(--layer-toast)">
           <Button
             variant="secondary"
             size="sm"
@@ -184,7 +168,7 @@ export function OwnerApprovalInbox() {
   );
 }
 
-/** Full-size Inbox approval; closing it from the chat only returns to the inline request. */
+/** Full-size approval for requests whose conversation is not on screen; closing it defers the request. */
 function InboxApprovalDialog({
   request,
   onClose,

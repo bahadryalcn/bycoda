@@ -1,6 +1,6 @@
 import { Text } from "../../shared/ui/Text";
 import { useT } from "../../shared/i18n";
-import { Button } from "../../shared/ui/Button";
+import { InlineError } from "../../shared/ui/InlineError";
 
 export function RecoveryVerification({
   verification,
@@ -15,16 +15,11 @@ export function RecoveryVerification({
 }) {
   const t = useT();
   return (
-    <Text as="div" size="caption" tone="secondary" className="break-words">
-      <span>{verification}</span>
+    <div className="grid gap-(--ui-space-1)">
+      <Text size="caption" tone="secondary" wrap="anywhere">{verification}</Text>
       {readError ? (
-        <>
-          <p className="select-text [overflow-wrap:anywhere]">{readError}</p>
-          <Button variant="ghost" size="sm" disabled={pending} onClick={onRetry}>
-            {t("Retry verification")}
-          </Button>
-        </>
+        <InlineError retry={{ label: t("Retry verification"), pending, onRetry }}>{readError}</InlineError>
       ) : null}
-    </Text>
+    </div>
   );
 }

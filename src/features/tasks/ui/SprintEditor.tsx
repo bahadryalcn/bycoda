@@ -81,11 +81,6 @@ export function SprintEditor({
             form={formId}
             loading={busy}
             disabled={!name.trim() || !selected.length}
-            disabledReason={
-              !name.trim() || !selected.length
-                ? t("Enter a sprint name and choose at least one project.")
-                : undefined
-            }
           >
             {t("Save sprint")}
           </Button>
@@ -137,7 +132,6 @@ export function SprintEditor({
         />
         <TextareaField
           label={t("Sprint goal")}
-          description={t("What should be finished by the end of this sprint?")}
           value={goal}
           onChange={(event) => setGoal(event.currentTarget.value)}
           disabled={busy}
@@ -147,7 +141,6 @@ export function SprintEditor({
           multiple
           label={t("Projects")}
           placeholder={t("Choose projects")}
-          description={t("A sprint can include projects from different servers.")}
           value={selected}
           onChange={setSelected}
           options={projects.map((project) => ({
@@ -161,13 +154,13 @@ export function SprintEditor({
         <div className="sprint-form-section">
           <div className="sprint-form-grid">
             <DatePicker
-              label={t("Start date (optional)")}
+              label={t("Start date")}
               value={startsAt}
               onChange={setStartsAt}
               disabled={busy}
             />
             <DatePicker
-              label={t("End date (optional)")}
+              label={t("End date")}
               value={endsAt}
               min={startsAt || undefined}
               onChange={setEndsAt}
@@ -183,40 +176,34 @@ export function SprintEditor({
         >
           <NumberField
             label={t("Sprint capacity (points)")}
-            description={t(
-              "Optional planning target. Add task estimates: 3 + 5 points = 8 points. Points are not hours and do not limit running tasks.",
-            )}
+            description={t("Points are not hours and do not limit running tasks.")}
             value={capacity}
             min={0}
             step={1}
             onChange={(event) => setCapacity(event.currentTarget.value)}
             disabled={busy}
           />
-          {selected.length ? (
-            <Disclosure summary={t("Project capacity budgets")}>
-              {projects
-                .filter((project) => selected.includes(sprintProjectKey(project)))
-                .map((project) => {
-                  const key = sprintProjectKey(project);
-                  return (
-                    <div className="sprint-project-budget" key={key}>
-                      <span>{projectLabel(project)}</span>
-                      <NumberField
-                        label={t("Capacity for {p0}", { p0: project.name })}
-                        hideLabel
-                        min={0}
-                        step={1}
-                        value={budgets[key] ?? ""}
-                        onChange={(event) =>
-                          setBudgets((value) => ({ ...value, [key]: event.currentTarget.value }))
-                        }
-                        disabled={busy}
-                      />
-                    </div>
-                  );
-                })}
-            </Disclosure>
-          ) : null}
+          {projects
+            .filter((project) => selected.includes(sprintProjectKey(project)))
+            .map((project) => {
+              const key = sprintProjectKey(project);
+              return (
+                <div className="sprint-project-budget" key={key}>
+                  <span>{projectLabel(project)}</span>
+                  <NumberField
+                    label={t("Capacity for {p0}", { p0: project.name })}
+                    hideLabel
+                    min={0}
+                    step={1}
+                    value={budgets[key] ?? ""}
+                    onChange={(event) =>
+                      setBudgets((value) => ({ ...value, [key]: event.currentTarget.value }))
+                    }
+                    disabled={busy}
+                  />
+                </div>
+              );
+            })}
         </Disclosure>
         {error ? <InlineError>{error}</InlineError> : null}
       </form>

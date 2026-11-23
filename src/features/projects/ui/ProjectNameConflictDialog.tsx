@@ -1,4 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -9,8 +8,8 @@ import { Alert } from "../../../shared/ui/Alert";
 type Props = {
   /** The name both projects would show. */
   name: string;
-  /** Location of the project being named, shown so it is clear which one it is. */
-  path: string;
+  /** Accepted for callers that still pass it; the dialog no longer displays the path. */
+  path?: string;
   /** Already applied to the project; cancelling keeps it. */
   suggested: string;
   /** Why a name cannot be used, or null. */
@@ -22,7 +21,6 @@ type Props = {
 /** Asks for another name for a project added under a name the rail already shows. */
 export function ProjectNameConflictDialog({
   name,
-  path,
   suggested,
   validate,
   onConfirm,
@@ -68,9 +66,6 @@ export function ProjectNameConflictDialog({
         }}
         className="flex flex-col gap-3 pt-2 pb-4"
       >
-        <Text wrap="anywhere" as="p" size="micro" tone="muted" leading="tight">
-          {path}
-        </Text>
         <TextField
           label={t("Project name")}
           ref={input}

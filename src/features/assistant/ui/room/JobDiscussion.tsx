@@ -143,35 +143,43 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
           />
         </ScrollArea>
       )}
-      {c.error && (
+      {c.error ? (
         <InlineError
           retry={{ label: t("Check conversation"), onRetry: () => void c.checkConversation() }}
         >
           {c.error}
         </InlineError>
+      ) : (
+        c.draftSaveError && (
+          <InlineError retry={{ label: t("Recover draft"), onRetry: () => c.openDraftRecovery() }}>
+            {t("The draft could not be saved.")}
+          </InlineError>
+        )
       )}
-      {c.draftSaveError && (
-        <InlineError retry={{ label: t("Recover draft"), onRetry: () => c.openDraftRecovery() }}>
-          {t("The draft could not be saved.")}
-        </InlineError>
+      {c.supported ? (
+        <AssistantChatComposer
+          label={t("Discuss a job")}
+          placeholder={t("What should this job achieve?")}
+          value={draft}
+          pending={c.pending}
+          disabled={!c.threadVisible(c.threadId)}
+          readOnly={!ready}
+          sendDisabled={c.clearing || !!c.requestKey.current[c.threadId]}
+          onValueChange={(value) => {
+            if (room.isAppQuitting()) return;
+            const saved = c.nativeDrafts.current.get(c.threadId);
+            if (native && saved && saved.environmentId === room.environmentId)
+              saved.desired = value;
+            c.draftsRef.current = { ...c.draftsRef.current, [c.threadId]: value };
+            c.setDrafts((current) => ({ ...current, [c.threadId]: value }));
+          }}
+          onSend={() => void c.send().catch(fail)}
+        />
+      ) : (
+        <Text size="caption" tone="secondary">
+          {t("Conversation replies are unavailable on this Host.")}
+        </Text>
       )}
-      <AssistantChatComposer
-        label={t("Discuss a job")}
-        placeholder={t("What should this job achieve?")}
-        value={draft}
-        pending={c.pending}
-        disabled={!c.threadVisible(c.threadId)}
-        readOnly={!ready}
-        sendDisabled={!c.supported || c.clearing || !!c.requestKey.current[c.threadId]}
-        onValueChange={(value) => {
-          if (room.isAppQuitting()) return;
-          const saved = c.nativeDrafts.current.get(c.threadId);
-          if (native && saved && saved.environmentId === room.environmentId) saved.desired = value;
-          c.draftsRef.current = { ...c.draftsRef.current, [c.threadId]: value };
-          c.setDrafts((current) => ({ ...current, [c.threadId]: value }));
-        }}
-        onSend={() => void c.send().catch(fail)}
-      />
       {!!c.visible.length && (
         <div className={styles.discussionActions}>
           <Button
@@ -203,11 +211,6 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
             </Button>
           )}
         </div>
-      )}
-      {!c.supported && (
-        <Text size="caption" tone="secondary">
-          {t("Conversation replies are unavailable on this Host.")}
-        </Text>
       )}
       <ConversationDraftRecovery c={c} />
     </section>

@@ -25,9 +25,9 @@ export function ProviderDecisionModels() {
       data-setting-id="decision-models"
       tabIndex={-1}
       aria-label={t("Decision models")}
-      className="flex min-w-0 flex-col gap-4"
+      className="settings-topics"
     >
-      <SettingsHostPicker scope={scope} />
+      {scope.options.length > 1 || scope.missing ? <SettingsHostPicker scope={scope} /> : null}
       {/* Only a connected machine reaches the editor; any other state is reported instead. */}
       {host ? (
         <HostDecisionModels key={host.id} host={host} remote={!local} />

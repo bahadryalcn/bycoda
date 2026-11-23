@@ -82,16 +82,11 @@ export function CrewEditorAddFooter({
   adding: boolean;
   onAdd: () => void;
 }) {
-  const { mode, newMember, issues } = additions;
+  const { mode, newMember } = additions;
   const { livePicked } = liveAdditions(data, additions);
   return (
     <>
       <div role="status" className="flex min-w-0 flex-col gap-0.5">
-        {mode === "new" && issues && (!newMember.name.trim() || !newMember.candidates.length) ? (
-          <Text tone="danger" className="min-w-0 break-words">
-            {t("Every member needs a name and a model.")}
-          </Text>
-        ) : null}
         {mode === "library" && livePicked.length ? (
           // The picker names the picks and what its filter hides; the add keeps every pick.
           <Text className="min-w-0 break-words">

@@ -269,33 +269,34 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
       )}
       <Disclosure size="sm" summary={t("Related work")}>
         <div className={styles.related}>
+          {(!props.onReviewJobTasks || !onOpenSession) && (job.goalId || job.sessionIds.length > 0) && (
+            <Text as="p" leading="inherit" className={styles.muted}>
+              {t("Open this job on its own computer")}
+            </Text>
+          )}
           {job.goalId && (
             <div>
               <Button
                 variant="link"
+                title={job.goalId}
                 disabled={!props.onReviewJobTasks || !!pending}
-                disabledReason={
-                  props.onReviewJobTasks ? undefined : t("Open this job on its own computer")
-                }
                 loading={pending?.key === `tasks:${job.id}`}
                 onClick={() => reviewJobTasks(job)}
               >
                 {t("Epic: {p0}", { p0: job.title })}
-              </Button>{" "}
-              <Code>{job.goalId}</Code>
+              </Button>
             </div>
           )}
           {job.sessionIds.map((id, index) => (
             <div key={id}>
               <Button
                 variant="link"
+                title={id}
                 disabled={!onOpenSession}
-                disabledReason={onOpenSession ? undefined : t("Open this job on its own computer")}
                 onClick={() => onOpenSession?.(id)}
               >
                 {t("Worker session {p0}", { p0: index + 1 })}
-              </Button>{" "}
-              <Code>{id}</Code>
+              </Button>
             </div>
           ))}
           {job.taskIds.length > 0 && (

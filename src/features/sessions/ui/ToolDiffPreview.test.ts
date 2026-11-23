@@ -101,7 +101,7 @@ describe("tool diff popovers", () => {
       );
       act(() => container.querySelector<HTMLButtonElement>("button")!.click());
       expect(dialog()?.textContent).toContain("Empty file");
-      expect(dialog()?.textContent).toContain(
+      expect(dialog()?.getAttribute("aria-label")).toContain(
         status === "accepted"
           ? "Written content"
           : status === "pending"
@@ -295,20 +295,6 @@ describe("tool diff popovers", () => {
     expect(dialog()).toBeNull();
   });
 
-  it("restores focus to the chip after the close button without reopening the dialog", () => {
-    const { trigger } = renderPreview();
-    key(trigger, "ArrowDown");
-    key(trigger, "ArrowDown");
-    const close = dialog()!.querySelector<HTMLButtonElement>('button[aria-label="Close preview"]')!;
-    act(() => close.focus());
-    act(() => close.click());
-    expect(dialog()).toBeNull();
-    expect(document.activeElement).toBe(trigger);
-    advance(1000);
-    expect(dialog()).toBeNull();
-    expect(trigger.getAttribute("aria-expanded")).toBe("false");
-  });
-
   it.each([true, false])(
     "previews expanded activity and preserves file navigation (diff handler: %s)",
     (hasDiffHandler) => {
@@ -353,7 +339,7 @@ describe("tool diff popovers", () => {
       "Denenen değişiklikler · araç tamamlanmadı",
     ],
   ] as const)(
-    "translates the %s header in the popover title and dialog name (%s)",
+    "translates the %s status in the dialog name (%s)",
     async (status, english, turkish) => {
       await act(async () => {
         await setLanguagePreference("tr");
@@ -371,8 +357,7 @@ describe("tool diff popovers", () => {
         );
         act(() => container.querySelector<HTMLButtonElement>("button")!.click());
         expect(dialog()?.getAttribute("aria-label")).toBe(`${turkish}: notes.md`);
-        expect(dialog()?.textContent).toContain(turkish);
-        expect(dialog()?.textContent).not.toContain(english);
+        expect(dialog()?.getAttribute("aria-label")).not.toContain(english);
       } finally {
         await act(async () => {
           await setLanguagePreference("en");

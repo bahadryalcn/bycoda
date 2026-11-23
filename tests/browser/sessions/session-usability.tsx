@@ -173,14 +173,23 @@ if (new URLSearchParams(location.search).has("controlDialogs")) {
   );
 }
 
-if (new URLSearchParams(location.search).has("reviewFixture")) {
+const reviewFixture = new URLSearchParams(location.search).get("reviewFixture");
+let checkpointReads = 0;
+const checkpointDirectories: string[] = [];
+if (reviewFixture !== null) {
   mockIPC(
-    (command) => {
-      if (command === "session_checkpoint_status")
+    (command, args) => {
+      if (command === "session_checkpoint_status") {
+        checkpointReads++;
+        const cwd = (args as { cwd: string }).cwd;
+        checkpointDirectories.push(cwd);
+        if (reviewFixture === "scratch-missing") throw new Error("ENOENT: scratch is missing");
+        if (reviewFixture === "worktree-busy" && checkpointReads === 1)
+          throw new Error("Workspace checkpoint is still recording this turn");
         return {
           files: [
             {
-              path: "/fixture/src/example.ts",
+              path: `${cwd}/src/example.ts`,
               relative: "src/example.ts",
               status: "modified",
               additions: 7,
@@ -190,6 +199,7 @@ if (new URLSearchParams(location.search).has("reviewFixture")) {
             },
           ],
         };
+      }
       if (command.startsWith("plugin:event|")) return null;
       throw new Error(`Unavailable in review fixture: ${command}`);
     },
@@ -271,9 +281,14 @@ const baseBlocks: Block[] = [
   },
 ];
 const initial: Session = {
-  ...newSession("claude", machineFixture === "projectless" ? "~" : "/fixture", modelId),
+  ...newSession(
+    "claude",
+    machineFixture === "projectless" || reviewFixture?.startsWith("scratch-") ? "~" : "/fixture",
+    modelId,
+  ),
   id: sessionId,
   title: "Integrated usability conversation with a long project title",
+  ...(reviewFixture === "worktree-busy" ? { worktreeCwd: "/fixture-worktree" } : {}),
   blocks: machineFixture
     ? []
     : historyFixture
@@ -305,7 +320,18 @@ setComposerAttachments(sessionId, [
     data: btoa("context"),
   },
 ]);
-const events = { sends: 0, stops: 0, approvals: 0, queueAttempts: 0, historyPages: 0, machine: "" };
+const events = {
+  sends: 0,
+  stops: 0,
+  approvals: 0,
+  queueAttempts: 0,
+  historyPages: 0,
+  machine: "",
+  get checkpointReads() {
+    return checkpointReads;
+  },
+  checkpointDirectories,
+};
 // The real pane resolves approval identity from the canonical session store.
 setSessions([initial]);
 type Mode = "idle" | "working" | "approval" | "unknown" | "tools" | "long";

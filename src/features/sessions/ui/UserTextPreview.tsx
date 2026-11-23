@@ -110,9 +110,6 @@ function TextCard({
               <UserMessageMarkdown text={excerpt} />
             </div>
           )}
-          <Text size="caption" tone="secondary" className="mt-1.5 block">
-            {t("Show full content ↗")}
-          </Text>
         </div>
       </div>
       {open ? (

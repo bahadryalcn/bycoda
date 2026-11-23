@@ -4,8 +4,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 16px;
-  padding-block: 10px;
+  gap: var(--ui-space-2) var(--ui-space-4);
+  padding-block: var(--ui-space-3);
   min-inline-size: 0;
 }
 .rowText {
@@ -23,8 +23,8 @@
 /* Settings page: status and error lines sit between rows with row padding, and collapse while empty. */
 .notices {
   display: grid;
-  gap: 4px;
-  padding: 8px 16px;
+  gap: var(--ui-space-1);
+  padding: var(--ui-space-2) var(--ui-space-4);
   min-inline-size: 0;
   --surface-frame-stacked: 1;
 }
@@ -36,13 +36,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  padding: 10px 16px;
-}
-.footerAction > p {
-  flex: 1 1 14rem;
-  margin: 0;
+  justify-content: flex-end;
+  gap: var(--ui-space-2) var(--ui-space-4);
+  padding: var(--ui-space-3) var(--ui-space-4);
 }
 
 /* The project picker fills its stacked row instead of shrinking to its value. */

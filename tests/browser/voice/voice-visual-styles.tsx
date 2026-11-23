@@ -314,9 +314,14 @@ createRoot(document.getElementById("root")!).render(
       />
     </main>
   ) : params.has("setup-wizard") ? (
-    <AssistantSetup voice onClose={() => {}} />
+    <VoiceSetupFixture />
   ) : (
     <FixtureCompanion />
   ),
 );
 Object.assign(window, { fixtureVoice });
+
+function VoiceSetupFixture() {
+  const [open, setOpen] = useState(true);
+  return open ? <AssistantSetup voice onClose={() => setOpen(false)} /> : null;
+}

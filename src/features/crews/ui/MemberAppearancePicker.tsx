@@ -1,4 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Button } from "../../../shared/ui/Button";
@@ -126,19 +125,15 @@ export function MemberAppearancePicker({
           />
           <Switch
             label={t("Glasses")}
-            labelPosition="start"
             checked={traits.glasses}
             onCheckedChange={(on) => set({ glasses: on })}
-            className="justify-between self-end"
+            className="self-end"
           />
           <div
             role="group"
             aria-label={t("Colors")}
             className="col-span-full flex flex-wrap items-center gap-1"
           >
-            <Text size="body" tone="inherit" className="me-1">
-              {t("Colors")}
-            </Text>
             {Array.from({ length: AVATAR_PALETTE_COUNT }, (_, palette) => (
               <Button
                 key={palette}

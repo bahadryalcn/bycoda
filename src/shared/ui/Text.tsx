@@ -71,8 +71,8 @@ export type TextRoles = {
   weight?: "regular" | "medium";
   leading?: TextLeading;
   truncate?: boolean;
-  /** Keep words intact; `anywhere` also breaks long identifiers when needed. */
-  wrap?: "normal" | "anywhere";
+  /** Keep words intact, break long identifiers, or preserve input line breaks. */
+  wrap?: "normal" | "anywhere" | "preserve-lines";
   tracking?: TextTracking;
   /** Underline only when pointer hovers this text. */
   hoverUnderline?: boolean;
@@ -131,8 +131,8 @@ export type TextProps = Omit<ComponentPropsWithRef<"span">, "ref"> & {
    * inside a flex or grid row. Needs a block box: a flex or grid item, or `as="div"` / `as="p"`.
    */
   truncate?: boolean;
-  /** Wrap prose at words, with `anywhere` as an emergency break for long identifiers. */
-  wrap?: "normal" | "anywhere";
+  /** Preserve input line breaks or wrap at words; truncation takes precedence over wrapping. */
+  wrap?: TextRoles["wrap"];
   /**
    * Letter spacing; `normal` resets inherited tracking. Unset keeps the surrounding spacing. `tight` -0.025em, `wide` 0.025em,
    * `wider` 0.08em.
@@ -182,8 +182,8 @@ export function Text({
   return (
     <Tag
       {...props}
-      data-lines={lines || undefined}
-      style={lines ? ({ ...style, "--clamp-lines": lines } as CSSProperties) : style}
+      data-lines={(!truncate && lines) || undefined}
+      style={!truncate && lines ? ({ ...style, "--clamp-lines": lines } as CSSProperties) : style}
       ref={ref as Ref<HTMLSpanElement>}
       {...textAttributes(
         { size, tone, weight, leading, truncate, wrap, tracking, hoverUnderline },
@@ -237,7 +237,7 @@ export function textAttributes(
     "data-weight": weight,
     "data-leading": leading,
     "data-truncate": truncate || undefined,
-    "data-wrap": wrap,
+    "data-wrap": truncate ? undefined : wrap,
     className: [styles.text, className].filter(Boolean).join(" "),
   };
 }

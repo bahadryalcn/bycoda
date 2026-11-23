@@ -25,9 +25,10 @@ it("opens each destination and refreshes without reloading the app", async () =>
     document.body.append(host);
     expect(
       [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
-    ).toEqual(["Refresh current view", "Sounds", "Full screen", "More"]);
+    ).toEqual(["More"]);
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click());
     const refreshButton = () =>
-      host.querySelector<HTMLButtonElement>('button[aria-label="Refresh current view"]')!;
+      document.querySelector<HTMLButtonElement>('[role^="menuitem"][aria-label="Refresh current view"]')!;
     await act(async () => refreshButton().click());
     expect(reload).toHaveBeenCalledOnce();
     expect(document.body.textContent).not.toContain("Manage hidden groups");
@@ -87,22 +88,24 @@ it("persists the sound toggle, follows Settings changes and retains state on fai
   const host = document.createElement("div");
   const root = createRoot(host);
   try {
+    document.body.append(host);
     await act(async () => root.render(createElement(WorkspaceControls, {})));
-    const button = host.querySelector<HTMLButtonElement>('[data-workspace-control="sounds"]')!;
-    expect(button.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-workspace-control="more"]')!.click());
+    const button = document.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"][aria-label="Sounds"]')!;
+    expect(button.getAttribute("aria-checked")).toBe("true");
     await act(async () => button.click());
     expect(loadSoundsEnabled()).toBe(false);
-    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(button.getAttribute("aria-checked")).toBe("false");
     await act(async () => {
       saveSoundsEnabled(true);
     });
-    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(button.getAttribute("aria-checked")).toBe("true");
     const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
       throw new Error("Storage unavailable");
     });
     await act(async () => button.click());
     expect(loadSoundsEnabled()).toBe(true);
-    expect(button.getAttribute("aria-pressed")).toBe("true");
+    expect(button.getAttribute("aria-checked")).toBe("true");
     expect(document.body.textContent).toContain("Could not save changes");
     write.mockRestore();
     const retry = [...document.body.querySelectorAll("button")].find(
@@ -110,10 +113,11 @@ it("persists the sound toggle, follows Settings changes and retains state on fai
     )!;
     await act(async () => retry.click());
     expect(loadSoundsEnabled()).toBe(false);
-    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(button.getAttribute("aria-checked")).toBe("false");
   } finally {
     vi.restoreAllMocks();
     await act(async () => root.unmount());
+    host.remove();
     localStorage.clear();
   }
 });

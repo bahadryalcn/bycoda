@@ -3,7 +3,6 @@ import { useT } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { ChevronRight } from "../../../shared/ui/icons";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Text } from "../../../shared/ui/Text";
 import type { DockAgent } from "../model/activityDock";
@@ -56,7 +55,7 @@ export function NestedSubagentList({
                   .join(", "),
               })}
               onClick={() => open(agent.sessionId)}
-              className="w-full min-w-0 items-center gap-2 text-left"
+              className="w-full min-w-0 items-center gap-2 text-start"
             >
               <span className="flex min-w-0 flex-1 flex-col">
                 <Text size="inherit" weight="medium" truncate>
@@ -77,7 +76,6 @@ export function NestedSubagentList({
                   {statusWord[agent.status]}
                 </Text>
               )}
-              <ChevronRight className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
             </Button>
           </li>
         ))}

@@ -106,10 +106,7 @@ it("fills the draft with the researched rules at once, without asking a model", 
   expect(rulePlan).toHaveBeenCalledWith([candidate], names);
   expect(edits).toHaveLength(1);
   expect(applySmartSetup).toHaveBeenCalledWith(expect.anything(), [candidate], plan);
-  expect(toast.show).toHaveBeenCalledWith({
-    tone: "info",
-    message: "Setup draft ready. Review it, then save.",
-  });
+  expect(toast.show).not.toHaveBeenCalled();
   expect(primary(container).getAttribute("aria-busy")).not.toBe("true");
 });
 
@@ -152,10 +149,7 @@ it("plans with localized names from the split menu, applies once and names the p
   });
   expect(edits).toHaveLength(1);
   expect(applySmartSetup).toHaveBeenCalledWith(expect.anything(), [candidate], plan);
-  expect(toast.show).toHaveBeenCalledWith({
-    tone: "info",
-    message: "Sol planned the setup. Review it, then save.",
-  });
+  expect(toast.show).not.toHaveBeenCalled();
 });
 
 it("warns when no model could plan and the rules were used instead", async () => {

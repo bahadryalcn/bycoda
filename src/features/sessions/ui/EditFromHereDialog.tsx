@@ -77,13 +77,11 @@ export function EditFromHereDialog({
           <Text as="p" size="body" tone="inherit">
             {unavailable}
           </Text>
-        ) : (
+        ) : revertFiles ? (
           <Text as="p" size="body" tone="inherit">
-            {revertFiles
-              ? t("Files to revert: {p0}", { p0: reverting })
-              : t("Your files stay as they are.")}
+            {t("Files to revert: {p0}", { p0: reverting })}
           </Text>
-        )}
+        ) : null}
         {revertFiles && !unavailable && conflicts.length ? (
           <div className="flex min-w-0 flex-col gap-1">
             <InlineMessage tone="warning" live="off">

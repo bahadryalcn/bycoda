@@ -76,9 +76,7 @@ it("browses a Windows build folder outside projects and keeps its files out of t
     throw new Error("Not a directory");
   });
   await render("[Installer](C:/Users/alice/.bycoda-build/packages/bycoda.exe)");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
-  );
+  await revealFromMenu();
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
   expect(actions.browseDirectory).toHaveBeenCalledWith(`${directory}/bycoda.exe`, true);
   expect(dialog.textContent).toContain(directory);
@@ -120,9 +118,7 @@ it("does not navigate above a remote Windows drive root", async () => {
 it("reports a failed folder request without guessing a different parent", async () => {
   actions.browseDirectory.mockRejectedValue(new Error("The machine disconnected"));
   await render("[Summary](/repo/assets/özet.md)");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
-  );
+  await revealFromMenu();
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(document.querySelector('[role="alert"]')!.textContent).toContain(
     "The machine disconnected",
@@ -144,6 +140,18 @@ async function render(text: string) {
       }),
     ),
   );
+}
+/** Opens the file link's context menu and picks the in-app "Open containing folder" action. */
+async function revealFromMenu() {
+  await act(async () =>
+    container
+      .querySelector("a")!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+  );
+  const reveal = [
+    ...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]'),
+  ].find((item) => item.textContent?.startsWith("Open containing folder in "))!;
+  await act(async () => reveal.click());
 }
 it("recognizes existing bare and relative folders while leaving protocol methods as code", async () => {
   await render("`assets/images` and `currentTime/read` and `assets` and `someVariable`");
@@ -169,11 +177,9 @@ it("browses remote folders and opens their files at exact paths", async () => {
   });
   expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
-it("opens a remote file's containing folder from its visible icon", async () => {
+it("opens a remote file's containing folder from the context menu", async () => {
   await render("[Summary](/repo/assets/özet.md)");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
-  );
+  await revealFromMenu();
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
   expect(dialog.textContent).toContain("remote://env/repo/assets");
   const folder = [...dialog.querySelectorAll("button")].find(

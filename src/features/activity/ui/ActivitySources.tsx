@@ -57,7 +57,7 @@ export function ActivitySources({ overview }: { overview: ActivityOverview }) {
           ]}
         />
       ) : null}
-      {overview.canChooseScope && overview.source === "cloud" ? null : (
+      {overview.canChooseScope ? null : (
         <Text as="p" size="secondary" tone="muted">
           {activitySourceNote(overview)}
         </Text>

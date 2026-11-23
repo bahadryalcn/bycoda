@@ -1,7 +1,6 @@
 import { memo } from "react";
 import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { Pause } from "../../../shared/ui/icons";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { claimAutoContinue } from "../model/autoContinue";
 import { canAutoContinue } from "../model/inFlight";
@@ -41,7 +40,6 @@ export const InterruptedNotice = memo(function InterruptedNotice({
     <InlineMessage
       data-interrupted-turn
       tone="warning"
-      icon={<Pause className="icon-sm" aria-hidden />}
       action={{
         label: t("Continue"),
         disabled: !!blockedReason,
@@ -53,7 +51,6 @@ export const InterruptedNotice = memo(function InterruptedNotice({
         },
       }}
     >
-      <strong>{t("Interrupted")} </strong>
       {message
         ? t(message)
         : t("This turn was cut off when {p0} quit.", { p0: PRODUCT_IDENTITY.displayName })}

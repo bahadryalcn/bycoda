@@ -2,7 +2,6 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -60,6 +59,8 @@ export function InboxScopeCollection({
     (item) => !needle || `${item.title} ${item.meta ?? ""}`.toLocaleLowerCase().includes(needle),
   );
   const selectedCount = items.filter((item) => selected.has(item.id)).length;
+  const selectedMatchingCount = matching.filter((item) => selected.has(item.id)).length;
+  const allMatching = matching.length > 0 && selectedMatchingCount === matching.length;
   const select = (ids: readonly string[], on: boolean) => {
     const next = new Set(selected);
     for (const id of ids) {
@@ -80,34 +81,20 @@ export function InboxScopeCollection({
         label={searchLabel}
         query={query}
         onQueryChange={setQuery}
-        count={summary(selectedCount, items.length)}
+        count={needle ? summary(selectedCount, items.length) : undefined}
       >
-        <Button
-          variant="ghost"
-          size="sm"
+        <Checkbox
+          label={needle ? t("Select all shown") : t("Select all")}
+          checked={allMatching}
+          indeterminate={selectedMatchingCount > 0 && !allMatching}
           disabled={disabled || matching.length === 0}
-          onClick={() =>
+          onChange={(event) =>
             select(
               matching.map((item) => item.id),
-              true,
+              event.target.checked,
             )
           }
-        >
-          {query.trim() ? t("Select all shown") : t("Select all")}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={disabled || matching.length === 0}
-          onClick={() =>
-            select(
-              matching.map((item) => item.id),
-              false,
-            )
-          }
-        >
-          {query.trim() ? t("Clear shown selection") : t("Clear")}
-        </Button>
+        />
         {actions}
       </CollectionToolbar>
       <ScrollArea

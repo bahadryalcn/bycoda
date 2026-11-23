@@ -198,10 +198,7 @@ it("locks every permission while the Host is offline", () => {
   for (const node of save) expect(node.disabled).toBe(true);
 });
 
-it("states that access does not approve a send", () => {
+it("keeps the card free of a loose help button", () => {
   render(vi.fn());
-  act(() => element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click());
-  expect(document.body.textContent).toContain(
-    "Access applies only to this account and can be revoked here. Sending still requires the autonomy level below.",
-  );
+  expect(element.querySelector('button[aria-label="Help"]')).toBeNull();
 });

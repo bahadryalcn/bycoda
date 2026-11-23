@@ -5,7 +5,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
-import { Check, CloudUpload } from "../../../shared/ui/icons";
+import { Check, CloudUpload, EyeOff, Pencil } from "../../../shared/ui/icons";
 import type { SkillEntry, SkillMachine, SkillPresence } from "../model/skillLibrary";
 import styles from "./SkillsPage.module.css";
 
@@ -134,23 +134,22 @@ export function SkillRow({
           >
             {entry.name}
           </Text>
-          {modified ? (
-            <Tooltip label={t("Draft")} asChild>
-              <span>·</span>
-            </Tooltip>
-          ) : null}
         </Button>
       </Tooltip>
+      {/* Marks are icons with a reason, not text tags; the name button's label announces both. */}
+      {modified ? (
+        <Tooltip label={t("Draft")} asChild>
+          <Text as="span" size="inherit" tone="secondary" className="flex-none" aria-hidden="true">
+            <Pencil className="icon-xs" />
+          </Text>
+        </Tooltip>
+      ) : null}
       {off ? (
-        <Text
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          className={styles.offLabel}
-          aria-hidden="true"
-        >
-          {t("Off")}
-        </Text>
+        <Tooltip label={t("Off")} asChild>
+          <Text as="span" size="inherit" tone="secondary" className="flex-none" aria-hidden="true">
+            <EyeOff className="icon-xs" />
+          </Text>
+        </Tooltip>
       ) : null}
       {cells?.map((cell) => {
         const key = cell.machine?.environmentId ?? "local";

@@ -4,7 +4,6 @@ import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { useT } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Popover } from "../../../../shared/ui/Popover";
-import { Text } from "../../../../shared/ui/Text";
 import { toast } from "../../../../shared/ui/ToastRegion";
 import { LOCAL_MODEL_SOURCE, useModelSource } from "../../../sessions/public/modelSource";
 import type { OrderDraft } from "../../model/modelRoutingDraft";
@@ -81,11 +80,8 @@ export function SmartSetupAction({
     }
     if (controller.signal.aborted) return;
     setRunning(false);
-    if (apply(result, failure))
-      toast.show({
-        tone: "info",
-        message: t("Setup draft ready. Review it, then save."),
-      });
+    // The edited draft, its dirty marks and the Save bar already say the draft is ready.
+    apply(result, failure);
   }
   async function runAi() {
     const controller = new AbortController();
@@ -103,33 +99,27 @@ export function SmartSetupAction({
     }
     if (controller.signal.aborted) return;
     setRunning(false);
-    if (!apply(result, failure) || !result) return;
-    toast.show(
-      result.plannedBy
-        ? {
-            tone: "info",
-            message: t("{p0} planned the setup. Review it, then save.", { p0: result.plannedBy }),
-          }
-        : {
-            tone: "warning",
-            message: result.failure
-              ? t(
-                  "{p0} could not plan the setup ({p1}), so the researched benefit-per-cost ranking was used. Review it, then save.",
-                  {
-                    p0: result.failure.planner,
-                    p1:
-                      result.failure.reason === "timeout"
-                        ? t("it timed out")
-                        : result.failure.reason === "unreadable"
-                          ? t("its answer could not be read")
-                          : (result.failure.detail ?? t("it failed")),
-                  },
-                )
-              : t(
-                  "No model could plan the setup, so the researched benefit-per-cost ranking was used. Review it, then save.",
-                ),
-          },
-    );
+    if (!apply(result, failure) || !result || result.plannedBy) return;
+    // Only a fallback to the rules is news; a planned draft is shown by the draft itself.
+    toast.show({
+      tone: "warning",
+      message: result.failure
+        ? t(
+            "{p0} could not plan the setup ({p1}), so the researched benefit-per-cost ranking was used. Review it, then save.",
+            {
+              p0: result.failure.planner,
+              p1:
+                result.failure.reason === "timeout"
+                  ? t("it timed out")
+                  : result.failure.reason === "unreadable"
+                    ? t("its answer could not be read")
+                    : (result.failure.detail ?? t("it failed")),
+            },
+          )
+        : t(
+            "No model could plan the setup, so the researched benefit-per-cost ranking was used. Review it, then save.",
+          ),
+    });
   }
   return (
     <>
@@ -177,14 +167,6 @@ export function SmartSetupAction({
           >
             {t("Plan setup with AI")}
           </Button>
-          <Text as="p" size="secondary" tone="secondary">
-            {t(
-              "Adds models used by groups and the best fallback in each tier for every account. Strong models at a moderate price come first, then cheaper capable models and top-priced models. Groups set reasoning effort for their jobs, up to High. Also sets subagents and the advisor.",
-            )}
-          </Text>
-          <Text as="p" size="caption" tone="secondary">
-            {t("Prices and scores: OpenRouter, Artificial Analysis.")}
-          </Text>
         </Popover>
       ) : null}
     </>

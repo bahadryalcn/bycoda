@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { AssistantQuickAutomationAction } from "../../../shared/model/assistantQuickAutomation";
 import { t } from "../../../shared/i18n";
 import { formatDate } from "../../../shared/i18n/core";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -119,7 +120,7 @@ export function AssistantQuickAutomationFields({
         </div>
         <FieldGroup legend={t("Automation schedule")} className={styles.scheduleField}>
           {value.scheduleKind === "once" && value.runAt !== undefined ? (
-            <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
+            <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.muted}>
               {t("Runs once on {p0}, then turns itself off.", {
                 p0: formatDate(value.runAt, { dateStyle: "full", timeStyle: "short" }),
               })}
@@ -168,25 +169,33 @@ export function AssistantQuickAutomationFields({
             </div>
           )}
         </FieldGroup>
-        <div className={styles.fieldRow}>
-          <Numeric
-            label={t("Run time limit (minutes)")}
-            value={value.maxRunMinutes}
-            max={10080}
-            onChange={(maxRunMinutes) => update({ maxRunMinutes })}
-          />
-          <Numeric
-            label={t("Runs per day")}
-            value={value.maxRunsPerDay}
-            max={1000}
-            onChange={(maxRunsPerDay) => update({ maxRunsPerDay })}
-          />
-        </div>
-        <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
-          {t(
-            "Zero uses the default run time limit in Models and no daily run limit. Automation limits are independent of the assistant token budget.",
-          )}
-        </Text>
+        {/* Limits default to zero (Models default, no daily cap); only an owner who set one sees it open. */}
+        <Disclosure
+          summary={t("Limits")}
+          size="sm"
+          tone="secondary"
+          defaultOpen={value.maxRunMinutes > 0 || value.maxRunsPerDay > 0}
+        >
+          <div className={styles.fieldRow}>
+            <Numeric
+              label={t("Run time limit (minutes)")}
+              value={value.maxRunMinutes}
+              max={10080}
+              onChange={(maxRunMinutes) => update({ maxRunMinutes })}
+            />
+            <Numeric
+              label={t("Runs per day")}
+              value={value.maxRunsPerDay}
+              max={1000}
+              onChange={(maxRunsPerDay) => update({ maxRunsPerDay })}
+            />
+          </div>
+          <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.muted}>
+            {t(
+              "Zero uses the default run time limit in Models and no daily run limit. Automation limits are independent of the assistant token budget.",
+            )}
+          </Text>
+        </Disclosure>
         <div className={styles.fieldRow}>
           <Switch
             label={t("Isolate each run in a worktree")}

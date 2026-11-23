@@ -153,12 +153,11 @@ async function render(props: { active?: boolean; machines?: RemoteMachine[] } = 
   );
 }
 
-it("lists each computer's devices with this desktop marked and revoke only for others", async () => {
+it("lists each computer's devices and offers revoke only for the others", async () => {
   await render();
   expect(devices.loadPairedDevices).toHaveBeenCalledWith(local);
   expect(devices.loadPairedDevices).toHaveBeenCalledWith(remote);
   expect(container.textContent).toContain("Pixel 9");
-  expect(container.textContent).toContain("This desktop");
   expect(container.textContent).toContain("Active");
   expect(buttons().filter((entry) => entry.textContent?.trim() === "Revoke")).toHaveLength(1);
   expect(container.textContent).toContain("Update the host on Home Mac to see its devices.");
@@ -289,7 +288,7 @@ it("refreshes the devices when the paired dialog is closed", async () => {
   expect(devices.loadPairedDevices.mock.calls.length).toBeGreaterThan(before);
 });
 
-it("turns local network access off only after confirmation and shows the network hint", async () => {
+it("turns local network access off at once and shows the network hint", async () => {
   api.access.mockResolvedValue({
     mode: "lan",
     state: "ready",
@@ -302,7 +301,5 @@ it("turns local network access off only after confirmation and shows the network
     '[role="switch"][aria-label="Local network access"]',
   )!;
   await act(async () => toggle.click());
-  expect(api.disable).not.toHaveBeenCalled();
-  await click("Turn off local network access", document.body);
   expect(api.disable).toHaveBeenCalledWith(local);
 });

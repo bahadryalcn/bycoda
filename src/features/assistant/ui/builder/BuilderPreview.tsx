@@ -75,6 +75,8 @@ export function BuilderPreview({
                     )
                   ) : (
                     <Text size="inherit" tone="secondary" className={styles.change}>
+                      <span>{entry.before}</span>
+                      <span aria-hidden="true">→</span>
                       <Text
                         as="strong"
                         size="inherit"
@@ -84,11 +86,6 @@ export function BuilderPreview({
                       >
                         {entry.after}
                       </Text>
-                      {entry.before === "—" ? (
-                        <span>{t("was empty")}</span>
-                      ) : (
-                        <span>{t("was {p0}", { p0: entry.before })}</span>
-                      )}
                     </Text>
                   )
                 }
@@ -141,16 +138,11 @@ export function BuilderPreview({
         <ModalActions
           reason={nothing ? t("Select a change to apply") : undefined}
           start={
-            <>
-              <Text size="caption" tone="secondary" leading="inherit">
-                {t("Permissions are not changed")}
-              </Text>
-              <InfoPopover label={t("About permissions")}>
-                {t(
-                  "Permissions stay manual: jobs and autonomy, execution access, projects and computer use are not changed here.",
-                )}
-              </InfoPopover>
-            </>
+            <InfoPopover label={t("Permissions")}>
+              {t(
+                "Permissions stay manual: jobs and autonomy, execution access, projects and computer use are not changed here.",
+              )}
+            </InfoPopover>
           }
         >
           <Button
@@ -166,7 +158,6 @@ export function BuilderPreview({
             type="button"
             startIcon={<Check className="icon-sm" />}
             disabled={nothing}
-            disabledReason={nothing ? t("Select a change to apply") : undefined}
             onClick={() =>
               onApply(
                 builderPatch(entries, checked, {

@@ -12,6 +12,7 @@ import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMen
 import { IS_MAC } from "../../platform/tauri/platform";
 import { WindowControls, toggleWindowMaximize } from "./WindowControls";
 import { Toast } from "../../shared/ui/ToastRegion";
+import { Copy } from "../../shared/ui/icons";
 
 type Props = { agents: LiveAgent[]; onSelectAgent: (id: string) => void };
 
@@ -65,6 +66,14 @@ const barTone = {
   waiting: "secondary",
   done: "muted",
 } as const satisfies Record<DetachedBarStatus, string>;
+
+function agentTone(agent: LiveAgent) {
+  if (agent.issue === "retrying") return "warning";
+  if (agent.issue === "failed") return barTone.failed;
+  if (agent.done) return barTone.done;
+  if (agent.needsApproval) return barTone.needsInput;
+  return agent.waiting ? barTone.waiting : barTone.working;
+}
 
 export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
   const t = useT();
@@ -126,31 +135,18 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
     window.addEventListener("pointercancel", end);
     window.addEventListener("blur", cleanup);
   };
-  const menuItems: DropdownMenuItem[] = agents.map((agent) => ({
-    kind: "item",
-    id: agent.id,
-    label: detachedAgentTitle(agent.title, t("Untitled session")),
-    description: t(agent.ownerWindowLabel ? "{p0} · Other window" : "{p0} · This window", {
-      p0: detachedAgentStatus(agent, t),
-    }),
-    icon: (
-      <StatusDot
-        tone={
-          agent.issue === "failed"
-            ? "danger"
-            : agent.issue === "retrying"
-              ? "warning"
-              : agent.done
-                ? "muted"
-                : agent.needsApproval
-                  ? "warning"
-                  : agent.waiting
-                    ? "secondary"
-                    : "accent"
-        }
-      />
-    ),
-  }));
+  const menuItems: DropdownMenuItem[] = agents.map((agent) => {
+    const title = detachedAgentTitle(agent.title, t("Untitled session"));
+    const state = detachedAgentStatus(agent, t);
+    return {
+      kind: "item",
+      id: agent.id,
+      label: [title, state, agent.ownerWindowLabel && t("Other window")].filter(Boolean).join(" · "),
+      content: title,
+      trailing: agent.ownerWindowLabel ? <Copy className="icon-sm" aria-hidden /> : undefined,
+      icon: <StatusDot tone={agentTone(agent)} />,
+    };
+  });
 
   return (
     <div
@@ -168,19 +164,15 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         `flex h-8 min-w-0 shrink-0 select-none items-center gap-2 [padding-inline-start:0.75rem] ${dragging ? "cursor-grabbing" : "cursor-grab"}`,
       )}
     >
-      <Text size="micro" tone="secondary">
-        {detachedBarStatusLabel(status, t)}
-      </Text>
-      <Button
+      {count > 0 ? <Button
         variant="ghost"
         motion="none"
         ref={trigger}
         type="button"
         data-tauri-drag-region="false"
-        aria-label={t("Working sessions: {p0}", { p0: summary })}
+        aria-label={`${summary} · ${detachedBarStatusLabel(status, t)}`}
         aria-haspopup="menu"
         expanded={open}
-        disabled={!count}
         onClick={() => setOpen((value) => !value)}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -188,13 +180,12 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
             setOpen(true);
           }
         }}
-        className="flex max-w-56 items-center gap-2"
       >
         <StatusDot tone={barTone[status]} />
         <Text size="inherit" tone="inherit" truncate>
-          {summary}
+          {formatNumber(count)}
         </Text>
-      </Button>
+      </Button> : null}
       <div className="min-w-4 flex-1 self-stretch" aria-hidden="true" />
       {!IS_MAC ? <WindowControls /> : null}
       {windowError ? (

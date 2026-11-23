@@ -54,9 +54,9 @@ export function CrewCoordinatorSession({
     if (managed.role !== "coordinator") return;
     if (
       !(await confirm({
-        title: t("Stop work"),
-        message: t("Stop work and cancel running assignments"),
-        confirmLabel: t("Stop work"),
+        title: t("Stop work?"),
+        message: t("Running assignments will be cancelled."),
+        confirmLabel: t("Stop"),
       }))
     )
       return;
@@ -101,15 +101,16 @@ export function CrewCoordinatorSession({
         );
     };
   }, [target.cwd, target.machineId, target.projectId, target.sessionId, revision, load]);
-  if (error)
-    return (
+  const errorNotice = error ? (
       <Alert
         tone="danger"
         action={{
           label: t("Retry"),
           onClick: () => {
             setError(undefined);
-            setRevision(revision + 1);
+            if (error.action === "stop" && session)
+              void stop(session.id).catch((reason: unknown) => setError({ reason, action: "stop" }));
+            else setRevision(revision + 1);
           },
         }}
       >
@@ -120,11 +121,12 @@ export function CrewCoordinatorSession({
             : t("Could not open this conversation."),
         )}
       </Alert>
-    );
-  if (!loaded || !session) return <LoadingText>{t("Loading session…")}</LoadingText>;
+    ) : null;
+  if (!loaded || !session) return errorNotice ?? <LoadingText>{t("Loading session…")}</LoadingText>;
   return (
     <>
       {dialog}
+      {errorNotice}
       <SessionPane
         {...paneProps}
         onStop={(sessionId) => {

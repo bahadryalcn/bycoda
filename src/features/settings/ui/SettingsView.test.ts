@@ -543,20 +543,16 @@ describe("settings pages", () => {
     expect(settingsSectionForAnchor("chat", "unknown-anchor")).toBe("chat");
     expect(settingsSectionForAnchor(undefined, "chat-width")).toBe("chat");
     expect(settingsSectionForAnchor("appearance")).toBe("appearance");
-    expect(SETTINGS_SECTIONS.find((entry) => entry.id === "groupLock")?.group).toBe("app");
+    expect(SETTINGS_SECTIONS.find((entry) => entry.id === "groupLock")?.group).toBe("privacy");
   });
 
   it("opens the bundled application policies from the settings navigation", async () => {
-    await render("policies");
+    await render("policies", { anchor: "privacy-policy" });
     expect(container.querySelectorAll(".policy-document")).toHaveLength(1);
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>("#setting-privacy-policy")!.click(),
-    );
     expect(document.body.textContent).toContain("What bycoda collects, and what it does not");
     expect(document.body.textContent).toContain("info@bycoda.codes");
-    for (const entry of SETTINGS_INDEX.filter((item) => item.section === "policies")) {
-      expect(container.querySelector(`[data-setting-id="${entry.id}"]`)).not.toBeNull();
-    }
+    expect(container.querySelector('[data-setting-id="policy-language"]')).not.toBeNull();
+    expect(container.querySelector('[data-setting-id="privacy-policy"]')).not.toBeNull();
     const contact = document.querySelector<HTMLAnchorElement>(
       'a[href="mailto:info@bycoda.codes"]',
     )!;
@@ -572,17 +568,13 @@ describe("settings pages", () => {
 
   it("keeps application and developer contacts distinct in About", async () => {
     vi.mocked(openUrl).mockReset().mockResolvedValue(undefined);
-    await render("general");
+    await render("policies");
     const website = productLink("bycoda.codes");
     const contact = productLink("info@bycoda.codes");
     const developerContact = productLink("info@bahadrhllyalcn.com");
     expect(contact.closest(".settings-row")?.textContent).toContain("Contact");
     expect(developerContact.closest(".settings-row")?.textContent).toContain("Developer contact");
-    const openWebsite = website
-      .closest(".settings-row")!
-      .querySelector<HTMLButtonElement>('button[aria-label="Open website"]')!;
-    expect(openWebsite).toBeTruthy();
-    await act(async () => openWebsite.click());
+    await act(async () => website.click());
     expect(openUrl).toHaveBeenLastCalledWith("https://bycoda.codes");
     await act(async () => contact.click());
     expect(openUrl).toHaveBeenLastCalledWith("mailto:info@bycoda.codes");
@@ -599,7 +591,7 @@ describe("settings pages", () => {
       .mockReset()
       .mockImplementationOnce(() => opening)
       .mockResolvedValue(undefined);
-    await render("general");
+    await render("policies");
     const website = productLink(PRODUCT_IDENTITY.websiteUrl.replace("https://", ""));
     const contact = productLink(PRODUCT_IDENTITY.contactEmail);
     const websiteRow = website.closest(".settings-row")!;
@@ -639,7 +631,7 @@ describe("settings pages", () => {
       .spyOn(clipboard, "copyText")
       .mockRejectedValueOnce(new Error("Clipboard unavailable"))
       .mockResolvedValue(undefined);
-    await render("general");
+    await render("policies");
     const contact = productLink(PRODUCT_IDENTITY.contactEmail);
     const row = contact.closest(".settings-row")!;
     await act(async () => contact.click());
@@ -1761,7 +1753,7 @@ describe("settings pages", () => {
     await render(section);
     if (section === "skills") {
       await act(async () =>
-        container.querySelector<HTMLButtonElement>('button[aria-label="More"]')!.click(),
+        container.querySelector<HTMLButtonElement>('button[aria-label="New"]')!.click(),
       );
       await act(async () =>
         [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')]

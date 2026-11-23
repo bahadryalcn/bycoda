@@ -40,11 +40,11 @@
 .automation-content {
   min-inline-size: 0;
   inline-size: 100%;
-  padding: 16px 24px 24px;
+  padding: var(--ui-space-4, 1rem) var(--ui-space-6, 1.5rem) var(--ui-space-6, 1.5rem);
 }
 @container (max-width: 540px) {
   .automation-content {
-    padding: 12px 12px 20px;
+    padding: var(--ui-space-3, 0.75rem) var(--ui-space-3, 0.75rem) var(--ui-space-5, 1.25rem);
   }
 }
 
@@ -56,16 +56,7 @@
 .automation-gallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
-  gap: 8px;
-}
-.automation-template {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  min-inline-size: 0;
-  block-size: 100%;
-  white-space: normal;
-  text-align: start;
+  gap: var(--ui-space-2, 0.5rem);
 }
 .automation-template-search {
   inline-size: min(100%, 16rem);
@@ -75,14 +66,12 @@
 .automation-scroll {
   container: automation-editor / size;
 }
-.automation-editor-header {
-}
 .automation-editor-grid {
   max-inline-size: 72rem;
   margin-inline: auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
+  gap: var(--ui-space-6, 1.5rem);
   align-items: start;
 }
 .automation-editor-grid > *,
@@ -91,11 +80,11 @@
 }
 .automation-editor-side {
   display: grid;
-  gap: 20px;
+  gap: var(--ui-space-5, 1.25rem);
 }
 @container automation-editor (min-width: 46rem) {
   .automation-editor-grid {
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-    gap: 32px;
+    gap: var(--ui-space-8, 2rem);
   }
 }

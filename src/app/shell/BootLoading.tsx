@@ -1,6 +1,5 @@
 import { useDelayedVisible } from "../../shared/hooks/useDelayedVisible";
 import { useT } from "../../shared/i18n";
-import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import { Button } from "../../shared/ui/Button";
 import { LiveText } from "../../shared/ui/LiveText";
 
@@ -17,7 +16,7 @@ function bootLogoSrc(): string {
 
 /**
  * First React frame under the HTML splash: the same centred mark on the themed canvas, nothing else.
- * Name, status and Retry appear below it only when the wait is slow, so the logo never moves.
+ * Status and Reload appear below it only when the wait is slow, so the logo never moves.
  */
 export function BootLoading({ onRetry }: { onRetry: () => void }) {
   const t = useT();
@@ -27,10 +26,9 @@ export function BootLoading({ onRetry }: { onRetry: () => void }) {
       <img src={bootLogoSrc()} alt="" aria-hidden="true" width={72} height={72} draggable={false} />
       {slow ? (
         <div className="bycoda-boot-loading-details">
-          <strong>{PRODUCT_IDENTITY.displayName}</strong>
           <LiveText text={t("Restoring your workspace and saved drafts…")} />
           <Button motion="none" onClick={onRetry}>
-            {t("Retry loading")}
+            {t("Reload")}
           </Button>
         </div>
       ) : null}

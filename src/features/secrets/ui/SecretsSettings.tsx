@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useT } from "../../../shared/i18n";
 import { formatArchiveDate } from "../../../shared/i18n/format";
 import { Button } from "../../../shared/ui/Button";
@@ -41,7 +41,6 @@ function OwnerSecretsInventory({ hostId, scope }: { hostId: string; scope: Setti
   const client = useMemo(() => secretsClient(hostId), [hostId]);
   const { state, reload } = useOwnerSecrets(client);
   const { confirm, dialog } = useConfirm();
-  const [failed, setFailed] = useState(false);
   const groups = useMemo(
     () =>
       state.status === "ready" ? groupSecretsByProject(state.secrets, state.projectNames) : [],
@@ -58,18 +57,14 @@ function OwnerSecretsInventory({ hostId, scope }: { hostId: string; scope: Setti
       confirmLabel: t("Remove"),
       pendingLabel: t("Removing…"),
       onConfirm: async () => {
-        setFailed(false);
         try {
           await client.revoke(secret.secretRef);
         } catch {
-          setFailed(true);
-          // Confirmation errors are visible; never render a credential RPC payload.
+          // The dialog stays open and shows this once; never render a credential RPC payload.
           throw new Error(t("Could not remove the secret."));
         }
       },
     });
-    // The dialog already reported a failure; a closed or cancelled dialog leaves no banner behind.
-    setFailed(false);
     if (removed) reload();
   };
 
@@ -96,9 +91,6 @@ function OwnerSecretsInventory({ hostId, scope }: { hostId: string; scope: Setti
     );
   return (
     <div className="flex flex-col gap-4">
-      {failed ? (
-        <SettingsFeedback state="error">{t("Could not remove the secret.")}</SettingsFeedback>
-      ) : null}
       {groups.map((group) => (
         <Group key={group.projectId} title={group.title}>
           {group.secrets.map((secret) => (

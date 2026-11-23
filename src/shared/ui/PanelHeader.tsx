@@ -74,7 +74,6 @@ export function PanelHeader({
           iconOnly
           size="sm"
           label={closeLabel ?? t("Close")}
-          tooltip={closeLabel ?? t("Close")}
           variant="ghost"
           onClick={onClose}
           disabled={closeDisabled}

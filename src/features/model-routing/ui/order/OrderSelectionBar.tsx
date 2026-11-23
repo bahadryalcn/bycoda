@@ -101,8 +101,14 @@ export function OrderSelectionBar({
         }))}
         onPick={onAddToGroup}
       />
-      <Button size="sm" variant="ghost" startIcon={<X className="icon-sm" />} onClick={onClear}>
-        {t("Clear selection")}
+      <Button
+        iconOnly
+        size="sm"
+        variant="ghost"
+        label={t("Clear selection")}
+        onClick={onClear}
+      >
+        <X className="icon-sm" />
       </Button>
     </div>
   );

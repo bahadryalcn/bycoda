@@ -205,7 +205,7 @@ describe("detached working header", () => {
 
   it("does not offer an empty picker or drag on a secondary mouse button", () => {
     render([]);
-    expect(container.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")!.disabled).toBe(true);
+    expect(container.querySelector("[aria-haspopup=menu]")).toBeNull();
     const bar = container.querySelector("[data-detached-working-bar]")!;
     pointer(bar, "pointerdown", 10, 10, 2);
     pointer(window, "pointermove", 30, 10);
@@ -215,22 +215,22 @@ describe("detached working header", () => {
 
   it("captions the bar with the aggregate state of finished and failed sessions", () => {
     render([agent("one", { done: true }), agent("two", { done: true, issue: "failed" })]);
-    expect(container.querySelector("[data-detached-working-bar] > span")!.textContent).toBe(
-      "Failed",
-    );
+    expect(container.querySelector("[aria-haspopup=menu]")?.getAttribute("aria-label")).toContain("Failed");
     render([agent("one", { done: true })]);
-    expect(container.querySelector("[data-detached-working-bar] > span")!.textContent).toBe("Done");
+    expect(container.querySelector("[aria-haspopup=menu]")?.getAttribute("aria-label")).toContain("Done");
   });
 
-  it("composes each row description from one translated status template", () => {
+  it("marks other-window sessions without repeating their status in visible copy", () => {
     render([
       agent("one", { needsApproval: true }),
       agent("two", { done: true, ownerWindowLabel: "window-2" }),
     ]);
     act(() => container.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")!.click());
     const items = container.querySelectorAll<HTMLButtonElement>("[role=menuitem]");
-    expect(items[0].textContent).toContain("Needs input · This window");
-    expect(items[1].textContent).toContain("Done · Other window");
+    expect(items[0].getAttribute("aria-label")).toContain("Needs input");
+    expect(items[0].getAttribute("aria-label")).not.toContain("Other window");
+    expect(items[1].getAttribute("aria-label")).toContain("Other window");
+    expect(items[1].textContent).not.toContain("Other window");
   });
 });
 

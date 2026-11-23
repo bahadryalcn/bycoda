@@ -1,4 +1,4 @@
-import { Text } from "../../../shared/ui/Text";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -358,10 +358,8 @@ function PlanSurface({
 
   if (!block || !plan) {
     return (
-      <div className="grid h-full place-items-center p-6 text-center">
-        <Text role="status" as="p" size="secondary" tone="secondary">
-          {t("This plan is no longer in the session.")}
-        </Text>
+      <div className="grid h-full place-items-center p-4">
+        <EmptyState title={t("This plan is no longer in the session.")} />
       </div>
     );
   }
@@ -405,13 +403,11 @@ function PlanSurface({
             <Button
               size="sm"
               variant="ghost"
-              motion="none"
-              type="button"
+              startIcon={<Play className="icon-sm" />}
               disabled={buildDisabled}
               loading={block.plan?.status === "building"}
               onClick={() => onBuildPlan(plan.sessionId, block.id)}
             >
-              <Play className="icon-sm" />
               {buildLabel}
             </Button>
             {session && !remote ? (

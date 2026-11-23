@@ -121,9 +121,10 @@ it("lists every address with its kind, source, whether it responds and the one i
   expect(row("100.97.82.0")).toContain("No response");
   expect(row("192.168.2.145")).toContain("Home network · Other address");
   expect(row("192.168.2.145")).toContain("In use");
-  expect(row("192.168.2.145")).toContain("Responds");
+  // Only problems and the address in use carry a badge; a healthy or switched-off row stays quiet.
+  expect(row("192.168.2.145")).not.toContain("Responds");
   expect(row("10.0.0.4")).toContain("Found by the host");
-  expect(row("192.168.95.2")).toContain("Off");
+  expect(row("192.168.95.2")).not.toContain("Off");
   // Only addresses the host found can be turned off; the owner edits the other two.
   expect(container.querySelectorAll('[role="switch"]')).toHaveLength(2);
   expect(container.querySelector('[data-route="192.168.2.145"] [role="switch"]')).toBeNull();

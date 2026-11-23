@@ -37,7 +37,7 @@ const native: MachineCandidate = {
 const onAdd = vi.fn();
 const onPaired = vi.fn();
 
-async function render(candidates: MachineCandidate[] | "missing", query = "") {
+async function render(candidates: MachineCandidate[] | "missing") {
   vi.mocked(invoke).mockImplementation(async (command) => {
     if (command === "discover_machine_candidates" && candidates !== "missing") return candidates;
     throw new Error("unknown command");
@@ -48,7 +48,6 @@ async function render(candidates: MachineCandidate[] | "missing", query = "") {
         saved: [],
         active: true,
         busy: false,
-        query,
         onAdd,
         onPaired,
       }),
@@ -191,22 +190,28 @@ const many = Array.from({ length: 7 }, (_, index) => ({
   routes: [{ address: `box-${index}.lan`, kind: "name" as const }],
 }));
 
-it("shows five found machines until Show all, and every match while searching", async () => {
+it("shows every found machine, and a search field only for a long list", async () => {
   account.state = { phase: "signed-out" };
   vi.mocked(listOtherComputers).mockResolvedValue([]);
+  await render(many.slice(0, 3));
+  expect(container.querySelector("input")).toBeNull();
   await render(many);
-  expect(container.textContent).toContain("box-4");
-  expect(container.textContent).not.toContain("box-5");
-  const showAll = [...container.querySelectorAll("button")].find((b) =>
-    b.textContent?.startsWith("Show all"),
-  )!;
-  await act(async () => showAll.click());
+  expect(container.textContent).toContain("box-0");
   expect(container.textContent).toContain("box-6");
+  const search = container.querySelector<HTMLInputElement>("input")!;
+  const type = async (value: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        search,
+        value,
+      );
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
 
-  await render(many, "BOX-6.LAN");
+  await type("BOX-6.LAN");
   expect(container.textContent).toContain("box-6");
   expect(container.textContent).not.toContain("box-0");
 
-  await render(many, "nothing-like-this");
+  await type("nothing-like-this");
   expect(container.textContent).toContain("No matches");
 });

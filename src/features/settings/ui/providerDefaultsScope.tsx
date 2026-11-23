@@ -102,12 +102,7 @@ export function ProjectAccountChoice({
   const fallback = accounts.find((account) => account.isDefault) ?? accounts[0];
   const missing = value && !accounts.some((account) => account.id === value);
   return (
-    <Row
-      label={t("Account")}
-      description={t(
-        "New chats here start on this account and follow its defaults below. Chats only.",
-      )}
-    >
+    <Row label={t("Account")}>
       <Select
         hideLabel
         label={t("{p0} account for this project", {

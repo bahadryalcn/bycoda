@@ -430,8 +430,10 @@ it("does not claim the helper's own model when the preview fails or is slow", as
   const roles = { "text.title": { kind: "order" } } as const;
   mocks.resolve.mockRejectedValue(new Error("offline"));
   await render(<Groups initial={draftOf({ entries: [entry], roles })} />);
-  const failed = rowOf("Title").textContent;
-  expect(failed).toContain("Current model could not be checked.");
+  const failed = container.textContent!;
+  // One list notice speaks for every failed job instead of a line on each row.
+  expect(failed.split("Current model could not be checked.")).toHaveLength(2);
+  expect(rowOf("Title").textContent).not.toContain("could not be checked");
   expect(failed).not.toContain("helper's own model selection");
 
   // A Host slower than the old 500 ms deadline still gets to answer.

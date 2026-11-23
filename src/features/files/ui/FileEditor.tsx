@@ -1588,14 +1588,11 @@ export function FileEditor({
             iconOnly
             label={t(REVEAL_LABEL)}
             variant="ghost"
-            motion="none"
-            type="button"
             onClick={() =>
               void revealInFileManager(path).catch((error: unknown) =>
                 setChromeError(String(error)),
               )
             }
-            aria-label={t(REVEAL_LABEL)}
           >
             <Folder className="icon-sm" />
           </Button>
@@ -1604,17 +1601,14 @@ export function FileEditor({
           <Button
             size="sm"
             variant="ghost"
-            motion="none"
-            type="button"
             disabled={openingChrome || isRemoteProjectPath(path)}
-            loading={openingChrome}
-            onClick={() => void goLive()}
-            tooltip={
+            disabledReason={
               isRemoteProjectPath(path)
                 ? t("Open in Chrome is available for local HTML files.")
-                : t("Save and open this HTML file in Google Chrome")
+                : undefined
             }
-            className="shrink-0"
+            loading={openingChrome}
+            onClick={() => void goLive()}
           >
             {t("Open in Chrome")}
           </Button>

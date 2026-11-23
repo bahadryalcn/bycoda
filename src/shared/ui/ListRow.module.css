@@ -14,7 +14,7 @@
 @layer components {
   .row {
     --list-row-height: var(--ui-control-height-sm);
-    --list-row-inset: 0.5rem;
+    --list-row-inset: var(--ui-list-gutter, 0.5rem);
     position: relative;
     display: flex;
     box-sizing: border-box;

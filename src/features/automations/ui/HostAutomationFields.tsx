@@ -8,6 +8,8 @@ import { NumberField } from "../../../shared/ui/NumberField";
 
 import { Alert } from "../../../shared/ui/Alert";
 
+import { describeRemoteError } from "../../connections/public/remoteFailure";
+
 import { machineCapabilities } from "../model/machineSnapshot";
 
 import { backgroundMachineFor } from "../model/hostAutomationClient";
@@ -50,15 +52,15 @@ export function HostAutomationFields({
 
   return (
     <div className="grid min-w-0 gap-3">
-      <SearchableSelect
-        label={t("Machine")}
-        value={machine?.id ?? ""}
-        disabled={!!draft.id || !!draft.cwd}
-
-        options={machines.map((entry) => ({ value: entry.id, label: entry.name }))}
-
-        onChange={(hostMachineId) => onChange({ ...draft, hostMachineId })}
-      />
+      {/* With one machine, or one fixed by the project or the stored automation, there is nothing to choose. */}
+      {machines.length > 1 && !draft.id && !draft.cwd ? (
+        <SearchableSelect
+          label={t("Machine")}
+          value={machine?.id ?? ""}
+          options={machines.map((entry) => ({ value: entry.id, label: entry.name }))}
+          onChange={(hostMachineId) => onChange({ ...draft, hostMachineId })}
+        />
+      ) : null}
 
       <SearchableSelect
         label={t("Scope")}
@@ -120,9 +122,12 @@ export function HostAutomationFields({
           label={t("Event")}
           value={draft.hostTrigger.event}
 
-          options={["task.finished", "task.blocked", "session.waiting", "automation.failed"].map(
-            (value) => ({ value, label: value }),
-          )}
+          options={[
+            { value: "task.finished", label: t("Task finished") },
+            { value: "task.blocked", label: t("Task blocked") },
+            { value: "session.waiting", label: t("Session waiting") },
+            { value: "automation.failed", label: t("Automation failed") },
+          ]}
 
           onChange={(event) =>
             onChange({
@@ -140,7 +145,9 @@ export function HostAutomationFields({
         />
       ) : null}
 
-      {query.error ? <Alert tone="warning">{String(query.error)}</Alert> : null}
+      {query.error ? (
+        <Alert tone="warning">{describeRemoteError(query.error).message}</Alert>
+      ) : null}
     </div>
   );
 }

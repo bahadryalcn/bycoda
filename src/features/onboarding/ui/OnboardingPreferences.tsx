@@ -7,7 +7,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { lazy, Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Check, CircleDashed, CodeBlock } from "../../../shared/ui/icons";
+import { CircleDashed } from "../../../shared/ui/icons";
 import { ModePreview, type Tint } from "../../settings/ui/AppearancePreviews";
 import { RadioTiles } from "../../settings/ui/RadioTiles";
 import { CANVAS_BACKGROUND_DEFAULT } from "../../settings/model/appearancePreferences";
@@ -143,24 +143,6 @@ export function OnboardingWorkspace() {
       />
       <div className="onboarding-scroll">
         <div className="onboarding-feature-grid">
-          <div
-            {...surfaceAttributes({ frame: "card", radius: "card" }, "onboarding-feature")}
-            data-fixed=""
-          >
-            <CodeBlock aria-hidden tone="muted" className="icon-lg" />
-            <div>
-              <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
-                {t("Coding essentials")}
-              </Text>
-              <Text as="small" size="micro" tone="muted" leading="snug">
-                {t("AI chat, files, terminal and Git")}
-              </Text>
-            </div>
-            <Text size="micro" tone="muted" leading="inherit" className="onboarding-included">
-              <Check aria-hidden className="icon-sm" />
-              {t("Included")}
-            </Text>
-          </div>
           {WORKSPACE_FEATURE_CHOICES.map(({ id, label, description, icon: Icon }) => (
             <Checkbox
               key={id}
@@ -189,9 +171,6 @@ export function OnboardingWorkspace() {
               }
             />
           ))}
-        </div>
-        {/* A system preference, not a workspace tool: its own section, apart from the feature cards. */}
-        <Section title={t("System")}>
           <SwitchRow
             label={t("Prevent sleep while agents work")}
             checked={keepAwake}
@@ -200,20 +179,20 @@ export function OnboardingWorkspace() {
             }}
             disabled={powerPending}
           />
-          {powerFailed !== null ? (
-            <SettingsFeedback
-              state="error"
-              action={{
-                label: t("Retry"),
-                onClick: () => {
-                  void savePower(powerFailed).catch(console.error);
-                },
-              }}
-            >
-              {t("Could not save changes")}
-            </SettingsFeedback>
-          ) : null}
-        </Section>
+        </div>
+        {powerFailed !== null ? (
+          <SettingsFeedback
+            state="error"
+            action={{
+              label: t("Retry"),
+              onClick: () => {
+                void savePower(powerFailed).catch(console.error);
+              },
+            }}
+          >
+            {t("Could not save changes")}
+          </SettingsFeedback>
+        ) : null}
       </div>
     </>
   );
@@ -243,19 +222,16 @@ export function OnboardingAppearance() {
   const crewChoices: {
     value: CrewTheme | "none";
     title: string;
-    caption: string;
     detail?: string;
   }[] = [
     {
       value: "classic",
       title: t("Uncles"),
-      caption: t("Code art"),
       detail: t("The original tea crew, drawn in monochrome code art."),
     },
     {
       value: "star-wars",
       title: t("Star Wars"),
-      caption: t("Galaxy crew"),
       detail: t(
         "Obi-Wan leads, Yoda advises; Darth Vader, Luke, Leia and Chewbacca join as subagents. R2-D2 joins when the crew grows beyond six.",
       ),
@@ -263,7 +239,6 @@ export function OnboardingAppearance() {
     {
       value: "lotr",
       title: t("The Lord of the Rings"),
-      caption: t("Fellowship crew"),
       detail: t(
         "Gandalf leads, Sauron advises; a Nazgûl, an Elf, a Dwarf and a Hobbit join as subagents. Orcs arrive when more than six subagents work.",
       ),
@@ -271,10 +246,9 @@ export function OnboardingAppearance() {
     {
       value: "matrix",
       title: t("The Matrix"),
-      caption: t("Zion crew"),
       detail: t("Neo leads, Morpheus advises, and every subagent is another Agent Smith."),
     },
-    { value: "none", title: t("No crew"), caption: t("Keep the workspace quiet") },
+    { value: "none", title: t("No crew") },
   ];
   const crewDetail = crewChoices.find((choice) => choice.value === crew)?.detail;
   return (
@@ -339,7 +313,7 @@ export function OnboardingAppearance() {
                 saveCrewSceneEnabled(true);
               }
             }}
-            options={crewChoices.map(({ value, title, caption }) => ({
+            options={crewChoices.map(({ value, title }) => ({
               value,
               id: `onboarding-crew-${value}`,
               data: CHOICE_FRAME_DATA,
@@ -369,9 +343,6 @@ export function OnboardingAppearance() {
                       leading="inherit"
                     >
                       {title}
-                    </Text>
-                    <Text as="small" size="micro" tone="muted" leading="normal">
-                      {caption}
                     </Text>
                   </span>
                 </>

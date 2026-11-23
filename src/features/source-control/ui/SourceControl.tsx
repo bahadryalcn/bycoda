@@ -1,5 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { HarnessId } from "../../sessions";
 import type { GitFileDiffKind, GitHistoryCommit } from "../../../platform/tauri/fs";
 import { GitChangesPanel } from "./GitChangesPanel";
@@ -11,8 +9,7 @@ import { pathKey } from "../../../shared/lib/paths";
 import { useWorktreeFocus } from "../model/worktreeFocus";
 import { isListedWorktree } from "../model/worktreeRows";
 import type { Worktree } from "../model/worktrees";
-import { Button } from "../../../shared/ui/Button";
-import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { MachineGate } from "../../connections/public/MachineUnavailable";
 import { peekDiffIndex } from "../hooks/useDiffIndex";
@@ -70,32 +67,16 @@ function SourceControlContent({
   const connectionShownCentrally = useConnectionErrorShownCentrally(error);
   const discoveryNotice =
     error && !connectionShownCentrally && !/not a git repository/i.test(error) ? (
-      <Text
-        as="div"
-        size="caption"
-        tone="inherit"
-        {...surfaceAttributes(
-          { frame: "pane", edge: "bottom" },
-          "flex shrink-0 flex-wrap items-center gap-x-2 px-2 py-0.5",
-        )}
+      <InlineError
+        inset="row"
+        className="shrink-0"
+        details={error}
+        retry={{ onRetry: () => void refresh(), pending: loading, disabled: !enabled, label: t("Retry") }}
       >
-        <Text role="status" as="p" size="inherit" tone="secondary" className="min-w-0">
-          {data
-            ? t("Could not refresh worktrees. Showing the last available list.")
-            : `${t("Worktrees")} · ${t("Unavailable")}`}
-        </Text>
-        <ErrorDetails detail={error} />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ms-auto"
-          loading={loading}
-          disabled={!enabled}
-          onClick={() => void refresh()}
-        >
-          {t("Retry")}
-        </Button>
-      </Text>
+        {data
+          ? t("Could not refresh worktrees. Showing the last available list.")
+          : t("Couldn’t load worktrees")}
+      </InlineError>
     ) : null;
   const checkouts = (() => {
     const paths: string[] = [];

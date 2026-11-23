@@ -30,9 +30,7 @@ export function WorkspaceEditorSettings() {
       <Row
         id="auto-save"
         label={t("Autosave")}
-        dependency={t(
-          "Autosave can save existing unsaved changes. Format on save applies to manual and automatic saves.",
-        )}
+        description={t("Turning on autosave can save existing unsaved changes.")}
         feedback={
           autosaveError ? (
             <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
@@ -48,14 +46,13 @@ export function WorkspaceEditorSettings() {
       <Row
         id="format-on-save"
         label={t("Format on save")}
-        dependency={t("Formatting requires a formatter installed in the project.")}
         feedback={
           formatError ? (
             <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
           ) : undefined
         }
         description={t(
-          "Run the project's formatter on supported files before writing. Off keeps the text you typed, including quote style.",
+          "Uses the project's installed formatter for supported files on manual and automatic saves.",
         )}
       >
         <Toggle label={t("Format on save")} on={formatOnSave} onChange={onFormatOnSave} />

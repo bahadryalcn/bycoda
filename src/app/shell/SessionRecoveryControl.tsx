@@ -2,7 +2,7 @@ import { Badge } from "../../shared/ui/Badge";
 import { Button } from "../../shared/ui/Button";
 import { InlineError } from "../../shared/ui/InlineError";
 import { Popover } from "../../shared/ui/Popover";
-import { useConfirm } from "../../shared/ui/ConfirmDialog";
+import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { useT } from "../../shared/i18n";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { RotateCcw } from "../../shared/ui/icons";
@@ -23,7 +23,6 @@ export function SessionRecoveryControl({
   includeFiles?: boolean;
 }) {
   const t = useT();
-  const { confirm, dialog } = useConfirm();
   const anchor = useRef<HTMLButtonElement>(null);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -34,7 +33,7 @@ export function SessionRecoveryControl({
     getRecoverySaveFailure,
     getRecoverySaveFailure,
   );
-  if (!count && !saveFailure && !pending) return null;
+  if (!count && !saveFailure && !clearError && !pending) return null;
 
   const label = includeFiles ? t("Recovered work") : t("Recovered sessions");
   const clearLabel = t("Dismiss recovered sessions");
@@ -49,18 +48,9 @@ export function SessionRecoveryControl({
     pendingRef.current = false;
     setPending(false);
   };
-  const confirmClear = async () => {
+  const clear = async () => {
     if (!onClear || pendingRef.current) return;
     setOptionsOpen(false);
-    const ok = await confirm({
-      title: t("Dismiss recovered sessions?"),
-      message: t(
-        "They leave the recovery list. Their session history is kept and running work is not stopped.",
-      ),
-      confirmLabel: clearLabel,
-      danger: false,
-    });
-    if (!ok || pendingRef.current) return;
     pendingRef.current = true;
     setPending(true);
     setClearError(false);
@@ -93,13 +83,11 @@ export function SessionRecoveryControl({
         motion="none"
         iconOnly
         label={`${label} (${count})`}
-        tooltip={failure}
-        tooltipSide="top"
         aria-haspopup="dialog"
         aria-expanded={canClear || failure ? showOptions : undefined}
         loading={pending}
         onClick={() => {
-          if (failure) setOptionsOpen((open) => !open);
+          if (failure && !count) setOptionsOpen((open) => !open);
           else {
             setOptionsOpen(false);
             onOpen();
@@ -126,7 +114,18 @@ export function SessionRecoveryControl({
           </span>
         ) : null}
       </Button>
-      {showOptions ? (
+      {showOptions && !failure && canClear ? (
+        <DropdownMenu
+          anchor={anchor}
+          label={label}
+          side="top"
+          align="end"
+          items={[{ kind: "item", id: "dismiss", label: clearLabel }]}
+          onClose={() => setOptionsOpen(false)}
+          onPick={() => void clear().catch(console.error)}
+        />
+      ) : null}
+      {showOptions && failure ? (
         <Popover
           anchor={anchor}
           kind="dialog"
@@ -135,37 +134,16 @@ export function SessionRecoveryControl({
           align="end"
           onDismiss={() => setOptionsOpen(false)}
         >
-          <div className="flex flex-col gap-2">
-            {failure ? (
-              <InlineError
-                retry={
-                  saveFailure
-                    ? { pending, onRetry: () => void retrySave().catch(console.error) }
-                    : undefined
-                }
-              >
-                {failure}
-              </InlineError>
-            ) : null}
-            {failure && count > 0 ? (
-              <Button
-                onClick={() => {
-                  setOptionsOpen(false);
-                  onOpen();
-                }}
-              >
-                {label}
-              </Button>
-            ) : null}
-            {canClear ? (
-              <Button onClick={() => void confirmClear().catch(console.error)} disabled={pending}>
-                {clearLabel}
-              </Button>
-            ) : null}
-          </div>
+          <InlineError
+            retry={{
+              pending,
+              onRetry: () => void (saveFailure ? retrySave() : clear()).catch(console.error),
+            }}
+          >
+            {failure}
+          </InlineError>
         </Popover>
       ) : null}
-      {dialog}
     </>
   );
 }

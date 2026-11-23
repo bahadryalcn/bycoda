@@ -125,7 +125,7 @@ it("lists the home directory on open without an Open button and keeps symlinks w
     );
     expect(context.host.querySelector('[aria-label="Download file.txt"]')).not.toBeNull();
     expect(context.host.querySelector('[aria-label="Download link"]')).toBeNull();
-    expect(context.host.textContent).toContain("Symlink; not followed");
+    expect(context.host.querySelector('[aria-label="Symlink; not followed"]')).not.toBeNull();
   } finally {
     await context.cleanup();
   }
@@ -171,7 +171,7 @@ it("shows only real observed bytes for the current operation and ignores another
         },
       }),
     );
-    expect(context.host.textContent).toContain("64 / 128");
+    expect(context.host.textContent).toContain("64 B / 128 B");
     await act(async () => finish());
   } finally {
     await context.cleanup();
@@ -213,16 +213,14 @@ it("lists recovery metadata without auto-resume and requires fresh upload replac
   }
 });
 
-it("requires fresh explicit replacement consent before every upload", async () => {
+it("asks for replacement consent only when the remote filename already exists", async () => {
   const context = await setup();
   try {
     await context.list();
+    // A new name uploads without a consent step and never claims consent.
     native.open.mockResolvedValueOnce("C:/chosen.txt");
     await act(async () => context.button("Upload").click());
-    expect(context.button("Upload file").disabled).toBe(true);
-    const checkbox = context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    expect(checkbox.checked).toBe(false);
-    await act(async () => checkbox.click());
+    expect(context.host.querySelector('input[type="checkbox"]')).toBeNull();
     expect(context.button("Upload file").disabled).toBe(false);
     native.invoke.mockResolvedValueOnce(123);
     await act(async () => context.button("Upload file").click());
@@ -232,11 +230,25 @@ it("requires fresh explicit replacement consent before every upload", async () =
         connectionId: "canonical-server",
         localPath: "C:/chosen.txt",
         remotePath: "./chosen.txt",
-        overwriteConfirmed: true,
+        overwriteConfirmed: false,
       }),
     );
-    expect(context.host.textContent).toContain("123");
-    native.open.mockResolvedValueOnce("C:/another.txt");
+    expect(context.host.textContent).toContain("123 B");
+    // An existing name needs fresh explicit consent every time.
+    native.open.mockResolvedValueOnce("C:/file.txt");
+    await act(async () => context.button("Upload").click());
+    expect(context.button("Upload file").disabled).toBe(true);
+    const checkbox = context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.checked).toBe(false);
+    await act(async () => checkbox.click());
+    expect(context.button("Upload file").disabled).toBe(false);
+    native.invoke.mockResolvedValueOnce(5);
+    await act(async () => context.button("Upload file").click());
+    expect(native.invoke).toHaveBeenCalledWith(
+      "ssh_sftp_upload",
+      expect.objectContaining({ remotePath: "./file.txt", overwriteConfirmed: true }),
+    );
+    native.open.mockResolvedValueOnce("C:/file.txt");
     await act(async () => context.button("Upload").click());
     expect(context.host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(
       false,

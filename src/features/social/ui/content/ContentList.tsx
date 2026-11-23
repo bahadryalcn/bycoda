@@ -200,16 +200,10 @@ export function ContentList({
                       >
                         {campaign.name}
                       </Text>
-                      <Text size="caption" tone="muted" truncate>
-                        {campaign.variants
-                          .map((variant) => accountsById.get(variant.accountId)?.name)
-                          .filter(Boolean)
-                          .join(", ")}
-                      </Text>
                       {preview ? (
                         <ClampText
                           as="span"
-                          lines={2}
+                          lines={1}
                           expandable={false}
                           size="caption"
                           tone="secondary"
@@ -243,15 +237,7 @@ export function ContentList({
         <EmptyState
           size="inline"
           kind="filtered"
-          className="content-platform-note"
           description={t("No posts match these filters.")}
-          action={{
-            label: t("Clear filters"),
-            onClick: () => {
-              onAccountFilter("");
-              onStatusFilter("all");
-            },
-          }}
         />
       )}
       {programs.length ? (

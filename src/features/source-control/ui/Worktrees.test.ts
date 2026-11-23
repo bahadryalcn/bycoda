@@ -197,7 +197,6 @@ it("offers branch deletion unchecked by default and disables it for unpushed com
   expect(box.disabled).toBe(true);
   expect(document.body.textContent).toContain("Also delete branch feature");
   expect(document.body.textContent).toContain("It has unpushed commits.");
-  expect(document.body.textContent).toContain("branch and its commits are kept.");
   await act(async () => button("Delete worktree").click());
   expect(onRemove).toHaveBeenCalledExactlyOnceWith("/repo", tree.path, true, false);
 });
@@ -219,7 +218,6 @@ it("passes deleteBranch when the checkbox is checked on a pushed branch", async 
   expect(box.disabled).toBe(false);
   await act(async () => box.click());
   expect(box.checked).toBe(true);
-  expect(document.body.textContent).toContain("branch is deleted if it is fully merged.");
   await act(async () => button("Delete worktree").click());
   expect(onRemove).toHaveBeenCalledExactlyOnceWith("/repo", tree.path, true, false, true);
 });

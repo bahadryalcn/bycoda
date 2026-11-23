@@ -555,3 +555,20 @@ it("exposes row layout props as data attributes and omits the defaults", async (
   expect(tuned.dataset.density).toBe("compact");
   expect(tuned.dataset.feedbackPosition).toBe("start");
 });
+
+it("places a start preview before the controls in DOM order", async () => {
+  await act(async () =>
+    root.render(
+      createElement(Row, {
+        label: "Appearance",
+        feedbackPosition: "start",
+        feedback: createElement("button", null, "Preview"),
+        children: createElement("button", null, "Setting"),
+      }),
+    ),
+  );
+  expect(Array.from(container.querySelectorAll("button"), (button) => button.textContent)).toEqual([
+    "Preview",
+    "Setting",
+  ]);
+});

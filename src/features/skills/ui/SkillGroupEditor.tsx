@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -10,7 +11,7 @@ import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
-import { Pencil, Trash2, X } from "../../../shared/ui/icons";
+import { MoreHorizontal, Pencil, Trash2, X } from "../../../shared/ui/icons";
 import { skillGroupInvocation, type SkillGroup } from "../index";
 import { setSkillGroupMembers } from "../model/skillGroups";
 import type { SkillEntry } from "../model/skillLibrary";
@@ -41,6 +42,8 @@ export function SkillGroupEditor({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<MemberFilter>("all");
   const [error, setError] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const moreTrigger = useRef<HTMLButtonElement>(null);
   const members = new Set(group.skillNames);
   const membership = () => ({
     members: new Set(group.skillNames),
@@ -78,22 +81,37 @@ export function SkillGroupEditor({
             {group.name}
           </Heading>
           <Button
-            variant="ghost"
-            size="sm"
-            startIcon={<Pencil />}
-            onClick={() => onEdit({ kind: "rename", group })}
-          >
-            {t("Rename")}
-          </Button>
-          <Button
+            ref={moreTrigger}
             variant="ghost"
             size="sm"
             iconOnly
-            label={t("Delete group")}
-            onClick={() => onEdit({ kind: "delete", group })}
+            label={t("More")}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(!menuOpen)}
           >
-            <Trash2 className="icon-sm" aria-hidden />
+            <MoreHorizontal className="icon-sm" aria-hidden />
           </Button>
+          {menuOpen ? (
+            <DropdownMenu
+              anchor={moreTrigger}
+              label={t("More")}
+              returnFocusRef={moreTrigger}
+              align="end"
+              onClose={() => setMenuOpen(false)}
+              onPick={(id) => onEdit({ kind: id === "rename" ? "rename" : "delete", group })}
+              items={[
+                { kind: "item", id: "rename", label: t("Rename"), icon: <Pencil className="icon-sm" /> },
+                {
+                  kind: "item",
+                  id: "delete",
+                  label: t("Delete group"),
+                  danger: true,
+                  icon: <Trash2 className="icon-sm" />,
+                },
+              ]}
+            />
+          ) : null}
           <Button variant="ghost" size="sm" iconOnly label={t("Close group")} onClick={onClose}>
             <X className="icon-sm" aria-hidden />
           </Button>
@@ -195,11 +213,7 @@ export function SkillGroupEditor({
           context="list"
           kind="filtered"
           icon={null}
-          description={
-            filter === "members" && !needle
-              ? t("No skills in this group yet. Choose All to add some.")
-              : t("No matching skills")
-          }
+          description={t("No matching skills")}
           onReset={() => {
             setQuery("");
             setFilter("all");

@@ -343,17 +343,6 @@ export function ProvidersPage({
               : t("{p0} CLIs need attention", { p0: attention })
             : t("Up to date");
 
-  const setupProvider = (harness: HarnessId) => {
-    setTab("providers");
-    setSelectedProvider(harness);
-    // The Runtime section holds the CLI path and setup for this provider.
-    requestAnimationFrame(() =>
-      document
-        .getElementById(settingDomId(`cli-path-${harness}`))
-        ?.scrollIntoView?.({ block: "center" }),
-    );
-  };
-
   // A tab holding unsaved changes carries a dot, so switching tabs never hides them.
   const dirtyTabs = new Set<ProvidersTab>(
     pendingSources.flatMap((source) =>
@@ -371,7 +360,7 @@ export function ProvidersPage({
   ];
 
   return (
-    <div className="settings-topics grid min-w-0 gap-4">
+    <div className="settings-topics">
       <Tabs
         value={tab}
         onValueChange={(next) => setTab(next as ProvidersTab)}
@@ -430,22 +419,17 @@ export function ProvidersPage({
                     >
                       {t("Check all")}
                     </Button>
-                    <Button
+                    {pendingUpdates.length ? <Button
                       size="sm"
                       stableWidth
                       onClick={() => {
                         for (const update of pendingUpdates) void runHarnessUpdate(update);
                       }}
-                      variant={pendingUpdates.length ? "primary" : "secondary"}
-                      tone={pendingUpdates.length ? "accent" : "neutral"}
-                      disabled={pendingUpdates.length === 0}
-                      tooltip={pendingUpdates.length === 0 ? t("Nothing to update") : undefined}
+                      variant="primary"
                       startIcon={<ArrowDownCircle aria-hidden />}
                     >
-                      {pendingUpdates.length
-                        ? t("Update all ({p0})", { p0: pendingUpdates.length })
-                        : t("Update all")}
-                    </Button>
+                      {t("Update all ({p0})", { p0: pendingUpdates.length })}
+                    </Button> : null}
                   </div>
                 }
                 feedback={
@@ -490,7 +474,6 @@ export function ProvidersPage({
                 disabled={accountBusy}
                 onSelect={setSelectedProvider}
                 onPickerVisible={onPickerVisible}
-                onSetup={setupProvider}
               />
               <div
                 {...surfaceAttributes(
@@ -515,14 +498,12 @@ export function ProvidersPage({
                             harness={harness}
                             available={isHarnessAvailable(harness)}
                             checkedAt={checkedAt}
-                            onCheck={runCheck}
                             onRowCheck={(check) =>
                               setRowChecks((rows) => [
                                 ...rows.filter((row) => row.check.harness !== check.harness),
                                 { source: sharedChecks, check },
                               ])
                             }
-                            onSetup={() => undefined}
                           />
                         </div>
                       ))}

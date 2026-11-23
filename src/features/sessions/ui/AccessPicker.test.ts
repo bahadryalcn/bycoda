@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { RuntimeMode } from "../model/session";
+import { RUNTIME_MODES, type RuntimeMode } from "../model/session";
 import { setLanguagePreference, t } from "../../../shared/i18n";
 import { AccessPicker } from "./AccessPicker";
 import { runtimeModeCopy } from "./runtimeModeCopy";
@@ -166,11 +166,11 @@ describe("AccessPicker compact trigger", () => {
     return container.querySelector<HTMLButtonElement>("[data-access-picker-trigger]")!;
   }
 
-  it("stays icon-only for the default mode", () => {
-    expect(trigger("supervised").hasAttribute("data-access-picker-compact")).toBe(true);
-  });
-
-  it("names a changed mode instead of showing a bare icon", () => {
-    expect(trigger("full-access").hasAttribute("data-access-picker-compact")).toBe(false);
+  it("stays icon-only and names the current mode for every value", () => {
+    for (const mode of RUNTIME_MODES) {
+      const button = trigger(mode);
+      expect(button.hasAttribute("data-access-picker-compact")).toBe(true);
+      expect(button.getAttribute("aria-label")).toBe(runtimeModeCopy(t, mode).label);
+    }
   });
 });

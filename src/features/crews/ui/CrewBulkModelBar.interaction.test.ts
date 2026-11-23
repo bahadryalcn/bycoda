@@ -42,19 +42,14 @@ it("coalesces rapid Apply clicks and exposes pending feedback", async () => {
       apply.click();
       apply.click();
     });
-    // Several targets ask for confirmation first; rapid clicks open one dialog and apply nothing yet.
-    expect(onApply).not.toHaveBeenCalled();
+    // The edit is reversible, so it applies at once: no dialog, one call for rapid clicks.
+    expect(onApply).toHaveBeenCalledTimes(1);
     expect(apply.getAttribute("aria-busy")).toBe("true");
     expect(apply.closest("fieldset")?.disabled).toBe(true);
-    const confirmApply = [
-      ...document.querySelectorAll<HTMLButtonElement>(
-        '[role="dialog"] button, [role="alertdialog"] button',
-      ),
-    ].find((candidate) => candidate.textContent?.trim() === "Apply")!;
-    await act(async () => confirmApply.click());
-    expect(onApply).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[role="dialog"], [role="alertdialog"]')).toBeNull();
     await act(async () => finish());
-    expect(container.textContent).toContain("Model choice applied.");
+    expect(apply.getAttribute("aria-busy")).not.toBe("true");
+    expect(container.textContent).not.toContain("Model choice applied.");
   } finally {
     await act(async () => root.unmount());
     container.remove();

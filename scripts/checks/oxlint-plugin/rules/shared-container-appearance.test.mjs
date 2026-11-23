@@ -117,3 +117,67 @@ test("shared-container-appearance ignores local components of the same name", (t
   });
   assert.deepEqual(found, []);
 });
+
+test("shared-container-appearance covers aliases, namespaces and control slots", (t) => {
+  const found = lint(t, {
+    "src/features/demo/ui/D.tsx": [
+      'import { Button as Action, Badge } from "../../../shared/ui/Button";', // 1
+      'import * as UI from "../../../shared/ui/Select";', // 2
+      'import { Button } from "./Button";', // 3 local homonym, not shared
+      'const framed = "px-3 bg-surface";', // 4
+      "export const D = () => (", // 5
+      "  <>", // 6
+      '    <Action className="px-3" />', // 7 flagged: alias, padding
+      '    <Action className="w-full min-w-0 ms-auto" />', // 8 allowed: layout only
+      "    <Action className={framed} />", // 9 flagged: resolved local const
+      "    <Action className={unknown} />", // 10 allowed: unresolved
+      '    <Badge className="font-semibold" />', // 11 flagged: typography
+      '    <UI.Select className="rounded-lg" />', // 12 flagged: namespace control
+      '    <UI.Select className="grow" />', // 13 allowed
+      '    <Action style={{ background: "red" }} />', // 14 flagged: paint key
+      '    <Action style={{ marginInlineStart: 8, flex: 1 }} />', // 15 allowed: layout keys
+      '    <Button className="p-9" />', // 16 allowed: local Button
+      "  </>",
+      ");",
+      "",
+    ].join("\n"),
+  });
+  assert.deepEqual(
+    found.map(({ line }) => line),
+    [7, 9, 11, 12, 14],
+  );
+});
+
+test("shared-container-appearance covers overlay props, glass hooks and paint variables", (t) => {
+  const found = lint(t, {
+    "src/features/demo/ui/E.tsx": [
+      'import { Modal } from "../../../shared/ui/Modal";', // 1
+      'import { Sheet } from "../../../shared/ui/Sheet";', // 2
+      'import { Popover } from "../../../shared/ui/Popover";', // 3
+      'import { useHoverCard } from "../../../shared/ui/HoverCard";', // 4
+      "export const E = () => {", // 5
+      '  const card = useHoverCard({ className: "glass" });', // 6 flagged: glass hook
+      '  const fine = useHoverCard({ className: "max-w-80", width: 320 });', // 7 allowed
+      "  return (", // 8
+      "    <>", // 9
+      '      <Modal panelStyle={{ background: "var(--x)" }} />', // 10 flagged: panel paint
+      '      <Modal panelStyle={{ ["--modal-frame"]: "red" }} />', // 11 computed key: skipped
+      '      <Modal panelStyle={{ "--modal-frame": "red" }} />', // 12 flagged: paint variable
+      '      <Modal style={{ boxShadow: "none" }} />', // 13 flagged: shadow key
+      '      <Sheet glassClassName="backdrop-blur-md" />', // 14 flagged: glass slot
+      '      <Sheet bodyClassName="flex-1 min-h-0 overflow-auto" overlayClassName="z-50" />', // 15 allowed
+      '      <Popover className="border-[color:var(--my-frame)]" />', // 16 flagged: custom frame colour
+      '      <Popover className="shadow-lg" />', // 17 flagged: shadow
+      '      <Popover className="[--popover-frame:red] w-64" />', // 18 flagged: arbitrary paint variable
+      "      <Popover style={{ maxHeight: 240, zIndex: 4 }} />", // 19 allowed: geometry
+      "    </>",
+      "  );",
+      "};",
+      "",
+    ].join("\n"),
+  });
+  assert.deepEqual(
+    found.map(({ line }) => line),
+    [6, 10, 12, 13, 14, 16, 17, 18],
+  );
+});

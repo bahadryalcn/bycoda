@@ -192,9 +192,12 @@ export function LiveAgentsPreview({
           {groups.map(({ label, rows }) =>
             rows.length > 0 ? (
               <div key={label} className="min-w-0 shrink-0" data-live-agents-group>
-                <SectionLabel variant="inline" className="block px-1.5 pt-1">
-                  {label}
-                </SectionLabel>
+                {/* One group needs no label: the section title already names it. */}
+                {groups.filter((group) => group.rows.length > 0).length > 1 ? (
+                  <SectionLabel variant="inline" className="block px-1.5 pt-1">
+                    {label}
+                  </SectionLabel>
+                ) : null}
                 {rows.map(renderCard)}
               </div>
             ) : null,
@@ -315,7 +318,13 @@ function LiveAgentCard({
       variant="item"
       type="button"
       tooltip={hint || undefined}
-      aria-label={[agent.title, project, waitReason || activity, elapsed]
+      aria-label={[
+        agent.title,
+        project,
+        waitReason || activity,
+        remote ? t("On another machine") : "",
+        elapsed,
+      ]
         .filter(Boolean)
         .join(", ")}
       aria-current={selected ? "true" : undefined}
@@ -354,11 +363,7 @@ function LiveAgentCard({
           active={live}
         />
         {remote ? (
-          <Internet
-            aria-label={t("On another machine")}
-            className="icon-xs shrink-0"
-            strokeWidth={1.75}
-          />
+          <Internet aria-hidden className="icon-xs shrink-0" strokeWidth={1.75} />
         ) : null}
         <Text
           size="inherit"

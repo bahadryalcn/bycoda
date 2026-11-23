@@ -107,5 +107,5 @@ export function TabLabel({
  */
 export function TabDirtyDot({ className = "" }: { className?: string }) {
   const label = useT()("Unsaved changes");
-  return <StatusDot tone="secondary" label={label} title={label} className={className} />;
+  return <StatusDot tone="secondary" label={label} className={className} />;
 }

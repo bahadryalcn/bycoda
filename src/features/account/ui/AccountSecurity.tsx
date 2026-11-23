@@ -10,11 +10,10 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { PrivateEmail } from "../../../shared/ui/PrivateEmail";
 import { Timeline } from "../../../shared/ui/Timeline";
 import { Clock } from "../../../shared/ui/icons";
 import { Group, Row } from "../../../shared/ui/settings";
-import { useDevices, useSecurityActivity } from "../hooks/useAccountData";
+import { useSecurityActivity } from "../hooks/useAccountData";
 import { securityUrl } from "../model/accountPortal";
 import {
   securityEventMeta,
@@ -75,22 +74,14 @@ function SecurityActivity() {
 }
 
 /**
- * Sign-in security owned by bycoda: the e-mail and sign-in methods, the signed-in devices with a
- * sign-out-everywhere action, and the account's own activity log. Password and two-step
+ * Sign-in security owned by bycoda: the sign-in methods, the privacy-settings link and the
+ * account's own activity log. Password and two-step
  * settings belong to the sign-in provider and open on the web when a portal is configured.
  */
-export function AccountSecurity({
-  user,
-  onShowDevices,
-}: {
-  user: User;
-  onShowDevices: () => void;
-}) {
+export function AccountSecurity({ user }: { user: User }) {
   useLocale();
-  const { query } = useDevices();
   const [error, setError] = useState("");
   const url = securityUrl();
-  const active = query.data?.filter((device) => !device.revokedAt) ?? [];
 
   return (
     <>
@@ -99,9 +90,6 @@ export function AccountSecurity({
         description={t("bycoda never sees your password; your sign-in provider checks it.")}
         feedback={error ? <InlineError>{error}</InlineError> : undefined}
       >
-        <Row label={t("E-mail")}>
-          <PrivateEmail email={user.email} />
-        </Row>
         <Row label={t("Sign-in methods")}>
           {user.signInMethods.length ? (
             <BadgeList
@@ -131,23 +119,6 @@ export function AccountSecurity({
             </Button>
           </Row>
         ) : null}
-      </Group>
-      <Group title={t("Sessions")} description={t("Devices that can use your account right now.")}>
-        <Row
-          label={t("Signed-in devices")}
-          descriptionVisible
-          description={
-            query.data
-              ? t("{p0} active", { p0: active.length })
-              : query.isError
-                ? t("Could not load your devices.")
-                : t("Loading devices…")
-          }
-        >
-          <Button variant="secondary" size="sm" onClick={onShowDevices}>
-            {t("Review devices")}
-          </Button>
-        </Row>
       </Group>
       <Group title={t("Privacy and security")}>
         <Row label={t("Privacy settings")}>

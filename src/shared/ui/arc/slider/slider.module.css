@@ -59,6 +59,9 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
 }
+.body:has(.end > .readout) {
+  grid-template-columns: auto minmax(0, 1fr) fit-content(40%);
+}
 .start {
   display: flex;
   grid-area: 1 / 1;
@@ -68,6 +71,15 @@
   display: flex;
   grid-area: 1 / 3;
   margin-left: var(--space-3);
+}
+.end > .readout {
+  display: block;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  margin-inline-start: auto;
+  text-align: end;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 /* The whole row takes the press; vertical pans still scroll the page on touch. */
 .control {
@@ -176,10 +188,11 @@
   min-height: 1.75rem;
   align-items: center;
   padding: 0 var(--space-3);
-  border-radius: var(--radius-pill);
-  background: var(--foreground);
-  color: var(--background);
-  box-shadow: var(--shadow-raised);
+  border: 1px solid var(--ui-floating-edge);
+  border-radius: var(--ui-radius-floating, var(--ui-radius-popup));
+  background: var(--ui-surface-floating);
+  color: var(--color-content);
+  box-shadow: var(--ui-floating-shadow, var(--shadow-floating));
   font-size: var(--ui-font-caption);
   font-weight: 500;
   font-variant-numeric: tabular-nums;

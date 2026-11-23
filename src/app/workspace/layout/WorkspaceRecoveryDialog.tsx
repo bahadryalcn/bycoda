@@ -1,4 +1,4 @@
-import { useState, type ComponentProps } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { Modal } from "../../../shared/ui/Modal";
 import { useT } from "../../../shared/i18n";
 import { SessionRecoveryPanel } from "../../shell/SessionRecoveryPanel";
@@ -11,17 +11,6 @@ import { RecoveryTabs, recoveryPanelId, recoveryTabId, type RecoveryTab } from "
 
 const PREFIX = "workspace-recovery";
 
-const emptyRecovery: SessionRecovery = {
-  capturedAt: 0,
-  dismissed: true,
-  workspace: {
-    tabs: [],
-    sessions: [],
-    activeTabId: "",
-    projectCwd: "~",
-    projectTerminals: [],
-  },
-};
 type Props = Omit<ComponentProps<typeof SessionRecoveryPanel>, "recovery" | "renderContainer"> & {
   recovery: SessionRecovery | null | undefined;
   editorDraftRecovery?: EditorDraftRecoverySectionProps["recovery"];
@@ -44,11 +33,7 @@ export function WorkspaceRecoveryDialog({
   // when there are no conversations.
   const hasSessions = !!recovery?.workspace.sessions.length;
   const fileSide = editorDraftRecords.length > 0 || !hasSessions;
-  return (
-    <SessionRecoveryPanel
-      {...props}
-      recovery={recovery ?? emptyRecovery}
-      renderContainer={(sessions, chatPending) => {
+  const renderContainer = (sessions: ReactNode, chatPending: boolean) => {
         const busy = chatPending || draftPending;
         const tabs: RecoveryTab[] = [
           ...(hasSessions ? [{ value: "sessions", label: t("Sessions"), disabled: busy }] : []),
@@ -86,10 +71,9 @@ export function WorkspaceRecoveryDialog({
                 />
               ) : null}
               <div
-                role={tabs.length > 1 ? "tabpanel" : "region"}
+                role={tabs.length > 1 ? "tabpanel" : undefined}
                 id={recoveryPanelId(PREFIX, activeMode)}
                 aria-labelledby={tabs.length > 1 ? recoveryTabId(PREFIX, activeMode) : undefined}
-                aria-label={tabs.length > 1 ? undefined : tabs[0]?.label}
                 className="flex min-h-0 flex-col"
               >
                 {activeMode === "files" ? (
@@ -104,7 +88,8 @@ export function WorkspaceRecoveryDialog({
             </div>
           </Modal>
         );
-      }}
-    />
-  );
+  };
+  return hasSessions && recovery ? (
+    <SessionRecoveryPanel {...props} recovery={recovery} renderContainer={renderContainer} />
+  ) : renderContainer(null, false);
 }

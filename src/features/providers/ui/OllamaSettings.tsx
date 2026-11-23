@@ -71,13 +71,6 @@ function OllamaPortRow({
         <Button
           type="submit"
           disabled={disabled || !validPort(value) || value === port}
-          disabledReason={
-            disabled || invalid
-              ? undefined
-              : value === port
-                ? t("The port has not changed.")
-                : undefined
-          }
           loading={saving}
         >
           {t("Save")}
@@ -96,9 +89,6 @@ function OllamaPortRow({
     </Row>
   );
 }
-
-const sameModels = (a: readonly string[], b: ReadonlySet<string>) =>
-  a.length === b.size && a.every((model) => b.has(model));
 
 /** One line under a model: size, parameters and whether OpenCode can use its tools. */
 function modelDetails(model: OllamaModel): string {
@@ -132,7 +122,6 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
   const loadError = query.error ? errorText(query.error) : "";
   const load = () => void query.refetch();
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState<Busy>("");
   /** The owner's unsaved choice; undefined follows the models saved in the OpenCode config. */
   const [draft, setDraft] = useState<Set<string>>();
@@ -144,7 +133,6 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
     if (busy) return false;
     setBusy(kind);
     setError("");
-    setSaved(false);
     try {
       queryClient.setQueryData(STATUS_KEY, await action());
       return true;
@@ -156,18 +144,18 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
     }
   };
 
+  // Each tick saves at once; a failed save keeps the unsaved choice visible beside the error.
   const toggle = (name: string, on: boolean) => {
     const next = new Set(selected);
     if (on) next.add(name);
     else next.delete(name);
     setDraft(next);
-    setSaved(false);
+    void save(next);
   };
 
-  const save = async () => {
-    if (!(await run("save", () => ollamaClient.saveOpencode([...selected])))) return;
+  const save = async (models: ReadonlySet<string>) => {
+    if (!(await run("save", () => ollamaClient.saveOpencode([...models])))) return;
     setDraft(undefined);
-    setSaved(true);
     // OpenCode reloads its config by itself; the app's cached model list is read again.
     void refreshOpenCodeCatalog().catch((reason: unknown) => setError(errorText(reason)));
   };
@@ -188,12 +176,6 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
         </SettingsFeedback>
       );
     if (error) return <SettingsFeedback state="error">{error}</SettingsFeedback>;
-    if (saved)
-      return (
-        <SettingsFeedback state="success">
-          {t("Saved. The chosen models appear in OpenCode's model list.")}
-        </SettingsFeedback>
-      );
     return undefined;
   })();
 
@@ -258,7 +240,7 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
                     key={model.name}
                     appearance="row"
                     checked={selected.has(model.name)}
-                    disabled={!!busy || configBlocked}
+                    disabled={!!busy || configBlocked || !opencodeAvailable}
                     label={model.name}
                     description={modelDetails(model)}
                     onChange={(event) => toggle(model.name, event.target.checked)}
@@ -269,7 +251,7 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
                     key={name}
                     appearance="row"
                     checked={selected.has(name)}
-                    disabled={!!busy || configBlocked}
+                    disabled={!!busy || configBlocked || !opencodeAvailable}
                     label={name}
                     description={t("Not downloaded in Ollama")}
                     onChange={(event) => toggle(name, event.target.checked)}
@@ -281,21 +263,6 @@ export function OllamaSettings({ opencodeAvailable }: { opencodeAvailable: boole
                 {t("No chat models in Ollama yet. Download one below.")}
               </SettingsFeedback>
             )}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="primary"
-                disabled={
-                  !opencodeAvailable ||
-                  configBlocked ||
-                  (!!busy && busy !== "save") ||
-                  sameModels(status.opencode.models, selected)
-                }
-                loading={busy === "save"}
-                onClick={() => void save()}
-              >
-                {t("Save to OpenCode")}
-              </Button>
-            </div>
           </div>
         </Row>
         <Row
@@ -416,7 +383,7 @@ function PullState({ pull }: { pull: NonNullable<OllamaStatus["pull"]> }) {
   if (pull.state === "done")
     return (
       <SettingsFeedback state="success">
-        {t("{p0} is downloaded. Select it above and save.", { p0: pull.model })}
+        {t("{p0} is downloaded. Select it above.", { p0: pull.model })}
       </SettingsFeedback>
     );
   if (pull.state === "cancelled")

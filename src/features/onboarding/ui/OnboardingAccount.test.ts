@@ -160,7 +160,8 @@ describe("onboarding account step", () => {
     expect(text()).toContain("Continue");
     account.state = { phase: "signed-out", notice: "declined", message: null };
     await render();
-    expect(text()).toContain("Sign-in was cancelled.");
+    // The user stopped it themselves, so no notice repeats that.
+    expect(text()).not.toContain("Sign-in was cancelled.");
     expect(text()).toContain("Sign in with browser");
   });
 

@@ -94,10 +94,10 @@ export function BuilderInterview({
         <div ref={end} />
       </div>
       {failure !== null ? (
-        <InlineError retry={{ onRetry }}>
+        // One friendly line; the provider's raw failure sits behind Details.
+        <InlineError retry={{ onRetry }} details={failure}>
           {[
             t("That did not go through."),
-            failure,
             SIGNED_OUT.test(failure)
               ? t(
                   "Choose a signed-in account in the model picker, or sign in to the provider again.",
@@ -114,6 +114,7 @@ export function BuilderInterview({
             <Button
               key={option}
               size="sm"
+              variant="secondary"
               type="button"
               tooltip={option}
               tooltipWhen="overflow"
@@ -134,7 +135,6 @@ export function BuilderInterview({
         maxRows={6}
         value={draft}
         maxLength={BUILDER_MAX_TURN_TEXT}
-        placeholder={t("Tell me in your own words")}
         onChange={(event) => onDraftChange(event.currentTarget.value)}
         onKeyDown={onKeyDown}
         toolbarTrailing={

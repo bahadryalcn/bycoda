@@ -267,12 +267,12 @@ export function GitGraphConflictEditor({
           ours={{
             text: loaded.stages.ours,
             label: loaded.oursLabel,
-            origin: "Git index · stage 2",
+            origin: t("Git index · stage 2"),
           }}
           theirs={{
             text: loaded.stages.theirs,
             label: loaded.theirsLabel,
-            origin: "Git index · stage 3",
+            origin: t("Git index · stage 3"),
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col">

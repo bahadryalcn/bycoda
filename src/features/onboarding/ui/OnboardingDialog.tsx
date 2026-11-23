@@ -32,7 +32,6 @@ import {
   FolderPlus,
 } from "../../../shared/ui/icons";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { BrandMark } from "../../../shared/ui/BrandMark";
 const ConnectionsSettings = lazy(() =>
   import("../../connections/ui/ConnectionsSettings").then((module) => ({
     default: module.ConnectionsSettings,
@@ -79,11 +78,7 @@ import { useOnboardingSteps } from "../model/useOnboardingSteps";
 import { loadOnboardingProviders, addOnboardingProviders } from "../model/onboardingProviders";
 import "./onboarding.css";
 
-/** Steps whose choices persist the moment they change; the footer says so only there. */
-const SAVES_ON_CHANGE: ReadonlySet<string> = new Set(["Statistics", "Workspace", "Appearance"]);
-
 type Props = {
-  onStartGuide?: () => void;
   onFinish: () => void;
   onImported: () => void;
   onOpenProject: (path: string) => void;
@@ -93,10 +88,11 @@ export default function OnboardingDialog({
   onFinish,
   onImported,
   onOpenProject,
-  onStartGuide,
 }: Props) {
   useLocale();
-  const steps = useOnboardingSteps();
+  const { machines } = useRemoteMachines();
+  const remotes = remoteProjectMachines(machines);
+  const steps = useOnboardingSteps().filter((id) => id !== "Machines" || remotes.length > 0);
   const [currentId, setCurrentId] = useState(steps[0]);
   const step = Math.max(0, steps.indexOf(currentId));
   const current = steps[step];
@@ -119,8 +115,6 @@ export default function OnboardingDialog({
   const languageAttempt = useRef(0);
   const body = useRef<HTMLDivElement>(null);
   const previousStep = useRef(step);
-  const { machines } = useRemoteMachines();
-  const remotes = remoteProjectMachines(machines);
   const goTo = (next: number) => {
     if (busy) return;
     if (current === "Account") markAccountStepSeen();
@@ -154,19 +148,7 @@ export default function OnboardingDialog({
       <div className="onboarding-layout" ref={body}>
         <header {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "onboarding-header")}>
           <div className="onboarding-topline">
-            <div className="onboarding-brand">
-              <BrandMark />
-              <span>{PRODUCT_IDENTITY.displayName}</span>
-              <small {...surfaceAttributes({ frame: "pane", edge: "inline-start" })}>
-                {t("Quick setup")}
-              </small>
-            </div>
             <div className="onboarding-topline-actions">
-              {onStartGuide && !busy ? (
-                <Button onClick={onStartGuide} variant="ghost" type="button">
-                  {t("Guide")}
-                </Button>
-              ) : null}
               <div className="onboarding-language">
                 <Select
                   hideLabel
@@ -243,7 +225,6 @@ export default function OnboardingDialog({
                   )}
                 </Button>
               }
-              note={SAVES_ON_CHANGE.has(current) ? t("Changes save automatically") : undefined}
             >
               <Button onClick={() => goTo(step + 1)} variant="primary" type="button">
                 {t("Continue")}
@@ -314,7 +295,6 @@ function Projects({
 }) {
   useLocale();
   const [candidates, setCandidates] = useState<ImportCandidate[]>([]);
-  const [hiddenTemporary, setHiddenTemporary] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -342,9 +322,6 @@ function Projects({
         // Scratch folders (OS temp, e2e runs) stay out of the list; nothing is deleted.
         const next = usable.filter((item) => !isTemporaryFolder(item.cwd));
         setCandidates(next);
-        setHiddenTemporary(
-          groupByFolder(usable.filter((item) => isTemporaryFolder(item.cwd))).length,
-        );
         setSelected(new Set(groupByFolder(next).map((folder) => folder.key)));
       })
       .catch((reason) => {
@@ -472,17 +449,6 @@ function Projects({
                   }
                 />
                 <span>{t("{p0} of {p1} selected", { p0: selected.size, p1: folders.length })}</span>
-                {hiddenTemporary > 0 ? (
-                  <Text
-                    as="small"
-                    size="micro"
-                    tone="muted"
-                    leading="normal"
-                    className="onboarding-selection-note"
-                  >
-                    {t("{p0} temporary folders hidden", { p0: hiddenTemporary })}
-                  </Text>
-                ) : null}
               </Text>
               <div {...surfaceAttributes({ dividers: "pane" }, "onboarding-projects")}>
                 {folders.map((folder) => {

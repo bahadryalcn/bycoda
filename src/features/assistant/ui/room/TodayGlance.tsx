@@ -30,7 +30,7 @@ function ChartBlock({
   children,
 }: {
   title: string;
-  caption: string;
+  caption?: string;
   children: ReactNode;
 }) {
   return (
@@ -38,9 +38,11 @@ function ChartBlock({
       <Heading size="item" level={3} className={styles.chartTitle}>
         {title}
       </Heading>
-      <Text as="p" size="caption" tone="muted" leading="inherit" className={styles.muted}>
-        {caption}
-      </Text>
+      {caption && (
+        <Text as="p" size="caption" tone="muted" leading="inherit">
+          {caption}
+        </Text>
+      )}
       <div className={styles.chartBody}>{children}</div>
     </div>
   );
@@ -70,7 +72,7 @@ export function TodayGlance({
   const hasActivity = days.some((day) => day.count > 0);
   const range = (at: number) => formatDate(at, { month: "short", day: "numeric" });
   return (
-    <section className={styles.glance} aria-label={t("Today at a glance")}>
+    <section className={styles.glance}>
       <SectionLabel as="h2">{t("Today at a glance")}</SectionLabel>
       <StatRow label={t("Today at a glance")}>
         <StatTile
@@ -95,7 +97,7 @@ export function TodayGlance({
         />
       </StatRow>
       <Disclosure
-        summary={t("Recent activity")}
+        summary={t("Charts")}
         variant="row"
         textSize="secondary"
         tone="secondary"
@@ -119,12 +121,11 @@ export function TodayGlance({
               <EmptyState
                 size="inline"
                 kind="empty"
-                className={styles.muted}
                 description={t("No updates in the last 7 days")}
               />
             )}
           </ChartBlock>
-          <ChartBlock title={t("Jobs by status")} caption={t("Jobs you can see")}>
+          <ChartBlock title={t("Jobs by status")}>
             {slices.length ? (
               <DonutChart
                 label={t("Jobs by status")}
@@ -140,7 +141,6 @@ export function TodayGlance({
               <EmptyState
                 size="inline"
                 kind="empty"
-                className={styles.muted}
                 description={t("No jobs yet")}
               />
             )}

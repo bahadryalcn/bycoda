@@ -60,11 +60,10 @@ export function ConfirmAutonomy({ accountName, action, level, dailyLimit }: Conf
       leading="inherit"
       className="social-confirm-autonomy"
     >
-      <p>{sentence}</p>
-      <ul>
-        <li>{t("Platform limits, opt-outs, working hours and the global AI stop still apply.")}</li>
-        {dailyLimit !== undefined ? <li>{t("Up to {p1} per day.", { p1: dailyLimit })}</li> : null}
-      </ul>
+      <p>
+        {sentence}
+        {dailyLimit !== undefined ? ` ${t("Up to {p1} per day.", { p1: dailyLimit })}` : null}
+      </p>
     </Text>
   );
 }

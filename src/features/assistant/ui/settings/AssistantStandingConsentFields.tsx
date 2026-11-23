@@ -3,6 +3,7 @@ import { t } from "../../../../shared/i18n";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { Select } from "../../../../shared/ui/Select";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { Row } from "../../../../shared/ui/settings";
 import styles from "./settings.module.css";
 
@@ -41,9 +42,13 @@ export function AssistantStandingConsentFields({
       <Row
         label={t("Assistant authority")}
         controlId={authorityId}
-        description={t(
-          "Applies to this workspace and the selected Host. Coding conversations keep their own permissions.",
-        )}
+        info={
+          <InfoPopover label={`${t("Assistant authority")}: ${t("Help")}`}>
+            {t(
+              "Applies to this workspace and the selected Host. Coding conversations keep their own permissions.",
+            )}
+          </InfoPopover>
+        }
       >
         <Select
           id={authorityId}
@@ -57,7 +62,10 @@ export function AssistantStandingConsentFields({
             })
           }
           options={[
-            { value: "legacy", label: t("Ask for each operation"), disabled: true },
+            // The legacy "ask for each operation" level is only listed while it is the current value.
+            ...(value.permissionLevel
+              ? []
+              : [{ value: "legacy", label: t("Ask for each operation"), disabled: true }]),
             { value: "watch", label: t("Watch") },
             { value: "projects", label: t("Selected projects") },
             { value: "everything", label: t("Everything") },

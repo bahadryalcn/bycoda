@@ -477,7 +477,6 @@ export function AssistantSettings({
                         type="button"
                         size="sm"
                         startIcon={<Sparkles className="icon-sm" />}
-                        tooltip={t("Answer a few questions and AI drafts the profile for you")}
                         onClick={() => setBuilderOpen(true)}
                       >
                         {t("Create with AI")}

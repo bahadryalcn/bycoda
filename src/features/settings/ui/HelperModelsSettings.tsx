@@ -9,7 +9,6 @@ export function HelperModelsSettings() {
     <Row
       id="helper-models"
       label={t("Translation, reprompt and title models")}
-      description={t("Model set in Settings → Models → Background work.")}
     >
       <Button variant="link" onClick={() => openModelsSettings("roles")}>
         {t("Manage models")}

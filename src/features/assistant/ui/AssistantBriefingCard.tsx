@@ -199,6 +199,8 @@ export function AssistantBriefingCard({
         </Heading>
         <Button
           iconOnly
+          variant="ghost"
+          size="sm"
           label={t("Dismiss")}
           disabled={!!busy}
           onClick={() =>
@@ -260,6 +262,11 @@ export function AssistantBriefingCard({
           <Button variant="primary" startIcon={<Mic />} onClick={onSetupVoice}>
             {t("Set up voice")}
           </Button>
+        ) : speaking === "idle" && unknownLanguage && !activeVoice ? (
+          // Without a spoken language Listen cannot start; the one useful control is the choice.
+          <Button variant="primary" startIcon={<Languages />} onClick={onChooseLanguage}>
+            {t("Choose language")}
+          </Button>
         ) : speaking === "idle" ? (
           <Button
             variant="primary"
@@ -311,20 +318,10 @@ export function AssistantBriefingCard({
             : t(
                 speaking === "loading"
                   ? "Preparing audio…"
-                  : "Reading the briefing. This does not open the microphone.",
+                  : "Reading the briefing.",
               )
         }
       />
-      {snapshot.profile.voiceSetupComplete && unknownLanguage && (
-        <div className={briefingStyles.languageHint}>
-          <Text as="span" tone="muted" leading="inherit" className={briefingStyles.muted}>
-            {t("Speak once or choose a language before listening.")}
-          </Text>
-          <Button startIcon={<Languages />} onClick={onChooseLanguage}>
-            {t("Choose language")}
-          </Button>
-        </div>
-      )}
       {audioError && <InlineError>{t(audioError)}</InlineError>}
       <LiveText
         className={briefingStyles.muted}

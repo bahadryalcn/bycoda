@@ -33,11 +33,10 @@ export function PrivacyStartupSettings() {
   };
   return (
     <>
-      <Group title={t("Privacy")} scope={t("Applies to this computer.")}>
+      <Group title={t("Privacy")}>
         <Row
           id="start-in-privacy-mode"
           label={t("Start in privacy mode")}
-          description={t("Hide your workspace on the next launch.")}
           feedback={
             privacy.storageAvailable === false ? (
               <PrivacyStorageError />

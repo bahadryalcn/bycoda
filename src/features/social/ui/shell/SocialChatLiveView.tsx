@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useT } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Sheet } from "../../../../shared/ui/Sheet";
@@ -36,6 +37,13 @@ export function SocialChatLiveView({
       return result.snapshot.accounts.filter((account) => account.connection === "browser");
     },
   });
+  // One browser account needs no list step: its panel opens directly, and closing it closes the sheet.
+  const only = accounts.data?.length === 1 ? accounts.data[0] : undefined;
+  const shownId = accountId ?? only?.id;
+  const closeSheet = () => {
+    setOpen(false);
+    setAccountId(undefined);
+  };
   return (
     <>
       <Button
@@ -47,21 +55,15 @@ export function SocialChatLiveView({
         {t("Open live view")}
       </Button>
       {open ? (
-        <Sheet
-          title={t("Live browser view")}
-          onClose={() => {
-            setOpen(false);
-            setAccountId(undefined);
-          }}
-        >
-          {accountId ? (
+        <Sheet title={t("Live browser view")} onClose={closeSheet}>
+          {shownId ? (
             <LiveBrowserPanel
               client={client}
-              accountId={accountId}
-              onClose={() => setAccountId(undefined)}
+              accountId={shownId}
+              onClose={only ? closeSheet : () => setAccountId(undefined)}
             />
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="social-live-list">
               {accounts.isPending ? <LoadingText delay={false} /> : null}
               {accounts.isError ? (
                 <InlineError
@@ -76,7 +78,11 @@ export function SocialChatLiveView({
                 </InlineError>
               ) : null}
               {accounts.data?.length === 0 ? (
-                <p>{t("Live view is available for browser accounts.")}</p>
+                <EmptyState
+                  size="inline"
+                  kind="empty"
+                  description={t("Live view is available for browser accounts.")}
+                />
               ) : null}
               {accounts.data?.map((account) => (
                 <Button

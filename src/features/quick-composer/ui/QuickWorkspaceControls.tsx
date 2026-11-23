@@ -1,4 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -171,11 +170,12 @@ export function QuickWorkspaceControls({
   const Icon = resolvedMode === "worktree" ? FolderTree : Folder;
   const label = resolvedMode === "worktree" ? t("New worktree") : t("Current checkout");
   return (
-    <div className="flex min-w-0 items-center gap-2 pl-1.5">
+    <div className="flex min-w-0 items-center gap-2">
       <Button
-        variant="ghost"
+        variant="chip"
         motion="none"
-        type="button"
+        truncate
+        startIcon={<Icon className="icon-sm shrink-0" />}
         disabled={disabled}
         aria-label={t("Workspace {p0}", { p0: label })}
         aria-haspopup="dialog"
@@ -185,12 +185,9 @@ export function QuickWorkspaceControls({
           beginClick("workspace");
         }}
         onClick={(event) => void show("workspace", event.currentTarget)}
-        className="-ml-1.5 flex min-w-0 max-w-48 items-center gap-1.5"
+        className="min-w-0 max-w-48"
       >
-        <Icon className="size-3.5 shrink-0" />
-        <Text size="inherit" tone="inherit" truncate>
-          {label}
-        </Text>
+        {label}
       </Button>
       <GitPickerTrigger
         label={

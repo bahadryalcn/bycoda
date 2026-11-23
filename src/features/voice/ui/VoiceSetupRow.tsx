@@ -76,32 +76,22 @@ export function VoiceSetupRow({
               </Button>
             ) : null}
             {pythonMissing ? (
-              <>
-                {/* One primary per state: without Python the next step is Get Python. */}
-                <Button
-                  variant="primary"
-                  onClick={() =>
-                    void openExternal(
-                      "https://www.python.org/downloads/release/python-31210/",
-                    ).catch((cause) => {
+              // One primary per state: without Python the only next step is Get Python.
+              <Button
+                variant="primary"
+                onClick={() =>
+                  void openExternal("https://www.python.org/downloads/release/python-31210/").catch(
+                    (cause) => {
                       setup.setError({
                         message: t("Open python.org to install Python 3.10–3.12."),
                         detail: String(cause),
                       });
-                    })
-                  }
-                >
-                  {t("Get Python")}
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled
-                  disabledReason={t("Install Python first.")}
-                  onClick={() => setup.install()}
-                >
-                  {t("Install")}
-                </Button>
-              </>
+                    },
+                  )
+                }
+              >
+                {t("Get Python")}
+              </Button>
             ) : !ready && !visibleError ? (
               <Button variant="primary" onClick={() => setup.install()}>
                 {t("Install")}

@@ -127,7 +127,7 @@ it("adopts a newer Host policy silently when there is nothing unsaved", async ()
   await mount();
   hostPolicy = policyAt(2, "worktree", ["host", "project"]);
   await act(async () => button("Refresh workspace status")!.click());
-  expect(container.textContent).toContain("Project override");
+  expect(container.textContent).toContain("Reset to Host defaults");
   expect(container.textContent).not.toContain("The saved policy changed while you were editing");
 });
 
@@ -272,5 +272,5 @@ it("leaves workspaces whose directory is already removed out of the roster", asy
   const rows = container.querySelectorAll<HTMLElement>('[role="listitem"]');
   expect(rows).toHaveLength(1);
   expect(rows[0].textContent).toContain("bycoda/s/branch-b");
-  expect(container.textContent).toContain("Showing 1 of 1 workspaces");
+  expect(container.textContent).not.toContain("Showing");
 });

@@ -1,5 +1,4 @@
 import { Skeleton } from "../../../shared/ui/Skeleton";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useNativePopoverHost } from "../../../shared/ui/Popover";
@@ -29,11 +28,11 @@ export function GitPickerTrigger({
   return (
     <Button
       size="sm"
-      variant="ghost"
+      variant="chip"
       motion="none"
       type="button"
       {...props}
-      className="flex min-w-0 max-w-64 items-center gap-1.5"
+      className="min-w-0 max-w-64"
     >
       <Icon className="icon-sm shrink-0" />
       <span className="relative flex min-w-0 flex-1">
@@ -47,11 +46,6 @@ export function GitPickerTrigger({
           <MiddleTruncate mode="text">{label}</MiddleTruncate>
         )}
       </span>
-      {worktree && (
-        <Badge size="xs" appearance="subtle" className="shrink-0">
-          {t("Worktree")}
-        </Badge>
-      )}
       {props.disabled ? null : <ChevronDown className="icon-xs shrink-0" tone="muted" />}
     </Button>
   );

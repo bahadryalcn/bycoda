@@ -67,11 +67,6 @@ export function ProviderRetryNotice({
             {t(notice.reconnecting ? "Reconnecting to {p0}" : "{p0} is retrying", { p0: provider })}
           </Text>
           {notice.detail ? <> · {notice.detail}</> : null}
-          <span className="block">
-            {t(
-              "Retrying automatically. If this stays here, stop the turn and review its latest output before continuing.",
-            )}
-          </span>
         </span>
       </InlineMessage>
       {refreshFailed ? (

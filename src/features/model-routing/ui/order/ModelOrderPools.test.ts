@@ -152,14 +152,10 @@ it("labels a cleared group's delete button with the same fallback name as its gr
   expect(container.querySelector('[aria-label="Delete group "]')).toBeNull();
 });
 
-it("removes a group only after the owner confirms the delete", async () => {
+it("removes a group at once; the draft is reverted by Discard, so no confirmation", async () => {
   const inner = () => container.querySelector<HTMLElement>('[aria-label="Delete group Inner"]')!;
   await act(async () => inner().click());
-  expect(applied).toBe(draft);
-  const confirmButton = [...document.querySelectorAll<HTMLElement>("button")].find(
-    (button) => button.textContent === "Delete",
-  )!;
-  await act(async () => confirmButton.click());
+  expect(document.querySelector('[role="alertdialog"], [role="dialog"]')).toBeNull();
   expect(applied.routing.pools.map((pool) => pool.id)).toEqual(["p1"]);
 });
 

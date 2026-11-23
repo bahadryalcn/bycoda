@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { PANE_MATRIX, expectLayoutContracts, openPane } from "../support/uiLayoutAssertions";
 
 const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-workspace");
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
@@ -1253,3 +1254,37 @@ for (const theme of ["light", "dark"]) {
     });
   }
 }
+
+// Runtime layout contracts for the sidebar session and project rows inside a real 320 px pane
+// (the sidebar becomes the pane), in both themes at both window sizes. Destination identity stays:
+// the row that lives on another machine keeps naming it at the narrow width.
+for (const { theme, width } of PANE_MATRIX)
+  test(`sidebar rows keep their layout contracts in a 320px pane ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(
+      `/tests/browser/sessions/session-row-layout.html?remote-header&legacy-remote-label&global&wide&${theme}`,
+    );
+    const pane = '[role="complementary"], aside';
+    await expect(page.locator('[data-session-card="row-multi"]')).toBeVisible();
+    await openPane(page, { theme, width, pane });
+    await expectLayoutContracts(page, {
+      surface: "sidebar project and session rows (320px pane)",
+      root: pane,
+      allow: {
+        overflow: [
+          {
+            selector: "[data-sidebar-scroll], [data-session-list-scroll]",
+            reason: "The row list is the sidebar's own vertical scroller.",
+          },
+        ],
+      },
+    });
+    await expect(
+      page
+        .locator('[data-session-card="row-multi"]')
+        .getByRole("img", { name: "On another machine" }),
+      "the remote session still names its destination at 320px",
+    ).toBeVisible();
+  });

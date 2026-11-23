@@ -6,12 +6,11 @@ import {
 } from "../../../shared/ui/ActionHost";
 import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { terminalText } from "../../../shared/lib/terminalText";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Alert } from "../../../shared/ui/Alert";
 import { useConnectionErrorShownCentrally } from "../../../shared/ui/connectionErrorGate";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -44,7 +43,6 @@ import {
   conversationRowsFrom,
   flattenGrouped,
   groupHitsWithCounts,
-  type GroupedHitCounts,
   hitsFromContentMatches,
   hitsFromFileRanks,
   mergeHits,
@@ -538,7 +536,7 @@ export function SearchView({
     ) : null;
   const indexNotice =
     pendingIndex > 0 && !conversationError && conversationMode ? (
-      <div className="flex items-center gap-1 px-2.5 py-1">
+      <div className="flex items-center gap-1 px-2 py-1">
         <LoadingText delay={false}>
           {pendingIndex === 1
             ? t("Indexing {p0} conversation", { p0: pendingIndex })
@@ -615,19 +613,17 @@ export function SearchView({
         ) : null}
 
         <div className="app-search-mode-band">
-          <div className="min-w-0 flex-1 overflow-x-auto">
-            <SegmentedControl
-              label={t("Search in")}
-              value={scope}
-              onValueChange={(value) => setScope(value as SearchScope)}
-              options={SCOPES.map((item) => ({
-                value: item.id,
-                label: item.label,
-              }))}
-            />
-          </div>
-          {scope === "files" || (chatMode && filters.scope !== "everywhere") ? (
-            <Text size="caption" tone="secondary" truncate>
+          <SegmentedControl
+            label={t("Search in")}
+            value={scope}
+            onValueChange={(value) => setScope(value as SearchScope)}
+            options={SCOPES.map((item) => ({
+              value: item.id,
+              label: item.label,
+            }))}
+          />
+          {scope === "files" ? (
+            <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1">
               {projectDisplayName(cwd)}
             </Text>
           ) : null}
@@ -643,35 +639,34 @@ export function SearchView({
       </div>
 
       {!empty && (showFileError || showConversationError) ? (
-        <Alert tone="danger" className="mx-2 mt-2 max-h-40 shrink-0 overflow-auto break-words">
-          {showFileError ? (
-            <p>
-              {t("File search failed: ")}
-              {error}{" "}
+        <Alert
+          tone="danger"
+          title={t("Search failed")}
+          className="mx-2 mt-2 shrink-0 break-words"
+          extra={
+            <>
+              <ErrorDetails
+                title={t("Search failed")}
+                detail={[showFileError ? error : null, showConversationError ? conversationError : null]
+                  .filter(Boolean)
+                  .join("\n")}
+              />
               <Button
                 variant="ghost"
                 size="sm"
-                type="button"
                 onClick={() => {
-                  projectSearch.retry();
-                  setFileRetry((value) => value + 1);
+                  if (showFileError) {
+                    projectSearch.retry();
+                    setFileRetry((value) => value + 1);
+                  }
+                  if (showConversationError) conversation.retry();
                 }}
               >
-                {t("Retry file search")}
+                {t("Retry")}
               </Button>
-            </p>
-          ) : null}
-          {showConversationError ? (
-            <p>
-              {t("Conversation search failed: ")}
-              {conversationError}{" "}
-              <Button variant="ghost" size="sm" type="button" onClick={conversation.retry}>
-                {t("Retry conversation search")}
-              </Button>
-            </p>
-          ) : null}
-          {rowCount > 0 ? <p>{t("Results below may be incomplete.")}</p> : null}
-        </Alert>
+            </>
+          }
+        />
       ) : null}
 
       <div
@@ -689,21 +684,14 @@ export function SearchView({
           </LoadingText>
         ) : null}
         {empty ? (
-          <EmptyState
-            context="panel"
-            icon={<Search className="icon-md" />}
-            description={t("Search files, conversations, and projects")}
-          />
+          <EmptyState context="panel" icon={<Search className="icon-md" />} />
         ) : noResults ? (
-          <>
-            <EmptyState
-              size="inline"
-              kind="filtered"
-              inset="row"
-              description={t(indexing ? "No indexed matches yet" : "No results")}
-            />
-            {indexNotice}
-          </>
+          <EmptyState
+            size="inline"
+            kind="filtered"
+            inset="row"
+            description={t(indexing ? "No indexed matches yet" : "No results")}
+          />
         ) : chatMode ? (
           <>
             {indexNotice}
@@ -723,7 +711,6 @@ export function SearchView({
             {indexNotice}
             <ResultList
               listId={listId}
-              counts={grouped.counts}
               hits={hits}
               active={resultsCurrent ? active : -1}
               query={trimmed}
@@ -735,35 +722,6 @@ export function SearchView({
           </>
         )}
       </div>
-      <Text
-        as="footer"
-        size="caption"
-        tone="secondary"
-        leading="inherit"
-        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "app-search-footer")}
-      >
-        <span>
-          <ShortcutKbd size="xs" tone="primary">
-            ↑
-          </ShortcutKbd>{" "}
-          <ShortcutKbd size="xs" tone="primary">
-            ↓
-          </ShortcutKbd>{" "}
-          {t("Navigate")}
-        </span>
-        <span>
-          <ShortcutKbd size="xs" tone="primary">
-            Enter
-          </ShortcutKbd>{" "}
-          {t("Open")}
-        </span>
-        <span>
-          <ShortcutKbd size="xs" tone="primary">
-            Esc
-          </ShortcutKbd>{" "}
-          {t("Close")}
-        </span>
-      </Text>
     </Text>
   );
   return presentation === "dialog" ? (
@@ -775,7 +733,7 @@ export function SearchView({
       onClose={onClose}
       toolbar={
         <>
-          <div className="min-w-0 flex-[0_1_18rem]">{searchField}</div>
+          <div className="min-w-0 flex-1">{searchField}</div>
           <Button variant="ghost" iconOnly label={t("Full screen")} onClick={onExpand}>
             <Maximize2 className="icon-sm" />
           </Button>
@@ -791,7 +749,6 @@ export function SearchView({
 
 function ResultList({
   listId,
-  counts,
   hits,
   active,
   query,
@@ -799,7 +756,6 @@ function ResultList({
   onOpen,
 }: {
   listId: string;
-  counts: GroupedHitCounts;
   hits: AppSearchHit[];
   active: number;
   query: string;
@@ -852,18 +808,6 @@ function ResultList({
                 : hit.kind === "content"
                   ? t("File content")
                   : t("Projects");
-        const count =
-          counts[
-            hit.kind === "conversation"
-              ? "conversations"
-              : hit.kind === "message"
-                ? "messages"
-                : hit.kind === "file"
-                  ? "files"
-                  : hit.kind === "project"
-                    ? "projects"
-                    : "content"
-          ];
         const fullIdentity =
           hit.kind === "file"
             ? hit.path
@@ -881,13 +825,12 @@ function ResultList({
                 tone="secondary"
                 weight="medium"
                 role="presentation"
-                className="flex items-center gap-2 px-2.5 pb-1 pt-2"
+                className="flex items-center gap-2 px-2 pb-1 pt-2"
               >
                 <span>{heading}</span>
-                <span className="tabular-nums">{count.shown}</span>
               </Text>
             ) : null}
-            <Tooltip label={fullIdentity}>
+            <Tooltip label={fullIdentity} when="overflow">
               <ListRow
                 active={highlighted}
                 aria-selected={highlighted}

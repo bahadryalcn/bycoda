@@ -28,7 +28,7 @@ describe("theme generation failure detail", () => {
   });
 });
 
-it("labels tone sliders and disables depth in light mode", async () => {
+it("labels tone sliders and shows depth in dark mode", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);

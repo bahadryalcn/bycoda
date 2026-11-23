@@ -34,7 +34,7 @@ export function VoiceLiveWorkspace({
       <Heading as="h2" size="heading" lines={1}>
         {t("Live results")}
       </Heading>
-      <div className="min-h-0 min-w-0 flex-1 space-y-6 overflow-x-hidden overflow-y-auto">
+      <div className="grid min-h-0 min-w-0 flex-1 content-start gap-4 overflow-y-auto">
         <Suspense fallback={null}>
           {presented && <VoicePresentedAnswer result={presented} />}
           {results.length > 0 && <VoiceWorkResults results={results} />}

@@ -1,11 +1,11 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useState } from "react";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useT } from "../../../shared/i18n";
-import { ArrowLeftRight } from "../../../shared/ui/icons";
+import { ArrowLeftRight, Clock } from "../../../shared/ui/icons";
 import { HARNESS_TITLE } from "../model/session";
 import type {
   ModelSwitchMeta,
@@ -30,6 +30,7 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
   if (!to || !from) return null;
   const switches = steps.length - 1;
   const title = t("Switched from {p0} to {p1}", { p0: describe(from), p1: describe(to) });
+  const note = stepNoteLabel(to, t);
   const line = (
     <>
       <ArrowLeftRight className="icon-sm shrink-0" tone="muted" aria-hidden="true" />
@@ -44,10 +45,7 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
           as="span"
           size="caption"
           tone="muted"
-          {...surfaceAttributes(
-            { radius: "pill", frame: "pane", edge: "all" },
-            "shrink-0   border-(--ui-pane-border) px-1.5",
-          )}
+          className="shrink-0"
         >
           {switches}
         </Text>
@@ -68,7 +66,10 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
           textSize="body"
           open={open}
           onOpenChange={setOpen}
-          summaryLabel={t("{p0}, {p1} switches", { p0: title, p1: String(switches) })}
+          summaryLabel={t("{p0}, {p1} switches", {
+            p0: note ? `${title}. ${note}` : title,
+            p1: String(switches),
+          })}
           summary={line}
           className="w-full min-w-0"
         >
@@ -78,6 +79,7 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
         <Text
           role="note"
           aria-label={title}
+          aria-description={note}
           as="div"
           size="body"
           tone="secondary"
@@ -95,14 +97,14 @@ function SwitchState({ state, previous = false }: { state: ModelSwitchState; pre
     <span
       className={`flex min-w-0 items-center gap-1.5 ${previous ? "max-w-[45%] shrink-[3] opacity-70" : "shrink"}`}
     >
-      <HarnessIcon harness={state.harness} className="size-3.5 shrink-0" />
+      <HarnessIcon harness={state.harness} className="icon-sm shrink-0" />
       {state.account ? (
         <Text
           size="inherit"
           tone={previous ? "inherit" : "neutral"}
           weight={previous ? undefined : "medium"}
           truncate
-          className={`min-w-0  `}
+          className="min-w-0"
         >
           {state.account}
         </Text>
@@ -111,7 +113,7 @@ function SwitchState({ state, previous = false }: { state: ModelSwitchState; pre
         aria-hidden="true"
         size="inherit"
         tone="muted"
-        className={`shrink-0  ${previous ? "@max-[420px]/switch:hidden" : ""} ${state.account ? "" : "hidden"}`}
+        className={`shrink-0 ${previous ? "@max-[420px]/switch:hidden" : ""} ${state.account ? "" : "hidden"}`}
       >
         ·
       </Text>
@@ -120,7 +122,7 @@ function SwitchState({ state, previous = false }: { state: ModelSwitchState; pre
         tone={state.account || previous ? "inherit" : "neutral"}
         weight={state.account || previous ? undefined : "medium"}
         truncate
-        className={`min-w-0  ${previous && state.account ? "@max-[420px]/switch:hidden" : ""} `}
+        className={`min-w-0 ${previous && state.account ? "@max-[420px]/switch:hidden" : ""}`}
       >
         {state.model}
       </Text>
@@ -128,48 +130,38 @@ function SwitchState({ state, previous = false }: { state: ModelSwitchState; pre
   );
 }
 
+function stepNoteLabel(step: ModelSwitchStep, t: ReturnType<typeof useT>) {
+  if (step.note === "summary") return t("Summary goes with next message");
+  if (step.note === "deferred") return t("Next message");
+  return undefined;
+}
+
 function StepNote({ step }: { step: ModelSwitchStep }) {
-  const t = useT();
-  if (step.note === "summary") {
-    const label = t("Summary goes with next message");
-    return (
-      <OverflowTooltip label={label}>
-        <Text size="caption" tone="warning" truncate className="min-w-0 max-w-[40%] shrink">
-          {label}
-        </Text>
-      </OverflowTooltip>
-    );
-  }
-  if (step.note === "deferred") {
-    return (
-      <Text size="caption" tone="muted" className="shrink-0 italic">
-        {t("Next message")}
-      </Text>
-    );
-  }
-  return null;
+  const label = stepNoteLabel(step, useT());
+  if (!label) return null;
+  return (
+    <Tooltip label={label} asChild>
+      <Clock
+        aria-label={label}
+        className="icon-sm shrink-0"
+        tone={step.note === "summary" ? "warning" : "muted"}
+      />
+    </Tooltip>
+  );
 }
 
 function SwitchHistory({ steps }: { steps: ModelSwitchStep[] }) {
-  const t = useT();
   return (
     <ol
       {...surfaceAttributes(
         { frame: "pane", edge: "left" },
-        "ml-1.5 flex min-w-0 flex-col  border-(--ui-pane-border) pl-3",
+        "ms-1.5 flex min-w-0 flex-col ps-3",
       )}
     >
       {steps.map((step, index) => {
         const before = steps[index - 1];
         const current = index === steps.length - 1;
         const changed = before ? changedParts(before, step) : [];
-        const tags = [
-          ...changed.map((part) =>
-            part === "provider" ? t("Provider") : part === "account" ? t("Account") : t("Model"),
-          ),
-          ...(index === 0 ? [t("Before")] : []),
-          ...(current ? [t("Now")] : []),
-        ];
         return (
           <Text
             key={`${index}:${step.at}`}
@@ -178,17 +170,17 @@ function SwitchHistory({ steps }: { steps: ModelSwitchStep[] }) {
             tone="secondary"
             className="flex min-w-0 items-center gap-1.5 py-0.5"
           >
-            <Text size="caption" tone="muted" className="min-w-[8ch] shrink-0 text-end font-mono">
+            <Text size="caption" tone="muted" className="min-w-[8ch] shrink-0 text-end">
               {index === 0 ? "" : <Timestamp value={step.at} format="time" tooltip={false} />}
             </Text>
-            <HarnessIcon harness={step.harness} className="size-3.5 shrink-0" />
+            <HarnessIcon harness={step.harness} className="icon-sm shrink-0" />
             {step.account ? (
               <Text
                 size="inherit"
                 tone={current || changed.includes("account") ? "neutral" : "inherit"}
                 weight={current || changed.includes("account") ? "medium" : undefined}
                 truncate
-                className={`min-w-0  `}
+                className="min-w-0"
               >
                 {step.account}
               </Text>
@@ -202,15 +194,10 @@ function SwitchHistory({ steps }: { steps: ModelSwitchStep[] }) {
               size="inherit"
               tone={changed.includes("model") ? "neutral" : "inherit"}
               truncate
-              className={`min-w-0  `}
+              className="min-w-0"
             >
               {step.model}
             </Text>
-            {tags.length ? (
-              <Text size="caption" tone="muted" className="shrink-0">
-                {tags.join(" · ")}
-              </Text>
-            ) : null}
             <StepNote step={step} />
           </Text>
         );

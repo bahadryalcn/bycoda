@@ -96,7 +96,7 @@ export function DelegationSettings({
                   update(writeLayer(delegation, layer, {}));
                 }}
               >
-                <X className="icon-xs" />
+                <X className="icon-sm" aria-hidden />
               </Button>
             </div>
             <DelegationLayerRows
@@ -145,12 +145,12 @@ function AddOverrideMenu({
         variant="ghost"
         size="sm"
         type="button"
+        startIcon={<Plus />}
         disabled={disabled}
         aria-haspopup="menu"
         expanded={open}
         onClick={() => setOpen((next) => !next)}
       >
-        <Plus className="icon-xs" />
         {t("Add override")}
       </Button>
       {open ? (

@@ -36,5 +36,5 @@ it.each([
     .trim();
   expect(buttonText).toBe(expected);
   expect(/<button[^>]*aria-disabled="true"/.test(html)).toBe(targetCount === 0);
-  if (!targetCount) expect(html).toContain("Select at least one member or profile.");
+  expect(html).not.toContain("Select at least one member or profile.");
 });

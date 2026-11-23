@@ -1193,7 +1193,11 @@ it("does not fetch a frame when an old host's status arrives after switching pro
 });
 
 it("blocks duplicate requests before React paints the busy state", async () => {
-  vi.mocked(hostFeatureRequest).mockResolvedValue({ open: false, url: null, controlling: false });
+  vi.mocked(hostFeatureRequest).mockResolvedValue({
+    open: true,
+    url: "https://example.test",
+    controlling: false,
+  });
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
   let finish!: (value: unknown) => void;
   vi.mocked(hostFeatureRequest).mockReturnValueOnce(
@@ -1203,11 +1207,12 @@ it("blocks duplicate requests before React paints the busy state", async () => {
   );
   await act(async () => button("Browser controls and setup").click());
   await act(async () => {
-    button("Status").click();
-    button("Status").click();
+    button("Claim control").click();
+    button("Claim control").click();
   });
-  expect(hostFeatureRequest).toHaveBeenCalledTimes(2);
-  await act(async () => finish({ open: false, url: null, controlling: false }));
+  expect(vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "browser.claim"))
+    .toHaveLength(1);
+  await act(async () => finish({ open: true, url: "https://example.test", controlling: true }));
 });
 it("shows an unavailable state and recovers through retry when the initial host read fails", async () => {
   vi.mocked(hostFeatureRequest)

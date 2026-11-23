@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { Alert } from "../../../../shared/ui/Alert";
 import { useConnectionErrorShownCentrally } from "../../../../shared/ui/connectionErrorGate";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import type { ProjectCrews, useProjectCrews } from "../../model/crewClient";
 
@@ -38,7 +39,7 @@ export function CrewsLoadState({
           <RetryAlert state={state} />
         ) : noProject ? (
           // The query is disabled without a real project folder: say so instead of loading forever.
-          <Alert tone="info">{t("Open a project to manage its crews.")}</Alert>
+          <EmptyState context="page" title={t("Open a project to manage its crews.")} />
         ) : (
           <LoadingText>{t("Loading crews…")}</LoadingText>
         )}

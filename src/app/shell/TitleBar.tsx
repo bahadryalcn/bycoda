@@ -351,7 +351,6 @@ function withTabMoveItems(
 
 function TitleTabItem({
   tab,
-  showProject,
   active,
   closable,
   canDrag,
@@ -368,8 +367,6 @@ function TitleTabItem({
   closable: boolean;
   canDrag: boolean;
   sortable: SortableApi;
-  /** Tabs of more than one project are open, so each tab names its own. */
-  showProject?: boolean;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onPinFile?: (fileId: string) => void;
@@ -379,8 +376,7 @@ function TitleTabItem({
 }) {
   const t = useT();
   const copy = buildTabCopy(tab, t("New session"), t);
-  const { headline, tooltip } = copy;
-  const meta = [showProject ? tab.project.trim() : "", copy.meta].filter(Boolean).join(" · ");
+  const { headline, tooltip, meta } = copy;
   const fileIcon = tab.files[0];
   const accessibleTooltip = [
     tooltip,
@@ -516,7 +512,7 @@ function TitleTabItem({
               size="caption"
               tone="secondary"
               leading="tight"
-              className="hidden max-w-[45%] shrink-0 @min-[11rem]:block"
+              className="hidden min-w-0 shrink @min-[11rem]:block"
             >
               {meta}
             </TabLabel>
@@ -1028,7 +1024,6 @@ function TitleBarComponent({
   const setActiveTabNode = (node: HTMLDivElement | null) => {
     activeTabRef.current = node;
   };
-  const projectsMixed = new Set(tabs.map((tab) => tab.project.trim())).size > 1;
   const canDrag = tabs.length > 1 || Boolean(onMoveToNewWindow);
 
   const activeTab = tabs.find((t) => t.id === activeId);
@@ -1271,19 +1266,7 @@ function TitleBarComponent({
           placement="below"
           onCwdChange={onSelectProject}
           onNewTerminal={onNewTerminal}
-          buttonClassName="flex h-full min-w-0 max-w-64 shrink items-center gap-2 px-6 text-left"
-        >
-          <Text
-            size="body"
-            tone="secondary"
-            weight="medium"
-            leading="tight"
-            truncate
-            className="min-w-0"
-          >
-            {t("No project")}
-          </Text>
-        </CwdPicker>
+        />
       ) : null}
 
       <div
@@ -1351,7 +1334,6 @@ function TitleBarComponent({
                   ) : null}
                   <TitleTabItem
                     tab={tab}
-                    showProject={projectsMixed}
                     active={!entry.closing && tab.id === activeId}
                     closable={!entry.closing && titleTabClosable(tab, tabs.length)}
                     canDrag={!entry.closing && canDrag}

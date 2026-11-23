@@ -63,7 +63,7 @@ export function AssistantSessions({
   }
   const filtered = Boolean(query.trim() || filter);
   return (
-    <section className={sessionStyles.panel} aria-label={t("Job sessions")}>
+    <section className={sessionStyles.panel}>
       <SectionLabel as="h2" count={entries.length}>
         {t("Job sessions")}
       </SectionLabel>

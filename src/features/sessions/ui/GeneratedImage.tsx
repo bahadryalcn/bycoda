@@ -1,6 +1,6 @@
-import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Text } from "../../../shared/ui/Text";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
@@ -141,11 +141,9 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
       style={state.status === "loading" ? { minHeight: knownHeights.get(image.path) } : undefined}
     >
       {state.status === "loading" ? (
-        <LoadingText delay={false} inset="panel">
-          {t("Loading generated image…")}
-        </LoadingText>
+        <Skeleton delay={false} className="h-32" />
       ) : state.status === "error" ? (
-        <Alert tone="danger">{t("Could not open generated image.")}</Alert>
+        <InlineError>{t("Could not open generated image.")}</InlineError>
       ) : (
         <div className="min-w-0 px-4 pb-3 pt-3">
           <Button
@@ -154,8 +152,6 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
             label={t("Open {p0} full screen", { p0: image.name })}
             variant="item"
             type="button"
-            aria-label={t("Open {p0} full screen", { p0: image.name })}
-            tooltip={t("Open {p0} full screen", { p0: image.name })}
             onClick={() => setOpen(true)}
             className="max-w-full"
           >
@@ -184,8 +180,6 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
               variant="ghost"
               type="button"
               label={t("Save {p0}", { p0: image.name })}
-              aria-label={t("Save {p0}", { p0: image.name })}
-              tooltip={t("Download")}
               disabled={save.saving}
               loading={save.saving}
               onClick={() => {
@@ -197,7 +191,7 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
               <Download className="icon-xs" strokeWidth={2} />
             </Button>
           </Text>
-          {save.error ? <Alert tone="danger">{save.error}</Alert> : null}
+          {save.error ? <InlineError details={save.error} /> : null}
           {open ? <ImageLightbox src={state.url} alt={alt} onClose={() => setOpen(false)} /> : null}
         </div>
       )}

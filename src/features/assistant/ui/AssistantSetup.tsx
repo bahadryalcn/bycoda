@@ -2,20 +2,17 @@ import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
-import { modelDisplayName } from "../../sessions/public/modelDisplayName";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ASSISTANT_MIN_DAILY_TOKEN_BUDGET,
   type AssistantProfilePatch,
 } from "../../../shared/model/host-contracts/assistant";
 import { t } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
-import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Stepper } from "../../../shared/ui/Stepper";
-import { Sparkles } from "../../../shared/ui/icons";
 import { loadVoicePersona } from "../../voice/model/voicePersona";
 import { useVoiceSetupProviderKey, VoiceSetupSteps } from "../../voice/public/setup";
 import { assistantRequest, useAssistantSnapshot } from "../model/assistantClient";
@@ -32,27 +29,12 @@ import {
   getHarnessAvailabilitySnapshot,
   subscribeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
-import { AlwaysOnChecklist } from "./settings/AlwaysOnChecklist";
 import { AssistantKeepAwakeStatus } from "./AssistantKeepAwakeStatus";
 import { AssistantProfileFields } from "./AssistantProfileFields";
-import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
-import { RUNTIME_MODE_LABEL } from "../../sessions/public/session";
-import { ASSISTANT_WORK_PRESET_TEXT, assistantWorkPreset } from "../model/assistantWorkPresets";
+import { applyAssistantWorkPreset, assistantWorkPreset } from "../model/assistantWorkPresets";
 import styles from "./AssistantSetup.module.css";
 
 const DRAFT_KEY = "bycoda.assistant.setup-draft";
-const TONE_LABEL = {
-  friendly: "Friendly",
-  neutral: "Neutral",
-  formal: "Formal",
-  casual: "Casual",
-  blunt: "Blunt",
-} as const;
-const FREQUENCY_LABEL = {
-  always: "Always use my name",
-  sometimes: "Sometimes use my name",
-  never: "Never use my name",
-} as const;
 const labels = {
   identity: "Identity",
   voice: "Voice provider",
@@ -104,8 +86,8 @@ function readDraft(): Draft | null {
   }
 }
 
-/** Core-only setup needs identity and budget. Voice adds explicit provider,
- * playback and microphone checks; reopening the wizard never starts capture. */
+/** Core setup is one screen: the name and a work mode, then Start. Voice adds explicit provider,
+ * playback and microphone checks as steps; reopening the wizard never starts capture. */
 export function AssistantSetup({
   onClose,
   voice = false,
@@ -128,12 +110,6 @@ export function AssistantSetup({
     liveEnvironment = useRef(environmentId);
   liveEnvironment.current = environmentId;
   const [error, setError] = useState("");
-  const [builderOpen, setBuilderOpen] = useState(false);
-  const [finished, setFinished] = useState(false);
-  const checklistRequest = useMemo(
-    (): typeof assistantRequest => (input) => assistantRequest(input, draft?.environmentId),
-    [draft?.environmentId],
-  );
   const providerKey = useVoiceSetupProviderKey();
   const [verifiedProvider, setVerifiedProvider] = useState<string>();
   const providerVerified = verifiedProvider === providerKey;
@@ -149,18 +125,27 @@ export function AssistantSetup({
           : []),
         "review",
       ]
-    : ["identity", "workmode", "review"];
+    : ["identity"];
   useEffect(() => {
     if (!draft && snapshot && environmentId) {
       const legacy = loadVoicePersona();
+      const defaults = assistantSetupDefaults({
+        ...snapshot.profile,
+        name: snapshot.profile.name || legacy.name,
+        addressAs: snapshot.profile.addressAs || legacy.userName,
+      });
+      // A first core setup starts on the safe "Only watch" mode instead of asking for a choice.
+      const untouched =
+        !voice &&
+        !snapshot.profile.setupComplete &&
+        assistantWorkPreset(defaults) === "custom" &&
+        (defaults.autonomy ?? "report") === "report";
       setDraft({
         step: voice && snapshot.profile.setupComplete ? "voice" : "identity",
         environmentId,
-        patch: assistantSetupDefaults({
-          ...snapshot.profile,
-          name: snapshot.profile.name || legacy.name,
-          addressAs: snapshot.profile.addressAs || legacy.userName,
-        }),
+        patch: untouched
+          ? { ...defaults, ...applyAssistantWorkPreset(defaults, "watch") }
+          : defaults,
         rules: snapshot.profile.setupComplete ? "" : legacy.rules,
       });
     } else if (draft && !draft.environmentId && snapshot && environmentId) {
@@ -177,12 +162,6 @@ export function AssistantSetup({
   const index = draft ? Math.max(0, steps.indexOf(draft.step)) : 0;
   const step = steps[index];
   const patch = draft?.patch ?? {};
-  const workPreset = assistantWorkPreset(patch);
-  /** A first setup starts with nothing chosen; a custom mix the owner made or already saved is shown as Custom. */
-  const workModeUnchosen =
-    workPreset === "custom" &&
-    !snapshot?.profile.setupComplete &&
-    (patch.autonomy ?? "report") === "report";
   const displayedDefaultWorker = modelSource.resolve("codex", "");
   const proposedWorker =
     !snapshot?.profile.setupComplete &&
@@ -199,14 +178,6 @@ export function AssistantSetup({
     modelSource
       .modelsFor(proposedWorker.harness)
       .some((model) => model.harness === proposedWorker.harness && model.id === proposedWorker.id);
-  const workerModel = patch.execution
-    ? (modelSource
-        .modelsFor(patch.execution.harness)
-        .find((model) => model.id === patch.execution?.model)?.name ??
-      modelDisplayName(patch.execution.model, patch.execution.harness))
-    : defaultWorkerAvailable
-      ? proposedWorker.name
-      : undefined;
   function assertSource() {
     if (!draft?.environmentId || liveEnvironment.current !== draft.environmentId)
       throw new Error(t("The original setup Host is unavailable. Your draft is kept."));
@@ -242,10 +213,9 @@ export function AssistantSetup({
   function valid() {
     if (step === "voice") return providerVerified;
     if (step === "review" && voiceOnly) return providerVerified;
-    if (step === "identity") return Boolean(patch.name?.trim());
-    if (step === "workmode" && workModeUnchosen) return false;
+    if (step === "identity" && voice) return Boolean(patch.name?.trim());
     if (
-      (step === "workmode" || step === "review") &&
+      (step === "identity" || step === "workmode" || step === "review") &&
       (!patch.name?.trim() ||
         !Number.isInteger(patch.dailyTokenBudget) ||
         (patch.dailyTokenBudget ?? 0) < ASSISTANT_MIN_DAILY_TOKEN_BUDGET)
@@ -350,7 +320,7 @@ export function AssistantSetup({
       if (!profile?.setupComplete || (voice && !profile.voiceSetupComplete))
         throw new Error(t("Setup could not be confirmed by the Host."));
       draftWriter.clear();
-      setFinished(true);
+      onClose();
     } catch (cause) {
       setError(presentRemoteError(cause, { explicit: true }));
     } finally {
@@ -358,55 +328,28 @@ export function AssistantSetup({
       setPending(false);
     }
   }
-  if (finished && snapshot)
-    return (
-      <Modal
-        title={t(voice ? "Voice is ready" : "Ready for 24/7")}
-        size="md"
-        fitViewport
-        onClose={onClose}
-        footer={
-          <ModalActions>
-            <Button variant="primary" onClick={onClose}>
-              {t("Done")}
-            </Button>
-          </ModalActions>
-        }
-      >
-        {voice ? (
-          <Text tone="secondary">{t("The microphone opens only when you choose to talk.")}</Text>
-        ) : (
-          <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.setup}>
-            <Text as="p" leading="normal" className={styles.muted}>
-              {t(
-                "Optional. Check what keeps the assistant working around the clock; you can skip this and find it later in Settings, Access.",
-              )}
-            </Text>
-            <AlwaysOnChecklist request={checklistRequest} snapshot={snapshot} />
-          </Text>
-        )}
-      </Modal>
-    );
   return (
     <Modal
       title={t(voice ? "Voice setup" : "Set up")}
       onClose={() => {
         if (!pending) onClose();
       }}
-      size="md"
+      size={voice ? "md" : "sm"}
       fitViewport
       footerStart={draft && error ? <InlineError>{error}</InlineError> : undefined}
       footer={
         draft ? (
           <ModalActions>
-            <Button
-              variant="ghost"
-              disabled={pending || index === 0}
-              onClick={() => setDraft({ ...draft, step: steps[index - 1] })}
-            >
-              {t("Back")}
-            </Button>
-            {step === "review" ? (
+            {voice && (
+              <Button
+                variant="ghost"
+                disabled={pending || index === 0}
+                onClick={() => setDraft({ ...draft, step: steps[index - 1] })}
+              >
+                {t("Back")}
+              </Button>
+            )}
+            {!voice || step === "review" ? (
               <Button
                 variant="primary"
                 loading={pending}
@@ -441,31 +384,24 @@ export function AssistantSetup({
         ) : null}
         {!draft ? null : (
           <>
-            <Stepper
-              steps={steps.map((id) => ({
-                id,
-                label: t(labels[id]),
-                description: id === "speaker" || id === "microphone" ? t("Optional") : undefined,
-              }))}
-              current={index}
-              details="current"
-              label={t("Set up")}
-            />
+            {voice && (
+              <Stepper
+                steps={steps.map((id) => ({
+                  id,
+                  label: t(labels[id]),
+                  description: id === "speaker" || id === "microphone" ? t("Optional") : undefined,
+                }))}
+                current={index}
+                details="current"
+                label={t("Set up")}
+              />
+            )}
             <div className={styles.content} key={step}>
               {step === "identity" && (
-                <Button
-                  type="button"
-                  className={styles.aiStart}
-                  startIcon={<Sparkles className="icon-sm" />}
-                  onClick={() => setBuilderOpen(true)}
-                >
-                  {t("Set up with AI")}
-                </Button>
+                <AssistantProfileFields section="identity" value={patch} onChange={update} />
               )}
-              {step === "identity" && (
-                <div className={styles.grid}>
-                  <AssistantProfileFields section="identity" value={patch} onChange={update} />
-                </div>
+              {step === "identity" && !voice && (
+                <AssistantProfileFields section="workmode" value={patch} onChange={update} />
               )}
               {step === "identity" && voice && (
                 <AssistantProfileFields section="language" value={patch} onChange={update} />
@@ -482,12 +418,7 @@ export function AssistantSetup({
               )}
               {step === "workmode" && (
                 <div className={styles.grid}>
-                  <AssistantProfileFields
-                    section="workmode"
-                    value={patch}
-                    onChange={update}
-                    workModeUnchosen={workModeUnchosen}
-                  />
+                  <AssistantProfileFields section="workmode" value={patch} onChange={update} />
                 </div>
               )}
               {step === "presence" && (
@@ -516,94 +447,15 @@ export function AssistantSetup({
                   onChange={(event) => setDraft({ ...draft, rules: event.currentTarget.value })}
                 />
               )}
-              {step === "review" && !voiceOnly && (
-                <div className={styles.review}>
-                  <DescriptionList>
-                    <DescriptionItem term={t("Name")}>{patch.name}</DescriptionItem>
-                    <DescriptionItem term={t("Work mode")}>
-                      {workPreset === "custom"
-                        ? t("Custom")
-                        : t(ASSISTANT_WORK_PRESET_TEXT[workPreset].label)}
-                    </DescriptionItem>
-                    <DescriptionItem term={t("Daily token budget")}>
-                      {patch.dailyTokenBudget?.toLocaleString()}
-                    </DescriptionItem>
-                    {(workerModel || proposedWorker) && (
-                      <DescriptionItem term={t("Worker model")}>
-                        {workerModel || t("Choose a provider and model")}
-                      </DescriptionItem>
-                    )}
-                    {patch.execution && (
-                      <DescriptionItem term={t("Execution permissions")}>
-                        {t(RUNTIME_MODE_LABEL[patch.execution.runtimeMode])}
-                      </DescriptionItem>
-                    )}
-                    <DescriptionItem term={t("Personality")}>
-                      {[
-                        t(TONE_LABEL[patch.tone ?? "friendly"]),
-                        t(FREQUENCY_LABEL[patch.addressFrequency ?? "sometimes"]),
-                        patch.allowProfanity ? t("Profanity allowed") : t("No profanity"),
-                      ].join(" · ")}
-                    </DescriptionItem>
-                    {draft.rules.trim() && (
-                      <DescriptionItem term={t("First rules")}>
-                        <Text
-                          as="span"
-                          size="inherit"
-                          tone="inherit"
-                          leading="relaxed"
-                          className={styles.rules}
-                        >
-                          {draft.rules}
-                        </Text>
-                      </DescriptionItem>
-                    )}
-                  </DescriptionList>
-                  <Text as="p" leading="normal" className={styles.muted}>
-                    {t("The microphone opens only when you choose to talk.")}
-                  </Text>
-                </div>
-              )}
-              {step === "review" && voiceOnly && (
+              {step === "review" && (
                 <Text tone="secondary">
                   {t("The microphone opens only when you choose to talk.")}
                 </Text>
-              )}
-              {step === "review" && voice && !voiceOnly && !draft.detailedVoice && (
-                <Button
-                  className={styles.aiStart}
-                  onClick={() => setDraft({ ...draft, detailedVoice: true, step: "workmode" })}
-                >
-                  {t("Work mode")}
-                </Button>
-              )}
-              {step === "review" && voice && !providerVerified && (
-                <Button
-                  onClick={() =>
-                    setDraft({
-                      ...draft,
-                      step: "voice",
-                    })
-                  }
-                >
-                  {t("Set up voice")}
-                </Button>
               )}
             </div>
           </>
         )}
       </Text>
-      {builderOpen && (
-        <AssistantBuilderDialog
-          current={patch}
-          onClose={() => setBuilderOpen(false)}
-          onApply={(changes) => {
-            if (voice && draft && (changes.name ?? patch.name)?.trim()) {
-              setDraft({ ...draft, patch: { ...patch, ...changes }, step: "voice" });
-            } else update(changes);
-          }}
-        />
-      )}
     </Modal>
   );
 }

@@ -1039,8 +1039,7 @@ describe("model panel settings column", () => {
       await act(async () => trigger().click());
       await renderField({});
       expect(badge("data-model-effort")?.getAttribute("aria-label")).toBe("Effort: low");
-      expect(badge("data-model-fast")?.getAttribute("data-model-fast")).toBe("off");
-      expect(badge("data-model-fast")?.getAttribute("aria-label")).toBe("Fast off");
+      expect(badge("data-model-fast")).toBeNull();
       await renderField({ fast: "true", effort: "high" });
       expect(badge("data-model-fast")?.getAttribute("data-model-fast")).toBe("on");
       expect(badge("data-model-fast")?.getAttribute("aria-label")).toBe("Fast on");

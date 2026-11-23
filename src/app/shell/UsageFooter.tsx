@@ -14,7 +14,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { Popover } from "../../shared/ui/Popover";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
-import { Tooltip } from "../../shared/ui/Tooltip";
 import {
   consumeClaudeLimitReset,
   consumeCodexRateLimitResetCredit,
@@ -37,7 +36,6 @@ import {
 import { loginHarness, supportsHarnessLogin } from "../../integrations/harness/core/auth";
 import { registerProviderAccount } from "../../features/providers/model/providerAccountRegistration";
 import {
-  runningTerminalChipLabel,
   type RunningTerminal,
 } from "../../features/terminal/model/terminalTab";
 import { useKeybindingShortcut } from "../../features/settings/public/useKeybindingShortcut";
@@ -309,10 +307,10 @@ export function UsageFooter({
         `@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 ${embedded ? "flex-1" : "shrink-0 px-1.5"}`,
       )}
     >
-      {/* Shared scrollbar (not hidden) so clipped provider chips show that more exist; the chips are buttons, so keyboard focus scrolls them into view. */}
+      {/* The row stays one line. Clipped chips remain reachable by scrolling and keyboard focus. */}
       <ScrollArea
-        axis="both"
-        scrollbar="auto"
+        axis="x"
+        scrollbar="hidden"
         data-provider-usage
         className="flex min-w-0 flex-1 items-center gap-1 overscroll-x-contain"
       >
@@ -447,12 +445,10 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
 
   if (!canLogin) {
     return (
-      <Tooltip label={HARNESS_TITLE[session.harness]}>
         <span className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap">
           <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
           <span>{HARNESS_LABEL[session.harness]}</span>
         </span>
-      </Tooltip>
     );
   }
 
@@ -468,14 +464,13 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
         aria-label={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
         aria-expanded={open}
         aria-haspopup="dialog"
-        tooltip={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
         onClick={() => setOpen((value) => !value)}
       >
         <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
         <span>{HARNESS_LABEL[session.harness]}</span>
         {authRequired ? (
           <Text size="caption" tone="warning">
-            {t("sign in")}
+            {t("Sign in")}
           </Text>
         ) : null}
       </Button>
@@ -517,17 +512,16 @@ function RunningTerminalChip({
   const t = useT();
   const root = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const label = runningTerminalChipLabel(terminals);
   const many = terminals.length > 1;
-  const details = terminals.map((terminal) => `"${terminal.process}" in ${terminal.label}`);
+  const details = terminals.map((terminal) => terminal.label);
   const ariaLabel =
     terminals.length === 1
       ? panelOpen
-        ? `Hide ${terminals[0]?.process}`
-        : `Show ${terminals[0]?.process}`
+        ? t("Hide terminal {p0}", { p0: terminals[0]?.process ?? "" })
+        : t("Show terminal {p0}", { p0: terminals[0]?.process ?? "" })
       : panelOpen
-        ? "Hide running terminals"
-        : `${terminals.length} terminals are running processes`;
+        ? t("Hide running terminals")
+        : t("Running terminals");
 
   const toggle = (fileId: string) => {
     setMenuOpen(false);
@@ -558,7 +552,6 @@ function RunningTerminalChip({
         }}
       >
         <WorkingIndicator className="shrink-0" />
-        <span className="sr-only">{label}</span>
       </Button>
       {menuOpen && many && !panelOpen ? (
         <DropdownMenu

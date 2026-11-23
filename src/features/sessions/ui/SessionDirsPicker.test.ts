@@ -52,7 +52,7 @@ function render(workingDirectory = "/work/web") {
 }
 function button(text: string) {
   const found = [...document.querySelectorAll<HTMLButtonElement>("button")].find((element) =>
-    visibleSessionTestText(element)?.includes(text),
+    element.getAttribute("aria-label") === text || visibleSessionTestText(element)?.includes(text),
   );
   expect(found, text).toBeDefined();
   return found!;
@@ -70,8 +70,8 @@ function checkbox(path: string) {
   );
 }
 
-async function browse() {
-  await act(async () => button("Choose from").click());
+async function browse(label = "Add folder…") {
+  await act(async () => button(label).click());
 }
 
 describe("session folders", () => {
@@ -81,7 +81,7 @@ describe("session folders", () => {
     open();
     expect(checkbox("/work/web")?.getAttribute("aria-selected")).toBe("true");
     expect(checkbox("/work/web")?.disabled).toBe(true);
-    expect(document.body.textContent).toContain("Working folder");
+    expect(checkbox("/work/web")?.querySelector('[aria-label="Working folder"]')).not.toBeNull();
     expect(document.body.textContent).not.toContain("No folders");
     expect(additionalDirsForSession("s1", "/work/web")).toEqual([]);
   });
@@ -185,7 +185,7 @@ describe("session folders", () => {
     render();
     open();
     click("Change project…");
-    await browse();
+    await browse("Open a project");
     expect(pickFolders).toHaveBeenCalledWith("Choose session project", false);
     expect(onProjectChange).toHaveBeenCalledWith("/custom/project");
     expect(loadSessionAdditionalDirs("s1")).toBeUndefined();
@@ -203,7 +203,7 @@ describe("session folders", () => {
     });
     expect(document.body.textContent).toContain("No matching folders");
     expect(checkbox("/other/api")).toBeUndefined();
-    expect(button("Choose from").disabled).toBe(false);
+    expect(button("Add folder…").disabled).toBe(false);
     act(() => document.querySelector<HTMLButtonElement>('[aria-label="Clear search"]')!.click());
     expect(input.value).toBe("");
     expect(checkbox("/other/api")).toBeDefined();

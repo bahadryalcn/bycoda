@@ -180,6 +180,13 @@ is not an exception.
 
 Pane structure: `PaneHeader` (+ `WindowChromeInset`) for pane/tool headers and title rows, `SectionLabel` for group titles, `Surface` for static containers, `Divider` for hairlines, `Sash` for resize edges, `Meter` for bounded measures, `Tabs` for view switching. Features compose these instead of local header rows, eyebrow labels, card recipes, `w-[78px]` spacers, resize-handle recipes, hand-made meter bars and roving-key tab handlers. Feature CSS may add container steps on the documented hooks (`Tabs` `data-tab-part`, `className`) but not restyle the parts.
 
+Header, list and choice variants (use them instead of feature styling):
+
+- `SectionLabel variant="rail"` is the sidebar section header (caption size, medium weight, `--ui-list-gutter` inset, trailing actions in one always-visible slot). An empty rail row uses the inline `EmptyState` (caption, regular weight, muted).
+- `PaneHeader` takes `primaryAction` and `overflow`. Below 26rem of header width the title shrinks first, `primaryAction` stays and `actions` move into `overflow`. Pass `overflow` only when there are actions to move.
+- `RadioGroup` tiles take `tileLayout="portrait" | "icon" | "preview"`; the group owns gap, wrapping, focus clearance and the inside selection ring, so callers pass no tile spacing or ring classes.
+- Initial data states are exclusive: `ContinuousList` renders exactly one of loading, failure with Retry, or inline empty; a continuation failure stays below the loaded rows.
+
 ## Action contract
 
 `Button.tsx` is the only ordinary action presentation owner. Copy, split, async and
@@ -197,7 +204,7 @@ Hierarchy and semantic color are independent:
 
 | Property                 | Values                                                                                                                                                                      | Meaning                                                                             |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `variant`                | `primary`, `secondary`, `ghost`, `link`                                                                                                                                     | Solid emphasis, outlined action, quiet action, text action                          |
+| `variant`                | `primary`, `secondary`, `ghost`, `link`, `chip`                                                                                                                             | Solid emphasis, outlined action, quiet action, text action, quiet icon plus value   |
 | `tone`                   | `neutral`, `accent`, `info`, `success`, `warning`, `danger`                                                                                                                 | Intent, independent of hierarchy                                                    |
 | Compatibility            | `variant="danger"`; `tone="error"`                                                                                                                                          | Normalize to secondary/danger and danger respectively; one style implementation     |
 | Structural compatibility | `item`, `tab`                                                                                                                                                               | Existing stable direct-child rendering; interaction owner retains ARIA/roving focus |
@@ -206,9 +213,15 @@ Hierarchy and semantic color are independent:
 
 The shared Button implements the independent tone prop. Existing seven variants
 remain compatible; legacy aliases normalize at the public adapter boundary.
-Hover and keyboard hints, shortcut key caps and disabled reasons all go through the shared
+`chip` is the compact selector face for machine, project, checkout, branch and model
+pickers: a quiet icon plus a readable value, no border or fill until hover. The visible
+value is its name; it gets no tooltip.
+An icon-only `label` is the accessible name only and opens no tooltip. A hint appears
+only when it adds a shortcut, a reason or detail. It goes through the shared
 Tooltip (`tooltip`, `shortcut`, `tooltipDetails`, `disabledReason`); a native `title=` on an
 action is drift, and optional rich previews use useHoverCard.
+`disabledReason` is for a non-obvious cause with no visible explanation beside the control;
+when the reason is already visible, associate it with the control instead of repeating it.
 Do not repeat a fully visible label in a hint. Remove plain duplicate hints;
 use `tooltipWhen="overflow"` on Button, `when="overflow"` on Tooltip/useTooltip,
 or `OverflowTooltip` for text that may be clipped or hidden in an icon-only mode.
@@ -252,6 +265,16 @@ announces progress and prevents click, keyboard and form activation duplicates.
 Features continue to own asynchronous operations; no new implicit persistence.
 
 ### Quiet, complete operation feedback
+
+One fact, one owner: decide at the event source where a message lives and render it once.
+A field validation or recoverable foreground failure shows at the field, row or form footer;
+a whole-pane condition shows in one pane banner until resolved; a background completion with
+no visible owner gets one toast. Never repeat the same message in a second channel, in a
+tooltip or in `disabledReason`. Toasts key actionable repeats by operation id (`reportFailure`
+accepts `operationId`), so a retry updates its card and two operations with equal text keep two
+cards, each with its own Retry. A visible blocked-form reason is associated with the footer
+action, not repeated as a hint. No inline help paragraphs: optional help is an info (ⓘ)
+control, required validation and recovery stay visible.
 
 Keep permission, readiness and activity distinct. Domain owners provide evidence,
 invalidate stale runtime observations after failed reads, and retain saved permission
@@ -597,8 +620,16 @@ consumed by name. Do not copy a value into feature CSS.
   Arc-scoped (density/scope specific); outside Arc use `--ui-control-height-*`, `--ui-surface-*`
   and `--color-stroke`/`--ui-pane-border`. `--ui-radius-control` and `--ui-radius-panel` alias
   `--ui-control-radius` and `--ui-radius-card`.
-- Floating container role: `--ui-surface-floating` is the one surface for dialogs, sheets,
-  popovers, menus, tooltips, toasts and floating panels. Tinted canvases keep the raised step; the
+- Spacing: `--ui-space-{1,2,3,4,5,6,8,10,12}` (4px per unit, rem) are the semantic steps
+  (4 glyph to label, 8 between independent controls, 12 list and popup gutter, 16 form gutter,
+  24 between sections); use 0 directly. `--ui-list-gutter` (`--ui-space-2`) is the one inline
+  inset shared by rail section headers, list rows and inline empty states. The legacy Arc
+  `--space-*` names keep their existing values until their last consumer moves.
+- Floating container role: `--ui-surface-floating` is the one opaque, theme-bound surface for
+  dialogs, sheets, popovers, menus, tooltips, toasts, native popups and floating panels, drawn
+  with `--ui-floating-edge`, `--ui-floating-shadow` and `--ui-radius-floating`. Size,
+  placement and scrolling never choose its paint, and no overlay owns a private frost or palette;
+  a docked sheet keeps the host canvas and a divider. Tinted canvases keep the raised step; the
   Pure background maps it near the pure ground (the pane border and floating elevation separate
   it) and controls inside keep their own steps.
 - Layer ground and lift: derived layers (surfaces, fields, hover and selected steps, group
@@ -669,10 +700,11 @@ the Button's `1em` sizing; do not add a size class there. `icons.tsx` `wrap()` d
 
 ### Floating surfaces
 
-Popover, Modal, Select, Menu and Combobox share `--ui-radius-popup` (12px),
-`--ui-elevation-floating` (light and dark variants), `border-stroke` and
-`--ui-overlay-backdrop`. Replace `rounded-xl/2xl`, `shadow-xl/2xl`, `border-content/10`
-and `bg-scrim/40` on those surfaces with these tokens.
+Popover, Modal, Select, Menu and Combobox share `--ui-radius-floating` (12px; `--ui-radius-popup`
+aliases it), `--ui-floating-shadow` (`--ui-elevation-floating` aliases it), `--ui-floating-edge`
+and `--ui-overlay-backdrop` (the scrim, a separate layer). Replace `rounded-xl/2xl`,
+`shadow-xl/2xl`, `border-content/10` and `bg-scrim/40` on those surfaces with these tokens.
+Do not pass frame paint through `className`, `panelStyle` or glass hooks.
 
 The shared control-density preference lives in `appearancePreferences` and uses
 the existing versioned preference record. Missing or invalid values normalize to
@@ -683,6 +715,8 @@ controls. This is the implemented `controlDensity` field in the existing
 Appearance applies the preference through `data-control-density` on the document
 root, and shared theme tokens own the geometry. Reading-settings reset restores
 compact density without clearing fonts or unrelated layout preferences.
+Density is the saved user preference: a narrow pane changes arrangement (stacking, wrapping,
+overflow), never density, and user UI scale still multiplies rem values.
 Use the 4px spacing rhythm for new layout roles; normalize the legacy Arc bridge's
 6/10/14px spacing centrally after geometry checks, not screen by screen. Touch
 contexts need at least a 44px interactive target through the shared density layer;
@@ -856,8 +890,8 @@ Keep one focus owner. `SearchInput` uses `input`, `group` or `menu` ownership as
 documented in [Arc integration](arc-ui.md). Features must not add nested outlines.
 Keyboard focus remains visible (keyboard modality and forced-colors mode); pointer
 interaction shows no focus visuals (see One component system spec). An icon action
-needs a translated accessible name and a tooltip; essential help and errors are
-reachable without hover. Navigation, tabs, menus and trees keep their native ARIA
+needs a translated accessible name; add a tooltip only for a shortcut, reason or detail.
+Essential help and errors are reachable without hover. Navigation, tabs, menus and trees keep their native ARIA
 and keyboard contracts.
 
 Motion explains a state change. Use shared tokens and stable keys, respect reduced

@@ -97,7 +97,10 @@ export function WorkspaceManagedRow({
                     {title}
                   </Text>
                 </Tooltip>
-                <Badge size="sm">{lifecycleLabel(workspace.state)}</Badge>
+                {/* The dot carries active and idle; only a finished outcome gets a word. */}
+                {workspace.state !== "active" && workspace.state !== "idle" ? (
+                  <Badge size="sm">{lifecycleLabel(workspace.state)}</Badge>
+                ) : null}
                 {missing && (
                   <Badge size="sm" tone="warning">
                     {t("Missing folder")}
@@ -113,7 +116,7 @@ export function WorkspaceManagedRow({
                   workspace.directoryState === "removing") && (
                   <Badge size="sm">{t("Removing directory…")}</Badge>
                 )}
-                {workspace.pinned && <Badge size="sm">{t("Pinned")}</Badge>}
+                {workspace.pinned && <Pin role="img" aria-label={t("Pinned")} className="icon-xs" />}
               </span>
               <Tooltip label={caption} when="overflow">
                 <Text

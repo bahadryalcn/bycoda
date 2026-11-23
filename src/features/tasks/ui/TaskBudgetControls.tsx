@@ -3,6 +3,7 @@ import "./task-form.css";
 import { t, useFormat, useLocale } from "../../../shared/i18n";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { NumberField } from "../../../shared/ui/NumberField";
 import type { TaskRunBudget, TaskRunBudgetUsage } from "../model/taskBudget";
 
@@ -47,11 +48,11 @@ export function TaskBudgetControls({
             onChange={(event) => update("maxTokens", event.target.value)}
           />
         </div>
-        <Text as="p" size="micro" tone="secondary" leading="inherit" className="task-form-hint">
+        <InfoPopover>
           {t(
             "Includes planning, workers, reviewers and correction runs. Empty or zero means unlimited. Token limits depend on provider reporting.",
           )}
-        </Text>
+        </InfoPopover>
       </div>
     </Disclosure>
   );
@@ -111,13 +112,6 @@ export function TaskBudgetUsage({
       {stop ? (
         <Text as="p" tone="warning" size="inherit" role="status" className="break-words">
           {stop}
-        </Text>
-      ) : null}
-      {usage?.historyComplete === false ? (
-        <Text as="p" size="micro" tone="warning">
-          {t(
-            "Earlier runs are missing from the usage history. Recorded readings are lower bounds.",
-          )}
         </Text>
       ) : null}
     </Text>

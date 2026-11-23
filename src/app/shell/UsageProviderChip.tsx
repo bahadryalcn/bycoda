@@ -463,7 +463,6 @@ function UsageProviderDetails({
                       {t("Updating")}
                     </Text>
                   ) : null}
-                  {refreshButton}
                 </div>
                 <Text as="p" size="caption" tone="secondary" className="mt-0.5">
                   {updatedLabel(detailLimits, now, t)}
@@ -495,7 +494,7 @@ function UsageProviderDetails({
                     {activeAccount ? (
                       <AccountColorDot account={activeAccount} className="size-1.5" />
                     ) : null}
-                    <Text size="inherit" tone="inherit" truncate className="max-w-[60%] shrink-0">
+                    <Text size="inherit" tone="inherit" truncate className="min-w-0">
                       {activeAccountLabel}
                     </Text>
                     <ProviderAccountSubtitle
@@ -544,6 +543,7 @@ function UsageProviderDetails({
                 }}
               />
             ) : null}
+            {refreshButton ? <div className="flex justify-end pt-(--ui-space-2)">{refreshButton}</div> : null}
             {limits.provider === "codex" || limits.provider === "claude" ? (
               <BankedResets
                 limits={detailLimits}

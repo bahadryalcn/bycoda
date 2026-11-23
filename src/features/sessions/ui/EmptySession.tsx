@@ -17,9 +17,8 @@ import { CrewScene } from "./crewSurface";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { BrandMark } from "../../../shared/ui/BrandMark";
 import { Button } from "../../../shared/ui/Button";
-import { BookOpen, FolderOpen } from "../../../shared/ui/icons";
+import { FolderOpen } from "../../../shared/ui/icons";
 import { runGuideAction } from "../../onboarding/model/guide";
-import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import "./BycodaSession.css";
 
 type Props = {
@@ -55,8 +54,6 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
         ? resolveTabGroupLabel(projectKey(cwd), loadTabGroupLabels(), basename(cwd))
         : null,
   );
-  const title = project ?? t("New session");
-
   return (
     <div
       ref={lockOverscroll}
@@ -76,25 +73,17 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
               <BrandMark variant="wordmark" className="bycoda-brand-lettering" />
             </div>
             <div className="bycoda-task-brief pointer-events-auto">
-              <Heading size="page">{title}</Heading>
+              {project ? <Heading size="page">{project}</Heading> : null}
               {project ? <p className="bycoda-task-path">{projectLocation}</p> : null}
               {project ? null : (
                 <div className="bycoda-entry-actions bycoda-arc">
                   <Button
                     variant="primary"
-                    size="lg"
+                    size="md"
                     startIcon={<FolderOpen />}
                     onClick={() => runGuideAction("open-project")}
                   >
                     {t("Open a project")}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    startIcon={<BookOpen />}
-                    onClick={openUsageGuide}
-                  >
-                    {t("Guide")}
                   </Button>
                 </div>
               )}

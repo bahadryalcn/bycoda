@@ -116,7 +116,7 @@ type Props = {
    * `inline` (default) is the compact toolbar trigger. `field` renders the trigger as a
    * full-width, left-aligned form field, for forms where the picker answers a labelled question.
    */
-  presentation?: "inline" | "field";
+  presentation?: "inline" | "field" | "chip";
   /** In the composer, shorten the model label and hide the account name when space is tight. */
   compactIdentity?: boolean;
   /**
@@ -808,7 +808,10 @@ export function ModelPicker({
           <Trigger
             {...(field
               ? { "data-field-size": "md", "data-state": open || recentOpen ? "open" : "closed" }
-              : { size: "sm" as const, variant: "ghost" as const })}
+              : {
+                  size: "sm" as const,
+                  variant: presentation === "chip" ? ("chip" as const) : ("ghost" as const),
+                })}
             className={field ? "bycoda-arc-select" : "w-auto max-w-full min-w-0 shrink-0"}
             data-model-picker-presentation={presentation}
             ref={button}
@@ -1055,21 +1058,6 @@ export function ModelPicker({
           highlight="state"
           initialActiveId={recentMenu?.initialId}
           items={[
-            ...recentModels.map((item): DropdownMenuItem => ({
-              kind: "item",
-              id: modelChoiceKey(item),
-              label: item.name,
-              icon: <HarnessIcon harness={item.harness} className="size-4 shrink-0" />,
-              trailing: (
-                <Text size="caption" tone="secondary">
-                  {HARNESS_TITLE[item.harness]}
-                  {item.provider ? ` · ${item.provider.name}` : ""}
-                </Text>
-              ),
-              checked: modelChoiceKey(item) === currentChoiceKey,
-              selectionRole: "radio",
-              disabled: !source.available(item.harness),
-            })),
             ...(recentModels.some((item) => source.available(item.harness))
               ? []
               : [
@@ -1088,6 +1076,21 @@ export function ModelPicker({
                     ),
                   } satisfies DropdownMenuItem,
                 ]),
+            ...recentModels.map((item): DropdownMenuItem => ({
+              kind: "item",
+              id: modelChoiceKey(item),
+              label: item.name,
+              icon: <HarnessIcon harness={item.harness} className="icon-sm shrink-0" />,
+              trailing: recentModels.some((other) => other !== item && other.name === item.name) ? (
+                <Text size="caption" tone="secondary">
+                  {HARNESS_TITLE[item.harness]}
+                  {item.provider ? ` · ${item.provider.name}` : ""}
+                </Text>
+              ) : undefined,
+              checked: modelChoiceKey(item) === currentChoiceKey,
+              selectionRole: "radio",
+              disabled: !source.available(item.harness),
+            })),
           ]}
           onPick={(id) => {
             const item = recentModels.find((model) => modelChoiceKey(model) === id);

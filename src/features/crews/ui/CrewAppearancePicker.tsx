@@ -62,22 +62,20 @@ export function CrewAppearancePicker({
           side="bottom"
           align="start"
           width={288}
-          constrainHeight
           onDismiss={() => setOpen(false)}
           kind="dialog"
           aria-label={t("Crew icon and color")}
           variant="compact"
-          className="bycoda-arc overflow-y-auto overscroll-contain"
         >
           <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap gap-[calc(var(--space-1)/2)]">
+            <div className="flex flex-wrap items-center gap-1">
               <RadioGroup
                 variant="tiles"
                 label={t("Crew icon")}
                 value={look.icon ?? ""}
                 onValueChange={(icon) => onChange({ icon })}
                 tile={{ motion: "none" }}
-                className="flex flex-wrap gap-[calc(var(--space-1)/2)]"
+                tileLayout="icon"
                 options={QUICK_ICONS.map((icon) => ({
                   value: icon,
                   iconOnly: true,

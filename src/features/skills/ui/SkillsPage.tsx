@@ -7,7 +7,6 @@ import { errorText } from "../../../shared/lib/errors";
 import { SkillAdvancedDialog } from "./SkillAdvancedDialog";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { Code } from "../../../shared/ui/Code";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SkillActionsMenu } from "./SkillActionsMenu";
 import { SkillsLibraryToolbar } from "./SkillsLibraryToolbar";
@@ -48,8 +47,7 @@ import {
   type ReactNode,
 } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { ChevronLeft, RefreshCw, X } from "../../../shared/ui/icons";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { X } from "../../../shared/ui/icons";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { confirmInApp } from "../../../shared/model/appConfirm";
 import { canTransferSkill, SkillExistsError, transferSkill } from "../model/transferSkill";
@@ -86,7 +84,6 @@ import {
   machineSkillsTruncated,
 } from "../model/machineSkills";
 import { canDeleteSkill } from "../model/deleteSkill";
-import { skillPreviewStatus, type SkillPreviewStatus } from "../model/skillPreviewStatus";
 import { RevealedSetting, Segmented, Toggle } from "../../../shared/ui/settings";
 import { cacheSkillPolicy, cachedSkillPolicy } from "../model/skillPreferences";
 import {
@@ -119,7 +116,6 @@ export function SkillsPage({
   const skillGroups = useSkillGroups();
   const groupView = useSkillGroupView();
   const openGroup = skillGroups.find((group) => group.id === groupView.groupId) ?? null;
-  const groupedNames = new Set(skillGroups.flatMap((group) => group.skillNames));
   const [groupEdit, setGroupEdit] = useState<GroupEdit | null>(null);
   const [groupError, setGroupError] = useState<string | null>(null);
   const revealed = useContext(RevealedSetting);
@@ -203,12 +199,9 @@ export function SkillsPage({
   const [policyTarget, setPolicyTarget] = useState<string | null>(null);
   const policySaving = policyTarget !== null;
   const policyPending = useRef(false);
+  // Only failures are reported; successful actions show their result in the list itself.
   const [actionError, setActionError] = useState<string | null>(null);
-  const [actionResult, setActionResult] = useState("");
-  const clearFeedback = () => {
-    setActionError(null);
-    setActionResult("");
-  };
+  const clearFeedback = () => setActionError(null);
   const [policyErrors, setPolicyErrors] = useState<Record<string, string>>({});
   // Path of the skill being copied to the other machine, if any.
   const [transferring, setTransferring] = useState<string | null>(null);
@@ -242,26 +235,6 @@ export function SkillsPage({
   const editingSource = editable && (editing || previewMode === "source");
   const draft = previewSkill ? (drafts[previewSkill.path] ?? previewText) : null;
   const dirty = draft !== null && previewText !== null && draft !== previewText;
-  const previewStatus = skillPreviewStatus({
-    readError: previewError !== null,
-    loaded: previewText !== null,
-    saving,
-    dirty,
-    editable,
-    savedDraft:
-      previewSkill !== null &&
-      savedDocument?.path === previewSkill.path &&
-      savedDocument.content === draft,
-  });
-  const previewStatusText: Record<SkillPreviewStatus, string> = {
-    failed: t("Could not read skill"),
-    loading: t("Loading skill…"),
-    saving: t("Saving…"),
-    dirty: t("Unsaved changes"),
-    "read-only": t("Read-only"),
-    saved: t("Saved"),
-    clean: t("All changes saved"),
-  };
 
   const onSave = async (): Promise<void> => {
     if (!previewSkill || !editable || draft === null || !dirty || savePending.current) return;
@@ -270,7 +243,6 @@ export function SkillsPage({
     savePending.current = true;
     setSaving(true);
     setActionError(null);
-    setActionResult("");
     try {
       // Refuse to overwrite an edit made outside this screen since it was read.
       if ((await readTextFile(path)) !== (draftBases[path] ?? previewText))
@@ -612,7 +584,6 @@ export function SkillsPage({
     if (policyPending.current) return;
     policyPending.current = true;
     setPolicyTarget(JSON.stringify([machine?.environmentId ?? "local", skill.path]));
-    setActionResult("");
     try {
       const policy = parseSkillPolicy(
         machine
@@ -638,7 +609,6 @@ export function SkillsPage({
         window.dispatchEvent(new Event(SKILLS_CHANGE_EVENT));
       }
       setActionError(null);
-      setActionResult(t("Skill preference saved for all providers on this machine."));
     } catch (error) {
       setPolicyErrors((current) => ({
         ...current,
@@ -653,7 +623,6 @@ export function SkillsPage({
   };
 
   const onReveal = (path: string): void => {
-    setActionResult("");
     setActionError(null);
     void revealItemInDir(path).catch((err: unknown) => {
       setActionError(t("Could not open the folder: {p0}", { p0: errorText(err) }));
@@ -661,22 +630,17 @@ export function SkillsPage({
   };
 
   const onCopyPath = (path: string): void => {
-    setActionResult("");
     setActionError(null);
-    void copyText(path)
-      .then(() => setActionResult(t("Path copied.")))
-      .catch(() => {
-        setActionError(t("Could not copy the path to the clipboard."));
-      });
+    void copyText(path).catch(() => {
+      setActionError(t("Could not copy the path to the clipboard."));
+    });
   };
 
   const onCreate = (name: string, scope: "project" | "user"): void => {
-    setActionResult("");
     setBusy(true);
     setCreateError(null);
     void createBlankSkill({ cwd, name, scope })
       .then((path) => {
-        setActionResult(t("Created {p0}.", { p0: name }));
         onPreview({ path, name, scope, source: "agents", description: "" });
         setDetailTab("document");
         invalidateSkills();
@@ -713,7 +677,6 @@ export function SkillsPage({
     };
     setActionError(null);
     setTransferring(skill.path);
-    setActionResult("");
     try {
       try {
         await transferSkill({ ...move, overwrite: false });
@@ -731,12 +694,6 @@ export function SkillsPage({
         if (!replace) return;
         await transferSkill({ ...move, overwrite: true });
       }
-      setActionResult(
-        t("Copied {p0} to personal skills on {p1}.", {
-          p0: skill.name,
-          p1: targetName,
-        }),
-      );
       requestRefresh(to?.environmentId ?? "local");
     } catch (err) {
       setActionError(
@@ -756,7 +713,6 @@ export function SkillsPage({
     if (deletePending.current) return;
     deletePending.current = true;
     setDeleting(skill.path);
-    setActionResult("");
     setActionError(null);
     try {
       const confirmed = await confirmInApp({
@@ -783,12 +739,6 @@ export function SkillsPage({
       }
       setPreviewSkill((current) => (current?.path === skill.path ? null : current));
       setActionsMenu((current) => (current?.skill.path === skill.path ? null : current));
-      setActionResult(
-        t("Deleted {p0} from {p1}.", {
-          p0: skill.name,
-          p1: machine?.name ?? t("this computer"),
-        }),
-      );
       requestRefresh(machine?.environmentId ?? "local");
     } catch (err) {
       setActionError(
@@ -866,32 +816,13 @@ export function SkillsPage({
       </InlineError>,
     ];
   });
-  const feedbackBusy = busy
-    ? t("Creating…")
-    : deleting
-      ? t("Deleting…")
-      : transferring
-        ? t("Copying…")
-        : "";
-  const actionFeedback =
-    actionError || actionResult || feedbackBusy ? (
-      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.feedback)}>
-        {actionError ? (
-          <InlineError secondaryAction={{ label: t("Dismiss"), onClick: clearFeedback }}>
-            {actionError}
-          </InlineError>
-        ) : feedbackBusy ? (
-          <InlineMessage tone="info">{feedbackBusy}</InlineMessage>
-        ) : (
-          <InlineMessage
-            tone="success"
-            secondaryAction={{ label: t("Dismiss"), onClick: clearFeedback }}
-          >
-            {actionResult}
-          </InlineMessage>
-        )}
-      </div>
-    ) : null;
+  const actionFeedback = actionError ? (
+    <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.feedback)}>
+      <InlineError secondaryAction={{ label: t("Dismiss"), onClick: clearFeedback }}>
+        {actionError}
+      </InlineError>
+    </div>
+  ) : null;
   const filterField = (
     <TextField
       ref={filterInput}
@@ -951,21 +882,6 @@ export function SkillsPage({
             {/* Embedded in Settings the frame header already names the page: no second title row. */}
             {header ? header : <Heading size="page">{t("Skills")}</Heading>}
             {header ? <div className={styles.filter}>{filterField}</div> : null}
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Refresh skills")}
-              tooltip={t("Rescan skill folders")}
-              disabled={libraryLoading || saving}
-              loading={localLoading || Object.values(machineLists).some((entry) => entry.loading)}
-              onClick={() => {
-                invalidateSkills();
-                window.dispatchEvent(new Event(SKILLS_CHANGE_EVENT));
-                requestRefresh();
-              }}
-            >
-              <RefreshCw className="icon-sm" aria-hidden="true" />
-            </Button>
           </div>
           {header ? null : filterField}
           <SkillsLibraryToolbar
@@ -981,20 +897,9 @@ export function SkillsPage({
             onFolders={() => setAdvancedOpen(true)}
           />
         </header>
-        {groupView.view === "groups" || groupError ? (
-          <div className="flex flex-col gap-2 px-2 pt-2">
-            {groupView.view === "groups" ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <AutoGroupDialog
-                  cwd={cwd}
-                  skills={entries.map((entry) => ({
-                    name: entry.name,
-                    description: entry.primary.skill.description,
-                  }))}
-                />
-              </div>
-            ) : null}
-            {groupError ? <Alert tone="danger">{groupError}</Alert> : null}
+        {groupError ? (
+          <div className={styles.feedback}>
+            <Alert tone="danger">{groupError}</Alert>
           </div>
         ) : null}
         <SkillList
@@ -1002,11 +907,18 @@ export function SkillsPage({
             groupView.view === "groups" ? (
               <SkillGroupNavList
                 groups={skillGroups}
-                ungroupedCount={entries.filter((entry) => !groupedNames.has(entry.name)).length}
                 query={query}
                 selectedId={openGroup?.id ?? null}
                 onSelect={groupView.selectGroup}
-                onNewGroup={() => setGroupEdit({ kind: "create", skillNames: [] })}
+                action={
+                  <AutoGroupDialog
+                    cwd={cwd}
+                    skills={entries.map((entry) => ({
+                      name: entry.name,
+                      description: entry.primary.skill.description,
+                    }))}
+                  />
+                }
               />
             ) : undefined
           }
@@ -1069,15 +981,6 @@ export function SkillsPage({
                 className={styles.headingRow}
                 aria-busy={policyTarget === JSON.stringify([shownOn, previewSkill.path])}
               >
-                <Button
-                  variant="ghost"
-                  className={styles.backAction}
-                  startIcon={<ChevronLeft className="icon-sm" aria-hidden="true" />}
-                  disabled={saving}
-                  onClick={() => setPreviewSkill(null)}
-                >
-                  {t("Back")}
-                </Button>
                 <Heading size="page" level={2}>
                   {previewSkill.name}
                 </Heading>
@@ -1100,7 +1003,6 @@ export function SkillsPage({
                   ref={closePreview}
                   variant="ghost"
                   iconOnly
-                  className={styles.closeAction}
                   label={t("Close skill preview")}
                   tooltip={t("Close preview (Escape)")}
                   disabled={saving}
@@ -1128,29 +1030,13 @@ export function SkillsPage({
                     </Badge>
                   </>
                 ) : null}
-              </Text>
-              <Text
-                as="p"
-                size="caption"
-                tone="secondary"
-                leading="inherit"
-                className={styles.path}
-              >
-                {previewSkill.path}
+                {!canDeleteSkill(previewSkill) || previewMachine
+                  ? ` · ${!canDeleteSkill(previewSkill) ? t("Managed skill") : t("Read-only copy")}`
+                  : null}
               </Text>
               {previewSkill.description ? (
                 <Text as="p" size="secondary" leading="relaxed" className={styles.description}>
                   {previewSkill.description}
-                </Text>
-              ) : null}
-              {!canDeleteSkill(previewSkill) || previewMachine ? (
-                <Text as="p" size="caption" tone="secondary" leading="inherit">
-                  {!canDeleteSkill(previewSkill) ? t("Managed skill") : t("Read-only copy")}
-                  <InfoPopover label={t("About this skill's access")}>
-                    {!canDeleteSkill(previewSkill)
-                      ? t("Managed skill: deletion is controlled by the provider, plugin or app.")
-                      : t("Copy this skill to this computer to edit it.")}
-                  </InfoPopover>
                 </Text>
               ) : null}
               {machines.length ? (
@@ -1163,9 +1049,6 @@ export function SkillsPage({
               ) : null}
               {showMachines ? null : (
                 <div className={styles.toolbar}>
-                  <Code size="caption" className={styles.fileLabel}>
-                    {machines.length ? null : "SKILL.md"}
-                  </Code>
                   <Segmented
                     label={t("Markdown view")}
                     value={split ? "split" : editingSource ? "edit" : previewMode}
@@ -1316,16 +1199,6 @@ export function SkillsPage({
                     <MarkdownSource text={draft} />
                   )}
                 </div>
-                <Text
-                  as="footer"
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                  className={styles.detailFooter}
-                >
-                  {/* A read failure is announced once, in the pane above, not again here. */}
-                  <span>{previewError ? null : previewStatusText[previewStatus]}</span>
-                </Text>
               </>
             )}
           </aside>

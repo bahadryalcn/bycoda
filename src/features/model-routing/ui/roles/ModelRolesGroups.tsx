@@ -77,11 +77,17 @@ export function ModelRolesGroups({
   const anyWaits = MODEL_ROLE_METADATA.some((item) =>
     waitsForModel(previewOf(item.role), item.role.startsWith("text.")),
   );
+  const anyFailed = MODEL_ROLE_METADATA.some((item) => previewOf(item.role)?.isError);
   return (
     <>
       {anyWaits ? (
         <InlineMessage tone="warning">
           {t("No eligible model right now. Runs wait until one is available.")}
+        </InlineMessage>
+      ) : null}
+      {anyFailed ? (
+        <InlineMessage tone="warning">
+          {t("Current model could not be checked. You can still edit this choice.")}
         </InlineMessage>
       ) : null}
       {MODEL_ROLE_GROUPS.map((group) => (

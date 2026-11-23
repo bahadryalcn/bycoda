@@ -7,7 +7,7 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useContext, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useContext, useEffect, useEffectEvent, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import {
   getHarnessAvailabilitySnapshot,
   isHarnessAvailable,
@@ -40,30 +40,24 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
     setHandledReveal(revealed);
     if (revealed === "antigravity-account") setExpanded(true);
   }
-  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
   const available = isHarnessAvailable("antigravity");
 
-  async function checkInstallation() {
+  async function checkInstallation(force = true) {
     if (busy.current) return;
     busy.current = true;
     setChecking(true);
-    setStatus(null);
     setError(null);
     try {
-      await probeHarnessAvailability({ force: true });
-      if (!isHarnessAvailable("antigravity")) {
-        setStatus("Antigravity CLI was not found. Install it, then check again.");
-        return;
-      }
+      await probeHarnessAvailability({ force });
+      if (!isHarnessAvailable("antigravity")) return;
       const models = await discoverAntigravityModels();
       if (!models.length)
         throw new Error(
           "No Antigravity models were returned. Run agy in a terminal to sign in, then check again.",
         );
       setHarnessModels("antigravity", models);
-      setStatus("Antigravity models refreshed. Choose Antigravity in the model picker.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not check Antigravity CLI.");
     } finally {
@@ -71,6 +65,12 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
       setChecking(false);
     }
   }
+
+  const autoCheck = useEffectEvent(() => void checkInstallation(false));
+  // Refresh the installation and catalog when setup is shown.
+  useEffect(() => {
+    if (!embedded || expanded) autoCheck();
+  }, [embedded, expanded]);
 
   const instructions = (
     <Text
@@ -80,11 +80,9 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
       className={`space-y-3 ${embedded ? "" : "px-4 py-4"}`}
     >
       <div className="flex items-center gap-1">
-        <p>
-          {available
-            ? t("Antigravity is installed.")
-            : t("Install Antigravity CLI on the computer running your sessions.")}
-        </p>
+        {!available && !checking ? (
+          <p>{t("Install Antigravity CLI on the computer running your sessions.")}</p>
+        ) : null}
         <InfoPopover className="shrink-0" width={360}>
           <p>
             {withSlots(
@@ -129,7 +127,7 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
           </p>
         </InfoPopover>
       </div>
-      {!available && (
+      {!available && !checking && (
         <>
           <p>{t("Windows (PowerShell)")}</p>
           <Code variant="block" tone="primary">
@@ -141,13 +139,11 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
           </Code>
         </>
       )}
-      <Button className="shrink-0" loading={checking} onClick={() => void checkInstallation()}>
-        {checking ? t("Checking…") : t("Check installation and models")}
-      </Button>
-      {!checking && status ? (
-        <SettingsFeedback state={available ? "success" : "warning"}>{t(status)}</SettingsFeedback>
+      {checking ? <SettingsFeedback state="loading">{t("Checking…")}</SettingsFeedback> : null}
+      {!checking && (!available || error) ? (
+        <Button onClick={() => void checkInstallation()}>{t("Retry")}</Button>
       ) : null}
-      {error && <SettingsFeedback state="error">{t(error)}</SettingsFeedback>}
+      {error ? <SettingsFeedback state="error">{t(error)}</SettingsFeedback> : null}
     </Text>
   );
   if (embedded)

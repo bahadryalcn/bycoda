@@ -1,7 +1,6 @@
 import { useId, useState, type ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Field } from "../../../shared/ui/Field";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -122,13 +121,6 @@ export function TunnelStartForm({
         />
       ) : null}
       <div className="external-tunnel-actions">
-        {selected && (selected.installed || provider === "ngrok") ? (
-          <Badge variant="dot" tone={selected.installed ? "success" : "neutral"}>
-            {t(selected.installed ? "{p0} CLI ready" : "{p0} CLI needed", {
-              p0: provider === "cloudflare" ? "Cloudflare" : "ngrok",
-            })}
-          </Badge>
-        ) : null}
         <Button
           type="button"
           variant="ghost"

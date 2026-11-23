@@ -97,8 +97,8 @@ describe("CrashReportNotice", () => {
     service.pending = crash("2026-11-18T10:00:00.000Z");
     const container = mount();
     service.sendPendingCrash.mockRejectedValueOnce(new Error("offline"));
-    await clickAction(container, "Always send");
+    await clickAction(container, "Send");
     expect(container.querySelector("[data-tone]")?.getAttribute("data-tone")).toBe("danger");
-    expect(container.querySelectorAll("button")).toHaveLength(3);
+    expect(container.querySelectorAll("button")).toHaveLength(2);
   });
 });

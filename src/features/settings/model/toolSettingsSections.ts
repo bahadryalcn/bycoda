@@ -42,7 +42,6 @@ export function toolSettingsTabForAnchor(anchor: string | null): ToolSettingsTab
   if (anchor?.startsWith("device-")) return "devices";
   if (anchor?.startsWith("logs-")) return "logs";
   if (anchor?.startsWith("servers-")) return "devServers";
-  if (anchor?.startsWith("bykit-")) return "bykit";
   return null;
 }
 
@@ -169,7 +168,7 @@ export const TOOL_SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "bykit-instructions",
-    section: "tools",
+    section: "providers",
     get label() {
       return t("Tell agents to use bykit");
     },

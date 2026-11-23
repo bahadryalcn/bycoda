@@ -9,14 +9,14 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.25rem;
-    padding-inline: 0.125rem;
+    gap: var(--ui-space-1, 0.25rem);
+    padding-inline: var(--ui-space-1, 0.25rem);
   }
   .swatch {
     display: grid;
     flex: none;
-    inline-size: var(--ui-color-swatch-target);
-    block-size: var(--ui-color-swatch-target);
+    inline-size: var(--ui-control-height-sm);
+    block-size: var(--ui-control-height-sm);
     place-items: center;
   }
   .hexField {
@@ -139,8 +139,8 @@
 }
 .preview {
   flex: none;
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
+  inline-size: var(--ui-control-height-sm);
+  block-size: var(--ui-control-height-sm);
   border: 1px solid var(--color-stroke);
   border-radius: calc(var(--ui-control-radius) - 2px);
 }

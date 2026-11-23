@@ -96,23 +96,3 @@
   gap: 0.5rem;
   padding: 0.75rem 1rem;
 }
-.task-ops-kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-  gap: 0.5rem;
-}
-.task-ops-kpi {
-  display: grid;
-  gap: 0.125rem;
-  min-inline-size: 0;
-  padding: 0.625rem 0.75rem;
-}
-.task-ops-kpi-value {
-  font-variant-numeric: tabular-nums;
-}
-.task-ops-meter {
-  display: grid;
-  gap: 0.25rem;
-  flex: 1 1 12rem;
-  min-inline-size: 0;
-}

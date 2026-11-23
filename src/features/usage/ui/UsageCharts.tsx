@@ -2,7 +2,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { useState } from "react";
-import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
+import { formatDate, formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -62,8 +62,8 @@ export function formatMetricTick(value: number, metric: UsageMetric): string {
   });
 }
 export function formatBucket(at: number, resolution: UsageResolution): string {
-  return new Date(at).toLocaleString(
-    getLocale(),
+  return formatDate(
+    at,
     resolution === "15m" || resolution === "hour"
       ? {
           month: "short",
@@ -144,7 +144,7 @@ export function ContinuousUsageTable({
         <Text as="span" leading="inherit" className="usage-muted">
           {rows.length === 1
             ? t("1 record")
-            : t("{p0} records", { p0: rows.length.toLocaleString(getLocale()) })}
+            : t("{p0} records", { p0: formatNumber(rows.length) })}
         </Text>
         <Button
           variant="ghost"
@@ -270,11 +270,8 @@ export function UsageDataNotes({
         {pricesUnavailable && (
           <p>{t("OpenRouter prices could not be loaded, so built-in prices are used.")}</p>
         )}
-        {sessionDurationUnavailable ? (
-          <p>
-            {t("Session duration data is unavailable on this app version or could not be read.")}
-          </p>
-        ) : (
+        {/* A failed read of the session logs is reported once, in the notice above the results. */}
+        {sessionDurationUnavailable ? null : (
           <p>
             {t(
               "Agent time sums recorded completed turn intervals and may include waiting. Parallel sessions can exceed wall-clock time.",

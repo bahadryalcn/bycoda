@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t } from "../../../shared/i18n";
-import { TabStrip } from "../../../shared/ui/Tabs";
+import { Button } from "../../../shared/ui/Button";
+import { Eye } from "../../../shared/ui/icons";
 import { AgentMarkdown } from "../../sessions/public/AgentMarkdown";
 
-/** Keep the source mounted while switching views so editor history survives. */
+/** Keep the source mounted while previewing so editor history survives. */
 export function InboxCommentPreview({
   draftIdentity,
   value,
@@ -16,40 +17,39 @@ export function InboxCommentPreview({
   children: ReactNode;
   toolbar?: () => ReactNode;
 }) {
-  // One writing surface by default; the preview is one tab away.
-  const [mode, setMode] = useRetainedState<"source" | "split" | "preview">(
-    `${draftIdentity}:view`,
-    "source",
-  );
+  // One writing surface by default; the preview is one toggle away and only exists once there is text.
+  const [mode, setMode] = useRetainedState<"source" | "preview">(`${draftIdentity}:view`, "source");
+  const previewing = mode === "preview";
+  const canPreview = previewing || value.trim().length > 0;
+  const bar = previewing ? null : toolbar?.();
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <TabStrip
-        label={t("Comment")}
-        value={mode}
-        onValueChange={setMode}
-        items={[
-          { value: "source", label: t("Source") },
-          { value: "split", label: t("Split") },
-          { value: "preview", label: t("Preview") },
-        ]}
-      />
-      {mode === "preview" ? null : toolbar?.()}
-      <div
-        className={
-          mode === "split"
-            ? "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4"
-            : "min-w-0"
-        }
-      >
-        <div className="min-w-0" hidden={mode === "preview"}>
-          {children}
+      {bar || canPreview ? (
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          {bar ?? <span />}
+          {canPreview ? (
+            <Button
+              iconOnly
+              size="sm"
+              variant="ghost"
+              type="button"
+              label={t("Preview")}
+              pressed={previewing}
+              onClick={() => setMode(previewing ? "source" : "preview")}
+            >
+              <Eye className="icon-sm" strokeWidth={1.75} />
+            </Button>
+          ) : null}
         </div>
-        {mode !== "source" && value.trim() ? (
-          <section aria-label={t("Preview")} className="min-w-0 wrap-anywhere">
-            <AgentMarkdown text={value} hardBreaks />
-          </section>
-        ) : null}
+      ) : null}
+      <div className="min-w-0" hidden={previewing}>
+        {children}
       </div>
+      {previewing && value.trim() ? (
+        <section aria-label={t("Preview")} className="min-w-0 wrap-anywhere">
+          <AgentMarkdown text={value} hardBreaks />
+        </section>
+      ) : null}
     </div>
   );
 }

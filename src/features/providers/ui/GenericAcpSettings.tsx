@@ -18,6 +18,8 @@ import { refreshGenericAcpCatalog } from "../../../integrations/harness/provider
 import { probeHarnessAvailability } from "../../../integrations/harness/core/availability";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { RefreshCw } from "../../../shared/ui/icons";
 import { Surface } from "../../../shared/ui/Surface";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
@@ -28,36 +30,6 @@ import type { AcpRegistryEntry, GenericAcpConfig, GenericAcpSummary } from "../m
 // Stable keys: each operation's label is translated at render time, never looked up dynamically.
 type BusyKind = "" | "reload" | "registry" | "saving" | "removing" | "installing";
 type StatusKind = "" | "draft" | "saved";
-
-function Field({
-  label,
-  hint,
-  wide,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  wide?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <Text
-      as="div"
-      size="caption"
-      tone="secondary"
-      weight="medium"
-      className={`flex min-w-0 flex-col gap-1 ${wide ? "sm:col-span-2" : ""}`}
-    >
-      <span>{label}</span>
-      {children}
-      {hint ? (
-        <Text size="micro" tone="secondary" weight="regular" leading="snug">
-          {hint}
-        </Text>
-      ) : null}
-    </Text>
-  );
-}
 
 export function GenericAcpSettings({
   cwd = "",
@@ -112,14 +84,9 @@ function AcpSettingsShell({
           "flex flex-wrap items-center justify-between gap-2 px-3 py-2",
         )}
       >
-        <div className="min-w-0">
-          <Text as="p" size="caption" tone="secondary" leading="snug">
-            {scope}
-          </Text>
-          <Text as="p" size="caption" tone="secondary">
-            {t("Changes require saving")}
-          </Text>
-        </div>
+        <Text as="p" size="caption" tone="secondary" leading="snug" className="min-w-0">
+          {scope}
+        </Text>
         {action}
       </div>
       {children}
@@ -338,11 +305,12 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
             </Button>
             <Button
               className="shrink-0"
+              iconOnly
+              label={t("Reload agents")}
+              startIcon={<RefreshCw className="icon-sm" />}
               disabled={loading || !!busy}
               onClick={() => void run("reload", async () => {})}
-            >
-              {t("Reload agents")}
-            </Button>
+            />
           </div>
         }
       >
@@ -372,8 +340,8 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
               </OverflowTooltip>
               <OverflowTooltip label={config.command}>
                 <Text as="div" size="caption" tone="secondary" truncate>
-                  {config.command} · {config.envKeys.length}
-                  {t(" environment values")}
+                  {config.command} ·{" "}
+                  {t("{p0} environment values", { p0: config.envKeys.length })}
                 </Text>
               </OverflowTooltip>
             </div>
@@ -428,7 +396,6 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
             key={`${formRevision}:${editing ? form.id : "new"}`}
             title={editing ? t("Edit agent") : t("Add agent")}
             defaultOpen
-            settingIds={["acp-advanced"]}
           >
             <form
               className="grid gap-x-3 gap-y-3 px-3 pb-3 pt-2 sm:grid-cols-2"
@@ -451,47 +418,28 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 });
               }}
             >
-              <Text
-                as="p"
-                size="micro"
-                tone="secondary"
-                weight="regular"
-                leading="snug"
-                className="sm:col-span-2"
-              >
-                {t(
-                  "Configure an executable on the session's machine. Credentials and environment values stay on that machine. Arguments are a JSON array; commands are launched without a shell.",
-                )}
-              </Text>
-              <Field label={t("Agent id")}>
-                <TextField
-                  label={t("Agent id")}
-                  hideLabel
-                  fieldClassName="w-full"
-                  disabled={loading || !!busy}
-                  value={form.id}
-                  required
-                  pattern="[a-z0-9][a-z0-9._-]*"
-                  spellCheck={false}
-                  placeholder="my-agent"
-                  onChange={(event) => setForm({ ...form, id: event.target.value })}
-                />
-              </Field>
-              <Field label={t("Name")}>
-                <TextField
-                  label={t("Name")}
-                  hideLabel
-                  fieldClassName="w-full"
-                  disabled={loading || !!busy}
-                  value={form.name}
-                  required
-                  onChange={(event) => setForm({ ...form, name: event.target.value })}
-                />
-              </Field>
-              <Field wide label={t("Executable path")}>
+              <TextField
+                label={t("Agent id")}
+                fieldClassName="w-full"
+                disabled={loading || !!busy}
+                value={form.id}
+                required
+                pattern="[a-z0-9][a-z0-9._-]*"
+                spellCheck={false}
+                placeholder="my-agent"
+                onChange={(event) => setForm({ ...form, id: event.target.value })}
+              />
+              <TextField
+                label={t("Name")}
+                fieldClassName="w-full"
+                disabled={loading || !!busy}
+                value={form.name}
+                required
+                onChange={(event) => setForm({ ...form, name: event.target.value })}
+              />
+              <div className="flex items-end gap-2 sm:col-span-2">
                 <TextField
                   label={t("Executable path")}
-                  hideLabel
                   fieldClassName="w-full"
                   disabled={loading || !!busy}
                   monospace
@@ -500,12 +448,17 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                   spellCheck={false}
                   onChange={(event) => setForm({ ...form, command: event.target.value })}
                 />
-              </Field>
+                <InfoPopover className="shrink-0">
+                  {t(
+                    "Configure an executable on the session's machine. Credentials and environment values stay on that machine. Arguments are a JSON array; commands are launched without a shell.",
+                  )}
+                </InfoPopover>
+              </div>
               <div className="sm:col-span-2">
                 <AdvancedSettings
                   key={editing ? form.id : "new"}
                   title={t("ACP arguments, environment and model context")}
-                  defaultOpen
+                  defaultOpen={editing}
                   settingIds={["acp-advanced"]}
                 >
                   <div
@@ -513,68 +466,54 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                     data-setting-id="acp-advanced"
                     className="grid gap-x-3 gap-y-3 py-3 sm:grid-cols-2"
                   >
-                    <Field wide label={t("Arguments (JSON array)")}>
+                    <div className="sm:col-span-2">
                       <TextareaField
                         label={t("Arguments (JSON array)")}
-                        hideLabel
                         disabled={loading || !!busy}
-                        aria-label={t("Arguments (JSON array)")}
                         monospace
                         minRows={3}
                         value={argsText}
                         spellCheck={false}
                         onChange={(event) => setArgsText(event.target.value)}
                       />
-                    </Field>
-                    <Field
-                      wide
-                      label={t("Environment (JSON object; blank preserves stored values)")}
-                    >
+                    </div>
+                    <div className="sm:col-span-2">
                       <PasswordField
                         label={t("Environment (JSON object; blank preserves stored values)")}
-                        hideLabel
                         fieldClassName="w-full"
                         disabled={loading || !!busy}
-
                         autoComplete="off"
                         monospace
                         value={envText}
                         spellCheck={false}
                         onChange={(event) => setEnvText(event.target.value)}
                       />
-                    </Field>
-                    <Field label={t("ACP authentication method id (optional)")}>
-                      <TextField
-                        label={t("ACP authentication method id (optional)")}
-                        hideLabel
-                        fieldClassName="w-full"
-                        disabled={loading || !!busy}
-                        value={form.authMethodId ?? ""}
-                        spellCheck={false}
-                        onChange={(event) =>
-                          setForm({ ...form, authMethodId: event.target.value || undefined })
-                        }
-                      />
-                    </Field>
-                    <Field label={t("Context window tokens (optional)")}>
-                      <NumberField
-                        label={t("Context window tokens (optional)")}
-                        hideLabel
-                        fieldClassName="w-full"
-                        disabled={loading || !!busy}
-
-                        min={1024}
-                        value={form.contextWindow ?? ""}
-                        onChange={(event) =>
-                          setForm({
-                            ...form,
-                            contextWindow: event.target.value
-                              ? Number(event.target.value)
-                              : undefined,
-                          })
-                        }
-                      />
-                    </Field>
+                    </div>
+                    <TextField
+                      label={t("ACP authentication method id (optional)")}
+                      fieldClassName="w-full"
+                      disabled={loading || !!busy}
+                      value={form.authMethodId ?? ""}
+                      spellCheck={false}
+                      onChange={(event) =>
+                        setForm({ ...form, authMethodId: event.target.value || undefined })
+                      }
+                    />
+                    <NumberField
+                      label={t("Context window tokens (optional)")}
+                      fieldClassName="w-full"
+                      disabled={loading || !!busy}
+                      min={1024}
+                      value={form.contextWindow ?? ""}
+                      onChange={(event) =>
+                        setForm({
+                          ...form,
+                          contextWindow: event.target.value
+                            ? Number(event.target.value)
+                            : undefined,
+                        })
+                      }
+                    />
                   </div>
                 </AdvancedSettings>
               </div>
@@ -599,10 +538,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         <div
           id="setting-acp-registry"
           data-setting-id="acp-registry"
-          {...surfaceAttributes(
-            { frame: "pane", edge: "top" },
-            "border-(--ui-tone-neutral-border)",
-          )}
+          {...surfaceAttributes({ frame: "pane", edge: "top" })}
         >
           <Disclosure
             variant="row"
@@ -613,14 +549,8 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           >
             <div
               id="setting-acp-registry-results"
-              {...surfaceAttributes(
-                { frame: "pane", edge: "top" },
-                "border-(--ui-tone-neutral-border)",
-              )}
+              {...surfaceAttributes({ frame: "pane", edge: "top" })}
             >
-              <Text as="p" size="micro" tone="secondary" className="px-3 pt-2">
-                {t("Install compatible ACP agents from the registry.")}
-              </Text>
               <Text as="p" size="caption" tone="secondary" leading="snug" className="px-3 py-2">
                 {t(
                   "Install downloads an exact package version into isolated host storage and may run package installation scripts. Binary and Python distributions can be configured as local commands.",
@@ -675,8 +605,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                               );
                             }}
                           >
-                            {t("Install ")}
-                            {entry.package}
+                            {t("Install {p0}", { p0: entry.package })}
                           </Button>
                         ) : null}
                         {installingId === entry.id ? (

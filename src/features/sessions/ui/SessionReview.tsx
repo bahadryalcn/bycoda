@@ -5,7 +5,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { Surface } from "../../../shared/ui/Surface";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -24,7 +24,13 @@ import {
   recordingPollDelay,
   type RecordingPhase,
 } from "../model/checkpointRecording";
-import { presentRemoteError } from "../../connections/public/remoteFailure";
+import {
+  classifyRemoteError,
+  isTransientTransportError,
+} from "../../connections/public/remoteFailure";
+import { useRemoteSupports } from "../../connections/public/remoteCapabilities";
+import { looksLikeProject } from "../../projects/public/recents";
+import { isProjectlessCwd } from "../model/recentSessions";
 import { invalidateProjectFiles } from "../../files/public/fileIndex";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { basename, notifyGitChanged, subscribeGitChanged } from "../../../platform/tauri/fs";
@@ -47,6 +53,13 @@ type UndoLockingRun = {
   tasks: readonly { sessionId?: string }[];
 };
 
+/** Review uses the execution checkout, but applies only to a logical project. */
+export function useSessionReviewEligibility(projectCwd: string, workCwd: string) {
+  const reviewCwd = looksLikeProject(projectCwd) && !isProjectlessCwd(projectCwd) ? workCwd : "";
+  const supported = useRemoteSupports(reviewCwd, "sessions.checkpoint-review");
+  return !!reviewCwd && supported === true;
+}
+
 /** True while an active or paused orchestration run leads or dispatched this session. */
 export function orchestrationLocksUndo(runs: readonly UndoLockingRun[], sessionId: string) {
   return runs.some(
@@ -56,16 +69,9 @@ export function orchestrationLocksUndo(runs: readonly UndoLockingRun[], sessionI
   );
 }
 
-/** `saved` marks a failed checkpoint record, which Refresh re-reads but cannot repair. */
-type ReviewError = { message: string; saved: boolean };
-type LoadOutcome = "loaded" | "recording" | "failed" | "skipped";
+type ReviewError = "recordingFailed" | "loadFailed" | "retryableLoad" | "keep" | "undo";
+type LoadOutcome = "loaded" | "recording" | "failed" | "retry" | "skipped";
 
-function describeReviewError(cause: unknown, explicit: boolean): ReviewError | null {
-  const message = explicit
-    ? presentRemoteError(cause, { explicit: true })
-    : presentRemoteError(cause);
-  return message ? { message, saved: classifyCheckpointFailure(cause) === "failed" } : null;
-}
 
 export function SessionReview(props: Props) {
   return <SessionReviewContent key={JSON.stringify([props.sessionId, props.cwd])} {...props} />;
@@ -107,7 +113,7 @@ function SessionReviewContent({
 
   /** `restart` is an explicit refresh: it starts a fresh bounded wait even after one stalled. */
   const load = useCallback(
-    (options?: { restart?: boolean }): Promise<LoadOutcome> => {
+    (options?: { restart?: boolean; retryOnFailure?: boolean }): Promise<LoadOutcome> => {
       if (actingRef.current) return Promise.resolve("skipped");
       const generation = ++request.current;
       if (!cwd || cwd === "~") {
@@ -128,7 +134,8 @@ function SessionReviewContent({
         .catch((cause: unknown): LoadOutcome => {
           if (generation !== request.current) return "skipped";
           setStatusStale(true);
-          if (classifyCheckpointFailure(cause) === "recording") {
+          const checkpointFailure = classifyCheckpointFailure(cause);
+          if (checkpointFailure === "recording") {
             setError(null);
             if (options?.restart || recordingRef.current === "idle") {
               pollAttempts.current = 0;
@@ -137,7 +144,25 @@ function SessionReviewContent({
             return "recording";
           }
           setPhase("idle");
-          setError(describeReviewError(cause, false));
+          console.warn("Session change review status failed", cause);
+          const failure = classifyRemoteError(cause);
+          if (checkpointFailure === "failed") {
+            setError("recordingFailed");
+          } else if (
+            /not a directory|no such file or directory|\bENOENT\b|\bENOTDIR\b/i.test(failure.message)
+          ) {
+            setFiles([]);
+            setError(null);
+          } else {
+            const retryable =
+              isTransientTransportError(cause) ||
+              (failure.kind === "other" &&
+                /\b(?:EBUSY|EAGAIN|ETIMEDOUT|busy|locked|timed out|temporarily unavailable)\b/i.test(
+                  failure.message,
+                ));
+            if (retryable && options?.retryOnFailure) return "retry";
+            setError(retryable ? "retryableLoad" : "loadFailed");
+          }
           return "failed";
         })
         .finally(() => {
@@ -147,18 +172,28 @@ function SessionReviewContent({
     [sessionId, cwd, setPhase],
   );
 
+  // Refresh settled review status and cancel debounced work when the checkout leaves this view.
   useEffect(() => {
     if (!enabled || busy) return;
     pollAttempts.current = 0;
-    void load();
+    let active = true;
     let timer: number | null = null;
     const schedule = () => {
       if (timer != null) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         timer = null;
-        load();
+        void load();
       }, 200);
     };
+    void load({ retryOnFailure: true })
+      .then((outcome) => {
+        if (!active || outcome !== "retry" || timer != null) return;
+        timer = window.setTimeout(() => {
+          timer = null;
+          void load();
+        }, RECORDING_POLL.baseMs);
+      })
+      .catch((cause: unknown) => console.warn("Session change review refresh failed", cause));
     const unsubReview = subscribeReviewChanged((id) => {
       if (!id || id === sessionId) schedule();
     });
@@ -171,6 +206,7 @@ function SessionReviewContent({
     window.addEventListener("focus", onResume);
     document.addEventListener("visibilitychange", onResume);
     return () => {
+      active = false;
       request.current += 1;
       if (timer != null) window.clearTimeout(timer);
       window.removeEventListener("focus", onResume);
@@ -232,48 +268,37 @@ function SessionReviewContent({
   }
   if (recording === "stalled") {
     return (
-      <Alert tone="warning">
-        {t("Still recording this turn's changes…")}{" "}
-        <Button
-          variant="ghost"
-          type="button"
-          onClick={() => void load({ restart: true })}
-          loading={refreshing}
-          disabled={refreshing}
-        >
-          {t("Refresh")}
-        </Button>
-      </Alert>
+      <InlineMessage
+        tone="neutral"
+        inset="row"
+        retry={{
+          label: t("Refresh"),
+          onRetry: () => void load({ restart: true }),
+          pending: refreshing,
+        }}
+      >
+        {t("Still recording this turn's changes…")}
+      </InlineMessage>
     );
   }
 
-  // `message` is already the localized presentRemoteError sentence, not raw error text.
-  const presentedReason = error?.message;
   const errorNotice = error ? (
-    <Alert
-      tone="danger"
-      title={
-        error.saved ? t("Could not record this turn's changes.") : t("Could not load the changes.")
+    <InlineError
+      inset="row"
+      retry={
+        error === "retryableLoad"
+          ? { label: t("Retry"), onRetry: () => void load({ restart: true }), pending: refreshing }
+          : undefined
       }
     >
-      {presentedReason}{" "}
-      {error.saved && (
-        <p>
-          {t(
-            "This turn's changes could not be fully recorded. Fix the reported error before starting a new turn. Refresh only checks the saved checkpoint.",
-          )}
-        </p>
-      )}
-      <Button
-        variant="ghost"
-        type="button"
-        onClick={() => void load({ restart: true })}
-        loading={refreshing}
-        disabled={refreshing}
-      >
-        {t(error.saved ? "Refresh" : "Load changes again")}
-      </Button>
-    </Alert>
+      {error === "recordingFailed"
+        ? t("Could not record this turn's changes.")
+        : error === "keep"
+          ? t("Could not keep session changes.")
+          : error === "undo"
+            ? t("Could not undo session changes.")
+            : t("Could not load the changes.")}
+    </InlineError>
   ) : null;
   if (files.length === 0) return errorNotice;
 
@@ -306,7 +331,8 @@ function SessionReviewContent({
         if (generation === request.current) setFiles(status.files);
       })
       .catch((cause: unknown) => {
-        if (generation === request.current) setError(describeReviewError(cause, true));
+        console.warn("Session change review action failed", cause);
+        if (generation === request.current) setError(action);
       })
       .finally(() => {
         actingRef.current = false;
@@ -331,7 +357,7 @@ function SessionReviewContent({
               showZero
               size="micro"
               weight="medium"
-              className="flex font-sans -mt-0.5"
+              className="flex font-sans"
             />
           </div>
           <div className="flex shrink-0 items-center gap-0.5" data-session-review-actions>
@@ -364,9 +390,7 @@ function SessionReviewContent({
               }
               asChild
             >
-              <span
-                {...surfaceAttributes({ frame: "pane", edge: "inline-start" }, "ms-1.5 ps-1.5")}
-              >
+              <span>
                 <ConfirmMorph
                   label={t("Undo")}
                   prompt={t("Undo all session changes")}

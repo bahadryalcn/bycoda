@@ -1,22 +1,14 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { IS_MAC, IS_WIN, MOD } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { errorText } from "../../../shared/lib/errors";
-import { setQuickComposerShortcut } from "../../quick-composer/model/quickComposer";
-import { quickComposerShortcutLabel } from "../../quick-composer/model/quickComposerShortcut";
 import {
   loadFileTabMode,
   subscribeFileTabMode,
   loadLiveAgentsEnabled,
   subscribeLiveAgentsEnabled,
-  loadQuickComposerEnabled,
-  subscribeQuickComposerEnabled,
-  loadQuickComposerShortcut,
   saveFileTabMode,
   saveLiveAgentsEnabled,
-  saveQuickComposerEnabled,
   type FileTabMode,
 } from "../model/settings";
 import { Group, Row, Segmented, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
@@ -25,7 +17,7 @@ import { loadExactGitRewind, saveExactGitRewind } from "../model/exactGitRewind"
 import { Button } from "../../../shared/ui/Button";
 import "./WorkspaceSettings.css";
 
-function ExactGitRewindSetting() {
+export function ExactGitRewindSetting() {
   const [enabled, setEnabled] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState(true);
@@ -120,38 +112,6 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
   const [fileTabError, setFileTabError] = useState(false);
   const [liveAgentsError, setLiveAgentsError] = useState(false);
 
-  const [quickComposerEnabled, setQuickComposerEnabled] = useStoredPreferenceState(
-    loadQuickComposerEnabled,
-    subscribeQuickComposerEnabled,
-  );
-  const [quickComposerError, setQuickComposerError] = useState<string | null>(null);
-  const [quickComposerSaving, setQuickComposerSaving] = useState(false);
-  const quickComposerPending = useRef(false);
-  const onQuickComposerEnabled = (next: boolean) => {
-    if (quickComposerPending.current) return;
-    quickComposerPending.current = true;
-    setQuickComposerSaving(true);
-    saveQuickComposerEnabled(next);
-    const saved = loadQuickComposerEnabled();
-    setQuickComposerEnabled(saved);
-    setQuickComposerError(null);
-    if (saved !== next) {
-      quickComposerPending.current = false;
-      setQuickComposerSaving(false);
-      setQuickComposerError(t("Could not save changes"));
-      return;
-    }
-    void setQuickComposerShortcut(saved)
-      .catch((error: unknown) => {
-        // Another app already owns the combination. Leave the switch where the
-        // user put it so the next launch tries again, but say why it is dead.
-        setQuickComposerError(errorText(error));
-      })
-      .finally(() => {
-        quickComposerPending.current = false;
-        setQuickComposerSaving(false);
-      });
-  };
   const onLiveAgentsEnabled = (next: boolean) => {
     saveLiveAgentsEnabled(next);
     const saved = loadLiveAgentsEnabled();
@@ -167,10 +127,7 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
 
   return (
     <div className="workspace-settings settings-topics">
-      <Group
-        title={t("Files and navigation")}
-        scope={t("Applies across projects. Changes save automatically.")}
-      >
+      <Group title={t("Files and navigation")}>
         <Row
           id="file-tabs"
           label={t("File tabs")}
@@ -207,9 +164,6 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
       <Group
         title={t("Workspace tools")}
         info={<WorkspaceToolsHelp />}
-        scope={t(
-          "Controls navigation visibility. Hiding this tool does not stop work or change permissions.",
-        )}
       >
         <WorkspaceFeatureSettings />
         <Row
@@ -228,46 +182,6 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
             onChange={onLiveAgentsEnabled}
           />
         </Row>
-      </Group>
-      {IS_MAC || IS_WIN ? (
-        <Group title={t("Session access")}>
-          {(IS_MAC || IS_WIN) && (
-            <Row
-              id="quick-composer"
-              label={t("Quick composer")}
-              feedback={
-                quickComposerError ? (
-                  <SettingsFeedback state="error">{quickComposerError}</SettingsFeedback>
-                ) : quickComposerSaving ? (
-                  <SettingsFeedback state="loading" immediate>
-                    {t("Saving…")}
-                  </SettingsFeedback>
-                ) : undefined
-              }
-              description={t(
-                "Press {p0} in any app to float a prompt over it and start a session without switching to {p1}. Change the shortcut in Keybindings. Enter starts it in the background; {p2}Enter starts it and brings the session forward.",
-                {
-                  p0: quickComposerShortcutLabel(loadQuickComposerShortcut()),
-                  p1: PRODUCT_IDENTITY.displayName,
-                  p2: MOD,
-                },
-              )}
-            >
-              <Toggle
-                label={t("Quick composer")}
-                on={quickComposerEnabled}
-                disabled={quickComposerSaving}
-                onChange={onQuickComposerEnabled}
-              />
-            </Row>
-          )}
-        </Group>
-      ) : null}
-      <Group
-        title={t("Experimental settings")}
-        scope={t("Applies to new turns on this computer's Host.")}
-      >
-        <ExactGitRewindSetting />
       </Group>
     </div>
   );

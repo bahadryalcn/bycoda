@@ -84,24 +84,32 @@ export function GitCommitActions({
     ? (index.upstream ?? `${index.remote ?? "origin"}/${index.branch ?? "HEAD"}`)
     : "";
   const syncTitle = syncing
-    ? "Synchronizing Changes…"
+    ? t("Synchronizing Changes…")
     : canPublish
       ? index?.branch
-        ? `Publish Branch "${index.branch}"`
-        : "Publish Branch"
+        ? t('Publish Branch "{p0}"', { p0: index.branch })
+        : t("Publish Branch")
       : behind > 0 && ahead > 0
-        ? `Pull ${behind} and push ${ahead} commits between ${dest}`
+        ? t("Pull {p0} and push {p1} commits between {p2}", { p0: behind, p1: ahead, p2: dest })
         : behind > 0
-          ? `Pull ${behind} commit${behind === 1 ? "" : "s"} from ${dest}`
-          : `Push ${ahead} commit${ahead === 1 ? "" : "s"} to ${dest}`;
+          ? t(behind === 1 ? "Pull {p0} commit from {p1}" : "Pull {p0} commits from {p1}", {
+              p0: behind,
+              p1: dest,
+            })
+          : t(ahead === 1 ? "Push {p0} commit to {p1}" : "Push {p0} commits to {p1}", {
+              p0: ahead,
+              p1: dest,
+            });
   const syncDetail = `${syncTitle}${canPublish || !index?.upstream ? ` · ${dest}` : ""}`;
   const syncLabel = canPublish
     ? t("Publish Branch")
     : t(behind > 0 && ahead > 0 ? "Sync changes" : behind > 0 ? "Pull" : "Push");
   const createTitle = index?.defaultBranch
-    ? `Create a pull request into ${index.defaultBranch}`
-    : "Create pull request";
-  const viewTitle = pr?.title ? `View PR #${pr.number}: ${pr.title}` : "View pull request";
+    ? t("Create a pull request into {p0}", { p0: index.defaultBranch })
+    : t("Create pull request");
+  const viewTitle = pr?.title
+    ? t("View PR #{p0}: {p1}", { p0: pr.number, p1: pr.title })
+    : t("View pull request");
   const viewLabel = pr?.number ? t("View PR #{p0}", { p0: pr.number }) : t("View PR");
   const showSync = hasRemote && !!index && (canPublish || canSync || syncing);
   // A permanently disabled Create PR is noise: offer it only when it can run.
@@ -308,7 +316,7 @@ export function GitCommitActions({
         variant="secondary"
         size="sm"
         className="min-w-0 max-w-full"
-        tooltip={syncDetail}
+        tooltip={dest}
         disabled={syncDisabled}
         loading={syncing}
         loadingLabel={t("Syncing…")}

@@ -22,7 +22,6 @@ export function CrewEditorFooter({
   canStart,
   onCreate,
   onStart,
-  onDone,
 }: {
   isNew: boolean;
   /** Why the draft cannot be saved yet, when the owner has something to fix. */
@@ -38,8 +37,6 @@ export function CrewEditorFooter({
   canStart: boolean;
   onCreate: () => void;
   onStart: () => void;
-  /** Close the editor; the stored crew has already saved itself. */
-  onDone: () => void;
 }) {
   const state = blocked ? null : issue ? (
     <InlineError live="polite">{issue}</InlineError>
@@ -62,23 +59,16 @@ export function CrewEditorFooter({
           <Button variant="primary" loading={creating} disabled={pending} onClick={onCreate}>
             {t("Create crew")}
           </Button>
-        ) : (
-          <>
-            {canStart ? (
-              <Button
-                variant="secondary"
-                loading={starting}
-                disabled={pending || blocked}
-                onClick={onStart}
-              >
-                {t("New work")}
-              </Button>
-            ) : null}
-            <Button variant="primary" disabled={pending} onClick={onDone}>
-              {t("Done")}
-            </Button>
-          </>
-        )}
+        ) : canStart ? (
+          <Button
+            variant="primary"
+            loading={starting}
+            disabled={pending || blocked}
+            onClick={onStart}
+          >
+            {t("New work")}
+          </Button>
+        ) : null}
       </div>
     </>
   );

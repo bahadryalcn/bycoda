@@ -1072,8 +1072,6 @@ function FileTreeInner({
               variant="ghost"
               align="start"
               selected={dragOverPath === cwd}
-              motion="none"
-              type="button"
               data-explorer-root
               data-path={cwd}
               expanded={rootOpen}
@@ -1097,7 +1095,7 @@ function FileTreeInner({
             {/* Creation, then tree management, then view/search; narrow headers fold the last two into the menu. */}
             <InlineAction
               reveal="always"
-              label={createLabel(t("New File"))}
+              label={createLabel(t("New file"))}
               disabled={Boolean(createBlockedReason)}
               data-explorer-action="new-file"
               onClick={() => runHeaderAction("new-file")}
@@ -1116,7 +1114,7 @@ function FileTreeInner({
             {narrowHeader ? null : (
               <InlineAction
                 reveal="always"
-                label={t("Collapse All")}
+                label={t("Collapse all")}
                 data-explorer-action="collapse"
                 onClick={() => runHeaderAction("collapse")}
               >
@@ -1192,23 +1190,17 @@ function FileTreeInner({
               }}
             />
           ) : null}
-          {selectedPaths.size > 1 || hiddenSelectedPaths.length ? (
+          {hiddenSelectedPaths.length ? (
+            // Only the hidden part of a selection needs a notice: a destructive action would reach it.
             <Text
               role="status"
               data-explorer-selection-scope
               as="div"
               size="caption"
               tone="secondary"
-              className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-2 py-1"
+              className="px-2 py-1"
             >
-              <span>
-                {t("Selected")}: {selectedPaths.size}
-              </span>
-              {hiddenSelectedPaths.length ? (
-                <span>
-                  {t("Selection includes hidden items")}: {hiddenSelectedPaths.length}
-                </span>
-              ) : null}
+              {t("Selection includes hidden items")}: {hiddenSelectedPaths.length}
             </Text>
           ) : null}
           {copyNotice ? <MoveRecoveryNotice notice={copyNotice} /> : null}
@@ -1236,11 +1228,7 @@ function FileTreeInner({
               {opError}
             </InlineError>
           ) : null}
-          {activeRefreshFailure && refreshError && refreshFailureShownCentrally ? (
-            <InlineMessage className="mx-2 my-1" tone="info">
-              {t("File change saved.")}
-            </InlineMessage>
-          ) : activeRefreshFailure && refreshError ? (
+          {activeRefreshFailure && refreshError && !refreshFailureShownCentrally ? (
             <InlineError
               className="mx-2 my-1"
               action={{
@@ -1449,8 +1437,6 @@ function TreeChildren({
           <Button
             size="sm"
             variant="ghost"
-            motion="none"
-            type="button"
             onClick={() => setLimit((n) => n + TREE_WINDOW_CHUNK)}
           >
             {t("Show {p0} more…", { p0: Math.min(TREE_WINDOW_CHUNK, hidden) })}
@@ -1459,8 +1445,6 @@ function TreeChildren({
             <Button
               size="sm"
               variant="ghost"
-              motion="none"
-              type="button"
               onClick={() => setLimit(Number.POSITIVE_INFINITY)}
             >
               {t("Show all {p0}", { p0: hidden })}

@@ -1,4 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
 import type {
   NotificationChannel,
   NotificationEventKey,
@@ -6,9 +5,11 @@ import type {
 } from "@bycoda/account-contracts";
 import { t, useLocale } from "../../../shared/i18n";
 import { Group, Row, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
-import { Switch } from "../../../shared/ui/Switch";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TimePicker } from "../../../shared/ui/TimePicker";
 import { localTimeZone, useNotificationSettings } from "../hooks/useAccountData";
+import { useAccountState } from "../hooks/useAccount";
+import { isDeactivated } from "./AccountStatus";
 import {
   NOTIFICATION_CHANNELS,
   defaultQuietHours,
@@ -21,7 +22,6 @@ import {
   setQuietHours,
   userNotificationEvents,
 } from "../model/notificationSettingsModel";
-import styles from "./account.module.css";
 import layout from "./accountNotifications.module.css";
 
 function channelLabel(channel: NotificationChannel): string {
@@ -136,29 +136,28 @@ function EventRow({
 }) {
   const locked = isLocked(event);
   return (
-    <>
-      <Text size="secondary" tone="primary">
-        {eventLabel(event)}
-      </Text>
-      {NOTIFICATION_CHANNELS.map((channel) =>
-        isChannelApplicable(event, channel) ? (
-          <span key={channel} className={styles.cell}>
-            <Switch
-              aria-label={`${eventLabel(event)}: ${channelLabel(channel)}`}
+    <Row label={eventLabel(event)}>
+      <div className={layout.channels} role="group" aria-label={eventLabel(event)}>
+        {NOTIFICATION_CHANNELS.filter((channel) => isChannelApplicable(event, channel)).map(
+          (channel) => (
+            <Checkbox
+              key={channel}
+              label={channelLabel(channel)}
               checked={isChannelOn(settings, event, channel)}
               disabled={locked}
-              onCheckedChange={(on) => onChange((s) => setChannel(s, event, channel, on))}
+              onChange={(next) => {
+                const on = next.currentTarget.checked;
+                onChange((s) => setChannel(s, event, channel, on));
+              }}
             />
-          </span>
-        ) : (
-          <span key={channel} className={styles.cell} />
-        ),
-      )}
-    </>
+          ),
+        )}
+      </div>
+    </Row>
   );
 }
 
-/** Event by channel switches, quiet hours and the push-details choice. */
+/** One row per event with its channels, then quiet hours and the push-details choice. */
 export function AccountNotifications() {
   useLocale();
   const { query, save } = useNotificationSettings();
@@ -189,38 +188,9 @@ export function AccountNotifications() {
     >
       {settings ? (
         <>
-          <Row label={t("Notifications by event and channel")} stacked>
-            <div className={layout.matrixScroll}>
-              <div
-                className={layout.matrix}
-                role="group"
-                aria-label={t("Notifications by event and channel")}
-              >
-                <Text size="caption" tone="secondary" leading="inherit" className={styles.gridHead}>
-                  {t("Event")}
-                </Text>
-                {NOTIFICATION_CHANNELS.map((channel) => (
-                  <Text
-                    size="caption"
-                    tone="secondary"
-                    leading="inherit"
-                    key={channel}
-                    className={styles.gridHead}
-                  >
-                    {channelLabel(channel)}
-                  </Text>
-                ))}
-                {userNotificationEvents().map((event) => (
-                  <EventRow
-                    key={event.key}
-                    event={event.key}
-                    settings={settings}
-                    onChange={update}
-                  />
-                ))}
-              </div>
-            </div>
-          </Row>
+          {userNotificationEvents().map((event) => (
+            <EventRow key={event.key} event={event.key} settings={settings} onChange={update} />
+          ))}
           <DailySummaryRow settings={settings} onChange={update} />
           <QuietHoursRow settings={settings} onChange={update} />
           <Row
@@ -239,4 +209,12 @@ export function AccountNotifications() {
       ) : null}
     </Group>
   );
+}
+
+/** Account delivery is available only to users who can update their account preferences. */
+export function SignedInAccountNotifications() {
+  const account = useAccountState();
+  return account.phase === "signed-in" && !isDeactivated(account.context.user) ? (
+    <AccountNotifications />
+  ) : null;
 }

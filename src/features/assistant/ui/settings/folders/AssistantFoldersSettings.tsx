@@ -87,7 +87,6 @@ export function AssistantFoldersSettings({
             <EmptyState
               size="inline"
               kind="empty"
-              className={styles.empty}
               description={t("No folders added yet.")}
             />
           )}

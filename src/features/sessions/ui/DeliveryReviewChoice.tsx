@@ -66,7 +66,6 @@ export function DeliveryReviewChoice({
           size="sm"
           variant="secondary"
           disabled={working || lateSettlement}
-          tooltip={lateSettlement ? undefined : retryHint}
           aria-describedby={warning}
           onClick={() => onChoose("retry")}
         >

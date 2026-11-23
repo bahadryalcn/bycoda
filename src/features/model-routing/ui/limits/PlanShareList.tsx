@@ -62,9 +62,8 @@ function AccountShare({
       >
         {label}
       </SectionLabel>
-      {account.jobs.length === 0 ? (
-        <EmptyState size="inline" title={t("No usage in this window")} />
-      ) : (
+      {/* An account without jobs shows only its header; "no usage" is said once for the whole list. */}
+      {account.jobs.length === 0 ? null : (
         <DescriptionList size="sm">
           {account.jobs.map((job) => (
             <DescriptionItem
@@ -124,7 +123,8 @@ export function PlanShareList({
   if (share.error)
     return <InlineError details={share.error}>{t("Could not estimate plan usage.")}</InlineError>;
   const shown = share.result?.accounts ?? [];
-  if (shown.length === 0) return <EmptyState size="inline" title={t("No usage in this window")} />;
+  if (shown.every((account) => account.jobs.length === 0))
+    return <EmptyState size="inline" title={t("No usage in this window")} />;
   return (
     <div className="flex min-w-0 flex-col gap-3">
       {shown.map((account) => (

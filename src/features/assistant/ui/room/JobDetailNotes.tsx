@@ -45,7 +45,6 @@ export function JobDetailNotes({
       <EmptyState
         size="inline"
         kind="empty"
-        className={styles.muted}
         description={t("No notes mention this job yet.")}
       />
     );

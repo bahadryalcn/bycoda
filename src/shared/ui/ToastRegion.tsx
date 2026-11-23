@@ -416,7 +416,7 @@ export type ToastProps = ToastContentProps & {
  * focusing the stack fans it out. Info and success expire after five seconds, warnings after
  * eight, errors after ten, and an error with an action stays until dismissed; expiry pauses on
  * hover, focus inside, an open stack, while waiting behind the visible three, and in a hidden or
- * unfocused window. The dismiss control shows on hover and focus (always on a persistent error).
+ * unfocused window. The dismiss control shows on hover and focus (always on a notice that never expires).
  * Pass `durationMs={null}` for an explicitly persistent notice.
  * @group feedback
  * @use Background or nonblocking event owned by a component: result, undo, retry, progress.
@@ -487,16 +487,37 @@ function subscribe(listener: () => void) {
   };
 }
 
-/** Plain toasts compare by what the owner sees; one with rows, progress or a bound id is its own. */
+/**
+ * Plain toasts compare by what the owner sees. A toast with a callback (`action`, `actions`,
+ * `extra`), rows, progress or a bound id is its own operation and never merges: two identical
+ * failures with different Retry callbacks stay two cards, each with its own callback.
+ */
 function repeatKey(options: ToastOptions, fixedId: boolean): string | null {
-  if (fixedId || options.children || options.progress || options.actions || options.extra)
+  if (
+    fixedId ||
+    options.children ||
+    options.progress ||
+    options.action ||
+    options.actions?.length ||
+    options.extra
+  )
     return null;
   if (options.message !== undefined && typeof options.message !== "string") return null;
-  return JSON.stringify([options.tone, options.title ?? "", options.message ?? ""]);
+  // Placement, lifetime and dismissibility are part of what the owner sees and how it behaves.
+  return JSON.stringify([
+    options.tone,
+    options.title ?? "",
+    options.message ?? "",
+    options.placement ?? "",
+    options.durationMs ?? "",
+    options.dismissible ?? true,
+    options.dismissDisabled ?? false,
+  ]);
 }
 
 function show(options: ToastOptions): string {
-  const key = repeatKey(options, options.id !== undefined);
+  // A repeat carrying its own dismiss effect would lose it inside the card it merges into.
+  const key = repeatKey(options, options.id !== undefined || options.onDismiss !== undefined);
   const same =
     key === null
       ? undefined
@@ -538,8 +559,10 @@ function dismissAll(placement?: ToastPlacement) {
 /**
  * Imperative toasts for code that has no component to own one (a background result). Shown by
  * the mounted `<ToastRegion />`; component-owned notices render `<Toast>` instead. `tone` is
- * required. Showing the same tone, title and message while it is visible adds to its "×N" count
- * and restarts its time instead of opening another toast.
+ * required. Showing the same plain tone, title and message while it is visible adds to its "×N"
+ * count and restarts its time instead of opening another toast. A toast with an action, rows,
+ * progress, an `onDismiss` or an `id` is never merged: pass the operation's `id` so a retry updates
+ * its own card, and never rely on text to identify an operation.
  */
 export const toast = { show, update, dismiss, dismissAll } as const;
 

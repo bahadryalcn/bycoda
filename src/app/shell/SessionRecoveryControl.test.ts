@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 import { SessionRecoveryControl } from "./SessionRecoveryControl";
 import { setRecoverySaveFailure } from "../../features/workspace/model/sessionRecovery";
 
-it("dismisses the recovered list only after confirmation, under one label in both modes", async () => {
+it("dismisses the recovered list immediately under one label in both modes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -46,20 +46,8 @@ it("dismisses the recovered list only after confirmation, under one label in bot
     await render(true);
     expect(button("Clear conversation recovery list")).toBeUndefined();
     const trigger = button("Dismiss recovered sessions")!;
-    // A single click only asks; nothing is cleared yet.
     await act(async () => trigger.click());
-    expect(onClear).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Dismiss recovered sessions?");
-    // Cancel keeps the list.
-    await act(async () => button("Cancel")!.click());
-    expect(onClear).not.toHaveBeenCalled();
-    // Confirm clears.
-    await openOptions("Recovered work (2)");
-    await act(async () => button("Dismiss recovered sessions")!.click());
-    const confirm = [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .filter((element) => element.textContent === "Dismiss recovered sessions")
-      .at(-1)!;
-    await act(async () => confirm.click());
+    expect(document.body.textContent).not.toContain("Dismiss recovered sessions?");
     expect(onClear).toHaveBeenCalledTimes(1);
   } finally {
     act(() => root.unmount());

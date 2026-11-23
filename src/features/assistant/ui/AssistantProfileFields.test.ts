@@ -355,13 +355,11 @@ it("requires an explicit worker choice when the default catalog is unavailable",
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
 
-it("keeps the dynamic title preview available beside its switch without an extra prose row", async () => {
+it("asks only for the name in setup; address, avatar and title are settings rows", async () => {
   await setup({ name: "Ada", showTitle: true }, "identity");
-  expect(container.textContent).not.toContain("Room · Ada");
-  await click("Preview");
-  expect(document.body.textContent).toContain("Assistant Ada");
-  expect(document.body.textContent).toContain("Room · Ada");
-  expect(observed.patches).toEqual([]);
+  expect(container.querySelectorAll("input")).toHaveLength(1);
+  expect(container.textContent).not.toContain("Avatar");
+  expect(container.textContent).not.toContain("Show title");
 });
 
 it("keeps task observation default off but lets the owner save a preference while unavailable", async () => {
@@ -380,7 +378,7 @@ it("keeps task observation default off but lets the owner save a preference whil
 it("saves address frequency, tone, profanity and persona as profile drafts without a new permission", async () => {
   await setup(
     { addressFrequency: "sometimes", tone: "friendly", allowProfanity: false },
-    "identity",
+    "personality",
   );
   const never = container.querySelector<HTMLInputElement>('input[type="radio"][value="never"]')!;
   expect(never.labels?.[0]?.textContent).toContain("Never");

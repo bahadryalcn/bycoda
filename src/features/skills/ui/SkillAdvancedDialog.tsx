@@ -9,6 +9,7 @@ import { t } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { joinPath } from "../../../shared/lib/paths";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { FolderOpen } from "../../../shared/ui/icons";
 import { homeDir, revealPath } from "../../../platform/tauri/fs";
 import styles from "./SkillsPage.module.css";
 
@@ -37,10 +38,7 @@ export function SkillAdvancedDialog({ cwd, onClose }: { cwd: string; onClose: ()
         data-setting-id="skill-folders"
         tabIndex={-1}
       >
-        <div className={styles.foldersHeader}>
-          <Text size="secondary" tone="secondary" leading="inherit">
-            {t("Skills are read from these folders.")}
-          </Text>
+        <div className="flex justify-end">
           <InfoPopover width={360}>
             <p>
               {t(
@@ -75,14 +73,16 @@ export function SkillAdvancedDialog({ cwd, onClose }: { cwd: string; onClose: ()
               </Text>
             </div>
             <Button
-              variant="secondary"
+              variant="ghost"
               size="sm"
+              iconOnly
+              label={t("Open {p0} folder", { p0: row.label })}
               onClick={() => {
                 setError("");
                 revealPath(row.path).catch((reason: unknown) => setError(errorText(reason)));
               }}
             >
-              {t("Open folder")}
+              <FolderOpen className="icon-sm" aria-hidden />
             </Button>
           </div>
         ))}

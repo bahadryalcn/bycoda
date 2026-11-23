@@ -168,7 +168,7 @@ it("asks for a branch name before creating from the fixed action", async () => {
   expect(document.activeElement).toBe(input);
 
   const submit = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Create branch",
+    (button) => button.textContent === "Create",
   )!;
   expect(submit.getAttribute("aria-disabled") === "true").toBe(true);
 

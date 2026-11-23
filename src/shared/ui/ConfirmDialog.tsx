@@ -17,6 +17,7 @@ import { AlertCircle, CircleX } from "./icons";
 import { Modal, ModalActions } from "./Modal";
 import { Switch } from "./Switch";
 import { TextField } from "./TextField";
+import { Text } from "./Text";
 
 /** What the owner has entered in the dialog so far. */
 export type ConfirmState = {
@@ -45,7 +46,7 @@ export type ConfirmConsequence = ConfirmConsequenceItem | ReactNode;
 export type ConfirmRequest = {
   title: string;
   /** The question or the one-sentence outcome. */
-  message: ReactNode;
+  message?: ReactNode;
   /** Label of the confirming button, e.g. "Delete". A function follows the acknowledge state. */
   confirmLabel: string | ((state: ConfirmState) => string);
   /** Defaults to "Cancel". */
@@ -335,7 +336,11 @@ export function ConfirmDialog({
         aria-busy={pending || undefined}
         className="flex flex-col gap-3 text-ui-secondary break-words text-(--ui-text-secondary)"
       >
-        <p>{request.message}</p>
+        {request.message == null ? null : (
+          <Text as="p" size="inherit" tone="inherit" wrap="preserve-lines">
+            {request.message}
+          </Text>
+        )}
         {request.details ? <div className="min-w-0">{request.details}</div> : null}
         {consequences?.length ? <ConfirmConsequences items={consequences} /> : null}
         {request.body}

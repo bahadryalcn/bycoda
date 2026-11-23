@@ -99,11 +99,9 @@ export function SheetGridView({
           </Badge>
           <InfoPopover label={t("Preview limits")}>
             <Text as="p" size="caption" tone="secondary">
-              {t("Showing the first {p0} of {p1} rows and {p2} of {p3} columns.", {
-                p0: format.formatNumber(grid.rowCount, { maximumFractionDigits: 0 }),
-                p1: format.formatNumber(grid.totalRows, { maximumFractionDigits: 0 }),
-                p2: format.formatNumber(grid.columns.length, { maximumFractionDigits: 0 }),
-                p3: format.formatNumber(grid.totalColumns, { maximumFractionDigits: 0 }),
+              {t("Showing {p0} of {p1} columns.", {
+                p0: format.formatNumber(grid.columns.length, { maximumFractionDigits: 0 }),
+                p1: format.formatNumber(grid.totalColumns, { maximumFractionDigits: 0 }),
               })}
               {grid.budgetLimited
                 ? ` ${t(
@@ -187,14 +185,8 @@ export function SheetGridView({
               aria-label={t("Row")}
               {...surfaceAttributes(
                 { frame: "pane", edge: "right", variant: "canvas" },
-                "sticky left-0 z-1 shrink-0 [width:var(--layout-width)]",
+                "sticky left-0 z-1 shrink-0 [width:var(--document-row-header-width)]",
               )}
-              style={
-                {
-                  "--layout-width":
-                    rowHeaderWidth === undefined ? undefined : rowHeaderWidth + "px",
-                } as CSSProperties
-              }
             />
             {grid.columns.map((label, column) => (
               <div
@@ -203,13 +195,8 @@ export function SheetGridView({
                 aria-colindex={column + 2}
                 {...surfaceAttributes(
                   { frame: "pane", edge: "right" },
-                  "shrink-0 text-center [width:var(--layout-width)]",
+                  "shrink-0 text-center [width:var(--document-column-width)]",
                 )}
-                style={
-                  {
-                    "--layout-width": columnWidth === undefined ? undefined : columnWidth + "px",
-                  } as CSSProperties
-                }
               >
                 {label}
               </div>

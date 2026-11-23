@@ -8,7 +8,6 @@ import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Progress } from "../../../shared/ui/Progress";
-import { Stepper, type StepperStep } from "../../../shared/ui/Stepper";
 import { useLocalInstall } from "../hooks/useLocalInstall";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import type {
@@ -46,7 +45,7 @@ function InstallProgress({ progress }: { progress: InstallState["progress"] | nu
 }
 
 /**
- * Local install in two steps: this computer with its recommendation, then an explicit install.
+ * Local install on one screen: this computer, its recommendation and one Install action.
  * An insufficient machine never gets an install button; the API path is offered instead.
  */
 export function LocalInstallWizard({
@@ -63,7 +62,6 @@ export function LocalInstallWizard({
   onClose: () => void;
 }) {
   const target = useDecisionTarget();
-  const [step, setStep] = useState(0);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
@@ -117,40 +115,21 @@ export function LocalInstallWizard({
   const install = () => {
     if (readyToInstall) local.install();
   };
-  const [wasInstalling, setWasInstalling] = useState(installing);
-  if (wasInstalling !== installing) {
-    setWasInstalling(installing);
-    if (installing) setStep(1);
-  }
-
-  const steps: StepperStep[] = [
-    { id: "recommendation", label: t("Recommendation") },
-    {
-      id: "install",
-      label: t("Install"),
-      error: installError !== null ? t("Install did not finish.") : undefined,
-    },
-  ];
   const installed = result?.state === "installed" || result?.state === "running";
-  // One primary action per step keeps the footer a single decision.
+  // One primary action keeps the footer a single decision; pressing Install is the confirmation.
   const planBlocked = plan !== null && (!plan.installable || !plan.fits);
-  const primary =
-    step === 0 && offer === "install" && !planBlocked
-      ? { label: t("Continue"), disabled: !readyToInstall, onClick: () => setStep(1) }
-      : step === 0 && (offer === "api" || planBlocked)
+  const primary = installed
+    ? { label: t("Done"), onClick: onClose }
+    : offer === "install" && !planBlocked
+      ? {
+          label: t("Install"),
+          loading: installing,
+          disabled: installing || !modelId || !readyToInstall || result !== null,
+          onClick: install,
+        }
+      : offer === "api" || planBlocked
         ? { label: t("Choose an API provider"), onClick: onChooseApi }
-        : step === 0
-          ? { label: t("Continue"), disabled: true, onClick: () => setStep(1) }
-          : step === 1 && !installed
-            ? {
-                label: t("Install"),
-                loading: installing,
-                disabled: installing || !modelId || !readyToInstall || result !== null,
-                onClick: install,
-              }
-            : step === 1 && installed
-              ? { label: t("Done"), onClick: onClose }
-              : null;
+        : null;
 
   return (
     <Modal
@@ -162,22 +141,16 @@ export function LocalInstallWizard({
             : t("A local model runs on this computer and needs no key.")}
         </InfoPopover>
       }
-      size="lg"
-      height="tall"
+      size="md"
       onClose={onClose}
       closeDisabled={installing}
       footer={
         <ModalActions>
-          <Button variant="ghost" disabled={installing} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            variant="ghost"
-            disabled={step === 0 || installing}
-            onClick={() => setStep(step - 1)}
-          >
-            {t("Back")}
-          </Button>
+          {installing || installed ? null : (
+            <Button variant="ghost" onClick={onClose}>
+              {t("Cancel")}
+            </Button>
+          )}
           {primary ? (
             <Button
               variant="primary"
@@ -192,9 +165,7 @@ export function LocalInstallWizard({
       }
     >
       <div className="flex min-w-0 flex-col gap-4">
-        <Stepper steps={steps} current={step} label={t("Install steps")} />
-        {step === 0 ? (
-          <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex min-w-0 flex-col gap-2">
             {loadError !== null ? (
               <ErrorNotice
                 title={t("Could not check this computer.")}
@@ -216,9 +187,8 @@ export function LocalInstallWizard({
                 ))}
               </Text>
             ) : null}
-          </div>
-        ) : null}
-        {step === 0 && loaded ? (
+        </div>
+        {loaded ? (
           <div className="flex min-w-0 flex-col gap-2">
             <p>{recommendationText(loaded.recommendation.tier)}</p>
             {offer === "install" ? (
@@ -231,15 +201,6 @@ export function LocalInstallWizard({
                     error={planError}
                     title={t("Could not prepare the install.")}
                     onRetry={() => setPlanAttempt((value) => value + 1)}
-                  />
-                ) : null}
-                {plan === null && planError === null ? (
-                  <Progress
-                    label={
-                      target
-                        ? t("Checking Host {p0}…", { p0: target })
-                        : t("Checking this computer…")
-                    }
                   />
                 ) : null}
                 {plan !== null && !plan.installable ? (
@@ -273,15 +234,8 @@ export function LocalInstallWizard({
             ) : null}
           </div>
         ) : null}
-        {step === 1 ? (
+        {installing || installError !== null || result !== null || local.cancelled ? (
           <div className="flex min-w-0 flex-col gap-2">
-            {result === null && !installing && installError === null && !local.cancelled ? (
-              <p>
-                {target
-                  ? t("Install {p1} on Host {p2}?", { p1: modelName, p2: target })
-                  : t("Install {p1} on this computer?", { p1: modelName })}
-              </p>
-            ) : null}
             {installing ? <InstallProgress progress={local.progress} /> : null}
             {installing && local.canCancel ? (
               <div className="flex">

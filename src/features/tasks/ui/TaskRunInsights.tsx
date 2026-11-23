@@ -9,6 +9,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import "./task-detail.css";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { NumberField } from "../../../shared/ui/NumberField";
 import type { HostTask } from "../model/hostTasks";
 import {
@@ -59,11 +60,11 @@ export function TaskRunInsights({ task, onSaveEvaluation }: Props) {
             value={number(usage?.reportedCostUsd ?? null, 4)}
           />
         </DescriptionList>
-        <Text as="p" size="micro" tone="secondary">
+        <InfoPopover>
           {t(
             "Includes recorded workers, reviewers and retries. Missing provider readings remain unknown; no billing estimate is inferred.",
           )}
-        </Text>
+        </InfoPopover>
         {task.status === "done" || task.status === "review" ? (
           <EvaluationEditor
             key={`${task.id}:${task.runId ?? task.sessionId ?? "manual"}:${task.completedAt ?? task.startedAt ?? "unfinished"}`}
@@ -157,20 +158,22 @@ function EvaluationEditor({ task, onSaveEvaluation }: Props) {
           />
         </div>
       </div>
-      <Text as="p" size="micro" tone="secondary">
-        {t(
-          "Saving an evaluation does not complete, approve or publish the task. Comparisons include only completed results you accepted.",
-        )}
-      </Text>
       {error ? <InlineError>{error}</InlineError> : null}
       {message ? (
         <Text as="p" size="caption" tone="inherit" role="status">
           {message}
         </Text>
       ) : null}
-      <Button type="submit" loading={busy}>
-        {t("Save evaluation")}
-      </Button>
+      <div className="flex items-center gap-1">
+        <Button type="submit" loading={busy}>
+          {t("Save evaluation")}
+        </Button>
+        <InfoPopover>
+          {t(
+            "Saving an evaluation does not complete, approve or publish the task. Comparisons include only completed results you accepted.",
+          )}
+        </InfoPopover>
+      </div>
     </form>
   );
 }
@@ -180,11 +183,13 @@ export function TaskMetricsComparison({ tasks }: { tasks: HostTask[] }) {
   const groups = taskMetricsComparisons(tasks);
   return (
     <section className="min-w-0 space-y-3" aria-label={t("Accepted work comparisons")}>
-      <Text as="p" size="caption" tone="secondary">
-        {t(
-          "Compare similar objectives and acceptance criteria. These are recorded outcomes, not a controlled model benchmark.",
-        )}
-      </Text>
+      <div className="flex items-center justify-end">
+        <InfoPopover>
+          {t(
+            "Compare similar objectives and acceptance criteria. These are recorded outcomes, not a controlled model benchmark.",
+          )}
+        </InfoPopover>
+      </div>
       {!groups.length ? (
         <Text as="p" size="caption" tone="inherit">
           {t("Accept a completed result and record your review to compare runs.")}

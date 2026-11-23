@@ -1,4 +1,5 @@
 import type { Session, WorkspaceMode } from "../../sessions/model/session";
+import { isProjectlessCwd } from "../../sessions/model/recentSessions";
 import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
 import { t } from "../../../shared/i18n";
 import { TimeoutError, withTimeout } from "../../../shared/lib/withTimeout";
@@ -25,6 +26,7 @@ export function isNewWorkspaceSession(session: Session): boolean {
 }
 
 export function needsSessionWorkspace(session: Session): boolean {
+  if (isProjectlessCwd(session.cwd)) return false;
   return (
     !session.worktreeCwd &&
     session.workspaceMode !== "current" &&

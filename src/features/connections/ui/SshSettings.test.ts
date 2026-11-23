@@ -144,11 +144,8 @@ it("opens global SSH management with an empty inventory and preserves config tex
   await act(async () => find("Keys").click());
   await act(async () => find("Import SSH config").click());
   expect(input.value).toContain("work.invalid");
-  expect(
-    native.invoke.mock.calls.some(
-      ([command]) => command === "ssh_config_preview" || command === "server_ssh_save",
-    ),
-  ).toBe(false);
+  // Previewing is automatic after typing pauses; nothing is saved without an explicit import.
+  expect(native.invoke.mock.calls.some(([command]) => command === "server_ssh_save")).toBe(false);
 });
 
 it("retries only the failed SSH inventory and keeps a successful key list usable", async () => {

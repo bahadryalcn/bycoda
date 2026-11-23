@@ -14,9 +14,9 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useState, useSyncExternalStore, type ReactNode } from "react";
-import { Lock } from "../../../shared/ui/icons";
+import { Lock, MoreHorizontal } from "../../../shared/ui/icons";
 import "./GroupPrivacy.css";
-import { Badge } from "../../../shared/ui/Badge";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useGroupLock } from "../hooks/useGroupLock";
 import { AUTO_LOCK_MINUTES, autoLockLabel, parseAutoLockMinutes } from "../model/autoLock";
 import {
@@ -92,6 +92,7 @@ export function GroupLockSettings({
   const lock = useGroupLock();
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [groupQuery, setGroupQuery] = useState("");
+  const [passwordMenu, setPasswordMenu] = useState<HTMLElement | null>(null);
   const { pending: pendingWrites, failed: unsaved } = useSyncExternalStore(
     subscribePrivacySettingsOperations,
     getPrivacySettingsOperations,
@@ -174,32 +175,26 @@ export function GroupLockSettings({
       <Group id="group-lock-password" title={t("Lock password")}>
         {lock.hasPassword ? (
           <>
+            {/* Reset and Remove are rare and destructive; both keep their confirmations. */}
             <Row label={t("Password is set")}>
-              <Button className="shrink-0" onClick={() => setDialog({ kind: "change" })}>
-                {t("Change password…")}
-              </Button>
-            </Row>
-            <Row
-              label={t("Forgot the password?")}
-              description={t("Reset protection. Your projects and hidden preferences stay saved.")}
-            >
-              <Button className="shrink-0" onClick={() => setDialog({ kind: "forgot" })}>
-                {t("Reset…")}
-              </Button>
-            </Row>
-            {/* The only destructive action of the group; it keeps its password confirmation. */}
-            <Row
-              label={t("Remove protection")}
-              descriptionVisible
-              description={t("Removes the password and all group locks.")}
-            >
-              <Button
-                tone="danger"
-                className="shrink-0"
-                onClick={() => setDialog({ kind: "remove" })}
-              >
-                {t("Remove…")}
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button className="shrink-0" onClick={() => setDialog({ kind: "change" })}>
+                  {t("Change password…")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  label={t("More actions")}
+                  aria-haspopup="menu"
+                  aria-expanded={passwordMenu !== null}
+                  onClick={(event) => {
+                    const anchor = event.currentTarget;
+                    setPasswordMenu((current) => (current ? null : anchor));
+                  }}
+                >
+                  <MoreHorizontal className="icon-md" strokeWidth={1.75} aria-hidden />
+                </Button>
+              </div>
             </Row>
           </>
         ) : (
@@ -353,31 +348,7 @@ export function GroupLockSettings({
                     : groupSummary
                 }
               />
-            ) : (
-              <Text
-                as="p"
-                size="caption"
-                tone="secondary"
-                leading="inherit"
-                className="privacy-group-summary"
-                role="status"
-              >
-                {groupSummary}
-              </Text>
-            )}
-            <Text
-              as="div"
-              size="caption"
-              tone="secondary"
-              weight="medium"
-              leading="inherit"
-              className="privacy-group-columns"
-              aria-hidden="true"
-            >
-              <span>{t("Group")}</span>
-              <span>{t("Lock state")}</span>
-              <span>{t("Requires password")}</span>
-            </Text>
+            ) : null}
             <ScrollArea
               gutter="stable"
               {...surfaceAttributes(
@@ -419,30 +390,16 @@ export function GroupLockSettings({
                       >
                         {group.name}
                       </Text>
+                      {/* The toggle says protected or not; only a lock that is on right now shows. */}
+                      {locked ? (
+                        <Lock
+                          className="icon-xs shrink-0"
+                          tone="secondary"
+                          role="img"
+                          aria-label={t("Locked")}
+                        />
+                      ) : null}
                     </span>
-                    {/* Only real states: locked now, unlocked, or (a dash) not protected at all. */}
-                    {locked ? (
-                      <Badge className="privacy-group-state">{t("Locked")}</Badge>
-                    ) : group.lockable ? (
-                      <Text
-                        size="caption"
-                        tone="secondary"
-                        leading="inherit"
-                        className="privacy-group-state privacy-group-state-quiet"
-                      >
-                        {t("Unlocked")}
-                      </Text>
-                    ) : (
-                      <Text
-                        size="caption"
-                        tone="secondary"
-                        leading="inherit"
-                        className="privacy-group-state privacy-group-state-quiet"
-                      >
-                        <span aria-hidden>—</span>
-                        <span className="sr-only">{t("Not protected")}</span>
-                      </Text>
-                    )}
                     <span className="privacy-group-toggle">
                       <Toggle
                         label={t("{p0} is lockable", { p0: group.name })}
@@ -461,6 +418,21 @@ export function GroupLockSettings({
       </Group>
       <HiddenGroupsSettings controls={{ Group, Row }} />
 
+      {passwordMenu ? (
+        <DropdownMenu
+          anchor={passwordMenu}
+          label={t("More actions")}
+          items={[
+            { kind: "item", id: "forgot", label: t("Reset…") },
+            { kind: "item", id: "remove", label: t("Remove protection…"), danger: true },
+          ]}
+          onClose={() => setPasswordMenu(null)}
+          onPick={(id) => {
+            setPasswordMenu(null);
+            setDialog({ kind: id === "remove" ? "remove" : "forgot" });
+          }}
+        />
+      ) : null}
       {dialog?.kind === "set" ? (
         <SetLockPasswordDialog
           mode="set"

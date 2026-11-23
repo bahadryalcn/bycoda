@@ -685,6 +685,20 @@ function PaneTreeComponent({
           const canMaximize = (inSplit || maximum) && !hidden;
           const rect = maximum ? { x: 0, y: 0, w: 1, h: 1 } : leaf.rect;
           const onPaneDragStart = startPaneDrag;
+          const maximizeButton = canMaximize ? (
+            <Button
+              iconOnly
+              label={t(maximum ? "Restore panel layout" : "Maximize panel")}
+              variant="ghost"
+              motion="none"
+              type="button"
+              aria-pressed={Boolean(maximum)}
+              data-pane-maximize={leaf.id}
+              onClick={() => toggleMaximum(leaf.id)}
+            >
+              {maximum ? <Minimize2 className="icon-sm" /> : <Maximize2 className="icon-sm" />}
+            </Button>
+          ) : null;
           return (
             <div
               key={leaf.id}
@@ -721,15 +735,15 @@ function PaneTreeComponent({
               style={paneRectStyle(rect)}
             >
               {leaf.tabIds && leaf.tabIds.length > 1 ? (
+                <div
+                  {...surfaceAttributes(
+                    { frame: "pane", edge: "bottom" },
+                    "flex min-w-0 shrink-0 items-center",
+                  )}
+                >
+                  <div className="min-w-0 flex-1">
                 <Tabs value={leaf.id} onValueChange={onFocus} panels="none">
-                  <TabList
-                    label={t("Pane sessions")}
-                    scroll="auto"
-                    {...surfaceAttributes(
-                      { frame: "pane", edge: "bottom" },
-                      `shrink-0${canMaximize ? " pe-10" : ""}`,
-                    )}
-                  >
+                  <TabList label={t("Pane sessions")} scroll="auto" className="shrink-0">
                     {leaf.tabIds.map((id) => (
                       <Tab
                         key={id}
@@ -737,7 +751,7 @@ function PaneTreeComponent({
                         type="button"
                         data-pane-tab-id={id}
                         truncate
-                        className={`relative max-w-48 shrink-0 `}
+                        className="relative max-w-48 shrink-0"
                         onClick={(event) => {
                           event.preventDefault();
                           onFocus(id);
@@ -786,22 +800,14 @@ function PaneTreeComponent({
                     ))}
                   </TabList>
                 </Tabs>
-              ) : null}
-              {(inSplit || maximum) && !hidden ? (
-                <Button
-                  iconOnly
-                  label={t(maximum ? "Restore panel layout" : "Maximize panel")}
-                  variant="ghost"
-                  motion="none"
-                  type="button"
-                  aria-label={t(maximum ? "Restore panel layout" : "Maximize panel")}
-                  aria-pressed={Boolean(maximum)}
-                  data-pane-maximize={leaf.id}
-                  onClick={() => toggleMaximum(leaf.id)}
-                  className="absolute [inset-block-start:0.25rem] end-2 z-1 grid place-items-center"
-                >
-                  {maximum ? <Minimize2 className="icon-sm" /> : <Maximize2 className="icon-sm" />}
-                </Button>
+                  </div>
+                  {maximizeButton ? <span className="shrink-0 px-1">{maximizeButton}</span> : null}
+                </div>
+              ) : maximizeButton ? (
+                // A single-session pane has no header row of its own; the button floats at its end.
+                <span className="absolute [inset-block-start:0.25rem] end-2 z-1">
+                  {maximizeButton}
+                </span>
               ) : null}
               <div
                 className="flex min-h-0 min-w-0 flex-1 flex-col"

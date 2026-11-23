@@ -65,7 +65,7 @@ it("offers Retry below an unmoved logo once the boot is slow, outside the live r
   expect(status.querySelector("button")).toBeNull();
   expect(container.querySelector("[aria-live]")).toBeNull();
   const button = container.querySelector("button")!;
-  expect(button.textContent).toBe("Retry loading");
+  expect(button.textContent).toBe("Reload");
   act(() => button.click());
   expect(retry).toHaveBeenCalledOnce();
 });
@@ -78,12 +78,12 @@ it("updates the mounted restore shell when the language catalog changes", async 
     renderLoading();
     act(() => vi.advanceTimersByTime(BOOT_SLOW_AFTER_MS));
     const button = container.querySelector("button")!;
-    expect(button.textContent).toBe("Retry loading");
+    expect(button.textContent).toBe("Reload");
     expect(container.textContent).toContain("Restoring your workspace and saved drafts…");
     vi.useRealTimers();
     await act(async () => setLanguagePreference("tr"));
     expect(container.querySelector("button")).toBe(button);
-    expect(button.textContent).toBe("Yüklemeyi yeniden dene");
+    expect(button.textContent).toBe("Yeniden yükle");
     expect(container.textContent).toContain(
       "Çalışma alanınız ve kayıtlı taslaklarınız geri yükleniyor…",
     );

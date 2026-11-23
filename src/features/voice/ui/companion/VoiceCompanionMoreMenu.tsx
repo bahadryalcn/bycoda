@@ -33,7 +33,6 @@ export function VoiceCompanionMoreMenu({
       kind: "item" as const,
       id: action.id,
       label: action.label,
-      description: action.description,
       checked: action.checked,
       selectionRole: "radio" as const,
     })),

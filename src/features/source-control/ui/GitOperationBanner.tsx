@@ -38,12 +38,6 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
   const run = async (work: () => Promise<unknown>) => {
     try {
       await withGitOperation(cwd, `Updating ${label.toLowerCase()}…`, work);
-      setGitFeedback(cwd, {
-        kind: "success",
-        get title() {
-          return t("{p0} operation complete", { p0: label });
-        },
-      });
     } catch (error) {
       setGitFeedback(cwd, {
         kind: "error",
@@ -59,10 +53,8 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
 
   const abort = async () => {
     const confirmed = await confirm({
-      title: t("Abort"),
-      message: t("Abort the {p0}? Changes made while resolving it are discarded.", {
-        p0: label.toLowerCase(),
-      }),
+      title: t("Abort the {p0}?", { p0: label.toLowerCase() }),
+      message: t("Changes made while resolving it are discarded."),
       confirmLabel: t("Abort"),
     });
     if (confirmed) await run(() => gitOperationAbort(cwd));
@@ -72,11 +64,11 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
     <div
       {...surfaceAttributes(
         { frame: "pane", edge: "bottom" },
-        "flex shrink-0 items-center gap-1 px-3 py-1.5",
+        "flex shrink-0 flex-wrap items-center gap-1 px-3 py-1.5",
       )}
     >
       {confirmElement}
-      <InlineMessage tone="warning" className="flex-1">
+      <InlineMessage tone="warning" className="min-w-0 flex-1">
         {operationSummary(label, conflictCount)}
       </InlineMessage>
       <Button
@@ -85,7 +77,6 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
         type="button"
         disabled={!!busy || conflictCount > 0}
         disabledReason={conflictCount > 0 ? t("Resolve every conflict first") : undefined}
-        tooltip={t("Continue the {p0}", { p0: label.toLowerCase() })}
         onClick={() => void run(() => gitOperationContinue(cwd))}
         className={ACTION}
       >
@@ -97,7 +88,6 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
         motion="none"
         type="button"
         disabled={!!busy}
-        tooltip={t("Abort the {p0}", { p0: label.toLowerCase() })}
         onClick={() => void abort()}
         className={ACTION}
       >

@@ -76,7 +76,7 @@ export function GitCommitBlameView({
                 tone="secondary"
                 {...surfaceAttributes(
                   { variant: "canvas" },
-                  "sticky left-0 flex w-72 shrink-0 items-baseline px-1 font-sans",
+                  "sticky left-0 flex w-40 shrink-0 items-baseline px-1 font-sans",
                 )}
               >
                 {first ? (
@@ -88,17 +88,14 @@ export function GitCommitBlameView({
                     truncate
                     className="min-w-0 flex-1"
                     disabled={!openCommit?.has(entry.sha)}
-                    disabledReason={t("This commit isn’t loaded in the history yet")}
                     onClick={() => openCommit?.open(entry.sha)}
                     tooltip={entry.summary}
-                    tooltipWhen="overflow"
                     tooltipDetails={[
                       `${entry.author} · ${entry.shortSha} · ${formatAbsoluteTime(entry.timestamp)}`,
                     ]}
                   >
                     <span className="shrink-0 font-mono">{entry.shortSha}</span>
-                    <span className="min-w-0 flex-1 truncate">{entry.summary}</span>
-                    <span className="shrink-0 tabular-nums">
+                    <span className="min-w-0 flex-1 truncate text-end tabular-nums">
                       {formatRelativeTime(entry.timestamp, now)}
                     </span>
                   </Button>

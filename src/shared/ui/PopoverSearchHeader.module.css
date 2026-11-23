@@ -13,7 +13,7 @@
   align-items: center;
   gap: 0.5rem;
   min-block-size: var(--ui-control-height-sm);
-  padding-inline: 0.625rem;
+  padding-inline: var(--ui-space-3, 0.75rem);
   color: var(--ui-text-secondary);
 }
 .header[data-size="md"] {
@@ -41,5 +41,5 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: 0.125rem;
+  gap: var(--ui-space-1, 0.25rem);
 }

@@ -146,7 +146,7 @@ it("keeps every switch locked while the Host is offline", async () => {
   mount({ sectionSnapshot: snapshotOf([rule({})]), request: vi.fn() }, { disabled: true });
   await flush();
   expect(toggleOf("Pricing replies")?.disabled).toBe(true);
-  expect(button("Review rules with AI")?.disabled).toBe(true);
+  expect(button("Review rules with AI")?.getAttribute("aria-disabled")).toBe("true");
 });
 
 it("offers a retry when the rules cannot be read", async () => {
@@ -169,19 +169,14 @@ it("says plainly that this account has no reply rules and offers no AI review", 
   );
   await flush();
   expect(element.textContent?.match(/No reply rules for this account yet\./g)).toHaveLength(1);
-  expect(button("Review rules with AI")?.disabled).toBe(true);
-  const description = button("Review rules with AI")?.getAttribute("aria-describedby");
-  expect(description && document.getElementById(description)?.textContent).toBe(
-    "No reply rules for this account yet.",
-  );
+  expect(button("Review rules with AI")).toBeUndefined();
 });
 
-it("keeps both the empty state and offline reason when there are no rules", async () => {
+it("shows only the empty state, without an AI review, when there are no rules offline", async () => {
   mount({ sectionSnapshot: snapshotOf([]), request: vi.fn() }, { disabled: true });
   await flush();
   expect(element.textContent?.match(/No reply rules for this account yet\./g)).toHaveLength(1);
-  expect(element.textContent).toContain("Connect to this computer to change this account.");
-  expect(button("Review rules with AI")?.disabled).toBe(true);
+  expect(button("Review rules with AI")).toBeUndefined();
 });
 
 it("shows that a stopped rule is paused", async () => {
@@ -228,12 +223,6 @@ it("asks AI to narrow only this account's rules and only proposes, never changin
     projectId: "p1",
     ruleIds: ["r1"],
   });
-  await act(async () =>
-    element.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!.click(),
-  );
-  expect(document.body.textContent).toContain(
-    "AI suggests these narrower rules. Nothing changes until you edit a rule.",
-  );
   expect(element.textContent).toContain("Pricing replies");
   expect(element.textContent).toContain("Too broad for pricing.");
   expect(element.textContent).toContain("Kept the stop words.");
@@ -270,10 +259,10 @@ it("shows the failure of the AI review without creating a proposal", async () =>
   expect(element.textContent).not.toContain("AI suggests these narrower rules.");
 });
 
-it("says why Review rules with AI is off while the Host is offline", async () => {
+it("keeps Review rules with AI off while the Host is offline", async () => {
   mount({ sectionSnapshot: snapshotOf([rule({})]), request: vi.fn() }, { disabled: true });
   await flush();
-  expect(element.textContent).toContain("Connect to this computer to change this account.");
+  expect(button("Review rules with AI")?.getAttribute("aria-disabled")).toBe("true");
 });
 
 it("clears the read error once a retry succeeds", async () => {

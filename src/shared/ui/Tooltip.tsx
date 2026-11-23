@@ -362,7 +362,8 @@ export function useTooltip({
           ? detailTooltipFrame
           : {
               passive: true,
-              className: `pointer-events-none break-words p-2 text-(length:--ui-font-caption) text-content ${
+              variant: "compact",
+              className: `pointer-events-none break-words text-(length:--ui-font-caption) text-content ${
                 wide ? "max-w-80" : "max-w-60"
               }`,
             })}

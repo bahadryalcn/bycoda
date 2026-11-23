@@ -96,10 +96,9 @@ export function AccountColorPicker({
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex shrink-0 items-center gap-1.5"
+        startIcon={<AccountColorDot account={account} className="size-2.5" />}
       >
-        <AccountColorDot account={account} className="size-2.5" />
-        <span>{t("Color")}</span>
+        {t("Color")}
       </Button>
       {open ? (
         <AccountColorPopover

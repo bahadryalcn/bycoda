@@ -114,16 +114,13 @@ export function AssistantMemoryPanel(props: Props) {
                       leading="inherit"
                       className={styles.meta}
                     >
-                      <span>
-                        {t(
-                          entry.scope === "all"
-                            ? "Everywhere"
-                            : entry.scope === "voice"
-                              ? "Voice only"
-                              : "Coding sessions only",
-                        )}
-                      </span>
-                      <span aria-hidden>·</span>
+                      {/* Everywhere is the default; only a narrower scope is worth saying. */}
+                      {entry.scope !== "all" && (
+                        <>
+                          <span>{t(entry.scope === "voice" ? "Voice only" : "Coding sessions only")}</span>
+                          <span aria-hidden>·</span>
+                        </>
+                      )}
                       {/* The group title already says "Learned". */}
                       {(entry.source === "typed" || entry.source === "spoken") && (
                         <>
@@ -155,7 +152,7 @@ export function AssistantMemoryPanel(props: Props) {
                       <Trash2 className="icon-sm" />
                     </InlineAction>
                     <Switch
-                      label={t("Active")}
+                      aria-label={t("Enable memory")}
                       aria-describedby={`assistant-memory-${entry.id}`}
                       checked={entry.active}
                       disabled={props.pending}

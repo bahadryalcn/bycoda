@@ -410,20 +410,20 @@ const MemoMenuBar = memo(function MenuBar({
     {
       kind: "item",
       id: "close_tab",
-      label: t("Close Pane"),
+      label: t("Close pane"),
       shortcut: shortcut("Pane: Close", `${MOD}W`),
     },
     {
       kind: "item",
       id: "close_other_tabs",
-      label: t("Close Other Tabs"),
+      label: t("Close other tabs"),
       shortcut: shortcut("Tab: Close Others", `${MOD}${ALT}T`),
     },
-    ...(onCloseIdleTabs ? [closeIdleTabsItem(t("Close Idle Tabs"), countIdleTabs)] : []),
+    ...(onCloseIdleTabs ? [closeIdleTabsItem(t("Close idle tabs"), countIdleTabs)] : []),
     {
       kind: "item",
       id: "close_all_tabs",
-      label: t("Close All Tabs"),
+      label: t("Close all tabs"),
       shortcut: shortcut("Tab: Close All", `${MOD}${SHIFT}W`),
     },
   ];
@@ -466,7 +466,7 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "new_window",
-            label: t("New Window"),
+            label: t("New window"),
             shortcut: shortcut("App: New Window", `${MOD}${SHIFT}N`),
           },
           { kind: "sep" },
@@ -480,7 +480,7 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "open_project",
-            label: t("Open Project…"),
+            label: t("Open project…"),
             shortcut: shortcut("App: Open Project", `${MOD}O`),
           },
           {
@@ -492,13 +492,13 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "go_to_file",
-            label: t("Go to File…"),
+            label: t("Go to file…"),
             shortcut: shortcut("App: Go to File", `${MOD}P`),
           },
           {
             kind: "item",
             id: "find_in_project",
-            label: t("Find in Files…"),
+            label: t("Find in files…"),
             shortcut: shortcut("App: Find in Files", `${MOD}${SHIFT}F`),
           },
           ...(!compact ? [{ kind: "sep" as const }, ...tabActions, ...windowActions] : []),
@@ -514,20 +514,20 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "toggle_session_sidebar",
-            label: t("Toggle Session Sidebar"),
+            label: t("Toggle session sidebar"),
             shortcut: shortcut("App: Toggle Session Sidebar", `${MOD}${SHIFT}B`),
           },
           ...(!compact ? destinations : []),
           {
             kind: "item",
             id: "open_model_picker",
-            label: t("Switch Model…"),
+            label: t("Switch model…"),
             shortcut: shortcut("App: Switch Model", `${MOD}${SHIFT}.`),
           },
           {
             kind: "item",
             id: "toggle_diff",
-            label: t("Toggle Source Control"),
+            label: t("Toggle source control"),
           },
           ...(!compact ? layoutItem : []),
           { kind: "sep" },
@@ -540,13 +540,13 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "zoom_out",
-            label: t("Zoom Out"),
+            label: t("Zoom out"),
             shortcut: shortcut("View: Zoom Out", `${MOD}-`),
           },
           {
             kind: "item",
             id: "zoom_reset",
-            label: t("Reset Zoom"),
+            label: t("Reset zoom"),
             shortcut: shortcut("View: Reset Zoom", `${MOD}0`),
           },
         ];
@@ -555,13 +555,13 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "new_terminal",
-            label: t("New Terminal"),
+            label: t("New terminal"),
             shortcut: shortcut("Terminal: New", `${MOD}\``),
           },
           {
             kind: "item",
             id: "toggle_terminal",
-            label: t("Toggle Terminal"),
+            label: t("Toggle terminal"),
             shortcut: shortcut("Terminal: Toggle Dock", `${MOD}J`),
           },
         ];
@@ -577,7 +577,7 @@ const MemoMenuBar = memo(function MenuBar({
           ...getMenuItems("file", true),
           ...destinations,
           { kind: "sep" },
-          { kind: "item", id: "tabs_menu", label: t("Tabs"), submenu: tabActions },
+          { kind: "item", id: "tabs_menu", label: t("Tabs and panes"), submenu: tabActions },
           ...layoutItem,
           { kind: "item", id: "view_menu", label: t("View"), submenu: getMenuItems("view", true) },
           {

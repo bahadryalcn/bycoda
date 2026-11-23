@@ -186,7 +186,7 @@ export function ModelOrderLimits({
           }
         />
       </Row>
-      <Row label={t("Default maximum run minutes")} info={t("For one unattended run.")}>
+      <Row label={t("Default maximum run minutes")}>
         <NumberField
           label={t("Default maximum run minutes")}
           hideLabel

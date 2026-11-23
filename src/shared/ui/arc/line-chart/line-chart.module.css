@@ -190,12 +190,12 @@
   display: grid;
   min-width: 140px;
   max-width: min(220px, 100%);
-  gap: 4px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--ui-radius-popup);
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-floating);
+  gap: var(--ui-space-1, 0.25rem);
+  padding: var(--ui-space-2, 0.5rem) var(--ui-space-3, 0.75rem);
+  border: 1px solid var(--ui-floating-edge);
+  border-radius: var(--ui-radius-floating, var(--ui-radius-popup));
+  background: var(--ui-surface-floating);
+  box-shadow: var(--ui-floating-shadow, var(--shadow-floating));
   opacity: 0;
   pointer-events: none;
   scale: 0.96;

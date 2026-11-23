@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
-import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import type { SshAddPlan } from "../model/machineCandidates";
 import type { RemoteMachine } from "../model/protocol";
@@ -32,7 +31,6 @@ export function AddComputerDialog({
 }) {
   useLocale();
   const [view, setView] = useState<string>(initialView);
-  const [query, setQuery] = useState("");
   return (
     <Modal
       title={t("Add a computer")}
@@ -49,20 +47,10 @@ export function AddComputerDialog({
             <Tab value="manual">{t("Enter address")}</Tab>
           </TabList>
           <TabPanel value="found" tabIndex={-1} className="connections-view">
-            <SearchInput
-              standalone
-              appearance="field"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              textSize="secondary"
-              placeholder={t("Search by name or address")}
-              aria-label={t("Search by name or address")}
-            />
             <DiscoveredMachines
               saved={saved}
               active
               busy={busy}
-              query={query}
               onAdd={onAdd}
               onPaired={onPaired}
             />

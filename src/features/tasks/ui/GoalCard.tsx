@@ -127,7 +127,13 @@ export function GoalCard({
                   aria-label={t("Epic progress")}
                   value={progress.done}
                   max={progress.total}
-                  tone={goal.status === "done" ? "success" : "neutral"}
+                  tone={
+                    goal.status === "blocked"
+                      ? "danger"
+                      : goal.status === "done"
+                        ? "success"
+                        : "neutral"
+                  }
                 />
                 <span>{t("{p0}/{p1} done", { p0: progress.done, p1: progress.total })}</span>
               </span>
@@ -154,7 +160,7 @@ export function GoalCard({
             </Text>
             {goal.stale && !goal.pendingRefresh ? (
               <Text size="inherit" tone="warning" leading="inherit" wrap="anywhere">
-                {t("Offline")}
+                {t(" (offline, last known)").trim()}
               </Text>
             ) : null}
           </Text>

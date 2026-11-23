@@ -227,7 +227,9 @@ export function InboxFiltersMenu({
         {source === "jira" ? (
           <div className="grid min-w-0 gap-3">
             <div className="grid min-w-0 gap-1.5">
+              <SectionLabel variant="menu">{t("Assignee")}</SectionLabel>
               <SearchableSelect
+                hideLabel
                 multiple
                 label={t("Assignee")}
                 placeholder={t("Anyone")}
@@ -242,7 +244,9 @@ export function InboxFiltersMenu({
               />
             </div>
             <div className="grid min-w-0 gap-1.5">
+              <SectionLabel variant="menu">{t("Board status")}</SectionLabel>
               <SearchableSelect
+                hideLabel
                 multiple
                 label={t("Board status")}
                 placeholder={t("All statuses")}
@@ -289,12 +293,16 @@ export function InboxFiltersMenu({
             ) : null}
           </div>
         </div>
-        <Select
-          label={t("Time")}
-          value={filters.time}
-          options={TIME_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
-          onValueChange={(value) => setTime(value as InboxTimeFilter)}
-        />
+        <div className="grid min-w-0 gap-1.5">
+          <SectionLabel variant="menu">{t("Time")}</SectionLabel>
+          <Select
+            hideLabel
+            label={t("Time")}
+            value={filters.time}
+            options={TIME_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
+            onValueChange={(value) => setTime(value as InboxTimeFilter)}
+          />
+        </div>
 
         {!tracker && source !== "github" ? (
           <div className="grid min-w-0 gap-1.5">
@@ -340,7 +348,9 @@ export function InboxFiltersMenu({
 
         {source === "linear" && linearProjects.length > 0 ? (
           <div className="grid min-w-0 gap-1.5">
+            <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
             <SearchableSelect
+              hideLabel
               multiple
               label={t("Projects")}
               options={linearProjects.map((item) => ({

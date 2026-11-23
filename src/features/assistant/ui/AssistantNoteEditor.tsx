@@ -2,7 +2,6 @@ import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useRef, useState } from "react";
 import type { AssistantNote } from "../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../shared/i18n";
-import { Save, X } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Tabs, TabList, Tab, TabPanel } from "../../../shared/ui/Tabs";
@@ -112,16 +111,10 @@ export function NoteEditor({
               }}
             />
             <div className="note-detail-actions">
-              <Button
-                startIcon={<X className="icon-sm" />}
-                variant="ghost"
-                disabled={pending}
-                onClick={onClose}
-              >
+              <Button variant="ghost" disabled={pending} onClick={onClose}>
                 {t("Close")}
               </Button>
               <Button
-                startIcon={<Save className="icon-sm" />}
                 variant="primary"
                 loading={pending}
                 disabled={!title.trim() || tooLong}

@@ -13,8 +13,6 @@ import { type UpdaterSnapshot } from "../model/updater";
 import type { InstalledUpdate } from "../model/updateNotice";
 import { snoozeUpdatePrompt } from "../model/updatePrompt";
 import { UpdateRailCard } from "./UpdateRailCard";
-import { GithubStarPrompt } from "./GithubStarPrompt";
-import { Disclosure } from "../../shared/ui/Disclosure";
 
 // The update entry point only earns its space when there is something to act on: an
 // update waiting to be installed, one downloading, or any updater error: a failed
@@ -40,8 +38,6 @@ export function SidebarUpdateFooter({
   onDismissUpdate?: () => void;
   noticesOnly?: boolean;
   inlineNotice?: boolean;
-  /** Legacy fixture option; repository prompts now live inside the update dialog. */
-  repositoryPrompt?: boolean;
   /** Footer icon button: only the download icon (dot while an update waits) and its dialog. */
   icon?: boolean;
   compact?: boolean;
@@ -89,12 +85,6 @@ export function SidebarUpdateFooter({
   if (!card && !actionable && !icon) return null;
   if (icon && !actionable) return null;
 
-  const actionText =
-    snapshot.phase === "downloading"
-      ? snapshot.progress != null
-        ? `${snapshot.progress}%`
-        : t("Downloading")
-      : t("Update");
   const actionIcon =
     snapshot.phase === "downloading" ? (
       <Spinner size="md" className="shrink-0" />
@@ -114,39 +104,18 @@ export function SidebarUpdateFooter({
 
   const updateAction = actionable ? (
     <Button
-      {...(icon && !compact
-        ? { label: actionLabel, revealLabel: true, startIcon: actionIcon }
-        : icon
-          ? { iconOnly: true as const, label: actionLabel }
-          : { label: actionLabel })}
+      {...(icon && compact ? { iconOnly: true as const, label: actionLabel } : { label: actionLabel })}
+      revealLabel={icon && !compact}
+      startIcon={actionIcon}
       variant={icon ? "ghost" : "secondary"}
       tone={snapshot.phase === "error" ? "warning" : "neutral"}
       motion="none"
-      tooltip={actionLabel}
       aria-haspopup="dialog"
       aria-expanded={promptOpen}
       onClick={() => setPromptOpen(true)}
       className="min-w-0"
     >
-      {icon && !compact ? (
-        actionText
-      ) : (
-        <>
-          {actionIcon}
-          {!icon ? (
-            <Text
-              size="caption"
-              tone="inherit"
-              weight="medium"
-              leading="tight"
-              truncate
-              className="@max-[140px]/rail:hidden"
-            >
-              {actionText}
-            </Text>
-          ) : null}
-        </>
-      )}
+      {icon && compact ? undefined : actionLabel}
     </Button>
   ) : null;
 
@@ -157,6 +126,7 @@ export function SidebarUpdateFooter({
       {promptOpen && actionable ? (
         <Modal
           title={snapshot.phase === "error" ? t("Update failed") : t("Update available")}
+          description={snapshot.availableVersion ? `v${snapshot.currentVersion} – v${snapshot.availableVersion}` : undefined}
           size="sm"
           onClose={closePrompt}
           footer={
@@ -171,19 +141,9 @@ export function SidebarUpdateFooter({
           }
         >
           <div className="flex flex-col gap-3">
-            <GithubStarPrompt oncePerVersion version={snapshot.currentVersion} />
-            {snapshot.availableVersion ? (
-              <Text as="p" size="body" tone="primary">
-                v{snapshot.currentVersion} → v{snapshot.availableVersion}
-              </Text>
-            ) : null}
             {snapshot.error ? <InlineError>{snapshot.error}</InlineError> : null}
             {notes ? (
-              <Disclosure summary={t("Release notes")} defaultOpen>
-                <div className="max-h-64 overflow-y-auto [margin-block-start:0.5rem]">
-                  <AgentMarkdown className="whats-new-md" text={notes} streaming={false} />
-                </div>
-              </Disclosure>
+              <AgentMarkdown className="whats-new-md" text={notes} streaming={false} />
             ) : null}
           </div>
         </Modal>
@@ -240,9 +200,6 @@ export function SidebarUpdate({
       variant="primary"
       fullWidth={!compact}
       motion="none"
-      label={label}
-      tooltip={label}
-      tooltipWhen="overflow"
     >
       <span className="icon-md grid shrink-0 place-items-center">
         {busy ? (

@@ -754,6 +754,14 @@ function AgentTranscriptComponent({
             const settled = !(busy && isLastTurn);
             const live = visible && !settled && !preparingHandoff;
             const turnId = turn[0].id;
+            // A failed handoff stands alone before the prompt it failed to start. That prompt's
+            // error notice (with Retry) already says so, so the divider would only repeat it.
+            if (
+              turn.length === 1 &&
+              turn[0].handoff?.status === "failed" &&
+              turns[index + 1]?.some(isSessionErrorBlock)
+            )
+              return null;
             const runHarness = turnHarnesses?.[turnIndex] ?? harness;
             const activity = live
               ? deriveTurnActivity({
@@ -1497,9 +1505,7 @@ function LiveFoldTitle({
     return (
       <Tooltip label={background.join("\n")} asChild>
         <span className="min-w-0 truncate font-sans text-ui-body text-(--transcript-ink-chrome)">
-          {background.length === 1
-            ? t("Finished · 1 command running in background")
-            : t("Finished · {p0} commands running in background", { p0: background.length })}
+          {t("Finished")} · {t("{p0} running in background", { p0: background.length })}
         </span>
       </Tooltip>
     );
@@ -1513,7 +1519,7 @@ function LiveFoldTitle({
         ? t("Waiting for answers")
         : t("Waiting for approval")
     : background?.length
-      ? `${formatWorkingDuration(t, format, elapsedMs, modelName)} · ${background.length === 1 ? t("running in background") : t("{p0} tasks running in background", { p0: background.length })}`
+      ? `${formatWorkingDuration(t, format, elapsedMs, modelName)} · ${t("{p0} running in background", { p0: background.length })}`
       : formatWorkingDuration(t, format, elapsedMs, modelName);
   const workLabel = (
     <WorkingIndicator className="min-w-0" text={{ size: "body" }} truncate glyph={false}>
@@ -2238,13 +2244,12 @@ const TranscriptBlock = memo(function TranscriptBlock({
     if (isSessionErrorBlock(block))
       return (
         <div className={`${embedded ? "" : "px-4"} py-2`}>
-          <SessionErrorNotice text={text} />
+          <SessionErrorNotice text={text} errorId={block.id} />
         </div>
       );
     return (
       <div
-        role={isSessionErrorBlock(block) ? "alert" : undefined}
-        className={`${embedded ? "" : "px-4"} py-2 ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : isSessionErrorBlock(block) ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-body)"}`}
+        className={`${embedded ? "" : "px-4"} py-2 ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-body)"}`}
       >
         <OutputBlock face="sans" size="inherit" tone="inherit">
           {text}
@@ -2441,10 +2446,10 @@ function UserMessageBlock({
           motion="none"
           iconOnly={!showLabels}
           label={t("Edit from here")}
-          tooltip={canRewind ? undefined : t("This conversation can no longer be rewound.")}
           variant="ghost"
           type="button"
           disabled={!canRewind}
+          disabledReason={canRewind ? undefined : t("This conversation can no longer be rewound.")}
           startIcon={<ChatEditMessage className={showLabels ? undefined : "icon-md"} />}
           onClick={(event) => {
             event.stopPropagation();

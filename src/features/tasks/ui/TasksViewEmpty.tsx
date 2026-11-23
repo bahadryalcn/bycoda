@@ -75,7 +75,6 @@ export function TasksViewEmpty({
       context="panel"
       kind="empty"
       title={t("No tasks yet")}
-      description={t("Use New task to give an agent something to work on.")}
     />
   );
 }

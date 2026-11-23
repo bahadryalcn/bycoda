@@ -8,6 +8,7 @@ import { sessionWorkedMs } from "../../features/sessions/public/sessionActivity"
 import { isRemoteProjectPath } from "../../features/projects/model/recents";
 import { loadRemoteWorkedMs } from "../../features/connections/model/remoteWorkedTime";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
+import { formatRelative } from "../../features/sessions/model/recentSessions";
 
 /** Last activity and total working time for the session detail card. */
 export function SessionDetailTimes({
@@ -20,7 +21,7 @@ export function SessionDetailTimes({
 }) {
   const t = useT();
   const format = useFormat();
-  const now = useMinuteNow(runningSince !== undefined);
+  const now = useMinuteNow();
   const live = useSession(session.id);
   const loaded = live && !live.historyPartial && !live.historyLoading ? live : undefined;
   const [stored, setStored] = useState<number | null>(null);
@@ -51,23 +52,9 @@ export function SessionDetailTimes({
       : finished + (runningSince !== undefined ? Math.max(0, now - runningSince) : 0);
 
   return (
-    <Text as="div" size="caption" tone="secondary" className="mt-2 grid gap-0.5">
-      <p>
-        {t("Last activity: {p0}", {
-          p0: format.formatDate(session.lastActivityAt ?? session.updatedAt, {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-        })}
-      </p>
-      {worked ? (
-        <p className="tabular-nums">
-          {t("Total work time: {p0}", { p0: format.formatDuration(worked) })}
-        </p>
-      ) : null}
+    <Text as="div" size="caption" tone="secondary" className="mt-(--ui-space-2) tabular-nums">
+      {formatRelative(session.lastActivityAt ?? session.updatedAt, now)}
+      {worked ? ` · ${t("{p0} worked", { p0: format.formatDuration(worked) })}` : null}
     </Text>
   );
 }

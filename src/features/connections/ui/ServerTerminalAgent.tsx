@@ -70,15 +70,31 @@ export function ServerTerminalAgent({
     if (shown && session && host.current) return mount(session, host.current);
   }, [shown, session, mount]);
 
+  const openIn = async (project: string, pending: { text?: string; direct?: boolean }) => {
+    if (!bridge || !target) return;
+    const opened = await bridge.open(target, project);
+    setBinding({ project, session: opened });
+    setExpanded(true);
+    if (pending.text) {
+      if (pending.direct) await bridge.sendSelection(opened, pending.text);
+      else bridge.addSelection(opened.sessionId, pending.text);
+    }
+  };
+  // One project is no choice: open in it directly. Several ask which one first.
+  const begin = (pending: { text?: string; direct?: boolean }) => {
+    const only = bridge?.projects.length === 1 ? bridge.projects[0] : undefined;
+    if (only) void openIn(only.path, pending);
+    else setRequest(pending);
+  };
   const actions =
     bridge && target ? (
       <Button
         variant="ghost"
         size="sm"
-        aria-pressed={!!session && expanded}
+        pressed={!!session && expanded}
         onClick={() => {
           if (session && expanded) setExpanded(false);
-          else setRequest({});
+          else begin({});
         }}
       >
         <Sparkles aria-hidden className="icon-sm" />
@@ -88,7 +104,7 @@ export function ServerTerminalAgent({
   const send = async (text: string, direct: boolean) => {
     if (!bridge || !target) return;
     if (!shown || !session) {
-      setRequest({ text, direct });
+      begin({ text, direct });
       return;
     }
     if (direct) await bridge.sendSelection(session, text);
@@ -139,15 +155,7 @@ export function ServerTerminalAgent({
         <NewSessionProjectDialog
           projects={bridge.projects}
           onClose={() => setRequest(undefined)}
-          onPick={async (project) => {
-            const opened = await bridge.open(target, project);
-            setBinding({ project, session: opened });
-            setExpanded(true);
-            if (request.text) {
-              if (request.direct) await bridge.sendSelection(opened, request.text);
-              else bridge.addSelection(opened.sessionId, request.text);
-            }
-          }}
+          onPick={(project) => openIn(project, request)}
         />
       ) : null}
     </div>

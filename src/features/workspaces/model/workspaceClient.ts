@@ -5,6 +5,7 @@ import { machineCapabilities } from "../../automations/model/machineSnapshot";
 import { remoteRequest } from "../../connections/model/connections";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { projectlessMachineSession } from "../../connections/public/sessionMachineTarget";
 import type { WorkspaceRpcContract, WorkspaceRpcMethod } from "./contracts";
 
 export type WorkspaceRpcParams = { [K in WorkspaceRpcMethod]: WorkspaceRpcContract[K]["request"] };
@@ -25,6 +26,13 @@ export class WorkspaceCapabilityError extends Error {
   constructor() {
     super(t(WORKSPACE_UPDATE_REQUIRED));
     this.name = "WorkspaceCapabilityError";
+  }
+}
+
+export class WorkspaceProjectRequiredError extends Error {
+  constructor() {
+    super(t("Choose a project to use managed workspaces."));
+    this.name = "WorkspaceProjectRequiredError";
   }
 }
 
@@ -59,7 +67,8 @@ async function owningMachine(context: WorkspaceContext): Promise<RemoteMachine> 
 
 /** Resolve on the execution host. A path is never substituted for a project ID. */
 export async function resolveWorkspaceContext(cwd: string) {
-  if (!cwd.trim() || cwd === "~") throw new Error(t("Choose a project to use managed workspaces."));
+  if (!cwd.trim() || cwd === "~" || projectlessMachineSession(cwd))
+    throw new WorkspaceProjectRequiredError();
   const machine = await owningMachine({ cwd });
   const project = await hostProjectFor(machine, cwd);
   return {

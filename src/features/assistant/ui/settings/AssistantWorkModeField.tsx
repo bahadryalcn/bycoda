@@ -19,17 +19,14 @@ const PRESETS = ["watch", "ask", "free"] as const satisfies readonly AssistantWo
 /**
  * One answer to "how freely may the assistant work?". Picking a preset sets the job controls
  * together. A profile that matches no preset shows "Custom" and keeps its own choices until a
- * preset replaces them. `unchosen` leaves every option unselected (first setup) instead of
- * showing "Custom" for the untouched defaults.
+ * preset replaces them. A first setup preselects "Only watch" before this renders.
  */
 export function AssistantWorkModeField({
   value,
   onChange,
-  unchosen = false,
 }: {
   value: AssistantProfilePatch;
   onChange: (patch: AssistantProfilePatch) => void;
-  unchosen?: boolean;
 }) {
   const rows = useProfileRows();
   const defaultWorker = useDefaultWorkerExecution();
@@ -51,7 +48,7 @@ export function AssistantWorkModeField({
     setError("");
     onChange(patch);
   }
-  const showCustom = current === "custom" && !unchosen;
+  const showCustom = current === "custom";
   // The group or setup step above already says "Work mode"; the row asks the question instead.
   const label = t("Work mode");
   const control = (
@@ -60,7 +57,7 @@ export function AssistantWorkModeField({
         label={<span className="sr-only">{label}</span>}
         compact
         className={styles.fill}
-        value={unchosen && current === "custom" ? "" : current}
+        value={current}
         onValueChange={choose}
         options={[
           ...PRESETS.map((name) => ({

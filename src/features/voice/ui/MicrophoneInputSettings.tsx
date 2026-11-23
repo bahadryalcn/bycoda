@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
+import { X } from "../../../shared/ui/icons";
 import { Select, SettingsFeedback } from "../../../shared/ui/settings";
 import { MicrophoneRecording, type MicrophoneRecordingState } from "../model/microphoneRecording";
 import { useVoiceSettings } from "../model/voiceSettings";
@@ -110,21 +111,28 @@ export function MicrophoneInputSettings() {
         }
       >
         <ButtonGroup aria-label={t("Microphone test")}>
-          <Button
-            disabled={busy || !!missing || microphoneInUse}
-            loading={state === "requesting"}
-            onClick={() => void recording.current?.record(settings.microphoneId)}
-          >
-            {t("Record test")}
-          </Button>
+          {/* One primary that follows the recording: Record, then Stop, then Play. */}
           {state === "recording" ? (
             <Button onClick={() => recording.current?.stop()}>{t("Stop recording")}</Button>
-          ) : null}
-          {state === "ready" ? (
+          ) : state === "ready" ? (
             <Button onClick={() => void recording.current?.play()}>{t("Play recording")}</Button>
-          ) : null}
+          ) : (
+            <Button
+              disabled={busy || !!missing || microphoneInUse}
+              loading={state === "requesting"}
+              onClick={() => void recording.current?.record(settings.microphoneId)}
+            >
+              {t("Record test")}
+            </Button>
+          )}
           {state !== "idle" ? (
-            <Button onClick={() => recording.current?.cancel()}>{t("Discard recording")}</Button>
+            <Button
+              iconOnly
+              label={t("Discard recording")}
+              onClick={() => recording.current?.cancel()}
+            >
+              <X className="icon-sm" />
+            </Button>
           ) : null}
         </ButtonGroup>
         {error ? (

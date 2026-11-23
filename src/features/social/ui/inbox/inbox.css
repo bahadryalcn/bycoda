@@ -36,13 +36,6 @@
   gap: 0.5rem;
 }
 
-.inbox-account-failures {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-}
-
 .inbox-notices {
   display: flex;
   flex-direction: column;
@@ -143,17 +136,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.inbox-row-subject,
-.inbox-row-preview {
-  margin: 0;
-}
-
-.inbox-row-subject {
-}
-
-.inbox-row-preview {
-}
-
 .inbox-row-meta {
   margin-block-start: 0.125rem;
 }
@@ -195,9 +177,6 @@
   align-items: center;
   gap: 0.25rem;
   min-width: 0;
-}
-
-.inbox-conversation-account-name {
 }
 
 .inbox-tag-field {

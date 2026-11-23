@@ -54,7 +54,7 @@ it.each(["history", "blame"] as const)(
       root.render(createElement(GitFileInspector, { onOpenCommit: afterSwitch })),
     );
     const button = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
-      (item) => item.textContent?.includes(kind === "history" ? commit.subject : commit.author),
+      (item) => item.textContent?.includes(kind === "history" ? commit.subject : commit.shortSha),
     )!;
     expect(button).toBeDefined();
     await act(async () => button.click());

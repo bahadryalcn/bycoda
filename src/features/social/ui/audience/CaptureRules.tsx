@@ -181,13 +181,12 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
           </Badge>
         )}
         <Switch
-          label={rule.enabled ? t("On") : t("Off")}
+          aria-label={rule.name}
           checked={rule.enabled}
           disabled={busyId === rule.id}
           onCheckedChange={(enabled) => void setEnabled(rule, enabled).catch(() => undefined)}
         />
         <InlineMoreAction
-          reveal="always"
           label={t("Actions for {p0}", { p0: rule.name })}
           expanded={menu?.ruleId === rule.id}
           onOpen={(anchor) => setMenu({ ruleId: rule.id, anchor })}
@@ -214,7 +213,7 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
             </div>
             {commenters ? (
               <Switch
-                label={commenters.enabled ? t("On") : t("Off")}
+                aria-label={t("Commenters")}
                 checked={commenters.enabled}
                 disabled={busyId === commenters.id}
                 onCheckedChange={(enabled) =>

@@ -10,6 +10,7 @@ import {
 } from "react";
 import { TabStrip } from "../../../shared/ui/Tabs";
 import { Button } from "../../../shared/ui/Button";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { CodeBlock, Eye, Minus, Plus } from "../../../shared/ui/icons";
 import styles from "./MarkdownModeToggle.module.css";
 
@@ -105,6 +106,8 @@ export function MarkdownViewShell({
   useLocale();
   const t = useT();
   const [zoom, setZoom] = useState(100);
+  const zoomButton = useRef<HTMLButtonElement>(null);
+  const [zoomOpen, setZoomOpen] = useState(false);
   const content = useRef<HTMLDivElement>(null);
   const changeZoom = useCallback((step: number) => {
     setZoom((value) => Math.max(50, Math.min(200, value + step)));
@@ -130,38 +133,36 @@ export function MarkdownViewShell({
         <div className="ms-auto flex flex-wrap items-center justify-end gap-1">
           {actions}
           {zoomable && mode === "preview" ? (
-            <div className="flex shrink-0 items-center gap-0.5">
+            <>
               <Button
-                iconOnly
-                label={t("Zoom out")}
+                ref={zoomButton}
                 variant="ghost"
                 size="sm"
-                disabled={zoom === 50}
-                onClick={() => changeZoom(-10)}
-              >
-                <Minus className="icon-sm" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                tooltip={t("Reset zoom")}
-                aria-label={t("Reset zoom")}
-                className="tabular-nums"
-                onClick={() => setZoom(100)}
+                aria-haspopup="menu"
+                expanded={zoomOpen}
+                aria-label={`${t("Zoom")} ${zoom}%`}
+                onClick={() => setZoomOpen((open) => !open)}
               >
                 {zoom}%
               </Button>
-              <Button
-                iconOnly
-                label={t("Zoom in")}
-                variant="ghost"
-                size="sm"
-                disabled={zoom === 200}
-                onClick={() => changeZoom(10)}
-              >
-                <Plus className="icon-sm" />
-              </Button>
-            </div>
+              {zoomOpen ? (
+                <DropdownMenu
+                  anchor={zoomButton}
+                  returnFocusRef={zoomButton}
+                  label={t("Zoom")}
+                  onClose={() => setZoomOpen(false)}
+                  items={[
+                    { kind: "item", id: "in", label: t("Zoom in"), icon: <Plus className="icon-sm" />, disabled: zoom === 200 },
+                    { kind: "item", id: "out", label: t("Zoom out"), icon: <Minus className="icon-sm" />, disabled: zoom === 50 },
+                    { kind: "item", id: "reset", label: t("Reset zoom"), disabled: zoom === 100 },
+                  ]}
+                  onPick={(id) => {
+                    if (id === "reset") setZoom(100);
+                    else changeZoom(id === "in" ? 10 : -10);
+                  }}
+                />
+              ) : null}
+            </>
           ) : null}
           <MarkdownModeToggle mode={mode} onChange={onModeChange} />
         </div>

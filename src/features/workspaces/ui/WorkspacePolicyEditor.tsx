@@ -1,16 +1,12 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { useId } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { Select } from "../../../shared/ui/Select";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { Heading } from "../../../shared/ui/Heading";
 import { Group, Row, SettingsFeedback, SettingsSaveBar } from "../../../shared/ui/settings";
 import { workspacePolicyChanges } from "./workspacePolicyChanges";
 import type {
@@ -19,7 +15,6 @@ import type {
   WorkspaceRpcResponse,
 } from "../model/contracts";
 import { lifecycleLabel, type PolicyDiskErrors } from "../model/workspacePresentation";
-import styles from "./WorkspacePolicySettings.module.css";
 
 const GIB = 1_073_741_824;
 const DAY = 86_400_000;
@@ -54,8 +49,6 @@ export function WorkspacePolicyEditor({
   update: (next: WorkspacePolicy) => void;
   onKeepEdits: () => void;
 }) {
-  const retentionHeadingId = useId();
-  const limitsHeadingId = useId();
   const hasProjectOverride = policy.resolved.appliedScopes.includes("project");
   const invalidDisk = Object.keys(diskErrors).length > 0;
   const listed = dirty ? workspacePolicyChanges(draft, policy.resolved.policy, update) : [];
@@ -63,14 +56,7 @@ export function WorkspacePolicyEditor({
   const changes = dirty && !listed.length ? [{ id: "other", label: t("Other changes") }] : listed;
   return (
     <Group
-      title={
-        <span className={styles.groupTitle}>
-          {t("Defaults for new workspaces")}
-          <Badge size="sm">
-            {hasProjectOverride ? t("Project override") : t("Following Host defaults")}
-          </Badge>
-        </span>
-      }
+      title={t("Defaults for new workspaces")}
       layout="full"
       id="workspace-policy"
       info={
@@ -131,22 +117,18 @@ export function WorkspacePolicyEditor({
           onCheckedChange={(pinned) => update({ ...draft, pinned })}
         />
       </Row>
-      <section
-        id="setting-workspace-retention"
-        data-setting-id="workspace-retention"
-        aria-labelledby={retentionHeadingId}
-        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.block)}
+      <Row
+        id="workspace-retention"
+        label={t("Automatic cleanup")}
+        info={t("Active and pinned workspaces are excluded")}
+        stacked
       >
-        <Heading size="item" id={retentionHeadingId} className={styles.subheading}>
-          {t("Automatic cleanup")}
-          <InfoPopover>{t("Active and pinned workspaces are excluded")}</InfoPopover>
-        </Heading>
-        <div className={styles.grid4}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-2">
           {retentionStates.map((state) => {
             const period = draft.retention[state];
             const label = lifecycleLabel(state);
             return (
-              <div key={state} className={styles.cell}>
+              <div key={state} className="flex min-w-0 flex-col gap-1">
                 <Text size="caption" tone="secondary" leading="inherit">
                   {label}
                 </Text>
@@ -189,18 +171,10 @@ export function WorkspacePolicyEditor({
             );
           })}
         </div>
-      </section>
-      <section
-        id="setting-workspace-disk-policy"
-        data-setting-id="workspace-disk-policy"
-        aria-labelledby={limitsHeadingId}
-        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.block)}
-      >
-        <Heading size="item" id={limitsHeadingId} className={styles.subheading}>
-          {t("Limits")}
-        </Heading>
-        <div className={styles.grid3}>
-          <div className={styles.cell}>
+      </Row>
+      <Row id="workspace-disk-policy" label={t("Limits")} stacked>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2">
+          <div className="flex min-w-0 flex-col gap-1">
             <Text size="caption" tone="secondary" leading="inherit">
               {t("Directory budget (GiB)")}
             </Text>
@@ -224,7 +198,7 @@ export function WorkspacePolicyEditor({
               }
             />
           </div>
-          <div className={styles.cell}>
+          <div className="flex min-w-0 flex-col gap-1">
             <Text size="caption" tone="secondary" leading="inherit">
               {t("Warn at (%)")}
             </Text>
@@ -249,7 +223,7 @@ export function WorkspacePolicyEditor({
               }
             />
           </div>
-          <div className={styles.cell}>
+          <div className="flex min-w-0 flex-col gap-1">
             <Text size="caption" tone="secondary" leading="inherit">
               {t("Minimum free space (GiB)")}
             </Text>
@@ -274,7 +248,7 @@ export function WorkspacePolicyEditor({
             />
           </div>
         </div>
-      </section>
+      </Row>
       <SettingsSaveBar
         id="workspace-policy"
         title={t("Defaults for new workspaces")}

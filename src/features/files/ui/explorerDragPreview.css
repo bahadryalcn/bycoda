@@ -6,15 +6,15 @@
   display: flex;
   width: max-content;
   max-width: min(280px, calc(100vw - 16px));
-  height: 26px;
+  height: var(--ui-control-height-compact);
   align-items: center;
-  gap: 6px;
+  gap: var(--ui-space-2, 0.5rem);
   margin: 0;
   padding-inline: var(--space-2);
   overflow: hidden;
   pointer-events: none;
   white-space: nowrap;
-  opacity: 0.94;
+  opacity: 1;
   will-change: transform;
   contain: paint;
 }
@@ -23,8 +23,4 @@
   display: flex;
   min-width: 0;
   align-items: center;
-}
-
-html.theme-light .explorer-file-drag-preview {
-  opacity: 1;
 }

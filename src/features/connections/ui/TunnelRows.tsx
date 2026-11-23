@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { t } from "../../../shared/i18n";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Code } from "../../../shared/ui/Code";
 import { Divider } from "../../../shared/ui/Divider";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
@@ -80,29 +80,16 @@ function TunnelShareActions({
 }) {
   const [qr, setQr] = useState(false);
   const [pair, setPair] = useState(false);
-  const [copied, setCopied] = useState<"idle" | "pending" | "done" | "error">("idle");
-  const pending = useRef(false);
-  const copy = async () => {
-    if (pending.current) return;
-    pending.current = true;
-    setCopied("pending");
-    try {
-      await copyText(publicUrl);
-      setCopied("done");
-    } catch {
-      setCopied("error");
-    } finally {
-      pending.current = false;
-    }
-  };
+  // The confirmation clears itself and resets when the URL changes.
+  const copyFeedback = useCopyFeedback({ resetKeys: [publicUrl] });
   return (
     <>
       <Button
         stableWidth
         type="button"
         className="shrink-0"
-        disabled={copied === "pending"}
-        onClick={() => void copy()}
+        disabled={copyFeedback.pending}
+        onClick={() => copyFeedback.copy(() => copyText(publicUrl))}
       >
         <Copy className="icon-sm" aria-hidden />
         {t("Copy URL")}
@@ -115,11 +102,11 @@ function TunnelShareActions({
           {t("Connect your phone")}
         </Button>
       ) : null}
-      {copied === "done" ? (
+      {copyFeedback.copied ? (
         <InlineMessage tone="success" className="external-tunnel-wide">
           {t("URL copied")}
         </InlineMessage>
-      ) : copied === "error" ? (
+      ) : copyFeedback.failed ? (
         <Alert tone="danger" className="external-tunnel-wide">
           {t("The URL could not be copied. Try again.")}
         </Alert>
@@ -193,9 +180,6 @@ function TunnelRow({
                 <Code>{publicUrl}</Code>
               </Text>
             </OverflowTooltip>
-            <InfoPopover label={t("Public URL")}>
-              <p>{t("Public access has not been verified.")}</p>
-            </InfoPopover>
           </div>
         ) : null}
         {tunnel.issue ? (

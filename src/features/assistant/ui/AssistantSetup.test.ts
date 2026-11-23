@@ -80,17 +80,15 @@ vi.mock("../model/assistantClient", () => ({
 vi.mock("./AssistantProfileFields", () => ({
   AssistantProfileFields: ({
     section,
-    workModeUnchosen,
     onChange,
   }: {
     section: string;
-    workModeUnchosen?: boolean;
     onChange: (patch: Record<string, unknown>) => void;
   }) =>
     section === "workmode"
       ? createElement(
           "div",
-          { "data-unchosen": String(workModeUnchosen === true) },
+          null,
           createElement(
             "button",
             {
@@ -130,25 +128,6 @@ vi.mock("../../voice/ui/VoiceSetupSteps", () => ({
     step: string;
     onValidChange: (valid: boolean) => void;
   }) => createElement("button", { onClick: () => onValidChange(true) }, `Verify ${step}`),
-}));
-vi.mock("./builder/AssistantBuilderDialog", () => ({
-  AssistantBuilderDialog: ({
-    onApply,
-    onClose,
-  }: {
-    onApply: (patch: { name: string }) => void;
-    onClose: () => void;
-  }) =>
-    createElement(
-      "button",
-      {
-        onClick: () => {
-          onApply({ name: "AI draft" });
-          onClose();
-        },
-      },
-      "Apply AI draft",
-    ),
 }));
 vi.mock("../../voice/model/voicePersona", () => ({ loadVoicePersona: () => ({ rules: "" }) }));
 vi.mock("../../../shared/i18n", () => ({
@@ -254,10 +233,9 @@ it("binds an unattempted legacy draft to the observed Host and forwards reviewed
     }),
     "host-a",
   );
-  expect(state.close).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain("Ready for 24/7");
-  await act(async () => button("Done").click());
+  // No second dialog: a successful Start closes setup and clears the draft.
   expect(state.close).toHaveBeenCalledOnce();
+  expect(document.body.textContent).not.toContain("Ready for 24/7");
   expect(localStorage.getItem(key)).toBeNull();
 });
 it("refuses to finish an original Host draft against replacement cloned profile IDs", async () => {
@@ -346,20 +324,11 @@ it("adds voice to a configured assistant without rewriting the saved profile or 
     "host-a",
   );
 });
-it("advances an applied AI draft to voice provider without saving it to the Host", async () => {
-  await render(true);
-  await click("Set up with AI");
-  await click("Apply AI draft");
-  expect(button("Verify provider")).toBeDefined();
-  expect(JSON.parse(localStorage.getItem(key)!).patch.name).toBe("AI draft");
-  expect(state.request).not.toHaveBeenCalled();
-});
 it("requires fresh voice verification when reopening a persisted Review draft", async () => {
   localStorage.setItem(key, JSON.stringify(draft("host-a")));
   await render(true);
   expect(button("Start").disabled).toBe(true);
-  await click("Set up voice");
-  expect(JSON.parse(localStorage.getItem(key)!).step).toBe("voice");
+  expect(document.body.textContent).not.toContain("Set up voice");
   expect(state.request).not.toHaveBeenCalled();
 });
 it("retains the provider check after changing the speaker but invalidates it after changing providers", async () => {
@@ -411,51 +380,19 @@ it("gives a completed profile with a zero budget a usable one, so quick setup ca
   await render();
   expect(JSON.parse(localStorage.getItem(key)!).patch.dailyTokenBudget).toBe(1_000_000);
 });
-it("runs quick setup as identity, work mode and review, without model or rules steps", async () => {
+it("runs core setup as one screen with the name, a preselected work mode and Start", async () => {
   await render();
-  const heading = () => {
-    const dialog = document.querySelector('[role="dialog"]')!;
-    const current = dialog.querySelector('[aria-current="step"]');
-    return ["Identity", "Work mode", "Review"].find((label) =>
-      current?.textContent?.includes(label),
-    );
-  };
-  const progress = () => {
-    const items = [...document.querySelectorAll('[role="group"][aria-label="Set up"] ol > li')];
-    return [
-      String(items.findIndex((item) => item.hasAttribute("aria-current")) + 1),
-      String(items.length),
-    ];
-  };
-  expect(heading()).toBe("Identity");
-  expect(progress()).toEqual(["1", "3"]);
-  await click("Next");
-  expect(heading()).toBe("Work mode");
-  expect(progress()).toEqual(["2", "3"]);
-  expect(document.body.textContent).not.toContain("Worker model");
-  // Nothing is chosen on a first setup, so Next waits for an explicit work mode.
-  expect(document.querySelector("[data-unchosen]")?.getAttribute("data-unchosen")).toBe("true");
-  expect(button("Next").disabled).toBe(true);
-  await click("Fixture only watch");
-  expect(button("Next").disabled).toBe(false);
-  await click("Next");
-  expect(heading()).toBe("Review");
-  expect(progress()).toEqual(["3", "3"]);
-  expect(document.body.textContent).toContain("Work modeOnly watch");
+  expect(document.querySelector('[aria-current="step"]')).toBeNull();
+  expect(document.body.textContent).not.toContain("Next");
+  expect(document.body.textContent).not.toContain("Back");
+  expect(document.body.textContent).not.toContain("Set up with AI");
   expect(document.querySelector("textarea")).toBeNull();
+  // "Only watch" is applied up front, so nothing blocks Start on a first setup.
+  const saved = JSON.parse(localStorage.getItem(key)!).patch;
+  expect(saved).toMatchObject({ autonomy: "report", planApproval: "always", confirmJobs: true });
   expect(button("Start").disabled).toBe(false);
-});
-it("shows Custom for an already set up profile whose job settings match no work mode", async () => {
-  state.profile.setupComplete = true;
-  const retained = draft("host-a");
-  retained.patch.setupComplete = true;
-  retained.patch.autonomy = "jobs" as never;
-  localStorage.setItem(key, JSON.stringify({ ...retained, step: "workmode" }));
-  await render();
-  expect(document.querySelector("[data-unchosen]")?.getAttribute("data-unchosen")).toBe("false");
-  expect(button("Next").disabled).toBe(false);
-  await click("Next");
-  expect(document.body.textContent).toContain("Work modeCustom");
+  await click("Fixture work and ask");
+  expect(JSON.parse(localStorage.getItem(key)!).patch.autonomy).toBe("chief");
 });
 it("keeps reviewed values and rules after a failed save and retries against the same Host", async () => {
   localStorage.setItem(key, JSON.stringify(draft("host-a")));
@@ -467,65 +404,15 @@ it("keeps reviewed values and rules after a failed save and retries against the 
   expect(state.close).not.toHaveBeenCalled();
   await start();
   expect(state.request.mock.calls.every((call) => call[1] === "host-a")).toBe(true);
-  expect(state.close).not.toHaveBeenCalled();
-  expect(document.body.textContent).toContain("Ready for 24/7");
-  await act(async () => button("Done").click());
   expect(state.close).toHaveBeenCalledOnce();
 });
-it.each(["jobs", "chief"])(
-  "materializes the displayed %s worker default only on explicit autonomy Next",
-  async (autonomy) => {
-    localStorage.setItem(
-      key,
-      JSON.stringify({
-        ...draft("host-a"),
-        step: "workmode",
-        patch: {
-          ...state.profile,
-          autonomy,
-          chiefExecution: null,
-          replyExecution: null,
-          planningExecution: null,
-        },
-      }),
-    );
-    await render();
-    expect(JSON.parse(localStorage.getItem(key)!).patch.execution).toBeNull();
-    expect(state.request).not.toHaveBeenCalled();
-    await click("Next");
-    const reviewed = {
-      harness: "codex",
-      model: models.worker.id,
-      modelSettings: { effort: "medium" },
-      runtimeMode: "supervised",
-      maxRunMinutes: 60,
-    };
-    expect(JSON.parse(localStorage.getItem(key)!).patch.execution).toEqual(reviewed);
-    expect(document.body.textContent).toContain("Worker model");
-    expect(document.body.textContent).toContain(models.worker.name);
-    await start();
-    expect(state.request).toHaveBeenCalledWith(
-      expect.objectContaining({
-        op: "profile.update",
-        patch: expect.objectContaining({
-          execution: reviewed,
-          chiefExecution: null,
-          replyExecution: null,
-          planningExecution: null,
-        }),
-      }),
-      "host-a",
-    );
-  },
-);
-it("materializes a missing worker in a retained unconfigured Review only at Start", async () => {
+it("materializes a missing worker in a retained unconfigured draft only at Start", async () => {
   localStorage.setItem(
     key,
     JSON.stringify({ ...draft("host-a"), patch: { ...state.profile, autonomy: "jobs" } }),
   );
   await render();
   expect(JSON.parse(localStorage.getItem(key)!).patch.execution).toBeNull();
-  expect(document.body.textContent).toContain(models.worker.name);
   await start();
   expect(state.request).toHaveBeenCalledWith(
     expect.objectContaining({

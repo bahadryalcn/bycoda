@@ -182,7 +182,8 @@ it("preserves explicit custom intervals during workspace refresh", async () => {
 
 it("keeps one date owner and chart options outside the Filters popover", async () => {
   await render(0);
-  expect(host.querySelector('[aria-label="Chart metric"]')).toBeTruthy();
+  // The metric tiles choose the metric on Overview, so there is no second chooser.
+  expect(host.querySelector('[aria-label="Chart metric"]')).toBeNull();
   expect(host.querySelector('[aria-label="Group by"]')).toBeTruthy();
   expect(host.querySelector('[aria-label="Resolution"]')).toBeTruthy();
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Filters"]')!.click());
@@ -269,7 +270,8 @@ it("shows true zero usage separately from a filter-empty result", async () => {
   await render(0);
   expect(host.textContent).toContain("No usage recorded in this period.");
   expect(host.textContent).not.toContain("No usage matches these filters.");
-  expect(host.querySelector(".usage-metrics")).toBeTruthy();
+  // One empty state replaces the tiles, charts and panels.
+  expect(host.querySelector(".usage-metrics")).toBeNull();
 });
 
 it("names an empty filtered result and offers a filter reset", async () => {

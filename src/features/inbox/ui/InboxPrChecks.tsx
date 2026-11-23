@@ -256,17 +256,9 @@ function PrCheckRow({
   const subtitle =
     failureMessage || (failedStep ? t("Failed at {p0}", { p0: failedStep }) : status);
   const title = `${check.name} · ${status}${duration ? `, ${t("took {p0}", { p0: duration })}` : ""}${workflow ? `, ${workflow}` : ""}`;
+  // Only a clipped name needs a hint; status, duration and the failed step are already on the row.
   const rowHint = useTooltip({
-    label: [
-      check.name,
-      workflow,
-      failureMessage || failedStep ? subtitle : undefined,
-      status,
-      duration,
-      failureMessage && failedStep ? t("Failed at {p0}", { p0: failedStep }) : undefined,
-    ]
-      .filter(Boolean)
-      .join("\n"),
+    label: [check.name, workflow].filter(Boolean).join("\n"),
     when: "overflow",
   });
   const url = check.url;
@@ -349,7 +341,6 @@ function PrCheckRow({
       disabled={fixDisabled}
       aria-haspopup="dialog"
       aria-expanded={fixOpen}
-      aria-label={t("Fix {p0} with AI", { p0: check.name })}
       tooltip={t("Fix with AI")}
       data-no-drag=""
       className="shrink-0"
@@ -366,7 +357,6 @@ function PrCheckRow({
       variant="ghost"
       type="button"
       tooltip={t("View full log")}
-      aria-label={t("Open {p0} check", { p0: check.name })}
       data-no-drag=""
       onClick={() => openUrlSafely(url)}
     >
@@ -738,11 +728,6 @@ export function InboxPrChecks({
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
             <Heading size="section">{headline}</Heading>
-            {stale ? (
-              <Badge tone="warning" size="xs">
-                {t("Saved results")}
-              </Badge>
-            ) : null}
           </div>
           {checks?.headOid ? (
             <Tooltip label={checks.headOid} asChild>
@@ -811,13 +796,15 @@ export function InboxPrChecks({
               {error}
             </Text>
           ) : null}
-          <Text as="p" size="caption" tone="inherit" className="break-words">
-            {t("Saved results may be out of date.")}
-          </Text>
           {error ? (
-            <Button variant="ghost" loading={refreshing} onClick={onRefresh}>
-              {t("Retry loading checks")}
-            </Button>
+            <>
+              <Text as="p" size="caption" tone="inherit" className="break-words">
+                {t("Saved results may be out of date.")}
+              </Text>
+              <Button variant="ghost" loading={refreshing} onClick={onRefresh}>
+                {t("Retry loading checks")}
+              </Button>
+            </>
           ) : null}
         </Alert>
       ) : null}
@@ -853,7 +840,7 @@ export function InboxPrChecks({
         />
       ) : null}
       {rows.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 py-1">
+        <div className="flex flex-wrap items-center gap-2 py-1">
           <SegmentedControl
             label={t("Filter checks")}
             selectionRole="pressed"
@@ -878,9 +865,6 @@ export function InboxPrChecks({
               },
             ]}
           />
-          <Text size="caption" tone="secondary" className="@max-[420px]/checks:hidden">
-            {counts.fail ? t("Failures first") : ""}
-          </Text>
         </div>
       ) : null}
       {rows.length === 0 ? (

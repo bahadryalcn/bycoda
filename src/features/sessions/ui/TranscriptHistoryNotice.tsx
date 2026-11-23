@@ -1,5 +1,5 @@
 import { useT } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 
 type TranscriptHistoryNoticeProps = {
@@ -30,23 +30,23 @@ export function TranscriptHistoryNotice({
   const t = useT();
   if (loadFailed)
     return (
-      <Alert
-        tone="danger"
-        action={onRetryLoad ? { label: t("Retry"), onClick: onRetryLoad } : undefined}
+      <InlineError
+        inset="panel"
+        retry={onRetryLoad ? { label: t("Retry"), onRetry: onRetryLoad } : undefined}
       >
         {initial
           ? t("This conversation could not be loaded.")
           : t("Earlier messages could not be loaded.")}
-      </Alert>
+      </InlineError>
     );
   if (pageError)
     return (
-      <Alert
-        tone="danger"
-        action={onRetryPage ? { label: t("Retry"), onClick: onRetryPage } : undefined}
+      <InlineError
+        inset="panel"
+        retry={onRetryPage ? { label: t("Retry"), onRetry: onRetryPage } : undefined}
       >
         {pageError}
-      </Alert>
+      </InlineError>
     );
   if (loading)
     return (

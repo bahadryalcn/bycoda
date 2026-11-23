@@ -54,6 +54,10 @@ export type PaneHeaderProps = Omit<ComponentPropsWithRef<"div">, "title"> & {
   meta?: ReactNode;
   /** Trailing actions: ghost icon Buttons, overflow menu. */
   actions?: ReactNode;
+  /** One short primary action (a labelled or icon Button). It stays visible at every width, before `actions`. */
+  primaryAction?: ReactNode;
+  /** Overflow menu trigger holding the same secondary `actions`. Shown only in a narrow header, where `actions` are hidden. Without it `actions` never hide. */
+  overflow?: ReactNode;
   /** After the actions, flush to the end: window controls on Windows/Linux. */
   trailing?: ReactNode;
   /** Reserve the macOS traffic-light space at the start (no-op elsewhere). */
@@ -72,6 +76,7 @@ export type PaneHeaderProps = Omit<ComponentPropsWithRef<"div">, "title"> & {
 /**
  * Title row of a pane or tool view: slots leading, icon, title, meta, children (tabs/search), actions, trailing.
  * Pane header contract: one 40px row (`--ui-pane-header-height`, density-aware, same as the title bar), caption-role title, at most 4 actions (more go into an overflow menu), optional 24px tab strip (`tabs`, `--ui-pane-tabs-height`) as the only second band.
+ * The title shrinks and truncates first. In a narrow header `primaryAction` stays and `actions` give way to the `overflow` menu.
  * Owns height (`--ui-pane-header-height`), bottom hairline, and optional window drag region plus macOS traffic-light inset.
  * Heading levels: PaneHeader = pane title row; PanelHeader = dialog/sheet/popover header (a different pattern, not merged); SectionLabel = caption over a group inside either.
  * @group layout
@@ -98,6 +103,8 @@ export function PaneHeader({
   icon,
   meta,
   actions,
+  primaryAction,
+  overflow,
   trailing,
   tabs,
   chromeInset = false,
@@ -148,9 +155,21 @@ export function PaneHeader({
           {children}
         </div>
       ) : null}
-      {actions != null ? (
+      {actions != null || primaryAction != null || overflow != null ? (
         <div className={styles.actions} data-pane-header-actions data-tauri-drag-region={noDrag}>
-          {actions}
+          {primaryAction}
+          {actions != null && overflow != null ? (
+            <div className={styles.secondary} data-pane-header-secondary>
+              {actions}
+            </div>
+          ) : (
+            actions
+          )}
+          {overflow != null ? (
+            <div className={styles.overflow} data-pane-header-overflow>
+              {overflow}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {trailing != null ? (

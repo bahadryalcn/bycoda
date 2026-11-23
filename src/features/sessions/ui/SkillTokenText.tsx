@@ -64,10 +64,9 @@ export function SkillTokenText({ text }: { text: string }) {
       >
         <Badge
           size="xs"
-          tone="accent"
+          tone="skill"
           appearance="subtle"
           icon={<SkillGroupIcon />}
-          className="text-skill"
           data-skill-group-token="true"
         >
           {`${run.group.name} · ${run.group.members.length}`}
@@ -85,10 +84,9 @@ function SkillRuns({ text, names }: { text: string; names: ReadonlySet<string> }
       <Badge
         key={index}
         size="xs"
-        tone="accent"
+        tone="skill"
         appearance="subtle"
         icon={<SkillIcon />}
-        className="text-skill"
         data-skill-token="true"
       >
         {part.text}

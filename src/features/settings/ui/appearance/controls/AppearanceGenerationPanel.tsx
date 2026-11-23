@@ -1,19 +1,20 @@
 import { useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
-import { ArrowDown, ArrowUp, Sparkles, X } from "../../../../../shared/ui/icons";
+import { Sparkles, X } from "../../../../../shared/ui/icons";
 import { Modal } from "../../../../../shared/ui/Modal";
-import { InlineMessage } from "../../../../../shared/ui/InlineError";
 import { StatusText, type StatusTextTone } from "../../../../../shared/ui/StatusText";
-import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { ThemeGenerator } from "./ThemeGenerator";
 import { useGeneratorState } from "./themeGeneratorSession";
 import { isActiveGeneration, readGenerationJobs, useGenerationJobs } from "./themeGenerationJobs";
 
+/**
+ * Open state and launcher status for the generator dialog. Closing the dialog never stops a
+ * generation (the session keeps it); the launcher shows progress and reopens the dialog.
+ */
 export function useAppearanceGenerationPanel() {
   const [open, setOpen] = useState(false);
-  const [minimized, setMinimized] = useGeneratorState("generationMinimized", false);
   const [dismissed, setDismissed] = useGeneratorState<string | null>("dismissedGeneration", null);
   const jobs = useGenerationJobs();
   const running = jobs.filter(isActiveGeneration).length;
@@ -30,27 +31,22 @@ export function useAppearanceGenerationPanel() {
       : null;
   const dismiss = () => {
     setDismissed(readGenerationJobs().find((job) => !isActiveGeneration(job))?.id ?? null);
-    setMinimized(false);
     setOpen(false);
   };
   return {
     open,
-    minimized: minimized && !open,
     status,
     running,
     dismiss,
     show: () => setOpen(true),
-    minimize: () => {
-      setMinimized(true);
-      setOpen(false);
-    },
+    close: () => setOpen(false),
   };
 }
 
 type Panel = ReturnType<typeof useAppearanceGenerationPanel>;
 
 export function AppearanceGenerationLauncher({ panel }: { panel: Panel }) {
-  const status = panel.minimized ? null : panel.status;
+  const status = panel.status;
   return (
     <div className="appearance-generation-launcher" data-has-status={status ? "" : undefined}>
       <Button
@@ -72,34 +68,6 @@ export function AppearanceGenerationLauncher({ panel }: { panel: Panel }) {
           <X />
         </Button>
       ) : null}
-      {!panel.open && panel.status ? (
-        <InlineMessage icon={null} tone="neutral" className="sr-only">
-          {panel.status.label}
-        </InlineMessage>
-      ) : null}
-    </div>
-  );
-}
-
-export function AppearanceGenerationDock({ panel }: { panel: Panel }) {
-  if (!panel.minimized) return null;
-  return (
-    <div
-      {...surfaceAttributes(
-        { variant: "floating", radius: "popup", elevation: "floating", ring: "pane" },
-        "appearance-generation-dock",
-      )}
-      role="group"
-      aria-label={t("Generation")}
-    >
-      <Button size="sm" variant="ghost" aria-haspopup="dialog" onClick={panel.show}>
-        <ArrowUp className="icon-sm" />
-        {t("Restore")}
-      </Button>
-      {panel.status ? <StatusText tone={panel.status.tone}>{panel.status.label}</StatusText> : null}
-      <Button size="sm" variant="ghost" iconOnly label={t("Dismiss")} onClick={panel.dismiss}>
-        <X />
-      </Button>
     </div>
   );
 }
@@ -118,12 +86,7 @@ export function AppearanceGenerationDialog({
       size="lg"
       fitViewport
       initialFocus=".theme-generator-prompt input"
-      onClose={panel.dismiss}
-      toolbar={
-        <Button size="sm" variant="ghost" iconOnly label={t("Minimize")} onClick={panel.minimize}>
-          <ArrowDown />
-        </Button>
-      }
+      onClose={panel.close}
     >
       <ThemeGenerator appearance={appearance} />
     </Modal>

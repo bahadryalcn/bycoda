@@ -23,10 +23,12 @@ import {
   ArrowDown as Download,
   Folder,
   File,
+  Link,
   CloudUpload as Upload,
   RefreshCw,
 } from "../../../shared/ui/icons";
-import { formatNumber, t } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n";
+import { formatBytes } from "../../../shared/i18n/format";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import {
   cancelSftp,
@@ -155,6 +157,8 @@ export function ServerFiles({
     cancel();
     onClose();
   };
+  // The listing already says whether the chosen remote filename would replace something.
+  const collides = !!upload && entries.some((entry) => entry.name === upload.name);
 
   return (
     <>
@@ -193,6 +197,7 @@ export function ServerFiles({
             </Button>
             <TextField
               label={t("Remote directory")}
+              hideLabel
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               disabled={busy}
@@ -204,7 +209,7 @@ export function ServerFiles({
               size="sm"
               iconOnly
               loading={busy}
-              label={t("Refresh")}
+              label={query === path ? t("Refresh") : t("Open")}
             >
               <RefreshCw className="icon-sm" />
             </Button>
@@ -224,11 +229,6 @@ export function ServerFiles({
               <Upload className="icon-sm" />
               {t("Upload")}
             </Button>
-            {busy ? (
-              <Button variant="ghost" onClick={cancel}>
-                {t("Cancel")}
-              </Button>
-            ) : null}
           </form>
           {busy || progress ? (
             <div className="flex min-w-0 flex-col gap-1" role="status">
@@ -246,11 +246,19 @@ export function ServerFiles({
                 max={progress?.totalBytes || 1}
                 tone="neutral"
               />
-              <Text tone="muted">
-                {progress
-                  ? `${formatNumber(progress.transferredBytes)}${progress.totalBytes != null ? ` / ${formatNumber(progress.totalBytes)}` : ""} ${t("bytes")}`
-                  : t("Waiting for transfer data…")}
-              </Text>
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <Text tone="muted">
+                  {progress
+                    ? `${formatBytes(progress.transferredBytes)}${progress.totalBytes != null ? ` / ${formatBytes(progress.totalBytes)}` : ""}`
+                    : t("Waiting for transfer data…")}
+                </Text>
+                {/* Cancel lives in the strip it stops, so the toolbar never changes width. */}
+                {busy ? (
+                  <Button variant="ghost" size="sm" onClick={cancel}>
+                    {t("Cancel")}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ) : null}
           {error ? <Alert tone="danger">{error}</Alert> : null}
@@ -272,17 +280,20 @@ export function ServerFiles({
                   setUpload({ ...upload, name: event.target.value });
                 }}
               />
-              <Checkbox
-                checked={overwrite}
-                disabled={busy}
-                onChange={(event) => setOverwrite(event.target.checked)}
-                label={t("I allow replacement if this remote filename already exists.")}
-                size="caption"
-                className="flex items-start gap-2"
-              />
+              {/* Consent is asked only when the name is already in this directory. */}
+              {collides ? (
+                <Checkbox
+                  checked={overwrite}
+                  disabled={busy}
+                  onChange={(event) => setOverwrite(event.target.checked)}
+                  label={t("I allow replacement if this remote filename already exists.")}
+                  size="caption"
+                  className="flex items-start gap-2"
+                />
+              ) : null}
               <div className="flex gap-2">
                 <Button
-                  disabled={!overwrite || busy || !upload.name}
+                  disabled={(collides && !overwrite) || busy || !upload.name}
                   onClick={() =>
                     void act(async (id) => {
                       const remotePath = sftpPath(path, upload.name);
@@ -291,21 +302,21 @@ export function ServerFiles({
                         operationId: id,
                         localPath: upload.localPath,
                         remotePath,
-                        overwriteConfirmed: overwrite,
+                        overwriteConfirmed: collides && overwrite,
                       });
                       if (ticket === null || !canContinue(id)) return;
                       const bytes = await uploadSftp(
                         connectionId,
                         upload.localPath,
                         remotePath,
-                        overwrite,
+                        collides && overwrite,
                         id,
                         ticket,
                       );
                       if (mounted.current) {
                         setUpload(undefined);
                         setOverwrite(false);
-                        setStatus(`${t("Uploaded")}: ${formatNumber(bytes)} ${t("bytes")}`);
+                        setStatus(`${t("Uploaded")}: ${formatBytes(bytes)}`);
                       }
                     })
                   }
@@ -391,11 +402,13 @@ export function ServerFiles({
               <p className="break-all">
                 {review.localPath} ↔ {review.remotePath}
               </p>
-              <Text as="p" size="inherit" tone="muted">
-                {t(
-                  "Resume verifies the existing content before continuing. Verification reads remote data again and may transfer the full file. Existing destination files are not silently replaced.",
-                )}
-              </Text>
+              <InfoPopover>
+                <p>
+                  {t(
+                    "Resume verifies the existing content before continuing. Verification reads remote data again and may transfer the full file. Existing destination files are not silently replaced.",
+                  )}
+                </p>
+              </InfoPopover>
               {review.direction === "upload" ? (
                 <Checkbox
                   checked={resumeOverwrite}
@@ -486,9 +499,12 @@ export function ServerFiles({
                   </OverflowTooltip>
                 )}
                 {entry.kind === "symlink" ? (
-                  <Text size="inherit" tone="muted">
-                    {t("Symlink; not followed")}
-                  </Text>
+                  <Link
+                    aria-label={t("Symlink; not followed")}
+                    role="img"
+                    className="icon-sm shrink-0"
+                    tone="muted"
+                  />
                 ) : entry.kind === "file" ? (
                   <Button
                     variant="ghost"

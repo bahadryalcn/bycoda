@@ -312,7 +312,7 @@ it("exposes the single-axis edges as focusable separators that resize from the k
   const edge = node.querySelector<HTMLElement>('[data-resize-direction="e"]')!;
   expect(edge.getAttribute("role")).toBe("separator");
   expect(edge.getAttribute("aria-orientation")).toBe("vertical");
-  expect(edge.getAttribute("aria-label")).toBe("Resize panel");
+  expect(edge.getAttribute("aria-label")).toBe("Resize panel, right edge");
   expect(edge.tabIndex).toBe(0);
   expect(edge.getAttribute("aria-hidden")).toBeNull();
 

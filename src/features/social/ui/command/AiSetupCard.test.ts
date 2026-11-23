@@ -48,7 +48,7 @@ it("explains why a model is needed and blocks saving until one is chosen", () =>
     "AI needs a model before it can plan or write reports.",
   );
   expect(button("Use this model")?.disabled).toBe(true);
-  expect(element.textContent).toContain("Choose a model first.");
+  expect(element.textContent).not.toContain("Choose a model first.");
   act(() => button("Use this model")?.click());
   expect(onSave).not.toHaveBeenCalled();
 });

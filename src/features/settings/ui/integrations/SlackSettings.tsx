@@ -1,6 +1,5 @@
-import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { Code } from "../../../../shared/ui/Code";
 import { useState } from "react";
-import { Text } from "../../../../shared/ui/Text";
 import { t, useLocale } from "../../../../shared/i18n";
 import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { PasswordField } from "../../../../shared/ui/PasswordField";
@@ -34,7 +33,7 @@ export const SLACK_BOT_SCOPES = [
   "chat:write",
 ] as const;
 
-/** Loopback redirect Slack apps must register; native listens on this fixed port. */
+/** HTTPS redirect URI a Slack application must register. */
 export const SLACK_REDIRECT_URL = "https://bycoda.codes/oauth/slack/";
 
 export function SlackSettings() {
@@ -42,7 +41,6 @@ export function SlackSettings() {
   return (
     <MessagingAccountsCard
       provider="slack"
-      emptyLabel={t("No Slack workspaces connected yet.")}
       addLabel={t("Add workspace")}
       describe={(account) => account.identity || t("Slack workspace")}
       Form={SlackAccountForm}
@@ -69,13 +67,6 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
       <Row
         stacked
         label={account ? t("Reconnect workspace") : t("Connect a workspace")}
-        info={
-          useBotToken
-            ? undefined
-            : t(
-                "Sign in with the Slack account whose channels and direct messages you want to read and answer.",
-              )
-        }
         persistence={{ mode: "explicit", state: saving ? "saving" : dirty ? "dirty" : "idle" }}
       >
         {useBotToken ? (
@@ -118,15 +109,9 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
             t("Invite the bot to each channel it should read with /invite."),
           ]}
         >
-          <Text
-            as="p"
-            size="caption"
-            tone="secondary"
-            leading="inherit"
-            {...surfaceAttributes({ radius: "card", variant: "card" }, "integration-code")}
-          >
+          <Code variant="block">
             {SLACK_BOT_SCOPES.join(" ")}
-          </Text>
+          </Code>
           <div className="integration-actions">
             <CopyButton label={t("Copy scopes")} text={SLACK_BOT_SCOPES.join(",")} />
           </div>

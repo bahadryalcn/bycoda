@@ -18,8 +18,16 @@ it("distinguishes a source search miss and clears only the search", async () => 
         createElement(SourceOrderPicker, {
           label: "Fallback",
           value: ["source"],
+          // Search appears only for a long list of sources.
           sources: [
             { id: "source", name: "Alpha", kind: "local", adapter: "systemone", status: "ready" },
+            ...Array.from({ length: 8 }, (_, index) => ({
+              id: `extra-${index}`,
+              name: `Extra ${index}`,
+              kind: "local" as const,
+              adapter: "systemone" as const,
+              status: "ready" as const,
+            })),
           ],
           disabled: false,
           onChange: change,

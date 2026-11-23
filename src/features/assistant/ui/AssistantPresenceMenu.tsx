@@ -21,19 +21,13 @@ export function AssistantPresenceMenu({
   const trigger = useRef<HTMLButtonElement>(null);
   if (presence.hidden) return null;
   const { label, state, error } = presence;
-  const items: DropdownMenuItem[] = [
-    // The inline error below already announces the failure; the menu row would say it twice.
-    ...presence.items.filter((item) => item.kind !== "item" || item.id !== "failure"),
-    { kind: "sep" },
-    {
-      kind: "item",
-      id: "refresh",
-      label: t("Refresh"),
-      disabled: presence.busy || presence.pending || presence.writeError,
-    },
-  ];
+  // The inline error below already announces the failure; the menu row would say it twice.
+  // Opening the menu already re-reads availability, so no separate Refresh row is offered.
+  const items: DropdownMenuItem[] = presence.items.filter(
+    (item) => item.kind !== "item" || item.id !== "failure",
+  );
   return (
-    <div className="flex shrink-0 items-center px-1" data-assistant-presence>
+    <div className="flex min-w-0 flex-wrap items-center px-1" data-assistant-presence>
       <Button
         ref={trigger}
         size="sm"
@@ -55,10 +49,7 @@ export function AssistantPresenceMenu({
           label={t("Availability")}
           items={items}
           onClose={presence.end}
-          onPick={(id) => {
-            if (id === "refresh") presence.begin().catch(() => undefined);
-            else presence.pick(id);
-          }}
+          onPick={presence.pick}
         />
       )}
     </div>

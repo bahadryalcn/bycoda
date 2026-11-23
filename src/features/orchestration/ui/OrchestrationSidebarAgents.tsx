@@ -3,7 +3,6 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
 import { useContext, useRef, useState, useSyncExternalStore } from "react";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
@@ -14,7 +13,6 @@ import {
   type OrchestrationSummary,
 } from "../model/orchestrationSummary";
 import { orchestrationTaskLabelText } from "./orchestrationTaskLabelText";
-import { HARNESS_TITLE } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { OrchestrationActions, OrchestrationWorkers } from "./OrchestrationActions";
 import { Check, CircleAlert } from "../../../shared/ui/icons";
@@ -85,20 +83,8 @@ export function OrchestrationSidebarAgents({
   // button rather than as another line of text.
   return (
     <div className="relative mt-1.5">
-      <Text
-        as="div"
-        size="micro"
-        tone="secondary"
-        className="mb-0.5 px-0.5 flex items-center justify-between"
-      >
-        <span>
-          {summary.tasks.length === 1
-            ? t("{p0} agent", { p0: summary.tasks.length })
-            : t("{p0} agents", { p0: summary.tasks.length })}
-        </span>
-        <span className="tabular-nums">
-          {t("{p0}/{p1} done", { p0: done, p1: summary.tasks.length })}
-        </span>
+      <Text as="div" size="micro" tone="secondary" className="mb-0.5 px-0.5 tabular-nums">
+        {t("{p0}/{p1} done", { p0: done, p1: summary.tasks.length })}
       </Text>
       {/*
         Offset by the rows' own padding so a chevron lands on the card's
@@ -134,7 +120,6 @@ export function OrchestrationSidebarAgents({
               <Button
                 variant="item"
                 type="button"
-                tooltip={`${task.title} · ${HARNESS_TITLE[task.harness]} · ${model} · ${label}`}
                 aria-label={t("Agent details: {p0}", { p0: task.title })}
                 fullWidth
                 className="min-w-0"
@@ -186,7 +171,7 @@ export function OrchestrationSidebarAgents({
               </Button>
               {/* Indented to the title's column: the icon slot and its gap. */}
               {open && (
-                <div className="space-y-2 pb-3 [padding-inline-start:calc(1rem+0.625rem)] pr-2">
+                <div className="space-y-2 pb-3 ps-7 pe-2">
                   <Text
                     as="p"
                     size="micro"
@@ -194,9 +179,6 @@ export function OrchestrationSidebarAgents({
                     className="flex min-w-0 flex-wrap items-start gap-1.5"
                   >
                     <ModelLabel model={task.model} harness={task.harness} name={model} wrap />
-                    <Text size="inherit" tone="inherit" wrap="anywhere">
-                      {HARNESS_TITLE[task.harness]}
-                    </Text>
                   </Text>
                   {live?.error && (
                     <Text as="p" size="micro" tone="danger">
@@ -250,10 +232,7 @@ export function OrchestrationSidebarAgents({
           agents together. Resume has no other home, so it stays. */}
       {run?.status === "paused" && (
         <div
-          {...surfaceAttributes(
-            { frame: "pane", edge: "top" },
-            "mt-1.5 space-y-1.5 border-(--ui-tone-neutral-border) pt-1.5",
-          )}
+          {...surfaceAttributes({ frame: "pane", edge: "top" }, "mt-1.5 space-y-1.5 pt-1.5")}
         >
           {resumeBlocker && (
             <Text as="p" size="micro" tone="warning" leading="relaxed" className="px-0.5">
@@ -263,17 +242,6 @@ export function OrchestrationSidebarAgents({
             </Text>
           )}
           <div className="-mr-1.5 flex items-center justify-end gap-1">
-            <InfoPopover>
-              {stopping
-                ? t("Stopping interrupted work before this run can resume.")
-                : leadBusy
-                  ? t(
-                      "Waiting for the lead's interrupted turn to finish before this run can resume.",
-                    )
-                  : t(
-                      "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
-                    )}
-            </InfoPopover>
             {resumeBlocker && actions && (
               <Button
                 variant="ghost"
@@ -297,10 +265,10 @@ export function OrchestrationSidebarAgents({
                   : leadBusy
                     ? t("Wait for the lead's interrupted turn to finish")
                     : resumeBlocker
-                      ? t("Stop {p0} before resuming", {
-                          p0: resumeBlocker.title || t("Another conversation"),
-                        })
-                      : t("Continue interrupted and queued work")
+                      ? undefined
+                      : t(
+                          "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
+                        )
               }
               onClick={() =>
                 void perform("resume", () =>

@@ -107,10 +107,6 @@ export function CrewLibrary({
               label={t("Search name, role, model or group")}
               query={query}
               onQueryChange={setQuery}
-              count={t("Showing {p0} of {p1} members", {
-                p0: agents.length,
-                p1: data.agents.length,
-              })}
             >
               {groups.length ? (
                 <SearchableSelect

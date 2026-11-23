@@ -12,6 +12,8 @@ import { PreviewSelectionMenu } from "./PreviewSelection";
 import { HtmlPreviewSecurityActions } from "./HtmlPreviewSecurityActions";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 
 /** A separate protocol and opaque sandbox keep generated scripts out of the app. */
 export function HtmlPreview({
@@ -101,20 +103,20 @@ export function HtmlPreview({
   };
   const header = (
     <div
-      className={
-        toolbarTarget
-          ? "flex items-center gap-1"
-          : compact
-            ? "flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-workspace-reading) px-2 py-1"
-            : "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center border-b border-(--ui-pane-border) bg-(--ui-workspace-panel) px-3 py-1"
-      }
+      {...(toolbarTarget
+        ? { className: "flex items-center gap-1" }
+        : surfaceAttributes(
+            { frame: "pane", edge: "bottom" },
+            compact
+              ? "flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-1 px-2 py-1"
+              : "flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 px-3 py-1",
+          ))}
     >
       {toolbar}
       <HtmlPreviewSecurityActions key={path} path={path} />
       <Button
         variant="ghost"
         size="sm"
-        motion="none"
         {...(compact
           ? { iconOnly: true as const, label: t("Reload preview") }
           : { iconOnly: false as const })}
@@ -154,9 +156,7 @@ export function HtmlPreview({
           hidden={sourceVisible}
         />
       ) : !sourceVisible ? (
-        <p role="status" className="p-6 text-ui-caption text-[var(--ui-text-muted)]">
-          {t("Opening preview…")}
-        </p>
+        <SurfaceLoading title={t("Opening preview…")} />
       ) : null}
       <PreviewSelectionMenu
         selection={sourceVisible ? null : selection}

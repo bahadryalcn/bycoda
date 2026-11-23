@@ -2,9 +2,8 @@ import { useContext } from "react";
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { usePhraseDraft } from "../model/voiceSettingsDrafts";
 import { getLocale, t } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { RevealedSetting, settingDomId, Toggle } from "../../../shared/ui/settings";
+import { RevealedSetting, Toggle } from "../../../shared/ui/settings";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 import { defaultWakePhrases, WAKE_PHRASE_LIMITS } from "../model/voiceWakePhrase";
 import { isImeComposition } from "../../../shared/lib/keyboard";
@@ -71,20 +70,20 @@ export function VoiceWakeRows({
   const defaults = defaultWakePhrases(profile?.language, getLocale(), profile?.name ?? "");
   const phraseTarget = revealed === "voice-wake-phrase" || revealed === "voice-sleep-phrase";
   const enabled = settings.enabled && settings.wakeEnabled === true;
-  const prerequisite = settings.enabled ? "voice-wake" : "voice-companion";
+  // One reason, stated once: the row and a revealed phrase row dim with it as a tooltip.
+  const unavailable = settings.enabled
+    ? t("Turn on wake and sleep phrases to edit this phrase.")
+    : t("Turn on voice to use wake and sleep phrases.");
   return (
     <>
       <Row
         id="voice-wake"
         label={t("Wake and sleep phrases")}
-        descriptionVisible={!settings.enabled}
-        description={
-          settings.enabled
-            ? t(
-                "Start and end a conversation with your voice. Waiting for the wake phrase uses the local voice pack and keeps audio on this device.",
-              )
-            : t("Turn on voice to use wake and sleep phrases.")
-        }
+        disabled={!settings.enabled}
+        disabledReason={t("Turn on voice to use wake and sleep phrases.")}
+        description={t(
+          "Start and end a conversation with your voice. Waiting for the wake phrase uses the local voice pack and keeps audio on this device.",
+        )}
       >
         <Toggle
           label={t("Wake and sleep phrases")}
@@ -97,27 +96,9 @@ export function VoiceWakeRows({
         <Row
           id={revealed}
           label={revealed === "voice-wake-phrase" ? t("Wake phrase") : t("Sleep phrase")}
-          descriptionVisible
-          description={
-            settings.enabled
-              ? t("Turn on wake and sleep phrases to edit this phrase.")
-              : t("Turn on voice to use wake and sleep phrases.")
-          }
-        >
-          <Button
-            variant="link"
-            onClick={() =>
-              document
-                .getElementById(settingDomId(prerequisite))
-                ?.querySelector<HTMLElement>('[role="switch"]')
-                ?.focus()
-            }
-          >
-            {settings.enabled
-              ? t("Go to Wake and sleep phrases")
-              : t("Go to Enable voice companion")}
-          </Button>
-        </Row>
+          disabled
+          disabledReason={unavailable}
+        />
       )}
       {enabled && (
         <>

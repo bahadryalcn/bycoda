@@ -12,6 +12,11 @@ vi.mock("./useAccountDesktopPair", () => ({
   useAccountDesktopPair: () => ({ view: pair.view, retry: vi.fn(), signedIn: true }),
 }));
 
+vi.mock("../../account", async () => ({
+  watchPairingView: (await import("../../account/model/phoneConnectInbox")).watchPairingView,
+  useAccount: () => ({ signIn: async () => undefined }),
+}));
+
 import { AccountPairDialog } from "./AccountPairDialog";
 
 let cleanup: (() => void) | undefined;
@@ -35,6 +40,6 @@ it("shows the computer name in the dialog title with every slot filled", async (
   };
   const text = document.body.textContent ?? "";
   expect(text).toContain("Add Work Mac");
-  expect(text).toContain("Allow it on Work Mac.");
+  expect(text).toContain("Allow it there.");
   expect(text).not.toContain("{");
 });

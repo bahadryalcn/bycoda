@@ -151,6 +151,10 @@
   overflow: hidden;
   white-space: normal;
 }
+.text[data-wrap="preserve-lines"] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 .text[data-size="glyph"] {
   font-size: var(--text-glyph-size);

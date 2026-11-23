@@ -3,17 +3,16 @@ import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Globe, X } from "../../../shared/ui/icons";
 import { forgetBrowserUrl, readBrowserRecents } from "../model/browserRecents";
 
 /** Shown while no frame exists: what to do next, plus recently opened addresses. */
 export function BrowserStartPage({
-  description,
   disabled,
   onOpen,
 }: {
-  description: string;
+  /** Kept for callers; the empty state is the address bar alone. */
+  description?: string;
   disabled: boolean;
   onOpen: (url: string) => void;
 }) {
@@ -21,21 +20,8 @@ export function BrowserStartPage({
   return (
     <div {...surfaceAttributes({ variant: "canvas" }, "host-browser-start")}>
       <div className="host-browser-start-body">
-        <Globe className="host-browser-start-icon" tone="secondary" aria-hidden />
-        <Text
-          size="body"
-          tone="secondary"
-          leading="inherit"
-          as="p"
-          className="host-browser-start-text"
-        >
-          {description}
-        </Text>
         {recents.length ? (
           <section className="host-browser-recents" aria-label={t("Recent")}>
-            <SectionLabel as="h4" className="host-browser-recents-title">
-              {t("Recent")}
-            </SectionLabel>
             <ul {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" })}>
               {recents.map((url) => (
                 <li key={url} {...surfaceAttributes({ separator: "pane-block" })}>

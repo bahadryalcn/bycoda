@@ -25,6 +25,7 @@ import {
 } from "react";
 import { ChevronDown, X } from "./icons";
 import { Spinner } from "./Spinner";
+import { SectionLabel } from "./SectionLabel";
 import { Badge } from "./Badge";
 import { Field, fieldDescribedBy, type FieldVariant } from "./Field";
 import { MatchText, matchPositions } from "./MatchText";
@@ -41,6 +42,7 @@ import { ComboboxItem, ComboboxList, ComboboxStatus } from "./arc/combobox/combo
 import { PopoverSearchHeader } from "./PopoverSearchHeader";
 import { PickerChoice } from "./picker/PickerChoice";
 import { PickerFooter } from "./picker/PickerList";
+import { canInspectPickerOption } from "./picker/usePickerList";
 import { usePointerMovement, type PointerMovement } from "./picker/usePointerMovement";
 import {
   ALL_GROUPS,
@@ -55,6 +57,8 @@ export type SearchableSelectOption = {
   keywords?: string;
   description?: string;
   disabled?: boolean;
+  /** Shown when the user inspects this unavailable choice. */
+  disabledReason?: string;
   /** Keep this scope reset visible above scrolling results, including during search. Use at most one, first in options. */
   pinned?: boolean;
   /** Leading glyph, logo or avatar (icon-sm/icon-md); also shown in the trigger for the selected value. */
@@ -126,7 +130,7 @@ type AsyncOptions = {
   /** Shows a Retry action with the error. */
   onRetry?: () => void;
   retryLabel?: string;
-  /** Shown when there are no options at all and no query. Defaults to `emptyLabel`. */
+  /** Shown when there are no options at all and no query. */
   noOptionsLabel?: string;
 };
 
@@ -282,7 +286,10 @@ const OptionRow = memo(function OptionRow({
   /** The list's shared guard: stationary pointer entry after keyboard scrolling must not take the highlight. */
   pointerMoved: PointerMovement;
 }) {
-  const title = option.description ? `${option.label} ${option.description}` : option.label;
+  const description =
+    (highlighted && option.disabled && option.disabledReason?.trim()) || option.description;
+  const title = description ? `${option.label} ${description}` : option.label;
+  const inspectable = canInspectPickerOption(option);
   return (
     <ComboboxItem
       data-value={option.value}
@@ -294,15 +301,15 @@ const OptionRow = memo(function OptionRow({
       tabIndex={-1}
       aria-selected={selected}
       aria-disabled={option.disabled || undefined}
-      disabled={controlDisabled || option.disabled}
-      aria-describedby={option.description ? `${listId}-description-${index}` : undefined}
+      disabled={controlDisabled || !inspectable}
+      aria-describedby={description ? `${listId}-description-${index}` : undefined}
       data-density={compact ? "sm" : "md"}
-      data-has-description={option.description ? "" : undefined}
+      data-has-description={description ? "" : undefined}
       data-active={highlighted || undefined}
       data-highlighted={highlighted || undefined}
       onMouseDown={(event) => event.preventDefault()}
       onPointerMove={(event) => {
-        if (pointerMoved(event) && !option.disabled) onHover(index);
+        if (pointerMoved(event) && inspectable) onHover(index);
       }}
       onClick={() => onPick(option.value)}
       className={option.pinned ? styles.pinnedOption : undefined}
@@ -319,7 +326,7 @@ const OptionRow = memo(function OptionRow({
             />
           </span>
         }
-        description={option.description}
+        description={description}
         descriptionId={`${listId}-description-${index}`}
         title={title}
         meta={option.meta}
@@ -472,9 +479,8 @@ function SearchableSelectMenu({
         : [...scoped],
     [normalizedQuery, scoped, searchLocale],
   );
-  // Disabled options are shown but never active: the stored index falls through to the first choosable row.
-  const firstChoosable = filtered.findIndex((option) => !option.disabled);
-  const activeIndex = filtered[active] && !filtered[active]!.disabled ? active : firstChoosable;
+  const firstInspectable = filtered.findIndex(canInspectPickerOption);
+  const activeIndex = canInspectPickerOption(filtered[active]) ? active : firstInspectable;
   const activeId = activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined;
   const failed = error != null && error !== false && error !== "";
   const popoverLayer =
@@ -501,7 +507,7 @@ function SearchableSelectMenu({
         ? committed
         : Math.max(
             0,
-            options.findIndex((o) => !o.disabled),
+            options.findIndex(canInspectPickerOption),
           ),
     );
     setOpen(true);
@@ -542,14 +548,14 @@ function SearchableSelectMenu({
   });
   const pickLatest = useCallback((next: string) => latestPick.current(next), []);
 
-  /** Next choosable row from `from`; wraps only with loopNavigation, otherwise stays at the end. */
+  /** Next inspectable row from `from`; wraps only with loopNavigation. */
   const step = (from: number, direction: 1 | -1) => {
     const count = filtered.length;
     for (let offset = 1; offset <= count; offset++) {
       const raw = from + direction * offset;
       const index = loopNavigation ? ((raw % count) + count) % count : raw;
       if (index < 0 || index >= count) return from;
-      if (!filtered[index]!.disabled) return index;
+      if (canInspectPickerOption(filtered[index])) return index;
     }
     return from;
   };
@@ -592,13 +598,13 @@ function SearchableSelectMenu({
     }
     if (event.key === "Home") {
       event.preventDefault();
-      setActive(Math.max(0, firstChoosable));
+      setActive(Math.max(0, firstInspectable));
       return;
     }
     if (event.key === "End") {
       event.preventDefault();
       let last = filtered.length - 1;
-      while (last > 0 && filtered[last]!.disabled) last--;
+      while (last > 0 && !canInspectPickerOption(filtered[last])) last--;
       setActive(Math.max(0, last));
       return;
     }
@@ -617,7 +623,9 @@ function SearchableSelectMenu({
   // An empty list says why: loading and failure have their own rows and are never "no matches".
   const noResults = !loading && !failed && filtered.length === 0;
   const resultsCopy =
-    options.length === 0 && !normalizedQuery ? (noOptionsLabel ?? emptyLabel) : emptyLabel;
+    options.length === 0 && !normalizedQuery
+      ? (noOptionsLabel ?? emptyLabelOption ?? t("No options available"))
+      : emptyLabel;
 
   const selectedOption = optionLookup.get(values[0] ?? "");
   // Shared tooltip: only while the list is closed, so it never covers the open menu.
@@ -901,7 +909,9 @@ function SearchableSelectMenu({
                     className={styles.group}
                   >
                     <div id={headingId} role="presentation" className={styles.groupHeading}>
-                      {section.group}
+                      <SectionLabel variant="menu" as="span" size="caption">
+                        {section.group}
+                      </SectionLabel>
                     </div>
                     {rows}
                   </div>

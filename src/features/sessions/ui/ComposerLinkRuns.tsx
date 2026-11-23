@@ -7,7 +7,6 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ExternalLink } from "../../../shared/ui/icons";
 import { UserLinkIcon } from "./UserLinkIcon";
 import { cachedUserLinkRanges, type UserLinkRange } from "../model/linkPreview";
 import { observeResize } from "../../../shared/lib/observeResize";
@@ -139,9 +138,6 @@ function LinkToken({
             <UserLinkIcon link={url} />
           </span>
           <span className={styles.linkName} data-link-label={label} />
-          <span data-composer-link-open="">
-            <ExternalLink strokeWidth={2} />
-          </span>
         </span>
       )}
     </span>

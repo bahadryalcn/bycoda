@@ -3,8 +3,10 @@ import { Skeleton } from "../../../shared/ui/Skeleton";
 import { MarkdownSource as IncrementalMarkdownSource } from "./markdownSource";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Code } from "../../../shared/ui/Code";
+import { Surface } from "../../../shared/ui/Surface";
+import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
 import { Link } from "../../../shared/ui/Link";
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { CopyButton } from "../../../shared/ui/CopyButton";
@@ -71,7 +73,6 @@ import {
   revealPath,
 } from "../../../platform/tauri/fs";
 import { ChatFolderBrowser } from "../../files/public/ChatFolderBrowser";
-import { FolderOpen } from "../../../shared/ui/icons";
 import { resolveFileOpenRequest } from "../../files/public/fileIndex";
 import { existingChatPath } from "../../files/public/chatPathChecks";
 import {
@@ -203,7 +204,6 @@ const FileOpenContext = createContext<{
   cwd?: string;
   documentPath?: string;
   onOpenFile?: OpenFileFn;
-  onRevealFile?: (path: string) => void;
   onFileContextMenu?: (event: ReactMouseEvent, path: string, navigation?: EditorNavigation) => void;
 }>({});
 
@@ -308,7 +308,6 @@ function MarkdownLink({
       >
         {children}
       </Link>
-      {file ? <FileRevealButton path={file.path} /> : null}
       {linkError ? (
         <FileActionError message={linkError} onDismiss={() => setLinkError(undefined)} />
       ) : null}
@@ -355,67 +354,7 @@ function scrollToMessageAnchor(link: Element, id: string) {
   target?.scrollIntoView({ block: "nearest" });
 }
 
-function FileRevealButton({ path }: { path: string }) {
-  // A changed reference must start unverified, even when a prior path was valid.
-  return <VerifiedFileRevealButton key={path} path={path} />;
-}
-
-function VerifiedFileRevealButton({ path }: { path: string }) {
-  const t = useT();
-  const { onRevealFile } = useContext(FileOpenContext);
-  const [exists, setExists] = useState(false);
-  useEffect(() => {
-    if (!onRevealFile) return;
-    let cancelled = false;
-    void existingChatPath(path).then((confirmed) => {
-      if (!cancelled) setExists(confirmed);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [path, onRevealFile]);
-  if (!onRevealFile || !exists) return null;
-  return (
-    <Button
-      motion="none"
-      iconOnly
-      label={t("Open containing folder")}
-      variant="ghost"
-      type="button"
-      aria-label={t("Open containing folder")}
-      tooltip={t("Open containing folder: {p0}", { p0: path })}
-      className="ml-1 shrink-0"
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        onRevealFile?.(path);
-      }}
-    >
-      <FolderOpen className="icon-sm" />
-    </Button>
-  );
-}
-
 type MarkdownCodeProps = ComponentProps<"code"> & { node?: unknown };
-
-function EmailCopyButton({ text }: { text: string }) {
-  const t = useT();
-  return (
-    <CopyButton
-      motion="none"
-      iconOnly
-      label={t("Copy")}
-      className="shrink-0"
-      resetKeys={[text]}
-      text={text}
-      onClick={(event) => {
-        // The button sits inside an email link: keep the press from following it.
-        event.preventDefault();
-        event.stopPropagation();
-      }}
-    />
-  );
-}
 
 function MarkdownCode({ children, className, node, onContextMenu, ...props }: MarkdownCodeProps) {
   useLocale();
@@ -457,11 +396,12 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
     const open = file && onOpenFile ? () => onOpenFile(file.path, file.navigation) : undefined;
     return (
       <span className="inline-flex max-w-full items-center align-baseline">
-        {isEmailAddress(text) ? <EmailCopyButton key={text} text={text} /> : null}
-        <code
+        <Code
           {...props}
+          variant="chip"
+          size="caption"
           dir="ltr"
-          className={`inline-flex items-center gap-1 rounded-md bg-(--ui-inline-code-surface) px-1.5 min-h-6 max-w-full [overflow-wrap:anywhere] align-baseline font-mono text-[0.8em] text-(--ui-tone-neutral-fg) ${
+          className={`inline-flex items-center gap-1 max-w-full [overflow-wrap:anywhere] align-baseline ${
             open ? "cursor-pointer hover:text-(--ui-tone-info-fg) hover:underline" : ""
           } ${className ?? ""}`}
           role={open ? "link" : undefined}
@@ -489,8 +429,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
             </span>
           ) : null}
           {children}
-        </code>
-        {file && file.path === verifiedPath ? <FileRevealButton path={file.path} /> : null}
+        </Code>
       </span>
     );
   }
@@ -604,23 +543,22 @@ function MarkdownCodeShell({
         label={label}
         variant="ghost"
         type="button"
-        aria-label={label}
         className="markdown-code-copy markdown-code-toggle"
         aria-expanded={!collapsed}
         aria-controls={contentId}
         onClick={() => setCollapsed((value) => !value)}
       >
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d={collapsed ? "m6 8 4 4 4-4" : "m6 12 4-4 4 4"} />
-        </svg>
+        {collapsed ? (
+          <ChevronDown aria-hidden className="icon-sm" />
+        ) : (
+          <ChevronUp aria-hidden className="icon-sm" />
+        )}
       </Button>
       {collapsed ? (
         <Button
           motion="none"
           variant="item"
           type="button"
-
-          tooltip={label}
           aria-label={`${label}: ${summary.preview}`}
           className="markdown-code-summary"
           aria-expanded={false}
@@ -993,9 +931,8 @@ export const AgentMarkdown = memo(function AgentMarkdown({
       documentPath,
       onOpenFile: onOpenFile ? openFile : undefined,
       onFileContextMenu,
-      onRevealFile,
     }),
-    [cwd, documentPath, onOpenFile, openFile, onFileContextMenu, onRevealFile],
+    [cwd, documentPath, onOpenFile, openFile, onFileContextMenu],
   );
   const remarkPlugins = useMemo<PluggableList>(
     () => [
@@ -1162,9 +1099,6 @@ export const AgentMarkdown = memo(function AgentMarkdown({
                   </Streamdown>
                 </MarkdownProseContext.Provider>
               )}
-              {markdownPending ? (
-                <LoadingText delay={false}>{t("Rendering Markdown…")}</LoadingText>
-              ) : null}
             </div>
             {fileMenu ? (
               <ExplorerMenu
@@ -1232,10 +1166,9 @@ export const MarkdownPreview = memo(function MarkdownPreview({
       data-markdown-region="preview"
       className="markdown-preview h-full overflow-y-auto overscroll-none [overflow-anchor:none]"
     >
-      <div className="mx-auto w-full max-w-[46rem] px-6 py-8">
+      <div className="mx-auto w-full max-w-3xl px-6 py-8">
         {header}
         <AgentMarkdown
-          className="text-ui-body! leading-[1.6]!"
           text={text}
           streaming={streaming}
           cwd={cwd}
@@ -1344,16 +1277,18 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
   }
 
   if (!svg) {
-    return <Skeleton lines={5} className="h-32 rounded-xl" />;
+    return <Skeleton lines={5} className="h-32" />;
   }
 
   return (
-    <div
-      className="mermaid-block overflow-x-auto rounded-xl border border-(--ui-tone-neutral-border) p-3"
-      data-streamdown="mermaid-block"
-      dir="ltr"
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    <Surface variant="card" padding="md" className="overflow-x-auto">
+      <div
+        className="mermaid-block"
+        data-streamdown="mermaid-block"
+        dir="ltr"
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    </Surface>
   );
 }
 
@@ -1442,7 +1377,6 @@ function MarkdownCodePath({ path, startLine }: { path: string; startLine?: numbe
         motion="none"
         variant="ghost"
         type="button"
-
         className="markdown-code-path-link"
         tooltip={file.path}
         onClick={() => onOpenFile(file.path, navigation)}
@@ -1450,7 +1384,6 @@ function MarkdownCodePath({ path, startLine }: { path: string; startLine?: numbe
       >
         {path}
       </Button>
-      <FileRevealButton path={file.path} />
     </span>
   );
 }

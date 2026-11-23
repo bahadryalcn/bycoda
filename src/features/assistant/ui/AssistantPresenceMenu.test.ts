@@ -91,7 +91,6 @@ it("allows manual availability while the computer reads Away without claiming He
   await open();
   expect(container.textContent).toContain("Away");
   expect(choice("Here").disabled).toBe(false);
-  expect(choice("Refresh").disabled).toBe(false);
   await act(async () => choice("Here").click());
   expect(port.set).toHaveBeenCalledWith("host-a", "present");
   expect(container.textContent).toContain("Away");

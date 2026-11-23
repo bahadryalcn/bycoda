@@ -1,7 +1,5 @@
-import { Text } from "../../../shared/ui/Text";
 import { truncateCodeUnits } from "../../../shared/lib/text/truncate";
 import { useState, type ReactNode } from "react";
-import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
@@ -113,9 +111,6 @@ export function CrewMemberForm({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <section aria-label={t("Identity")} className="flex min-w-0 flex-col gap-2">
-        <Heading size="section" level={3}>
-          {t("Identity")}
-        </Heading>
         <div className="flex min-w-0 flex-wrap items-start gap-3">
           {identity ? (
             <div className="flex shrink-0 flex-col items-center gap-1">
@@ -169,24 +164,16 @@ export function CrewMemberForm({
         ) : null}
       </section>
       <section aria-label={t("Work")} className="flex min-w-0 flex-col gap-3">
-        <Heading size="section" level={3}>
-          {t("Work")}
-        </Heading>
         {compact ? null : (
-          <div className="flex min-w-0 flex-col items-start gap-2">
-            <Text size="body" tone="inherit" weight="medium">
-              {t("Responsibility in the crew")}
-            </Text>
-            <RadioGroup
-              variant="inline"
-              label={t("Responsibility in the crew")}
-              value={agent.role}
-              options={(["coordinator", "specialist", "reviewer", "advisor"] as const).map(
-                (role) => ({ value: role, label: roleLabel(role) }),
-              )}
-              onValueChange={(role) => onChange({ role: role as CrewRole })}
-            />
-          </div>
+          <RadioGroup
+            variant="inline"
+            label={t("Responsibility in the crew")}
+            value={agent.role}
+            options={(["coordinator", "specialist", "reviewer", "advisor"] as const).map(
+              (role) => ({ value: role, label: roleLabel(role) }),
+            )}
+            onValueChange={(role) => onChange({ role: role as CrewRole })}
+          />
         )}
         <TextareaField
           label={t("Instructions")}

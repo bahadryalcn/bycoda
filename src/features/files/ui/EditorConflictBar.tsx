@@ -3,8 +3,6 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
 
-const iconButton = "shrink-0";
-
 /**
  * The editor's merge-conflict strip: how many blocks are left and a way to
  * step between them, then, once the last one is gone, a way to stage the file.
@@ -37,12 +35,8 @@ export function EditorConflictBar({
     <Button
       size="sm"
       variant="ghost"
-      motion="none"
-      type="button"
-      tooltip={t("Open the next conflicted file")}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onNextFile}
-      className="shrink-0"
     >
       {t("Next file")}
     </Button>
@@ -85,12 +79,8 @@ export function EditorConflictBar({
               iconOnly
               label={t("Previous conflict")}
               variant="ghost"
-              motion="none"
-              type="button"
-              aria-label={t("Previous conflict")}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onPrev}
-              className={iconButton}
             >
               <ChevronUp className="icon-sm" strokeWidth={1.75} />
             </Button>
@@ -99,12 +89,8 @@ export function EditorConflictBar({
               iconOnly
               label={t("Next conflict")}
               variant="ghost"
-              motion="none"
-              type="button"
-              aria-label={t("Next conflict")}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onNext}
-              className={iconButton}
             >
               <ChevronDown className="icon-sm" strokeWidth={1.75} />
             </Button>
@@ -143,13 +129,9 @@ export function EditorConflictBar({
             <Button
               size="sm"
               variant="ghost"
-              motion="none"
-              type="button"
               disabled={marking}
               onMouseDown={(event) => event.preventDefault()}
               onClick={onMarkResolved}
-              tooltip={t("Save the file and stage it")}
-              className="shrink-0"
             >
               {marking ? t("Staging…") : t("Mark resolved")}
             </Button>

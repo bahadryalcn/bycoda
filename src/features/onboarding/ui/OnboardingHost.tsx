@@ -7,7 +7,7 @@ import {
   shouldShowOnboarding,
   type OnboardingContext,
 } from "../model/onboarding";
-import { OPEN_USAGE_GUIDE_EVENT, openUsageGuide } from "../model/usageGuide";
+import { OPEN_USAGE_GUIDE_EVENT } from "../model/usageGuide";
 import {
   highlightTourSteps,
   markHighlightSeen,
@@ -214,11 +214,6 @@ export function OnboardingHost({
       <OnboardingDialog
         onImported={onImported}
         onOpenProject={onOpenProject}
-        onStartGuide={() => {
-          finishOnboarding();
-          // Use the shared request so the shell reveals the workspace too.
-          openUsageGuide();
-        }}
         onFinish={() => {
           finishOnboarding();
           setOpen(false);

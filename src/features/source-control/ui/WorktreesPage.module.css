@@ -66,8 +66,9 @@
 
 .line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 2px 6px;
   min-inline-size: 0;
 }
 

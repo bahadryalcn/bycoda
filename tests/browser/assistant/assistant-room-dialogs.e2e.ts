@@ -52,8 +52,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "More options", exact: true }).click();
       await page.getByRole("menuitem", { name: "Recently deleted", exact: true }).click();
       const trash = page.getByRole("dialog", { name: "Recently deleted", exact: true });
-      await trash.getByRole("button", { name: "More actions", exact: true }).first().click();
-      await page.getByRole("menuitem", { name: "Delete permanently", exact: true }).click();
+      await trash.getByRole("button", { name: "Delete permanently", exact: true }).first().click();
       const purge = page.getByRole("dialog", { name: "Delete permanently?", exact: true });
       await expect(purge).toContainText("This record cannot be restored.");
       await capture("trash-purge");

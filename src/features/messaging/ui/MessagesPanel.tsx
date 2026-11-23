@@ -233,16 +233,17 @@ export function MessagesPanel({
         ) : null}
         {connectedCount > 0 && disconnected.length > 0 ? (
           <div className="flex shrink-0 flex-col gap-1 px-3 py-1">
-            {disconnected.map((account) => (
-              <InlineMessage
-                key={account.id}
-                tone="neutral"
-                live="off"
-                action={{ label: t("Open settings"), onClick: openMessagingSettings }}
-              >
-                {t("{p0} is not connected.", { p0: account.label || account.identity })}
-              </InlineMessage>
-            ))}
+            <InlineMessage
+              tone="neutral"
+              live="off"
+              action={{ label: t("Open settings"), onClick: openMessagingSettings }}
+            >
+              {disconnected.length === 1
+                ? t("{p0} is not connected.", {
+                    p0: disconnected[0].label || disconnected[0].identity,
+                  })
+                : t("{p0} accounts are not connected.", { p0: String(disconnected.length) })}
+            </InlineMessage>
           </div>
         ) : null}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{listBody}</div>

@@ -95,17 +95,11 @@
   min-block-size: var(--ui-control-height-compact);
 }
 .actionSlots {
-  display: grid;
-  grid-template-columns: repeat(4, var(--ui-control-height-compact));
+  display: flex;
   gap: 4px;
   align-items: center;
   margin-inline-start: auto;
   flex-shrink: 0;
-}
-.actionSlot {
-  display: flex;
-  justify-content: flex-end;
-  min-inline-size: 0;
 }
 
 .branchHeader {
@@ -116,16 +110,10 @@
   padding-inline: 6px;
 }
 .branchSlots {
-  display: grid;
-  grid-template-columns: repeat(3, var(--ui-control-height-compact));
+  display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
-}
-.branchSlot {
-  display: flex;
-  justify-content: center;
-  min-inline-size: 0;
 }
 
 @container changes (max-width: 340px) {

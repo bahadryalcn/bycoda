@@ -202,13 +202,6 @@ export function ProviderDefaultsForm({
       id={section === "delegation" ? "models-delegation" : "agent-clis"}
       layout="full"
       title={section === "delegation" ? null : t("New conversation defaults")}
-      description={
-        section === "delegation"
-          ? undefined
-          : inherits
-            ? t("Unset fields use Bycoda defaults. Existing conversations keep their settings.")
-            : t("Applies to new conversations. Existing conversations keep their settings.")
-      }
     >
       {providerControl}
       {scopeControl}
@@ -228,19 +221,6 @@ export function ProviderDefaultsForm({
             <Row
               controlWidth="wide"
               label={t("Model")}
-              description={
-                inherits
-                  ? modelOverride
-                    ? accountId
-                      ? t("Account override. Bycoda default: {p0}", {
-                          p0: modelDisplayName(harness, globalModel),
-                        })
-                      : t("Project override. Bycoda default: {p0}", {
-                          p0: modelDisplayName(harness, globalModel),
-                        })
-                    : t("Uses Bycoda defaults")
-                  : undefined
-              }
               modified={inherits && Boolean(modelOverride)}
               onReset={onModelReset}
               resetLabel={t("Use Bycoda defaults")}
@@ -260,6 +240,10 @@ export function ProviderDefaultsForm({
                   value: item.id,
                   label: item.name,
                   keywords: item.id,
+                  description:
+                    inherits && item.id === current.id && modelOverride
+                      ? t("Bycoda default ({p0})", { p0: modelDisplayName(harness, globalModel) })
+                      : undefined,
                   icon: <ModelLabel model={item.id} harness={harness} iconOnly />,
                 }))}
               />

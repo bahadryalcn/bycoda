@@ -12,7 +12,7 @@
 .summary {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--ui-space-1, 0.25rem);
   min-inline-size: 0;
   list-style: none;
   cursor: pointer;
@@ -130,52 +130,47 @@
   order: 1;
 }
 
-/* step: one transcript line, the whole row toggles, persistent chevron in the chrome ink. The
-   negative margin keeps the label on the caller's gutter while the hover wash overhangs it. */
-@layer components {
-  .root[data-variant="step"],
-  .static {
-    margin-inline: -0.375rem;
-  }
-}
-.root[data-variant="step"] > .summary {
+/* Step rows share the same inset and ink in static and collapsible presentations. */
+.root[data-variant="step"] > .summary,
+.static[data-variant="step"] {
   min-block-size: var(--ui-control-height-xs);
-  padding-inline: 0.375rem;
+  padding-inline: var(--ui-space-2, 0.5rem);
   border-radius: var(--ui-radius-control);
-  color: var(--transcript-ink-chrome, var(--ui-text-secondary));
+  color: var(--ui-quiet-chrome-ink, var(--ui-text-secondary));
   /* A step summary is interface text even inside a monospace log region. */
   font-family: var(--font-sans);
 }
 .root[data-variant="step"] > .summary > .label {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--ui-space-1, 0.25rem);
 }
 /* Hover and focus lift the chrome ink to the body ink, never to emphasis; an open row keeps no wash. */
 @media (hover: hover) and (pointer: fine) {
   .root[data-variant="step"] > .summary:hover {
     background: var(--ui-surface-hover);
-    color: var(--transcript-ink-chrome-active, var(--foreground));
+    color: var(--ui-quiet-chrome-active-ink, var(--foreground));
   }
 }
 .root[data-variant="step"] > .summary:focus-visible {
   outline-offset: calc(var(--ui-focus-width) * -1);
+  color: var(--ui-quiet-chrome-active-ink, var(--foreground));
 }
 .root[data-variant="step"] > .summary > .chevron {
-  color: var(--transcript-ink-chrome, var(--ui-text-muted));
+  color: inherit;
 }
 /* collapsible={false}: the same row geometry as a plain block, no chevron, no toggle. */
 .static {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  gap: var(--ui-space-1, 0.25rem);
   min-inline-size: 0;
-  min-block-size: var(--ui-control-height-xs);
-  padding-inline: 0.375rem;
-  color: var(--transcript-ink-chrome, var(--ui-text-secondary));
-  font-family: var(--font-sans);
+  color: var(--ui-text-secondary);
   font-size: var(--ui-font-body);
   line-height: var(--ui-leading-body);
+}
+.static[data-variant="step"] {
+  color: var(--ui-quiet-chrome-ink, var(--ui-text-secondary));
 }
 .static[data-size="sm"] {
   font-size: var(--ui-font-caption);

@@ -86,6 +86,18 @@ export function VoicePersonaDialog({
       />
     </FieldGroup>
   );
+  const rules = (
+    <TextareaField
+      label={t("Ground rules")}
+      description={t("For example: always answer in English, keep replies under two sentences.")}
+      value={draft.rules}
+      minRows={3}
+      maxRows={8}
+      autosize
+      maxLength={PERSONA_LIMITS.rules}
+      onChange={(event) => change({ rules: event.target.value })}
+    />
+  );
   return (
     <Modal
       title={
@@ -181,23 +193,20 @@ export function VoicePersonaDialog({
           <Disclosure variant="row" chevron="end" summary={t("Tasks")}>
             {tasks}
           </Disclosure>
+        ) : welcome ? (
+          // First run asks for names and tone; tasks and ground rules wait behind one reveal.
+          <Disclosure variant="row" chevron="end" summary={t("More")}>
+            <div className={styles.form}>
+              {tasks}
+              {rules}
+            </div>
+          </Disclosure>
         ) : (
-          tasks
+          <>
+            {tasks}
+            {rules}
+          </>
         )}
-        {!styleOnly ? (
-          <TextareaField
-            label={t("Ground rules")}
-            description={t(
-              "For example: always answer in English, keep replies under two sentences.",
-            )}
-            value={draft.rules}
-            minRows={3}
-            maxRows={8}
-            autosize
-            maxLength={PERSONA_LIMITS.rules}
-            onChange={(event) => change({ rules: event.target.value })}
-          />
-        ) : null}
       </div>
     </Modal>
   );

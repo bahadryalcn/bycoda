@@ -15,13 +15,19 @@
    so a deliberate utility on the content still wins. */
 @layer components {
   .panel {
-    padding: 0.75rem;
+    padding: var(--ui-space-3, 0.75rem);
   }
   .compact {
-    padding: 0.5rem;
+    padding: var(--ui-space-2, 0.5rem);
   }
   .preview {
-    padding: var(--space-3);
+    padding: var(--ui-space-3, var(--space-3));
+  }
+  .floatingFrame,
+  .frame {
+    border-color: var(--ui-floating-edge, var(--ui-pane-border));
+    border-radius: var(--ui-radius-floating, var(--ui-radius-popup));
+    box-shadow: var(--ui-floating-shadow, var(--ui-elevation-floating));
   }
 }
 
@@ -29,20 +35,15 @@
 .frame {
   isolation: isolate;
   overflow: hidden;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-popup);
-  box-shadow: var(--ui-elevation-floating);
+  border-width: 1px;
+  border-style: solid;
 }
 .list {
   max-inline-size: min(var(--popup-max-width), 100vw);
 }
 
-.frame[data-popover-appearance="composer"] {
-  border-color: var(--ui-composer-border);
-}
-
 .listContent {
-  padding: var(--space-1);
+  padding: var(--ui-space-1, var(--space-1));
 }
 
 .nativeFrame {

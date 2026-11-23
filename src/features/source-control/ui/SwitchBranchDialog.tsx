@@ -119,9 +119,9 @@ export function SwitchBranchDialog({
           >
             {t("Cancel")}
           </Button>
-          {/* The action the user is working toward is the primary one: a typed message means commit. */}
+          {/* Emphasis stays on Stash & switch: it must not move under the pointer as the user types. */}
           <Button
-            variant={trimmed ? "primary" : "secondary"}
+            variant="secondary"
             motion="none"
             type="button"
             loading={busy === "commit"}
@@ -137,7 +137,7 @@ export function SwitchBranchDialog({
             {t("Commit & switch")}
           </Button>
           <Button
-            variant={trimmed ? "secondary" : "primary"}
+            variant="primary"
             motion="none"
             type="button"
             loading={busy === "stash"}
@@ -152,9 +152,6 @@ export function SwitchBranchDialog({
       <div aria-busy={Boolean(busy) || generating} className="flex flex-col gap-3">
         {files.length > 0 ? (
           <div className="flex min-w-0 flex-col gap-1">
-            <Text size="caption" tone="secondary">
-              {t("Files in the way")}
-            </Text>
             <Text
               as="div"
               size="micro"
@@ -223,7 +220,6 @@ export function SwitchBranchDialog({
         {error ? (
           <Alert
             tone="danger"
-            title={t("Couldn’t switch to “{p0}”", { p0: branch })}
             extra={fitsOneLine(error) ? undefined : <ErrorDetails detail={error} />}
           >
             {fitsOneLine(error) ? error : errorHeadline(error)}

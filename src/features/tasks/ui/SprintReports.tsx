@@ -288,11 +288,6 @@ export function SprintReports({
             </Heading>
             {report ? <SprintStatusBadge state={report.sprint.state} /> : null}
           </div>
-          {!sprintId ? (
-            <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
-              {t("Choose a sprint to inspect its progress and burndown.")}
-            </Text>
-          ) : null}
         </div>
         <div className="sprint-actions">
           {onChooseSprint && board.sprints.length ? (
@@ -424,16 +419,6 @@ export function SprintReports({
           </section>
           <section className="sprint-section">
             <SectionLabel>{t("Burndown")}</SectionLabel>
-            {report?.sprint.startedAt === undefined ? (
-              <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
-                {t("Start the sprint to record its burndown. Planned scope is shown below.")}
-              </Text>
-            ) : null}
-            {!start || !end ? (
-              <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
-                {t("Set sprint dates to show the ideal burndown line.")}
-              </Text>
-            ) : null}
             {chart.length ? (
               <LineChart
                 label={t("Sprint burndown")}

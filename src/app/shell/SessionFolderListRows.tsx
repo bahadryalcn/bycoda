@@ -3,8 +3,7 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import type { SessionListEntry } from "../../features/sessions/model/sessionFolders";
 import styles from "./Sidebar.module.css";
-import { t, useT } from "../../shared/i18n";
-import { confirmInApp } from "../../shared/model/appConfirm";
+import { useT } from "../../shared/i18n";
 import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { CheckCheck, Clock, Pin } from "../../shared/ui/icons";
 import { FolderRow, FolderRenameRow } from "./SessionFolderRows";
@@ -74,7 +73,6 @@ export function SessionFolderListHeader({
         {renaming ? (
           <FolderRenameRow
             folder={entry.folder}
-            memberCount={entry.allSessions.length}
             onCommit={onRenameCommit}
             onCancel={onRenameCancel}
           />
@@ -99,18 +97,6 @@ export function SessionFolderListHeader({
       </div>
     </li>
   );
-}
-
-/** Asks before archiving every session on the Settled shelf; archiving can be undone. */
-function confirmArchiveAll(count: number): Promise<boolean> {
-  return confirmInApp({
-    title: t("Archive {p0} settled sessions?", { p0: count }),
-    message: t(
-      "They move to Archive and leave the list. You can restore them from Archive at any time.",
-    ),
-    confirmLabel: t("Archive {p0} sessions", { p0: count }),
-    tone: "normal",
-  });
 }
 
 /**
@@ -148,7 +134,7 @@ export function SessionGroupListRow({
   const t = useT();
   const [menu, setMenu] = useState<{ x: number; y: number } | HTMLElement | null>(null);
   const reminders = entry.kind === "reminders";
-  const name = reminders ? "Reminders" : entry.kind === "settled" ? t("Settled") : t("Pinned");
+  const name = reminders ? t("Reminders") : entry.kind === "settled" ? t("Settled") : t("Pinned");
   const sessions: SessionSummary[] =
     entry.kind === "pinned"
       ? [...entry.folders.flatMap((folder) => folder.allSessions), ...entry.sessions]
@@ -169,10 +155,7 @@ export function SessionGroupListRow({
   const onPick = (id: string) => {
     setMenu(null);
     if (id === "delete-all") onDeleteAll?.(ids);
-    else if (id === "archive-all")
-      void confirmArchiveAll(ids.length)
-        .then((confirmed) => confirmed && onArchiveAll?.(ids))
-        .catch(() => undefined); // -- an unavailable dialog denies; nothing was archived.
+    else if (id === "archive-all") onArchiveAll?.(ids);
   };
   return (
     <li

@@ -12,7 +12,6 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
-import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
 import { useT, type LanguageDomain } from "../i18n";
 import { useT as useGitT } from "../i18n/git";
 import { useT as useTechnicalT } from "../i18n/technical";
@@ -25,6 +24,7 @@ import {
   DIALOG_BODY_PADDING_CLASS_NAME,
   DIALOG_FOOTER_CLASS_NAME,
 } from "./Modal";
+import { floatingFrameClassName, PopupBackdrop } from "./NativePopupHost";
 import {
   OverlayMenuLayer,
   OverlayParent,
@@ -73,7 +73,7 @@ export type SheetProps = {
    * nearest positioned ancestor (a pane); Escape closes it only when focus is in that pane.
    */
   anchor?: "viewport" | "container";
-  /** Non-modal only. `canvas` fits an inline workspace pane; `chat` uses the chat canvas. */
+  /** Non-modal container sheets can inherit the workspace or chat pane ground. */
   surface?: "floating" | "canvas" | "chat";
   /** Non-modal only: `false` keeps the sheet mounted but inert and hidden from Escape. */
   open?: boolean;
@@ -135,7 +135,7 @@ export type SheetProps = {
   languageDomain?: LanguageDomain;
   /** Classes on the sheet surface (`section`). */
   className?: string;
-  /** Extra classes on the floating glass layer (the shared `popover-backdrop` stays). */
+  /** Extra classes on the floating backdrop. The shared ground stays opaque. */
   glassClassName?: string;
   /** Classes on the content column inside the glass. */
   bodyClassName?: string;
@@ -191,7 +191,7 @@ function useContainerFocusReturn(sheet: RefObject<HTMLElement | null>, active: b
 /**
  * A side or bottom sheet. Modal sheets reuse Modal; both share the body `padding` rule. Non-modal sheets are
  * side panels that keep the page usable (session sub-panels, the notification list). Header is the
- * shared PanelHeader. Non-modal sheets use floating glass by default and can use the chat canvas.
+ * shared PanelHeader. Detached sheets use the floating frame. Docked sheets use the host canvas.
  * Hand-written side and bottom overlay panels; header, close, padding and footer reuse Modal chrome.
  * @group overlay
  * @use A detail or secondary panel beside or below the work (task detail, notifications).
@@ -370,7 +370,7 @@ function NonModalSheet({
       iconOnly
       size="sm"
       label={closeText}
-      tooltip={closeText}
+      shortcut="Esc"
       variant="ghost"
       onClick={onClose}
     >
@@ -378,16 +378,20 @@ function NonModalSheet({
     </Button>
   );
   const fillsPane = end && !viewport && expanded;
+  const docked = !viewport && fill !== "floating";
   const sized = width !== undefined ? width : size;
+  const endCap = "min(100%, max(20rem, 94%))";
   const sizeStyle: CSSProperties = fillsPane
     ? { inlineSize: "100%" }
     : sized === undefined
       ? end
-        ? { inlineSize: "min(34rem, 94%)" }
+        ? { inlineSize: `min(34rem, ${endCap})` }
         : {}
       : end
-        ? { inlineSize: `min(${cssSize(sized)}, 94%)` }
+        ? { inlineSize: `min(${cssSize(sized)}, ${endCap})` }
         : { blockSize: cssSize(sized) };
+  const blockInset = (value: number | string | undefined) =>
+    typeof value === "string" ? value : `${value ?? 0}px`;
   const position: CSSProperties = viewport
     ? end
       ? {
@@ -401,6 +405,7 @@ function NonModalSheet({
           position: "fixed",
           insetInline: 0,
           insetBlockEnd: inset?.bottom ?? 0,
+          maxBlockSize: `max(0px, calc(100dvh - ${blockInset(inset?.top)} - ${blockInset(inset?.bottom)}))`,
           marginInline: "auto",
           zIndex: layer,
         }
@@ -410,14 +415,19 @@ function NonModalSheet({
           position: "absolute",
           insetInline: 0,
           insetBlockEnd: 0,
+          maxBlockSize: "100%",
           marginInline: "auto",
         };
   const frame =
-    fill === "canvas"
-      ? ""
+    docked
+      ? end
+        ? "border-s border-(--ui-pane-border)"
+        : "border-t border-(--ui-pane-border)"
       : end
-        ? `border-s border-(--ui-pane-border) ${viewport ? "" : "rounded-s-(--ui-radius-popup)"}`
-        : "w-full max-w-4xl rounded-t-(--ui-radius-popup) border border-b-0 border-(--ui-pane-border)";
+        ? viewport
+          ? "rounded-none border-s"
+          : "rounded-e-none border-s"
+        : "w-full max-w-4xl rounded-b-none border border-b-0";
 
   const surface = (
     <section
@@ -432,24 +442,25 @@ function NonModalSheet({
       data-sheet-side={side}
       data-sheet-motion={motion}
       data-sheet-surface={fill}
+      data-sheet-docked={docked || undefined}
       data-state={open ? "open" : "closed"}
       // A closed sheet a caller keeps mounted (to keep its content) must not stay painted.
       hidden={!open}
       style={{ ...position, ...sizeStyle }}
       className={[
         styles.sheet,
-        "isolate flex flex-col outline-none",
-        fill !== "canvas" && "shadow-(--ui-elevation-floating)",
+        "isolate flex min-h-0 flex-col outline-none",
+        !docked && floatingFrameClassName,
         frame,
         className,
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      {fill === "floating" ? (
-        <GlassBackdrop
-          ref={glassRef}
-          className={["popover-backdrop", glassClassName].filter(Boolean).join(" ")}
+      {!docked ? (
+        <PopupBackdrop
+          ref={fill === "floating" ? glassRef : undefined}
+          className={fill === "floating" ? glassClassName : undefined}
         />
       ) : null}
       {resizable && end && !fillsPane ? (
@@ -497,7 +508,7 @@ function NonModalSheet({
         ref={bodyRef}
         {...optionalTextAttributes(bodyText ?? {})}
         className={[
-          "relative z-[1] flex h-full min-h-0 flex-col text-(--ui-tone-neutral-fg)",
+          "relative z-[1] flex min-h-0 flex-1 flex-col text-(--ui-tone-neutral-fg)",
           optionalTextAttributes(bodyText ?? {}, bodyClassName).className,
         ]
           .filter(Boolean)
@@ -534,9 +545,12 @@ function NonModalSheet({
             titleId={titleId}
             context={context}
             description={description}
-            actions={headerActions}
-            onClose={onClose}
-            closeLabel={closeText}
+            actions={
+              <>
+                {headerActions}
+                {closeAction}
+              </>
+            }
           />
         )}
         {headerBelow ? <div className="shrink-0 px-4 pb-2">{headerBelow}</div> : null}
@@ -553,7 +567,7 @@ function NonModalSheet({
             (padding ?? (scroll === "none" ? "none" : "md")) === "md"
               ? DIALOG_BODY_PADDING_CLASS_NAME
               : "",
-            `border-t ${scrolled ? "border-(--ui-tone-neutral-border)" : "border-transparent"}`,
+            `border-t ${scrolled ? "border-(--ui-pane-border)" : "border-transparent"}`,
           ]
             .filter(Boolean)
             .join(" ")}

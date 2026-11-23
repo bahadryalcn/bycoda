@@ -139,23 +139,12 @@ export function AssistantNotificationRecovery({
             value={choice}
             options={projectOptions}
             disabled={busy || source !== "registered"}
-            onChange={setChoice}
-          />
-          <Button
-            variant="secondary"
-            startIcon={<RefreshCw className="icon-sm" />}
-            loading={busy || (expanded && source === "pending")}
-            loadingLabel={
-              source === "pending" ? t("Checking Room registration…") : t("Check notifications")
-            }
-            size="sm"
-            disabled={!choice || busy || source !== "registered"}
-            onClick={() => {
-              void read(choice).catch((cause) => setError(actionError(cause)));
+            onChange={(projectId) => {
+              // Choosing the project is the only input; the read follows it directly.
+              setChoice(projectId);
+              if (projectId) void read(projectId).catch((cause) => setError(actionError(cause)));
             }}
-          >
-            {t("Check notifications")}
-          </Button>
+          />
         </div>
         {error ? <InlineError>{error}</InlineError> : null}
         {selected && !busy && !error && rows.length === 0 ? (

@@ -116,12 +116,12 @@ describe("PeopleTable", () => {
     renderTable();
     const [adaRow, graceRow] = Array.from(document.querySelectorAll("tbody tr"));
     expect(adaRow!.querySelector('[aria-label="X"]')).not.toBeNull();
-    expect(adaRow!.querySelector('[role="meter"]')?.getAttribute("aria-valuenow")).toBe("87");
+    expect(adaRow!.querySelector('[role="meter"]')).toBeNull();
     expect(adaRow!.textContent).toContain("New");
     expect(adaRow!.textContent).toContain("87");
     expect(adaRow!.textContent).toContain("vip");
 
-    expect(graceRow!.textContent).toContain("No account");
+    expect(graceRow!.textContent).not.toContain("No account");
     expect(graceRow!.textContent).toContain("–");
     expect(graceRow!.textContent).toContain("alpha");
     expect(graceRow!.textContent).toContain("bravo");
@@ -140,7 +140,7 @@ describe("PeopleTable", () => {
 
   it("keeps the Host order and offers no sort while more pages remain", () => {
     renderTable({ people: [grace, ada], hasMore: true });
-    expect(document.body.textContent).toContain("Load all people to sort.");
+    expect(document.body.textContent).not.toContain("Load all people to sort.");
     expect(document.querySelector('[aria-label="Sort by Name"]')).toBeNull();
     expect(document.querySelector('[aria-label="Sort by Score"]')).toBeNull();
     expect(firstRowCell()?.textContent).toContain("Grace");
@@ -189,7 +189,7 @@ it("reserves intrinsic categorical cells and bounds long identities with full va
     "content",
   );
   expect(table.querySelector('tbody td[data-label="Status"]')?.textContent).toBe("New");
-  expect(table.querySelector('tbody td[data-label="Accounts"]')?.textContent).toBe("No account");
+  expect(table.querySelector('tbody td[data-label="Accounts"]')?.textContent).toBe("–");
   expect(table.querySelector("tbody td[data-primary]")?.textContent).toContain(name);
   expect(table.querySelector("tbody td[data-primary]")?.textContent).toContain(address);
 });

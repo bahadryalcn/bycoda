@@ -54,7 +54,6 @@ export function AccountStatus({
       label={t("Reason (optional)")}
       maxLength={500}
       minRows={2}
-      placeholder={t("Tell us why you are leaving. It helps us improve bycoda.")}
       onChange={(event) => {
         reason.current = event.currentTarget.value;
       }}
@@ -104,25 +103,21 @@ export function AccountStatus({
             </Button>
           </Row>
         ) : (
-          <>
-            <Row
-              label={t("Deactivate account")}
-              descriptionVisible
-              description={t(
-                "Keeps your data, signs all your devices out and silences notifications. You can reactivate any time.",
-              )}
+          <Row
+            label={t("Deactivate account")}
+            descriptionVisible
+            description={t("Keeps your data. You can reactivate any time.")}
+          >
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={busy}
+              disabled={Boolean(deletion)}
+              onClick={() => deactivate().catch(() => undefined)}
             >
-              <Button
-                variant="secondary"
-                size="sm"
-                loading={busy}
-                disabled={Boolean(deletion)}
-                onClick={() => deactivate().catch(() => undefined)}
-              >
-                {t("Deactivate…")}
-              </Button>
-            </Row>
-          </>
+              {t("Deactivate…")}
+            </Button>
+          </Row>
         )}
       </Group>
       <Group title={null}>
@@ -147,10 +142,9 @@ export function AccountStatus({
           <Row
             label={t("Delete account")}
             descriptionVisible
-            description={t(
-              "Removes everything bycoda stores about you. You have {p0} days to change your mind.",
-              { p0: DELETION_GRACE_DAYS },
-            )}
+            description={t("You have {p0} days to change your mind.", {
+              p0: DELETION_GRACE_DAYS,
+            })}
           >
             <Button
               tone="danger"

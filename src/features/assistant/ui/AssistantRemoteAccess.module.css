@@ -1,7 +1,7 @@
 /* Remote Room access dialog: a quiet status line, two aligned field pairs, then notices. */
 .body {
   display: grid;
-  gap: 16px;
+  gap: var(--ui-space-4);
   min-inline-size: 0;
 }
 .status,
@@ -11,7 +11,7 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-  gap: 16px;
+  gap: var(--ui-space-4);
   align-items: start;
   min-inline-size: 0;
 }
@@ -21,7 +21,7 @@
 /* The original request that still needs inspecting is a thin frame, not a card. */
 .request {
   display: grid;
-  gap: 8px;
+  gap: var(--ui-space-2);
   justify-items: start;
   min-inline-size: 0;
 }
@@ -36,11 +36,11 @@
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 .identity {
   display: grid;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .identity p {

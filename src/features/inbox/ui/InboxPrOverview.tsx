@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { DiffStat } from "../../../shared/ui/DiffStat";
 import { Text } from "../../../shared/ui/Text";
 import { InboxLoadError } from "./InboxLoadError";
@@ -7,7 +6,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { ClampText } from "../../../shared/ui/ClampText";
-import { surfaceAttributes, Surface } from "../../../shared/ui/Surface";
+import { Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { useMemo, useState } from "react";
 import { ChevronRight } from "../../../shared/ui/icons";
@@ -136,12 +135,7 @@ export function InboxDescriptionSummary({
         onClick={() => setExpanded((current) => !current)}
         className="self-start"
       >
-        {expanded ? t("Show less") : t("Show full description")}
-        {!expanded && excerpt.images > 0 ? (
-          <Text size="inherit" tone="secondary">
-            · {excerpt.images} {excerpt.images === 1 ? t("image") : t("images")}
-          </Text>
-        ) : null}
+        {expanded ? t("Show less") : t("Show more")}
       </Button>
     </Surface>
   );
@@ -160,7 +154,6 @@ export function InboxPrChangesGlance({
 }) {
   useLocale();
   const files = diff?.files ?? [];
-  const maxChurn = Math.max(1, ...files.map((file) => file.additions + file.deletions));
   const shown = files.slice(0, GLANCE_FILES);
 
   return (
@@ -208,9 +201,6 @@ export function InboxPrChangesGlance({
             const slash = file.path.lastIndexOf("/");
             const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
             const name = file.path.slice(slash + 1);
-            const churn = file.additions + file.deletions;
-            const width = Math.max(8, Math.round((churn / maxChurn) * 48));
-            const added = churn > 0 ? (file.additions / churn) * width : 0;
             return (
               <li key={file.path}>
                 <Button
@@ -235,27 +225,6 @@ export function InboxPrChangesGlance({
                       {name}
                     </Text>
                   </Text>
-                  <span
-                    aria-hidden
-                    {...surfaceAttributes(
-                      { radius: "pill" },
-                      "flex h-1.5 shrink-0 overflow-hidden @max-[420px]/linked:hidden [width:var(--layout-width)]",
-                    )}
-                    style={
-                      {
-                        "--layout-width": width === undefined ? undefined : width + "px",
-                      } as CSSProperties
-                    }
-                  >
-                    <span
-                      {...surfaceAttributes(
-                        { variant: "diff-add" },
-                        "shrink-0 [width:var(--layout-added-width)]",
-                      )}
-                      style={{ "--layout-added-width": `${added}px` } as CSSProperties}
-                    />
-                    <span {...surfaceAttributes({ variant: "diff-delete" }, "flex-1")} />
-                  </span>
                   <DiffStat
                     additions={file.additions}
                     deletions={file.deletions}

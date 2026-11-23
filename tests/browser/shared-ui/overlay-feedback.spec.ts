@@ -1,4 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
+import {
+  PANE_MATRIX,
+  countVisibleMessages,
+  expectAnnouncedOnce,
+  expectFailureShownOnce,
+  expectLayoutContracts,
+  openPane,
+  watchAnnouncements,
+} from "../support/uiLayoutAssertions";
 
 declare global {
   interface Window {
@@ -544,3 +553,65 @@ test.describe("feedback behavior", () => {
     }
   });
 });
+
+// Runtime layout contracts for feedback surfaces inside a real 320 px pane.
+for (const { theme, width } of PANE_MATRIX)
+  test(`feedback surfaces keep their layout contracts in a 320px pane ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`${URL}?view=pane&theme=${theme}`);
+    await openPane(page, { theme, width, pane: '[data-pane="feedback"]' });
+    await expectLayoutContracts(page, {
+      surface: "feedback alerts, inline message and empty state (320px pane)",
+      root: '[data-pane="feedback"]',
+      // The unbroken remote machine name is deliberately longer than the pane: it must wrap or
+      // truncate, never push the dismiss control out of the alert.
+      allow: {},
+    });
+  });
+
+for (const { theme, width } of PANE_MATRIX)
+  test(`one failed operation shows and announces its message once ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`${URL}?view=operations&theme=${theme}`);
+    const message = "Could not save the file.";
+    const history = ['[data-testid="history"]'];
+    const surface = "failed operation toast";
+    await watchAnnouncements(page, message);
+    await page.getByRole("button", { name: "Fail operation A", exact: true }).click();
+    await expectFailureShownOnce(page, { surface, message, history });
+    await expectAnnouncedOnce(page, surface);
+    // Retry updates the same operation in place: still one visible message, one more announcement
+    // is not allowed to stack a second card.
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect.poll(() => counter(page, "retry-a")).toBe(1);
+    await expectFailureShownOnce(page, { surface: `${surface} after retry`, message, history });
+    // The stored history line stays silent: it is never counted as a notice.
+    expect(await countVisibleMessages(page, { surface, message })).toBe(2);
+    // A second, distinct operation with identical copy keeps its own card and its own Retry.
+    await page.getByRole("button", { name: "Fail operation B", exact: true }).click();
+    await expectFailureShownOnce(page, {
+      surface: `${surface} (two operations)`,
+      message,
+      history,
+      expected: 2,
+    });
+    const retries = page.locator("[data-toast-stack]").getByRole("button", {
+      name: "Retry",
+      exact: true,
+    });
+    await expect(retries).toHaveCount(2);
+    await retries.last().click();
+    await expect.poll(() => counter(page, "retry-b")).toBe(1);
+    expect(await counter(page, "retry-a")).toBe(1);
+    await expectFailureShownOnce(page, {
+      surface: `${surface} (two operations after retry)`,
+      message,
+      history,
+      expected: 2,
+    });
+  });

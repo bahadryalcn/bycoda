@@ -105,8 +105,4 @@ export type PhonePairingLinkProps = {
 
 export type PhonePairingLinkStatus = "idle" | "pending" | "error";
 
-export type PhonePairingCopyProps = {
-  code: MobilePairingCode;
-};
-
 export type PhonePairingCopyStatus = "idle" | "pending" | "success" | "error";

@@ -32,7 +32,8 @@ function InboxMediaContent({ src, alt }: Props) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [expanded, setExpanded] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const label = alt?.trim() || src;
+  // The authenticated source URL is never link text; it appears only through "Open in browser".
+  const label = alt?.trim() || t("Attachment");
 
   // Load authenticated bytes through the owning native route; retire blobs and stale responses.
   useEffect(() => {

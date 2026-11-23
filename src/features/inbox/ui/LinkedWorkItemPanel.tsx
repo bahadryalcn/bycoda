@@ -5,7 +5,6 @@ import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Sash } from "../../../shared/ui/Sash";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -109,22 +108,17 @@ export function LinkedWorkItemPanel({
         label={t("Resize linked {p0} panel", { p0: kindLabel })}
         className="absolute inset-y-0 -left-px"
       />
-      <PaneHeader
-        as="header"
-        titleAs="div"
-        title={t("Linked {p0} #{p1}", { p0: kindLabel, p1: target.number })}
-        actions={
-          <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            label={t("Close {p0} panel", { p0: kindLabel })}
-            onClick={onClose}
-          >
-            <X className="icon-sm" strokeWidth={1.75} />
-          </Button>
-        }
-      />
+      {/* The detail's own identity row (kind, reference, status) is the one header; the close button sits at its end. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        iconOnly
+        label={t("Close {p0} panel", { p0: kindLabel })}
+        onClick={onClose}
+        className="absolute end-2 top-1 z-10"
+      >
+        <X className="icon-sm" strokeWidth={1.75} />
+      </Button>
       <div className="min-h-0 min-w-0 flex-1">
         {item ? (
           <InboxDetail

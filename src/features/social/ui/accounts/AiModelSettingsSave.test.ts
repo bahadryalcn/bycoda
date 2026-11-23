@@ -170,7 +170,6 @@ it("shows the failure and does not refresh when the Host refuses the model", asy
 it("says a platform with no model of its own uses the all-accounts one", async () => {
   mount(vi.fn());
   await chooseScope("X");
-  expect(element.textContent).toContain("AI uses this model to write replies, plans and reports.");
   expect(agent().value).toBe("");
   expect(element.textContent).toContain("Use the all-accounts model");
 });

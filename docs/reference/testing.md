@@ -145,6 +145,19 @@ every legacy config manually is not the canonical full suite. New files need one
 default owner in the manifest; browser/theme/viewport repetitions inside the spec
 remain deliberate coverage. Tests are not deleted to make an inventory pass.
 
+### Layout and message contracts
+
+`tests/browser/support/uiLayoutAssertions.ts` holds the shared runtime contracts for UI
+surfaces. `openPane` puts a surface in a real 320 px pane inside an 800 or 1280 px window in
+both themes. `expectLayoutContracts` then checks, with geometry measured after fonts and
+animation frames settle: no overflow, no clipped actionable content, no overlapping unrelated
+actions (with a hit test), and spacing (8 px between independent controls, 4 px glyph to label,
+0 px in a joined group). `expectFailureShownOnce`, `watchAnnouncements` and
+`expectAnnouncedOnce` count the visible messages and live-region announcements of one failed
+operation. A surface that legitimately differs declares an exception with a selector and a written
+reason, which silences that one check only; never weaken a contract to make a suite pass. Add a
+new surface to the existing owning spec rather than a new file.
+
 Before changing selection, capture the existing actual discovery and compare it:
 
 ```sh

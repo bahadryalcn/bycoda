@@ -50,7 +50,9 @@ export function VoiceChoiceCard({
     setDraftError("");
     if (!owner) return;
     if (!writeQuestionDraft(owner.scope, choice.prompt, owner.formDraft, true).ok) {
-      setDraftError("This question draft could not be restored. Keep the original card and retry.");
+      setDraftError(
+        t("This question draft could not be restored. Keep the original card and retry."),
+      );
       return;
     }
     return subscribeQuestionDraftCapacity(() => {
@@ -69,10 +71,9 @@ export function VoiceChoiceCard({
   if (restored.error || draftError)
     return (
       <div ref={root}>
-        <InlineError>{t(restored.error ?? draftError)}</InlineError>
-        <Button size="sm" onClick={() => setEpoch((value) => value + 1)}>
-          {t("Retry")}
-        </Button>
+        <InlineError retry={{ onRetry: () => setEpoch((value) => value + 1), label: t("Retry") }}>
+          {t(restored.error ?? draftError)}
+        </InlineError>
       </div>
     );
   return (

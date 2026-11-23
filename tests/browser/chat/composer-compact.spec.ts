@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+import { PANE_MATRIX, expectLayoutContracts, openPane } from "../support/uiLayoutAssertions";
 
 // Fixture evidence for the composer reading mode (V2-001). Captures are written
 // only when V2_CAPTURE is set; the assertions always run.
@@ -1236,3 +1237,105 @@ for (const theme of ["light", "dark"])
         path: `temp/verification/session-last-interactions/pane-${theme}-${width}.png`,
       });
     });
+
+// Runtime layout contracts for the composer in a real 320 px pane, in both themes at both window
+// sizes. The session pane becomes the 320 px pane; the dock must fit it without clipping.
+for (const { theme, width } of PANE_MATRIX)
+  test(`composer dock keeps its layout contracts in a 320px pane ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(url({}, theme === "light"));
+    await expect(field(page)).toBeVisible();
+    await openPane(page, { theme, width, pane: "main[data-integrated-session]" });
+    await expectLayoutContracts(page, {
+      surface: "composer dock (320px pane)",
+      root: "[data-session-composer]",
+      allow: {
+        overflow: [
+          {
+            selector: ".cm-scroller, textarea",
+            reason: "The draft field scrolls its own long text vertically inside the editor.",
+          },
+        ],
+      },
+    });
+  });
+
+// Composer contract: at 800 px the machine, checkout and branch chips show readable labels, and the
+// access shield is icon-only for every mode. Chips are the buttons of the workspace controls.
+for (const { theme, width } of PANE_MATRIX.filter((entry) => entry.width === 800))
+  test(`composer workspace chips show readable labels at 800px ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(url({ workspaceChips: "1" }, theme === "light"));
+    const controls = page.locator("[data-composer-workspace-controls]");
+    await expect(controls).toBeVisible();
+    await expect(controls.getByRole("button", { name: /^Run on:/ })).toHaveText("This computer");
+    await expect(controls.getByRole("button", { name: "Workspace Current checkout" })).toBeVisible();
+    await expect(controls.getByRole("button", { name: "Branch main", exact: true })).toBeVisible();
+    const chips = await controls.locator("button, [role='combobox']").evaluateAll((nodes) =>
+      nodes
+        .filter((node) => node.getBoundingClientRect().width > 0)
+        .map((node) => {
+          const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+          let text = "";
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) text += n.textContent ?? "";
+          const label = text.replace(/\s+/g, " ").trim();
+          const box = node.getBoundingClientRect();
+          return {
+            name: node.getAttribute("aria-label") ?? label,
+            label,
+            width: box.width,
+            clipped: node.scrollWidth > node.clientWidth + 1,
+          };
+        }),
+    );
+    expect(chips.length, "workspace controls render their chips").toBeGreaterThanOrEqual(3);
+    for (const chip of chips) {
+      expect(chip.label.length, `chip "${chip.name}" shows a readable label, not an icon alone`)
+        .toBeGreaterThan(0);
+      expect(chip.clipped, `chip "${chip.name}" label is not clipped`).toBe(false);
+    }
+  });
+
+test("the access shield stays icon-only for every mode", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.goto(url());
+  const trigger = page.locator("[data-access-picker-trigger]");
+  await expect(trigger).toBeVisible();
+  const iconOnly = () =>
+    trigger.evaluate((node) => ({
+      text: (node.textContent ?? "").replace(/\s+/g, " ").trim(),
+      glyphs: node.querySelectorAll("svg").length,
+      name: node.getAttribute("aria-label") ?? "",
+    }));
+  const check = async (mode: string) => {
+    const state = await iconOnly();
+    expect(state.text, `access shield (${mode}) shows no text`).toBe("");
+    expect(state.glyphs, `access shield (${mode}) shows its icon`).toBeGreaterThan(0);
+    expect(state.name.length, `access shield (${mode}) keeps an accessible name`).toBeGreaterThan(0);
+  };
+  await check("initial");
+  await trigger.click();
+  const options = page.locator("[data-access-picker]").getByRole("option");
+  const count = await options.count();
+  expect(count, "the access menu lists every mode").toBeGreaterThan(1);
+  await page.keyboard.press("Escape");
+  const selectedNames = new Set<string>();
+  for (let index = 0; index < count; index++) {
+    await trigger.click();
+    const option = page.locator("[data-access-picker]").getByRole("option").nth(index);
+    const mode = (await option.textContent())?.trim() ?? String(index);
+    if (await option.isDisabled()) {
+      await page.keyboard.press("Escape");
+      continue;
+    }
+    await option.click();
+    await check(mode);
+    selectedNames.add((await trigger.getAttribute("aria-label")) ?? "");
+    await trigger.click();
+    await expect(options.nth(index)).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Escape");
+  }
+  expect(selectedNames.size).toBeGreaterThan(1);
+});

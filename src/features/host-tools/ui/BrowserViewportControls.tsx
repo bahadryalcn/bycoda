@@ -3,7 +3,7 @@ import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
-import { RefreshCw } from "../../../shared/ui/icons";
+import { RotateCcw } from "../../../shared/ui/icons";
 
 type Viewport = { width: number; height: number };
 const presets = [
@@ -37,6 +37,10 @@ export function BrowserViewportControls({
   const value = `${viewport.width}x${viewport.height}`;
   const changed = next.width !== viewport.width || next.height !== viewport.height;
   const canRotate = viewport.height <= 2560 && viewport.width <= 2160;
+  // Enter and leaving a field apply the draft; presets and Rotate apply at once.
+  const apply = () => {
+    if (!disabled && valid && changed) onResize(next);
+  };
   return (
     <section className="host-browser-viewport-content" aria-label={t("Browser viewport")}>
       <Select
@@ -62,7 +66,7 @@ export function BrowserViewportControls({
         className="host-browser-viewport-fields"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!disabled && valid && changed) onResize(next);
+          apply();
         }}
       >
         <TextField
@@ -74,7 +78,9 @@ export function BrowserViewportControls({
           step={1}
           value={width}
           disabled={disabled}
+          error={width !== "" && !valid ? t("Width: 240–2560 px. Height: 240–2160 px.") : undefined}
           onChange={(event) => setWidth(event.target.value)}
+          onBlur={apply}
         />
         <TextField
           label={t("Height")}
@@ -85,6 +91,7 @@ export function BrowserViewportControls({
           value={height}
           disabled={disabled}
           onChange={(event) => setHeight(event.target.value)}
+          onBlur={apply}
         />
         <Button
           type="button"
@@ -92,26 +99,10 @@ export function BrowserViewportControls({
           iconOnly
           label={t("Rotate viewport")}
           disabled={disabled || !canRotate}
-          disabledReason={disabledReason ?? t("Viewport dimensions must fit the supported limits.")}
-          tooltipDetails={[`${viewport.height} × ${viewport.width}`]}
+          disabledReason={disabledReason}
           onClick={() => onResize({ width: viewport.height, height: viewport.width })}
         >
-          <RefreshCw className="icon-sm" aria-hidden />
-        </Button>
-        <Button
-          type="submit"
-          variant="secondary"
-          size="sm"
-          disabled={disabled || !valid || !changed}
-          disabledReason={
-            disabledReason ??
-            (!valid
-              ? t("Width: 240–2560 px. Height: 240–2160 px.")
-              : t("Viewport already uses these dimensions."))
-          }
-          tooltip={t("Change page dimensions to test responsive layouts.")}
-        >
-          {t("Apply")}
+          <RotateCcw className="icon-sm" aria-hidden />
         </Button>
       </form>
     </section>

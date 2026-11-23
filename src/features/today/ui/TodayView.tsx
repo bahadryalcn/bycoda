@@ -298,7 +298,7 @@ function ProjectTable({ data }: { data: TodayData }) {
           label: t("Project"),
           sortable: true,
           render: (_, row) => (
-            <Tooltip label={row.path || todayLabel(row.label)} asChild>
+            <Tooltip label={row.path || undefined} asChild>
               <span>{todayLabel(row.label)}</span>
             </Tooltip>
           ),

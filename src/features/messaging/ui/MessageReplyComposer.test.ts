@@ -149,7 +149,7 @@ describe("MessageReplyComposer", () => {
     expect(readReplyDraft(key).body).toBe("");
   });
 
-  it("does not repeat a Slack thread title in the reply hint, but keeps the Teams destination", () => {
+  it("shows no destination hint for chat providers, and an email address only when the header lacks it", () => {
     render(vi.fn());
     expect(container.textContent).not.toContain("#general");
     expect(container.textContent).not.toContain("Sends to");
@@ -162,8 +162,28 @@ describe("MessageReplyComposer", () => {
         }),
       ),
     );
-    expect(container.textContent).toContain("Sends to this Teams chat");
+    expect(container.textContent).not.toContain("Sends to");
     expect(container.textContent).not.toContain("Design sync");
+    act(() =>
+      root.render(
+        createElement(MessageReplyComposer, {
+          thread: { ...thread, provider: "email", participants: ["Ada <ada@example.com>"] },
+          replyAddress: "ada@example.com",
+          onSent: vi.fn(),
+        }),
+      ),
+    );
+    expect(container.textContent).not.toContain("Reply to ada@example.com");
+    act(() =>
+      root.render(
+        createElement(MessageReplyComposer, {
+          thread: { ...thread, provider: "email", participants: ["Ada"] },
+          replyAddress: "ada@example.com",
+          onSent: vi.fn(),
+        }),
+      ),
+    );
+    expect(container.textContent).toContain("Reply to ada@example.com");
   });
 
   it("does not send an empty draft", async () => {

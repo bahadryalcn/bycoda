@@ -10,7 +10,7 @@ import {
   t,
   useLocale,
 } from "../../../shared/i18n";
-import { Group, Row, Select, SettingsFeedback } from "../../../shared/ui/settings";
+import { AdvancedSettings, Group, Row, Select, SettingsFeedback } from "../../../shared/ui/settings";
 
 export function LanguageSettings() {
   useLocale();
@@ -34,7 +34,6 @@ export function LanguageSettings() {
       <Row
         id="interface-language"
         label={t("Application language")}
-        description={t("Changes apply immediately. Your conversations and drafts are preserved.")}
         feedback={
           pending || error ? (
             <SettingsFeedback state={error ? "error" : "loading"} immediate>
@@ -54,8 +53,10 @@ export function LanguageSettings() {
           disabled={pending}
         />
       </Row>
-      <DomainLanguageRow domain="git" />
-      <DomainLanguageRow domain="technical" />
+      <AdvancedSettings settingIds={["git-language", "technical-language"]} keepMounted>
+        <DomainLanguageRow domain="git" />
+        <DomainLanguageRow domain="technical" />
+      </AdvancedSettings>
     </Group>
   );
 }

@@ -63,7 +63,6 @@ export function FolderRow({
       type="button"
       tooltip={folder.name}
       tooltipWhen="overflow"
-      tooltipDetails={[busy ? t("Working") : null, needsApproval ? t("Needs input") : null]}
       tooltipWide
       data-folder-row=""
       expanded={expanded}
@@ -155,7 +154,6 @@ export function FolderRow({
         {onNewSession ? (
           <InlineAction
             label={newSessionLabel}
-            tooltipDetails={[folder.name]}
             motion="none"
             type="button"
             data-no-drag
@@ -170,7 +168,6 @@ export function FolderRow({
           <InlineMoreAction
             label={t("Actions for {p0}", { p0: folder.name })}
             tooltip={t("More actions")}
-            tooltipDetails={[folder.name]}
             motion="none"
             type="button"
             data-no-drag
@@ -186,12 +183,10 @@ export function FolderRow({
 
 export function FolderRenameRow({
   folder,
-  memberCount,
   onCommit,
   onCancel,
 }: {
   folder: SessionFolder;
-  memberCount: number;
   onCommit: (name: string) => void;
   onCancel: () => void;
 }) {
@@ -255,9 +250,6 @@ export function FolderRenameRow({
         leading="snug"
         className="relative min-w-0 flex-1"
       />
-      <Text size="micro" tone="muted" className="relative shrink-0 tabular-nums">
-        {memberCount}
-      </Text>
     </Text>
   );
 }

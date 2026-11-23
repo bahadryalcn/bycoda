@@ -205,23 +205,15 @@ export function SourceRow({
                 </Badge>
               ) : null}
               {duplicate ? (
-                <Tooltip
-                  label={t(
-                    "Same model or endpoint as {p1}. Use More actions > Remove source to remove this copy.",
-                    { p1: duplicate },
-                  )}
+                <Badge
+                  className="decision-source-duplicate"
+                  size="xs"
+                  tone="warning"
+                  truncate
+                  icon={<Copy />}
                 >
-                  <Badge
-                    className="decision-source-duplicate"
-                    tabIndex={0}
-                    size="xs"
-                    tone="warning"
-                    truncate
-                    icon={<Copy />}
-                  >
-                    {t("Duplicate of {p1}", { p1: duplicate })}
-                  </Badge>
-                </Tooltip>
+                  {t("Duplicate of {p1}", { p1: duplicate })}
+                </Badge>
               ) : null}
             </div>
             <Text

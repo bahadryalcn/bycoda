@@ -139,21 +139,24 @@ export function SessionDiscussionPanel({
         if (generation === request.current) setLoading(false);
       });
   };
+  const restartAction = onRestart ? (
+    <Button
+      variant="ghost"
+      iconOnly
+      label={t("Restart conversation")}
+      disabled={loading}
+      onClick={restart}
+    >
+      <RotateCcw className="icon-sm" aria-hidden />
+    </Button>
+  ) : null;
   const content = (
     <>
-      {narrow && actions ? (
-        <div className="flex items-center gap-2 px-3 py-2">{actions}</div>
-      ) : null}
-      {narrow && onRestart ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          startIcon={<RotateCcw className="icon-sm" aria-hidden />}
-          disabled={loading}
-          onClick={restart}
-        >
-          {t("Restart conversation")}
-        </Button>
+      {narrow && (actions || restartAction) ? (
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+          {actions}
+          {restartAction}
+        </div>
       ) : null}
       {error ? (
         <InlineError
@@ -197,17 +200,7 @@ export function SessionDiscussionPanel({
         actions={
           <>
             {actions}
-            {onRestart ? (
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Restart conversation")}
-                disabled={loading}
-                onClick={restart}
-              >
-                <RotateCcw className="icon-sm" />
-              </Button>
-            ) : null}
+            {restartAction}
             <Button variant="ghost" iconOnly label={t("Close panel")} onClick={onClose}>
               <X className="icon-sm" />
             </Button>

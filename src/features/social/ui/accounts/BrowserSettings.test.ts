@@ -55,7 +55,7 @@ it("starts with the window hidden and no desktop control", async () => {
   expect(button("Save browser settings")?.disabled).toBe(true);
 });
 
-it("explains why nothing can be saved until a setting changes", async () => {
+it("keeps save disabled without a reason until a setting changes", async () => {
   const client = {
     browser: { settings: { get: vi.fn(async () => settings), set: vi.fn() } },
   } as unknown as SocialClient;
@@ -71,5 +71,9 @@ it("explains why nothing can be saved until a setting changes", async () => {
     ),
   );
   await act(async () => undefined);
-  expect(element.textContent).toContain("No changes to save.");
+  expect(element.textContent).not.toContain("No changes to save.");
+  const save = [...element.querySelectorAll("button")].find(
+    (node) => node.textContent === "Save browser settings",
+  );
+  expect(save?.disabled).toBe(true);
 });

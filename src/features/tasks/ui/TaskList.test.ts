@@ -184,7 +184,7 @@ it("groups failures first under one heading and retries a failed task from its r
   expect(rows[0].textContent).toContain("Broken task");
   expect(rows[1].textContent).toContain("Fine task");
   expect(container.querySelector('[data-task-group="failed"]')?.textContent).toBe("Failed · 1");
-  expect(container.querySelector('[data-task-group="other"]')?.textContent).toBe("Other · 1");
+  expect(container.querySelector('[data-task-group="other"]')).toBeNull();
   const retry = [...rows[0].querySelectorAll("button")].find((b) => b.textContent === "Retry")!;
   await act(async () => retry.click());
   expect(onRetry).toHaveBeenCalledWith(failed);

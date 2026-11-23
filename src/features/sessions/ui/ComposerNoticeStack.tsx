@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
 export function ComposerNoticeStack({ children }: { children: ReactNode }) {
   return (
     <div
-      className="flex max-h-[max(4rem,min(40cqb,14rem))] shrink-0 flex-col gap-1 overflow-y-auto overscroll-contain px-4 has-[[data-activity-dock],[data-provider-goal],[role=alert],[role=status]:not(.sr-only)]:py-1 [&>*]:shrink-0"
+      className="flex max-h-[max(4rem,min(40cqb,14rem))] shrink-0 flex-col gap-(--ui-space-1) overflow-y-auto overscroll-contain px-(--ui-space-4) has-[[data-activity-dock],[data-provider-goal],[role=alert],[role=status]:not(.sr-only)]:py-(--ui-space-1) [&>*]:shrink-0"
       data-composer-notices
     >
       {children}

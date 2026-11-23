@@ -1,6 +1,5 @@
-import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { RotateCcw } from "../../../shared/ui/icons";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -24,7 +23,6 @@ export function NewProjectFolderGroup() {
     newProjectFolderSetting.subscribe,
   );
   const [home, setHome] = useState<string | null>(null);
-  const [homeLoading, setHomeLoading] = useState(true);
   const [homeError, setHomeError] = useState<string | null>(null);
   const [homeAttempt, setHomeAttempt] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -34,24 +32,20 @@ export function NewProjectFolderGroup() {
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- resolves the native home directory for this mounted row and ignores completion after unmount.
   useEffect(() => {
     let current = true;
-    setHomeLoading(true);
     setHomeError(null);
     homeDir().then(
       (value) => {
         if (current) {
           if (typeof value !== "string" || !value.trim()) {
             setHomeError(t("Could not read your home folder. Retry or choose a folder."));
-            setHomeLoading(false);
             return;
           }
           setHome(value);
-          setHomeLoading(false);
         }
       },
       (cause: unknown) => {
         if (current) {
           setHomeError(errorText(cause));
-          setHomeLoading(false);
         }
       },
     );
@@ -89,17 +83,10 @@ export function NewProjectFolderGroup() {
   };
 
   return (
-    <Group title={t("New projects")}>
+    <Group title={null}>
       <Row
         id="new-project-folder"
         label={t("Folder for new projects")}
-        description={
-          chosen
-            ? t("New projects you ask the assistant to create are added here.")
-            : t(
-                "Not set: new projects go to the folder most of your projects share, otherwise Projects in your home folder.",
-              )
-        }
         feedback={
           error ? (
             <SettingsFeedback state="error">{error}</SettingsFeedback>
@@ -114,28 +101,23 @@ export function NewProjectFolderGroup() {
             >
               {homeError}
             </SettingsFeedback>
-          ) : !chosen && homeLoading ? (
-            <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
           ) : undefined
         }
       >
-        <OverflowTooltip label={chosen ?? automatic}>
-          <Text size="caption" tone="secondary" truncate tabIndex={0}>
-            {chosen ?? automatic}
-          </Text>
-        </OverflowTooltip>
         <Button
-          className="shrink-0"
+          variant="link"
           loading={busy}
-          disabled={!chosen && homeLoading}
+          disabled={busy}
           loadingLabel={t("Choosing folder…")}
           onClick={() => choose().catch((cause: unknown) => setError(errorText(cause)))}
         >
-          {t("Choose folder…")}
+          {chosen || automatic || t("Choose folder…")}
         </Button>
         {chosen ? (
           <Button
-            className="shrink-0"
+            variant="ghost"
+            iconOnly
+            label={t("Choose automatically")}
             disabled={busy}
             onClick={() => {
               setError(null);
@@ -143,7 +125,7 @@ export function NewProjectFolderGroup() {
                 setError(t("Could not save. Your previous choice was kept."));
             }}
           >
-            {t("Choose automatically")}
+            <RotateCcw aria-hidden />
           </Button>
         ) : null}
       </Row>

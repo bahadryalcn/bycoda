@@ -1,5 +1,6 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { projectKey } from "../../../shared/lib/paths";
+import { Button } from "../../../shared/ui/Button";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { MessageSquarePlus } from "../../../shared/ui/icons";
 import { projectDisplayName } from "../../projects/public/projectNames";
@@ -23,6 +24,19 @@ export function NoteChatAction({
     .filter(
       (path, index, paths) =>
         paths.findIndex((other) => projectKey(other) === projectKey(path)) === index,
+    );
+  // One possible destination needs no picker.
+  if (projects.length < 2)
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        startIcon={<MessageSquarePlus className="icon-sm" />}
+        disabled={disabled}
+        onClick={() => onAdd(projectCwd)}
+      >
+        {t("Add to chat")}
+      </Button>
     );
   return (
     <SplitButton

@@ -20,32 +20,30 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-it("keeps the known section title visible and announces one loading status", async () => {
+it("announces one loading status for the destination", async () => {
   await act(async () =>
     root.render(createElement(SettingsLoadingSurface, { section: "appearance" })),
   );
-  expect(node.querySelector("h2")?.textContent).toBe("Appearance");
+  expect(node.querySelector("h2")).toBeNull();
   await act(async () => vi.advanceTimersByTime(500));
   const statuses = node.querySelectorAll('[role="status"]');
   expect(statuses).toHaveLength(1);
-  expect(statuses[0]!.textContent).toBe("Loading Settings…");
+  expect(statuses[0]!.getAttribute("aria-label")).toBe("Appearance");
 });
 
-it("shows settings rows inside the one centred card and no invented values", async () => {
+it("shows one set of settings rows without manufactured progress", async () => {
   await act(async () => root.render(createElement(SettingsLoadingSurface, { section: "general" })));
-  const card = node.querySelector("[data-loading-card]")!;
+  const card = node.querySelector("[data-settings-loading]")!;
   expect(card.querySelectorAll(".settings-skeleton-row")).toHaveLength(4);
   expect(node.querySelector('[role="progressbar"]')).toBeNull();
   expect(node.textContent).not.toMatch(/\d+\s?%/);
 });
 
-it("explains a slow load inside the card and stops its timers when the dialog closes", async () => {
+it("keeps a single loading state during a slow load and clears timers on unmount", async () => {
   await act(async () => root.render(createElement(SettingsLoadingSurface, { section: "general" })));
   expect(node.textContent).not.toContain("taking longer");
   await act(async () => vi.advanceTimersByTime(3_000));
-  expect(node.querySelector("[data-loading-card]")?.textContent).toContain(
-    "Settings is taking longer to load. You can return to the workspace.",
-  );
+  expect(node.querySelectorAll('[role="status"]')).toHaveLength(1);
   await act(async () => root.render(createElement("div")));
   expect(vi.getTimerCount()).toBe(0);
 });

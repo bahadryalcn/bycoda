@@ -23,7 +23,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n";
-import { AUTOMATION_WEEKDAYS, automationScheduleLabel } from "../../automations/public/automations";
+import { AUTOMATION_WEEKDAYS } from "../../automations/public/automations";
 import { projectDisplayName } from "../../projects/public/projectNames";
 import { looksLikeProject, type RecentProject } from "../../projects/public/recents";
 import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
@@ -34,15 +34,6 @@ import type { StewardDraft } from "../model/stewardClient";
 import { taskClientErrors } from "../model/taskClientErrors";
 import { SettingFrame, SettingRow } from "./TaskLimitsRow";
 import { AutoMergeField } from "./TaskFormFields";
-
-function scheduleOf(draft: StewardDraft) {
-  return {
-    scheduleKind: draft.scheduleKind,
-    minute: draft.minute,
-    time: draft.time,
-    dayOfWeek: draft.dayOfWeek,
-  };
-}
 
 const SCHEDULE_OPTIONS = [
   {
@@ -71,10 +62,10 @@ const SCHEDULE_OPTIONS = [
   },
 ] as const;
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <section className="task-ops-section">
-      <SectionLabel>{title}</SectionLabel>
+      {title ? <SectionLabel>{title}</SectionLabel> : null}
       {children}
     </section>
   );
@@ -147,9 +138,9 @@ export function StewardForm({
     >
       <FieldGroup variant="bare" disabled={saving} inert={saving}>
         <div {...surfaceAttributes({ frame: "none" }, "task-ops-fields")}>
-          <Section title={t("Project")}>
+          <Section>
             <SettingFrame>
-              <SettingRow title={t("Project")}>
+              <SettingRow title={t("Project")} description={machine}>
                 {draft.id ? (
                   // A steward stays with the project it was created for.
                   <Text
@@ -177,23 +168,12 @@ export function StewardForm({
                   />
                 )}
               </SettingRow>
-              <SettingRow title={t("Runs on ").trim()}>
-                {machine ? (
-                  <Text
-                    size="caption"
-                    tone="secondary"
-                    leading="inherit"
-                    className="task-ops-caption"
-                  >
-                    {machine}
-                  </Text>
-                ) : (
-                  <InlineMessage tone="warning" live="assertive">
-                    {taskClientErrors.machine()}
-                  </InlineMessage>
-                )}
-              </SettingRow>
             </SettingFrame>
+            {machine ? null : (
+              <InlineMessage tone="warning" live="assertive">
+                {taskClientErrors.machine()}
+              </InlineMessage>
+            )}
           </Section>
           <Section title={t("Focus")}>
             <TextareaField
@@ -212,10 +192,7 @@ export function StewardForm({
           </Section>
           <Section title={t("Schedule")}>
             <SettingFrame>
-              <SettingRow
-                title={t("Frequency")}
-                description={automationScheduleLabel(scheduleOf(draft))}
-              >
+              <SettingRow title={t("Frequency")}>
                 <SearchableSelect
                   variant="pill"
                   searchable={false}
@@ -349,8 +326,9 @@ export function StewardForm({
                 className="task-ops-caption"
                 data-tone="warning"
               >
-                {t("Suggestions will run without you reviewing the idea first.")}
-                {t(" Each still waits for your review before it is merged.")}
+                {t(
+                  "Suggestions will run without you reviewing the idea first. Each still waits for your review before it is merged.",
+                )}
               </Text>
             ) : null}
           </Section>

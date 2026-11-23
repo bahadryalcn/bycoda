@@ -1,6 +1,5 @@
 import { t } from "../../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
-import { Text } from "../../../../shared/ui/Text";
 import { StatusDot } from "../../../../shared/ui/StatusDot";
 import type { StatusTextStatus } from "../common/StatusText";
 
@@ -56,14 +55,7 @@ export function ContentStateBadge({ state }: { state: ContentState }) {
   );
 }
 
-/** Dot plus word for the narrow calendar chips. */
+/** The state as a named dot for calendar chips; the word is its accessible name. */
 export function ContentStateDot({ state }: { state: ContentState }) {
-  return (
-    <Text as="span" size="micro" tone="secondary" leading="inherit" className="content-chip-status">
-      <StatusDot tone={contentStateTone(state)} />
-      <Text as="span" size="inherit" tone="inherit" leading="inherit" truncate>
-        {contentStateLabel(state)}
-      </Text>
-    </Text>
-  );
+  return <StatusDot tone={contentStateTone(state)} label={contentStateLabel(state)} />;
 }

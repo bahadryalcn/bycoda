@@ -3,6 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -23,7 +24,7 @@ import {
   localExplorerPath,
   saveExplorerMapping,
 } from "../../../shared/lib/remoteExplorerPaths";
-import { displayPath, isEqualOrInside, parentPath } from "../../../shared/lib/paths";
+import { isEqualOrInside, parentPath } from "../../../shared/lib/paths";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { ArrowUp, ExternalLink, FolderOpen } from "../../../shared/ui/icons";
 import { FileTypeIcon } from "./FileTypeIcon";
@@ -197,18 +198,11 @@ export function ChatFolderBrowser({
       footer={
         editingMapping ? (
           <ModalActions>
-            <Button
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={busy}
-              onClick={() => setEditingMapping(false)}
-            >
+            <Button variant="ghost" disabled={busy} onClick={() => setEditingMapping(false)}>
               {t("Cancel")}
             </Button>
             <Button
               variant="primary"
-              motion="none"
               type="submit"
               form={mappingFormId}
               disabled={busy}
@@ -231,9 +225,6 @@ export function ChatFolderBrowser({
             iconOnly
             label={t("Parent folder")}
             variant="ghost"
-            motion="none"
-            type="button"
-            aria-label={t("Parent folder")}
             disabled={busy || !parent}
             onClick={() => parent && setDirectory(parent)}
           >
@@ -243,11 +234,9 @@ export function ChatFolderBrowser({
             {directory}
           </Text>
         </div>
-        <div className="flex flex-wrap gap-2 py-2">
+        <div className="flex flex-wrap items-center gap-2 py-2">
           <Button
             variant="ghost"
-            motion="none"
-            type="button"
             disabled={busy || !listing?.canOpenFiles}
             loading={pendingAction === "live"}
             onClick={() => void openLiveFolder()}
@@ -256,32 +245,26 @@ export function ChatFolderBrowser({
           </Button>
           <Button
             variant="ghost"
-            motion="none"
-            type="button"
             disabled={busy}
             loading={pendingAction === "reveal"}
             onClick={() => void revealDirectory()}
           >
             {revealLabel}
           </Button>
-          <Button
-            variant="ghost"
-            motion="none"
-            type="button"
-            disabled={busy}
-            onClick={configureMapping}
-          >
+          <Button variant="ghost" disabled={busy} onClick={configureMapping}>
             {t("Shared folder settings")}
           </Button>
+          <InfoPopover label={t("About live folders and local copies")}>
+            <Text as="p" size="caption" tone="secondary">
+              {t(
+                "Live folders show the connected computer’s current files. Remote changes are visible; writing is disabled.",
+              )}
+            </Text>
+            <Text as="p" size="caption" tone="secondary">
+              {t("Local copies do not sync changes back to the connected machine.")}
+            </Text>
+          </InfoPopover>
         </div>
-        <Text as="p" size="caption" tone="secondary">
-          {t(
-            "Live folders show the connected computer’s current files. Remote changes are visible; writing is disabled.",
-          )}
-        </Text>
-        <Text as="p" size="caption" tone="secondary">
-          {t("Local copies do not sync changes back to the connected machine.")}
-        </Text>
         {editingMapping ? (
           <Text as="div" size="body" tone="inherit">
             <form
@@ -316,8 +299,6 @@ export function ChatFolderBrowser({
               />
               <Button
                 variant="ghost"
-                motion="none"
-                type="button"
                 disabled={busy}
                 loading={pendingAction === "choose"}
                 className="justify-self-start"
@@ -366,8 +347,6 @@ export function ChatFolderBrowser({
                 <li key={entry.path} className="flex min-w-0 items-center gap-1">
                   <Button
                     variant="ghost"
-                    motion="none"
-                    type="button"
                     disabled={busy || (!entry.isDir && (!listing?.canOpenFiles || !onOpenFile))}
                     className="flex min-w-0 flex-1 items-center gap-2 text-start disabled:cursor-not-allowed"
                     onClick={() => {
@@ -383,7 +362,7 @@ export function ChatFolderBrowser({
                     ) : (
                       <FileTypeIcon name={entry.name} isDir={false} size="md" />
                     )}
-                    <Tooltip label={displayPath(entry.path, directory)} asChild>
+                    <Tooltip label={entry.name} when="overflow" asChild>
                       <Text truncate size="body" tone="inherit" className="min-w-0">
                         {entry.name}
                       </Text>
@@ -394,13 +373,8 @@ export function ChatFolderBrowser({
                       iconOnly
                       label={`${t("Open local copy")}: ${entry.name}`}
                       variant="ghost"
-                      motion="none"
-                      type="button"
                       disabled={busy}
                       loading={pendingAction === `copy:${entry.path}`}
-                      tooltip={t("Open local copy")}
-                      aria-label={`${t("Open local copy")}: ${entry.name}`}
-
                       onClick={() => void openLocalCopy(entry.path)}
                     >
                       <ExternalLink className="icon-md" />
@@ -413,8 +387,6 @@ export function ChatFolderBrowser({
               <Button
                 size="sm"
                 variant="ghost"
-                motion="none"
-                type="button"
                 onClick={() => setLimit((n) => n + TREE_WINDOW_CHUNK)}
               >
                 {t("Show {p0} more…", { p0: Math.min(TREE_WINDOW_CHUNK, hidden) })}

@@ -46,16 +46,22 @@ function TunnelNotices({
           })}
         </Alert>
       ) : null}
-      {issue && state.issue ? <Alert tone="danger">{t(issueCopy[state.issue])}</Alert> : null}
-      {issue && retry && state.issue && state.phase === "error" ? (
-        <Button
-          type="button"
-          className="shrink-0 self-start"
-          disabled={state.pending}
-          onClick={() => void controller.refresh(true)}
+      {issue && state.issue ? (
+        <Alert
+          tone="danger"
+          action={
+            retry && state.phase === "error"
+              ? {
+                  label: t("Check again"),
+                  ariaLabel: t("Check again"),
+                  disabled: state.pending,
+                  onClick: () => void controller.refresh(true),
+                }
+              : undefined
+          }
         >
-          {t("Check again")}
-        </Button>
+          {t(issueCopy[state.issue])}
+        </Alert>
       ) : null}
     </>
   );
@@ -103,7 +109,7 @@ export function TunnelControls({
             disabled={!canStart}
             disabledReason={blockedReason}
           >
-            {t("Start tunnel")}
+            {t("Share")}
           </Button>
         }
       />
@@ -175,9 +181,8 @@ function MachineSharing({
                 form={formId}
                 loading={state.pending && action === "start"}
                 disabled={!canStart}
-                disabledReason={blockedReason}
               >
-                {t("Start sharing")}
+                {t("Share")}
               </Button>
             </ModalActions>
           }
@@ -287,8 +292,6 @@ export function ExternalTunnelsPanel({
           context="panel"
           kind="empty"
           title={t("No shared links")}
-          description={t("Create a link to share a dev server or bycoda Host.")}
-          showDescription
         />
       ) : null}
     </section>

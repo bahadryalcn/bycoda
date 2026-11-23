@@ -2,7 +2,6 @@
 import { createMockAccountServer } from "@bycoda/account-contracts/mock";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  MAX_STATS_PROMPTS,
   getStatsConsent,
   installationId,
   migrateLegacyConsent,
@@ -80,12 +79,9 @@ describe("statistics consent", () => {
 });
 
 describe("one-time prompt", () => {
-  it("asks until answered, at most three times", () => {
+  it("asks once even when the notice is dismissed without an answer", () => {
     expect(shouldPromptForStats()).toBe(true);
-    for (let i = 0; i < MAX_STATS_PROMPTS; i++) {
-      expect(shouldPromptForStats()).toBe(true);
-      recordStatsPromptShown();
-    }
+    recordStatsPromptShown();
     expect(shouldPromptForStats()).toBe(false);
     expect(getStatsConsent().choice).toBeNull();
   });

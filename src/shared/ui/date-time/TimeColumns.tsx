@@ -2,7 +2,9 @@ import { useLayoutEffect, useRef } from "react";
 import { useT } from "../../i18n";
 import { useCalendarFormat } from "../../i18n/calendar";
 import { ScrollArea } from "../ScrollArea";
+import { surfaceAttributes } from "../Surface";
 import { Text } from "../Text";
+import { ComboboxItem } from "../arc/combobox/combobox";
 import { minuteOptions, parseLocalTime, timeKey } from "./values";
 import styles from "./Pickers.module.css";
 
@@ -43,14 +45,14 @@ function TimeColumn({
         gutter="stable"
       >
         {values.map((value, index) => (
-          <button
+          <ComboboxItem
             key={value}
             type="button"
             role="option"
             aria-selected={value === selected}
             tabIndex={value === selected ? 0 : -1}
             disabled={disabled}
-            className={styles.option}
+            {...surfaceAttributes({ focusRing: "inset" }, styles.option)}
             onClick={() => onChange(value)}
             onKeyDown={(event) => {
               const next =
@@ -73,7 +75,7 @@ function TimeColumn({
             }}
           >
             {format(value)}
-          </button>
+          </ComboboxItem>
         ))}
       </ScrollArea>
     </div>

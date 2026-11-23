@@ -106,11 +106,6 @@
     display: none;
   }
 }
-@container conflict-pane (inline-size < 520px) {
-  .conflict-result-meta {
-    display: none;
-  }
-}
 
 .conflict-source-editor {
   flex: 1;

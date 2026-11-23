@@ -3,17 +3,17 @@ import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
 import { usePointerMovement } from "../../../shared/ui/picker/usePointerMovement";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
-import { SplitButton } from "../../../shared/ui/SplitButton";
 import { IS_MAC, MOD } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
 import { ListRow } from "../../../shared/ui/ListRow";
 import { PromptField } from "../../../shared/ui/PromptField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { projectDisplayName } from "../../projects/public/projectNames";
+import { looksLikeProject } from "../../projects/public/recents";
+import { isProjectlessCwd } from "../../sessions/model/recentSessions";
 import { t, useLocale } from "../../../shared/i18n";
 import { useComposerSpelling } from "../../settings/public/composerSpelling";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -197,16 +197,18 @@ export function QuickComposer({
     },
     [owner, setField],
   );
-  const workspace = workspaceForProject(workspaceChoice, cwd);
+  const workspaceCwd = cwd && looksLikeProject(cwd) && !isProjectlessCwd(cwd) ? cwd : null;
+  const workspace = workspaceForProject(workspaceChoice, workspaceCwd);
   const workspaceCreation = useWorkspaceCreation(
-    cwd ?? "",
-    !!cwd && !workspace.tree,
+    workspaceCwd ?? "",
+    !!workspaceCwd && !workspace.tree,
     workspace.mode,
     workspace.base,
   );
   // Pending is bounded by the policy-read timeout; only an explicit worktree choice
   // makes a failed read a hard stop. Automatic falls back to the current checkout.
   const workspaceBlocked =
+    !!workspaceCwd &&
     !workspace.tree &&
     (workspaceCreation.pending || (!!workspaceCreation.error && workspace.mode === "worktree"));
   const [gitOpen, setGitOpen] = useState(false);
@@ -648,30 +650,25 @@ export function QuickComposer({
         if (picker) closePicker();
         else dismiss();
       }}
-      className="relative flex max-h-[520px] flex-col overflow-clip rounded-(--ui-radius-popup) border border-stroke bg-[color-mix(in_oklab,var(--color-background-base)_45%,transparent)] text-content"
+      className="relative flex max-h-[520px] flex-col overflow-clip rounded-(--ui-radius-floating) border border-(--ui-floating-edge) bg-(--ui-surface-floating) text-content"
     >
-      <Tooltip label={t("Drag to move")} asChild>
-        <div
-          className="group absolute inset-x-0 top-0 z-(--layer-pane-sheet) flex h-3 cursor-grab items-start justify-center pt-1 active:cursor-grabbing"
-          onMouseDown={(event) => {
-            if (event.button !== 0) return;
-            event.preventDefault();
-            void getCurrentWindow()
-              .startDragging()
-              .catch(() => undefined);
-          }}
-        >
-          <span className="pointer-events-none h-0.5 w-6 rounded-full bg-(--ui-text-muted) opacity-50 transition-opacity group-hover:opacity-100" />
-        </div>
-      </Tooltip>
+      <div
+        className="group absolute inset-x-0 top-0 z-(--layer-pane-sheet) flex h-3 cursor-grab items-start justify-center pt-1 active:cursor-grabbing"
+        onMouseDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          void getCurrentWindow()
+            .startDragging()
+            .catch(() => undefined);
+        }}
+      >
+        <span className="pointer-events-none h-0.5 w-6 rounded-full bg-(--ui-text-muted) opacity-50 transition-opacity group-hover:opacity-100" />
+      </div>
       <Button
         iconOnly
         label={t("Close composer")}
         variant="ghost"
         motion="none"
-        type="button"
-        aria-label={t("Close composer")}
-        tooltip={t("Close")}
         shortcut="Esc"
         onClick={dismiss}
         // Above the drag strip.
@@ -680,30 +677,6 @@ export function QuickComposer({
         <X className="icon-xs" />
       </Button>
       <div className="flex shrink-0 items-center gap-2 px-5 pt-3 pr-9">
-        <Button
-          selected={picker === "project"}
-          variant="ghost"
-          motion="none"
-          type="button"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => openPicker("project")}
-          disabled={projects.length === 0}
-          tooltip={t("Project")}
-          shortcut="mod+p"
-          expanded={picker === "project"}
-          className="flex min-w-0 max-w-[40%] items-center gap-1.5"
-        >
-          {cwd ? (
-            <QuickProjectIcon
-              projectPath={cwd}
-              appearance={projectAppearance}
-              className="size-3 shrink-0"
-            />
-          ) : null}
-          <Text size="inherit" tone="inherit" truncate>
-            {cwd ? projectDisplayName(cwd) : t("No project")}
-          </Text>
-        </Button>
         <QuickWorkspaceControls
           key={cwd}
           value={workspace}
@@ -717,6 +690,29 @@ export function QuickComposer({
           onOpenChange={onGitOpenChange}
           onClose={focusPrompt}
         />
+        <Button
+          selected={picker === "project"}
+          variant="chip"
+          motion="none"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => openPicker("project")}
+          disabled={projects.length === 0}
+          shortcut="mod+p"
+          expanded={picker === "project"}
+          truncate
+          startIcon={
+            cwd ? (
+              <QuickProjectIcon
+                projectPath={cwd}
+                appearance={projectAppearance}
+                className="size-3 shrink-0"
+              />
+            ) : undefined
+          }
+          className="ml-auto min-w-0 max-w-[40%]"
+        >
+          {cwd ? projectDisplayName(cwd) : t("No project")}
+        </Button>
       </div>
       {attachments.files.length ? (
         <div
@@ -812,7 +808,8 @@ export function QuickComposer({
           {t("Choose a provider that supports attachments, or remove the attached files.")}
         </Alert>
       ) : null}
-      {!workspace.tree &&
+      {workspaceCwd &&
+      !workspace.tree &&
       (workspaceCreation.pending ||
         workspaceCreation.error ||
         workspaceCreation.mode === "worktree") ? (
@@ -852,80 +849,60 @@ export function QuickComposer({
           selected={picker === "attachments"}
           variant="ghost"
           motion="none"
-          type="button"
           ref={plusRef}
-          aria-label={t("Add attachment")}
           aria-expanded={picker === "attachments"}
-          tooltip={
-            attachmentsSupported
-              ? t("Attach files or take a screenshot")
-              : t("This provider does not support attachments")
-          }
+          tooltip={attachmentsSupported ? undefined : t("This provider does not support attachments")}
           disabled={!attachmentsSupported || attachments.loading || busy}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("attachments")}
-          className={`grid shrink-0 place-items-center `}
+          className="shrink-0"
         >
           <Plus className="icon-sm" />
         </Button>
         <Button
           selected={picker === "model"}
-          variant="ghost"
+          variant="chip"
           motion="none"
-          type="button"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => openPicker("model")}
-          tooltip={t("Model")}
           shortcut="mod+."
           expanded={picker === "model"}
-          className={`flex min-w-0 max-w-[40%] items-center gap-1.5 `}
+          truncate
+          startIcon={<HarnessIcon harness={model.harness} className="icon-sm shrink-0" />}
+          className="min-w-0 max-w-[40%]"
         >
-          <HarnessIcon harness={model.harness} className="size-3.5 shrink-0" />
-          <Text size="inherit" tone="inherit" truncate>
-            {model.name}
-          </Text>
+          {model.name}
         </Button>
         {model.harness !== "fx" ? (
           <Button
             selected={picker === "permissions"}
-            variant="ghost"
+            variant="chip"
             motion="none"
-            type="button"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => openPicker("permissions")}
-            tooltip={t("Permissions")}
             aria-label={t("Permissions")}
             expanded={picker === "permissions"}
-            className={`flex min-w-0 items-center gap-1.5 `}
+            truncate
+            startIcon={<QuickPermissionIcon mode={runtimeMode} className="icon-sm shrink-0" />}
+            className="min-w-0"
           >
-            <QuickPermissionIcon mode={runtimeMode} className="size-3.5 shrink-0" />
-            <Text size="inherit" tone="inherit" truncate className="max-[450px]:hidden">
-              {RUNTIME_MODE_LABEL[runtimeMode]}
-            </Text>
+            <span className="max-[450px]:hidden">{RUNTIME_MODE_LABEL[runtimeMode]}</span>
           </Button>
         ) : null}
         <Text size="micro" tone="secondary" className="ml-auto flex shrink-0 items-center gap-3">
           {attachments.loading ? <LoadingText>{t("Adding attachment…")}</LoadingText> : null}
-          <SplitButton
+          <Button
             variant="primary"
             tone="accent"
             motion="none"
-            type="button"
-            label={leadingMode?.name === DRAFT_COMMAND.name ? t("Save draft") : t("Start")}
             shortcut="Enter"
-            menuLabel={t("More ways to start")}
+            tooltip={t("{p0}↵ start and open", { p0: MOD })}
             onClick={() => void submit(false)}
             disabled={!canSubmit}
             loading={busy}
-            actions={[
-              {
-                id: "start-open",
-                label: t("Start and open"),
-                description: `${MOD}↵`,
-                onSelect: () => void submit(true),
-              },
-            ]}
-          />
+          >
+            {leadingMode?.name === DRAFT_COMMAND.name ? t("Save draft") : t("Start")}
+          </Button>
         </Text>
       </div>
 
@@ -944,31 +921,29 @@ export function QuickComposer({
           <Button
             variant="ghost"
             motion="none"
-            type="button"
             disabled={attachments.loading || !attachmentsSupported}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               hidePicker();
               void attachments.chooseFiles().then(focusPrompt);
             }}
-            className="flex w-full items-center gap-2"
+            fullWidth
+            startIcon={<ImagePlus className="icon-sm" />}
           >
-            <ImagePlus className="icon-sm" />
             {t("Choose files…")}
           </Button>
           <Button
             variant="ghost"
             motion="none"
-            type="button"
             disabled={attachments.loading || !attachmentsSupported}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               hidePicker();
               void attachments.takeScreenshot().then(focusPrompt);
             }}
-            className="flex w-full items-center gap-2"
+            fullWidth
+            startIcon={<Maximize2 className="icon-sm" />}
           >
-            <Maximize2 className="icon-sm" />
             {t("Take screenshot…")}
           </Button>
         </Popover>
@@ -979,7 +954,6 @@ export function QuickComposer({
             <PickerListRoot
               ref={listRef}
               id="quick-composer-commands"
-
               label={t("Commands")}
               className="shrink-0 border-t border-stroke p-2"
             >

@@ -10,7 +10,6 @@ import { TextField } from "../../../../shared/ui/TextField";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import type { EmailAccount, OutreachChannel } from "../../model/outreach";
 import { ChannelIcon } from "./ChannelIcon";
-import { LabeledSelect } from "./LabeledSelect";
 import { channelLabel } from "./audienceModel";
 import { useTouched } from "./formFooter";
 
@@ -101,7 +100,7 @@ export function SequenceStepEditor({
           />
         </div>
         {isEmail ? (
-          <LabeledSelect
+          <Select
             label={t("Send from")}
             value={step.accountId}
             disabled={disabled || !emailAccounts.length}
@@ -112,7 +111,7 @@ export function SequenceStepEditor({
                 label: `${account.name} <${account.from}>`,
               })),
             ]}
-            onChange={(accountId) => onChange({ ...step, accountId })}
+            onValueChange={(accountId) => onChange({ ...step, accountId })}
           />
         ) : null}
         <TextareaField

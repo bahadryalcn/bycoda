@@ -5,9 +5,11 @@ import { PickerChoice } from "./PickerChoice";
 import { usePointerMovement } from "./usePointerMovement";
 import { ActionHost } from "../ActionHost";
 import { Button } from "../Button";
+import { SectionLabel } from "../SectionLabel";
 import { MatchText, matchPositions } from "../MatchText";
 import { ComboboxItem, ComboboxStatus } from "../arc/combobox/combobox";
 import {
+  canInspectPickerOption,
   usePickerList,
   type PickerListController,
   type PickerListOptions,
@@ -197,11 +199,11 @@ export function PickerList({
       ? ({ ref: win.measureElement, "data-index": entryOfOption[index] } as const)
       : {};
     const selected = !option.onAction && list.isSelected(option.value);
-    const selectionClass = selected && selectionIndicator === "start" ? styles.selectionStart : "";
     const highlighted = index === list.activeIndex;
     const unavailable = disabled || !!option.disabled;
+    const inspectable = !disabled && canInspectPickerOption(option);
     const description =
-      option.disabled && option.disabledReason
+      highlighted && option.disabled && option.disabledReason?.trim()
         ? t("Unavailable: {p0}", { p0: option.disabledReason })
         : option.description;
     const descriptionId = description != null ? `${list.optionId(index)}-description` : undefined;
@@ -227,7 +229,7 @@ export function PickerList({
         aria-label={option.accessibleLabel}
         aria-controls={option.popup?.expanded ? option.popup.listId : undefined}
         aria-describedby={descriptionId}
-        disabled={unavailable}
+        disabled={!inspectable}
         data-highlighted={highlighted || undefined}
         data-active={highlighted || undefined}
         data-density={density}
@@ -236,22 +238,20 @@ export function PickerList({
         onMouseDown={(event) => event.preventDefault()}
         onContextMenu={option.onContextMenu}
         onMouseEnter={() => {
-          if (!unavailable && pointerHighlight === "entry") list.setActive(index);
+          if (inspectable && pointerHighlight === "entry") list.setActive(index);
         }}
         onPointerMove={(event) => {
           if (pointerHighlight !== "movement") return;
-          if (pointerMoved(event) && !unavailable) list.setActive(index);
+          if (pointerMoved(event) && inspectable) list.setActive(index);
         }}
         onClick={() => {
           if (!unavailable) list.commit(index);
         }}
-        className={
-          actions == null && selectionClass ? `${styles.row} ${selectionClass}` : styles.row
-        }
+        className={styles.row}
       >
         <PickerChoice
           selected={selected}
-          showSelection={checkPlacement !== "none"}
+          showSelection={checkPlacement !== "none" || selectionIndicator === "start"}
           icon={option.icon}
           label={title}
           title={typeof option.title === "string" ? option.title : option.textValue}
@@ -269,7 +269,7 @@ export function PickerList({
         key={option.value}
         {...measure}
         selected={selected}
-        className={selectionClass ? `${styles.actionRow} ${selectionClass}` : styles.actionRow}
+        className={styles.actionRow}
       >
         {button}
         <div data-picker-actions="" className={styles.actions}>
@@ -293,7 +293,9 @@ export function PickerList({
             role="presentation"
             className={styles.groupHeading}
           >
-            {section.group}
+            <SectionLabel variant="menu" as="span" size="caption">
+              {section.group}
+            </SectionLabel>
           </div>
           {section.options.map((option, offset) => row(option, section.start + offset))}
         </div>
@@ -321,7 +323,9 @@ export function PickerList({
               role="presentation"
               className={styles.groupHeading}
             >
-              {entry.group}
+              <SectionLabel variant="menu" as="span" size="caption">
+                {entry.group}
+              </SectionLabel>
             </div>,
           ],
         });
@@ -409,7 +413,9 @@ export function PickerList({
       >
         {windowed ? windowBody() : fullBody()}
         {list.options.length === 0 && !loading && !failed ? (
-          <ComboboxStatus empty>{emptyLabel ?? t("No matching options")}</ComboboxStatus>
+          <ComboboxStatus empty>
+            {emptyLabel ?? (query.trim() ? t("No matching options") : t("No options available"))}
+          </ComboboxStatus>
         ) : null}
       </PickerListRoot>
     </div>

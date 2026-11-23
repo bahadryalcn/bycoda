@@ -1,10 +1,7 @@
-import { IMAGE_MODELS_KEY } from "../../../shared/model/host-contracts/image-models";
 import { EffortScale } from "../../../shared/ui/EffortScale";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { Divider } from "../../../shared/ui/Divider";
 import {
-  Fragment,
   useLayoutEffect,
   useRef,
   useState,
@@ -49,14 +46,6 @@ import {
   CROSS_SUBAGENT_MAX_EFFORT_KEY,
   subagentEffortCeiling,
 } from "../../../shared/model/host-contracts/delegation";
-
-/** Agents rows read as three jobs; each section names its job above its first row. */
-function agentSection(setting: ModelSetting): "images" | "advice" | "delegated" | undefined {
-  if (setting.id === IMAGE_MODELS_KEY) return "images";
-  if (/advisor/i.test(setting.id)) return "advice";
-  if (/subagent/i.test(setting.id)) return "delegated";
-  return undefined;
-}
 
 const isUltraEffort = (value: string) => /^ultra/i.test(value);
 
@@ -282,8 +271,7 @@ export function ModelSettingsColumn({
             </div>
           ) : null}
           <div
-            // The last 1.25rem fades out so clipped rows read as scrollable; pb-6 keeps the final row clear of it.
-            className="min-h-0 flex-1 [mask-image:linear-gradient(to_bottom,currentcolor_calc(100%-1.25rem),transparent)] overflow-y-auto overscroll-none px-1.5 pt-1 pb-6"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-none px-1.5 pt-1 pb-2"
             onMouseOver={explain}
             onMouseLeave={() => setExplained(focusedSetting.current)}
           >
@@ -294,35 +282,7 @@ export function ModelSettingsColumn({
                 })}
               </p>
             ) : (
-              scrolling.map((setting, index) => {
-                const section = shownTab === "agents" ? agentSection(setting) : undefined;
-                const first =
-                  section !== undefined &&
-                  (index === 0 || section !== agentSection(scrolling[index - 1]!));
-                return (
-                  <Fragment key={setting.id}>
-                    {first ? (
-                      <>
-                        {index > 0 ? <Divider className="mt-2" /> : null}
-                        <Text
-                          as="div"
-                          size="micro"
-                          weight="medium"
-                          tone="secondary"
-                          className={index > 0 ? "px-1.5 pt-2" : "px-1.5 pt-1"}
-                        >
-                          {section === "images"
-                            ? t("Images")
-                            : section === "advice"
-                              ? t("Second opinion")
-                              : t("Delegated work")}
-                        </Text>
-                      </>
-                    ) : null}
-                    {renderSetting(setting)}
-                  </Fragment>
-                );
-              })
+              scrolling.map(renderSetting)
             )}
           </div>
         </>

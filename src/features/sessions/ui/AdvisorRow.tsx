@@ -35,9 +35,9 @@ export function AdvisorRow({
       <WorkingIndicator size="sm" text={{ size: "caption" }}>
         {t("Thinking…")}
       </WorkingIndicator>
-    ) : (
-      <Badge size="xs" appearance="subtle" tone={state === "accepted" ? "success" : "danger"}>
-        {state === "accepted" ? t("Done") : t("Failed")}
+    ) : state === "accepted" ? null : (
+      <Badge size="xs" appearance="subtle" tone="danger">
+        {t("Failed")}
       </Badge>
     );
   const summary = (

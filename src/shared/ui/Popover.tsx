@@ -1,7 +1,6 @@
-import { NativePopupHost, PopupBackdrop } from "./NativePopupHost";
+import { floatingFrameClassName, NativePopupHost, PopupBackdrop } from "./NativePopupHost";
 // Public alias of the NativePopupHost component; the catalog entry lives on its definition.
 export { NativePopover } from "./NativePopupHost";
-import { Surface } from "./Surface";
 import {
   useCallback,
   useContext,
@@ -108,7 +107,7 @@ function focusDialog(surface: HTMLElement | null, initialFocus?: string) {
  *
  * - `"panel"`: filter panel, small form, details or tool panel (0.75rem, the Surface `md` inset).
  * - `"compact"`: colour or icon grid and small picker (0.5rem, the Surface `sm` inset).
- * - `"preview"`: hover preview or row detail (10px, frosted), the frame of `detailTooltipFrame`.
+ * - `"preview"`: hover preview or row detail with the standard panel inset.
  * - Omitted: no inset; the content owns it (list bodies use {@link popupListClassName}).
  *
  * `padding` is the viewport edge gap, not this inset.
@@ -145,9 +144,9 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   flow?: PopoverFlow;
   /** Defaults to `LAYER.popover`; a flyout off an open popover wants higher. */
   layer?: number;
-  /** Drops the glass frame and keeps only placement and the content animation. */
+  /** Drops the floating frame and keeps placement and the content animation. */
   bare?: boolean;
-  /** Match the chat composer surface for overlays attached to its input. */
+  /** Marks overlays attached to the composer. Uses the shared floating frame. */
   appearance?: "composer";
   /** Non-interactive hints must not return focus when their trigger blurs. */
   restoreFocus?: boolean;
@@ -155,16 +154,9 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   passive?: boolean;
   /** Keyboard hints and other frequent surfaces can skip their entrance motion. */
   motion?: "auto" | "none";
-  /**
-   * Keeps the frame but paints an opaque surface instead of backdrop glass.
-   * For popovers over live canvases (terminal WebGL): a backdrop-filter that
-   * samples a moving canvas makes Chromium recomposite, and flash, the canvas.
-   */
+  /** Legacy material flag. The frame is always opaque. */
   solid?: boolean;
-  /**
-   * Frosted glass: a thin tint over a strong blur, for non-interactive hover cards that should
-   * let the pane beneath show through. Falls back to the opaque surface without blur support.
-   */
+  /** Legacy material flag. Previews use the shared floating frame. */
   frosted?: boolean;
   style?: CSSProperties;
   autoFocus?: boolean;
@@ -359,7 +351,7 @@ function NativePopover({
       }}
       data-popover-flow={flow}
       style={{
-        maxHeight: maxHeight ?? 400,
+        maxHeight: `min(${maxHeight ?? 400}px, var(--native-popup-max-height, 100dvh))`,
         ...(minWidth != null ? { "--popup-max-width": `${POPUP_MAX_WIDTH}px` } : null),
         ...(flow === "scroll" ? SCROLL_STYLE : null),
         ...style,
@@ -388,9 +380,9 @@ function WebPopover({
   layer = LAYER.popover,
   bare = false,
   appearance,
-  solid = false,
+  solid,
   variant,
-  frosted = variant === "preview",
+  frosted,
   className,
   style,
   autoFocus,
@@ -595,9 +587,7 @@ function WebPopover({
         visibility: "hidden",
       };
 
-  // Keep the backdrop-filter on a stable frame. WebKit can briefly paint a
-  // stale backdrop when the same composited element is transformed and then
-  // invalidated by a child hover. Only this unblurred content layer moves.
+  // Keep the frame stationary while its content animates in.
   const frameInset = bare ? 0 : 2;
   const contentMaxHeight = constrainHeight
     ? position
@@ -620,19 +610,11 @@ function WebPopover({
           zIndex: effectiveLayer,
         } as CSSProperties
       }
-      className={[!bare && FRAME, minWidth != null && styles.list].filter(Boolean).join(" ")}
+      className={[!bare && FRAME, !bare && floatingFrameClassName, minWidth != null && styles.list]
+        .filter(Boolean)
+        .join(" ")}
     >
-      {bare ? null : appearance === "composer" ? (
-        <Surface
-          variant="floating"
-          frame="none"
-          material={solid ? undefined : "glass"}
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-        />
-      ) : (
-        <PopupBackdrop solid={solid} frosted={frosted} />
-      )}
+      {bare ? null : <PopupBackdrop solid={solid} frosted={frosted} />}
       <div
         {...(dialog ? { role: "dialog", tabIndex: -1 } : null)}
         {...rest}

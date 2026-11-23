@@ -25,7 +25,7 @@ export function BootFailure({ error, onRetry }: { error: unknown; onRetry: () =>
         }
         error={error}
         onRetry={onRetry}
-        retryLabel={t("Reload app")}
+        retryLabel={t("Reload")}
       />
     </main>
   );

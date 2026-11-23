@@ -4,7 +4,6 @@ import { FacebookReelFields } from "./FacebookReelFields";
 import { MetaFields } from "./MetaFields";
 import { RedditFields } from "./RedditFields";
 import { TikTokFields } from "./TikTokFields";
-import { XFields } from "./XFields";
 import { YouTubeFields } from "./YouTubeFields";
 
 export type PlatformFieldProps = {
@@ -20,16 +19,11 @@ export type PlatformFieldProps = {
 /** The platform-specific options for one selected account. Platforms without options render nothing. */
 export function PlatformFields(props: PlatformFieldProps) {
   switch (props.account.platform) {
-    case "x":
-      return <XFields />;
-    case "instagram":
     case "facebook":
       return (
         <>
           <MetaFields {...props} />
-          {props.account.platform === "facebook" && props.value.facebook?.target === "reel" ? (
-            <FacebookReelFields {...props} />
-          ) : null}
+          {props.value.facebook?.target === "reel" ? <FacebookReelFields {...props} /> : null}
         </>
       );
     case "tiktok":

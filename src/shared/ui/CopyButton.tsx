@@ -11,7 +11,7 @@ type CopyButtonProps = Omit<
   ButtonProps,
   "iconOnly" | "label" | "children" | "value" | "loading" | "success" | "successLabel"
 > & {
-  /** Translated idle label: visible text, or the accessible name and tooltip when `iconOnly`. */
+  /** Translated idle label: visible text, or the accessible name when `iconOnly`. */
   label: string;
   /** Text to copy, read at click time when a function. */
   text?: string | (() => string);
@@ -90,7 +90,7 @@ export function CopyButton({
           iconOnly
           variant={variant}
           label={name}
-          tooltip={tooltip && !state ? tooltip : name}
+          tooltip={state ? name : tooltip}
           className={className}
           data-copy-state={state}
           aria-busy={feedback.pending || undefined}

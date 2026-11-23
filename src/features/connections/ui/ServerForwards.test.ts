@@ -250,7 +250,6 @@ it("keeps the local destination draft through SOCKS5 mode changes and saves with
   await setInput("Destination port", "5432");
   await setInput("Local port", "1080");
   await click("SOCKS5");
-  expect(container.textContent).toContain("SOCKS5 · 127.0.0.1:1080");
   expect(container.textContent).not.toContain("Destination host");
   await click("Local");
   expect(

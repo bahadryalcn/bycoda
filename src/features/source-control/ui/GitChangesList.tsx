@@ -420,14 +420,15 @@ function ChangeDirRow({
             data-action-primary=""
             tabIndex={tabStop ? 0 : -1}
             onClick={() => onToggle(dir.path)}
-            className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+            align="start"
+            className="min-w-0 flex-1"
           >
             <FileTypeIcon name={dir.name} isDir isOpen={open} />
             <Text
               as="span"
               size="inherit"
               tone="inherit"
-              weight="regular"
+              weight="medium"
               className="flex min-w-0 flex-1"
             >
               <MiddleTruncate mode="path" size="body" tone="primary" className="min-w-0 flex-1">

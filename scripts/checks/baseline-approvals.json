@@ -282,13 +282,6 @@
     },
     {
       "baseline": "ui-drift-baseline.json",
-      "rule": "one-primary-per-view",
-      "from": 0,
-      "to": 12,
-      "reason": "New Phase 5 guard rule one-primary-per-view records existing debt on 2026-11-15; future per-file counts may only fall via --ratchet."
-    },
-    {
-      "baseline": "ui-drift-baseline.json",
       "rule": "nested-card",
       "from": 0,
       "to": 1,
@@ -390,13 +383,6 @@
       "rule": "bycoda/transcript-ink-roles",
       "from": 0,
       "to": 2,
-      "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
-    },
-    {
-      "baseline": "invariants-baseline.json",
-      "rule": "bycoda/disabled-needs-reason",
-      "from": 0,
-      "to": 609,
       "reason": "UI hardening 2026-11-22: new/widened rule, audit K11/K12/K10 (temp/local/bycoda-design-audit/todo/00-plan.md)."
     },
     {

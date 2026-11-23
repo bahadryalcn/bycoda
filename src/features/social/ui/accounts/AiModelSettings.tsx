@@ -72,14 +72,7 @@ export function AiModelSettings({ client, policies, onChanged }: AiModelSettings
         ) : null
       }
     >
-      <Row
-        label={t("Model")}
-        description={
-          effective
-            ? t("AI uses this model to write replies, plans and reports.")
-            : t("Choose a model first. AI cannot write replies or plans until you do.")
-        }
-      >
+      <Row label={t("Model")}>
         <SocialModelSource model={effective?.model ?? ""} values={effective?.modelSettings ?? {}}>
           <ModelPicker
             harness={

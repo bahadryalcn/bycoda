@@ -55,15 +55,10 @@ function NavigationLoading({ label, onBack }: { label: string; onBack: () => voi
         trailing={IS_MAC ? null : <WindowControls />}
       />
       <SurfaceLoading
-        title={t("Loading {p0}…", { p0: label })}
+        title={t("Loading…")}
         slowDescription={t("{p0} is taking longer to load. You can return to the workspace.", {
           p0: label,
         })}
-        slowAction={
-          <Button size="sm" variant="secondary" type="button" onClick={onBack}>
-            {t("Back to workspace")}
-          </Button>
-        }
       >
         {/* Neutral page shapes: a heading line, then a few content lines. */}
         <SkeletonBar width="45%" height="0.875rem" />

@@ -1,7 +1,6 @@
 import { useContext, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
-import { Tab, TabList, TabPanel, Tabs } from "../../../../shared/ui/Tabs";
+import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import { isPausedMessagingProvider, MessagingProviderMark } from "../../../messaging";
 import { INBOX_PROVIDERS, inboxProviderMark } from "../InboxSettings";
 import { JiraSettings } from "../JiraSettings";
@@ -99,41 +98,35 @@ export function IntegrationsPage() {
 
   return (
     <div className="inbox-settings integrations-settings">
-      <Tabs value={active} onValueChange={setActive} size="md">
-        <TabList label={t("Integrations")} scroll="wrap" inset="sm">
-          {INTEGRATIONS.map((item) => (
-            <Tab key={item.id} value={item.id} stableWidth icon={item.icon}>
-              {t(item.name)}
-            </Tab>
-          ))}
-        </TabList>
+      <div className="settings-topics">
+        <SearchableSelect
+          label={t("Services")}
+          value={active}
+          onChange={setActive}
+          options={INTEGRATIONS.map((item) => ({
+            value: item.id,
+            label: t(item.name),
+            icon: item.icon,
+            keywords: t(item.description),
+          }))}
+        />
         {INTEGRATIONS.map((item) => (
-          <TabPanel key={item.id} value={item.id} keepMounted>
-            <div className="settings-topics grid min-w-0 gap-6">
+          <div key={item.id} hidden={active !== item.id}>
+            <div className="settings-topics">
               <Group
                 layout="full"
-                scope={
-                  item.capability === "inbox"
-                    ? t("This computer · Inbox account")
-                    : t("This computer · Messaging accounts")
-                }
                 id={item.id}
                 title={t("Connection")}
                 info={t(item.description)}
-                action={
-                  <Badge size="sm" appearance="subtle">
-                    {item.capability === "inbox" ? t("Inbox") : t("Messages")}
-                  </Badge>
-                }
               >
                 {active === item.id || visited.has(item.id)
                   ? item.render(active === item.id)
                   : null}
               </Group>
             </div>
-          </TabPanel>
+          </div>
         ))}
-      </Tabs>
+      </div>
     </div>
   );
 }

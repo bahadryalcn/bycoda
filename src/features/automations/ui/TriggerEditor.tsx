@@ -279,25 +279,11 @@ export function EventTriggerSentence({
             options={branchOptions}
             placeholder={t("Select a branch")}
             disabled={!projectChosen}
-            emptyLabel={projectChosen ? "No branches found" : "Choose a project first"}
+            emptyLabel={projectChosen ? t("No branches found") : t("Choose a project first")}
             onChange={(value) => onChange({ ...trigger, branch: value })}
           />
         </>
       ) : null}
-      <span>{t("by")}</span>
-      <TriggerPill
-        label={t("Actor")}
-        value={trigger.actor || "anyone"}
-        options={[
-          {
-            value: "anyone",
-            get label() {
-              return t("Anyone");
-            },
-          },
-        ]}
-        onChange={(value) => onChange({ ...trigger, actor: value })}
-      />
     </>
   );
 }

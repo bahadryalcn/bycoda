@@ -9,6 +9,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
+import { observeResize } from "../lib/observeResize";
 import { Badge } from "./Badge";
 import { Button, type ButtonProps } from "./Button";
 import styles from "./Tabs.module.css";
@@ -203,6 +204,24 @@ export function TabList({
       all.find(enabled);
     for (const tab of all) tab.tabIndex = tab === stop ? 0 : -1;
   });
+
+  // Keep the selected tab visible in the strip after selection, resizing or label changes.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list || scroll !== "auto" || tabs.orientation !== "horizontal") return;
+    const all = ownTabs(list);
+    const tab = all.find((entry) => entry.dataset.tabValue === tabs.value);
+    if (!tab) return;
+    const reveal = () => {
+      const bounds = list.getBoundingClientRect();
+      const selected = tab.getBoundingClientRect();
+      if (selected.left < bounds.left) list.scrollLeft += selected.left - bounds.left;
+      else if (selected.right > bounds.right) list.scrollLeft += selected.right - bounds.right;
+    };
+    reveal();
+    const cleanups = [list, ...all].map((node) => observeResize(node, reveal));
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [scroll, tabs.orientation, tabs.value]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     onKeyDown?.(event);

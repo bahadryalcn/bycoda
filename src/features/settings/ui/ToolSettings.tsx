@@ -42,7 +42,7 @@ export function ToolSettingsPage({ revealRequest = 0 }: { revealRequest?: number
   return (
     <ActiveToolSettingsTab.Provider value={tab}>
       <Tabs value={tab} onValueChange={setTab}>
-        <TabList label={t("Conversation tools")} scroll="wrap">
+        <TabList label={t("Conversation tools")} scroll="auto">
           <Tab value="browser" className="shrink-0">
             {t("Browser")}
           </Tab>
@@ -54,9 +54,6 @@ export function ToolSettingsPage({ revealRequest = 0 }: { revealRequest?: number
           </Tab>
           <Tab value="devServers" className="shrink-0">
             {t("Development servers")}
-          </Tab>
-          <Tab value="bykit" className="shrink-0">
-            bykit
           </Tab>
         </TabList>
         <TabPanel value="browser" keepMounted>
@@ -70,9 +67,6 @@ export function ToolSettingsPage({ revealRequest = 0 }: { revealRequest?: number
         </TabPanel>
         <TabPanel value="devServers" keepMounted>
           <DevServersSettingsPage />
-        </TabPanel>
-        <TabPanel value="bykit" keepMounted>
-          <BykitSettingsPage />
         </TabPanel>
       </Tabs>
     </ActiveToolSettingsTab.Provider>
@@ -111,7 +105,7 @@ function DraftPreference<T extends string | number>({
   id,
   label,
   description,
-  dependency,
+  dependsOn,
   preference,
   parse,
   valid,
@@ -126,7 +120,7 @@ function DraftPreference<T extends string | number>({
   invalidMessage: string;
   bounds?: { min: number; max: number };
   description?: string;
-  dependency?: string;
+  dependsOn?: boolean;
 }) {
   const [value] = useStoredPreferenceState(preference.load, preference.subscribe);
   const [draft, setDraft] = useState(String(value));
@@ -184,7 +178,7 @@ function DraftPreference<T extends string | number>({
       id={id}
       label={label}
       description={description}
-      dependency={dependency}
+      dependsOn={dependsOn}
       stacked
       modified={value !== preference.defaultValue || dirty}
       onReset={() => commit(String(preference.defaultValue))}
@@ -357,7 +351,7 @@ export function BrowserSettingsPage() {
         <DraftPreference
           id="browser-viewport-width"
           label={t("Width")}
-          dependency={t("Used with the Custom viewport.")}
+          dependsOn={viewport === "custom"}
           preference={toolPreferences.browserViewportWidth}
           parse={Number}
           valid={(draft) =>
@@ -372,7 +366,7 @@ export function BrowserSettingsPage() {
         <DraftPreference
           id="browser-viewport-height"
           label={t("Height")}
-          dependency={t("Used with the Custom viewport.")}
+          dependsOn={viewport === "custom"}
           preference={toolPreferences.browserViewportHeight}
           parse={Number}
           valid={(draft) =>
@@ -411,7 +405,7 @@ export function BrowserSettingsPage() {
           id="browser-search-template"
           label={t("Search URL template")}
           description={t("{p0} is replaced with your encoded search terms.", { p0: "{query}" })}
-          dependency={t("Used with Custom search.")}
+          dependsOn={searchEngine === "custom"}
           preference={toolPreferences.browserSearchTemplate}
           parse={(draft) => draft}
           valid={validBrowserSearchTemplate}
@@ -523,19 +517,12 @@ export function DevServersSettingsPage() {
 export function BykitSettingsPage() {
   useLocale();
   return (
-    <ToolSettingsGroup
-      tab="bykit"
-      title="bykit"
-      description={t(
-        "When bykit is installed, agents are told to use it for large files, diffs, long command output and bulk edits. Applies to the next agent turn.",
-      )}
-      keys={["bykitInstructions"]}
-    >
+    <Group title={t("Agent behavior")}>
       <BooleanPreference
         id="bykit-instructions"
         label={t("Tell agents to use bykit")}
         preference={toolPreferences.bykitInstructions}
       />
-    </ToolSettingsGroup>
+    </Group>
   );
 }

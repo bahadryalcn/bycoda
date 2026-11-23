@@ -7,12 +7,10 @@ export function MemoryTab({ snapshot }: { snapshot: AssistantSnapshot }) {
   const room = useAssistantRoom();
   const {
     environmentId,
-    assistantRequest,
     view,
     query,
     setQuery,
     pending,
-    setConfirm,
     setUndo,
     memorySearching,
     memoryEntries,
@@ -49,25 +47,20 @@ export function MemoryTab({ snapshot }: { snapshot: AssistantSnapshot }) {
               active,
             })
           }
-          onDelete={(entry) =>
-            setConfirm({
-              title: t("Delete memory?"),
-              message: entry.text,
-              confirmLabel: t("Delete"),
-              onConfirm: async () => {
-                await assistantRequest({
-                  op: "memory.delete",
-                  id: entry.id,
-                  expectedVersion: entry.version,
-                });
-                setUndo({
-                  id: `memory:${entry.id}`,
-                  label: entry.text,
-                  environmentId,
-                });
-              },
-            })
-          }
+          onDelete={async (entry) => {
+            // Restorable from Undo / Recently deleted, so no confirmation dialog.
+            const deleted = await mutate(entry.id, t("Deleting…"), {
+              op: "memory.delete",
+              id: entry.id,
+              expectedVersion: entry.version,
+            });
+            if (deleted)
+              setUndo({
+                id: `memory:${entry.id}`,
+                label: entry.text,
+                environmentId,
+              });
+          }}
         />
       )}
     </>

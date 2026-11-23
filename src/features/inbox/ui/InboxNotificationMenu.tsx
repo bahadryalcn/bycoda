@@ -1,7 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
-import { LoadingText } from "../../../shared/ui/LoadingText";
-import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState } from "react";
@@ -26,6 +24,9 @@ import {
   notificationMuteActions,
   notificationMuteDeadline,
 } from "../../notifications/ui/notificationMuteActions";
+
+/** One width for the menu and its custom mute popover. */
+const INBOX_NOTIFICATION_MENU_WIDTH = 272;
 
 type Props = {
   x: number;
@@ -110,7 +111,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
       <Popover
         anchor={{ x, y }}
         gap={0}
-        width={280}
+        width={INBOX_NOTIFICATION_MENU_WIDTH}
         kind="dialog"
         aria-label={t("Mute project notifications")}
         onDismiss={onClose}
@@ -135,38 +136,23 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
       x={x}
       y={y}
       ariaLabel={t("Inbox actions")}
-      width={272}
+      width={INBOX_NOTIFICATION_MENU_WIDTH}
       items={items}
       onClose={onClose}
       header={
-        <div className="space-y-1 px-2 py-1.5">
-          <Text as="p" size="caption" tone="neutral" weight="medium">
-            {t("Inbox")}
-          </Text>
-          <LiveText
-            size="caption"
-            tone="secondary"
-            className="block"
-            text={t(
-              allIds.length === 1 ? "{p0} project · {p2} muted" : "{p0} projects · {p2} muted",
-              {
-                p0: allIds.length,
-                p2: mutedIds.length,
-              },
-            )}
-          />
-          {seenStatus.state === "loading" ? (
-            <LoadingText>{t("Loading Inbox read status…")}</LoadingText>
-          ) : seenStatus.state === "error" ? (
-            <Alert tone="danger">
-              {t("Inbox read status is unavailable. Unread indicators may be incomplete.")}{" "}
-              <Button variant="secondary" onClick={retryInboxSeenStorage}>
-                {t("Retry")}
-              </Button>
-            </Alert>
-          ) : null}
-          {saveError ? <Alert tone="danger">{t(saveError)}</Alert> : null}
-        </div>
+        seenStatus.state === "error" || saveError ? (
+          <div className="space-y-1 px-2 py-1.5">
+            {seenStatus.state === "error" ? (
+              <Alert tone="danger">
+                {t("Inbox read status is unavailable. Unread indicators may be incomplete.")}{" "}
+                <Button variant="secondary" onClick={retryInboxSeenStorage}>
+                  {t("Retry")}
+                </Button>
+              </Alert>
+            ) : null}
+            {saveError ? <Alert tone="danger">{t(saveError)}</Alert> : null}
+          </div>
+        ) : undefined
       }
       onPick={(id) => {
         if (id === "read-all") {

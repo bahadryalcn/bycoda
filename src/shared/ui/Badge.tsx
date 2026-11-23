@@ -17,8 +17,9 @@ export type { BadgeTone, BadgeVariant, BadgeAppearance } from "./arc/badge/badge
 /** `xs` is the inline metadata size for triggers, rows and tab labels; `sm`/`md` are the Arc sizes. */
 export type BadgeSize = "xs" | "sm" | "md";
 
-export type BadgeProps = Omit<ArcBadgeProps, "size"> & {
+export type BadgeProps = Omit<ArcBadgeProps, "size" | "tone"> & {
   size?: BadgeSize;
+  tone?: BadgeTone | "skill";
   /** Tint from an account's identity palette. Text retains the theme foreground. */
   identityColor?: string;
   /** Round 28px icon container for a decorative activity glyph. */
@@ -71,7 +72,11 @@ export function Badge({
   ...props
 }: BadgeProps) {
   const badgeTone =
-    variant === "count" && tone !== "warning" && tone !== "danger" ? "accent" : (tone ?? "neutral");
+    variant === "count" && tone !== "warning" && tone !== "danger"
+      ? "accent"
+      : tone === "skill"
+        ? "neutral"
+        : (tone ?? "neutral");
   const body =
     truncate &&
     variant !== "count" &&
@@ -101,6 +106,7 @@ export function Badge({
       className={[
         "bycoda-arc",
         styles.ink,
+        tone === "skill" && variant !== "count" && styles.skill,
         size === "xs" && styles.xs,
         shape === "icon" && styles.iconShape,
         leading && styles.leading,
@@ -142,12 +148,19 @@ export function statusBadgeTone(status: BadgeStatus): BadgeTone {
   return STATUS_TONE[status];
 }
 
-function StatusIcon({ status }: { status: BadgeStatus }) {
+/** Shared glyph for compact and filled workflow status. */
+export function StatusGlyph({
+  status,
+  size = "xs",
+}: {
+  status: BadgeStatus;
+  size?: "xs" | "sm";
+}) {
   switch (status) {
     case "failed":
       return <CircleX strokeWidth={1.75} />;
     case "running":
-      return <Spinner size="xs" />;
+      return <Spinner size={size} />;
     case "retrying":
       return <RotateCcw strokeWidth={1.75} />;
     case "done":
@@ -212,8 +225,8 @@ export function StatusBadge({
       {...props}
       size={size}
       appearance={appearance}
-      tone={STATUS_TONE[status]}
-      icon={<StatusIcon status={status} />}
+      tone={statusBadgeTone(status)}
+      icon={<StatusGlyph status={status} />}
       label={iconOnly ? label : undefined}
       role={iconOnly ? "img" : props.role}
       data-status={status}

@@ -14,10 +14,10 @@ for (const kind of ["projectless", "project"])
         const picker = page.getByRole("button", { name: /^Run on:/ });
         await expect(picker).toContainText("This computer");
         await picker.click();
-        await expect(page.getByRole("option", { name: /Office Mac/ })).toBeVisible();
-        await expect(page.getByRole("option", { name: /Build PC.*Offline/ })).toBeDisabled();
+        await expect(page.getByRole("menuitemradio", { name: /Office Mac/ })).toBeVisible();
+        await expect(page.getByRole("menuitemradio", { name: /Build PC.*Offline/ })).toBeDisabled();
         if (width === 1280) await expect(page.locator(".crew-scene")).toBeVisible();
-        const choices = page.getByRole("listbox", { name: "Run on" });
+        const choices = page.getByRole("menu", { name: "Run on" });
         await expect
           .poll(async () => {
             const trigger = (await picker.boundingBox())!;
@@ -31,13 +31,18 @@ for (const kind of ["projectless", "project"])
         await page.screenshot({
           path: `temp/verification/session-machine-selection/${kind}-${light ? "light" : "dark"}-${width}.png`,
         });
-        await page.getByRole("option", { name: /Office Mac/ }).click();
+        await page.getByRole("menuitemradio", { name: /Office Mac/ }).click();
         await expect
           .poll(() => page.evaluate(() => window.sessionUsability.events.machine))
           .toBe("office");
-        await expect(page.locator("[data-composer-box] textarea")).toHaveValue(
-          "Keep this integrated draft",
-        );
+        const editor = page.locator("[data-composer-box] textarea");
+        await expect(editor).toHaveValue("Keep this integrated draft");
+        await expect(editor).toBeFocused();
+        await picker.evaluate((trigger: HTMLButtonElement) => trigger.click());
+        await expect(choices).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(choices).toHaveCount(0);
+        await expect(editor).toBeFocused();
       });
 
 for (const light of [true, false])
@@ -103,7 +108,7 @@ for (const light of [true, false])
         content:
           ".agent-transcript { background-image: radial-gradient(ellipse at 70% 25%, var(--ui-tone-info-subtle), transparent 75%); }",
       });
-      await expect(page.locator("[data-session-review]")).toContainText("Changed 1 file");
+      await expect(page.locator("[data-session-review]")).toContainText("1 file changed");
       const review = page.getByRole("button", { name: "Review", exact: true });
       const undo = page.getByRole("button", { name: "Undo", exact: true });
       await expect(undo).toBeDisabled();
@@ -126,6 +131,28 @@ for (const light of [true, false])
         path: `temp/verification/sessions-callers/session-review-${light ? "light" : "dark"}-${width}.png`,
       });
     });
+
+for (const directory of ["scratch-missing", "scratch-present"]) {
+  test(`settled projectless session skips checkpoint review with ${directory}`, async ({ page }) => {
+    await page.goto(`/tests/browser/sessions/session-usability.html?reviewFixture=${directory}`);
+    await expect(page.getByText("The report is ready for review.", { exact: false })).toBeVisible();
+    await expect(page.locator("[data-session-review-shell]")).toHaveCount(0);
+    await expect(page.getByText("Could not load the changes.", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/\.bycoda-host\/scratch\/session-/)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.sessionUsability.events.checkpointReads)).toBe(0);
+  });
+}
+
+test("worktree checkpoint review recovers automatically while recording", async ({ page }) => {
+  await page.goto("/tests/browser/sessions/session-usability.html?reviewFixture=worktree-busy");
+  await expect(page.locator("[data-session-review]")).toContainText("1 file changed");
+  expect(await page.evaluate(() => window.sessionUsability.events.checkpointReads)).toBe(2);
+  expect(await page.evaluate(() => window.sessionUsability.events.checkpointDirectories)).toEqual([
+    "/fixture-worktree",
+    "/fixture-worktree",
+  ]);
+});
 
 for (const light of [true, false])
   for (const width of [800, 1280])

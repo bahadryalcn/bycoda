@@ -73,14 +73,14 @@ it.each(["Cancel", "Add as new groups"])("previews before explicit %s", async (a
     action === "Cancel" ? ["Existing"] : ["Existing", "Proposed"],
   );
 });
-it("makes adding the proposal primary and replace a secondary danger action", async () => {
+it("makes adding the proposal primary and replace a quiet danger action", async () => {
   await render();
   await click("Group with AI");
   const buttonNamed = (label: string) =>
     [...document.querySelectorAll("button")].find((item) => item.textContent === label)!;
   expect(buttonNamed("Add as new groups").getAttribute("data-button-variant")).toBe("primary");
   const replace = buttonNamed("Replace my groups");
-  expect(replace.getAttribute("data-button-variant")).toBe("secondary");
+  expect(replace.getAttribute("data-button-variant")).toBe("ghost");
   expect(replace.getAttribute("data-button-tone")).toBe("danger");
 });
 it("does not replace existing groups until the danger confirmation is approved", async () => {

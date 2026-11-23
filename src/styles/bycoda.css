@@ -9,6 +9,8 @@
   --ui-island-border: color-mix(in srgb, var(--palette-solidInk) 12%, var(--palette-scrim));
   --bycoda-panel: var(--ui-surface-panel);
   --bycoda-raised: var(--ui-surface-raised);
+  --ui-crew-stage-surface: var(--palette-canvasPureDark);
+  --ui-crew-stage-ink: var(--palette-solidInk);
   --bycoda-brass-muted: var(--palette-hex7e8795);
 }
 .bycoda-settings-content > header {
@@ -568,16 +570,6 @@ html[data-performance-no-blur] {
 
 /* Appearance swatches: each option paints its sample from fixed palette entries, not the active
    theme, so every card shows its own colors. */
-.code-theme-swatch[data-swatch="github"] {
-  --swatch-1: var(--palette-hexff7b72);
-  --swatch-2: var(--palette-hexa5d6ff);
-  --swatch-3: var(--palette-hexd2a8ff);
-}
-.code-theme-swatch[data-swatch="dracula"] {
-  --swatch-1: var(--palette-hexff79c6);
-  --swatch-2: var(--palette-hexf1fa8c);
-  --swatch-3: var(--palette-hex50fa7b);
-}
 .diff-swatch[data-palette="default"] {
   --swatch-add: var(--palette-hex10b981);
   --swatch-del: var(--palette-hexf43f5e);

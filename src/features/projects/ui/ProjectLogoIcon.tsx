@@ -1,9 +1,7 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Folder, type IconComponent } from "../../../shared/ui/icons";
 import { useEffect, useState } from "react";
 import { projectLogoSrcAt } from "../model/projectLogos";
-import { useT } from "../../../shared/i18n";
 import { identityClassName, type IdentitySize } from "../../../shared/ui/identity/identitySize";
 import {
   TAB_GROUP_LOGOS_CHANGED,
@@ -28,7 +26,6 @@ export function ProjectLogoIcon({
   fallback: Fallback = Folder,
   fallbackStrokeWidth = 1.5,
 }: Props) {
-  const t = useT();
   const className = identityClassName(size, classNameProp, "size-3.5 shrink-0");
   const [revision, setRevision] = useState(tabGroupLogoDisplayRevision);
   const [failedImage, setFailedImage] = useState<string | null>(null);
@@ -55,13 +52,6 @@ export function ProjectLogoIcon({
       />
     );
   }
-  if (src)
-    return (
-      <Tooltip label={t("Project logo could not be loaded")} asChild>
-        <span role="img" aria-label={t("Project logo could not be loaded")}>
-          <Fallback className={className} strokeWidth={fallbackStrokeWidth} />
-        </span>
-      </Tooltip>
-    );
+  // A logo that fails to load falls back to the plain icon without a message of its own.
   return <Fallback className={className} strokeWidth={fallbackStrokeWidth} />;
 }

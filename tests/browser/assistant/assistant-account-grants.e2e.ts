@@ -51,7 +51,6 @@ for (const theme of ["light", "dark"])
       await page.getByText("Task notification recovery").click();
       await page.getByRole("button", { name: /^Project\b/ }).click();
       await page.getByRole("option", { name: "Fixture project", exact: true }).click();
-      await page.getByRole("button", { name: "Check notifications", exact: true }).click();
       await expect(page.getByText("Outcome unknown")).toBeVisible();
       await expect(page.getByRole("button", { name: "Check original status" })).toBeVisible();
       await page.screenshot({

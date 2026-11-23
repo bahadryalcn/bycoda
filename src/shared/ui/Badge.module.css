@@ -41,8 +41,11 @@
 }
 /* Inside an assistant reply a neutral badge reads the chrome ink role, so counters and chips stay
    below the body text. Outside a reply the token is unset and the Arc tone ink applies. */
-:global([data-transcript-reply]) .ink.ink[data-tone="neutral"] {
-  color: var(--transcript-ink-chrome, var(--ui-tone-neutral-fg));
+.ink.ink[data-tone="neutral"] {
+  --badge-foreground: var(--ui-quiet-chrome-ink, var(--ui-tone-neutral-fg));
+}
+.skill.skill[data-tone="neutral"] {
+  --badge-foreground: var(--color-skill);
 }
 /* An explicit `leading` wins over the size's own line height, in every variant. */
 .leading.leading.leading[data-leading="none"] {

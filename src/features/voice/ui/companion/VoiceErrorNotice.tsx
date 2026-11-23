@@ -22,26 +22,12 @@ export function voiceErrorTitle(error: string) {
 }
 
 /**
- * Header mark for a voice error. It carries `data-voice-error`, which tints the whole card. With
- * `onShow` it is a button (the compact card has no room for the message and expands on it);
- * otherwise it is a plain mark, because the message is already visible in the body.
+ * Compact header mark for a voice error. It carries `data-voice-error`, which tints the whole card.
+ * The compact card has no room for the message, so the mark is a button that expands it; the
+ * expanded panel shows the notice itself and no mark.
  */
-export function VoiceErrorMark({ error, onShow }: { error: string; onShow?: () => void }) {
+export function VoiceErrorMark({ error, onShow }: { error: string; onShow: () => void }) {
   const title = voiceErrorTitle(error);
-  if (!onShow) {
-    return (
-      <Text
-        size="inherit"
-        tone="danger"
-        data-voice-error=""
-        role="img"
-        aria-label={title}
-        className="grid size-7 shrink-0 place-items-center"
-      >
-        <TriangleAlert className="icon-sm" />
-      </Text>
-    );
-  }
   return (
     <Button
       iconOnly

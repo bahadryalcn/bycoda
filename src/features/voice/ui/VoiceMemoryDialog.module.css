@@ -1,20 +1,20 @@
 /* Memory list: compact rows on a quiet surface, separated by spacing. */
 .body {
   display: grid;
-  gap: 12px;
+  gap: var(--ui-space-3, 0.75rem);
   min-width: 0;
 }
 .status {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--ui-space-2, 0.5rem);
   min-width: 0;
 }
 .add {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--ui-space-2, 0.5rem);
   min-width: 0;
 }
 .add > :first-child {
@@ -23,7 +23,7 @@
 }
 .list {
   display: grid;
-  gap: 4px;
+  gap: var(--ui-space-1, 0.25rem);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -31,9 +31,10 @@
 .note {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2, 0.5rem);
   min-width: 0;
-  padding: 6px 6px 6px 12px;
+  padding: var(--ui-space-1, 0.25rem) var(--ui-space-1, 0.25rem) var(--ui-space-1, 0.25rem)
+    var(--ui-space-3, 0.75rem);
 }
 .text {
   flex: 1;

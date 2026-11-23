@@ -294,8 +294,6 @@ export function MediaView({
             <div className="mt-2 flex justify-center gap-2">
               <Button
                 variant="primary"
-                motion="none"
-                type="button"
                 startIcon={<Play className="icon-sm" />}
                 onClick={() => setChosen({ path, mode: "stream" })}
               >
@@ -303,8 +301,6 @@ export function MediaView({
               </Button>
               <Button
                 variant="ghost"
-                motion="none"
-                type="button"
                 startIcon={<Download className="icon-sm" />}
                 onClick={() => setChosen({ path, mode: "download" })}
               >

@@ -23,10 +23,8 @@ it("shows Grok weekly remaining/used values and known reset without account cont
   expect(remaining).toContain("81%");
   expect(remaining).toContain("Weekly");
   expect(remaining).toContain("Resets in");
-  expect(remaining).toContain(
-    `dateTime="${new Date(state.limits.weekly!.resetsAt!).toISOString()}"`,
-  );
-  expect(remaining).toMatch(/<time[^>]*>[^<]+<\/time>/);
+  // The reset time is the countdown's tooltip, not a second line of text.
+  expect(remaining).not.toContain("<br");
   expect(remaining).toContain('aria-label="Grok · Weekly · left"');
   expect(remaining).not.toContain("Account actions");
   state.remaining = false;

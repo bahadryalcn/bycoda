@@ -1,4 +1,4 @@
-import { Text } from "../../../shared/ui/Text";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useState, useSyncExternalStore } from "react";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { errorText } from "../../../shared/lib/errors";
@@ -79,11 +79,7 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
         focusRequest={focusRequest}
         onChoose={(outcome) => void choose(outcome)}
       />
-      {error ? (
-        <Text as="div" tone="danger" className="mt-1">
-          {error}
-        </Text>
-      ) : null}
+      {error ? <InlineError className="mt-1">{error}</InlineError> : null}
     </Disclosure>
   );
 }

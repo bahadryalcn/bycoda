@@ -6,8 +6,7 @@ import {
   type EmptyStateProps as ArcEmptyStateProps,
 } from "./arc/empty-state/empty-state";
 import { InlineError } from "./InlineError";
-import { NoticeButton, NoticeGlyph, type NoticeAction } from "./Notice";
-import { CircleAlert } from "./icons";
+import { NoticeButton, type NoticeAction } from "./Notice";
 import { Button } from "./Button";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import styles from "./FailureState.module.css";
@@ -194,7 +193,7 @@ export function FailureState({
         context={context}
         role={role ?? "alert"}
         data-kind="unavailable"
-        icon={icon === undefined ? <CircleAlert aria-hidden /> : icon}
+        icon={icon}
         className={["bycoda-arc", className].filter(Boolean).join(" ")}
         action={
           action || secondaryAction || extra || onRetry ? (
@@ -203,9 +202,9 @@ export function FailureState({
               {secondaryAction ? <NoticeButton action={secondaryAction} /> : null}
               {extra}
               {onRetry ? (
-                <NoticeButton
-                  action={{ label: retryText, onClick: () => void retry(), pending: retryBusy }}
-                />
+                <Button variant="primary" size="sm" loading={retryBusy} onClick={() => void retry()}>
+                  {retryText}
+                </Button>
               ) : null}
             </>
           ) : undefined
@@ -224,7 +223,7 @@ export function FailureState({
         {brand}
         <div className={styles.message} role="alert">
           <div className={styles.heading}>
-            <NoticeGlyph tone="danger" size="box" />
+            {icon}
             <Heading id={titleId} className={styles.title}>
               {title}
             </Heading>
@@ -234,7 +233,7 @@ export function FailureState({
         <div className={styles.actions}>
           {onRetry ? (
             <Button
-              variant="secondary"
+              variant="primary"
               size="sm"
               motion="none"
               loading={retryBusy || undefined}
@@ -246,18 +245,20 @@ export function FailureState({
           {action ? <NoticeButton action={action} /> : null}
           {secondaryAction ? <NoticeButton action={secondaryAction} /> : null}
           {extra}
-          <Button
-            variant="ghost"
-            size="sm"
-            motion="none"
-            aria-expanded={details}
-            aria-controls={detailsId}
-            onClick={() => setDetails(!details)}
-          >
-            {details ? t("Hide details") : t("Show details")}
-          </Button>
+          {error !== undefined ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              motion="none"
+              aria-expanded={details}
+              aria-controls={detailsId}
+              onClick={() => setDetails(!details)}
+            >
+              {details ? t("Hide details") : t("Show details")}
+            </Button>
+          ) : null}
         </div>
-        {details && (
+        {error !== undefined && details && (
           <div id={detailsId} className={styles.details}>
             <pre ref={preview} tabIndex={0} aria-label={t("Error details")}>
               {shown}

@@ -5,7 +5,7 @@ import type { SettingsEntry } from "./settings";
 export const GENERAL_SETTINGS_INDEX: SettingsEntry[] = [
   {
     id: "performance-trace",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Performance trace");
     },
@@ -14,7 +14,7 @@ export const GENERAL_SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "host-stall-profiles",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Host CPU profiles");
     },
@@ -23,7 +23,7 @@ export const GENERAL_SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "performance-trace-data",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Trace data");
     },
@@ -31,7 +31,7 @@ export const GENERAL_SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "session-folder",
-    section: "general",
+    section: "workspace",
     get label() {
       return t("Folder for sessions without a project");
     },
@@ -40,7 +40,7 @@ export const GENERAL_SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "new-project-folder",
-    section: "general",
+    section: "workspace",
     get label() {
       return t("Folder for new projects");
     },

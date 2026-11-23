@@ -9,7 +9,7 @@ export function ExternalEditorIcon({ id }: { id: string }) {
     return (
       <svg
         viewBox="0 0 24 24"
-        {...textAttributes({ tone: id === "vscode" ? "info" : "success" }, "size-4")}
+        {...textAttributes({ tone: id === "vscode" ? "info" : "success" }, "icon-md")}
         fill="currentColor"
         aria-hidden="true"
       >
@@ -26,7 +26,7 @@ export function ExternalEditorIcon({ id }: { id: string }) {
         weight="medium"
         {...surfaceAttributes(
           { radius: "sm", frame: "pane", edge: "all", variant: "inset" },
-          "grid size-4 place-items-center",
+          "grid icon-md place-items-center",
         )}
       >
         {jetbrains[id as keyof typeof jetbrains]}

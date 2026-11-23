@@ -31,7 +31,7 @@ import {
   useFollowSystemMotionEnabled,
   usePrefersReducedMotion,
 } from "../../../model/decorativeMotion";
-import { Group, Row, Toggle } from "../../../../../shared/ui/settings";
+import { AdvancedSettings, Group, Row, Toggle } from "../../../../../shared/ui/settings";
 import { resetCrew, resetMotion } from "../appearanceResets";
 import "./CrewStageCard.css";
 
@@ -85,13 +85,7 @@ export function CrewStageCard() {
         resetLabel={t("Reset crew")}
         onReset={resetCrew}
       >
-        <Row
-          id="crew-scene"
-          label={t("Show agent crew")}
-          description={t(
-            "Show the main agent, the advisor and subagents as a crew. Decorative animations control their activity.",
-          )}
-        >
+        <Row id="crew-scene" label={t("Show agent crew")}>
           <Toggle
             label={t("Agent crew")}
             on={visible}
@@ -134,7 +128,7 @@ export function CrewStageCard() {
             value={theme}
             options={[
               { value: "classic", label: t("Classic crew"), disabled: !visible },
-              { value: "star-wars", label: "Star Wars", disabled: !visible },
+              { value: "star-wars", label: t("Star Wars"), disabled: !visible },
               { value: "lotr", label: t("The Lord of the Rings"), disabled: !visible },
               { value: "matrix", label: t("The Matrix"), disabled: !visible },
             ]}
@@ -147,12 +141,8 @@ export function CrewStageCard() {
           dependsOn={visible}
           description={
             theme === "classic"
-              ? t(
-                  "When on, each crew member ages with its own context window and stays monochrome: baby, child, adult, then uncle. When off, everyone is an uncle and fills with color from the feet up as context fills. Compaction lowers the level. Unknown context stays neutral.",
-                )
-              : t(
-                  "Each character fills with color from the feet up as its context fills. Compaction lowers the level. Unknown context stays neutral. When off, all characters stay in full color.",
-                )
+              ? t("Each crew member ages with its own context: baby, child, adult, then uncle.")
+              : t("Each character fills with color as its context fills.")
           }
         >
           <Toggle
@@ -178,9 +168,7 @@ export function CrewStageCard() {
         <Row
           id="follow-system-motion"
           label={t("Follow system setting")}
-          description={t(
-            "When your system asks for reduced motion, decorative and tab animations turn off.",
-          )}
+          description={t("Reduced motion in your system turns decorative and tab animations off.")}
         >
           <Toggle
             label={t("Follow system setting")}
@@ -203,20 +191,22 @@ export function CrewStageCard() {
             onChange={saveDecorativeMotionEnabled}
           />
         </Row>
-        <Row
-          id="tab-animations"
-          label={t("Tab animations")}
-          description={t("Slide tabs as they open and close. Off makes tab changes instant.")}
-        >
-          <Toggle
+        <AdvancedSettings settingIds={["tab-animations"]}>
+          <Row
+            id="tab-animations"
             label={t("Tab animations")}
-            on={tabs}
-            onChange={(next) => {
-              saveTabAnimationsEnabled(next);
-              setTabs(loadTabAnimationsEnabled());
-            }}
-          />
-        </Row>
+            description={t("Slide tabs as they open and close. Off makes tab changes instant.")}
+          >
+            <Toggle
+              label={t("Tab animations")}
+              on={tabs}
+              onChange={(next) => {
+                saveTabAnimationsEnabled(next);
+                setTabs(loadTabAnimationsEnabled());
+              }}
+            />
+          </Row>
+        </AdvancedSettings>
       </Group>
     </>
   );

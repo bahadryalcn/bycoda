@@ -1,4 +1,3 @@
-import { Text } from "../../shared/ui/Text";
 import { useT } from "../../shared/i18n";
 import {
   formatReleaseDate,
@@ -6,12 +5,16 @@ import {
   releaseNotesTitleForName,
 } from "../model/releaseNotes";
 import { AgentMarkdown } from "../../features/sessions/ui/AgentMarkdown";
-import { Modal } from "../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../shared/ui/Modal";
 import { Button } from "../../shared/ui/Button";
 import { startTour } from "../../features/onboarding/model/tourState";
 import { usePendingHighlights } from "../../features/onboarding/model/useFeatureHighlights";
 import { useAppName } from "../../shared/lib/appName";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
+import { openExternal } from "../../platform/tauri/openExternal";
+import { errorText } from "../../shared/lib/errors";
+import { InlineError } from "../../shared/ui/InlineError";
+import { useState } from "react";
 
 type Props = {
   version: string;
@@ -19,26 +22,12 @@ type Props = {
 };
 
 export function WhatsNewBody({ version }: { version: string }) {
-  const t = useT();
   const notes = presentReleaseNotes(version);
   const title = releaseNotesTitleForName(version, useAppName());
-
+  if (!notes?.markdown) return null;
   return (
-    <article aria-label={title} className="px-5 py-4">
-      {notes?.markdown ? (
-        <AgentMarkdown className="whats-new-md" text={notes.markdown} streaming={false} />
-      ) : (
-        <Text as="p" size="secondary" tone="secondary">
-          {t("Release notes for this version have not been added yet.")}
-        </Text>
-      )}
-      {PRODUCT_IDENTITY.releaseNotesUrl ? (
-        <AgentMarkdown
-          className="whats-new-md mt-5"
-          text={`[View release on GitHub](${PRODUCT_IDENTITY.releaseNotesUrl})`}
-          streaming={false}
-        />
-      ) : null}
+    <article aria-label={title}>
+      <AgentMarkdown className="whats-new-md" text={notes.markdown} streaming={false} />
     </article>
   );
 }
@@ -50,33 +39,38 @@ export function WhatsNewDialog({ version, onClose }: Props) {
   const date = notes?.date ? formatReleaseDate(notes.date) : null;
   // Features added since the user last looked can be pointed out in the app itself.
   const hasHighlights = usePendingHighlights().length > 0;
+  const releaseUrl = PRODUCT_IDENTITY.releaseNotesUrl;
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   return (
     <Modal
-      padding="none"
       onClose={onClose}
       title={t("What's new")}
       description={`${name} ${version}${date ? ` · ${date}` : ""}`}
       size="md"
-      height="tall"
-    >
-      {hasHighlights ? (
-        <div className="flex items-center justify-between gap-3 px-5 pt-4">
-          <Text size="secondary" tone="secondary">
-            {t("See the new features of this update in the app.")}
-          </Text>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
+      height={notes?.markdown ? "tall" : undefined}
+      footer={hasHighlights || releaseUrl ? (
+        <ModalActions>
+          {releaseUrl ? (
+            <Button variant="ghost" onClick={() => {
+              setLinkError(null);
+              void openExternal(releaseUrl).catch((error) => setLinkError(errorText(error)));
+            }}>
+              {t("View release on GitHub")}
+            </Button>
+          ) : null}
+          {hasHighlights ? (
+            <Button variant="primary" size="sm" onClick={() => {
               onClose();
               startTour("whats-new");
-            }}
-          >
-            {t("Show me")}
-          </Button>
-        </div>
-      ) : null}
+            }}>
+              {t("Show me")}
+            </Button>
+          ) : null}
+        </ModalActions>
+      ) : undefined}
+    >
+      {linkError ? <InlineError>{linkError}</InlineError> : null}
       <WhatsNewBody version={version} />
     </Modal>
   );

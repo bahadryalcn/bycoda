@@ -5,7 +5,6 @@ import { useMemo, type ReactNode } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Eye } from "../../../shared/ui/icons";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import type { HostModelCatalog } from "../../connections/model/protocol";
 import { taskSessionIds } from "../../tasks/model/backgroundSession";
@@ -75,8 +74,8 @@ function SessionRow({
       disabled={disabled}
       loading={loading}
       onClick={onClick}
-      tooltip={title ?? t("View conversation")}
-      tooltipWhen={title ? "overflow" : "always"}
+      tooltip={title}
+      tooltipWhen="overflow"
       tooltipDetails={details}
     >
       {traits ? (
@@ -109,7 +108,6 @@ function SessionRow({
           {status ? <span>{status}</span> : null}
         </Text>
       ) : null}
-      <Eye aria-hidden="true" className="icon-sm shrink-0" tone="muted" />
     </Button>
   );
 }

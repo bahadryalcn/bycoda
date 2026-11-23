@@ -1,4 +1,5 @@
 import { errorText } from "../../../shared/lib/errors";
+import { isMissingPathError } from "../model/checkoutSelection";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
@@ -133,7 +134,7 @@ export function CommitDiff({ cwd, sha }: Props) {
                   unified.additions === 0 &&
                   unified.deletions === 0 &&
                   !loaded.binary
-                ? "No textual diff"
+                ? t("No textual diff")
                 : undefined,
         additions: unified?.additions ?? file.additions,
         deletions: unified?.deletions ?? file.deletions,
@@ -152,7 +153,8 @@ export function CommitDiff({ cwd, sha }: Props) {
     );
   }, [models]);
 
-  if (!cwd || cwd === "~") {
+  // A folder that no longer exists is the same state as no folder: nothing to retry.
+  if (!cwd || cwd === "~" || (files == null && isMissingPathError(error))) {
     return (
       <div className="grid h-full place-items-center">
         <EmptyState key="no-project" context="panel" description={t("No project folder")} />

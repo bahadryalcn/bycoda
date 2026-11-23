@@ -3746,7 +3746,7 @@ function Workspace({
                   sessionDeleteDialog={sessionDeleteDialog}
                   setSessionDeleteDialog={setSessionDeleteDialog}
                 />
-                <WorkspaceNotices sessionReminders={sessionReminders} openSettings={openSettings} />
+                <WorkspaceNotices sessionReminders={sessionReminders} />
                 <SessionNotificationBridges activeSessionId={activeSessionId} />
                 <AppConfirmHost />
                 <WorkspacePickerDialogs

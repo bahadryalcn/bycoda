@@ -61,7 +61,7 @@ import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
+import { useTabGroupLogos } from "../../projects/public/useTabGroupLogos";
 import { releaseGithubReadBlock } from "../model/githubReadGate";
 import {
   inboxItemKey,
@@ -108,7 +108,6 @@ import {
 } from "../model/inboxSeen";
 import { saveHiddenLinearTeamIds } from "../model/linear";
 import { saveHiddenJiraProjectIds } from "../model/jira";
-import {} from "../../workspace/model/tabGroups";
 import { InboxDiscussionPanel, type InboxSessionPortal } from "./InboxDiscussionPanel";
 import { inboxAskKey } from "../model/inboxAsk";
 import { InboxDetailBody } from "./InboxDetailBody";
@@ -882,7 +881,7 @@ export function InboxView({
           ) : null}
         </Alert>
       ) : null}
-      {seenStorageStatus.state === "error" ? (
+      {!readStatusError && seenStorageStatus.state === "error" ? (
         <InlineMessage
           tone="warning"
           action={{ label: t("Retry"), onClick: retryInboxSeenStorage }}
@@ -937,6 +936,11 @@ export function InboxView({
               kind="empty"
               icon={<Inbox aria-hidden="true" />}
               description={t("Add a project to see its repository's pull requests.")}
+              action={
+                onOpenProject
+                  ? { label: t("Add project"), onClick: () => void onOpenProject() }
+                  : undefined
+              }
             />
           ) : narrowed ? (
             <EmptyState
@@ -1089,20 +1093,6 @@ export function InboxView({
         {toolNavigation ? <ToolNavigation /> : null}
       </PaneHeader>
       <RemoteActivityNotices inbox />
-      {pullRequestsOnly && needsLocalProject && projects.length === 0 && onOpenProject ? (
-        <header
-          {...surfaceAttributes(
-            { frame: "pane", edge: "bottom" },
-            "flex shrink-0 flex-wrap items-center gap-2 px-3 py-2",
-          )}
-        >
-          {pullRequestsOnly && needsLocalProject && projects.length === 0 && onOpenProject ? (
-            <Button variant="ghost" type="button" onClick={() => void onOpenProject()}>
-              {t("Add project")}
-            </Button>
-          ) : null}
-        </header>
-      ) : null}
       {messagesOpen ? (
         <MessagesPanel accounts={messaging.accounts} sourceRow={sourceRow} />
       ) : source === "jira" && jiraView === "board" ? (

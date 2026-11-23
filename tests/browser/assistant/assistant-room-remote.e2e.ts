@@ -20,7 +20,6 @@ for (const theme of ["light", "dark"])
       await page.getByRole("menuitem", { name: "Remote Room access…" }).click();
       const dialog = page.getByRole("dialog", { name: "Remote Room access" });
       await expect(dialog).toBeVisible();
-      await expect(dialog.getByText("This Room is registered on its original Host.")).toBeVisible();
       await expect(
         dialog.getByText(
           "The target project must be visible and the native identity trusted by both Hosts. Each connection needs native review.",

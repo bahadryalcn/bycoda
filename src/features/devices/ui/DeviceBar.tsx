@@ -1,6 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { ReactNode } from "react";
-import { t } from "../../../shared/i18n/technical";
+import { t, useLocale } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
 import { RefreshCw } from "../../../shared/ui/icons";
@@ -37,6 +37,7 @@ export function DeviceBar({
   onRefresh: () => void;
   children?: ReactNode;
 }) {
+  useLocale();
   const device = devices.find((item) => item.id === selected);
   return (
     <div
@@ -49,19 +50,7 @@ export function DeviceBar({
         <div className="device-panel-choice">
           <SearchableSelect
             hideLabel
-            tooltip={
-              device
-                ? [
-                    hostLabel,
-                    platformVersionLabel(device),
-                    kindLabel(device),
-                    stateLabel(device),
-                    device.id,
-                  ]
-                    .filter(Boolean)
-                    .join(", ")
-                : undefined
-            }
+            tooltip={device ? [hostLabel, device.id].filter(Boolean).join(", ") : undefined}
             label={t("Selected device")}
             value={selected}
             disabled={disabled}

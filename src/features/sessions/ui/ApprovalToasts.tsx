@@ -2,22 +2,20 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { NotificationRequestCount } from "./NotificationRequestCount";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Motion } from "../../../shared/ui/Motion";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Surface } from "../../../shared/ui/Surface";
 import { Divider } from "../../../shared/ui/Divider";
 import { Switch } from "../../../shared/ui/Switch";
-import { Text } from "../../../shared/ui/Text";
 import { Popover } from "../../../shared/ui/Popover";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Sheet } from "../../../shared/ui/Sheet";
-import { LiveText } from "../../../shared/ui/LiveText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Badge } from "../../../shared/ui/Badge";
 import { ToastCard, ToastSlot, useAutoDismiss } from "../../../shared/ui/ToastRegion";
 import { useT } from "../../../shared/i18n";
 import { useToday } from "../../../shared/ui/useToday";
-import { Bell, BellOff, Settings } from "../../../shared/ui/icons";
+import { Bell, BellOff, CheckCheck, Settings } from "../../../shared/ui/icons";
 import {
   Fragment,
   useEffect,
@@ -325,7 +323,6 @@ export function ApprovalToasts({
         className="relative"
         ref={trigger}
         type="button"
-        aria-label={t("Notifications")}
         aria-describedby={badgeCount > 0 ? `${panelId}-count` : undefined}
         aria-expanded={expanded}
         aria-controls={expanded ? panelId : undefined}
@@ -363,22 +360,18 @@ export function ApprovalToasts({
           onClose={closePanel}
           headerActions={
             <>
-              {/* Title, count and action read as one line: they share a text baseline. */}
-              <span className="notification-header-meta">
-                <Text size="caption" tone="muted" truncate className="tabular-nums">
-                  <LiveText text={unreadCount > 0 ? t("{p0} unread", { p0: unreadCount }) : ""} />
-                </Text>
-                {unreadCount > 0 ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    onClick={() => markNotificationsSeen()}
-                  >
-                    {t("Mark all read")}
-                  </Button>
-                ) : null}
-              </span>
+              {unreadCount > 0 ? (
+                <Button
+                  iconOnly
+                  label={t("Mark all read")}
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => markNotificationsSeen()}
+                >
+                  <CheckCheck aria-hidden className="icon-sm" />
+                </Button>
+              ) : null}
               <Button
                 iconOnly
                 size="sm"
@@ -388,7 +381,7 @@ export function ApprovalToasts({
                 aria-controls={optionsAnchor ? `${panelId}-options` : undefined}
                 onClick={(event) => setOptionsAnchor(optionsAnchor ? null : event.currentTarget)}
               >
-                {popupsEnabled ? <Settings className="icon-sm" /> : <BellOff className="icon-sm" />}
+                <Settings className="icon-sm" />
               </Button>
             </>
           }
@@ -399,7 +392,8 @@ export function ApprovalToasts({
               anchor={optionsAnchor}
               role="region"
               aria-label={t("Notification options")}
-              className="notification-options bycoda-arc"
+              variant="panel"
+              className="flex flex-col gap-2"
               width={292}
               flow="scroll"
               onDismiss={(reason) => {
@@ -457,41 +451,21 @@ export function ApprovalToasts({
             className="notification-sheet-list"
           >
             {historyUnavailable ? (
-              <div className="notification-history-status">
-                <Alert tone="warning">
-                  {t("Notification history could not be read. Showing what this window has.")}
-                </Alert>
-                <Button variant="ghost" size="sm" type="button" onClick={reloadHistory}>
-                  {t("Retry")}
-                </Button>
-              </div>
+              <Alert tone="warning" action={{ label: t("Retry"), onClick: reloadHistory }}>
+                {t("Notification history could not be read. Showing what this window has.")}
+              </Alert>
             ) : null}
             {clearError ? (
-              <div className="notification-history-status">
-                <Alert tone="danger">
-                  {t("Notification history could not be cleared. Nothing was removed.")}
-                </Alert>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  loading={clearing}
-                  onClick={() => void clear()}
-                >
-                  {t("Retry")}
-                </Button>
-              </div>
+              <Alert
+                tone="danger"
+                action={{ label: t("Retry"), onClick: () => void clear(), pending: clearing }}
+              >
+                {t("Notification history could not be cleared. Nothing was removed.")}
+              </Alert>
             ) : null}
             {count > 0 ? (
               <>
-                <SectionLabel
-                  className="notification-section-label"
-                  actions={
-                    <Badge variant="count" tone="warning" size="xs">
-                      {count}
-                    </Badge>
-                  }
-                >
+                <SectionLabel className="notification-section-label">
                   {t("Waiting for you")}
                 </SectionLabel>
                 <Surface variant="card" padding="none" className="notification-pending-card">
@@ -529,9 +503,7 @@ export function ApprovalToasts({
             )}
             {visibleHistory.length < history.length ? <LockedNotice /> : null}
             {count === 0 && recent.length === 0 && !historyUnavailable ? (
-              <Text as="p" size="caption" tone="muted" className="notification-empty">
-                {t("All clear")}
-              </Text>
+              <EmptyState size="inline" context="list" description={t("All clear")} />
             ) : null}
           </ScrollArea>
         </Sheet>

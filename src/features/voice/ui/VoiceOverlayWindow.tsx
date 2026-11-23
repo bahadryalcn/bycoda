@@ -434,14 +434,15 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               }}
             />
           )}
+          {compact && status !== "idle" && speakerButton}
           {compact && status !== "idle" && (
             <Button
+              iconOnly
               tone="danger"
-              aria-label={t("Disconnect voice")}
-              startIcon={<PhoneOff className="icon-sm" />}
+              label={t("Disconnect voice")}
               onClick={() => send("disconnect")}
             >
-              {t("End call")}
+              <PhoneOff className="icon-sm" />
             </Button>
           )}
           {compact ? (
@@ -449,11 +450,9 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               live={status === "live"}
               manual={state?.manualTurnEnd === true}
               muted={muted}
-              speakerMuted={speakerMuted}
               disabled={!state}
               onManualChange={changeTurnMode}
               onFinish={() => send("finishTurn")}
-              onToggleSpeaker={() => send("toggleSpeaker")}
               onExpand={() => setCompact(false)}
               onReturn={returnToApp}
               onError={menuFailed}
@@ -591,11 +590,11 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   </Button>
                   {status !== "idle" && (
                     <Button
-                      aria-label={t("Disconnect voice")}
-                      startIcon={<PhoneOff className="icon-sm" />}
+                      iconOnly
+                      label={t("Disconnect voice")}
                       onClick={() => send("disconnect")}
                     >
-                      {t("Disconnect")}
+                      <PhoneOff className="icon-sm" />
                     </Button>
                   )}
                 </>
@@ -632,14 +631,14 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   </Button>
                   {speakerButton}
                   <Button
+                    iconOnly
                     shape="pill"
                     size="lg"
                     tone="danger"
-                    aria-label={t("Disconnect voice")}
-                    startIcon={<PhoneOff className="icon-sm" />}
+                    label={t("Disconnect voice")}
                     onClick={() => send("disconnect")}
                   >
-                    {t("Disconnect")}
+                    <PhoneOff className="icon-sm" />
                   </Button>
                 </>
               )}

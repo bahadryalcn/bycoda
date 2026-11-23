@@ -25,6 +25,7 @@ import {
   type DocumentProblem,
 } from "../model/documentViewer";
 import { DocumentMessage } from "./DocumentMessage";
+import { InlineError } from "../../../shared/ui/InlineError";
 import {
   clampZoom,
   formatZoomPercent,
@@ -344,7 +345,6 @@ function PdfPages({ doc }: { doc: PDFDocumentProxy }) {
         <Button
           size="sm"
           variant="ghost"
-          type="button"
           onClick={() => {
             endGesture();
             changeZoom("fit");
@@ -583,19 +583,21 @@ function PdfPage({
       <canvas ref={canvasRef} className="block h-full w-full" />
       <div ref={textRef} className="pdf-text-layer" />
       {error && !errorShownCentrally && (
-        <div className="absolute inset-0">
-          <DocumentMessage
-            title={t("Couldn’t render page {p0}", { p0: number })}
-            error
-            detail={documentProblemParts(error).detail}
-            retryLabel={t("Retry page {p0}", { p0: number })}
-            onRetry={() => {
-              setError(null);
-              setAttempt((value) => value + 1);
+        // A page frame shrinks with zoom: a one-line row with its retry fits where a message page clips.
+        <div className="absolute inset-x-0 top-0">
+          <InlineError
+            inset="row"
+            details={documentProblemParts(error).detail}
+            retry={{
+              label: t("Retry page {p0}", { p0: number }),
+              onRetry: () => {
+                setError(null);
+                setAttempt((value) => value + 1);
+              },
             }}
           >
-            {documentProblemParts(error).reason}
-          </DocumentMessage>
+            {`${t("Couldn’t render page {p0}", { p0: number })}. ${documentProblemParts(error).reason}`}
+          </InlineError>
         </div>
       )}
     </div>

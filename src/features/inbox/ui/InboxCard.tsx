@@ -102,16 +102,23 @@ export const InboxCard = memo(function InboxCard({
     : `${t(status.label)}${attentionLabel ? ` · ${t(attentionLabel)}` : ""}`;
   const reference = inboxItemRef(item);
   const secondary = [reference, source].filter(Boolean).join(" · ");
-  const statusMark = (rowMetadata?: boolean) => (
+  // The status word shows only where it carries more than the icon: a tracker's own workflow
+  // status or a code host's attention reason. Every other row shows the icon.
+  const showStatusWord = jira || !!attentionLabel;
+  const statusMark = (
     <StatusText
-      data-inbox-row-metadata={rowMetadata ? "" : undefined}
+      data-inbox-row-metadata=""
       tone={statusTextTone(rowStatus.tone)}
       icon={<rowStatus.Icon strokeWidth={1.75} />}
-      className={rowMetadata ? "min-w-0 max-w-[60%] shrink-0" : "min-w-0 max-w-full"}
+      className={showStatusWord ? "min-w-0 max-w-[60%] shrink-0" : "shrink-0"}
     >
-      <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0">
-        {statusWord}
-      </Text>
+      {showStatusWord ? (
+        <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0">
+          {statusWord}
+        </Text>
+      ) : (
+        <span className="sr-only">{statusWord}</span>
+      )}
     </StatusText>
   );
   // No title tooltip on the row: the hover card carries the full title and details.
@@ -198,7 +205,7 @@ export const InboxCard = memo(function InboxCard({
                 {relatedSessionCount}
               </Badge>
             ) : null}
-            {statusMark(true)}
+            {statusMark}
           </Text>
         </Button>
         {comfortable && item.labels.length > 0 ? (
@@ -207,15 +214,7 @@ export const InboxCard = memo(function InboxCard({
           </div>
         ) : null}
         {hover.card(() => (
-          <InboxCardPreview
-            item={item}
-            reference={reference}
-            kindLabel={t(kindLabel)}
-            source={source}
-            status={statusMark()}
-            attention={attentionLabel ? t(attentionLabel) : ""}
-            sessionLabel={sessionLabel}
-          />
+          <InboxCardPreview item={item} />
         ))}
       </ActionHost>
     </div>

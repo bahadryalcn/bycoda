@@ -94,7 +94,7 @@ export function PickerShell({
             }}
           >
             <span id={valueId} className={styles.value} data-placeholder={!shown || undefined}>
-              {shown || placeholder || t("Choose a date")}
+              {shown || placeholder || (timeOnly ? t("Choose a time") : t("Choose a date"))}
             </span>
             {timeOnly ? (
               <Clock className="size-(--ui-icon-sm)" aria-hidden="true" />

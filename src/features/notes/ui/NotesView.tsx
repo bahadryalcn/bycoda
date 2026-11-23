@@ -70,7 +70,6 @@ import {
   noteSourceProject,
   noteHeading,
   noteTitle,
-  withNoteHeading,
   peekLibraryNoteSummaries,
   peekNoteDetail,
   summarizeNote,
@@ -943,16 +942,19 @@ export function NotesView({
                 })),
               ]}
             />
-            <SearchableSelect
-              hideLabel
-              label={t("Filter by tag")}
-              value={tagFilter ?? ""}
-              onChange={(value) => setTagFilter(value || null)}
-              options={[
-                { value: "", label: t("All tags") },
-                ...allTags.map((tag) => ({ value: tag, label: "#" + tag })),
-              ]}
-            />
+            {/* Two or more tags are filtered from the chip row; a lone tag has no row, so it is picked here. */}
+            {allTags.length === 1 ? (
+              <SearchableSelect
+                hideLabel
+                label={t("Filter by tag")}
+                value={tagFilter ?? ""}
+                onChange={(value) => setTagFilter(value || null)}
+                options={[
+                  { value: "", label: t("All tags") },
+                  ...allTags.map((tag) => ({ value: tag, label: "#" + tag })),
+                ]}
+              />
+            ) : null}
             <Select
               hideLabel
               label={t("Group notes by")}
@@ -2022,6 +2024,10 @@ function NoteEditor({
       >
         <header className="note-detail-header">
           <div className="note-detail-titlerow">
+            {/* A body that starts with a heading already names the note; the title field would say it twice. */}
+            {noteHeading(body) && !titleError ? (
+              <span className="note-detail-title" />
+            ) : (
             <TextField
               label={t("Note title")}
               appearance="quiet"
@@ -2051,9 +2057,7 @@ function NoteEditor({
                   (key) => key !== "title",
                 );
                 finalizeRef.current = null;
-                // Renaming a note with a heading rewrites that heading, so both stay equal.
-                const renamed = value.trim() ? withNoteHeading(body, value) : body;
-                editNote(renamed === body ? { title: value } : { title: value, body: renamed });
+                editNote({ title: value });
                 scheduleSave();
               }}
               onBlur={commitTitle}
@@ -2065,6 +2069,7 @@ function NoteEditor({
               leading="snug"
               placeholder={t("Untitled")}
             />
+            )}
             <div className="note-detail-actions">
               {preparing ? (
                 <LoadingText>{t("Preparing checkpoint…")}</LoadingText>
@@ -2073,7 +2078,6 @@ function NoteEditor({
                   state={noteSaveState({
                     deleting: false,
                     saveError,
-                    titleError,
                     recovering,
                     saving: Boolean(saving || saveAction),
                     dirty,
@@ -2175,6 +2179,9 @@ function NoteEditor({
                 }}
               />
             </div>
+            <span className="tabular-nums">
+              <NoteWordCount body={body} />
+            </span>
             <div className="note-detail-tags">
               <NoteTagsEditor
                 availableTags={availableTags}
@@ -2353,9 +2360,6 @@ function NoteEditor({
             </div>
           </TabPanel>
         </Tabs>
-        <Text as="div" size="caption" tone="muted" leading="inherit" className="note-detail-words">
-          <NoteWordCount body={body} />
-        </Text>
       </SurfaceSelection>
     </div>
   );

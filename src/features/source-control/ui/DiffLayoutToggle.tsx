@@ -1,8 +1,5 @@
-import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { InlineError } from "../../../shared/ui/InlineError";
-import { Popover } from "../../../shared/ui/Popover";
 import { FileDiff, LayoutGrid, SplitSquare } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
@@ -55,7 +52,6 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
   const preference = useDiffLayout();
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [failed, setFailed] = useState<DiffLayout>();
   const choices = [
     { value: "auto" as const, label: t("Automatic"), Icon: LayoutGrid },
     { value: "inline" as const, label: t("Inline"), Icon: FileDiff },
@@ -64,7 +60,8 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
   const current = choices.find((choice) => choice.value === preference)!;
   const label = `${t("Diff view")}: ${current.label}`;
   const pick = (value: DiffLayout) => {
-    setFailed(saveDiffLayoutPreference(value) ? undefined : value);
+    // The in-memory preference still applies for this session when storage is unavailable.
+    saveDiffLayoutPreference(value);
     setOpen(false);
   };
   return (
@@ -78,10 +75,7 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
         motion="none"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => {
-          setFailed(undefined);
-          setOpen((value) => !value);
-        }}
+        onClick={() => setOpen((value) => !value)}
         onKeyDown={(event) => {
           if (
             event.nativeEvent.isComposing ||
@@ -89,7 +83,6 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
           )
             return;
           event.preventDefault();
-          setFailed(undefined);
           setOpen(true);
         }}
         className={`min-w-0 shrink-0 ${className}`}
@@ -114,26 +107,6 @@ export function DiffLayoutToggle({ className = "" }: { className?: string }) {
           }}
           onClose={() => setOpen(false)}
         />
-      ) : null}
-      {failed !== undefined ? (
-        <Popover
-          anchor={anchor}
-          kind="dialog"
-          aria-label={t("Diff view")}
-          onDismiss={() => setFailed(undefined)}
-        >
-          <Text as="div" size="secondary" tone="inherit" className="flex flex-col gap-2 p-3">
-            <InlineError>{t("Could not save changes")}</InlineError>
-            <div className="flex justify-end gap-1">
-              <Button size="sm" variant="ghost" onClick={() => setFailed(undefined)}>
-                {t("Cancel")}
-              </Button>
-              <Button size="sm" onClick={() => pick(failed)}>
-                {t("Retry")}
-              </Button>
-            </div>
-          </Text>
-        </Popover>
       ) : null}
     </>
   );

@@ -35,8 +35,8 @@ it("shows the current automatic mode and opens choices without changing or commi
   expect(automatic.onFinish).not.toHaveBeenCalled();
   const choices = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
   expect(choices.map((node) => [node.textContent, node.getAttribute("aria-checked")])).toEqual([
-    ["I'll finish when readyPress Finish turn to send your speech.", "false"],
-    ["Reply when I pauseReply after a pause in your speech.", "true"],
+    ["I'll finish when ready", "false"],
+    ["Reply when I pause", "true"],
   ]);
   await act(async () => choices[0].click());
   expect(automatic.onManualChange).toHaveBeenCalledExactlyOnceWith(true);

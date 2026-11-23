@@ -20,7 +20,10 @@ export function SettingsSearch({
       matches.map((result) => ({
         id: `${result.section}:${result.settingId ?? "*"}`,
         title: result.label,
-        group: result.sectionLabel,
+        group:
+          result.settingId && result.label !== result.sectionLabel
+            ? result.sectionLabel
+            : undefined,
       })),
     [matches, locale],
   );

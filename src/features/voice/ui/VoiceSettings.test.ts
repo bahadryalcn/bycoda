@@ -718,7 +718,9 @@ it("shows what uses the microphone only while it is in use, without starting cap
   await act(async () => reportDictation(owner, { state: "listening", visible: true, stop }));
   expect(row()?.textContent).toContain("Dictation is listening");
   await act(async () =>
-    [...row()!.querySelectorAll("button")].find((b) => b.textContent === "Stop dictation")!.click(),
+    [...row()!.querySelectorAll("button")]
+      .find((b) => b.getAttribute("aria-label") === "Stop dictation")!
+      .click(),
   );
   expect(stop).toHaveBeenCalledOnce();
   await act(async () => {

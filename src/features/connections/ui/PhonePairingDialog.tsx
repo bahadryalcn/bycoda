@@ -9,7 +9,6 @@ export function PhonePairingDialog(props: PhonePairingDialogProps) {
   return (
     <Modal
       title={t("Connect your phone")}
-      description={t("Manage this computer from bycoda on your phone.")}
       onClose={props.onClose}
       size="md"
     >

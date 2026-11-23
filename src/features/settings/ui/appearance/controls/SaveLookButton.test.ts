@@ -47,7 +47,7 @@ it("prefills every save entry with the selected name and keeps it editable", asy
 it("opens an unnamed handmade look with an empty editable name", () => {
   act(() =>
     root.render(
-      createElement(SaveLookButton, { appearance: {} as AppearanceSettings, card: true }),
+      createElement(SaveLookButton, { appearance: {} as AppearanceSettings }),
     ),
   );
   act(() => container.querySelector<HTMLButtonElement>("button")!.click());

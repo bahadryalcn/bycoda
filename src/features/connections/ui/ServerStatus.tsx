@@ -28,7 +28,6 @@ export function MachineStatus({
 }: {
   machine: RemoteMachine;
   details?: boolean;
-  compact?: boolean;
   /** List rows: say nothing while the machine is simply not connected; only live or problem states show. */
   quiet?: boolean;
   /** A detail surface can place the secondary host diagnostics in its own disclosure. */

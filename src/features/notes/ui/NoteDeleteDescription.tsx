@@ -23,14 +23,11 @@ export function NoteDeleteDescription({
         {t("This cannot be undone. Unsaved changes in the selected notes will also be deleted.")}
       </span>
       <span className="block">
-        {targets
-          .slice(0, 5)
-          .map((note) => note.title || t("Untitled"))
-          .join(" · ")}
+        {[
+          ...targets.slice(0, 5).map((note) => note.title || t("Untitled")),
+          ...(targets.length > 5 ? [t("And {p0} more", { p0: targets.length - 5 })] : []),
+        ].join(" · ")}
       </span>
-      {targets.length > 5 ? (
-        <span className="block">{t("And {p0} more", { p0: targets.length - 5 })}</span>
-      ) : null}
       {hidden.length ? (
         <span className="block">
           {t("{p0} of them are hidden by the current filters.", { p0: hidden.length })}

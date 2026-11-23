@@ -97,6 +97,18 @@ export function MemberToolsPicker({
           <Text as="p" size="secondary">
             {profileText(choice).description}
           </Text>
+          {custom ? (
+            <Text as="p" size="secondary">
+              {t("Empty lists mean no limit.")}
+            </Text>
+          ) : null}
+          {value && value.preset !== "custom" ? (
+            <Text as="p" size="secondary">
+              {t(
+                "This member is read-only from an earlier setting. Choose a profile to change it.",
+              )}
+            </Text>
+          ) : null}
         </InfoPopover>
       </div>
       <RadioGroup
@@ -111,13 +123,6 @@ export function MemberToolsPicker({
       />
       {custom ? (
         <div className="flex min-w-0 flex-col gap-2">
-          {value && value.preset !== "custom" ? (
-            <Text as="p" tone="inherit">
-              {t(
-                "This member is read-only from an earlier setting. Choose a profile to change it.",
-              )}
-            </Text>
-          ) : null}
           <ToolNamesField
             label={t("Host tools")}
             placeholder={t("All Host tools")}
@@ -162,9 +167,6 @@ export function MemberToolsPicker({
             max={CREW_TOOL_LIMITS.names}
             onChange={(next) => set({ ...lists, skills: next })}
           />
-          <Text as="p" tone="inherit">
-            {t("Empty lists mean no limit.")}
-          </Text>
         </div>
       ) : null}
     </div>

@@ -1,6 +1,6 @@
 .quickFields {
   display: grid;
-  gap: 12px;
+  gap: var(--ui-space-3);
   grid-column: 1 / -1;
   min-inline-size: 0;
 }

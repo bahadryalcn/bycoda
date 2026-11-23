@@ -232,7 +232,7 @@ describe("file picker command mode", () => {
     const input = dialog.querySelector<HTMLInputElement>("input")!;
     expect(dialog.getAttribute("aria-label")).toBe("Command Palette");
     expect(input.value).toBe(">");
-    expect(input.placeholder).toContain("type > for commands");
+    expect(input.placeholder).toContain("> for commands");
     expect(dialog.querySelector('[role="listbox"][aria-label="Commands"]')).not.toBeNull();
     expect(dialog.textContent).toContain("Reload bycoda");
     expect(dialog.textContent).toContain(reloadActionHint());

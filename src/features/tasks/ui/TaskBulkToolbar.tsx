@@ -86,14 +86,15 @@ export function TaskBulkToolbar({
     try {
       const eligible = batch.filter((task) => !taskBulkUnavailable(task, action)).length;
       if (
-        (action === "delete" || action === "stop") &&
+        // Stopping is reversible (Start or Retry again); only deletion asks first.
+        action === "delete" &&
         !(await confirm({
-          title: action === "delete" ? t("Delete selected tasks") : t("Stop selected tasks"),
+          title: t("Delete selected tasks"),
           message: t(
             "Apply to {p0} selected tasks in the current results? {p1} are eligible. Other tasks and unmerged work are preserved.",
             { p0: batch.length, p1: eligible },
           ),
-          confirmLabel: action === "delete" ? t("Delete") : t("Stop"),
+          confirmLabel: t("Delete"),
         }))
       )
         return;

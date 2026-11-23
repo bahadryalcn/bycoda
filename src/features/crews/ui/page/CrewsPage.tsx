@@ -154,7 +154,6 @@ export function CrewsPage({
               {active.data ? (
                 <CrewsActive
                   items={active.data.items}
-                  truncated={active.data.truncated}
                   known={known}
                   onOpenSession={onOpenSession}
                   onOpenWork={(item) => {

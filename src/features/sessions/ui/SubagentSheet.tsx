@@ -21,7 +21,7 @@ import {
 import {
   ArrowDown,
   ArrowLeft,
-  Crosshair,
+  CornerDownRight,
   Maximize2,
   Minimize2,
   Square,
@@ -266,7 +266,7 @@ export function SubagentSheet({
               tooltip={command ? undefined : t("Scroll to this agent in the transcript")}
               className="shrink-0"
             >
-              <Crosshair className="icon-sm" aria-hidden />
+              <CornerDownRight className="icon-sm" aria-hidden />
             </Button>
           ) : null}
         </>

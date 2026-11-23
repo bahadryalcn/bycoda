@@ -10,7 +10,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import { Bot, Clock, Folder, FolderTree, MoreHorizontal, Pin } from "../../shared/ui/icons";
+import { MoreHorizontal } from "../../shared/ui/icons";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
 import {
   applyShownSectionOrder,
@@ -47,7 +47,7 @@ export const RAIL_SECTION_LABEL = "text-ui-caption font-medium text-(--ui-text-s
  * so a closed rail stays a tight list of headers. Pass `data-collapsed` when closed.
  */
 export const RAIL_SECTION_BLOCK =
-  "reorder-item rail-reorder-block mb-3 shrink-0 data-[collapsed]:mb-0.5";
+  "reorder-item rail-reorder-block mb-(--ui-space-3) shrink-0 data-[collapsed]:mb-0.5";
 
 /**
  * One header for every rail section. Anatomy, left to right: a flexible label track
@@ -86,18 +86,10 @@ export function RailSectionHeader({
   labelClickLabel?: string;
   selected?: boolean;
 }) {
-  const t = useT();
   const collapsible = onToggleCollapsed != null;
-  const sectionIcons = [
-    [t("Pinned"), Pin],
-    [t("Groups"), FolderTree],
-    [t("Projects"), Folder],
-    [t("Last sessions"), Clock],
-    [t("Crews"), Bot],
-  ] as const;
-  const SectionIcon = sectionIcons.find(([name]) => name === label)?.[1];
   return (
     <SectionLabel
+      variant="rail"
       selected={selected}
       host
       compactRail
@@ -115,7 +107,7 @@ export function RailSectionHeader({
             }
           : undefined
       }
-      icon={icon ?? (SectionIcon ? <SectionIcon className="icon-sm" /> : undefined)}
+      icon={icon}
       chevron="hover"
       // SectionLabel types `count` as a number; it renders any node, and LiveAgentsPreview passes one.
       count={count as number | null | undefined}
@@ -124,11 +116,10 @@ export function RailSectionHeader({
         "data-rail-section-header": "",
         tabIndex: drag ? 0 : undefined,
         "aria-keyshortcuts": drag ? "Alt+ArrowUp Alt+ArrowDown" : undefined,
-        title: drag ? t("Drag to reorder") : undefined,
       }}
       {...surfaceAttributes(
         { radius: "row" },
-        `px-2 ${drag ? RAIL_DRAG_HANDLE : ""} @max-[140px]/rail:px-0`,
+        drag ? RAIL_DRAG_HANDLE : "",
       )}
       classNames={{
         count: "ms-auto ps-1",
@@ -154,8 +145,7 @@ export function RailSectionHeader({
 }
 
 /**
- * The "..." on a section header. Unlike row actions it is always visible, so the
- * section menu never depends on hover; it sits in the header's trailing slot.
+ * Section options sit in the header's trailing slot.
  */
 export function SectionMenuButton({
   label,
@@ -167,13 +157,11 @@ export function SectionMenuButton({
   const t = useT();
   return (
     <InlineAction
-      reveal="always"
+      reveal="interaction"
       label={t("{p0} section options", { p0: label })}
       motion="none"
       type="button"
       data-no-drag
-      tooltip={t("Section options")}
-      aria-label={t("{p0} section options", { p0: label })}
       aria-haspopup="menu"
       onClick={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();

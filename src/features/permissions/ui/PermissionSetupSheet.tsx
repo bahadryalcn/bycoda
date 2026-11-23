@@ -27,7 +27,16 @@ import { PermissionRestartButton } from "./PermissionRestartButton";
  * Guides one permission: the status line first, then the step and one row of
  * actions with a single primary (restart, Allow or Open settings).
  */
-export function PermissionSetupSheet({ id, onClose }: { id: PermissionId; onClose: () => void }) {
+export function PermissionSetupSheet({
+  id,
+  onClose,
+  requested = false,
+}: {
+  id: PermissionId;
+  onClose: () => void;
+  /** The OS prompt was already shown and access is still missing, so the next step is settings, not Allow again. */
+  requested?: boolean;
+}) {
   const {
     report,
     entries: [entry],
@@ -107,7 +116,7 @@ export function PermissionSetupSheet({ id, onClose }: { id: PermissionId; onClos
     !failed &&
     (pendingRestart || (acted && permissionMayNeedRestart(id, report?.platform)));
   const blocked = !ready && entry.state !== "restricted" && !pendingRestart;
-  const showAllow = blocked && entry.canRequest;
+  const showAllow = blocked && entry.canRequest && !requested;
   const showSettings = blocked && entry.canOpenSettings;
   const status = failed
     ? t("Permission status is unavailable. Check again from the desktop app.")
@@ -129,11 +138,6 @@ export function PermissionSetupSheet({ id, onClose }: { id: PermissionId; onClos
     <Sheet title={permissionInfo(id).label} onClose={onClose} motion="none">
       <div className="flex flex-col gap-3">
         <InlineMessage tone={tone}>{status}</InlineMessage>
-        {showAllow && (
-          <Text as="p" tone="secondary">
-            {t("bycoda asks your operating system for access. Choose Allow if a prompt appears.")}
-          </Text>
-        )}
         {showSettings && (
           <Text as="p" tone="secondary">
             {permissionInstructions(id, report?.platform)}

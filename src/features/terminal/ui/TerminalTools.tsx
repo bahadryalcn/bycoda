@@ -13,20 +13,16 @@ import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Switch } from "../../../shared/ui/Switch";
 import { Select } from "../../../shared/ui/Select";
-import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Popover } from "../../../shared/ui/Popover";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import {
   ChevronDown,
-  CheckList,
   ChevronUp,
   Minus,
   Plus,
   Search,
-  Terminal as TerminalIcon,
   X,
-  Info,
   MoreHorizontal,
 } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
@@ -99,7 +95,6 @@ export function TerminalTools({
   const [reviewingStartup, setReviewingStartup] = useState(false);
   const startupPending = useRef(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const helpAnchor = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [overlayRef, typing] = useHideWhileTyping<HTMLDivElement>();
@@ -212,9 +207,9 @@ export function TerminalTools({
     }
   };
 
-  const renderControls = (search: boolean) => (
+  const renderSearch = () => (
     <div
-      data-terminal-tools={search ? "" : undefined}
+      data-terminal-tools=""
       onMouseDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
         event.stopPropagation();
@@ -224,9 +219,8 @@ export function TerminalTools({
         }
       }}
     >
-      <div className={search ? styles.tools : styles.menuActions}>
-        {search ? (
-          <>
+      <div className={styles.tools}>
+        <>
             <SearchInput
               ref={inputRef}
               clearable={false}
@@ -276,179 +270,108 @@ export function TerminalTools({
                       : t("{p0} matches", { p0: String(results.resultCount) })
                   : ""}
             </Text>
-          </>
-        ) : null}
-        {!search && remoteShell ? (
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              align="start"
-              disabled={!ready || alternate}
-              loading={mode === "remote" && remoteShell.waiting}
-              shortcut="Ctrl+Space"
-              onClick={() => {
-                changeMode("remote");
-                void remoteShell.request(remoteShell.source);
-              }}
-            >
-              {t("Suggestions")}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              align="start"
-              disabled={!ready || alternate}
-              onClick={() => {
-                remoteShell.setSource("history");
-                changeMode("remote");
-                void remoteShell.request("history");
-              }}
-            >
-              {t("Reviewed history")}
-            </Button>
-          </>
-        ) : null}
-        {!search && !toolbarTarget && onSaveCommand ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            align="start"
-            onClick={() => {
-              changeMode(null);
-              onSaveCommand();
-            }}
-          >
-            {t("Save command")}
-          </Button>
-        ) : null}
-        {!search && onSavedCommands ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            align="start"
-            onClick={() => {
-              changeMode(null);
-              onSavedCommands();
-            }}
-          >
-            {t("Saved commands")}
-          </Button>
-        ) : null}
-        {!search && onSendSelectedText ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            align="start"
-            disabled={mode === "search" || !terminal?.hasSelection()}
-            onClick={() => {
-              const text = terminal?.getSelection();
-              if (!text?.trim()) return;
-              changeMode(null);
-              void onSendSelectedText(text)
-                .catch((reason: unknown) => reportFailure(reason, { toast }))
-                .catch(() => undefined);
-            }}
-          >
-            {t("Send to agent")}
-          </Button>
-        ) : null}
-        {!search && onEnableShellIntegration ? (
-          <SplitButton
-            variant="ghost"
-            size="sm"
-            disabled={!ready}
-            label={t("Bash suggestions")}
-            menuLabel={t("Shell suggestions")}
-            actions={[
-              {
-                id: "zsh",
-                label: t("Zsh suggestions"),
-                onSelect: () => onEnableShellIntegration("zsh"),
-              },
-              {
-                id: "powershell",
-                label: t("PowerShell suggestions"),
-                onSelect: () => onEnableShellIntegration("powershell"),
-              },
-            ]}
-            tooltip={t(
-              "Opens a new Bash terminal with session-only suggestions. No remote shell files are changed.",
-            )}
-            tooltipDetails={["Bash 4.4+ · ls/cd/pwd/git"]}
-            onClick={() => onEnableShellIntegration("bash")}
-          />
-        ) : null}
-        {!search && onStartupReview ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            align="start"
-            label={t("Review startup scripts")}
-            loading={reviewingStartup}
-            disabled={!ready}
-            onClick={() => {
-              if (startupPending.current) return;
-              startupPending.current = true;
-              setReviewingStartup(true);
-              const complete = () => {
-                startupPending.current = false;
-                setReviewingStartup(false);
-              };
-              void onStartupReview().then(complete, complete);
-            }}
-          >
-            <CheckList className="icon-sm" />
-            {t("Review startup scripts")}
-          </Button>
-        ) : null}
-        {(search || mode === "remote") && (
-          <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={close}>
-            <X className="icon-sm" />
-          </Button>
-        )}
+        </>
+        <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={close}>
+          <X className="icon-sm" />
+        </Button>
       </div>
-      {!search && remoteShell ? (
-        <Disclosure size="sm" className={styles.settings} summary={t("Suggestion settings")}>
-          <div className={styles.settingRow}>
-            <Text as="span" size="caption">
-              {t("Show suggestions while typing")}
-            </Text>
-            <Switch
-              checked={remoteShell.automatic}
-              onCheckedChange={remoteShell.setAutomatic}
-              aria-label={t("Show suggestions while typing")}
-            />
-          </div>
-          <Select
-            fieldSize="sm"
-            label={t("Suggestion source")}
-            value={remoteShell.source}
-            onValueChange={(value) =>
-              remoteShell.setSource(value as "commands" | "paths" | "history")
-            }
-            options={[
-              { value: "commands", label: t("Commands") },
-              { value: "paths", label: t("Remote paths") },
-              { value: "history", label: t("Reviewed history") },
-            ]}
-          />
-          <Text as="p" size="caption" tone="muted" className={styles.settingNote}>
-            {t(
-              "Session only. Remote command and path names may appear here. Reviewed history uses approved command forms; arbitrary shell completion stays on Tab.",
-            )}
-          </Text>
-        </Disclosure>
-      ) : null}
     </div>
   );
-  const hasToolRows =
-    !!remoteShell ||
-    (!toolbarTarget && !!onSaveCommand) ||
-    !!onSendSelectedText ||
-    !!onSavedCommands ||
-    !!onEnableShellIntegration ||
-    !!onStartupReview;
+  /** Suggestion exposure stays explicit: the switch, the source and the note live with the menu. */
+  const suggestionSettings = remoteShell ? (
+    <Disclosure size="sm" className={styles.settings} summary={t("Suggestion settings")}>
+        <div className={styles.settingRow}>
+          <Text as="span" size="caption">
+            {t("Show suggestions while typing")}
+          </Text>
+          <Switch
+            checked={remoteShell.automatic}
+            onCheckedChange={remoteShell.setAutomatic}
+            aria-label={t("Show suggestions while typing")}
+          />
+        </div>
+        <Select
+          fieldSize="sm"
+          label={t("Suggestion source")}
+          value={remoteShell.source}
+          onValueChange={(value) => remoteShell.setSource(value as "commands" | "paths" | "history")}
+          options={[
+            { value: "commands", label: t("Commands") },
+            { value: "paths", label: t("Remote paths") },
+            { value: "history", label: t("Reviewed history") },
+          ]}
+        />
+        <Text as="p" size="caption" tone="muted" className={styles.settingNote}>
+          {t(
+            "Session only. Remote command and path names may appear here. Reviewed history uses approved command forms; arbitrary shell completion stays on Tab.",
+          )}
+        </Text>
+    </Disclosure>
+  ) : null;
+  const showSuggestionsItem = !!remoteShell || (!toolbarTarget && suggestionsAllowed);
+  const savedFontChanged =
+    !!onResetFontSize && savedFontSize !== undefined && fontSize !== savedFontSize;
+  const actionRows: DropdownMenuItem[] = [
+    ...(showSuggestionsItem
+      ? ([
+          {
+            kind: "item",
+            id: remoteShell ? "suggestions" : "command",
+            label: remoteShell ? t("Suggestions") : t("Command suggestions"),
+            shortcut: "Ctrl+Space",
+            disabled: !ready || alternate,
+          },
+        ] satisfies DropdownMenuItem[])
+      : []),
+    ...(!toolbarTarget && onSaveCommand
+      ? ([{ kind: "item", id: "save-command", label: t("Save command") }] satisfies DropdownMenuItem[])
+      : []),
+    ...(onSavedCommands
+      ? ([{ kind: "item", id: "saved-commands", label: t("Saved commands") }] satisfies DropdownMenuItem[])
+      : []),
+    ...(onSendSelectedText
+      ? ([
+          {
+            kind: "item",
+            id: "send-agent",
+            label: t("Send to agent"),
+            disabled: mode === "search" || !terminal?.hasSelection(),
+          },
+        ] satisfies DropdownMenuItem[])
+      : []),
+    ...(onEnableShellIntegration
+      ? ([
+          {
+            kind: "item",
+            id: "bash",
+            label: t("Bash suggestions"),
+            title: t(
+              "Opens a new Bash terminal with session-only suggestions. No remote shell files are changed.",
+            ),
+            description: "Bash 4.4+ · ls/cd/pwd/git",
+            disabled: !ready,
+          },
+          { kind: "item", id: "zsh", label: t("Zsh suggestions"), disabled: !ready },
+          {
+            kind: "item",
+            id: "powershell",
+            label: t("PowerShell suggestions"),
+            disabled: !ready,
+          },
+          { kind: "item", id: "about", label: t("About shell suggestions") },
+        ] satisfies DropdownMenuItem[])
+      : []),
+    ...(onStartupReview
+      ? ([
+          {
+            kind: "item",
+            id: "startup",
+            label: t("Review startup scripts"),
+            disabled: !ready || reviewingStartup,
+          },
+        ] satisfies DropdownMenuItem[])
+      : []),
+  ];
   const menuItems: DropdownMenuItem[] = [
     ...(terminal
       ? ([
@@ -494,35 +417,84 @@ export function TerminalTools({
                 >
                   <Plus className="icon-sm" />
                 </Button>
-                {onResetFontSize ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    label={t("Reset text size")}
-                    disabled={savedFontSize === undefined || fontSize === savedFontSize}
-                    onClick={() => {
-                      onResetFontSize();
-                      terminal?.focus();
-                    }}
-                  >
-                    {t("Reset")}
-                  </Button>
-                ) : null}
               </div>
             ),
           },
-        ] satisfies DropdownMenuItem[])
-      : []),
-    ...(hasToolRows
-      ? ([
-          ...(terminal || fontSize !== undefined ? [{ kind: "sep" } as const] : []),
-          { kind: "content", id: "tools", node: renderControls(false) },
-          ...(toolbarTarget && onEnableShellIntegration
-            ? [{ kind: "item", id: "about", label: t("About shell suggestions") } as const]
+          ...(savedFontChanged
+            ? ([{ kind: "item", id: "reset-font", label: t("Reset text size") }] satisfies DropdownMenuItem[])
             : []),
         ] satisfies DropdownMenuItem[])
       : []),
+    ...(actionRows.length
+      ? ([
+          ...(terminal || fontSize !== undefined ? [{ kind: "sep" } as const] : []),
+          ...actionRows,
+        ] satisfies DropdownMenuItem[])
+      : []),
+    ...(suggestionSettings
+      ? ([
+          { kind: "sep" },
+          { kind: "content", id: "settings", node: suggestionSettings },
+        ] satisfies DropdownMenuItem[])
+      : []),
   ];
+  const pick = (id: string) => {
+    switch (id) {
+      case "scroll":
+        terminal?.scrollToBottom();
+        break;
+      case "clear":
+        terminal?.clear();
+        break;
+      case "reset-font":
+        onResetFontSize?.();
+        break;
+      case "suggestions":
+        changeMode("remote");
+        void remoteShell?.request(remoteShell.source);
+        break;
+      case "command":
+        changeMode("command");
+        break;
+      case "save-command":
+        changeMode(null);
+        onSaveCommand?.();
+        return;
+      case "saved-commands":
+        changeMode(null);
+        onSavedCommands?.();
+        return;
+      case "send-agent": {
+        const text = terminal?.getSelection();
+        if (!text?.trim() || !onSendSelectedText) return;
+        changeMode(null);
+        void onSendSelectedText(text)
+          .catch((reason: unknown) => reportFailure(reason, { toast }))
+          .catch(() => undefined);
+        return;
+      }
+      case "bash":
+      case "zsh":
+      case "powershell":
+        onEnableShellIntegration?.(id);
+        return;
+      case "about":
+        setHelpOpen(true);
+        return;
+      case "startup": {
+        if (startupPending.current || !onStartupReview) return;
+        startupPending.current = true;
+        setReviewingStartup(true);
+        const complete = () => {
+          startupPending.current = false;
+          setReviewingStartup(false);
+        };
+        void onStartupReview().then(complete, complete);
+        return;
+      }
+    }
+    terminal?.focus();
+  };
   const overlayAppearance = actionContentAttributes(
     { phase: "hover-overlay", hidden: typing, open: mode === "search" || menuOpen || helpOpen },
     styles.overlay,
@@ -557,37 +529,6 @@ export function TerminalTools({
       >
         <Search className="icon-sm" />
       </Button>
-      {!toolbarTarget && suggestionsAllowed && (
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={t("Command suggestions")}
-          shortcut="Ctrl+Space"
-          aria-pressed={mode === "command"}
-          disabled={!ready || alternate}
-          onClick={() => {
-            if (mode === "command") close();
-            else changeMode("command");
-          }}
-        >
-          <TerminalIcon className="icon-sm" />
-        </Button>
-      )}
-      {!toolbarTarget && onEnableShellIntegration ? (
-        <Button
-          ref={helpAnchor}
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={t("About shell suggestions")}
-          aria-expanded={helpOpen}
-          aria-haspopup="dialog"
-          onClick={() => setHelpOpen(!helpOpen)}
-        >
-          <Info aria-hidden className="icon-sm" />
-        </Button>
-      ) : null}
       {terminal || toolbarTarget ? (
         <>
           <Button
@@ -614,15 +555,7 @@ export function TerminalTools({
               ignore="[data-terminal-pane-menu-trigger]"
               items={menuItems}
               onClose={() => setMenuOpen(false)}
-              onPick={(id) => {
-                if (id === "scroll") terminal?.scrollToBottom();
-                else if (id === "clear") terminal?.clear();
-                else if (id === "about") {
-                  setHelpOpen(true);
-                  return;
-                }
-                terminal?.focus();
-              }}
+              onPick={pick}
             />
           ) : null}
         </>
@@ -645,12 +578,12 @@ export function TerminalTools({
           data-typing={typing || undefined}
           onMouseDown={(event) => event.stopPropagation()}
         >
-          {mode === "search" ? renderControls(true) : toolbar}
+          {mode === "search" ? renderSearch() : toolbar}
         </div>
       )}
       {onEnableShellIntegration && helpOpen ? (
         <Popover
-          anchor={toolbarTarget ? menuAnchor : helpAnchor}
+          anchor={menuAnchor}
           align="end"
           kind="dialog"
           aria-label={t("About shell suggestions")}

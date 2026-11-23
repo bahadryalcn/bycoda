@@ -187,7 +187,7 @@ export const TranscriptFind = memo(function TranscriptFind({
     if (onTriggerChange || triggerContainer !== undefined) return headerTrigger;
     return (
       <div
-        className={`pointer-events-none absolute top-2 z-(--layer-pane-sheet) ${side === "left" ? "left-3" : "right-3"}`}
+        className={`pointer-events-none absolute top-2 z-(--layer-pane-sheet) ${side === "left" ? "start-3" : "end-3"}`}
       >
         <div className="pointer-events-auto">{trigger}</div>
       </div>
@@ -198,7 +198,7 @@ export const TranscriptFind = memo(function TranscriptFind({
     <>
       {headerTrigger}
       <div
-        className={`pointer-events-none absolute top-2 z-(--layer-pane-sheet) ${side === "left" ? "left-3" : "right-3"}`}
+        className={`pointer-events-none absolute top-2 z-(--layer-pane-sheet) ${side === "left" ? "start-3" : "end-3"}`}
       >
         <div
           role="search"
@@ -229,7 +229,7 @@ export const TranscriptFind = memo(function TranscriptFind({
                   role="status"
                   size="micro"
                   tone="secondary"
-                  className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono tabular-nums"
+                  className="min-w-[10ch] shrink-0 whitespace-nowrap text-end tabular-nums"
                 >
                   {query.trim()
                     ? matches.length
@@ -285,10 +285,11 @@ function FindButton({
   return (
     <Button
       variant="ghost"
+      size="sm"
       type="button"
-      tooltip={label}
+      iconOnly
+      label={label}
       shortcut={shortcut}
-      aria-label={label}
       disabled={disabled}
       onClick={onClick}
     >

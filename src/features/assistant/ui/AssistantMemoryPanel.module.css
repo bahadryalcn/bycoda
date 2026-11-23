@@ -3,20 +3,20 @@
   min-inline-size: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--ui-space-4);
 }
 .header {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: var(--ui-space-2) var(--ui-space-3);
   min-inline-size: 0;
 }
 .title {
   display: flex;
   align-items: center;
   flex: 1 1 auto;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .search {
@@ -29,7 +29,7 @@
 }
 .group {
   display: grid;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .list {
@@ -41,12 +41,12 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 4px 16px;
-  padding: 10px 12px;
+  gap: var(--ui-space-1) var(--ui-space-4);
+  padding: var(--ui-space-3);
 }
 .text {
   display: grid;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .body {
@@ -68,7 +68,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 .quote {
   margin: 0;
@@ -84,13 +84,13 @@
 }
 .editor {
   display: grid;
-  gap: 20px;
+  gap: var(--ui-space-5);
   min-inline-size: 0;
 }
 .editorOptions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--ui-space-4);
 }
 @container assistant-room (max-width: 540px) {
   .header {

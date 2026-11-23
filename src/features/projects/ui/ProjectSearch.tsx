@@ -2,7 +2,6 @@ import { errorText } from "../../../shared/lib/errors";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
@@ -276,9 +275,6 @@ function ProjectSearchContent({
           <Button variant="ghost" iconOnly label={t("Back to files")} onClick={onClose}>
             <ChevronLeft className="icon-md" strokeWidth={1.75} />
           </Button>
-          <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1">
-            {t("Search in files")}
-          </Text>
         </div>
       ) : null}
       <div
@@ -424,6 +420,8 @@ function ProjectSearchContent({
           {replaceSummary}
         </Text>
       ) : null}
+      {/* The empty query needs no status line: the field's placeholder already says what to do. */}
+      {loading || error || query.trim() ? (
       <Text
         as="div"
         size="micro"
@@ -450,24 +448,25 @@ function ProjectSearchContent({
                 )}
             {truncated ? t(" (limited)") : ""}
           </span>
-        ) : (
-          <span>{t("Type to search across the project")}</span>
-        )}
+        ) : null}
       </Text>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         {groups.map((group) => (
           <section key={group.path} {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "")}>
-            {/* Keep exact file identity readable without hover, including duplicate basenames. */}
+            {/* The folder follows the name, so duplicate basenames stay distinguishable without repeating the name. */}
             <div className="flex min-w-0 items-start gap-1.5 px-2 py-1">
               <FileTypeIcon name={group.name} isDir={false} size="md" />
               <div className="min-w-0 flex-1">
-                <Text as="div" wrap="anywhere" size="caption" tone="primary">
+                <Text as="div" wrap="anywhere" size="caption" tone="primary" weight="medium">
                   {group.name}
                 </Text>
-                <Text as="div" wrap="anywhere" size="micro" tone="muted">
-                  {group.relative}
-                </Text>
+                {group.directory ? (
+                  <Text as="div" wrap="anywhere" size="micro" tone="muted">
+                    {group.directory}
+                  </Text>
+                ) : null}
               </div>
               <Badge variant="count" size="xs" tone="accent" max={Infinity}>
                 {group.matches.length}
@@ -484,17 +483,15 @@ function ProjectSearchContent({
                     onDoubleClick={() => openMatch(match, true)}
                     className="flex w-full items-start gap-2 text-left"
                   >
-                    <Tooltip label={t("Line {p0}", { p0: match.line })} asChild>
-                      <Text
-                        role="img"
-                        aria-label={t("Line {p0}", { p0: match.line })}
-                        size="micro"
-                        tone="muted"
-                        className="w-7 shrink-0 pt-0 text-right font-mono tabular-nums"
-                      >
-                        {match.line}
-                      </Text>
-                    </Tooltip>
+                    <Text
+                      role="img"
+                      aria-label={t("Line {p0}", { p0: match.line })}
+                      size="micro"
+                      tone="muted"
+                      className="w-7 shrink-0 pt-0 text-right font-mono tabular-nums"
+                    >
+                      {match.line}
+                    </Text>
                     <Text
                       as="span"
                       size="micro"

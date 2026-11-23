@@ -5,7 +5,8 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { Text } from "../../../shared/ui/Text";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { RotateCcw } from "../../../shared/ui/icons";
 import { usePendingSource } from "../../../shared/ui/settings";
 import type { McpServerRow } from "../model/mcpSettingsCache";
 import { errorText } from "../../../shared/lib/errors";
@@ -53,16 +54,18 @@ export function McpServerConfigEditor(props: EditorProps) {
   return (
     <Disclosure
       summary={t("Edit provider JSON")}
+      summaryActions={
+        props.server.scope === "project" ? (
+          <InfoPopover label={t("Project credentials")}>
+            {t("This file can be shared with the project. Store tokens in Project credentials.")}
+          </InfoPopover>
+        ) : undefined
+      }
       size="sm"
       onOpenChange={(open) => {
         if (open) setOpened(true);
       }}
     >
-      {props.server.scope === "project" ? (
-        <Text as="p" size="caption" tone="secondary">
-          {t("This file can be shared with the project. Store tokens in Project credentials.")}
-        </Text>
-      ) : null}
       {opened ? <ServerConfigForm {...props} /> : null}
     </Disclosure>
   );
@@ -184,13 +187,15 @@ function ServerConfigForm({ server, cwd, globalOnly, remote, disabled, onSaved }
         <Button
           variant="ghost"
           size="sm"
+          iconOnly
+          label={t("Revert")}
           disabled={!dirty || saving}
           onClick={() => {
             setDraft(loaded.config);
             setSaveError("");
           }}
         >
-          {t("Revert")}
+          <RotateCcw aria-hidden />
         </Button>
         <Button
           variant="primary"

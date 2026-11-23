@@ -7,6 +7,7 @@ import {
   type DropdownMenuItem,
 } from "../../../shared/ui/DropdownMenu";
 import { Text } from "../../../shared/ui/Text";
+import { Bot } from "../../../shared/ui/icons";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { groupDockAgents, type DockAgent } from "../model/activityDock";
 import { AgentStatusDot } from "./ActivityDock";
@@ -49,7 +50,6 @@ export function SessionSubagentsMenu({
       kind: "item",
       id: agent.blockId,
       label: [agent.name, agent.model, status, elapsed].filter(Boolean).join(", "),
-      title: `${agent.name} · ${status}`,
       icon: <AgentStatusDot status={agent.status} />,
       content: (
         <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -97,7 +97,6 @@ export function SessionSubagentsMenu({
         variant="ghost"
         selected={open}
         aria-label={label}
-        tooltip={t("Session subagents")}
         aria-haspopup="menu"
         aria-expanded={open}
         data-composer-subagents-trigger
@@ -106,29 +105,7 @@ export function SessionSubagentsMenu({
         {running > 0 ? (
           <WorkingIndicator size="xs" />
         ) : (
-          <svg aria-hidden="true" width={16} height={16} viewBox="0 0 24 24" fill="none">
-            <path
-              d="M9 9V8a4 4 0 0 1 4-4h5a4 4 0 0 1 4 4v2a4 4 0 0 1-4 4h-1"
-              stroke="currentColor"
-              strokeWidth={1.7}
-              strokeLinecap="round"
-            />
-            <rect
-              x={2}
-              y={11}
-              width={13}
-              height={9}
-              rx={4}
-              stroke="currentColor"
-              strokeWidth={1.7}
-            />
-            <path
-              d="M6.5 15.5h.01m4 0h.01M13.5 8.5h.01m4 0h.01"
-              stroke="currentColor"
-              strokeWidth={2.2}
-              strokeLinecap="round"
-            />
-          </svg>
+          <Bot aria-hidden className="icon-sm" />
         )}
         <Text as="span" size="inherit" tone="inherit">
           {agents.length}
@@ -142,8 +119,6 @@ export function SessionSubagentsMenu({
           side="top"
           align="end"
           size="lg"
-          density="comfortable"
-          frosted
           items={items}
           onPick={(id) => {
             const agent = agents.find((candidate) => candidate.blockId === id);

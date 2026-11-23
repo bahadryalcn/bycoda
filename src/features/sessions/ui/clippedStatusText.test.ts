@@ -44,10 +44,8 @@ describe("clipped status sentences stay readable", () => {
         }),
       ),
     );
-    const note = textElement("Summary goes with next message");
-    expect(note.hasAttribute("data-truncate")).toBe(true);
-    expect(note.className).toContain("min-w-0");
-    expect(note.className).not.toMatch(/(^|\s)shrink-0(\s|$)/);
+    expect(container.querySelector('svg[aria-label="Summary goes with next message"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Summary goes with next message");
   });
 
   it("makes the queue's subagent wait sentence truncating and focusable for its overflow tooltip (#1281)", async () => {

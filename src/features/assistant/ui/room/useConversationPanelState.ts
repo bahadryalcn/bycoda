@@ -144,6 +144,8 @@ export function useConversationPanelState({
   );
   const savedDrafts = useRef(initialSavedDrafts);
   const maximumDraftTimer = useRef<number | undefined>(undefined);
+  /** Consecutive failed local saves: the notice appears on the second, because every edit retries. */
+  const draftSaveFailures = useRef(0);
   const [draftSaveError, setDraftSaveError] = useState(!isTauri() && !!unsavedConversationDrafts);
   const [operationPending, setPending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -392,10 +394,12 @@ export function useConversationPanelState({
         localStorage.setItem("bycoda.assistant.thread-drafts", serialized);
         savedDrafts.current = serialized;
         unsavedConversationDrafts = undefined;
+        draftSaveFailures.current = 0;
         if (report) setDraftSaveError(false);
       } catch {
         unsavedConversationDrafts = { ...draftsRef.current };
-        if (report) setDraftSaveError(true);
+        draftSaveFailures.current += 1;
+        if (report && draftSaveFailures.current >= 2) setDraftSaveError(true);
       }
     },
     [flushNativeDraft],
@@ -406,7 +410,11 @@ export function useConversationPanelState({
     return () => window.clearTimeout(timer);
   }, [drafts, flushDrafts]);
   useEffect(() => {
-    const flush = () => flushDrafts();
+    // The window may close next, so a failed save here is reported at once instead of retried.
+    const flush = () => {
+      draftSaveFailures.current = Math.max(draftSaveFailures.current, 1);
+      flushDrafts();
+    };
     window.addEventListener("pagehide", flush);
     return () => {
       window.removeEventListener("pagehide", flush);

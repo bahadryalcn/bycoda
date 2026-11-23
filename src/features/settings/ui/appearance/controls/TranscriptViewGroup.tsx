@@ -1,5 +1,5 @@
 import { formatNumber, t, useLocale } from "../../../../../shared/i18n";
-import { Group, Row, Segmented } from "../../../../../shared/ui/settings";
+import { AdvancedSettings, Row, Segmented } from "../../../../../shared/ui/settings";
 import {
   APPEARANCE_DEFAULTS,
   TRANSCRIPT_ACTIONS,
@@ -40,9 +40,64 @@ const ACTION_LABELS: Record<(typeof TRANSCRIPT_ACTIONS)[number], () => string> =
   hover: () => t("On hover"),
 };
 
+type PresetFields = Pick<
+  AppearancePreferences,
+  | "transcriptSurface"
+  | "transcriptSurfaceOpacity"
+  | "transcriptSurfaceBlur"
+  | "messageColor"
+  | "userMessageOpacity"
+  | "transcriptBodyInk"
+  | "transcriptChromeInk"
+  | "transcriptCards"
+  | "transcriptActions"
+>;
+
+const PRESET_FIELDS = [
+  "transcriptSurface",
+  "transcriptSurfaceOpacity",
+  "transcriptSurfaceBlur",
+  "messageColor",
+  "userMessageOpacity",
+  "transcriptBodyInk",
+  "transcriptChromeInk",
+  "transcriptCards",
+  "transcriptActions",
+] as const satisfies readonly (keyof AppearancePreferences)[];
+
+const PRESET_BASE = Object.fromEntries(
+  PRESET_FIELDS.map((field) => [field, APPEARANCE_DEFAULTS[field]]),
+) as PresetFields;
+
+/** Reading looks that fill all nine fields; the fine-tuning rows below edit the same values. */
+const PRESETS: Record<"default" | "glass" | "plain" | "contrast", PresetFields> = {
+  default: PRESET_BASE,
+  glass: {
+    ...PRESET_BASE,
+    transcriptSurface: "column",
+    transcriptSurfaceOpacity: 55,
+    transcriptSurfaceBlur: 12,
+  },
+  plain: { ...PRESET_BASE, transcriptSurface: "off", transcriptCards: "outline" },
+  contrast: {
+    ...PRESET_BASE,
+    transcriptBodyInk: 100,
+    transcriptChromeInk: 90,
+    transcriptCards: "solid",
+  },
+};
+const PRESET_LABELS: Record<keyof typeof PRESETS | "custom", () => string> = {
+  default: () => t("Default"),
+  glass: () => t("Glass"),
+  plain: () => t("Plain"),
+  contrast: () => t("High contrast"),
+  custom: () => t("Custom"),
+};
+
 /**
- * The nine reading settings of the transcript: surface, its material, the ink roles, cards and
- * the actions row. Sliders preview through `onDraft` while dragging and save on release.
+ * The transcript reading settings: a preset row up front and the nine fine-tuning rows (surface,
+ * its material, the ink roles, cards, actions row) behind one advanced reveal. Render inside a
+ * `Group`. Sliders preview through `onDraft` while dragging and save on release.
  */
 export function TranscriptViewGroup({
   appearance,
@@ -78,8 +133,43 @@ export function TranscriptViewGroup({
   const percent = (value: number) => formatNumber(value / 100, { style: "percent" });
   const pixels = (value: number) => `${value}px`;
   const offReason = t("Turn on a reading surface first");
+  const activePreset =
+    (Object.keys(PRESETS) as (keyof typeof PRESETS)[]).find((name) =>
+      PRESET_FIELDS.every((field) => preferences[field] === PRESETS[name][field]),
+    ) ?? "custom";
+  const presetOptions = (Object.keys(PRESETS) as (keyof typeof PRESETS)[]).map((value) => ({
+    value: value as keyof typeof PRESETS | "custom",
+    label: PRESET_LABELS[value](),
+  }));
+  if (activePreset === "custom")
+    presetOptions.push({ value: "custom", label: PRESET_LABELS.custom() });
   return (
-    <Group title={t("Transcript view")}>
+    <>
+      <Row id="transcript-preset" label={t("Reading look")}>
+        <Segmented
+          label={t("Reading look")}
+          value={activePreset}
+          options={presetOptions}
+          disabled={preferencesUnavailable}
+          onChange={(name) => {
+            if (name !== "custom") set(PRESETS[name]);
+          }}
+        />
+      </Row>
+      <AdvancedSettings
+        title={t("Fine-tune reading")}
+        settingIds={[
+          "transcript-surface",
+          "transcript-surface-opacity",
+          "transcript-surface-blur",
+          "chat-message-color",
+          "user-message-opacity",
+          "transcript-body-ink",
+          "transcript-chrome-ink",
+          "transcript-cards",
+          "transcript-actions",
+        ]}
+      >
       <Row
         id="transcript-surface"
         label={t("Reading surface")}
@@ -188,6 +278,7 @@ export function TranscriptViewGroup({
           onChange={(transcriptActions) => set({ transcriptActions })}
         />
       </Row>
-    </Group>
+      </AdvancedSettings>
+    </>
   );
 }

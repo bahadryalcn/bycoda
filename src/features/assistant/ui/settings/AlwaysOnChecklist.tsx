@@ -101,9 +101,7 @@ export function AlwaysOnChecklist({
         item.state === "done" && item.detail ? (
           <InfoPopover label={item.label}>
             <Text as="p" size="secondary">
-              {item.target && !onOpen && item.state !== "done"
-                ? `${item.detail} ${t("Settings · {p0}", { p0: t(WHERE[item.target]) })}`
-                : item.detail || undefined}
+              {item.detail}
             </Text>
           </InfoPopover>
         ) : undefined

@@ -693,8 +693,16 @@ for (const theme of ["light", "dark"]) {
       await expect(next).toBeEnabled();
       await setup.screenshot({ path: join(captures, `${theme}-${width}-setup-microphone.png`) });
       await next.click();
+      await expect(setup.getByText("The microphone opens only when you choose to talk.")).toBeVisible();
       await setup.getByRole("button", { name: "Start", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "Voice is ready" })).toBeVisible();
+      await expect(setup).toHaveCount(0);
+      expect(
+        await page.evaluate(() =>
+          (window as any).fixtureVoice.ownerRequests.filter(
+            ({ input }: { input: { op: string } }) => input.op === "profile.update",
+          ),
+        ),
+      ).toMatchObject([{ input: { patch: { voiceSetupComplete: true } } }]);
     });
   }
 }
@@ -718,6 +726,8 @@ test("voice surface computed probe", async ({ page }) => {
     await panel.evaluate((el) => el.setAttribute("data-surface-frame", "focus"));
     const focus = await panel.evaluate((el) => getComputedStyle(el).borderTopColor);
     await page.evaluate(() => (window as any).fixtureVoice.callbacks.error("fixture error"));
+    await expect(panel.getByRole("alert")).toHaveText("Voice needs attention: fixture error");
+    await panel.getByRole("button", { name: "Compact voice companion" }).click();
     await expect(panel.locator("[data-voice-error]")).toBeVisible();
     const danger = await panel.evaluate((el) => getComputedStyle(el).borderTopColor);
     console.log(JSON.stringify({ theme, assistant, activity, normal, focus, danger }));

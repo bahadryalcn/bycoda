@@ -129,7 +129,6 @@ export function TaskDeliveryDialog({
             type="button"
             loading={acting}
             disabled={acting || !!blockedReason}
-            disabledReason={blockedReason}
             onClick={onSave}
           >
             {t("Save delivery target")}

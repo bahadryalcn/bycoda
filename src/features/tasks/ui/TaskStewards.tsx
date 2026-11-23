@@ -1,5 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
@@ -95,18 +95,18 @@ function StewardsPanel({
     >
       <div className="task-ops-head">
         <div className="task-ops-head-text">
-          <SectionLabel count={stewards.length}>{t("Stewards")}</SectionLabel>
-          <Text
-            as="p"
-            size="caption"
-            tone="secondary"
-            leading="inherit"
-            className="task-ops-caption"
+          <SectionLabel
+            count={stewards.length}
+            actions={
+              <InfoPopover>
+                {t(
+                  "A steward reads its project on a schedule and suggests the next work as To do items. Nothing runs until you start it.",
+                )}
+              </InfoPopover>
+            }
           >
-            {t(
-              "A steward reads its project on a schedule and suggests the next work as To do items. Nothing runs until you start it.",
-            )}
-          </Text>
+            {t("Stewards")}
+          </SectionLabel>
         </div>
         <Button
           variant="secondary"
@@ -160,11 +160,7 @@ function StewardsPanel({
           })}
         </ul>
       ) : !draft ? (
-        <ul aria-label={t("Steward list")}>
-          <li>
-            <EmptyState size="inline" description={t("No stewards yet.")} />
-          </li>
-        </ul>
+        <EmptyState size="inline" description={t("No stewards yet.")} />
       ) : null}
       {menu && menuSteward ? (
         <DropdownMenu

@@ -214,27 +214,40 @@ export function JiraCommentEditor({
         draftIdentity={draftIdentity}
         value={value}
         toolbar={() => (
-          <ButtonGroup
-            surface="transparent"
-            className="self-start flex-wrap"
-            aria-label={t("Markdown formatting")}
-          >
-            {commands.map(([command, label, Icon]) => (
-              <Button
-                key={command}
-                type="button"
-                variant="ghost"
-                size="sm"
-                iconOnly
-                label={t(label)}
-                disabled={locked}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => run(command)}
-              >
-                <Icon className="icon-sm" />
-              </Button>
-            ))}
-          </ButtonGroup>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <ButtonGroup
+              surface="transparent"
+              className="self-start flex-wrap"
+              aria-label={t("Markdown formatting")}
+            >
+              {commands.map(([command, label, Icon]) => (
+                <Button
+                  key={command}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={t(label)}
+                  disabled={locked}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => run(command)}
+                >
+                  <Icon className="icon-sm" />
+                </Button>
+              ))}
+            </ButtonGroup>
+            <FileField
+              label={t("Images")}
+              hideLabel
+              buttonLabel={t("Insert image")}
+              accept={JIRA_IMAGE_TYPES.join(",")}
+              multiple
+              disabled={locked}
+              onFiles={(files) => {
+                void addFiles(files).catch((error) => setImageError(String(error)));
+              }}
+            />
+          </div>
         )}
       >
         <div className="min-w-0" inert={locked}>
@@ -253,17 +266,6 @@ export function JiraCommentEditor({
           />
         </div>
       </InboxCommentPreview>
-      <FileField
-        label={t("Images")}
-        hideLabel
-        buttonLabel={t("Insert image")}
-        accept={JIRA_IMAGE_TYPES.join(",")}
-        multiple
-        disabled={locked}
-        onFiles={(files) => {
-          void addFiles(files).catch((error) => setImageError(String(error)));
-        }}
-      />
       {images.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {images.map((image) => (

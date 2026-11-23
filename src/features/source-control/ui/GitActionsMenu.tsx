@@ -126,7 +126,7 @@ type Dialog =
   | {
       kind: "name";
       title: string;
-      description: string;
+      description?: string;
       label: string;
       placeholder: string;
       submitLabel: string;
@@ -239,12 +239,8 @@ export function GitActionsMenu({
     onPending?.(pending ?? null);
     try {
       await work();
+      // One channel for the outcome: the header status, not a second success row.
       if (status) onStatus(status);
-      if (status)
-        setGitFeedback(cwd, {
-          kind: "success",
-          title: status,
-        });
     } catch (error) {
       setGitFeedback(cwd, {
         kind: "error",
@@ -432,7 +428,7 @@ export function GitActionsMenu({
           get title() {
             return t("Merge Branch");
           },
-          description: branch ? `Merge into ${branch}` : undefined,
+          description: branch ? t("Merge into {p0}", { p0: branch }) : undefined,
           get placeholder() {
             return t("Filter branches");
           },
@@ -449,7 +445,7 @@ export function GitActionsMenu({
           get title() {
             return t("Rebase Branch");
           },
-          description: branch ? `Rebase ${branch} onto` : undefined,
+          description: branch ? t("Rebase {p0} onto", { p0: branch }) : undefined,
           get placeholder() {
             return t("Filter branches");
           },
@@ -465,10 +461,7 @@ export function GitActionsMenu({
         return askName(
           {
             get title() {
-              return t("Create branch");
-            },
-            get description() {
-              return t("Create a branch at HEAD and switch to it.");
+              return t("New branch");
             },
             get label() {
               return t("Branch name");
@@ -476,7 +469,7 @@ export function GitActionsMenu({
             get placeholder() {
               return t("feature/my-branch");
             },
-            submitLabel: t("Create branch"),
+            submitLabel: t("Create"),
           },
           (name) => gitCreateBranch(cwd, name),
         );
@@ -495,10 +488,11 @@ export function GitActionsMenu({
             askName(
               {
                 get title() {
-                  return t("Create branch");
+                  return t("New branch");
                 },
+                // The base ref is the one fact the title and field do not state.
                 get description() {
-                  return t("Create a branch from {p0} and switch to it.", { p0: ref });
+                  return t("From {p0}", { p0: ref });
                 },
                 get label() {
                   return t("Branch name");
@@ -506,7 +500,7 @@ export function GitActionsMenu({
                 get placeholder() {
                   return t("feature/my-branch");
                 },
-                submitLabel: t("Create branch"),
+                submitLabel: t("Create"),
               },
               (name) => gitCreateBranchFrom(cwd, name, ref),
             ),
@@ -518,16 +512,13 @@ export function GitActionsMenu({
             get title() {
               return t("Rename branch");
             },
-            get description() {
-              return t("Rename {p0}.", { p0: branch });
-            },
             get label() {
               return t("New name");
             },
             get placeholder() {
               return t("feature/my-branch");
             },
-            submitLabel: "Rename",
+            submitLabel: t("Rename"),
             initialValue: branch,
           },
           (name) => gitRenameBranch(cwd, branch, name),
@@ -554,21 +545,18 @@ export function GitActionsMenu({
             get title() {
               return t("Add Remote");
             },
-            get description() {
-              return t("Add a named remote to this repository.");
-            },
             get label() {
               return t("Remote name");
             },
             get placeholder() {
               return t("origin");
             },
-            submitLabel: "Add Remote",
+            submitLabel: t("Add Remote"),
             extra: {
               get label() {
                 return t("Remote URL");
               },
-              placeholder: "https://github.com/owner/repo.git",
+              placeholder: t("https://github.com/owner/repo.git"),
             },
           },
           (name, url) => gitRemoteAdd(cwd, name, url),
@@ -670,14 +658,11 @@ export function GitActionsMenu({
             get title() {
               return t("Create Tag");
             },
-            get description() {
-              return t("Tag the commit at HEAD.");
-            },
             get label() {
               return t("Tag name");
             },
-            placeholder: "v1.0.0",
-            submitLabel: "Create Tag",
+            placeholder: t("v1.0.0"),
+            submitLabel: t("Create Tag"),
           },
           (name) => gitCreateTag(cwd, name, head),
         );

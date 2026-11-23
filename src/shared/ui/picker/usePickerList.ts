@@ -70,6 +70,11 @@ export type PickerListOptions = {
 
 const choosable = (option: PickerOption | undefined) => !!option && !option.disabled;
 
+/** A reason makes an unavailable option inspectable without making it selectable. */
+export function canInspectPickerOption(option?: { disabled?: boolean; disabledReason?: string }) {
+  return !!option && (!option.disabled || !!option.disabledReason?.trim());
+}
+
 export function pickerOptionText(option: PickerOption): string {
   return option.textValue ?? (typeof option.title === "string" ? option.title : option.value);
 }
@@ -108,10 +113,10 @@ export function usePickerList(props: PickerListOptions) {
   const selected = new Set<string>(
     props.multiple ? props.value : props.value != null ? [props.value] : [],
   );
-  const firstChoosable = () => options.findIndex(choosable);
+  const firstInspectable = () => options.findIndex(canInspectPickerOption);
   const initialValue = () => {
     const committed = options.find((option) => selected.has(option.value) && choosable(option));
-    return committed?.value ?? options.find(choosable)?.value ?? null;
+    return committed?.value ?? options.find(canInspectPickerOption)?.value ?? null;
   };
   const [chosen, setChosen] = useState<{ key: string; value: string | null } | null>(null);
   // Reset during render so keyboard events never see a stale query's active row.
@@ -122,11 +127,11 @@ export function usePickerList(props: PickerListOptions) {
       : chosen?.key === resetKey
         ? chosen.value
         : initialValue();
-  const found = options.findIndex((option) => option.value === requested && choosable(option));
-  const activeIndex = found >= 0 ? found : props.activeValue !== undefined ? -1 : firstChoosable();
+  const found = options.findIndex((option) => option.value === requested && canInspectPickerOption(option));
+  const activeIndex = found >= 0 ? found : props.activeValue !== undefined ? -1 : firstInspectable();
   const activeValue = options[activeIndex]?.value ?? null;
   const setActive = (index: number) => {
-    const value = choosable(options[index]) ? options[index]!.value : null;
+    const value = canInspectPickerOption(options[index]) ? options[index]!.value : null;
     if (props.activeValue === undefined) setChosen({ key: resetKey, value });
     if (value !== activeValue) props.onActiveValueChange?.(value);
   };
@@ -141,19 +146,19 @@ export function usePickerList(props: PickerListOptions) {
       const raw = from + direction * offset;
       const index = loop ? ((raw % count) + count) % count : raw;
       if (index < 0 || index >= count) return from;
-      if (choosable(options[index])) return index;
+      if (canInspectPickerOption(options[index])) return index;
     }
     return from;
   };
   const last = () => {
     for (let index = options.length - 1; index >= 0; index--)
-      if (choosable(options[index])) return index;
+      if (canInspectPickerOption(options[index])) return index;
     return -1;
   };
 
   const move = (to: PopoverSearchMove) => {
     if (options.length === 0) return;
-    if (to === "first") setActive(firstChoosable());
+    if (to === "first") setActive(firstInspectable());
     else if (to === "last") setActive(last());
     else setActive(step(activeIndex, to === "next" ? 1 : -1));
   };

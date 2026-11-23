@@ -4,13 +4,8 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { useFormat, useT } from "../../../shared/i18n";
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { ToastSlot } from "../../../shared/ui/ToastRegion";
-import {
-  loadNotificationsEnabled,
-  NOTIFICATIONS_CHANGE_EVENT,
-} from "../../notifications/model/notifications";
-
 import { sessionDisplayTitle } from "../model/session";
 import {
   formatReminderTimeWith,
@@ -18,17 +13,8 @@ import {
   type SessionReminder,
 } from "../model/sessionReminders";
 import { ExplorerMenu } from "../../files/public/ExplorerMenu";
-import { Clock } from "../../../shared/ui/icons";
+import { Clock, X } from "../../../shared/ui/icons";
 import { sessionReminderPresets } from "./sessionReminderPresets";
-
-function subscribeNotifications(callback: () => void) {
-  window.addEventListener(NOTIFICATIONS_CHANGE_EVENT, callback);
-  window.addEventListener("storage", callback);
-  return () => {
-    window.removeEventListener(NOTIFICATIONS_CHANGE_EVENT, callback);
-    window.removeEventListener("storage", callback);
-  };
-}
 
 export function ReminderNotices({
   reminders,
@@ -37,7 +23,6 @@ export function ReminderNotices({
   onSnooze,
   onDismiss,
   onRetry,
-  onOpenSettings,
 }: {
   reminders: SessionReminder[];
   error: string | null;
@@ -45,7 +30,8 @@ export function ReminderNotices({
   onSnooze: (ids: readonly string[], dueAt: number) => void;
   onDismiss: (ids: readonly string[], expectedDueAt?: number) => void;
   onRetry: () => void;
-  onOpenSettings: () => void;
+  /** Retired: the notifications-off footer lives in Settings only; callers may stop passing it. */
+  onOpenSettings?: () => void;
 }) {
   const t = useT();
   const format = useFormat();
@@ -57,7 +43,6 @@ export function ReminderNotices({
     /** The snooze choices with their clock times, fixed when the menu opens. */
     presets: ReturnType<typeof sessionReminderPresets>;
   } | null>(null);
-  const notifications = useSyncExternalStore(subscribeNotifications, loadNotificationsEnabled);
   const visible = reminders.length > 0 || error != null;
   if (!visible) return null;
 
@@ -73,15 +58,6 @@ export function ReminderNotices({
           "relative flex w-[min(320px,calc(100vw-24px))] flex-col overflow-hidden rounded-(--ui-radius-popup) shadow-(--ui-elevation-floating)",
         )}
       >
-        <div className="flex min-h-7 items-center gap-2 px-3 pt-2">
-          <Clock className="icon-sm shrink-0" tone="secondary" aria-hidden />
-          <Text as="span" size="caption" tone="secondary" weight="medium" className="flex-1">
-            {t("Due reminders")}
-          </Text>
-          <Text role="status" size="caption" tone="secondary" className="tabular-nums">
-            {reminders.length || ""}
-          </Text>
-        </div>
         {error ? (
           <div className="px-2 pt-1">
             <InlineError retry={{ onRetry }}>{t("Couldn’t load reminders.")}</InlineError>
@@ -89,12 +65,11 @@ export function ReminderNotices({
         ) : null}
         <div className="flex max-h-[min(320px,50vh)] flex-col gap-1 overflow-y-auto overscroll-none p-1">
           {reminders.map((reminder) => (
-            <article key={reminder.sessionId} className="rounded-(--ui-control-radius) px-2 py-1.5">
+            <article key={reminder.sessionId} className="flex items-center gap-1 px-1 py-0.5">
               <Button
-                fullWidth
                 variant="item"
-                type="submit"
-                className="block w-full text-left"
+                type="button"
+                className="min-w-0 flex-1 text-start"
                 onClick={() => onOpen(reminder)}
               >
                 <Text
@@ -112,50 +87,37 @@ export function ReminderNotices({
                   {formatReminderTimeWith(reminder.dueAt, format.formatDate)}
                 </Text>
               </Button>
-              <div className="mt-1 flex items-center gap-1">
-                <Button variant="ghost" type="submit" onClick={() => onOpen(reminder)}>
-                  {t("Open session")}
-                </Button>
-                <Button
-                  variant="ghost"
-                  type="submit"
-                  aria-haspopup="menu"
-                  aria-expanded={snooze?.reminder.sessionId === reminder.sessionId}
-                  onClick={(event) => {
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    setSnooze({
-                      reminder,
-                      x: rect.left,
-                      y: rect.bottom + 4,
-                      presets: sessionReminderPresets(t, format.formatDate),
-                    });
-                  }}
-                >
-                  {t("Snooze")}
-                </Button>
-                <Button
-                  variant="ghost"
-                  type="submit"
-                  className="ml-auto"
-                  onClick={() => onDismiss([reminder.sessionId], reminder.dueAt)}
-                >
-                  {t("Dismiss")}
-                </Button>
-              </div>
+              <Button
+                variant="ghost"
+                type="button"
+                iconOnly
+                label={t("Snooze")}
+                aria-haspopup="menu"
+                aria-expanded={snooze?.reminder.sessionId === reminder.sessionId}
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setSnooze({
+                    reminder,
+                    x: rect.left,
+                    y: rect.bottom + 4,
+                    presets: sessionReminderPresets(t, format.formatDate),
+                  });
+                }}
+              >
+                <Clock className="icon-sm" aria-hidden />
+              </Button>
+              <Button
+                variant="ghost"
+                type="button"
+                iconOnly
+                label={t("Dismiss")}
+                onClick={() => onDismiss([reminder.sessionId], reminder.dueAt)}
+              >
+                <X className="icon-sm" aria-hidden />
+              </Button>
             </article>
           ))}
         </div>
-        {!notifications && reminders.length ? (
-          <Button
-            fullWidth
-            variant="item"
-            type="submit"
-            className="w-full text-left"
-            onClick={onOpenSettings}
-          >
-            {t("Desktop alerts are off. Enable in Settings.")}
-          </Button>
-        ) : null}
       </Text>
       {snooze &&
       reminders.some(

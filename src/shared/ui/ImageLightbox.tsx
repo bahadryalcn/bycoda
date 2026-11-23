@@ -165,7 +165,6 @@ function ImageLightboxContent({
                 ref={closeRef}
                 type="button"
                 label={t("Close image preview")}
-                tooltip={t("Close")}
                 onClick={onClose}
               >
                 <X className="icon-sm" strokeWidth={1.75} />

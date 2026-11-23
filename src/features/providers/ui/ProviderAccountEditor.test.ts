@@ -24,7 +24,8 @@ it("offers kind and color before signing in to a new account", () => {
       ),
     );
     expect(container.textContent).not.toContain("Automatic");
-    expect(container.querySelector('button[type="submit"]')?.getAttribute("aria-disabled")).toBe(
+    expect(onMetadata).toHaveBeenCalledWith({ kind: "personal" });
+    expect(container.querySelector('button[type="submit"]')?.getAttribute("aria-disabled")).not.toBe(
       "true",
     );
     act(() => container.querySelector<HTMLInputElement>('input[value="work"]')?.click());

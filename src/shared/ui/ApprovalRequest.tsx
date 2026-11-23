@@ -41,15 +41,15 @@ export function ApprovalRequest({
   details,
 }: ApprovalRequestProps) {
   return (
-    <section aria-label={title} className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-        <div className="flex min-w-0 items-center gap-1.5">
+    <section aria-label={title} className="flex min-w-0 flex-col gap-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex min-w-0 items-center gap-1">
           <NoticeGlyph tone="warning" size="inline" />
           <Heading as="div" size="item">
             {title}
           </Heading>
         </div>
-        <div className="ms-auto flex flex-wrap items-center gap-1.5" data-no-drag="">
+        <div className="ms-auto flex flex-wrap items-center gap-2" data-no-drag="">
           {[...(actions ?? []), deny, allow].map((action, index, all) => (
             <Button
               key={index}
@@ -68,11 +68,11 @@ export function ApprovalRequest({
           ))}
         </div>
       </div>
-      {context?.length ? (
-        <Text as="div" size="caption" tone="secondary" truncate>
-          {context.join(" · ")}
+      {context?.map((item, index) => (
+        <Text as="div" size="caption" tone="secondary" wrap="anywhere" key={index}>
+          {item}
         </Text>
-      ) : null}
+      ))}
       <OutputBlock frame="filled" scroll className="max-h-48 min-w-0">
         {detail}
       </OutputBlock>

@@ -18,6 +18,7 @@ type Props = {
   ariaLabel?: string;
   /** Guide spotlight target name (`data-usage-guide`). */
   guide?: string;
+  search?: boolean;
 };
 
 export function RailAction({
@@ -32,6 +33,7 @@ export function RailAction({
   command,
   ariaLabel,
   guide,
+  search = false,
 }: Props) {
   const currentShortcut = useKeybindingShortcut(command ?? "");
   const shortcut = command ? currentShortcut : fallbackShortcut;
@@ -49,6 +51,7 @@ export function RailAction({
       type="button"
       onClick={onClick}
       data-usage-guide={guide}
+      data-rail-search={search || undefined}
       onContextMenu={
         onOpenContextMenu
           ? (event) => {
@@ -71,7 +74,7 @@ export function RailAction({
       }
       disabled={!onClick}
       aria-label={ariaLabel ?? label}
-      className={`relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center`}
+      className="relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center"
     >
       <Icon
         className="icon-sm shrink-0"
@@ -79,6 +82,7 @@ export function RailAction({
         strokeWidth={1.75}
       />
       <Text
+        data-rail-search-label={search || undefined}
         size="caption"
         tone="inherit"
         weight="medium"
@@ -101,12 +105,12 @@ export function RailAction({
       ) : null}
       {dot ? (
         <StatusDot
-          label={ariaLabel ?? label}
           aria-hidden
           className="shrink-0 @max-[140px]/rail:absolute @max-[140px]/rail:right-2 @max-[140px]/rail:top-1.5"
         />
       ) : shortcut ? (
         <Text
+          data-rail-search-shortcut={search || undefined}
           data-tooltip-shortcut=""
           aria-hidden
           size="caption"
@@ -120,65 +124,6 @@ export function RailAction({
   );
 }
 
-export function RailSearch({
-  label,
-  icon: Icon,
-  onClick,
-  active = false,
-  shortcut: fallbackShortcut,
-  command,
-  ariaLabel,
-}: {
-  label: string;
-  icon: IconComponent;
-  onClick?: () => void;
-  active?: boolean;
-  shortcut?: string;
-  command?: string;
-  ariaLabel?: string;
-}) {
-  const currentShortcut = useKeybindingShortcut(command ?? "");
-  const shortcut = command ? currentShortcut : fallbackShortcut;
-  return (
-    <Button
-      tooltip={ariaLabel ?? label}
-      tooltipWhen={ariaLabel && ariaLabel !== label ? "always" : "overflow"}
-      shortcut={shortcut}
-      tooltipSide="right"
-      data-rail-search
-      selected={active}
-      variant="item"
-      motion="none"
-      type="button"
-      onClick={onClick}
-      disabled={!onClick}
-      aria-label={ariaLabel ?? label}
-      className={`relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center`}
-    >
-      <Icon className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
-      <Text
-        data-rail-search-label
-        size="caption"
-        tone="inherit"
-        weight="medium"
-        leading="tight"
-        truncate
-        className="min-w-0 flex-1 @max-[140px]/rail:hidden"
-      >
-        {label}
-      </Text>
-      {shortcut ? (
-        <Text
-          data-rail-search-shortcut
-          data-tooltip-shortcut=""
-          aria-hidden
-          size="caption"
-          tone="secondary"
-          className="shrink-0 @max-[200px]/rail:hidden"
-        >
-          {shortcut}
-        </Text>
-      ) : null}
-    </Button>
-  );
+export function RailSearch(props: Pick<Props, "active" | "ariaLabel" | "command" | "icon" | "label" | "onClick" | "shortcut">) {
+  return <RailAction {...props} search />;
 }

@@ -49,7 +49,6 @@ it("keeps CLI versions out of Accounts metadata and marks default and auth seman
       onSetup: vi.fn(),
     }),
   );
-  expect(html).toContain(">Default<");
   expect(html).toContain('aria-label="Codex, Signed in, Default provider"');
   expect(html).toContain('aria-current="true"');
   expect(html).toContain("Show Codex in the model picker");
@@ -59,8 +58,7 @@ it("shows standalone sign-in once in the header without inferring readiness from
   const unknown = renderToStaticMarkup(
     createElement(ProviderDetailHeader, { harness: "cursor", available: true }),
   );
-  expect(unknown).toContain("Sign-in");
-  expect(unknown).toContain("Not checked");
+  expect(unknown).not.toContain("Sign-in");
   expect(unknown).not.toContain("CLI detected");
   expect(unknown).not.toContain("Verified ready");
   const completed = renderToStaticMarkup(

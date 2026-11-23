@@ -1,6 +1,6 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
-import { Check, CircleAlert, CircleX, Clock } from "./icons";
-import { Spinner } from "./Spinner";
+import { StatusGlyph, statusBadgeTone, type BadgeStatus } from "./Badge";
+import { textAttributes } from "./Text";
 import styles from "./StatusText.module.css";
 
 /** The five status roles: running, needs you (warning), failed (danger), done (success), idle (neutral). */
@@ -12,22 +12,17 @@ export type StatusTextProps = Omit<ComponentPropsWithoutRef<"span">, "children">
   children: ReactNode;
   /** Replaces the tone's standard 14px icon, for example a domain glyph. */
   icon?: ReactNode;
+  /** Let longer labels wrap in narrow rows. */
+  wrap?: boolean;
 };
 
-function ToneIcon({ tone }: { tone: StatusTextTone }) {
-  switch (tone) {
-    case "running":
-      return <Spinner size="sm" />;
-    case "needs-you":
-      return <CircleAlert strokeWidth={1.75} />;
-    case "failed":
-      return <CircleX strokeWidth={1.75} />;
-    case "done":
-      return <Check strokeWidth={1.75} />;
-    case "idle":
-      return <Clock strokeWidth={1.75} />;
-  }
-}
+const STATUS: Record<StatusTextTone, BadgeStatus> = {
+  running: "running",
+  "needs-you": "warning",
+  failed: "failed",
+  done: "done",
+  idle: "queued",
+};
 
 /**
  * Status as a 14px icon and one word in the tone colour, caption size, no pill: running (spinner, accent), needs you
@@ -39,15 +34,23 @@ function ToneIcon({ tone }: { tone: StatusTextTone }) {
  * @example
  * <StatusText tone="needs-you">{t("Plan ready")}</StatusText>
  */
-export function StatusText({ tone, icon, className, children, ...props }: StatusTextProps) {
+export function StatusText({ tone, icon, wrap, className, children, ...props }: StatusTextProps) {
+  const status = STATUS[tone];
   return (
     <span
       {...props}
-      data-tone={tone}
-      className={[styles.status, className].filter(Boolean).join(" ")}
+      {...textAttributes(
+        {
+          size: "caption",
+          tone: tone === "idle" ? "secondary" : statusBadgeTone(status),
+          wrap: wrap ? "anywhere" : undefined,
+        },
+        [styles.status, className].filter(Boolean).join(" "),
+      )}
+      data-status={tone}
     >
       <span className={styles.icon} aria-hidden="true">
-        {icon ?? <ToneIcon tone={tone} />}
+        {icon ?? <StatusGlyph status={status} size="sm" />}
       </span>
       {children}
     </span>

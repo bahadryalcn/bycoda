@@ -109,7 +109,7 @@ it("shows selected Room readiness, paired Host and policy denial without enablin
         }),
       ),
     );
-    expect(container.textContent).toContain("This Room is registered on its original Host.");
+    expect(container.textContent).not.toContain("Room registration");
     expect(container.textContent).toContain("Office (remote-host)");
     expect(container.textContent).toContain("The target project must be visible");
     expect(

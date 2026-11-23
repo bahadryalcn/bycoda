@@ -1,5 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
-import { useId, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
@@ -51,7 +50,6 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
   const setError = (error: string, errorDetail = "") => state.update({ error, errorDetail });
   const setQueued = (queued: boolean) => state.update({ queued });
   const confirmation = useConfirm();
-  const aiNoteId = useId();
 
   const blocked = options.data ? replyBlockedText(options.data) : undefined;
   // Until the Host answers, Send says why it is off instead of guessing that a reply is allowed.
@@ -169,11 +167,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
     }
   };
 
-  // A disabled action's reason lives in its own tooltip and accessible description. Only the AI
-  // prerequisites get visible text, because the owner must act on them; that note replaces the
-  // tooltip so the same reason is never shown twice.
-  const aiNote = operation ? undefined : aiPrerequisite;
-
+  // A disabled action's reason lives in its own tooltip and accessible description, said once.
   return (
     <div className="inbox-reply">
       <PromptField
@@ -196,9 +190,6 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
               loading={busy === "suggest"}
               loadingLabel={t("Working…")}
               {...suggestGate}
-              // ui-drift-ignore: native-title -- Button consumes the empty title to suppress its tooltip when the same reason is already visible.
-              title={aiNote ? "" : undefined}
-              aria-describedby={aiNote ? aiNoteId : undefined}
             >
               {t("Fill with AI")}
             </Button>
@@ -215,18 +206,6 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
           </>
         }
       />
-      {aiNote ? (
-        <Text
-          as="p"
-          id={aiNoteId}
-          size="caption"
-          tone="muted"
-          leading="inherit"
-          className="inbox-note"
-        >
-          {aiNote}
-        </Text>
-      ) : null}
       {options.isError ? (
         <Button
           variant="link"

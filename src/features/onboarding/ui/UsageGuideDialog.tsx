@@ -10,7 +10,12 @@ import { MessageSquare, Check } from "../../../shared/ui/icons";
 import { UsageGuideTooltip } from "./UsageGuideTooltip";
 import { GuideShortcuts } from "./GuideShortcuts";
 import { findUsageGuideTarget } from "../model/usageGuideTargets";
-import { TOUR_FLOATING, TOUR_OPTIONS, tourLocale, useTourArrowKeys } from "./tourRunner";
+import {
+  COMPACT_TOUR_OPTIONS,
+  TOUR_FLOATING,
+  tourLocale,
+  useTourArrowKeys,
+} from "./tourRunner";
 import { runGuideAction, setGuideStepDone, type GuideAction } from "../model/guide";
 import { guideMissingHelp, guideTopics } from "../model/guideTopics";
 import { tourPlan } from "../model/guideTours";
@@ -101,7 +106,7 @@ export default function UsageGuideDialog({
       content: (
         <Text
           as="section"
-          size="title"
+          size="body"
           tone="inherit"
           weight="regular"
           leading="inherit"
@@ -214,7 +219,7 @@ export default function UsageGuideDialog({
         onEvent={onEvent}
         tooltipComponent={UsageGuideTooltip}
         floatingOptions={TOUR_FLOATING}
-        options={TOUR_OPTIONS}
+        options={COMPACT_TOUR_OPTIONS}
         locale={tourLocale()}
       />
     </div>

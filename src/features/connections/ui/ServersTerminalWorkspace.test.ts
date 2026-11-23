@@ -36,7 +36,10 @@ vi.mock("../model/sshRunbookQueue", () => ({
 vi.mock("./useSshHttpProxyApproval", () => ({
   useSshHttpProxyApproval: () => ({ request: proxy.request, dialog: null }),
 }));
-vi.mock("../model/sshGroupDefaults", () => ({ previewSshConfiguration: configuration.preview }));
+vi.mock("../model/sshGroupDefaults", () => ({
+  previewSshConfiguration: configuration.preview,
+  listSshGroupDefaults: vi.fn().mockResolvedValue([]),
+}));
 vi.mock("../../terminal/ui/TerminalView", () => ({
   TerminalView: ({
     id,
@@ -134,7 +137,8 @@ vi.mock("../../terminal/ui/TerminalView", () => ({
     );
   },
 }));
-vi.mock("../../../app/shell/ToolNavigation", () => ({
+vi.mock("../../../app/shell/ToolNavigation", async () => ({
+  ToolNavigationContext: (await import("react")).createContext(null),
   ToolHeader: ({ children }: { children: unknown }) => children,
 }));
 vi.mock("../../../app/shell/WindowControls", () => ({ WindowControls: () => null }));

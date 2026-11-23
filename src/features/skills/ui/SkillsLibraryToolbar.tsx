@@ -3,13 +3,12 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { ListFilter, MoreHorizontal, Plus } from "../../../shared/ui/icons";
+import { ListFilter, Plus } from "../../../shared/ui/icons";
 import type { SkillListFilter } from "../model/skillLibrary";
 
 /**
  * The skills library's one control row: view (All / Groups), a filter menu for the enabled
- * state, and a trailing "New" menu that holds every creation action. Skill folders live in
- * the overflow menu so no permanent footer is needed.
+ * state, and a trailing "New" menu that holds every creation action and the skill folders.
  */
 export function SkillsLibraryToolbar({
   view,
@@ -34,10 +33,9 @@ export function SkillsLibraryToolbar({
   onNewGroup: () => void;
   onFolders: () => void;
 }) {
-  const [open, setOpen] = useState<"filter" | "new" | "more" | null>(null);
+  const [open, setOpen] = useState<"filter" | "new" | null>(null);
   const filterTrigger = useRef<HTMLButtonElement>(null);
   const newTrigger = useRef<HTMLButtonElement>(null);
-  const moreTrigger = useRef<HTMLButtonElement>(null);
   const filters: { id: SkillListFilter; label: string }[] = [
     { id: "all", label: t("All") },
     { id: "enabled", label: t("Enabled") },
@@ -81,18 +79,6 @@ export function SkillsLibraryToolbar({
       >
         {t("New")}
       </Button>
-      <Button
-        ref={moreTrigger}
-        variant="ghost"
-        size="sm"
-        iconOnly
-        label={t("More")}
-        aria-haspopup="menu"
-        aria-expanded={open === "more"}
-        onClick={() => setOpen(open === "more" ? null : "more")}
-      >
-        <MoreHorizontal className="icon-sm" aria-hidden />
-      </Button>
       {open === "filter" ? (
         <DropdownMenu
           anchor={filterTrigger}
@@ -120,24 +106,16 @@ export function SkillsLibraryToolbar({
           onPick={(id) => {
             if (id === "skill") onNewSkill();
             else if (id === "group") onNewGroup();
+            else if (id === "folders") onFolders();
             else onDiscover();
           }}
           items={[
             { kind: "item", id: "skill", label: t("New skill"), disabled: busy },
             { kind: "item", id: "group", label: t("New group") },
             { kind: "item", id: "discover", label: t("Discover skills") },
+            { kind: "sep" },
+            { kind: "item", id: "folders", label: t("Skill folders") },
           ]}
-        />
-      ) : null}
-      {open === "more" ? (
-        <DropdownMenu
-          anchor={moreTrigger}
-          label={t("More")}
-          returnFocusRef={moreTrigger}
-          align="end"
-          onClose={close}
-          onPick={() => onFolders()}
-          items={[{ kind: "item", id: "folders", label: t("Skill folders") }]}
         />
       ) : null}
     </div>

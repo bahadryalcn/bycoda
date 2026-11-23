@@ -117,8 +117,6 @@ export function AccountMenu({
             ? `${t("Account")}: ${name}. ${presence.summary}`
             : `${t("Account")}: ${name}`
         }
-        tooltip={name}
-        tooltipSide="top"
         aria-haspopup="menu"
         aria-expanded={open}
         data-account-menu-trigger

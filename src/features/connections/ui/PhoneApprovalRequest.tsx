@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
+import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { Modal } from "../../../shared/ui/Modal";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { Text } from "../../../shared/ui/Text";
 import { errorText } from "../../../shared/lib/errors";
 
 type Request = {
@@ -87,18 +88,33 @@ function PhoneApprovalDialog({
       onClose={() => {
         if (!inFlight.current) onSettle(false);
       }}
+      footer={
+        <ModalActions>
+          <Button
+            stableWidth
+            type="button"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => onSettle(false)}
+          >
+            {request.cancelLabel}
+          </Button>
+          <Button
+            stableWidth
+            type="button"
+            variant="primary"
+            loading={pending}
+            disabled={pending}
+            onClick={() => void allow()}
+          >
+            {pending ? request.pendingLabel : request.confirmLabel}
+          </Button>
+        </ModalActions>
+      }
     >
-      <ApprovalRequest
-        title={request.title}
-        detail={request.message}
-        allow={{
-          label: pending ? request.pendingLabel : request.confirmLabel,
-          pending,
-          disabled: pending,
-          onClick: () => void allow(),
-        }}
-        deny={{ label: request.cancelLabel, disabled: pending, onClick: () => onSettle(false) }}
-      />
+      <Text as="p" wrap="anywhere">
+        {request.message}
+      </Text>
       {error ? <InlineError>{error}</InlineError> : null}
     </Modal>
   );

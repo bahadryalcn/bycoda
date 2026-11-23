@@ -10,7 +10,6 @@ import { Button } from "../../../../shared/ui/Button";
 import { Select } from "../../../../shared/ui/Select";
 import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
 import { Switch } from "../../../../shared/ui/Switch";
-import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
 import { StatusText } from "../common/StatusText";
 import type { RemoteMachine } from "../../../connections/public/protocol";
 import type { BrowserSettings as BrowserSettingsValue } from "../../model/socialActions";
@@ -87,13 +86,12 @@ export function BrowserSettings({
   }
 
   const changed = JSON.stringify(draft) !== JSON.stringify(saved);
-  const gate: ActionGate = disabled
-    ? { disabled: true, disabledReason: t("Connect to this computer to change this account.") }
-    : !changed
-      ? { disabled: true, disabledReason: t("No changes to save.") }
-      : draft.desktopControl.allowed && !draft.desktopControl.computerId
-        ? { disabled: true, disabledReason: t("Choose the computer desktop control may use.") }
-        : { disabled: false };
+  // Nothing to save is obvious from the untouched form, so only real prerequisites are explained.
+  const blockedReason = disabled
+    ? t("Connect to this computer to change this account.")
+    : changed && draft.desktopControl.allowed && !draft.desktopControl.computerId
+      ? t("Choose the computer desktop control may use.")
+      : undefined;
 
   const save = () =>
     void write("browser", () => client.browser.settings.set(draft))
@@ -168,15 +166,16 @@ export function BrowserSettings({
         />
       ) : null}
       <div className="social-field-row">
-        <DisabledReason
+        <Button
           variant="primary"
           size="sm"
           loading={is("browser")}
           onClick={save}
-          {...gateProps(gate)}
+          disabled={!changed || !!blockedReason}
+          disabledReason={blockedReason}
         >
           {t("Save browser settings")}
-        </DisabledReason>
+        </Button>
       </div>
       {error ? <InlineError>{error}</InlineError> : null}
       {live ? (

@@ -49,6 +49,10 @@ type Props = {
   /** Hide targets unsupported by desktop-only filesystem integrations. */
   localOnly?: boolean;
   mode?: "switch" | "move";
+  /** Accessible name before a project is selected. */
+  chooseLabel?: string;
+  /** Accessible action paired with the current project name. */
+  actionLabel?: string;
   className?: string;
   buttonClassName?: string;
   appearance?: "ghost" | "filled";
@@ -69,6 +73,8 @@ export function SearchableProjectPicker({
   disabled = false,
   localOnly = false,
   mode = "switch",
+  chooseLabel,
+  actionLabel,
   className,
   buttonClassName,
   appearance = "ghost",
@@ -161,13 +167,13 @@ export function SearchableProjectPicker({
         title: resolveTabGroupLabel(itemKey, groupLabels, basename(item.path) || seed),
         meta: prettyParent(item.path),
         icon: logo ? (
-          <ProjectLogoIcon path={logo} className="size-4" imageClassName="size-4" />
+          <ProjectLogoIcon path={logo} className="icon-sm" imageClassName="icon-sm" />
         ) : (
           <ProjectMascot
             project={seed}
             color={resolveTabGroupColor(itemKey, groupColors, groupCustomColors, seed)}
             name={resolveTabGroupMascot(itemKey, groupMascots)}
-            className="size-3.5"
+            className="icon-sm"
           />
         ),
         onContextMenu: onProjectContextMenu
@@ -187,7 +193,8 @@ export function SearchableProjectPicker({
     onChange: pickProject,
   });
 
-  const action = mode === "move" ? t("Move note to project") : t("Switch project");
+  const choose = chooseLabel ?? t("Choose project for note");
+  const action = actionLabel ?? (mode === "move" ? t("Move note to project") : t("Switch project"));
 
   return (
     <div
@@ -197,7 +204,7 @@ export function SearchableProjectPicker({
       <Button
         variant="item"
         iconOnly={compact}
-        label={t("Choose project for note")}
+        label={choose}
         motion="none"
         type="button"
         disabled={disabled}
@@ -205,7 +212,7 @@ export function SearchableProjectPicker({
         aria-label={
           inProject
             ? t("{p0}, current project {p1}", { p0: action, p1: label })
-            : t("Choose project for note")
+            : choose
         }
         selected={open || appearance === "filled"}
         expanded={compact ? undefined : open}
@@ -220,31 +227,29 @@ export function SearchableProjectPicker({
           openPicker();
         }}
         leading="none"
-        className={` flex min-w-0 items-center  ${
-          compact ? "justify-center" : "gap-1.5"
-        }     ${buttonClassName ? `   ${buttonClassName}  ` : ""}  `}
+        className={`flex min-w-0 items-center ${compact ? "justify-center" : "gap-1.5"}${
+          buttonClassName ? ` ${buttonClassName}` : ""
+        }`}
       >
         {!inProject ? null : logoPath ? (
           <ProjectLogoIcon
             path={logoPath}
-            className={`${compact ? "size-4" : "size-3.5"} shrink-0 rounded-sm`}
-            imageClassName={compact ? "size-4" : "size-3.5"}
+            className="icon-sm shrink-0 rounded-sm"
+            imageClassName="icon-sm"
           />
         ) : (
           <ProjectMascot
             project={seed}
             color={color}
             name={resolveTabGroupMascot(key, groupMascots)}
-            className={`${compact ? "size-3.5" : "size-3"} shrink-0`}
+            className="icon-sm shrink-0"
             active={busy}
           />
         )}
         {compact ? null : (
-          <>
-            <Text truncate size="inherit" tone="primary" weight="medium" className="min-w-0">
-              {label}
-            </Text>
-          </>
+          <Text truncate size="inherit" tone="primary" weight="medium" className="min-w-0">
+            {label}
+          </Text>
         )}
       </Button>
       {open && !disabled ? (
@@ -291,7 +296,7 @@ export function SearchableProjectPicker({
                 }}
                 className="flex w-full items-center gap-2.5 text-left"
               >
-                <Plus className="icon-md shrink-0" strokeWidth={1.75} />
+                <Plus className="icon-sm shrink-0" strokeWidth={1.75} />
                 <span>{t("New project")}</span>
               </Button>
             </div>

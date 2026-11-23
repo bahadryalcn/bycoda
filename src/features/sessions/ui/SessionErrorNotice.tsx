@@ -3,10 +3,15 @@ import { ErrorDetails, errorHeadline, fitsOneLine } from "../../../shared/ui/Err
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Text } from "../../../shared/ui/Text";
 import { sessionErrorPresentation } from "../model/sessionErrorPresentation";
+import { useFailedTurnRecovery } from "./RetryFailedTurn";
 
-/** Transcript failure copy; protocol diagnostics stay available without dominating the conversation. */
-export function SessionErrorNotice({ text }: { text: string }) {
+/**
+ * The one transcript failure notice: the reason once, with Retry beside it when the turn can be
+ * resent. Protocol diagnostics stay behind Technical details.
+ */
+export function SessionErrorNotice({ text, errorId }: { text: string; errorId?: string }) {
   const t = useT();
+  const recovery = useFailedTurnRecovery(errorId);
   const message = sessionErrorPresentation(text);
   const detail = message.detail ?? (!fitsOneLine(text) ? text : undefined);
   const summary = errorHeadline(message.summary || t("The last turn failed"));
@@ -30,7 +35,16 @@ export function SessionErrorNotice({ text }: { text: string }) {
     );
   }
   return (
-    <InlineError text={{ tone: "primary" }} extra={details}>
+    <InlineError
+      text={{ tone: "primary" }}
+      extra={details}
+      retry={
+        recovery
+          ? { onRetry: recovery.retry, label: t("Retry"), pending: recovery.pending }
+          : undefined
+      }
+      data-retry-failed-turn={recovery ? "" : undefined}
+    >
       {summary}
     </InlineError>
   );

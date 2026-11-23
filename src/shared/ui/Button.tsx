@@ -27,7 +27,7 @@ import arcStyles from "./arc/button/button.module.css";
 import styles from "./Button.module.css";
 
 export type { ButtonSize } from "./arc/button/button";
-export type ButtonVariant = Exclude<ArcButtonVariant, "danger"> | "link" | "item" | "tab";
+export type ButtonVariant = Exclude<ArcButtonVariant, "danger"> | "link" | "item" | "tab" | "chip";
 export type ButtonShape = "default" | "pill";
 export type ButtonTone = "neutral" | "accent" | "info" | "success" | "warning" | "danger";
 
@@ -116,7 +116,8 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   reserveLabels?: readonly string[];
   /** Translated hint shown in the shared Tooltip on hover and keyboard focus (never a native
    *  `title`). An explicit `title` takes precedence; `title=""` means no tooltip at all, for a
-   *  Button that an outer `Tooltip` already describes. Icon-only buttons fall back to `label`. */
+   *  Button that an outer `Tooltip` already describes. An icon-only `label` is the accessible
+   *  name only; it appears in a hint just with `shortcut`, `tooltipDetails` or `revealLabel`. */
   tooltip?: string;
   /** Show repeated text only when clipped/hidden. Extra details and missing shortcuts stay available. */
   tooltipWhen?: "always" | "overflow";
@@ -237,11 +238,11 @@ export function nativeButtonPresentation({
 const isTrue = (value: unknown) => value === true || value === "true";
 
 /**
- * The one action control: variants `primary`, `secondary` (default), `ghost`, `link`, `item` and `tab`, with tone, size, icons, `loading` and `pressed` toggle state. It owns focus ring, hit area, tooltip (`tooltip`, `shortcut`, `disabledReason`), stable width across label changes and long-press.
- * Icon-only buttons need `iconOnly` and a `label`.
+ * The one action control: variants `primary`, `secondary` (default), `ghost`, `link`, `item`, `tab` and `chip` (quiet compact icon plus readable value for machine, project, checkout, branch and model pickers: no border or fill until hover), with tone, size, icons, `loading` and `pressed` toggle state. It owns focus ring, hit area, tooltip (`tooltip`, `shortcut`, `disabledReason`), stable width across label changes and long-press.
+ * Icon-only buttons need `iconOnly` and a `label` (accessible name; no tooltip unless `tooltip`, `shortcut` or `tooltipDetails` is passed).
  * For confirmed async results, set `success` and translated `successLabel`; the action owns its check, label and announcement. At rest the button shows only its label (no reserved icon slot); the confirmed width, check included, is reserved inside the label. Clear success when its draft or target changes.
  * @group actions
- * @use Any click that runs an action, opens something or navigates. Use padding roles and reserveEndAction for row geometry; controlHeight and controlMinHeight preserve content and density.
+ * @use Any click that runs an action, opens something or navigates. Use variant="chip" for a compact icon and readable value. Give icon-only actions an accessible name and reserve tooltips for shortcuts, reasons or details. Use padding roles and reserveEndAction for row geometry; controlHeight and controlMinHeight preserve content and density.
  * Default is variant="secondary" size="sm"; toolbar and icon-only actions pass variant="ghost", a destructive action is tone="danger". Size md has one caller and lg none: use sm or xs.
  * @avoid Choosing between modes: SegmentedControl or RadioGroup. Navigation to an external page: Button variant="link" with openExternal. Icon action inside a row/tab host: InlineAction. Joined related actions: ButtonGroup.
  */
@@ -363,7 +364,8 @@ export function Button({
   };
   useEffect(() => () => void clearLongPress(), []);
   const insetText = inset === "text";
-  const hierarchy = variant;
+  // A chip is a quiet ghost with its own compact face (see `data-button-variant="chip"`).
+  const hierarchy = variant === "chip" ? "ghost" : variant;
   const resolvedTone: ButtonTone = tone ?? "neutral";
   const structural = variant === "item" || variant === "tab";
   // A text action with a start icon swaps that icon for the spinner in the same slot.
@@ -402,7 +404,9 @@ export function Button({
       isTrue(props["aria-current"]) ||
       props["aria-current"] === "page");
   const arcVariant: ArcButtonVariant =
-    hierarchy === "link" || hierarchy === "item" || hierarchy === "tab" ? "ghost" : hierarchy;
+    hierarchy === "link" || hierarchy === "item" || hierarchy === "tab"
+      ? "ghost"
+      : hierarchy;
   const classes = [
     "bycoda-arc",
     styles.control,
@@ -440,12 +444,16 @@ export function Button({
       if (swallow(event)) return;
       handler?.(event);
     };
-  // Tooltip: one shared hint for `title`, `tooltip`, the icon-only `label` and `shortcut`.
-  // `title=""` is an explicit "no tooltip" (an outer Tooltip owns the hint).
+  // Tooltip: one shared hint for `title`, `tooltip` and `shortcut`. The accessible name
+  // (`label`) is separate: an icon-only button shows a hint only when the caller adds a
+  // tooltip, shortcut or details (the shortcut hint then leads with the label), or reveals
+  // its label. `title=""` is an explicit "no tooltip" (an outer Tooltip owns the hint).
   const suppressed = props.title === "";
   const tooltipText = suppressed
     ? undefined
-    : props.title || tooltip || (iconOnly || revealLabel ? label : undefined);
+    : props.title ||
+      tooltip ||
+      (revealLabel || (iconOnly && (shortcut || tooltipDetails?.length)) ? label : undefined);
   const reason = explained && !suppressed ? disabledReason : undefined;
   const hintLabel = tooltipText ?? reason;
   const hintDetails = suppressed

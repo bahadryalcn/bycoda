@@ -8,9 +8,9 @@
   }
 }
 
-/* Sizes sit on the icon scale doubled up: 16, 20, 24, 32. */
+/* Portrait artwork shares the small end of the scale with identity glyphs. */
 .avatar {
-  --avatar-size: 1.5rem;
+  --avatar-size: var(--ui-space-6, 1.5rem);
   position: relative;
   display: inline-grid;
   place-items: center;
@@ -18,13 +18,16 @@
   block-size: var(--avatar-size);
 }
 .avatar[data-size="xs"] {
-  --avatar-size: 1rem;
+  --avatar-size: var(--ui-icon-md);
 }
 .avatar[data-size="sm"] {
-  --avatar-size: 1.25rem;
+  --avatar-size: var(--ui-icon-lg);
 }
 .avatar[data-size="lg"] {
-  --avatar-size: 2rem;
+  --avatar-size: var(--ui-space-8, 2rem);
+}
+.avatar[data-size="portrait"] {
+  --avatar-size: var(--ui-space-10, 2.5rem);
 }
 .face {
   display: grid;

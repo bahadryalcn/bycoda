@@ -81,12 +81,12 @@ it("maps every reason to its scene", () => {
   expect(machineScene("pairing-refused")).toBe("error");
 });
 
-it("shows the scene, a title and one status line in a panel, with the reason behind the info button", async () => {
+it("shows a title without art in a panel, with the reason behind the info button", async () => {
   await mountOffline("panel");
 
-  expect(art()?.dataset.scene).toBe("unreachable");
+  expect(art()).toBeNull();
   expect(text()).toContain("Your computer evpc isn’t reachable right now");
-  expect(text()).toContain("Waiting to reconnect");
+  expect(text()).not.toContain("Waiting to reconnect");
   expect(text()).not.toContain("Tailscale");
   const info = container.querySelector('button[aria-haspopup="dialog"]');
   expect(info).not.toBeNull();
@@ -95,12 +95,12 @@ it("shows the scene, a title and one status line in a panel, with the reason beh
 });
 
 it("uses the still frame while decorative motion is off", async () => {
-  await mount({ reason: "not-added" });
+  await mount({ reason: "not-added", size: "page" });
   expect(art()?.dataset.scene).toBe("connect-computer");
   const animated = art()?.getAttribute("src");
 
   motion.enabled = false;
-  await mount({ reason: "not-added" });
+  await mount({ reason: "not-added", size: "page" });
   expect(art()?.getAttribute("src")).not.toBe(animated);
   expect(art()?.getAttribute("src")).toContain("still");
 });

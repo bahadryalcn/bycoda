@@ -74,7 +74,7 @@ it("uses the same selected row anatomy in short, searchable and embedded lists",
   expect(embedded.getAttribute("aria-selected")).toBe("true");
 });
 
-it("keeps rich descriptions accessible, skips disabled values and commits multiple choices", async () => {
+it("exposes a disabled reason without allowing the option to be selected", async () => {
   const onChange = vi.fn();
   await act(async () =>
     root.render(
@@ -98,10 +98,8 @@ it("keeps rich descriptions accessible, skips disabled values and commits multip
   );
   const list = container.querySelector('[role="listbox"]')!;
   const rows = container.querySelectorAll<HTMLButtonElement>('[role="option"]');
-  expect(rows[1].disabled).toBe(true);
-  expect(document.getElementById(rows[1].getAttribute("aria-describedby")!)?.textContent).toContain(
-    "Offline",
-  );
+  expect(rows[1].getAttribute("aria-disabled")).toBe("true");
+  expect(rows[1].getAttribute("aria-describedby")).toBeNull();
   expect(document.getElementById(rows[2].getAttribute("aria-describedby")!)?.textContent).toBe(
     "Provider details",
   );
@@ -110,6 +108,14 @@ it("keeps rich descriptions accessible, skips disabled values and commits multip
       new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
     ),
   );
+  expect(list.getAttribute("aria-activedescendant")).toBe(rows[1].id);
+  expect(document.getElementById(rows[1].getAttribute("aria-describedby")!)?.textContent).toContain(
+    "Offline",
+  );
+  await key(list, "Enter");
+  await act(async () => rows[1].click());
+  expect(onChange).not.toHaveBeenCalled();
+  await key(list, "ArrowDown");
   await act(async () =>
     list.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),

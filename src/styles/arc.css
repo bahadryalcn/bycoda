@@ -19,8 +19,8 @@
      the caret and surface carry focus).
    - Selected state is never a focus colour: use --ui-selected-ring (index.css). */
 html:root {
-  --ui-field-height-sm: var(--ui-control-height-compact);
-  --ui-field-height-md: var(--ui-control-height);
+  --ui-field-height-sm: var(--ui-control-height-sm);
+  --ui-field-height-md: var(--ui-control-height-md);
   --ui-field-radius: var(--ui-radius-control);
   /* Fields rest with a faint frame (about 1.5:1 against the field ground) and a muted
      ground (--ui-field-surface) so they stay findable without a focus frame. Check boxes and other
@@ -61,35 +61,27 @@ html[data-input-modality="keyboard"]:root {
   --surface-muted: var(--ui-surface-muted);
   --text-secondary: var(--ui-text-secondary);
   --text-muted: var(--ui-text-muted);
-  --border: var(--color-stroke);
-  --border-subtle: color-mix(in oklch, var(--color-content) 5%, transparent);
-  --border-strong: color-mix(in oklch, var(--color-content) 16%, transparent);
-  --accent: var(--user-accent-solid, var(--user-accent-color, var(--color-accent)));
+  --border: var(--ui-tone-neutral-border);
+  --border-subtle: var(--ui-fill-faint);
+  --border-strong: var(--ui-fill-strong);
+  --accent: var(--ui-tone-accent-solid);
   --accent-strong: var(--accent);
   --accent-subtle: var(--ui-surface-selected);
-  --accent-foreground: var(--user-accent-foreground, var(--ui-text-on-active));
+  --accent-foreground: var(--ui-tone-accent-on-solid);
   --danger: var(--ui-tone-danger-fg);
   --info: var(--ui-tone-info-fg);
   --warning: var(--ui-tone-warning-fg);
   --success: var(--ui-tone-success-fg);
-  /* Switch, checkbox, radio and slider on-state: the Appearance accent when one is set, else a
-     neutral mid ink step, so the default workbench keeps one restrained hue (no saturated blue). */
-  --control-on: var(
-    --user-accent-solid,
-    var(
-      --user-accent-color,
-      color-mix(in oklab, var(--color-content) 58%, var(--color-background-base))
-    )
-  );
+  --control-on: var(--ui-control-on);
   --control-fill: var(--control-on);
-  --control-glyph: var(--user-accent-foreground, var(--color-background-base));
+  --control-glyph: var(--ui-control-on-glyph);
   --control-track: color-mix(in oklch, var(--color-content) 20%, transparent);
   --control-track-hover: color-mix(in oklch, var(--color-content) 28%, transparent);
   --control-thumb: var(--ui-control-thumb);
   --control-thumb-on: var(--ui-control-thumb);
-  --control-thumb-shadow: var(--ui-control-thumb-shadow);
+  --control-thumb-shadow: none;
   --shadow-resting: none;
-  --shadow-raised: none;
+  --shadow-raised: var(--ui-floating-shadow);
   /* Type: 12 label (--text-xs/--text-sm), 13 entry (--text-base; fields and menus re-point
      --text-sm below), 14 reading, 16 title. */
   --text-xs: var(--ui-font-caption);
@@ -103,8 +95,8 @@ html[data-input-modality="keyboard"]:root {
   --tracking-body: normal;
   /* Arc heights follow the spec ladder: xs 24, sm 28, md 32, lg 40 (density-scaled). */
   --control-height-xs: var(--ui-control-height-xs);
-  --control-height-sm: var(--ui-control-height-compact);
-  --control-height-md: var(--ui-control-height);
+  --control-height-sm: var(--ui-control-height-sm);
+  --control-height-md: var(--ui-control-height-md);
   --control-height-lg: var(--ui-control-height-lg);
   /* Arc motion collapses onto the two durations and the one easing. */
   --duration-instant: var(--motion-duration-fast);
@@ -119,7 +111,7 @@ html[data-input-modality="keyboard"]:root {
   --ease-in-out: var(--motion-ease-standard);
   --ease-spring: var(--motion-ease-standard);
   --focus-ring: transparent;
-  --shadow-floating: none;
+  --shadow-floating: var(--ui-floating-shadow);
   font-family: var(--font-sans);
 }
 
@@ -188,7 +180,11 @@ html[data-input-modality="keyboard"] .bycoda-arc[data-ui-appearance="island"] .b
 
 .bycoda-arc-switch,
 .bycoda-arc-slider {
-  --control-height-md: var(--ui-control-height-compact);
+  --control-height-md: var(--ui-control-height-sm);
+}
+
+.bycoda-arc-switch {
+  --control-thumb-shadow: inset 0 0 0 1px var(--ui-control-thumb-border);
 }
 
 /* A solid fill and its contrast ink must switch together when the theme or
@@ -201,7 +197,7 @@ html[data-input-modality="keyboard"] .bycoda-arc[data-ui-appearance="island"] .b
 .bycoda-arc-segmented {
   /* Unselected options remain readable choices, rather than muted metadata. */
   --text-muted: var(--ui-text-secondary);
-  --control-height-sm: var(--ui-segment-height, 1.5rem);
+  --control-height-sm: var(--ui-segment-height, var(--ui-control-height-xs));
   --surface: var(--ui-surface-selected);
   --surface-muted: transparent;
 }
@@ -396,11 +392,11 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 
 .bycoda-arc[data-select-variant="pill"],
 .bycoda-arc[data-select-variant="row"] {
-  --control-height-md: var(--ui-control-height-compact);
+  --control-height-md: var(--ui-control-height-sm);
 }
 
 .bycoda-arc[data-select-variant="panel"] {
-  --control-height-md: 3.5rem;
+  --control-height-md: var(--ui-control-height-panel);
 }
 
 .bycoda-arc[data-select-variant="transparent"] {
@@ -409,19 +405,20 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 
 .bycoda-arc-menu {
   --text-sm: var(--ui-font-secondary);
-  --control-height-md: var(--ui-control-height);
-  --surface: var(--surface-raised);
+  --control-height-md: var(--ui-control-height-md);
+  --border: var(--ui-floating-edge);
+  --surface: var(--ui-surface-floating);
   --surface-muted: var(--ui-surface-hover);
 }
 
 .bycoda-arc-card {
   --text-lg: var(--ui-font-secondary);
-  --space-5: 0.75rem;
+  --space-5: var(--ui-space-3);
   --space-6: 0.875rem;
 }
 
 .bycoda-arc.bycoda-arc-morph {
-  --control-height-md: var(--ui-control-height-compact);
+  --control-height-md: var(--ui-control-height-sm);
   --duration-spring: var(--motion-reorder-duration);
   --ease-spring: var(--motion-ease-out);
   --ease-enter: var(--motion-ease-out);
@@ -429,7 +426,7 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 }
 
 .bycoda-arc-field--search {
-  --control-height-md: var(--ui-control-height-compact);
+  --control-height-md: var(--ui-control-height-sm);
 }
 
 .bycoda-arc-field--search input {
@@ -506,7 +503,7 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   font-variant-numeric: tabular-nums;
 }
 .bycoda-arc-shortcut {
-  --control-height-md: var(--ui-control-height-compact);
+  --control-height-md: var(--ui-control-height-sm);
   flex: 1;
 }
 .bycoda-image-comparison {
@@ -583,6 +580,7 @@ html[data-control-density="touch"] .bycoda-arc-switch {
     var(--ui-surface)
   );
   --ui-chart-area-fill: var(--ui-surface-selected);
+  /* The heatmap's inverse label needs inverse secondary ink until its tooltip adopts raised paint. */
   --ui-chart-tooltip-secondary: color-mix(
     in oklab,
     var(--color-background-base) 68%,

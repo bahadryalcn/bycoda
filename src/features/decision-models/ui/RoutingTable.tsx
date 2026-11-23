@@ -184,20 +184,9 @@ export function RoutingTable({
   return (
     <>
       <div className="flex min-w-0 items-center justify-between gap-2 px-4 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Text size="caption" tone="secondary">
-            {t("Automatic: local models first")}
-          </Text>
-          {Object.values(draft).some((route) => route?.sourceIds.length) ? (
-            <Badge size="xs">
-              {t("{p1} customized", {
-                p1: formatNumber(
-                  Object.values(draft).filter((route) => route?.sourceIds.length).length,
-                ),
-              })}
-            </Badge>
-          ) : null}
-        </div>
+        <Text size="caption" tone="secondary">
+          {t("Automatic: local models first")}
+        </Text>
         <Button
           variant="ghost"
           size="sm"
@@ -207,7 +196,7 @@ export function RoutingTable({
           {expanded ? t("Done") : t("Customize")}
         </Button>
       </div>
-      <div className="decision-routing-list">
+      <div>
         {expanded &&
         (editingTask !== null || Object.values(draft).some((route) => route?.sourceIds.length)) ? (
           <div className="decision-routing-row">
@@ -250,11 +239,6 @@ export function RoutingTable({
                   <Text size="body" weight="medium" truncate>
                     {taskTypeLabel(task)}
                   </Text>
-                  {expanded && route?.sourceIds.length ? (
-                    <Badge className="shrink-0" size="xs">
-                      {t("Custom")}
-                    </Badge>
-                  ) : null}
                 </div>
                 {expanded && (route?.sourceIds.length || editingTask === task) ? (
                   <>

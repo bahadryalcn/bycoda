@@ -26,8 +26,8 @@ export function RewoundHistoryDisclosure({
       )}
     >
       {truncated ? (
-        <Text as="p" size="inherit" tone="disabled" className="mt-1">
-          {t("Showing a preview of rewound history.")}
+        <Text as="p" size="inherit" tone="disabled" className="mt-1" aria-hidden>
+          …
         </Text>
       ) : null}
       {/* The list owns its scroll inside a cap relative to the session pane, so the summary row
@@ -74,7 +74,6 @@ export function RewoundHistoryDisclosure({
                       tone="secondary"
                       className="mt-1 flex min-w-0 items-center gap-1.5"
                     >
-                      <span className="shrink-0">{t("Attachments")}:</span>
                       <BadgeList
                         label={t("Attachments")}
                         size="xs"

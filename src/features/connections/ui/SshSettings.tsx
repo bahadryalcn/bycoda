@@ -9,6 +9,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Check, CircleDashed } from "../../../shared/ui/icons";
 import { errorText } from "../../../shared/lib/errors";
 import { sanitizeConnectionError } from "../model/remoteConnection";
 
@@ -103,7 +104,9 @@ export function SshSettings({
     configRef.current = config;
   });
   const [preview, setPreview] = useState<Preview>();
-  const [error, setError] = useState("");
+  // Each panel owns its failure, so an assign error never shows on Known hosts or Import.
+  const [keysError, setKeysError] = useState("");
+  const [importError, setImportError] = useState("");
   const hostsError = hostInventory.error;
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -131,20 +134,48 @@ export function SshSettings({
     const saved = await setServerSshIdentity(server.id, path);
     onAssigned?.(saved);
   };
-  const act = async (callback: () => Promise<void>) => {
+  const act = async (setFailure: (message: string) => void, callback: () => Promise<void>) => {
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
-    setError("");
+    setFailure("");
     try {
       await callback();
     } catch (reason) {
-      setError(sanitizeConnectionError(errorText(reason)));
+      setFailure(sanitizeConnectionError(errorText(reason)));
     } finally {
       pending.current = false;
       setBusy(false);
     }
   };
+  // Previews the pasted config once typing pauses; a result for older text is dropped.
+  useEffect(() => {
+    // Effect reason: debounce the native preview call so pasting needs no extra Preview action.
+    const content = config;
+    if (!content.trim()) return;
+    const timer = window.setTimeout(() => {
+      void invoke<Preview>("ssh_config_preview", { content }).then(
+        (result) => {
+          if (configRef.current === content) {
+            setImportError("");
+            setPreview(result);
+          }
+        },
+        (reason) => {
+          if (configRef.current === content) setImportError(sanitizeConnectionError(errorText(reason)));
+        },
+      );
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [config]);
+  const existingFor = (host: Preview["hosts"][number]) =>
+    servers.filter(
+      (candidate) =>
+        candidate.kind === "ssh" &&
+        (candidate.effectiveSshEndpoint ?? candidate.sshEndpoint) &&
+        sameSshEndpoint((candidate.effectiveSshEndpoint ?? candidate.sshEndpoint)!, host.endpoint),
+    );
+  const newHosts = preview?.hosts.filter((host) => !host.duplicate && !existingFor(host).length) ?? [];
   return (
     <Sheet title={t("SSH settings")} onClose={() => onClose()} size="lg">
       <div className="flex flex-col gap-4">
@@ -157,8 +188,8 @@ export function SshSettings({
             </Tab>
             <Tab value="import">{t("Import SSH config")}</Tab>
           </TabList>
-          {error ? <Alert tone="danger">{error}</Alert> : null}
           <TabPanel value="keys" keepMounted>
+            {keysError ? <Alert tone="danger">{keysError}</Alert> : null}
             <div className="flex flex-wrap items-center justify-end gap-2">
               <InfoPopover className="shrink-0">
                 <p>{t("Private keys stay in OpenSSH or your OS agent.")}</p>
@@ -173,7 +204,7 @@ export function SshSettings({
                   disabled={busy}
                   loading={generating}
                   onClick={() =>
-                    void act(async () => {
+                    void act(setKeysError, async () => {
                       setGenerating(true);
                       try {
                         const path = await save({
@@ -194,17 +225,16 @@ export function SshSettings({
                 </Button>
               ) : null}
             </div>
-            {agentInventory.loading ? (
-              <LoadingText className="mbs-2">
-                {t("SSH agent")}: {t("Loading\u2026")}
-              </LoadingText>
-            ) : null}
             {agentInventory.error ? (
-              <Alert tone="danger">
+              <Alert
+                tone="danger"
+                action={{
+                  label: t("Retry"),
+                  onClick: agentInventory.retry,
+                  pending: agentInventory.loading,
+                }}
+              >
                 {t("SSH agent")}: {agentInventory.error}
-                <Button loading={agentInventory.loading} onClick={agentInventory.retry}>
-                  {t("Retry")}
-                </Button>
               </Alert>
             ) : null}
             {agent ? (
@@ -226,11 +256,6 @@ export function SshSettings({
                 ))}
               </Text>
             ) : null}
-            {canAssignKey ? (
-              <Text wrap="anywhere" as="p" tone="inherit" className="mbs-2">
-                {t("Select a key for")}: {server?.name}
-              </Text>
-            ) : null}
             {canAssignKey && selectedIdentity ? (
               <div className="mbs-2 flex min-w-0 flex-wrap items-center gap-2">
                 <Text
@@ -246,7 +271,7 @@ export function SshSettings({
                   variant="secondary"
                   disabled={busy}
                   onClick={() =>
-                    void act(async () => {
+                    void act(setKeysError, async () => {
                       await assignIdentity();
                     })
                   }
@@ -264,11 +289,15 @@ export function SshSettings({
               aria-label={t("Search SSH keys…")}
             />
             {keyInventory.error ? (
-              <Alert tone="danger">
+              <Alert
+                tone="danger"
+                action={{
+                  label: t("Retry"),
+                  onClick: keyInventory.retry,
+                  pending: keyInventory.loading,
+                }}
+              >
                 {t("Keys")}: {keyInventory.error}
-                <Button loading={keyInventory.loading} onClick={keyInventory.retry}>
-                  {t("Retry")}
-                </Button>
               </Alert>
             ) : null}
             {keyInventory.loading && keys.length === 0 ? <LoadingText className="mbs-2" /> : null}
@@ -306,21 +335,24 @@ export function SshSettings({
                   </Text>
                   {canAssignKey && key.identityFile ? (
                     <Button
-                      variant="secondary"
-                      aria-label={`${t("Assign key")}: ${key.identityFile} (${server?.name})`}
-                      aria-pressed={!inheritedIdentity && selectedIdentity === key.identityFile}
+                      variant="ghost"
+                      iconOnly
+                      label={`${t("Assign key")}: ${key.identityFile} (${server?.name})`}
+                      pressed={!inheritedIdentity && selectedIdentity === key.identityFile}
                       disabled={
                         busy || (!inheritedIdentity && selectedIdentity === key.identityFile)
                       }
                       onClick={() => {
-                        void act(async () => {
+                        void act(setKeysError, async () => {
                           await assignIdentity(key.identityFile);
                         });
                       }}
                     >
-                      {!inheritedIdentity && selectedIdentity === key.identityFile
-                        ? t("Assigned")
-                        : t("Assign key")}
+                      {!inheritedIdentity && selectedIdentity === key.identityFile ? (
+                        <Check className="icon-xs" />
+                      ) : (
+                        <CircleDashed className="icon-xs" />
+                      )}
                     </Button>
                   ) : null}
                 </div>
@@ -337,11 +369,15 @@ export function SshSettings({
             />
             {hostInventory.loading ? <LoadingText /> : null}
             {hostsError ? (
-              <Alert tone="danger">
+              <Alert
+                tone="danger"
+                action={{
+                  label: t("Retry"),
+                  onClick: hostInventory.retry,
+                  pending: hostInventory.loading,
+                }}
+              >
                 {hostsError}
-                <Button loading={hostInventory.loading} onClick={hostInventory.retry}>
-                  {t("Retry")}
-                </Button>
               </Alert>
             ) : null}
             {!hosts.length && !hostInventory.loading && !hostsError ? (
@@ -383,33 +419,36 @@ export function SshSettings({
               }}
               rows={6}
             />
-            <Button
-              loading={busy}
-              onClick={() => {
-                const content = config;
-                void act(async () => {
-                  const result = await invoke<Preview>("ssh_config_preview", { content });
-                  if (configRef.current === content) setPreview(result);
-                });
-              }}
-            >
-              {t("Preview")}
-            </Button>
+            {importError ? <Alert tone="danger">{importError}</Alert> : null}
             {preview?.warnings.map((warning, index) => (
-              <Text key={index} as="p" tone="muted">
+              <Alert key={index} tone="warning">
                 {warning}
-              </Text>
+              </Alert>
             ))}
+            {newHosts.length > 1 ? (
+              <Button
+                loading={busy}
+                onClick={() =>
+                  void act(setImportError, async () => {
+                    for (const host of newHosts) {
+                      await saveSshConnection({
+                        name: host.alias,
+                        endpoint: host.endpoint,
+                        importOnly: true,
+                      });
+                      setPreview(
+                        (previous) =>
+                          previous && { ...previous, hosts: previous.hosts.filter((h) => h !== host) },
+                      );
+                    }
+                  })
+                }
+              >
+                {t("Import all new")}
+              </Button>
+            ) : null}
             {preview?.hosts.map((host, index) => {
-              const existing = servers.filter(
-                (candidate) =>
-                  candidate.kind === "ssh" &&
-                  (candidate.effectiveSshEndpoint ?? candidate.sshEndpoint) &&
-                  sameSshEndpoint(
-                    (candidate.effectiveSshEndpoint ?? candidate.sshEndpoint)!,
-                    host.endpoint,
-                  ),
-              );
+              const existing = existingFor(host);
               const skip = () =>
                 setPreview(
                   (previous) =>
@@ -442,7 +481,7 @@ export function SshSettings({
                       : undefined
                   }
                   onImport={() =>
-                    void act(async () => {
+                    void act(setImportError, async () => {
                       await saveSshConnection({
                         name: host.alias,
                         endpoint: host.endpoint,

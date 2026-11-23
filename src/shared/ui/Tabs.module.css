@@ -7,7 +7,7 @@
   .list {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 1px;
     min-inline-size: 0;
   }
   .list[data-inset="sm"] {
@@ -21,6 +21,18 @@
   .list[data-scroll="auto"] {
     overflow-x: auto;
     overscroll-behavior-inline: contain;
+    scroll-padding-inline: var(--ui-space-1, 0.25rem);
+  }
+  :global([data-pane-header-tabs]) .list[data-scroll="wrap"]:not([aria-orientation="vertical"]) {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    scroll-padding-inline: var(--ui-space-1, 0.25rem);
+  }
+  :global([data-pane-header-tabs])
+    .list[data-scroll="wrap"]:not([aria-orientation="vertical"], [data-fill]) > * {
+    flex: none;
   }
   .list[data-scroll="auto"][aria-orientation="vertical"] {
     overflow-x: hidden;

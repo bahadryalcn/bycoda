@@ -112,7 +112,7 @@ it("shows the one primary action and a plain empty sentence, without a repeated 
   ).toBe(true);
 });
 
-it("lists each account on one line with its API or Browser label and health text", async () => {
+it("lists each account by name and shows health text only when it needs attention", async () => {
   const accounts = [account("a1", { connection: "browser" }), account("a2", { connected: false })];
   act(() =>
     root.render(
@@ -125,9 +125,8 @@ it("lists each account on one line with its API or Browser label and health text
   await flush();
   const rows = element.querySelectorAll(".social-account-row");
   expect(rows).toHaveLength(2);
-  expect(rows[0]?.textContent).toContain("Browser");
-  expect(rows[0]?.textContent).toContain("Connected");
-  expect(rows[1]?.textContent).toContain("API");
+  expect(rows[0]?.textContent).toContain("Account a1");
+  expect(rows[0]?.textContent).not.toContain("Connected");
   expect(rows[1]?.textContent).toContain("Connection needed");
 });
 

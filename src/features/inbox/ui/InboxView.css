@@ -4,7 +4,7 @@
   container: inbox / inline-size;
 }
 .inbox-collection-search {
-  flex-basis: 12rem;
+  flex-basis: calc(var(--ui-space-12) * 4);
 }
 .inbox-detail-back {
   display: none;
@@ -28,7 +28,7 @@
    expanded planning groups. Wide layout retains an independent reading pane. */
 .inbox-jira-layout > .jira-board-detail {
   min-width: 0;
-  width: min(42%, 38rem);
+  width: min(42%, calc(var(--ui-space-12) * 12));
 }
 @container inbox (max-width: 44rem) {
   .inbox-list-detail > .inbox-list-panel {

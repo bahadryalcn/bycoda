@@ -9,6 +9,7 @@ import { PasswordField } from "../../../../shared/ui/PasswordField";
 import { Select } from "../../../../shared/ui/Select";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { EmailAccount } from "../../model/outreach";
+import type { SocialPlatform } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { gateReason, type ActionGate } from "../common/DisabledReason";
 import {
@@ -18,7 +19,7 @@ import {
   type EmailDraft,
   type EmailKind,
 } from "./emailAccountForm";
-import { AddAccountKind } from "./AddAccountKind";
+import { ProviderSelect } from "./ProviderSelect";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -26,8 +27,8 @@ export type EmailAccountDialogProps = {
   client: SocialClient;
   onClose(): void;
   onCreated(accountId: string): void;
-  /** Shows the account-kind switch and returns to the social account form. Omit when opened on its own. */
-  onSwitchToAccount?(): void;
+  /** Shows the platform select and returns to the social account form with the chosen platform. Omit when opened on its own. */
+  onSwitchToAccount?(platform: SocialPlatform): void;
 };
 
 function kindText(kind: EmailKind): string {
@@ -113,7 +114,12 @@ export function EmailAccountDialog({
         }}
       >
         {onSwitchToAccount ? (
-          <AddAccountKind kind="email" disabled={is("email")} onChange={onSwitchToAccount} />
+          <ProviderSelect
+            value="email"
+            onChange={(next) => {
+              if (next !== "email" && !is("email")) onSwitchToAccount(next);
+            }}
+          />
         ) : null}
         <Select
           label={t("Email provider")}

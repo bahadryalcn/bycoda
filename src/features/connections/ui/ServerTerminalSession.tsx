@@ -6,24 +6,20 @@ import {
 } from "../../settings/public/appearancePreferences";
 import { Badge, StatusBadge } from "../../../shared/ui/Badge";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { StatusDot } from "../../../shared/ui/StatusDot";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { useT } from "../../../shared/i18n";
 import type { SshEndpoint } from "../model/serverInventory";
 import styles from "./ServerTerminalSession.module.css";
 
 type ServerTerminalLifecycle = "opened-on-computer" | "exited" | "failed" | "closed";
 
+/** Badge for a tab whose terminal is not healthy; a running terminal shows nothing. */
 export function ServerTerminalStatus({ lifecycle }: { lifecycle?: ServerTerminalLifecycle }) {
   const t = useT();
   switch (lifecycle) {
     case "opened-on-computer":
-      return (
-        <Badge size="xs" appearance="subtle" icon={<StatusDot tone="success" />}>
-          {t("Running")}
-        </Badge>
-      );
+      return null;
     case "failed":
       return <StatusBadge status="failed" size="xs" />;
     case "exited":
@@ -41,8 +37,6 @@ export function ServerTerminalStatus({ lifecycle }: { lifecycle?: ServerTerminal
 
 /** Presentation only. The existing SSH PTY owns connection, input and approvals. */
 export function ServerTerminalSession({
-  name,
-  lifecycle,
   endpoint,
   target,
   port,
@@ -51,8 +45,6 @@ export function ServerTerminalSession({
   actions,
   children,
 }: {
-  name?: string;
-  lifecycle?: ServerTerminalLifecycle;
   endpoint?: SshEndpoint;
   target?: string;
   port?: number | null;
@@ -87,29 +79,24 @@ export function ServerTerminalSession({
     (endpoint ? `${endpoint.user ? `${endpoint.user}@` : ""}${endpoint.host}` : (target ?? "SSH"));
   return (
     <div className={styles.session} data-server-terminal-session>
-      <div className={styles.toolbar}>
-        <div className={styles.identity}>
-          <OverflowTooltip label={name ?? address}>
-            <span className={styles.address}>{name ?? address}</span>
-          </OverflowTooltip>
-          <span className={styles.status} role="status">
-            <ServerTerminalStatus lifecycle={lifecycle} />
-          </span>
-        </div>
-        <div className={styles.actions}>
-          {actions}
-          <div ref={setToolbarTarget} />
-          <InfoPopover label={t("Connection details")}>
-            <DescriptionList>
-              <DescriptionItem term={t("Host")}>
-                {address}
-                {sshPort ? `:${sshPort}` : ""}
-              </DescriptionItem>
-              {key ? <DescriptionItem term={t("Identity file")}>{key}</DescriptionItem> : null}
-            </DescriptionList>
-          </InfoPopover>
-        </div>
-      </div>
+      {/* The tab already names the terminal and shows its state; the toolbar holds only actions. */}
+      <PaneHeader
+        actions={
+          <>
+            {actions}
+            <div ref={setToolbarTarget} />
+            <InfoPopover label={t("Connection details")}>
+              <DescriptionList>
+                <DescriptionItem term={t("Host")}>
+                  {address}
+                  {sshPort ? `:${sshPort}` : ""}
+                </DescriptionItem>
+                {key ? <DescriptionItem term={t("Identity file")}>{key}</DescriptionItem> : null}
+              </DescriptionList>
+            </InfoPopover>
+          </>
+        }
+      />
       {children(fontSize, setFontSize, preferences.terminalLineHeight, toolbarTarget)}
     </div>
   );

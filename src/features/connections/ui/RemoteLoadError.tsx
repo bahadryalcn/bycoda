@@ -13,12 +13,11 @@ import type { RemoteFailure } from "../model/remoteFailure";
 import { useRemoteConnection } from "../model/useRemoteConnection";
 import { useRemoteConnectionFeedback } from "./RemoteConnectionFeedback";
 /** One compact, inline explanation of why a remote project's data could not be
- * loaded, with what the user can do about it. `stale` says older data is still
- * shown (dimmed) below it. */
+ * loaded, with what the user can do about it. Older data that is still shown
+ * dimmed below it needs no sentence of its own. */
 export function RemoteLoadError({
   cwd,
   failure,
-  stale = false,
   onRetry,
   compact = false,
   coordinated = true,
@@ -27,6 +26,7 @@ export function RemoteLoadError({
 }: {
   cwd: string;
   failure: RemoteFailure;
+  /** Accepted for callers that pass it; the dimmed data already says so. */
   stale?: boolean;
   onRetry?: () => void;
   compact?: boolean;
@@ -154,7 +154,6 @@ export function RemoteLoadError({
             />
           </span>
         ) : null}
-        {stale ? <span className="mt-1 block">{t("Showing what was last loaded.")}</span> : null}
       </InlineMessage>
     );
   }
@@ -175,7 +174,6 @@ export function RemoteLoadError({
       {reconnectFailed ? (
         <p className="mt-1 break-words">{t("Reconnecting failed: {p0}", { p0: reconnectError })}</p>
       ) : null}
-      {stale ? <p className="mt-1">{t("Showing what was last loaded.")}</p> : null}
     </Alert>
   );
 }

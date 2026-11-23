@@ -15,7 +15,6 @@ import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
 import { assistantJobProjectIds } from "../../model/assistantJobs";
 import { createLocalDraftWriter } from "../../model/assistantLocalDraft";
-import rootStyles from "../AssistantView.module.css";
 import styles from "./Jobs.module.css";
 import { type OwnerRequest } from "./assistantRoomHelpers";
 
@@ -211,7 +210,6 @@ export function JobOwnerEditDialog({
             variant="primary"
             loading={pending}
             disabled={Boolean(blockedReason)}
-            disabledReason={blockedReason}
           >
             {t(draft.intent ? "Check status" : mode === "replan" ? "Replan" : "Save")}
           </Button>
@@ -267,10 +265,9 @@ export function JobOwnerEditDialog({
               : ""
           }
         />
-        {error && <InlineError className={rootStyles.error}>{error}</InlineError>}
+        {error && <InlineError>{error}</InlineError>}
         {draftStorageError && (
           <InlineError
-            className={rootStyles.error}
             retry={{
               label: t("Retry saving"),
               onRetry: () => {

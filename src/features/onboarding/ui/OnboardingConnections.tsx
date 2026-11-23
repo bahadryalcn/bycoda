@@ -3,10 +3,10 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { OnboardingHeading } from "./OnboardingHeading";
 import { OnboardingIllustratedStep } from "./OnboardingIllustratedStep";
-import { AppWindow, Globe } from "../../../shared/ui/icons";
+import { Globe } from "../../../shared/ui/icons";
 import { Surface } from "../../../shared/ui/Surface";
 
-/** The optional Connections step: this computer, remote computers and the manager. */
+/** The optional Connections step: the remote computers already known, and the one manager button. */
 export function OnboardingConnections({
   remotes,
   onManage,
@@ -21,34 +21,18 @@ export function OnboardingConnections({
         info={t("Remote agents stay on their own computer. Add machines later in Settings.")}
       />
       <OnboardingIllustratedStep scene="connections">
-        <Surface variant="card" padding="md" className="onboarding-card">
-          <AppWindow aria-hidden className="icon-lg" />
-          <div>
-            <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
-              {t("This computer")}
-            </Text>
-            <Text as="small" size="caption" tone="muted" leading="normal" truncate>
-              {t("Your local projects and agents")}
-            </Text>
-          </div>
-          <Text size="micro" tone="muted" leading="inherit">
-            {t("Local")}
-          </Text>
-        </Surface>
+        {/* This computer is always there, so only remote machines are listed. */}
         {remotes.map((machine) => (
-          <Surface variant="card" padding="md" className="onboarding-card" key={machine.id}>
-            <Globe aria-hidden className="icon-lg" />
-            <div>
-              <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
-                {machine.name}
-              </Text>
-              <Text as="small" size="caption" tone="muted" leading="normal" truncate>
-                {t("Remote computer")}
-              </Text>
-            </div>
-            <Button onClick={onManage} variant="secondary" type="button">
-              {t("Manage")}
-            </Button>
+          <Surface
+            variant="card"
+            padding="md"
+            className="mb-2 flex min-w-0 items-center gap-3"
+            key={machine.id}
+          >
+            <Globe aria-hidden className="icon-lg shrink-0" />
+            <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit" truncate>
+              {machine.name}
+            </Text>
           </Surface>
         ))}
         <div className="onboarding-actions">

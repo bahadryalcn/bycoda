@@ -2,10 +2,9 @@ import { useRef, useState } from "react";
 import { useT } from "../../shared/i18n";
 import { InlineAction } from "../../shared/ui/ActionHost";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
-import { Archive, FolderPlus, Plus, Server } from "../../shared/ui/icons";
+import { FileScript, FolderPlus, Plus, Server } from "../../shared/ui/icons";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
 import { OPEN_CODE_WORKSPACE_EVENT } from "../../features/projects/model/codeWorkspace";
-import { OPEN_SESSION_IMPORT_EVENT } from "../../features/sessions/public/importModel";
 
 /** Adds a folder on this computer, or one on a connected machine. */
 export function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
@@ -21,7 +20,6 @@ export function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void })
         ref={anchor}
         type="button"
         data-no-drag
-        aria-label={t("Open project")}
         data-usage-guide="project-add"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -53,19 +51,13 @@ export function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void })
               kind: "item",
               id: OPEN_CODE_WORKSPACE_EVENT,
               label: t("Open VS Code workspace…"),
-              icon: <FolderPlus className="icon-sm" />,
+              icon: <FileScript className="icon-sm" />,
             },
             {
               kind: "item",
               id: OPEN_REMOTE_PROJECT_EVENT,
               label: t("Open folder on a machine…"),
               icon: <Server className="icon-sm" />,
-            },
-            {
-              kind: "item",
-              id: OPEN_SESSION_IMPORT_EVENT,
-              label: t("Import Claude Code / Codex sessions…"),
-              icon: <Archive className="icon-sm" />,
             },
           ]}
         />

@@ -250,6 +250,31 @@ it("distinguishes loading, empty and failed initial reads", async () => {
   expect(container.textContent).toContain("No records");
 });
 
+it("shows one initial state with no rows and a separate continuation state with rows", async () => {
+  const state = () => container.querySelector("[data-collection-footer]")!.getAttribute("data-state");
+  await act(async () =>
+    root.render(
+      createElement(ContinuousList<string>, { ...props, items: [], loading: true, error: "x" }),
+    ),
+  );
+  expect(state()).toBe("initial");
+  expect(container.textContent).not.toContain("x");
+  expect(container.textContent).not.toContain("No records");
+  await act(async () =>
+    root.render(
+      createElement(ContinuousList<string>, { ...props, items: [], emptyMessage: "No sessions" }),
+    ),
+  );
+  expect(container.textContent).toBe("No sessions");
+  await act(async () =>
+    root.render(createElement(ContinuousList<string>, { ...props, items: ["one"], error: "Offline" })),
+  );
+  expect(state()).toBe("continuation");
+  expect(container.textContent).toContain("Row one");
+  expect(container.textContent).toContain("Offline");
+  expect(container.textContent).not.toContain("No records");
+});
+
 const loadMoreButton = () =>
   [...container.querySelectorAll("button")].find((entry) =>
     entry.textContent?.includes("Load more"),

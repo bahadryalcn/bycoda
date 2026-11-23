@@ -54,9 +54,7 @@ afterEach(() => {
 });
 
 const applyButton = () =>
-  [...host.querySelectorAll("button")].find(
-    (b) => b.textContent === "Rewind conversation and files",
-  );
+  [...host.querySelectorAll("button")].find((b) => b.textContent === "Rewind");
 
 // Regression for #461: the preview used to re-render every second only to notice expiry.
 it("arms one timer for the expiry instead of ticking every second", async () => {

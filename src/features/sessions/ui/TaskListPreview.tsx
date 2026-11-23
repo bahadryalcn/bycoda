@@ -22,7 +22,6 @@ export function TaskListPreview({ items, explanation }: Props) {
       as="section"
       variant="card"
       padding="none"
-      aria-label={t("Task progress")}
       className="mb-2 overflow-hidden"
     >
       <div
@@ -44,7 +43,7 @@ export function TaskListPreview({ items, explanation }: Props) {
               as="p"
               lines={2}
               expandable={false}
-              size="micro"
+              size="caption"
               className="mt-0.5 font-sans"
             >
               {explanation}
@@ -63,11 +62,9 @@ export function TaskListPreview({ items, explanation }: Props) {
               size="secondary"
               tone="secondary"
               className={`min-w-0 flex-1 font-sans ${
-                item.status === "completed"
+                item.status === "completed" || item.status === "cancelled"
                   ? "line-through decoration-content/25"
-                  : item.status === "cancelled"
-                    ? "line-through decoration-content/20"
-                    : ""
+                  : ""
               }`}
             >
               {item.text}
@@ -83,25 +80,11 @@ function TaskState({ status }: { status: TaskListItemStatus }) {
   const t = useT();
   if (status === "completed" || status === "in_progress") {
     return (
-      <StatusBadge
-        status={status === "completed" ? "done" : "running"}
-        iconOnly
-        size="xs"
-        className="mt-0"
-      />
+      <StatusBadge status={status === "completed" ? "done" : "running"} iconOnly size="xs" />
     );
   }
   if (status === "cancelled") {
-    return (
-      <Badge
-        tone="neutral"
-        size="xs"
-        label={t("Cancelled")}
-        role="img"
-        icon={<Minus />}
-        className="mt-0"
-      />
-    );
+    return <Badge tone="neutral" size="xs" label={t("Cancelled")} role="img" icon={<Minus />} />;
   }
   return <StatusDot tone="neutral" label={t("Pending")} className="mt-1" />;
 }

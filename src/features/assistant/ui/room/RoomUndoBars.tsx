@@ -1,13 +1,10 @@
-import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
-import { Button } from "../../../../shared/ui/Button";
-import { X } from "../../../../shared/ui/icons";
+import { Toast } from "../../../../shared/ui/ToastRegion";
 import { assistantJobVisible } from "../../model/assistantJobs";
 import { restoreNotesInOrder } from "./noteBulkDelete";
-import styles from "./RoomShell.module.css";
 import { useAssistantRoom } from "./assistantRoomContext";
 
+/** Deletion notices as shared toasts: Undo while a receipt exists, otherwise a link to Recently deleted. */
 export function RoomUndoBars() {
   const room = useAssistantRoom();
   const {
@@ -33,15 +30,18 @@ export function RoomUndoBars() {
             { projectId: undo.projectId, projectIds: undo.projectIds },
             canSeeProject,
           )) && (
-          <div {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.undo)}>
-            <Text size="inherit" tone="inherit" truncate className={styles.undoText}>
-              {t("Deleted")}: {undo.label}
-            </Text>
-            <span className={styles.undoActions}>
-              <Button
-                disabled={Boolean(pending)}
-                onClick={() =>
-                  run("undo", t("Restoring…"), async () => {
+          <>
+            <Toast
+              tone="success"
+              title={t("Deleted")}
+              message={undo.label}
+              durationMs={null}
+              onDismiss={() => setUndo(null)}
+              action={{
+                label: t("Undo"),
+                disabled: Boolean(pending),
+                onClick: () =>
+                  void run("undo", t("Restoring…"), async () => {
                     const { remaining, error } = await restoreNotesInOrder(
                       undo.ids ?? [undo.id],
                       (id) => assistantRequest({ op: "trash.restore", id }, undo.environmentId),
@@ -57,42 +57,27 @@ export function RoomUndoBars() {
                       );
                     }
                     setUndo(null);
-                  })
-                }
-              >
-                {t("Undo")}
-              </Button>
-              <Button iconOnly variant="ghost" label={t("Dismiss")} onClick={() => setUndo(null)}>
-                <X className="icon-sm" />
-              </Button>
-            </span>
+                  }),
+              }}
+            />
             {errorFor("undo")}
-          </div>
+          </>
         )}
       {deletedNoteWithoutReceipt && (
-        <div {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.undo)}>
-          <Text size="inherit" tone="inherit" truncate className={styles.undoText}>
-            {t("Deleted")}: {deletedNoteWithoutReceipt}
-          </Text>
-          <span className={styles.undoActions}>
-            <Button
-              onClick={() => {
-                setDeletedNoteWithoutReceipt(null);
-                setTrash(true);
-              }}
-            >
-              {t("Recently deleted")}
-            </Button>
-            <Button
-              iconOnly
-              variant="ghost"
-              label={t("Dismiss")}
-              onClick={() => setDeletedNoteWithoutReceipt(null)}
-            >
-              <X className="icon-sm" />
-            </Button>
-          </span>
-        </div>
+        <Toast
+          tone="success"
+          title={t("Deleted")}
+          message={deletedNoteWithoutReceipt}
+          durationMs={null}
+          onDismiss={() => setDeletedNoteWithoutReceipt(null)}
+          action={{
+            label: t("Recently deleted"),
+            onClick: () => {
+              setDeletedNoteWithoutReceipt(null);
+              setTrash(true);
+            },
+          }}
+        />
       )}
     </>
   );

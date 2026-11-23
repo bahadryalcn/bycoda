@@ -11,14 +11,18 @@ import { ActionHost } from "../../shared/ui/ActionHost";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
 import { useLocale, useT } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, Clock, FolderOpen, PenLine, Server } from "../../shared/ui/icons";
+import { CircleAlert, FolderOpen, PenLine, Server } from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
 import type { useTabGroupLogos } from "../../features/projects/hooks/useTabGroupLogos";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
-import { RAIL_SECTION_BLOCK, RailSectionHeader, type RailSectionDrag } from "./useRailSections";
+import {
+  RAIL_SECTION_BLOCK,
+  RailSectionHeader,
+  type RailSectionDrag,
+} from "./useRailSections";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import { useRecentSessions } from "../../features/sessions/hooks/useRecentSessions";
 import { useUnsentComposerDraft } from "../../features/sessions/hooks/useUnsentComposerDraft";
@@ -148,10 +152,12 @@ export function LastSessionsSection({
     projectKeys,
     enabled,
   });
+  // Keep sortable section membership in sync with the resolved recent sessions.
   useEffect(() => {
-    onShownChange?.(true);
+    onShownChange?.(hasRows);
     return () => onShownChange?.(false);
-  }, [onShownChange]);
+  }, [hasRows, onShownChange]);
+  if (!hasRows) return null;
   return (
     <div
       ref={drag?.setRef}
@@ -162,12 +168,11 @@ export function LastSessionsSection({
         label={t("Last sessions")}
         selected={lastSessionsOpen}
         drag={drag}
-        icon={<Clock className="icon-sm" />}
         collapsed={prefs.collapsed}
         onToggleCollapsed={() => update({ ...prefs, collapsed: !prefs.collapsed })}
         onLabelClick={onOpenLastSessions}
         actions={
-          !prefs.collapsed && hasRows ? (
+          !prefs.collapsed ? (
             <CountPicker count={prefs.count} onChange={(count) => update({ ...prefs, count })} />
           ) : undefined
         }
@@ -219,11 +224,12 @@ export function LastSessionsRows({
         className={`flex min-h-0 flex-1 flex-col gap-0 ${className ?? ""}`}
       >
         <ContinuousList
-          className="flex-1 min-h-0 px-2"
+          className="flex-1 min-h-0"
           items={rows}
           itemKey={(row) => JSON.stringify([row.cwd, row.id])}
           stateKey={listScopeKey ?? "last-sessions:rail"}
           estimateSize={56}
+          emptyMessage={t("No matching sessions")}
           renderItem={(row) => (
             <SessionRow
               row={row}

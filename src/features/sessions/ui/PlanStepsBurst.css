@@ -1,11 +1,11 @@
 .plan-step-dot {
   position: absolute;
-  bottom: -16px;
-  left: -8px;
+  inset-block-end: calc(var(--ui-space-4) * -1);
+  inset-inline-start: calc(var(--ui-space-2) * -1);
   display: grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
+  inline-size: var(--ui-space-4);
+  block-size: var(--ui-space-4);
   /* ui-drift-ignore: feature-typography -- The painted mark uses the same mode ink as its drawn check. */
   color: var(--mode-color);
   font-variant-numeric: tabular-nums;

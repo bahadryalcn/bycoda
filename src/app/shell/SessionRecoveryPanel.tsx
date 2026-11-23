@@ -270,7 +270,6 @@ export function SessionRecoveryPanel({
       setPending(false);
     }
   };
-  const hiddenCount = rows.length - shown.length;
   const listMaintenancePending =
     pendingAction === "remove-selected" ||
     pendingAction === "clear-completed" ||
@@ -361,11 +360,6 @@ export function SessionRecoveryPanel({
   // The primary action opens exactly what the owner sees: the selection, else the filtered list.
   const primaryIds = primaryOpensSelected ? selectedIds : shown.map((row) => row.stub.id);
   const primaryAction = primaryOpensSelected ? "open-selected" : "open-shown";
-  const primaryLabel = primaryOpensSelected
-    ? `${t("Open selected")} (${selectedIds.length})`
-    : hiddenCount > 0
-      ? `${t("Open shown")} (${shown.length})`
-      : `${t("Open all")} (${rows.length})`;
   const listError = error && errorArea === "list" ? error : "";
   const openError = error && errorArea === "open" ? error : "";
   const content = (
@@ -589,7 +583,9 @@ export function SessionRecoveryPanel({
               variant="primary"
               size="sm"
               motion="none"
-              label={primaryLabel}
+              label={t("Open sessions")}
+              trailing={<Badge size="xs" variant="count">{primaryIds.length}</Badge>}
+              tooltip={primaryOpensSelected ? t("Open selected") : t("Open shown")}
               menuLabel={t("More ways to open")}
               disabled={pending || !primaryIds.length}
               loading={

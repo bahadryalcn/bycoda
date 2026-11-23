@@ -42,6 +42,8 @@ import { checkoutBlockedFiles } from "../model/checkoutBlockedFiles";
 type Props = {
   cwd: string;
   branch?: string;
+  /** Omit the chip when repository discovery settles without a branch. */
+  hideWithoutRepository?: boolean;
   enabled?: boolean;
   worktree?: boolean;
   initialOpen?: boolean;
@@ -114,6 +116,7 @@ function branchOption(entry: GitBranchInfo, tree?: Worktree, locked = false): Pi
 export function BranchPicker({
   cwd,
   branch,
+  hideWithoutRepository = false,
   enabled = true,
   worktree = false,
   initialOpen = false,
@@ -348,6 +351,7 @@ export function BranchPicker({
   const stale = unreachable && !branch;
   const awaitingBranch = inProject && !current && !branchesSettled && !stale;
   const missingGit = !current && !awaitingBranch && !stale;
+  if (missingGit && hideWithoutRepository) return null;
   const branchLabel = current
     ? detached
       ? t("detached {p0}", { p0: current })
@@ -362,12 +366,13 @@ export function BranchPicker({
       ? t("This machine is unreachable")
       : missingGit
         ? t("No git repository")
-        : `${t("Switch branch in this worktree…")} · ${label}`;
+        : t("Switch branch in this worktree…");
   const interactive = enabled && !checkoutBusy && !awaitingBranch && !missingGit && !stale;
 
   return (
     <div ref={root} className="relative flex min-w-0 shrink">
       <GitPickerTrigger
+        data-composer-chip={hideWithoutRepository ? "branch" : undefined}
         title={title}
         aria-label={
           awaitingBranch

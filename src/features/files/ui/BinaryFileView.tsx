@@ -19,7 +19,6 @@ import {
   readBinaryFile,
   revealPath,
 } from "../../../platform/tauri/fs";
-import { displayPath } from "../../../shared/lib/paths";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { useImageZoom } from "../../../shared/hooks/useImageZoom";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
@@ -46,7 +45,7 @@ type LoadState =
  * Read-only surface for files the editor can't open. Images render; bytes that
  * turn out not to be an image get a card pointing at the file on disk.
  */
-export function BinaryFileView({ path, cwd }: Props) {
+export function BinaryFileView({ path }: Props) {
   useLocale();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -191,22 +190,20 @@ export function BinaryFileView({ path, cwd }: Props) {
   }
 
   if (state.status === "unsupported") {
-    return <UnsupportedFile path={path} cwd={cwd} size={state.size} />;
+    return <UnsupportedFile path={path} size={state.size} />;
   }
 
-  return <ImageView path={path} url={state.url} size={state.size} mime={state.mime} />;
+  return <ImageView path={path} url={state.url} size={state.size} />;
 }
 
 function ImageView({
   path,
   url,
   size,
-  mime,
 }: {
   path: string;
   url: string;
   size: number;
-  mime: string;
 }) {
   useLocale();
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
@@ -306,7 +303,6 @@ function ImageView({
       <ViewerFooter name={basename(path)}>
         <span className="tabular-nums">{natural ? `${natural.w} × ${natural.h}` : "—"}</span>
         <span className="tabular-nums">{formatFileSize(size)}</span>
-        <span className="uppercase">{mime.replace(/^image\//, "")}</span>
         {IS_MAC ? (
           <Button
             size="sm"
@@ -335,11 +331,8 @@ function ImageView({
         <Button
           size="sm"
           variant="ghost"
-          motion="none"
-          type="button"
-          tooltip={t("Fit to window")}
           onClick={imageZoom.reset}
-          className="w-11 text-center tabular-nums"
+          className="tabular-nums"
         >
           {zoom === 1
             ? t("Fit")
@@ -369,7 +362,7 @@ function ImageView({
               kind: "item",
               id: "copy-original",
               get label() {
-                return t("Copy Original File");
+                return t("Copy original file");
               },
             },
           ]}
@@ -385,7 +378,7 @@ function ImageView({
 }
 
 /** A file the viewer cannot show: says what it is and offers the ways to reach it on disk. */
-function UnsupportedFile({ path, cwd, size }: { path: string; cwd: string; size: number }) {
+function UnsupportedFile({ path, size }: { path: string; size: number }) {
   useLocale();
   const openOwner = useMemo(() => ({ path }), [path]);
   const openAction = useDefaultAppOpen(openOwner, path);
@@ -410,7 +403,7 @@ function UnsupportedFile({ path, cwd, size }: { path: string; cwd: string; size:
   const failure = error ?? openAction.error;
   return (
     <DocumentMessage
-      title={t("This file can’t be previewed")}
+      title={t("{p0} can’t be previewed", { p0: basename(path) })}
       action={{
         label: t(localCopy ? "Open local copy" : "Open in default app"),
         onClick: openAction.open,
@@ -440,9 +433,6 @@ function UnsupportedFile({ path, cwd, size }: { path: string; cwd: string; size:
     >
       <Text as="span" size="secondary" tone="secondary" className="break-words">
         {`${formatFileSize(size)} · ${t("Not an image")}`}
-      </Text>
-      <Text as="span" size="caption" tone="muted" className="mt-1 block break-words font-mono">
-        {displayPath(path, cwd)}
       </Text>
       {failure ? (
         <InlineError className="mt-2 justify-center break-words">{failure}</InlineError>

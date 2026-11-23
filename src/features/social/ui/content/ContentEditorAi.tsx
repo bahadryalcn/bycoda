@@ -93,7 +93,6 @@ export function ContentEditorAi({
             label={t("What should the post say?")}
             value={instruction}
             disabled={disabled}
-            description={t("AI drafts the text. You review it before anything is saved.")}
             onChange={(event) => setInstruction(event.target.value)}
           />
           <DisabledReason

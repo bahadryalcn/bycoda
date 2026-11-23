@@ -1,14 +1,10 @@
 import { useId, useRef, useState } from "react";
 import { useT } from "../../../../shared/i18n";
-import type {
-  ModelRoutingEntry,
-  ModelRoutingEntryStatus,
-} from "../../../../shared/model/host-contracts/model-routing";
+import type { ModelRoutingEntry } from "../../../../shared/model/host-contracts/model-routing";
 import { Button } from "../../../../shared/ui/Button";
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { Popover } from "../../../../shared/ui/Popover";
 import { Select } from "../../../../shared/ui/Select";
-import { Timestamp } from "../../../../shared/ui/Timestamp";
 import { MoreHorizontal, Trash2 } from "../../../../shared/ui/icons";
 import type { EntryAccount } from "./useEntryAccount";
 
@@ -19,7 +15,6 @@ export function ModelOrderRowMore({
   percent,
   providerPercent,
   account,
-  status,
   onChange,
   onPercent,
   onRemove,
@@ -30,7 +25,6 @@ export function ModelOrderRowMore({
   /** The provider default "keep free" percent as typed; "" when none. */
   providerPercent: string;
   account: EntryAccount;
-  status?: ModelRoutingEntryStatus;
   onChange: (entry: ModelRoutingEntry) => void;
   onPercent: (text: string) => void;
   onRemove: () => void;
@@ -107,9 +101,6 @@ export function ModelOrderRowMore({
               onChange({ ...entry, unknownLimit: value === "skip" ? "skip" : "use" })
             }
           />
-          {status?.resetsAt != null ? (
-            <Timestamp value={status.resetsAt} prefix={t("Resets")} size="caption" />
-          ) : null}
           <Button
             variant="ghost"
             tone="danger"
@@ -120,7 +111,7 @@ export function ModelOrderRowMore({
               onRemove();
             }}
           >
-            {t("Remove model {p0}", { p0: index + 1 })}
+            {t("Remove")}
           </Button>
         </Popover>
       ) : null}

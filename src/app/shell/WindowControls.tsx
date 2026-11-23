@@ -83,8 +83,6 @@ function NativeWindowControls() {
       <Button
         iconOnly
         label={minimizeToTray ? t("Minimize to tray") : t("Minimize window")}
-        tooltip={minimizeToTray ? undefined : t("Minimize")}
-        tooltipSide="bottom"
         variant="ghost"
         motion="none"
         data-tauri-drag-region="false"
@@ -102,7 +100,6 @@ function NativeWindowControls() {
               ? t("Restore window")
               : t("Maximize window")
         }
-        tooltip={isFullscreen ? t("Exit full screen") : isMaximized ? t("Restore") : t("Maximize")}
         variant="ghost"
         motion="none"
         data-tauri-drag-region="false"
@@ -118,8 +115,8 @@ function NativeWindowControls() {
       <Button
         iconOnly
         label={t("Close window")}
-        tooltip={t("Close")}
         variant="ghost"
+        tone="danger"
         motion="none"
         data-tauri-drag-region="false"
         onClick={handleClose}

@@ -6,11 +6,11 @@
   overscroll-behavior: contain;
 }
 .jira-board-column {
-  min-inline-size: 240px;
-  scroll-padding-block-start: 44px;
+  min-inline-size: calc(var(--ui-space-12) * 5);
+  scroll-padding-block-start: var(--ui-space-12);
 }
 .jira-board-card {
-  margin-block-end: 6px;
+  margin-block-end: var(--ui-space-2);
   touch-action: auto;
 }
 .jira-board-card-open {
@@ -27,24 +27,24 @@
 }
 .jira-board-status,
 .jira-board-hint {
-  padding-block: 6px;
-  padding-inline: 12px;
+  padding-block: var(--ui-space-2);
+  padding-inline: var(--ui-space-3);
 }
 .jira-board-hint {
   margin: 0;
 }
 .jira-board-error {
-  margin-inline: 12px;
-  margin-block-end: 8px;
+  margin-inline: var(--ui-space-3);
+  margin-block-end: var(--ui-space-2);
   overflow-wrap: anywhere;
 }
 .jira-board-transition {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin-inline: 12px;
-  margin-block-end: 8px;
+  gap: var(--ui-space-2);
+  margin-inline: var(--ui-space-3);
+  margin-block-end: var(--ui-space-2);
 }
 .jira-board-transition strong {
   flex-basis: 100%;
@@ -52,11 +52,11 @@
 .jira-board-detail {
   display: flex;
   flex-direction: column;
-  flex: 0 1 480px;
-  min-inline-size: 260px;
+  flex: 0 1 calc(var(--ui-space-12) * 10);
+  min-inline-size: calc(var(--ui-space-12) * 5.5);
   min-block-size: 0;
 }
 .jira-board-detail-close {
   align-self: end;
-  margin: 8px;
+  margin: var(--ui-space-2);
 }

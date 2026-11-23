@@ -41,9 +41,6 @@ import {
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
 
-// One height for the whole detail action row; `border` is inside it, so the
-// outline variant lines up with the filled and ghost ones.
-
 export type InboxProjectOption = {
   path: string;
   name: string;

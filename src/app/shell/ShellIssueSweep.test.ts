@@ -6,10 +6,10 @@ const source = (path: string) => readFileSync(new URL(path, import.meta.url), "u
 it("translates the shell labels and includes their keys in every desktop locale", () => {
   const labels = [
     ["TitleBar", ["Scroll tabs left", "Scroll tabs right", "Tab actions for {p0}"]],
-    ["ProjectRail", ["No projects yet"]],
+    ["ProjectRail", ["No projects found"]],
     ["UsageFooter", ["Provider usage", "Terminals", "Session", "Could not complete sign-in"]],
     ["UsageProviderChip", ["Could not complete sign-in"]],
-    ["NavigationBoundary", ["Loading {p0}…"]],
+    ["NavigationBoundary", ["Loading…"]],
     ["SidebarUpdate", ["Remind me tomorrow"]],
   ] as const;
 

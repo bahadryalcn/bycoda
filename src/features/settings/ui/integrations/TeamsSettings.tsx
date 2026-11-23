@@ -16,7 +16,6 @@ export function TeamsSettings() {
   return (
     <MessagingAccountsCard
       provider="teams"
-      emptyLabel={t("No Microsoft Teams accounts connected yet.")}
       addLabel={t("Add account")}
       describe={(account) => account.identity || t("Microsoft Teams")}
       Form={TeamsAccountForm}

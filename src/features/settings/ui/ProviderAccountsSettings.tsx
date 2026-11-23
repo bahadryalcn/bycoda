@@ -3,10 +3,9 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { Group, Row, SettingsFeedback } from "../../../shared/ui/settings";
-import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
-import { MoreHorizontal, Plus } from "../../../shared/ui/icons";
+import { MoreHorizontal, Plus, Star } from "../../../shared/ui/icons";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 
@@ -182,6 +181,7 @@ export function ProviderAccountsSettings({
       provider,
       accountId: newProviderAccount(provider, "").id,
       label: "",
+      kind: "personal",
       adding: true,
     });
   };
@@ -463,9 +463,7 @@ export function ProviderAccountsSettings({
                             {displayLabel}
                           </Text>
                           {account.isDefault && !defaultNamed ? (
-                            <Badge size="xs" className="shrink-0">
-                              {t("Default account")}
-                            </Badge>
+                            <Star role="img" aria-label={t("Default account")} className="icon-sm" />
                           ) : null}
                         </div>
                         <Text
@@ -520,11 +518,7 @@ export function ProviderAccountsSettings({
                         ) : null}
                       </div>
                       <div className="provider-account-status">
-                        {signedOut ? (
-                          <Badge size="sm" tone="warning" className="shrink-0">
-                            {t("Signed out")}
-                          </Badge>
-                        ) : usageRenewalPending(limits) ? null : (
+                        {signedOut || usageRenewalPending(limits) ? null : (
                           <AccountStatusLabel status={status} size="caption" />
                         )}
                       </div>
@@ -549,7 +543,6 @@ export function ProviderAccountsSettings({
                           variant="ghost"
                           iconOnly
                           label={t("Actions for {p0}", { p0: account.label })}
-                          tooltip={t("Account actions")}
                           aria-haspopup="menu"
                           aria-expanded={menuOpen}
                           loading={removing}

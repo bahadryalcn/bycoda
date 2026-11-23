@@ -65,7 +65,7 @@ it("uses explicit pending first paint instead of raw large Markdown", async () =
   const text = "**Formatted beginning**\n\n".padEnd(128 * 1024 + 1, "x");
   try {
     f.render(text);
-    expect(f.container.textContent).toContain("Rendering Markdown");
+    expect(f.container.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(f.container.textContent).not.toContain("**Formatted beginning**");
     await act(async () => ControlledWorker.current.complete());
     expect(f.container.querySelector('[data-streamdown="strong"]')?.textContent).toBe(
@@ -89,7 +89,7 @@ it("retains formatted nodes and selection when growth crosses worker threshold",
     f.render(prefix + " grows.".repeat(20000));
     expect(f.container.querySelector("p")).toBe(paragraph);
     expect(document.getSelection()!.toString()).toBe("Completed selectable paragraph.");
-    expect(f.container.textContent).toContain("Rendering Markdown");
+    expect(f.container.querySelector('[aria-busy="true"]')).not.toBeNull();
     ControlledWorker.current.complete();
     expect(f.container.querySelector("p")).toBe(paragraph);
     expect(document.getSelection()!.toString()).toBe("Completed selectable paragraph.");

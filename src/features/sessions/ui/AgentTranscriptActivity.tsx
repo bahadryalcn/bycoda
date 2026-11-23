@@ -36,6 +36,7 @@ import { ToolDiffPreview } from "./ToolDiffPreview";
 import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { SubagentRow } from "./SubagentCards";
+import { SessionErrorNotice } from "./SessionErrorNotice";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -1385,10 +1386,19 @@ export function HandoffDivider({ block }: { block: Block }) {
   );
   if (!meta) return null;
 
+  // A failed switch is one failure notice, not a divider: the transcript hides this block when the
+  // failed prompt's own notice follows, so it only shows for a history that has no such notice.
+  if (meta.status === "failed") {
+    return (
+      <div className="px-4 py-2">
+        <SessionErrorNotice text={meta.error ?? t("The last turn failed")} />
+      </div>
+    );
+  }
+
   const preparing = meta.status === "preparing";
-  const failed = meta.status === "failed";
   const cancelled = meta.status === "cancelled";
-  const terminal = failed || cancelled;
+  const terminal = cancelled;
   const label = preparing
     ? phase === "summarizing"
       ? t("Asking {p0} for a summary…", { p0: HARNESS_TITLE[meta.from] })
@@ -1396,7 +1406,7 @@ export function HandoffDivider({ block }: { block: Block }) {
         ? t("Stopping {p0}…", { p0: HARNESS_TITLE[meta.from] })
         : t("Preparing a handoff")
     : terminal
-      ? `${HARNESS_TITLE[meta.to]} · ${t(failed ? "Failed" : "Cancelled")}`
+      ? `${HARNESS_TITLE[meta.to]} · ${t("Cancelled")}`
       : HARNESS_TITLE[meta.to];
 
   return (
@@ -1412,7 +1422,7 @@ export function HandoffDivider({ block }: { block: Block }) {
                 ? `${t("Handoff")} · ${label}`
                 : t("Continued with {p0}", { p0: label })
           }
-          className={`flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-ui-caption ${failed ? "text-(--ui-tone-danger-fg)" : "text-(--transcript-ink-chrome)"}`}
+          className={`flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-ui-caption text-(--transcript-ink-chrome)`}
         >
           {preparing ? (
             <>

@@ -97,14 +97,9 @@ export function TaskList({
         estimateSize={36}
         renderItem={(task, index) => {
           const status = taskStatusLine(task);
+          // Only the failed group is named; everything else is simply the rest of the list.
           const groupHeading =
-            failed.length === 0
-              ? null
-              : index === 0
-                ? t("Failed · {p0}", { p0: failed.length })
-                : index === failed.length && failed.length < ordered.length
-                  ? t("Other · {p0}", { p0: ordered.length - failed.length })
-                  : null;
+            failed.length > 0 && index === 0 ? t("Failed · {p0}", { p0: failed.length }) : null;
           const previousAt = index > 0 ? taskListUpdatedAt(ordered[index - 1]) : null;
           const retry =
             onRetry &&
@@ -136,13 +131,20 @@ export function TaskList({
             .filter(Boolean)
             .join(" · ");
           // The state sits next to the title; the reason follows it on the same line.
+          // The hover hint carries the full error only when it adds text the row does not show.
+          const fullError = task.error ?? task.mergeError ?? "";
+          const statusText = (
+            <StatusText tone={statusTextTone(status)} data-task-status={status.kind}>
+              {status.label}
+            </StatusText>
+          );
           const secondary = (
             <>
-              <Tooltip label={task.error ?? task.mergeError ?? status.detail ?? status.label}>
-                <StatusText tone={statusTextTone(status)} data-task-status={status.kind}>
-                  {status.label}
-                </StatusText>
-              </Tooltip>
+              {fullError && fullError !== failure ? (
+                <Tooltip label={fullError}>{statusText}</Tooltip>
+              ) : (
+                statusText
+              )}
               {detail ? ` · ${detail}` : ""}
             </>
           );
@@ -155,7 +157,7 @@ export function TaskList({
                   tone="muted"
                   weight="medium"
                   className="px-2 pt-2 pb-1"
-                  data-task-group={index === 0 ? "failed" : "other"}
+                  data-task-group="failed"
                 >
                   {groupHeading}
                 </Text>

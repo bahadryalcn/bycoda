@@ -159,27 +159,28 @@ export function useConversationPanelView(
       history.current.scrollTop = history.current.scrollHeight;
   }, [threadId, query, lastMessageId]);
   const time = (timestamp: number) => formatDate(timestamp, { hour: "2-digit", minute: "2-digit" });
-  const deleteMessage = (message: AssistantMessage) =>
-    setConfirm({
-      title: t("Delete message?"),
-      message: message.text,
-      confirmLabel: t("Delete"),
-      onConfirm: async () => {
-        if (!messageVisible(message)) return;
-        await assistantRequest({
-          op: "messages.delete",
-          id: message.id,
-          expectedVersion: message.version,
-        });
-        setMessages((current) => ({
-          ...current,
-          [message.threadId]: (current[message.threadId] ?? []).filter(
-            (item) => item.id !== message.id,
-          ),
-        }));
-        dropSearchResults((item) => item.id !== message.id);
-      },
-    });
+  // A deleted message moves to Recently deleted, so it runs at once; a failure shows in the panel error slot.
+  const deleteMessage = async (message: AssistantMessage) => {
+    if (!messageVisible(message)) return;
+    try {
+      await assistantRequest({
+        op: "messages.delete",
+        id: message.id,
+        expectedVersion: message.version,
+      });
+    } catch (cause) {
+      const failure = presentRemoteError(cause, { explicit: true });
+      if (failure) setError(failure);
+      return;
+    }
+    setMessages((current) => ({
+      ...current,
+      [message.threadId]: (current[message.threadId] ?? []).filter(
+        (item) => item.id !== message.id,
+      ),
+    }));
+    dropSearchResults((item) => item.id !== message.id);
+  };
   // Handlers keep one identity so a changed closure never rebuilds every message item.
   const openSession = useStableCallback(onOpenSession);
   const openJob = useStableCallback(onJob);

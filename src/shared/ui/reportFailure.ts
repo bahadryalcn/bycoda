@@ -27,8 +27,11 @@ export async function reportFailure(
     toast,
     retry,
     signal,
+    operationId,
   }: {
-    toast: { show: (options: { tone: "danger"; message: string }) => unknown };
+    toast: { show: (options: { tone: "danger"; message: string; id?: string }) => unknown };
+    /** Identity of the failed operation: a repeat updates its own card instead of matching on text. */
+    operationId?: string;
     retry?: () => void | Promise<unknown>;
     signal?: AbortSignal;
   },
@@ -69,5 +72,9 @@ export async function reportFailure(
     });
     if (recovered || signal?.aborted) return;
   }
-  toast.show({ tone: "danger", message: failure.message });
+  toast.show({
+    tone: "danger",
+    message: failure.message,
+    ...(operationId === undefined ? {} : { id: operationId }),
+  });
 }

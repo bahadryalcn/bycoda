@@ -130,7 +130,6 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
   return (
     <Modal
       title={mode === "set" ? t("Set lock password") : t("Change lock password")}
-      description={t("One password locks any number of groups.")}
       size="sm"
       fitViewport
       // The running change cannot be cancelled, so the dialog stays until it finishes.
@@ -144,7 +143,6 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
             type="submit"
             form={formId}
             disabled={busy || cooldown.remainingMs > 0}
-            disabledReason={busy ? undefined : (cooldownMessage(cooldown.remainingMs) ?? undefined)}
             variant="primary"
             loading={busy}
           >
@@ -179,7 +177,6 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
-          description={t("Use at least {p0} characters.", { p0: PASSWORD_MIN_LENGTH })}
           aria-invalid={(message != null && errorField === "next") || undefined}
           aria-describedby={
             message && errorField === "next" ? "set-lock-password-error" : undefined

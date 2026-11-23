@@ -61,9 +61,9 @@ export function PickerChoice({
         </span>
       </OverflowTooltip>
       {meta != null ? (
-        <span className={styles.meta} title={typeof meta === "string" ? meta : undefined}>
-          {meta}
-        </span>
+        <OverflowTooltip label={typeof meta === "string" ? meta : undefined}>
+          <span className={styles.meta}>{meta}</span>
+        </OverflowTooltip>
       ) : null}
       {trailing != null ? <span className={styles.trailing}>{trailing}</span> : null}
     </>

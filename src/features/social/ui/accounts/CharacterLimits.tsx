@@ -1,11 +1,10 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { Group, Row } from "../../../../shared/ui/settings";
+import { Button } from "../../../../shared/ui/Button";
 import { Select } from "../../../../shared/ui/Select";
 
 import { TextField } from "../../../../shared/ui/TextField";
-import { DisabledReason } from "../common/DisabledReason";
 import { PlatformIcon } from "../common/PlatformIcon";
 import {
   SOCIAL_PLATFORMS,
@@ -52,39 +51,33 @@ export function CharacterLimits({ client, policies, onChanged }: CharacterLimits
   // Unsaved edits live here per scope, so switching scope or a saved change elsewhere keeps them.
   const [unsaved, setUnsaved] = useState<Partial<Record<PolicyScope, Drafts>>>({});
   return (
-    <Group
-      title={t("Character limits")}
-      description={t("Leave a field blank to inherit its value.")}
-      action={
-        <Select
-          hideLabel
-          label={t("Apply to")}
-          value={scope}
-          options={[
-            { value: "global", label: t("All accounts") },
-            ...SOCIAL_PLATFORMS.map((platform) => ({
-              value: platform,
-              label: SOCIAL_PLATFORM_NAMES[platform],
-              icon: <PlatformIcon platform={platform} />,
-            })),
-          ]}
-          onValueChange={(value) => setScope(value as PolicyScope)}
-        />
-      }
-    >
-      <Row label={t("Maximum length")} stacked>
-        <LimitFields
-          key={`${scope}:${JSON.stringify(readScope(policies, scope))}`}
-          client={client}
-          policies={policies}
-          scope={scope}
-          unsaved={unsaved[scope]}
-          onUnsavedChange={(drafts) => setUnsaved((current) => ({ ...current, [scope]: drafts }))}
-          onSaved={() => setUnsaved(({ [scope]: _saved, ...rest }) => rest)}
-          onChanged={onChanged}
-        />
-      </Row>
-    </Group>
+    // The Disclosure around this card already names it, so there is no second title.
+    <div className="social-card">
+      <Select
+        hideLabel
+        label={t("Apply to")}
+        value={scope}
+        options={[
+          { value: "global", label: t("All accounts") },
+          ...SOCIAL_PLATFORMS.map((platform) => ({
+            value: platform,
+            label: SOCIAL_PLATFORM_NAMES[platform],
+            icon: <PlatformIcon platform={platform} />,
+          })),
+        ]}
+        onValueChange={(value) => setScope(value as PolicyScope)}
+      />
+      <LimitFields
+        key={`${scope}:${JSON.stringify(readScope(policies, scope))}`}
+        client={client}
+        policies={policies}
+        scope={scope}
+        unsaved={unsaved[scope]}
+        onUnsavedChange={(drafts) => setUnsaved((current) => ({ ...current, [scope]: drafts }))}
+        onSaved={() => setUnsaved(({ [scope]: _saved, ...rest }) => rest)}
+        onChanged={onChanged}
+      />
+    </div>
   );
 }
 
@@ -161,9 +154,9 @@ function LimitFields({
           }}
         />
       ))}
-      <DisabledReason type="submit" variant="secondary" size="sm" loading={is("policy.limits")}>
+      <Button type="submit" variant="secondary" size="sm" loading={is("policy.limits")}>
         {t("Save limits")}
-      </DisabledReason>
+      </Button>
       {localError || error ? <InlineError>{localError || error}</InlineError> : null}
     </form>
   );

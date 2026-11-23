@@ -199,11 +199,9 @@ export function ProjectNotificationSettings({
       className="project-notification-settings @container/notifications"
     >
       <div className="settings-collection-header">
-        <div>
-          <Heading size="item" level={2}>
-            {t("Project notifications")}
-          </Heading>
-        </div>
+        <Heading size="item" level={2}>
+          {t("Project notifications")}
+        </Heading>
       </div>
       <div
         {...surfaceAttributes(
@@ -358,7 +356,6 @@ export function ProjectNotificationSettings({
                 const muted = mutedIds.has(project.id);
                 const isExpanded = expanded === project.id;
                 const panelId = `notification-categories-${encodeURIComponent(project.id)}`;
-                const muteHintId = `${panelId}-mute-hint`;
                 return (
                   <FieldGroup
                     key={project.id}
@@ -378,7 +375,7 @@ export function ProjectNotificationSettings({
                         "project-notification-item-heading settings-collection-row",
                       )}
                     >
-                      <div className="flex min-w-[min(100%,200px)] flex-1 items-center gap-3">
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
                         {selecting ? (
                           <ProjectSelection
                             label={t("Select {p0}", { p0: `${project.name} (${project.detail})` })}
@@ -498,21 +495,6 @@ export function ProjectNotificationSettings({
                           <MiddleTruncate>{project.detail}</MiddleTruncate>
                         </Text>
                         <div className="project-notification-category-grid">
-                          {muted ? (
-                            <Text
-                              as="p"
-                              size="caption"
-                              tone="secondary"
-                              leading="inherit"
-                              id={muteHintId}
-                              role="status"
-                              className="project-notification-mute-hint"
-                            >
-                              {t(
-                                "Your category choices apply when notifications resume. You can edit them while muted.",
-                              )}
-                            </Text>
-                          ) : null}
                           {categories.map((category) => (
                             <Switch
                               key={category.id}
@@ -520,7 +502,6 @@ export function ProjectNotificationSettings({
                               labelText={{ size: "secondary", tone: "primary", leading: "inherit" }}
                               label={t(category.label)}
                               labelPosition="start"
-                              aria-describedby={muted ? muteHintId : undefined}
                               checked={!preferences[project.id]?.disabled.includes(category.id)}
                               disabled={preferencesUnavailable}
                               onCheckedChange={(checked) =>

@@ -4,7 +4,6 @@ import { Button } from "../../../shared/ui/Button";
 import { OnboardingHeading } from "./OnboardingHeading";
 import { OnboardingIllustratedStep } from "./OnboardingIllustratedStep";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Text } from "../../../shared/ui/Text";
 import { useAccount } from "../../account";
 
 /**
@@ -35,10 +34,8 @@ export function OnboardingAccount() {
         ) : null}
         {state.phase === "signing-in" ? (
           <>
-            <LoadingText delay={false}>{t("Waiting for your browser…")}</LoadingText>
-            <Text as="p" size="caption" tone="muted" leading="normal" className="onboarding-hint">
-              {t("Complete the sign-in in the browser window that opened, then return to bycoda.")}
-            </Text>
+            {/* One line carries both the wait and the next action. */}
+            <LoadingText delay={false}>{t("Finish signing in in your browser…")}</LoadingText>
             <div className="onboarding-actions">
               <Button variant="secondary" onClick={() => cancelSignIn().catch(() => undefined)}>
                 {t("Stop")}
@@ -52,9 +49,6 @@ export function OnboardingAccount() {
               <Alert tone="danger">
                 {signedOut.message ?? t("Sign-in did not finish. Try again.")}
               </Alert>
-            ) : null}
-            {signedOut.notice === "declined" ? (
-              <Alert tone="info">{t("Sign-in was cancelled.")}</Alert>
             ) : null}
             <div className="onboarding-actions">
               <Button variant="secondary" onClick={() => signIn().catch(() => undefined)}>

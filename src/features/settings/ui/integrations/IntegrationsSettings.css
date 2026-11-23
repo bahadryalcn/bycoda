@@ -43,10 +43,6 @@
   gap: 8px;
   min-inline-size: 0;
 }
-/* Save/cancel sit directly in the group frame; align them with the rows above. */
-.integration-actions-bar {
-  padding: var(--ui-row-inset-block) var(--ui-row-inset-inline);
-}
 /* Inside a stacked row (a wrapping flex control) actions and code take a full line. */
 .integration-actions,
 .integration-code {

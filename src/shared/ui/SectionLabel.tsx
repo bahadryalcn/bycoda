@@ -26,8 +26,12 @@ export type SectionLabelClassNames = {
 };
 
 export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> & {
-  /** Standalone menu caption or inline group label; section actions and disclosure do not apply. */
-  variant?: "section" | "menu" | "inline";
+  /**
+   * `section` (default) heads a group of rows; `rail` is the sidebar section header (caption size, medium weight,
+   * the same leading gutter and 16px mark column as ListRow); `menu` and `inline` are standalone captions
+   * where section actions and disclosure do not apply.
+   */
+  variant?: "section" | "rail" | "menu" | "inline";
   /** Compatibility names; group captions share the smallest existing type role (micro). */
   size?: "caption" | "micro" | "secondary";
   /**
@@ -89,6 +93,7 @@ export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> &
 /**
  * Section caption over a list or group: caption size, medium weight, secondary colour, sentence case, never uppercase.
  * Optional `count`, trailing `actions` (always visible) and `collapsible` (heading wraps the button; actions stay outside).
+ * `variant="rail"` is the sidebar section header: caption size, medium weight, gutter and mark column shared with ListRow. Its empty rows are EmptyState `size="inline"` without an icon.
  * `variant="menu"` is a compact standalone menu caption.
  * `variant="inline"` renders a standalone span without a row or actions.
  * `labelAction` (collapsible) splits the row: the chevron collapses, the label text opens the section's page.
@@ -225,7 +230,8 @@ export function SectionLabel({
       {...props}
       {...(host ? { selected } : {})}
       data-section-label=""
-      data-size={size === "caption" ? undefined : size}
+      data-variant={variant === "rail" ? "rail" : undefined}
+      data-size={size === "caption" || variant === "rail" ? undefined : size}
       data-compact-rail={compactRail || undefined}
       className={[styles.root, headerProps?.className, className].filter(Boolean).join(" ")}
     >

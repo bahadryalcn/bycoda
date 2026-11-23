@@ -21,6 +21,60 @@ const found = (file, text) =>
 const css = (text, file = "src/features/demo/Demo.module.css") => found(file, text);
 const tsx = (text, file = "src/features/demo/Demo.tsx") => found(file, text);
 
+test("narrow drift rules locate one finding on the offending class or declaration", () => {
+  const known = ':root { --ui-space-2: 8px; --ui-text-size-caption: 12px; --ui-surface: black; }';
+  const sources = new Map([["src/styles/index.css", known]]);
+  const fixtures = [
+    ["spacing-step", ".css", ".slot {\n  inset-inline-start: 7px;\n}", "inset-inline-start: 7px;", ".slot { inset-inline-start: env(safe-area-inset-left); gap: 8px; }"],
+    ["spacing-step", ".tsx", 'const View = () => <div\n  className="md:inset-x-7"\n/>;', "md:inset-x-7", 'const View = () => <div className="inset-x-2 md:gap-4" />;'],
+    ["arbitrary-spacing", ".tsx", 'const View = () => <div\n  className="supports-[display:grid]:[inset-inline-start:9px]"\n/>;', "[inset-inline-start:9px]", 'const View = () => <div className="pe-[var(--ui-space-2)] inset-x-[10%]" />;'],
+    ["radius-size", ".tsx", 'const View = () => <div\n  className="@max-[600px]/pane:min-h-[29px]"\n/>;', "min-h-[29px]", 'const View = () => <div className="max-w-[65ch] aspect-[4/3] min-h-[40vh]" />;'],
+    ["radius-size", ".css", ".slot {\n  border-start-end-radius: .8em;\n}", "border-start-end-radius: .8em;", ".slot { border-start-end-radius: 0; }"],
+    ["inline-style-layout", ".tsx", 'const View = () => <div style={{\n  paddingInlineStart: "17px",\n}} />;', "paddingInlineStart", 'const View = () => <div style={{ "--pane-inline-start": measured, minWidth: "60%" }} />;'],
+    ["theme-palette-literal", ".css", ".slot {\n  background: linear-gradient(#112233, oklch(.6 .1 44));\n}", "linear-gradient(#112233", ".slot { content: '#112233'; background: var(--ui-surface); }"],
+    ["theme-palette-literal", ".tsx", 'const View = () => <div style={{\n  color: "rgb(1 2 3)",\n}} />;', "color:", 'const colorData = "#112233"; const View = () => <div className="text-right" />;'],
+    ["theme-palette-literal", ".tsx", 'const View = () => <div\n  className="has-[>svg]:bg-[#1234]"\n/>;', "has-[>svg]:bg-[#1234]", 'const View = () => <div className="bg-[url(/red.svg)] bg-(--ui-surface)" />;'],
+    ["feature-typography", ".tsx", 'const View = () => <Text\n  className="md:text-[13px]/[20px]"\n/>;', "text-[13px]/[20px]", 'const View = () => <Text size="caption" className="text-right text-[length:var(--ui-text-size-caption)]" />;'],
+    ["feature-typography", ".tsx", 'const View = () => <Text style={{\n  fontSize: 14,\n}} />;', "fontSize: 14", 'const View = () => <Text size="caption" />;'],
+  ];
+  const narrowed = new Set(fixtures.map(([rule]) => rule));
+  for (const [rule, extension, rejected, declaration, accepted] of fixtures) {
+    const file = `src/features/demo/View${extension}`;
+    const definitions = collectDefinitions(sources);
+    assert.deepEqual(scanFile(file, rejected, definitions).map(({ rule, line }) => [rule, line]), [[rule, 2]], rejected);
+    assert.ok(scanFile(file, rejected, definitions)[0].text.includes(declaration), rejected);
+    assert.deepEqual(scanFile(file, accepted, definitions).filter((item) => narrowed.has(item.rule)), [], accepted);
+  }
+});
+
+test("focus removal and pointer-visible rings retain keyboard and forced-color treatments", () => {
+  const cssFile = "src/features/demo/View.css";
+  const tsxFile = "src/features/demo/View.tsx";
+  const focus = (file, text) => scanFile(file, text, definitions)
+    .filter(({ rule }) => rule === "focus-outline-removed")
+    .map(({ line }) => line);
+  const styles = [
+    "button:focus { outline: 2px solid currentColor; }",
+    "button:focus-visible { outline: 2px solid currentColor; }",
+    "button:focus { box-shadow: 0 0 0 2px currentColor; }",
+    "button:focus { box-shadow: 0 4px 8px currentColor; }",
+    ".row:focus-within { opacity: 1; }",
+    "@media (forced-colors: active) { button:focus { outline: 1px solid CanvasText; } }",
+    '[data-input-modality="keyboard"] button:focus { outline: 2px solid currentColor; }',
+    ".action { outline-style: none; }",
+  ].join("\n");
+  assert.deepEqual(focus(cssFile, styles), [1, 3, 8]);
+  const view = [
+    'import { Button as Action } from "@/shared/ui/Button";',
+    'const View = () => <><Action className="md:focus:ring-2" />',
+    '<Action className="focus-visible:ring-2 forced-colors:focus:outline" />',
+    '<Unrelated className="focus:ring-2" />',
+    '<Action className="focus:shadow-lg focus:ring-inset" />',
+    '<div className="[outline-width:0]" /></>;',
+  ].join("\n");
+  assert.deepEqual(focus(tsxFile, view), [2, 6]);
+});
+
 test("theme specimens retain paint without exempting their surrounding controls", () => {
   const cases = [
     [
@@ -263,7 +317,7 @@ test("type, surface, truncation, motion and scrollbar declarations are reported 
   assert.deepEqual(
     css(
       [
-        ".a { font-size: var(--x); line-height: 1.4; letter-spacing: 0; color: red; }",
+        ".a { font-size: var(--x); line-height: 1.4; letter-spacing: 0; color: var(--x); }",
         ".b { border: 1px solid; border-radius: var(--x); background: none; box-shadow: none; outline: 1px solid; }",
         ".c { text-overflow: ellipsis; -webkit-line-clamp: 2; }",
         ".d { transition: opacity var(--x); animation-name: spin; }",
@@ -285,24 +339,24 @@ test("type, surface, truncation, motion and scrollbar declarations are reported 
 test("a state block is one kind of finding, whatever it sets", () => {
   assert.deepEqual(
     css(
-      ".row:hover { background: var(--x); color: red; }\n.row:focus-visible { outline: 0; }\n.row[aria-selected='true'] { opacity: 1; }",
+      ".row:hover { background: var(--x); color: var(--x); }\n.row:focus-visible { outline: 1px solid currentColor; }\n.row[aria-selected='true'] { opacity: 1; }",
     ),
-    Array(4).fill("interaction-state"),
+    Array(3).fill("interaction-state"),
   );
   assert.deepEqual(
-    tsx('<div className="hover:bg-(--x) md:focus-visible:ring-2 group-hover:flex" />'),
-    ["interaction-state", "interaction-state"],
+    tsx('<div className="hover:text-(--x) md:focus-within:ring-2 group-hover:flex" />'),
+    ["interaction-state", "interaction-state", "interaction-state"],
   );
 });
 
 test("a literal value that a narrower rule reports is not reported twice", () => {
   const rulesOf = (file, text) => scanFile(file, text, definitions).map((finding) => finding.rule);
   assert.deepEqual(rulesOf("src/features/demo/Demo.module.css", ".a { font-size: 13px; }"), [
-    "typography",
+    "feature-typography",
   ]);
   assert.deepEqual(rulesOf("src/features/demo/Demo.tsx", '<p className="text-sm font-bold" />'), [
-    "typography",
     "font-weight",
+    "feature-typography",
   ]);
 });
 
@@ -437,7 +491,7 @@ test("a bespoke part exempts only what it names inside an ordinary file", () => 
         ".queue-departure { animation: queue-departure 1s; }",
         "@keyframes queue-departure { to { opacity: 0; } }",
         ".other { animation: spin 1s; font-size: var(--x); }",
-        ".queue-departure { color: red; }",
+        ".queue-departure { color: var(--x); }",
       ].join("\n"),
       chat,
     ),
@@ -446,7 +500,7 @@ test("a bespoke part exempts only what it names inside an ordinary file", () => 
   // A named rule list leaves the other rules of the same selector counted.
   assert.deepEqual(
     css(
-      ".dismiss { transition: opacity 1s; color: red; }",
+      ".dismiss { transition: opacity 1s; color: var(--x); }",
       "src/app/shell/GithubStarPrompt.module.css",
     ),
     ["feature-typography"],
@@ -500,7 +554,7 @@ test("bespoke surfaces, shared UI and suppressed lines are outside the appearanc
   assert.deepEqual(css(text, "src/styles/index.css"), []);
   assert.deepEqual(
     css(
-      ".a {\n  /* ui-drift-ignore: feature-typography -- status ink set by the caller */\n  color: red;\n}",
+      ".a {\n  /* ui-drift-ignore: feature-typography -- status ink set by the caller */\n  color: var(--x);\n}",
     ),
     [],
   );

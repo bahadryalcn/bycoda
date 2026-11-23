@@ -1312,13 +1312,10 @@ for (const theme of ["light", "dark"]) {
       .fill("windows.example.invalid");
     await dialog.getByRole("button", { name: "Connect", exact: true }).click();
     await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
-    await page.getByRole("button", { name: "About shell suggestions", exact: true }).click();
-    await expect(page.getByText(/Custom profile bindings are not loaded/)).toBeVisible();
+    await page.getByRole("menuitem", { name: "About shell suggestions", exact: true }).click();
+    await expect(page.getByText(/custom profile key bindings and history settings are not loaded/)).toBeVisible();
     await page.keyboard.press("Escape");
-    if (!(await page.getByRole("button", { name: "Shell suggestions", exact: true }).isVisible())) {
-      await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
-    }
-    await page.getByRole("button", { name: "Shell suggestions", exact: true }).click();
+    await page.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
     const option = page.getByRole("menuitem", { name: /PowerShell suggestions/ });
     await expect(option).toBeVisible();
     const folder = "temp/verification/2026-10-18-termius-goal/powershell-browser";

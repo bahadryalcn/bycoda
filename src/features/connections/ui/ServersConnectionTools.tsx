@@ -1,6 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
 import { SshSettings } from "./SshSettings";
-import { Heading } from "../../../shared/ui/Heading";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 export { ConfigImportChoices } from "./SshConfigImportChoices";
 import { SshRunbooks } from "./SshRunbooks";
@@ -18,7 +17,8 @@ import { SshAgentForwarding } from "./SshAgentForwarding";
 import { useOpenAgentServerTerminal, useOpenServerTerminal } from "./ServersTerminalWorkspace";
 import { ServerFiles } from "./ServerFiles";
 import { ServerSnippets } from "./ServerSnippets";
-import { sshEndpointPreview, sshJumpChain } from "../model/sshEndpointReview";
+import { sshJumpChain } from "../model/sshEndpointReview";
+import { sshProxyEndpointText } from "./sshProxyEndpointText";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ServerForwards } from "./ServerForwards";
 import { ServerActivity } from "./ServerActivity";
@@ -96,12 +96,6 @@ export function ServersConnectionTools({
   };
   return (
     <div className="server-connection-tools @container/connection-tools min-w-0">
-      {endpoint?.httpProxy ? (
-        <Text wrap="anywhere" as="p" tone="muted" className="px-4 pbe-2">
-          {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
-          {sshEndpointPreview(endpoint.httpProxy)}
-        </Text>
-      ) : null}
       <Tabs id={panelId} value={panel} onValueChange={setPanel}>
         <div
           {...surfaceAttributes(
@@ -148,10 +142,7 @@ export function ServersConnectionTools({
           <TabPanel value="connection" keepMounted>
             {canAssignKey ? (
               <section aria-label={t("Credentials")} className="flex min-w-0 flex-col gap-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Heading size="section" level={3}>
-                    {t("Credentials")}
-                  </Heading>
+                <div className="flex flex-wrap items-center justify-end gap-2">
                   <Button
                     variant="secondary"
                     className="shrink-0"
@@ -175,6 +166,11 @@ export function ServersConnectionTools({
                   {jumpChain.length ? (
                     <DescriptionItem term={t("Jump chain")} monospace>
                       {jumpChain.join(" → ")}
+                    </DescriptionItem>
+                  ) : null}
+                  {endpoint?.httpProxy ? (
+                    <DescriptionItem term={t("Connection proxy")} monospace>
+                      {sshProxyEndpointText(endpoint.httpProxy)}
                     </DescriptionItem>
                   ) : null}
                 </DescriptionList>
@@ -258,7 +254,7 @@ export function ServersConnectionTools({
                   {t("Forward SSH agent")}
                 </Button>
               ) : null}
-              {server.kind === "ssh" ? (
+              {server.kind === "ssh" && !currentServer.metadata.sshInheritance ? (
                 <Button variant="secondary" onClick={() => setGroupSettings(true)}>
                   {t("SSH group settings")}
                 </Button>

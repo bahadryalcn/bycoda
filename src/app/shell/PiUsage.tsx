@@ -1,9 +1,6 @@
 import { Tooltip } from "../../shared/ui/Tooltip";
-import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw } from "../../shared/ui/icons";
-import { Spinner } from "../../shared/ui/Spinner";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
   fetchPiUsage,
@@ -32,7 +29,6 @@ export function PiUsage({ model, now }: { model?: string; now: number }) {
       >
         <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
           <HarnessIcon harness="pi" className="icon-sm shrink-0" />
-          <span>{t("pi · Usage unavailable")}</span>
         </span>
       </Tooltip>
     );
@@ -41,14 +37,13 @@ export function PiUsage({ model, now }: { model?: string; now: number }) {
 }
 
 function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: number }) {
-  const t = useT();
   const [limits, setLimits] = useState(() => idleRateLimits(piBillingProvider(provider)));
-  const refreshRef = useRef<(force?: boolean) => void>(() => undefined);
+  const refreshRef = useRef<(force?: boolean) => Promise<void>>(async () => {});
   useEffect(() => {
     let disposed = false;
     let inflight = false;
     let lastFetchAt = 0;
-    const refresh = (force = false) => {
+    const refresh = async (force = false) => {
       if (disposed || inflight) return;
       if (
         !force &&
@@ -61,19 +56,18 @@ function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: nu
         ...idleRateLimits(piBillingProvider(provider)),
         status: "fetching",
       });
-      void fetchPiUsage(provider)
-        .then((result) => {
-          if (!disposed) setLimits(result);
-        })
-        .finally(() => {
-          inflight = false;
-          lastFetchAt = Date.now();
-        });
+      try {
+        const result = await fetchPiUsage(provider);
+        if (!disposed) setLimits(result);
+      } finally {
+        inflight = false;
+        lastFetchAt = Date.now();
+      }
     };
     refreshRef.current = refresh;
-    refresh();
-    const timer = window.setInterval(refresh, RATE_LIMIT_POLL_MS);
-    const onVisible = () => refresh();
+    const onVisible = () => void refresh().catch(console.error);
+    onVisible();
+    const timer = window.setInterval(onVisible, RATE_LIMIT_POLL_MS);
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
     return () => {
@@ -83,31 +77,17 @@ function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: nu
       window.removeEventListener("focus", onVisible);
     };
   }, [provider]);
-  const fetching = limits.status === "fetching";
   return (
-    <>
       <UsageProviderChip
         limits={limits}
         now={now}
+        onRefresh={() => refreshRef.current(true).catch(console.error)}
+        refreshing={limits.status === "fetching"}
         presentation={{
           sourceLabel: "Pi's saved OAuth account",
           harness: "pi",
           label: provider === "anthropic" ? "Pi · Anthropic" : "Pi · OpenAI Codex",
         }}
       />
-      <Button
-        iconOnly
-        label={t("Refresh Pi usage")}
-        variant="ghost"
-        motion="none"
-        type="button"
-        size="sm"
-        disabled={fetching}
-        onClick={() => refreshRef.current(true)}
-        className="shrink-0"
-      >
-        {fetching ? <Spinner /> : <RefreshCw className="icon-sm" aria-hidden />}
-      </Button>
-    </>
   );
 }

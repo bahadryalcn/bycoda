@@ -342,7 +342,7 @@ it("retains busy state and errors on their original project while its editor is 
   expect(text()).toContain("Original project failed");
 });
 
-it("exposes bounded content continuation and warns that the calendar/list is partial", () => {
+it("exposes bounded content continuation in the list only", () => {
   const loadMore = vi.fn();
   state.data = {
     snapshot: snapshot(),
@@ -356,9 +356,6 @@ it("exposes bounded content continuation and warns that the calendar/list is par
   // The calendar reads by schedule, so older pages are offered only in the list.
   expect(text()).not.toContain("More posts are available");
   act(() => buttonWith("List")!.click());
-  expect(text()).toContain(
-    "More posts are available. Load more to include older posts in this view.",
-  );
   act(() => buttonWith("Load more")!.click());
   expect(loadMore).toHaveBeenCalledOnce();
 });

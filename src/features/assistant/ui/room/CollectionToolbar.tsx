@@ -1,4 +1,3 @@
-import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Heading } from "../../../../shared/ui/Heading";
 import { Text } from "../../../../shared/ui/Text";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
@@ -9,7 +8,7 @@ import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import { Select } from "../../../../shared/ui/Select";
 import { Popover } from "../../../../shared/ui/Popover";
 import { FilterTrigger } from "../../../../shared/ui/FilterTrigger";
-import { Plus, Sparkles, Trash2, RotateCcw } from "../../../../shared/ui/icons";
+import { Plus, Sparkles, Trash2 } from "../../../../shared/ui/icons";
 import styles from "../AssistantView.module.css";
 import toolbar from "./CollectionToolbar.module.css";
 import { assistantActivityLabels } from "../AssistantHistory";
@@ -233,23 +232,6 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                   />
                 </>
               )}
-            </div>
-            <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, toolbar.footer)}>
-              <Button
-                startIcon={<RotateCcw className="icon-sm" />}
-                variant="ghost"
-                disabled={!activeFilters}
-                onClick={() => {
-                  setFilter("");
-                  if (view === "Jobs") {
-                    setJobProjectFilter("");
-                    setJobDateFilter("all");
-                  }
-                  setFilterAnchor(null);
-                }}
-              >
-                {t("Reset")}
-              </Button>
             </div>
           </div>
         </Popover>

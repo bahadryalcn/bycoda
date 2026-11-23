@@ -70,11 +70,6 @@
   max-width: 19rem;
   min-width: 10rem;
 }
-.sprint-errors {
-  overflow-wrap: anywhere;
-  margin: 0.5rem 0;
-  padding-left: 1.25rem;
-}
 
 /* Selected sprint progress. */
 .sprint-progress {

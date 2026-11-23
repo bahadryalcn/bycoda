@@ -31,8 +31,8 @@ import { popupNativeActionMenu } from "./nativeActionMenu";
 
 /**
  * Flat action menu for bounded native windows where a Popover would be clipped.
- * Owns native label presentation; only a real selection invokes onPick. The
- * returned promise acknowledges opening, not dismissal. Errors reach the caller.
+ * The OS owns the menu chrome. Only a real selection invokes onPick. The returned promise
+ * acknowledges opening, and errors reach the caller.
  */
 export function popupNativeDropdownMenu(
   anchor: HTMLElement,
@@ -225,6 +225,7 @@ function MenuSurface({
   const takesFocus = takeFocus ?? depth === 0;
   const surface = useRef<HTMLDivElement>(null);
   const searchField = useRef<HTMLInputElement>(null);
+  const openingFocus = useRef<Element | null>(null);
   const query = useRef({ value: "", at: 0 });
   const closeTimer = useRef<number | null>(null);
   const uid = useId();
@@ -271,6 +272,7 @@ function MenuSurface({
   useEffect(() => cancelClose, []);
   useEffect(() => {
     if (!takesFocus) return;
+    openingFocus.current = document.activeElement;
     // A flyout of radio rows opens on the current choice.
     const first = () =>
       (initialActiveId ? rowOf(initialActiveId) : undefined) ??
@@ -312,6 +314,7 @@ function MenuSurface({
     setBranch(null);
     if (!restoreFocus || !current) return;
     if (search) searchField.current?.focus({ preventScroll: true });
+    else if (stateHighlight) surface.current?.focus({ preventScroll: true });
     else if (current.anchor.isConnected) current.anchor.focus({ preventScroll: true });
   };
   const activate = (action: DropdownMenuAction, row: HTMLElement | null, keyboard: boolean) => {
@@ -349,8 +352,21 @@ function MenuSurface({
               : index - 1;
     return stateHighlight ? enabled[next] : rows()[next];
   };
+  const activateHighlight = (key: string) => {
+    if (!highlighted) return false;
+    if (key === "ArrowRight" && !highlighted.submenu && !highlighted.panel) return false;
+    if (key !== "ArrowRight" && key !== "Enter" && key !== " ") return false;
+    activate(highlighted, document.getElementById(rowId(highlighted.id)), true);
+    return true;
+  };
   const keyboard = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.nativeEvent.isComposing || event.key === "Process" || event.keyCode === 229) return;
+    if (
+      event.defaultPrevented ||
+      event.nativeEvent.isComposing ||
+      event.key === "Process" ||
+      event.keyCode === 229
+    )
+      return;
     const target = event.target as Node;
     // Keys from a flyout bubble here through the React tree; they belong to that flyout.
     if (!surface.current?.contains(target)) return;
@@ -368,6 +384,10 @@ function MenuSurface({
     if (event.key === "ArrowLeft" && depth > 0) {
       event.preventDefault();
       back?.();
+      return;
+    }
+    if (stateHighlight && !field && activateHighlight(event.key)) {
+      event.preventDefault();
       return;
     }
     if (event.key === "ArrowRight") {
@@ -569,22 +589,36 @@ function MenuSurface({
         />
       )
     ) : null;
-  // `highlight="state"` without a search field: the trigger may keep DOM focus (the composer), so
-  // the navigation keys are taken at the window in capture, re-bound each render to the latest rows.
+  // The opening control can still own focus while Popover measures its hidden frame.
+  // Once the menu receives focus, its own handler and active-descendant relationship take over.
   useEffect(() => {
     if (highlight !== "state" || search || !takesFocus) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.isComposing || closed.current) return;
+      const active = document.activeElement;
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.keyCode === 229 ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        closed.current ||
+        !active ||
+        active !== openingFocus.current ||
+        surface.current?.contains(active) ||
+        (event.target !== active && event.target !== window)
+      )
+        return;
       if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         event.preventDefault();
         event.stopPropagation();
         move(step(event.key, searchIndex()));
         return;
       }
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (highlighted) activate(highlighted, document.getElementById(rowId(highlighted.id)), true);
+      if (activateHighlight(event.key)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -619,6 +653,9 @@ function MenuSurface({
         controller.close(reason === "escape");
       }}
       onKeyDown={keyboard}
+      onFocus={() => {
+        openingFocus.current = null;
+      }}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave ?? (branch ? scheduleClose : undefined)}
       className={`bycoda-arc ${styles.menu} ${search ? styles.searchable : popupListClassName}`}

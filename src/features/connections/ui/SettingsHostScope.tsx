@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { t, useT } from "../../../shared/i18n";
+import { errorText } from "../../../shared/lib/errors";
 import { Select } from "../../../shared/ui/Select";
 import { SettingsFeedback } from "../../../shared/ui/settings";
 import { StatusDot } from "../../../shared/ui/StatusDot";
@@ -97,7 +98,7 @@ export function useSettingsHostScope() {
     /** The chosen machine, only while it is connected. */
     selected: entry?.status === "connected" ? entry.machine : undefined,
     /** The saved machines could not be read. */
-    error: hosts.error ? String(hosts.error) : undefined,
+    error: hosts.error ? errorText(hosts.error) : undefined,
     options,
     /** The picker value: the chosen machine, or the removed one. */
     value: chosen.entry?.id ?? choice ?? "",

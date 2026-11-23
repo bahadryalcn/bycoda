@@ -42,74 +42,63 @@ export function TaskAttemptHistory({
   // The current stop reason lives in the detail panel's status alert.
   return (
     <section aria-label={t("Attempt history")} className="grid min-w-0 gap-2">
-      {task.attemptHistory?.length ? (
-        <>
-          <SectionLabel
-            as="h3"
-            count={task.attemptHistory.length}
-            actions={
-              <InfoPopover label={t("About attempt outcomes")}>
-                {t(
-                  "Worker summaries describe what the agent reported. The review below records verification.",
-                )}
-              </InfoPopover>
-            }
-          >
-            {t("Attempt outcomes")}
-          </SectionLabel>
-          <Timeline
-            label={t("Attempt outcomes")}
-            events={task.attemptHistory.map((entry) => ({
-              id: [entry.reviewerSessionId, entry.at, String(entry.attempt)].join(":"),
-              at: entry.at,
-              title: [
-                entry.reviewOnly
-                  ? t("Review recheck")
-                  : entry.attempt
-                    ? t("Correction {p0}", { p0: entry.attempt })
-                    : t("Initial attempt"),
-                entry.verdict === "pass" ? t("Review passed") : t("Review failed"),
-              ].join(" · "),
-              tone: entry.verdict === "pass" ? ("success" as const) : ("danger" as const),
-              meta: new Date(entry.at).toLocaleString(getLocale()),
-              detail: <AttemptDetail summary={entry.workerSummary} note={entry.note} />,
-              actions: (
-                <Text
-                  as="div"
-                  size="micro"
-                  tone="info"
-                  className="mt-2 flex flex-wrap gap-x-3 gap-y-1"
+      <SectionLabel
+        as="h3"
+        count={task.attemptHistory.length}
+        actions={
+          <InfoPopover label={t("About attempt outcomes")}>
+            {t(
+              "Worker summaries describe what the agent reported. The review below records verification.",
+            )}
+          </InfoPopover>
+        }
+      >
+        {t("Attempt outcomes")}
+      </SectionLabel>
+      <Timeline
+        label={t("Attempt outcomes")}
+        events={task.attemptHistory.map((entry) => ({
+          id: [entry.reviewerSessionId, entry.at, String(entry.attempt)].join(":"),
+          at: entry.at,
+          title: [
+            entry.reviewOnly
+              ? t("Review recheck")
+              : entry.attempt
+                ? t("Correction {p0}", { p0: entry.attempt })
+                : t("Initial attempt"),
+            entry.verdict === "pass" ? t("Review passed") : t("Review failed"),
+          ].join(" · "),
+          tone: entry.verdict === "pass" ? ("success" as const) : ("danger" as const),
+          meta: new Date(entry.at).toLocaleString(getLocale()),
+          detail: <AttemptDetail summary={entry.workerSummary} note={entry.note} />,
+          actions: (
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+              {entry.workerSessionId ? (
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={isOpeningSession(entry.workerSessionId)}
+                  loading={isOpeningSession(entry.workerSessionId)}
+                  onClick={() => onOpenSession(entry.workerSessionId!)}
                 >
-                  {entry.workerSessionId ? (
-                    <Button
-                      variant="ghost"
-                      type="button"
-
-                      disabled={isOpeningSession(entry.workerSessionId)}
-                      loading={isOpeningSession(entry.workerSessionId)}
-                      onClick={() => onOpenSession(entry.workerSessionId!)}
-                    >
-                      {t("Open worker session")}
-                    </Button>
-                  ) : null}
-                  {entry.reviewerSessionId ? (
-                    <Button
-                      variant="ghost"
-                      type="button"
-
-                      disabled={isOpeningSession(entry.reviewerSessionId)}
-                      loading={isOpeningSession(entry.reviewerSessionId)}
-                      onClick={() => onOpenSession(entry.reviewerSessionId)}
-                    >
-                      {t("Open review session")}
-                    </Button>
-                  ) : null}
-                </Text>
-              ),
-            }))}
-          />
-        </>
-      ) : null}
+                  {t("Open worker session")}
+                </Button>
+              ) : null}
+              {entry.reviewerSessionId ? (
+                <Button
+                  variant="ghost"
+                  type="button"
+                  disabled={isOpeningSession(entry.reviewerSessionId)}
+                  loading={isOpeningSession(entry.reviewerSessionId)}
+                  onClick={() => onOpenSession(entry.reviewerSessionId)}
+                >
+                  {t("Open review session")}
+                </Button>
+              ) : null}
+            </div>
+          ),
+        }))}
+      />
     </section>
   );
 }
@@ -120,8 +109,7 @@ function AttemptDetail({ summary, note }: { summary: string; note: string }) {
   const shortNote = firstSentence(note, 160) ?? "";
   const noteLine = (text: string) => (
     <Text as="p" size="caption" tone="secondary" className="mt-1.5 whitespace-pre-wrap break-words">
-      {t("Review: ")}
-      {text}
+      {t("Review: {p0}", { p0: text })}
     </Text>
   );
   return (

@@ -60,14 +60,18 @@ export function StewardRow({
           {!steward.enabled ? <Badge size="xs">{t("Paused")}</Badge> : null}
         </div>
         <Text as="p" size="caption" tone="secondary">
-          <TaskModelChoiceLabel choice={steward.modelChoice} machineId={steward.machineId} /> ·{" "}
+          {steward.modelChoice && steward.modelChoice.kind !== "fixed" ? (
+            <>
+              <TaskModelChoiceLabel choice={steward.modelChoice} machineId={steward.machineId} /> ·{" "}
+            </>
+          ) : null}
           <ModelLabel harness={steward.harness} model={steward.model} />
         </Text>
         <Text as="p" size="caption" tone="secondary" leading="inherit" className="task-ops-caption">
-          {t("on ")}
-          {steward.machineName}
-          {steward.stale && !steward.pendingRefresh ? t(" (offline, last known)") : ""} ·{" "}
-          {automationScheduleLabel(steward)}
+          {steward.stale && !steward.pendingRefresh
+            ? t("on {p0} (offline, last known)", { p0: steward.machineName })
+            : t("on {p0}", { p0: steward.machineName })}{" "}
+          · {automationScheduleLabel(steward)}
         </Text>
         <Text
           as="p"

@@ -1,10 +1,10 @@
 import { TabDirtyDot } from "../../../shared/ui/TabLabel";
-import { Button } from "../../../shared/ui/Button";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { useT, type t } from "../../../shared/i18n";
-import { CircleAlert, GitCompare, GripVertical, Terminal, X } from "../../../shared/ui/icons";
+import { CircleAlert, GitCompare, Terminal, X } from "../../../shared/ui/icons";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
@@ -584,28 +584,8 @@ export function SurfaceTabs({
           ref={lockOverscroll}
           data-surface-pane-id={paneId}
           label={label ?? t("Open files")}
-          className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overscroll-none pr-1"
+          className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overscroll-none pe-1"
         >
-          {onPaneDragStart ? (
-            <Button
-              iconOnly
-              variant="ghost"
-              size="sm"
-              motion="none"
-              type="button"
-              label={t("Drag to reorder pane")}
-              tabIndex={-1}
-              className="w-5 shrink-0 cursor-grab touch-none active:cursor-grabbing"
-              onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                event.preventDefault();
-                event.stopPropagation();
-                onPaneDragStart(event);
-              }}
-            >
-              <GripVertical className="icon-sm" strokeWidth={1.75} />
-            </Button>
-          ) : null}
           {displayed.map((entry) => {
             const file = entry.item;
             const closing = entry.closing;
@@ -668,7 +648,13 @@ export function SurfaceTabs({
                 externalDrop.tabPosition ? (
                   <span
                     data-file-tab-drop={externalDrop.tabPosition}
-                    className={`pointer-events-none absolute inset-y-0 z-1 w-(--ui-drop-line-size) rounded-full ${externalDrop.tabPosition === "before" ? "start-0" : "end-0"} ${externalDrop.invalid ? "bg-(--ui-drop-blocked)" : "bg-(--ui-drop-line)"}`}
+                    {...surfaceAttributes(
+                      {
+                        radius: "pill",
+                        variant: externalDrop.invalid ? "drop-blocked" : "drop-line",
+                      },
+                      `pointer-events-none absolute inset-y-0 z-1 w-(--ui-drop-line-size) ${externalDrop.tabPosition === "before" ? "start-0" : "end-0"}`,
+                    )}
                   />
                 ) : null}
                 <Tab
@@ -737,20 +723,18 @@ export function SurfaceTabs({
                     onSelectFile(file.id);
                   }}
                   onDoubleClick={() => onPinFile?.(file.id)}
-                  className={`relative flex min-w-0 flex-1 cursor-default pe-7 items-center gap-1.5 self-center `}
+                  className="relative flex min-w-0 flex-1 cursor-default items-center gap-1.5 self-center pe-7"
                 >
                   {terminal ? (
                     <Terminal className="icon-sm shrink-0" strokeWidth={1.75} />
                   ) : agent ? (
-                    <HarnessIcon harness={agent.harness} className="size-3.5 shrink-0" />
+                    <HarnessIcon harness={agent.harness} className="icon-sm shrink-0" />
                   ) : changes || commit || review ? (
                     <GitCompare className="icon-sm shrink-0" strokeWidth={1.75} />
                   ) : (
                     <FileTypeIcon name={iconName} isDir={false} size="sm" />
                   )}
-                  <TabLabel
-                    className={`flex-1 ${file.preview ? "italic" : ""} ${errors ? "text-(--ui-tone-danger-fg)" : ""}`}
-                  >
+                  <TabLabel className={`flex-1 ${file.preview ? "italic" : ""}`}>
                     {label}
                   </TabLabel>
                   {errors ? (
@@ -765,7 +749,6 @@ export function SurfaceTabs({
                   label={t("Close {p0}", { p0: label })}
                   motion="none"
                   type="button"
-                  aria-label={t("Close {p0}", { p0: label })}
                   data-no-drag
                   tabIndex={-1}
                   onPointerDown={(event) => event.stopPropagation()}

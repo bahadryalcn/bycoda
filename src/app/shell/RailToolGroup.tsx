@@ -1,7 +1,8 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Button } from "../../shared/ui/Button";
 import { ButtonGroup, ButtonGroupSelection } from "../../shared/ui/ButtonGroup";
 import { StatusDot } from "../../shared/ui/StatusDot";
+import "./toolNavigation.css";
 
 export type RailTool = {
   id: string;
@@ -25,7 +26,7 @@ export function RailToolGroup({ label, tools }: { label: string; tools: readonly
       surface="navigation"
       selection="plate"
       className="w-full"
-      style={{ "--rail-tool-columns": Math.ceil(tools.length / 2) } as CSSProperties}
+      data-rail-tool-group=""
     >
       {tools.map((tool) => (
         <Button

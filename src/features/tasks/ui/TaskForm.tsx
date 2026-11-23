@@ -148,7 +148,7 @@ export function TaskForm({
     ? blockedReason
     : t("Add a description to start this with an agent.");
   const todoReason = blockedReason ?? (todoUnsupported || undefined);
-  // The visible reason beside the primary action; the same text is its disabledReason.
+  // The visible reason beside the primary action; shown once, not again as a tooltip.
   const footerReason = draft.id
     ? canSave
       ? undefined
@@ -189,7 +189,7 @@ export function TaskForm({
             />
             <div className="task-form-targets">
               <div className="task-form-targets-row">
-                {!draft.id ? (
+                {!draft.id && machineOptions.length > 1 ? (
                   <SearchableSelect
                     label={t("Machine")}
                     value={targetId}
@@ -246,8 +246,7 @@ export function TaskForm({
               >
                 {machine && draft.id ? (
                   <Text truncate size="inherit" tone="inherit">
-                    {t("Runs on ")}
-                    {machine}
+                    {t("Runs on {p0}", { p0: machine })}
                   </Text>
                 ) : !machine ? (
                   <InlineMessage tone="warning" live="assertive">
@@ -442,9 +441,6 @@ export function TaskForm({
               form={formId}
               loading={saving}
               disabled={!canSave || saving}
-              disabledReason={
-                canSave || saving ? undefined : (blockedReason ?? t("Add a description to save."))
-              }
             >
               {t("Save")}
             </Button>
@@ -455,7 +451,6 @@ export function TaskForm({
                 type="button"
                 disabled={!ready || !hasDescription || saving}
                 loading={saving && submitMode === "queued"}
-                tooltip={ready && hasDescription ? t("Queues it for an agent now.") : undefined}
                 disabledReason={(ready && hasDescription) || saving ? undefined : startReason}
                 onClick={() => {
                   setSubmitMode("queued");
@@ -470,10 +465,8 @@ export function TaskForm({
                 form={formId}
                 loading={saving && submitMode === "todo"}
                 disabled={!canTodo || saving}
-                tooltip={canTodo ? t("Saves it without running.") : undefined}
-                disabledReason={canTodo || saving ? undefined : todoReason}
               >
-                {t("Add to to-do")}
+                {t("Add to To do")}
               </Button>
             </>
           )}

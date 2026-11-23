@@ -2,7 +2,6 @@ import { EffortScale } from "../../../shared/ui/EffortScale";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
 import { delegationSelectChoice } from "../../sessions/public/modelPickerData";
-import type { CSSProperties } from "react";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Zap, WandSparkles } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
@@ -24,7 +23,6 @@ import {
 } from "../../sessions/public/modelPickerData";
 import type { ProviderSessionDefaults } from "../../sessions/public/projectProviders";
 import { mergeProviderExtras } from "../../sessions/public/providerSessionDefaults";
-import { Badge } from "../../../shared/ui/Badge";
 import { Row } from "../../../shared/ui/settings";
 import { SubagentSelectionControl } from "../../sessions/public/SubagentModeControl";
 
@@ -107,21 +105,6 @@ export function ProviderDefaultExtras({
         }
         const inheritedOption = setting.options.find((option) => option.value === inherited);
         const inheritedLabel = inherited === "null" ? "Off" : (inheritedOption?.label ?? inherited);
-        // A delegate that is gone arrives labelled "Unavailable: name"; the state moves to a badge
-        // so the choice keeps its name and the select never truncates a sentence.
-        const unavailableMark = t("Unavailable: {p0}", { p0: "" }).trim();
-        const inheritedUnavailable = Boolean(
-          delegation && inherited !== "null" && inheritedLabel?.startsWith(unavailableMark),
-        );
-        const inheritedName = inheritedUnavailable
-          ? inheritedLabel!.slice(unavailableMark.length).trim()
-          : inheritedLabel;
-        const savedUnavailable =
-          delegation &&
-          setting.options.some(
-            (option) => option.value === saved && option.label.startsWith(unavailableMark),
-          );
-        const effectiveUnavailable = saved ? savedUnavailable : inheritedUnavailable;
         const savedIsUnavailable =
           Boolean(saved) &&
           saved !== "null" &&
@@ -167,13 +150,6 @@ export function ProviderDefaultExtras({
             // The window is the second half of Auto-compact: indented under it, inert while it is off.
             dependsOn={setting.id === "autoCompactWindow" ? !compactDisabled : undefined}
             controlWidth={delegation ? "wide" : undefined}
-            feedback={
-              effectiveUnavailable ? (
-                <Badge size="xs" tone="warning">
-                  {t("Unavailable")}
-                </Badge>
-              ) : undefined
-            }
           >
             {compact ? (
               setting.id === "autoCompact" && !savedIsUnavailable ? (
@@ -272,16 +248,6 @@ export function ProviderDefaultExtras({
                 }}
               />
             ) : (setting.id === "fast" || setting.id === "serviceTier") && !savedIsUnavailable ? (
-              <div
-                style={
-                  {
-                    "--ui-surface-selected":
-                      saved === "true" || saved === "fast"
-                        ? "var(--ui-tone-accent-subtle)"
-                        : undefined,
-                  } as CSSProperties
-                }
-              >
                 <SegmentedControl
                   label={t(setting.label)}
                   value={saved ?? ""}
@@ -301,7 +267,7 @@ export function ProviderDefaultExtras({
                         label: speedLabel(option.value, option.label),
                         icon:
                           option.value === "true" || option.value === "fast" ? (
-                            <Zap className="icon-sm" tone="accent" fill="currentColor" />
+                            <Zap className="icon-sm" />
                           ) : undefined,
                       })),
                   ]}
@@ -312,7 +278,6 @@ export function ProviderDefaultExtras({
                     onSessionDefaultsChange({ ...scopeDefaults, extras });
                   }}
                 />
-              </div>
             ) : (
               <SearchableSelect
                 hideLabel
@@ -336,7 +301,7 @@ export function ProviderDefaultExtras({
                   {
                     value: "",
                     label: inheritedChoiceLabel(
-                      inheritedName ? t(inheritedName) : undefined,
+                      inheritedLabel ? t(inheritedLabel) : undefined,
                       Boolean(inheritedOption) || inherited === "null",
                     ),
                   },

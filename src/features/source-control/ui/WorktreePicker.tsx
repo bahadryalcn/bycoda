@@ -214,13 +214,14 @@ export function WorktreePicker({
               motion="none"
               type="button"
               disabled={busy}
+              fullWidth
+              align="start"
+              startIcon={<Plus className="icon-sm" />}
               onClick={() => {
                 setOpen(false);
                 setCreating(true);
               }}
-              className="flex w-full items-center gap-2 text-left"
             >
-              <Plus className="icon-sm" />
               {t("Create worktree…")}
             </Button>
             <Button
@@ -228,13 +229,14 @@ export function WorktreePicker({
               motion="none"
               type="button"
               disabled={busy || worktreeRemoved}
+              fullWidth
+              align="start"
+              startIcon={<GitBranch className="icon-sm" />}
               onClick={() => {
                 setOpen(false);
                 setBranchPicker(true);
               }}
-              className="flex w-full items-center gap-2 text-left"
             >
-              <GitBranch className="icon-sm" />
               {t("Switch branch in this worktree…")}
             </Button>
             {onManage && (
@@ -243,13 +245,14 @@ export function WorktreePicker({
                 motion="none"
                 type="button"
                 disabled={busy}
+                fullWidth
+                align="start"
+                startIcon={<Settings className="icon-sm" />}
                 onClick={() => {
                   dismiss();
                   onManage();
                 }}
-                className="flex w-full items-center gap-2 text-left"
               >
-                <Settings className="icon-sm" />
                 {t("Manage worktrees…")}
               </Button>
             )}

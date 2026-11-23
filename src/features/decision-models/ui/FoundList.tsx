@@ -1,7 +1,6 @@
 import { useDecisionTarget } from "./DecisionTarget";
 import { connectedCandidate } from "../model/presentation";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
-import { Badge } from "../../../shared/ui/Badge";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { t } from "../../../shared/i18n";
@@ -37,11 +36,8 @@ export function FoundList({
   onAdd: (candidate: DiscoveryCandidate) => void;
 }) {
   const target = useDecisionTarget();
-  const items = [...(found ?? [])].sort(
-    (a, b) =>
-      Number(Boolean(connectedCandidate(a, sources))) -
-      Number(Boolean(connectedCandidate(b, sources))),
-  );
+  // What is already connected is listed under Connected models, not here.
+  const items = (found ?? []).filter((candidate) => !connectedCandidate(candidate, sources));
   const empty =
     found !== null && items.length === 0 && !scanning && scanError === null && !incomplete;
   return (
@@ -96,18 +92,14 @@ export function FoundList({
                   </div>
                 </div>
               </div>
-              {connectedCandidate(candidate, sources) ? (
-                <Badge size="sm">{t("Connected")}</Badge>
-              ) : (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => onAdd(candidate)}
-                >
-                  {t("Add")}
-                </Button>
-              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={() => onAdd(candidate)}
+              >
+                {t("Add")}
+              </Button>
             </li>
           ))}
         </ul>
@@ -117,13 +109,7 @@ export function FoundList({
           <EmptyState
             context="list"
             size="inline"
-            description={
-              target
-                ? t("Nothing found on Host {p1}. Running services and model files appear here.", {
-                    p1: target,
-                  })
-                : t("Nothing found on this computer. Running services and model files appear here.")
-            }
+            description={t("Nothing found.")}
           />
         </div>
       ) : null}

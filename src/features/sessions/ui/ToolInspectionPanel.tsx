@@ -179,15 +179,15 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
       {presentation.map(({ section, json }, index) => {
         return (
           <section key={index} className="min-w-0">
-            <div className="flex min-h-7 items-center justify-between gap-2 pr-1 pl-3">
-              <SectionLabel as="h4">{t(section.title)}</SectionLabel>
+            <div className="flex min-h-7 items-center justify-between gap-2 pe-1 ps-3">
+              {/* A lone section is named by its own disclosure, so only several need headings. */}
+              {presentation.length > 1 ? (
+                <SectionLabel as="h4">{t(section.title)}</SectionLabel>
+              ) : (
+                <span />
+              )}
               {index === 0 ? (
                 <div className="flex items-center gap-2">
-                  {feedback.failed ? (
-                    <Text role="status" size="caption" tone="danger">
-                      {t("Copy failed")}
-                    </Text>
-                  ) : null}
                   <FloatingButtonGroup
                     label={t("Output actions")}
                     // Same bare icon row as the message actions: no tray padding.
@@ -198,7 +198,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                     items={actions}
                   />
                   <span role="status" className="sr-only">
-                    {feedback.copied ? t("Copied") : ""}
+                    {feedback.copied ? t("Copied") : feedback.failed ? t("Copy failed") : ""}
                   </span>
                 </div>
               ) : null}
@@ -241,7 +241,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                 )}
               </OutputBlock>
             )}
-            {section.truncated || section.legacy ? (
+            {(section.truncated && section.text) || section.legacy ? (
               <Text as="p" size="caption" tone="secondary" className="px-3 pt-1">
                 {t(
                   section.legacy

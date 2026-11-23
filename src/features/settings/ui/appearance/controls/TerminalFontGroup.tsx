@@ -2,7 +2,7 @@ import { t, useLocale } from "../../../../../shared/i18n";
 import { NumberField } from "../../../../../shared/ui/NumberField";
 import { CODE_FONT_CATALOG, fontFamilyValue } from "../../../model/fontCatalog";
 import { APPEARANCE_DEFAULTS } from "../../../model/appearancePreferences";
-import { Group, Row, Segmented } from "../../../../../shared/ui/settings";
+import { AdvancedSettings, Group, Row, Segmented } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { FontPicker } from "./FontPicker";
 import { useNumberDraft } from "./useNumberDraft";
@@ -52,7 +52,7 @@ export function TerminalFontGroup({ appearance: a }: { appearance: AppearanceSet
     >
       <Row
         id="terminal-font"
-        label={t("Terminal font")}
+        label={t("Font")}
         modified={
           p.terminalFontSource !== d.terminalFontSource || p.terminalFont !== d.terminalFont
         }
@@ -85,7 +85,7 @@ export function TerminalFontGroup({ appearance: a }: { appearance: AppearanceSet
       </Row>
       <Row
         id="terminal-font-size"
-        label={t("Terminal font size")}
+        label={t("Size")}
         modified={p.terminalSize !== d.terminalSize}
         onReset={() => a.onPreferences({ ...p, terminalSize: d.terminalSize })}
       >
@@ -98,6 +98,7 @@ export function TerminalFontGroup({ appearance: a }: { appearance: AppearanceSet
           {...terminalSize}
         />
       </Row>
+      <AdvancedSettings settingIds={["terminal-font-weight", "terminal-line-height"]}>
       <Row
         id="terminal-font-weight"
         label={t("Terminal font weight")}
@@ -131,6 +132,7 @@ export function TerminalFontGroup({ appearance: a }: { appearance: AppearanceSet
           onChange={(value) => a.onPreferences({ ...p, terminalLineHeight: Number(value) })}
         />
       </Row>
+      </AdvancedSettings>
     </Group>
   );
 }

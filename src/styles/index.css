@@ -467,7 +467,7 @@ html.theme-light {
   --ui-tone-subtle-strength: 8%;
   --ui-status-ink-strength: 10%;
   --ui-status-shade-strength: 0%;
-  --ui-elevation-floating:
+  --ui-floating-shadow:
     0 8px 24px color-mix(in oklab, var(--color-scrim) 10%, transparent),
     0 1px 2px color-mix(in oklab, var(--color-scrim) 8%, transparent);
   --ui-tone-neutral-on-solid: var(--palette-solidInk);
@@ -501,8 +501,10 @@ html.theme-light {
   --ui-icon-lg: 1.25rem;
   --ui-icon-stroke: 1.75;
   /* One floating family for Popover, Modal, Select, Menu and Combobox surfaces. */
-  --ui-radius-popup: 0.75rem;
-  --ui-elevation-floating:
+  --ui-radius-floating: 0.75rem;
+  --ui-radius-popup: var(--ui-radius-floating);
+  --ui-elevation-floating: var(--ui-floating-shadow);
+  --ui-floating-shadow:
     0 8px 24px color-mix(in oklab, var(--color-scrim) 32%, transparent),
     0 1px 3px color-mix(in oklab, var(--color-scrim) 24%, transparent);
   --ui-text-on-active: var(--palette-oklch_0_29_0_066_243);
@@ -555,10 +557,22 @@ html.theme-light {
     var(--color-content) calc(16% * var(--appearance-layer-strength, 1)),
     var(--ui-layer-base)
   );
-  /* Container role for every floating surface: dialogs, sheets, popovers, menus, tooltips, toasts
-     and floating panels (V3-040). Tinted canvases keep the raised step; the Pure background maps it
-     near the pure ground below. Controls inside keep their own field, hover and selected steps. */
-  --ui-surface-floating: var(--ui-surface-raised);
+  /* Pure/Tinted only choose the painted canvas. Floating chrome lifts from the opaque theme layer
+     in both modes. Light uses a capped lift so the theme tint survives high surface contrast. */
+  --ui-floating-base: var(--ui-layer-base);
+  --ui-floating-lift-color: var(--color-content);
+  --ui-floating-lift: calc(16% * var(--appearance-layer-strength, 1));
+  --ui-surface-floating: color-mix(
+    in oklab,
+    var(--ui-floating-lift-color) var(--ui-floating-lift),
+    var(--ui-floating-base)
+  );
+  --ui-floating-edge: color-mix(
+    in oklab,
+    var(--color-content)
+      calc(var(--appearance-stroke-strength, 7%) * 1.75 * var(--ui-stroke-boost, 1)),
+    var(--ui-surface-floating)
+  );
   --ui-conflict-current-surface: color-mix(
     in oklab,
     var(--color-conflict-ours) 12%,
@@ -651,12 +665,10 @@ html.theme-light {
   --ui-activity-dock-edge:
     inset 0 0 0 1px color-mix(in oklab, var(--color-content) 8%, transparent),
     inset 0 1px 0 color-mix(in oklab, var(--color-content) 7%, transparent);
-  /* Frosted hover cards (session details): a thin tint over a strong, saturated blur, so the
-     pane beneath shows through as color instead of a flat gray card (owner 2026-11-03,
-     translated: "I don't like this gray design ... blurred, glass effect"). Opaque fallback: .popover-frosted. */
-  --ui-frosted-glass: color-mix(in oklab, var(--color-background-base) 22%, transparent);
-  --ui-frosted-filter: blur(calc(var(--glass-blur) * 1.25)) saturate(1.8) brightness(0.82);
-  --ui-frosted-edge: inset 0 1px 0 color-mix(in oklab, var(--color-content) 10%, transparent);
+  /* Legacy preview tokens resolve to opaque floating paint without an extra filter or glint. */
+  --ui-frosted-glass: var(--ui-surface-floating);
+  --ui-frosted-filter: none;
+  --ui-frosted-edge: none;
   --ui-frosted-divider: var(--ui-pane-border);
   /* Large editable regions and boxed setting groups are identified by surface
      and caret; their edge is quieter than a 3:1 small-field border. */
@@ -686,9 +698,9 @@ html.theme-light {
   --ui-settings-row-hover: var(--ui-surface-hover);
   /* One row inset role: Settings rows, and any list-like row that wants the same rhythm, pad from
      these; compact is the dense step for rows with a short control or no description. */
-  --ui-row-inset-block: 10px;
-  --ui-row-inset-block-compact: 6px;
-  --ui-row-inset-inline: 16px;
+  --ui-row-inset-block: var(--ui-space-2);
+  --ui-row-inset-block-compact: var(--ui-space-1);
+  --ui-row-inset-inline: var(--ui-space-4);
   /* Group and fieldset titles weigh one step above a field label (500). */
   --ui-weight-group-title: 600;
   /* Card frames use the control radius; the name stays for existing consumers. */
@@ -747,7 +759,7 @@ html.theme-light {
   );
   /* Lightest field edge that keeps 3:1 against its surface; light needs more ink. */
   --ui-control-border: color-mix(in oklab, var(--color-content) 44%, var(--ui-surface-muted));
-  --ui-dialog-frame: color-mix(in oklab, var(--ui-pane-border), var(--ui-control-border) 30%);
+  --ui-dialog-frame: var(--ui-floating-edge);
   /* Ordinary ranges use the exact contrast pair on an opaque fill, including
      content with its own inverse background. Overlay editors keep a tint. */
   /* Before the derived pair is published the plain accent is paired with dark ink. */
@@ -761,8 +773,17 @@ html.theme-light {
   );
   --ui-primary-hover: color-mix(in oklab, var(--color-content) 85%, var(--ui-tint-base));
   --ui-primary-pressed: color-mix(in oklab, var(--color-content) 75%, var(--ui-tint-base));
+  /* Selection controls use the saved accent pair or a restrained neutral fill with matching ink. */
+  --ui-control-on: var(
+    --user-accent-solid,
+    var(
+      --user-accent-color,
+      color-mix(in oklab, var(--color-content) 58%, var(--color-background-base))
+    )
+  );
+  --ui-control-on-glyph: var(--user-accent-foreground, var(--color-background-base));
   --ui-control-thumb: var(--color-on-solid);
-  --ui-control-thumb-border: color-mix(in oklab, var(--color-scrim) 22%, transparent);
+  --ui-control-thumb-border: color-mix(in oklab, var(--color-scrim) 5%, transparent);
   --ui-control-thumb-shadow: 0 1px 4px color-mix(in oklab, var(--color-scrim) 20%, transparent);
   /* Height ladder (One component system spec): xs 24, sm 28, md 32, lg 40; density scales it. */
   --ui-control-height-xs: 1.5rem;
@@ -854,17 +875,29 @@ html.theme-light {
   --radius-panel: var(--ui-radius-popup);
   --radius-surface: var(--ui-radius-popup);
   --radius-pill: 9999px;
-  --space-1: 0.25rem;
+  /* Four-pixel base at the default root size. Legacy steps retain their existing geometry. */
+  --ui-space-1: 0.25rem;
+  --ui-space-2: 0.5rem;
+  --ui-space-3: 0.75rem;
+  --ui-space-4: 1rem;
+  --ui-space-5: 1.25rem;
+  --ui-space-6: 1.5rem;
+  --ui-space-8: 2rem;
+  --ui-space-10: 2.5rem;
+  --ui-space-12: 3rem;
+  /* Leading gutter shared by list rows, rail section labels and inline empty states. */
+  --ui-list-gutter: var(--ui-space-2);
+  --space-1: var(--ui-space-1);
   --space-2: 0.375rem;
   --space-3: 0.625rem;
   --space-4: 0.875rem;
-  --space-5: 1rem;
-  --space-6: 1.25rem;
-  --space-8: 1.5rem;
-  --space-10: 2rem;
-  --space-12: 2.5rem;
-  --space-16: 3rem;
-  --accent: var(--user-accent-solid, var(--user-accent-color, var(--color-accent)));
+  --space-5: var(--ui-space-4);
+  --space-6: var(--ui-space-5);
+  --space-8: var(--ui-space-6);
+  --space-10: var(--ui-space-8);
+  --space-12: var(--ui-space-10);
+  --space-16: var(--ui-space-12);
+  --accent: var(--ui-tone-accent-solid);
   /* Radius names used by features before the scale settled; aliases of the owned roles. */
   /* Radius roles (One component system spec): control 8, inset = control - 2, row 6, popup 12.
      Pill only for switch, status dot and count. One name, one value: --radius-panel,
@@ -1067,6 +1100,12 @@ html.theme-light {
       ),
     var(--ui-layer-base)
   );
+  --ui-floating-lift-color: var(--palette-solidInk);
+  --ui-floating-lift: clamp(
+    0%,
+    calc((var(--ui-ground-lightness) - 58%) * 2.5 * var(--appearance-layer-strength, 1)),
+    88%
+  );
   /* Light ladder: zinc-like ink steps (4 / 12 / 16), selected vs hover >= 1.15:1 on the ground. */
   --ui-state-hover: 4%;
   --ui-state-selected: 12%;
@@ -1086,11 +1125,6 @@ html.theme-light {
   /* Light glass: a milky canvas veil that brightens the blur instead of dimming it. */
   --ui-activity-dock-glass: color-mix(in oklab, var(--color-background-base) 45%, transparent);
   --ui-activity-dock-filter: blur(var(--ui-activity-dock-blur)) saturate(1.4) brightness(1.06);
-  /* Light frosted cards: a milky veil that brightens what it blurs. */
-  --ui-frosted-glass: color-mix(in oklab, var(--color-background-base) 36%, transparent);
-  --ui-frosted-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(1.6) brightness(1.05);
-  --ui-frosted-edge: inset 0 1px 0
-    color-mix(in oklab, var(--color-background-base) 85%, transparent);
   --ui-activity-dock-edge:
     inset 0 0 0 1px color-mix(in oklab, var(--color-content) 8%, transparent),
     inset 0 1px 0 color-mix(in oklab, var(--color-background-base) 80%, transparent);
@@ -1124,15 +1158,6 @@ html.theme-light {
 html[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureDark);
   --ui-chat-canvas: var(--color-background-base);
-  /* Every floating container (dialogs, sheets, popovers, menus, tooltips, toasts, floating panels)
-     stays near the pure ground instead of a mid gray slab, at the surface step (10%), above the composer (9%), cards (4%) and selected rows (8%) it holds, so dark layers get lighter as they rise. The mix
-     is in srgb: an oklab mix this close to black rounds to the canvas itself. Controls inside
-     keep their steps. */
-  --ui-surface-floating: color-mix(
-    in srgb,
-    var(--color-content) calc(10% * var(--appearance-layer-strength, 1)),
-    var(--color-background-base)
-  );
   /* Groups and cards read as cards on the black ground: a faint ink fill over whatever surface
      holds them, framed by the card border. */
   --ui-card-surface: color-mix(
@@ -1151,7 +1176,6 @@ html[data-canvas-background="pure"] {
 html.theme-light[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureLight);
   --ui-chat-pane-canvas: var(--ui-chat-canvas);
-  --ui-surface-floating: var(--ui-surface-raised);
   --ui-card-surface: transparent;
   /* Mirror of the dark step: a faint off-white on the white ground. */
   --ui-composer-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
@@ -1191,6 +1215,12 @@ html.has-user-accent.theme-light {
 }
 
 @media (forced-colors: active) {
+  html:root {
+    --ui-surface-floating: Canvas;
+    --ui-floating-edge: CanvasText;
+    --ui-floating-shadow: none;
+  }
+
   ::selection {
     -webkit-text-fill-color: HighlightText;
   }
@@ -2579,6 +2609,8 @@ html.has-workspace-background {
       calc(clamp(0, var(--workspace-background-strength, 0), 1) * 32%),
     var(--color-background-base)
   );
+  /* Keep the selected tint present when artwork contributes to the layer under a Pure canvas. */
+  --ui-floating-base: color-mix(in oklab, var(--ui-tint-base) 35%, var(--ui-layer-base));
   --ui-ground-lightness: calc(
     var(--background-lightness) *
       (1 - clamp(0, var(--workspace-background-strength, 0), 1) * 0.32) +
@@ -2824,14 +2856,8 @@ html.is-reordering {
 .composer-controls {
   container: composer-controls / inline-size;
 }
-@container composer-controls (width < 560px) {
-  [data-extras-summary] {
-    display: none;
-  }
-}
 @container composer-controls (width < 480px) {
-  [data-session-dirs-label],
-  [data-extras-label] {
+  [data-session-dirs-label] {
     display: none;
   }
 }
@@ -4449,46 +4475,11 @@ html:not(.theme-light) .markdown-code-token {
   }
 }
 
-/* Menus need a stable surface above bright buttons and custom backgrounds. */
-.popover-backdrop {
+/* Every backdrop spelling shares the opaque theme ground, including legacy previews. */
+.popover-backdrop,
+.popover-solid,
+.popover-frosted {
   background: var(--ui-surface-floating);
-}
-
-/* Opaque popover surface for live canvases; no backdrop sampling. */
-.popover-solid {
-  background: var(--ui-surface-floating);
-}
-
-/* Frosted glass for opt-in popovers. The doubled selector outranks
-   the shared .popover-backdrop rules below; without blur the opaque floating surface stays readable. */
-.popover-backdrop.popover-frosted,
-html.theme-light .popover-backdrop.popover-frosted {
-  background: var(--ui-frosted-glass);
-  box-shadow: var(--ui-frosted-edge);
-  -webkit-backdrop-filter: var(--ui-frosted-filter);
-  backdrop-filter: var(--ui-frosted-filter);
-}
-
-html[data-performance-no-blur] .popover-backdrop.popover-frosted {
-  background: var(--ui-surface-floating);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .popover-backdrop.popover-frosted,
-  html.theme-light .popover-backdrop.popover-frosted {
-    background: var(--ui-surface-floating);
-  }
-}
-
-@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-  .popover-backdrop.popover-frosted,
-  html.theme-light .popover-backdrop.popover-frosted {
-    background: var(--ui-surface-floating);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
 }
 
 /* Animate content only; its sibling glass stays still. Finish at `none` and
@@ -5018,11 +5009,8 @@ html.is-reordering
 :is(.backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md) {
   --tw-backdrop-blur: blur(var(--glass-blur));
 }
-/* The floating surface (.popover-backdrop: popovers, menus, dialogs, sheets) is opaque, so a
-   blur behind it is invisible yet re-samples the pane on every repaint. Only .popover-frosted
-   (a deliberately translucent popover) blurs, through its own rule above. */
-/* A nested glass surface samples the already blurred parent only once. */
-.popover-backdrop
+/* The opaque floating backdrop already covers the pane. Skip blur on nested surfaces. */
+:is(.popover-backdrop, .popover-solid, .popover-frosted)
   ~ *
   :is(.backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-lg, .backdrop-blur-md) {
   --tw-backdrop-blur: none;

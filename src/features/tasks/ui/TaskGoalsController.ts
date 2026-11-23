@@ -1,5 +1,5 @@
-import { t } from "../../../shared/i18n";
 import { type FormEvent, useMemo, useState } from "react";
+import { t } from "../../../shared/i18n";
 import { useSprintBoard } from "../model/sprintClient";
 import { taskMatchesProject, type TaskProjectScope } from "../model/taskBoardScope";
 import { taskClientErrors } from "../model/taskClientErrors";
@@ -150,13 +150,10 @@ export function useTaskGoals({
             id: `goal:${saved.machineId}:${saved.id}`,
             title: saved.title,
             sprintId: currentSprint.id,
+            reason: presentRemoteError(reason, { explicit: true }),
             goal: { environmentId: machine?.environmentId ?? "", goalId: saved.id },
           });
-          setError(
-            t("Epic created. Sprint assignment failed: {p0}", {
-              p0: presentRemoteError(reason, { explicit: true }),
-            }),
-          );
+          setError(null);
           refresh().catch(report);
           return;
         }

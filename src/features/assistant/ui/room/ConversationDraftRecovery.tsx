@@ -52,6 +52,7 @@ export function ConversationDraftRecovery({ c }: { c: ConversationContext }) {
         </ModalActions>
       }
     >
+      <div className={styles.recovery}>
       {draftRecovery.error && <InlineError>{draftRecovery.error}</InlineError>}
       <SearchableSelect
         hideLabel
@@ -66,6 +67,7 @@ export function ConversationDraftRecovery({ c }: { c: ConversationContext }) {
         disabled={draftRecovery.loading || draftRecovery.backups.length === 0}
       />
       <TextareaField
+        hideLabel
         label={t("Draft preview")}
         readOnly
         minRows={3}
@@ -74,7 +76,7 @@ export function ConversationDraftRecovery({ c }: { c: ConversationContext }) {
         value={draftRecovery.selectedText ?? ""}
       />
       {draftRecovery.selectedSavedAt != null && (
-        <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.note}>
+        <Text as="p" size="caption" tone="secondary" leading="inherit">
           {formatDate(draftRecovery.selectedSavedAt, { dateStyle: "medium", timeStyle: "short" })}
         </Text>
       )}
@@ -96,28 +98,10 @@ export function ConversationDraftRecovery({ c }: { c: ConversationContext }) {
           }}
         />
       )}
-      <Button
-        disabled={draftRecovery.loading}
-        onClick={() => {
-          const current = draftRecovery;
-          setDraftRecovery({
-            ...current,
-            backups: [],
-            selected: "",
-            selectedText: undefined,
-            selectedSavedAt: undefined,
-            next: undefined,
-            revision: undefined,
-            loading: true,
-          });
-          void loadDraftBackups(current.threadId, current.environmentId).catch(report);
-        }}
-      >
-        {t("Refresh")}
-      </Button>
       {!draftRecovery.loading && !draftRecovery.backups.length && !draftRecovery.error && (
         <EmptyState size="inline" kind="empty" description={t("No saved drafts found.")} />
       )}
+      </div>
     </Modal>
   );
 }

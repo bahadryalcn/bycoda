@@ -4,7 +4,6 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Meter } from "../../../../shared/ui/Meter";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
@@ -26,7 +25,6 @@ import {
   iysLabel,
   sourceLabel,
   stageLabel,
-  stageTone,
   type IysState,
 } from "./audienceModel";
 import {
@@ -131,34 +129,18 @@ export function PersonPanel({
         <div className="audience-panel-body">
           <header className="audience-person">
             <SocialAvatar name={person.name} size="lg" />
-            <div className="audience-person-text">
-              <Text
-                size="body"
-                tone="primary"
-                leading="inherit"
-                weight="medium"
-                className="audience-person-name"
-                truncate
-              >
-                {person.name}
-              </Text>
-              <Text size="inherit" tone="inherit" truncate className="audience-row">
-                <Badge size="sm" tone={stageTone(person.stage)}>
-                  {stageLabel(person.stage)}
-                </Badge>
-                {person.score ? (
-                  <span className="audience-score">
-                    <Meter
-                      className="audience-score-bar"
-                      label={t("Interest score")}
-                      value={person.score.value}
-                      tone="accent"
-                    />
-                    {formatNumber(person.score.value)}
-                  </span>
-                ) : null}
-              </Text>
-            </div>
+            {/* The sheet title names the person and the status section shows the stage. */}
+            {person.score ? (
+              <span className="audience-score">
+                <Meter
+                  className="audience-score-bar"
+                  label={t("Interest score")}
+                  value={person.score.value}
+                  tone="accent"
+                />
+                {formatNumber(person.score.value)}
+              </span>
+            ) : null}
           </header>
 
           {detail.suppressed ? (

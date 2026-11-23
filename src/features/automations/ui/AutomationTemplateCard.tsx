@@ -32,7 +32,7 @@ export function AutomationTemplateCard({
       onClick={() => onPick(template)}
       variant="item"
       layout="stacked"
-      className="automation-template"
+      className="h-full min-w-0"
     >
       <span className="flex min-w-0 items-start gap-2">
         <Text size="inherit" tone="muted" className="grid size-7 shrink-0 place-items-center">

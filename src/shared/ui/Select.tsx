@@ -25,6 +25,7 @@ import { SelectTrigger, SelectOption, SelectValue } from "./arc/select/select";
 export { SelectTrigger };
 import { ComboboxStatus } from "./arc/combobox/combobox";
 import { PickerChoice } from "./picker/PickerChoice";
+import { canInspectPickerOption } from "./picker/usePickerList";
 import { useT } from "../i18n";
 import { Field, fieldDescribedBy, type FieldVariant } from "./Field";
 import { useKeyedActiveIndex } from "../hooks/useKeyedActiveIndex";
@@ -33,8 +34,10 @@ export type SelectChoice = {
   value: string;
   label: string;
   icon?: ReactNode;
-  /** Shown but not choosable and skipped by keyboard navigation; a committed disabled value stays visible. */
+  /** Shown but not choosable; a committed disabled value stays visible. */
   disabled?: boolean;
+  /** Why this option cannot be selected. Makes it reachable for keyboard inspection. */
+  disabledReason?: string;
 };
 
 /** Next choosable index from `from` in `step` direction; wraps only when asked, otherwise stays put at an end. */
@@ -44,21 +47,21 @@ function nextEnabled(options: readonly SelectChoice[], from: number, step: 1 | -
     const raw = from + step * offset;
     const index = loop ? ((raw % count) + count) % count : raw;
     if (index < 0 || index >= count) return from;
-    if (!options[index]?.disabled) return index;
+    if (canInspectPickerOption(options[index])) return index;
   }
   return from;
 }
 const firstEnabled = (options: readonly SelectChoice[]) =>
-  options.findIndex((option) => !option.disabled);
+  options.findIndex(canInspectPickerOption);
 const lastEnabled = (options: readonly SelectChoice[]) => {
   for (let index = options.length - 1; index >= 0; index--)
-    if (!options[index]!.disabled) return index;
+    if (canInspectPickerOption(options[index])) return index;
   return -1;
 };
 /** The committed option when choosable, otherwise the first choosable one (-1 when none). */
 const initialActive = (options: readonly SelectChoice[], value: string) => {
   const index = options.findIndex((option) => option.value === value);
-  return index >= 0 && !options[index]!.disabled ? index : firstEnabled(options);
+  return index >= 0 && canInspectPickerOption(options[index]) ? index : firstEnabled(options);
 };
 
 /**
@@ -314,11 +317,13 @@ export function Select({
           className={`${popupListClassName} bycoda-arc bycoda-arc-menu overflow-y-auto overscroll-contain`}
         >
           {options.length === 0 ? (
-            <ComboboxStatus empty>{t("No matching options")}</ComboboxStatus>
+            <ComboboxStatus empty>{t("No options available")}</ComboboxStatus>
           ) : null}
           {options.map((option, index) => {
             const isSelected = option.value === value;
             const highlighted = index === active;
+            const reason = highlighted && option.disabled ? option.disabledReason?.trim() : undefined;
+            const descriptionId = reason ? `${listId}-opt-${index}-reason` : undefined;
             return (
               <SelectOption
                 key={option.value}
@@ -329,11 +334,12 @@ export function Select({
                 tabIndex={-1}
                 aria-selected={isSelected}
                 aria-disabled={option.disabled || undefined}
-                disabled={option.disabled}
+                aria-describedby={descriptionId}
+                disabled={!canInspectPickerOption(option)}
                 data-highlighted={highlighted || undefined}
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => {
-                  if (!option.disabled) setActive(index);
+                  if (canInspectPickerOption(option)) setActive(index);
                 }}
                 onClick={() => pick(option.value)}
               >
@@ -342,6 +348,8 @@ export function Select({
                   icon={option.icon}
                   label={option.label}
                   title={option.label}
+                  description={reason}
+                  descriptionId={descriptionId}
                 />
               </SelectOption>
             );

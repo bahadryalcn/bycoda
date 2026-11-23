@@ -62,7 +62,9 @@ export function SkillMachinesPanel({
         const here = id === shownOn;
         const saving = entry ? policyTarget === JSON.stringify([id, copy?.path]) : false;
         const loadError = list.skills === null ? list.error : undefined;
-        const status: { tone: StatusTextTone; label: string } =
+        // An installed copy with a known preference is shown by its switch alone; text only
+        // explains what the switch cannot (not installed, still loading, a failure).
+        const status: { tone: StatusTextTone; label: string } | null =
           list.skills === null
             ? loadError
               ? { tone: "failed", label: loadError }
@@ -74,9 +76,7 @@ export function SkillMachinesPanel({
                 }
               : !list.policyKnown
                 ? { tone: "done", label: t("Installed") }
-                : isOff(entry)
-                  ? { tone: "idle", label: t("Installed, off") }
-                  : { tone: "done", label: t("Installed, enabled") };
+                : null;
         return (
           <li key={id} className={styles.machineRow} data-current={here || undefined}>
             <Text
@@ -89,9 +89,11 @@ export function SkillMachinesPanel({
               <Text size="inherit" tone="inherit" weight="medium">
                 {name}
               </Text>
-              <StatusText tone={status.tone} className={styles.machineStatus}>
-                {status.label}
-              </StatusText>
+              {status ? (
+                <StatusText tone={status.tone} className={styles.machineStatus}>
+                  {status.label}
+                </StatusText>
+              ) : null}
             </Text>
             <div className={styles.machineActions}>
               {saving ? <Spinner size="xs" label={t("Saving…")} /> : null}

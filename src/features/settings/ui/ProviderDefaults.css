@@ -7,11 +7,6 @@
   align-items: center;
   gap: var(--space-1);
 }
-.provider-targets-popover {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 .provider-effort {
   inline-size: min(100%, 17rem);
   min-inline-size: 0;

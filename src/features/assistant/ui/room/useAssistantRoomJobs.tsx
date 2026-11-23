@@ -164,7 +164,6 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
                   ? "Deleting this job keeps its saved note or automation."
                   : "The job stops first. Tasks, sessions, worktrees and changes remain.",
             ),
-            t("You can restore this job from Recently deleted for seven days."),
             ...(state.acknowledged
               ? [
                   t(

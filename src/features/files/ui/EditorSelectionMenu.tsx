@@ -52,20 +52,16 @@ export function EditorSelectionMenu({
       <Button
         size="sm"
         variant="ghost"
-        motion="none"
-        type="button"
+        startIcon={<MessageSquarePlus aria-hidden="true" className="icon-sm" strokeWidth={1.75} />}
+        endIcon={<ShortcutKeys shortcut="mod+l" size="xs" />}
         aria-keyshortcuts="Control+l Meta+l"
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => {
           requestAddToChat(formatEditorSelectionReference(selection), "plain");
           onDismiss();
         }}
-        className="flex items-center gap-1.5 whitespace-nowrap"
-        leading="none"
       >
-        <MessageSquarePlus aria-hidden="true" className="icon-sm" strokeWidth={1.75} />
         {t("Add to chat")}
-        <ShortcutKeys shortcut="mod+l" size="xs" />
       </Button>
     </Popover>
   );

@@ -21,7 +21,7 @@ export function ErrorNotice({
     <InlineError
       className="min-w-0"
       details={errorDetail(error)}
-      retry={onRetry ? { onRetry, label: t("Try again"), pending: retrying } : undefined}
+      retry={onRetry ? { onRetry, label: t("Retry"), pending: retrying } : undefined}
     >
       {title ?? t("This did not work. Try again.")}
     </InlineError>

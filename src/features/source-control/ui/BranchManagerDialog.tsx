@@ -95,11 +95,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
     const { remote, name } = branch;
     if (!remote) return;
     const confirmed = await confirm({
-      title: t("Delete"),
-      message: t(
-        "Delete branch {p0} on {p1}? This removes it from the remote for everyone who uses it.",
-        { p0: name, p1: remote },
-      ),
+      title: t("Delete {p0} from {p1}?", { p0: name, p1: remote }),
       confirmLabel: t("Delete"),
     });
     if (!confirmed) return;
@@ -211,11 +207,6 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             motion="none"
             type="button"
             disabled={busy}
-            tooltip={
-              branch.remote
-                ? t("Check out {p0} as a local branch", { p0: reference })
-                : t("Switch to {p0}", { p0: reference })
-            }
             onClick={() => void checkout(branch)}
             className={ACTION}
           >
@@ -304,11 +295,6 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
     <Modal
       languageDomain="git"
       title={t("Branches")}
-      description={
-        current
-          ? t("Switch branches, or merge into or rebase {p0}.", { p0: current })
-          : t("Switch, create, rename, and delete branches.")
-      }
       size="md"
       fitViewport
       onClose={() => {
@@ -335,11 +321,10 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
             motion="none"
             type="button"
             disabled={busy}
+            startIcon={<Plus className="icon-sm" strokeWidth={1.75} />}
             onClick={() => startEditing({ kind: "create" })}
-            className="inline-flex shrink-0 items-center gap-1"
           >
-            <Plus className="icon-sm" strokeWidth={1.75} />
-            {t("Create branch…")}
+            {t("New branch")}
           </Button>
         </div>
         {editing?.kind === "create" ? renderForm(t("New branch name"), t("Create")) : null}

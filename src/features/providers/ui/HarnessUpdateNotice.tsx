@@ -8,7 +8,6 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
 import { Toast } from "../../../shared/ui/ToastRegion";
 import { Check } from "../../../shared/ui/icons";
-import { Spinner } from "../../../shared/ui/Spinner";
 import { isPickerProviderVisible } from "../../sessions/model/models";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
@@ -131,11 +130,11 @@ export function HarnessUpdateNotice() {
           />
         ))}
       </div>
-      <Text as="p" size="micro" tone="muted" className="pt-2">
-        {anyUpdated
-          ? t("CLI version verified. Model discovery can be retried in Providers.")
-          : t("New models often need the latest version.")}
-      </Text>
+      {anyUpdated ? (
+        <Text as="p" size="micro" tone="muted" className="pt-2">
+          {t("CLI version verified. Model discovery can be retried in Providers.")}
+        </Text>
+      ) : null}
     </Toast>
   );
 }
@@ -181,20 +180,11 @@ function HarnessUpdateRow({
               variant="ghost"
               size="sm"
               type="button"
-              disabled={state.status === "updating"}
-              className="inline-flex shrink-0 items-center gap-1.5"
+              loading={state.status === "updating"}
+              loadingLabel={t("Updating")}
               onClick={onUpdate}
             >
-              {state.status === "updating" ? (
-                <>
-                  <Spinner size="xs" />
-                  {t("Updating")}
-                </>
-              ) : state.status === "failed" ? (
-                t("Retry")
-              ) : (
-                t("Update")
-              )}
+              {state.status === "failed" ? t("Retry") : t("Update")}
             </Button>
             {state.status === "updating" ? (
               <Button

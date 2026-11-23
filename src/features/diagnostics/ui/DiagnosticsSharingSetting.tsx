@@ -2,6 +2,7 @@ import { useRef, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Text } from "../../../shared/ui/Text";
@@ -36,7 +37,7 @@ export function DiagnosticsSharingSetting() {
     const ok = await confirm({
       title: t("Send logs now"),
       message: t("Help us fix crashes by sending redacted app logs."),
-      confirmLabel: t("Send logs now"),
+      confirmLabel: t("Send"),
       tone: "neutral",
       body: (
         <TextField
@@ -62,6 +63,15 @@ export function DiagnosticsSharingSetting() {
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex flex-wrap items-center justify-end gap-2">
+        {mode !== "off" ? (
+          <InfoPopover label={t("Share diagnostic logs")}>
+            <Text as="p" size="caption" tone="secondary">
+              {mode === "auto"
+                ? t("After a crash they are sent automatically, and once a week.")
+                : t("After a crash you are asked whether to send them.")}
+            </Text>
+          </InfoPopover>
+        ) : null}
         <SegmentedControl
           label={t("Share diagnostic logs")}
           value={mode}
@@ -81,13 +91,6 @@ export function DiagnosticsSharingSetting() {
           {t("Send logs now")}
         </Button>
       </div>
-      {mode !== "off" ? (
-        <Text as="p" size="caption" tone="muted">
-          {mode === "auto"
-            ? t("After a crash they are sent automatically, and once a week.")
-            : t("After a crash you are asked whether to send them.")}
-        </Text>
-      ) : null}
       {result ? (
         <InlineMessage tone={result === "sent" ? "success" : "danger"}>
           {diagnosticResultText(result)}

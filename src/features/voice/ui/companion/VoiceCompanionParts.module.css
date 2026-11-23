@@ -3,21 +3,21 @@
    state, so connecting or speaking never moves a control. */
 .stage {
   display: grid;
-  gap: 10px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
-  margin-block-end: 10px;
-  padding: 10px;
+  margin-block-end: var(--ui-space-2);
+  padding: var(--ui-space-2);
 }
 .stage[data-layout="stage"] {
   justify-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   margin-block-end: 0;
-  padding-block: 4px;
+  padding-block: var(--ui-space-1);
   text-align: center;
 }
 .stage[data-layout="stage"] .status {
   flex-direction: column;
-  gap: 8px;
+  gap: var(--ui-space-2);
   inline-size: 100%;
 }
 .stage[data-layout="stage"] .statusText {
@@ -26,7 +26,7 @@
 }
 .stage[data-layout="stage"] .statusLine {
   justify-content: center;
-  min-block-size: 20px;
+  min-block-size: var(--ui-space-5);
 }
 .stage[data-layout="stage"] .statusEnd {
   margin-inline-start: 0;
@@ -38,11 +38,11 @@
   justify-content: center;
 }
 .stage[data-full-call] {
-  gap: clamp(var(--space-2), 1.3dvh, var(--space-4));
+  gap: clamp(var(--ui-space-2), 1.3dvh, var(--ui-space-4));
   padding: 0;
 }
 .stage[data-full-call] .status {
-  gap: var(--space-3);
+  gap: var(--ui-space-3);
 }
 .stage[data-full-call] .statusLine {
   min-block-size: 1.6rem;
@@ -66,7 +66,7 @@
 .meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -75,26 +75,26 @@
 }
 .clock::before {
   content: "·";
-  margin-inline-end: 8px;
+  margin-inline-end: var(--ui-space-2);
 }
 .status {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
 .statusText {
   display: grid;
   flex: 1 1 0;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .statusLine {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
-  min-block-size: 24px;
+  min-block-size: var(--ui-space-6);
 }
 .statusEnd {
   margin-inline-start: auto;
@@ -106,7 +106,7 @@
 .scope {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 
@@ -114,13 +114,13 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
   min-block-size: 4.5rem;
   max-block-size: min(42dvh, 300px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  margin-block-end: 8px;
+  margin-block-end: var(--ui-space-2);
 }
 .row {
   display: flex;
@@ -131,7 +131,7 @@
 }
 .bubble {
   max-inline-size: 85%;
-  padding: 6px 10px;
+  padding: var(--ui-space-2) var(--ui-space-3);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -141,7 +141,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .bar > * {
@@ -154,7 +154,7 @@
 /* Live call controls: the turn choice, then a centred, phone-style dock of round buttons. */
 .callFooter {
   display: grid;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .callDock {
@@ -162,7 +162,7 @@
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .callDock > * {
@@ -176,7 +176,7 @@
 [data-full-screen] .chat {
   min-block-size: 0;
   max-block-size: none;
-  padding-block-start: var(--space-3);
+  padding-block-start: var(--ui-space-3);
   margin-block-end: 0;
 }
 
@@ -192,7 +192,7 @@
   min-inline-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 8px;
+  padding: var(--ui-space-2);
 }
 
 /* In a window too small for a side panel: docked above the controls with its own scroll. */
@@ -201,7 +201,7 @@
   max-block-size: min(55dvh, 440px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 8px 10px;
+  padding: var(--ui-space-2) var(--ui-space-3);
 }
 
 /* Resize grip in the header: drag outward and up; the icon points the way it resizes. */
@@ -213,15 +213,15 @@
 }
 .resizeEdge[data-resize-direction="n"],
 .resizeEdge[data-resize-direction="s"] {
-  left: 12px;
-  right: 12px;
+  left: var(--ui-space-3);
+  right: var(--ui-space-3);
   block-size: 6px;
   cursor: ns-resize;
 }
 .resizeEdge[data-resize-direction="e"],
 .resizeEdge[data-resize-direction="w"] {
-  top: 12px;
-  bottom: 12px;
+  top: var(--ui-space-3);
+  bottom: var(--ui-space-3);
   inline-size: 6px;
   cursor: ew-resize;
 }
@@ -229,8 +229,8 @@
 .resizeEdge[data-resize-direction="nw"],
 .resizeEdge[data-resize-direction="se"],
 .resizeEdge[data-resize-direction="sw"] {
-  width: 12px;
-  height: 12px;
+  width: var(--ui-space-3);
+  height: var(--ui-space-3);
 }
 .resizeEdge[data-resize-direction="ne"],
 .resizeEdge[data-resize-direction="sw"] {

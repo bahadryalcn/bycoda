@@ -149,6 +149,16 @@ describe("project folder browser", () => {
   });
 
   it("filters growing folder lists without losing selected paths and opens the filtered keyboard target", async () => {
+    // The filter field appears once the listing is long enough to need it.
+    const many = Array.from({ length: 14 }, (_, index) => ({
+      name: `Extra ${index}`,
+      path: `C:/Users/me/Extra ${index}`,
+      isDir: true,
+      ignored: false,
+    }));
+    fs.listDir.mockImplementation(async (path) =>
+      path === "C:/Users/me" ? [...folders, ...many] : [],
+    );
     await render(true);
     await act(async () => option("Projects").click());
     type("Search folders", "note");

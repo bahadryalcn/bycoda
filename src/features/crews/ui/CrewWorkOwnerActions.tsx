@@ -3,7 +3,6 @@ import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { InlineMessage } from "../../../shared/ui/InlineError";
 import { RotateCcw } from "../../../shared/ui/icons";
 import { Select } from "../../../shared/ui/Select";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -71,7 +70,6 @@ function Composer({
   const member = members.find((agent) => agent.id === memberId);
   const [text, setText] = useState("");
   const [choice, setChoice] = useState<"assign" | "note">("assign");
-  const [sent, setSent] = useState(false);
   const action = useOwnerAction();
   const mode = composerCanAssign(run, member) ? choice : "note";
   const title = composerTitle(text);
@@ -108,7 +106,6 @@ function Composer({
       .then((ok) => {
         if (!ok || currentDraft.current !== draftIdentity) return;
         setText((current) => (current === text ? "" : current));
-        setSent(mode === "note");
       });
   return (
     <div className="mt-3 flex max-w-[46rem] flex-col gap-2">
@@ -118,10 +115,7 @@ function Composer({
             label={t("Send to")}
             value={memberId}
             options={members.map((agent) => ({ value: agent.id, label: agent.name }))}
-            onValueChange={(id) => {
-              onMemberChange(id);
-              setSent(false);
-            }}
+            onValueChange={onMemberChange}
           />
         </div>
         {composerCanAssign(run, member) ? (
@@ -143,13 +137,9 @@ function Composer({
         placeholder={t("Write a message")}
         minRows={2}
         value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          setSent(false);
-        }}
+        onChange={(e) => setText(e.target.value)}
       />
       {action.error ? <InlineError>{action.error}</InlineError> : null}
-      {sent ? <InlineMessage tone="success">{t("Note sent to the lead.")}</InlineMessage> : null}
       <div>
         <Button
           size="sm"

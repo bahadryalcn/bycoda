@@ -88,7 +88,6 @@ export function JobReviewDialog() {
             variant="primary"
             loading={pending?.key === "jobs.create"}
             disabled={blocked}
-            disabledReason={blockedReason}
             onClick={() =>
               submitJobs().catch((error: unknown) =>
                 room.setError({ key: "jobs.create", text: errorText(error) }),
@@ -155,15 +154,16 @@ export function JobReviewDialog() {
                 />
                 {jobReview.length > 1 && (
                   <Button
+                    iconOnly
                     size="sm"
                     variant="ghost"
-                    startIcon={<X className="icon-sm" aria-hidden />}
+                    label={t("Remove request")}
                     disabled={jobReviewFrozen || Boolean(pending)}
                     onClick={() =>
                       setJobReview((current) => current!.filter((item) => item.id !== draft.id))
                     }
                   >
-                    {t("Remove job")}
+                    <X className="icon-sm" aria-hidden />
                   </Button>
                 )}
               </div>
@@ -203,7 +203,6 @@ export function JobReviewDialog() {
                 <SearchableSelect
                   label={t("Participating projects")}
                   multiple
-                  placeholder={t("Choose projects")}
                   showSelectedValues
                   selectionLabels={{ done: t("Done") }}
                   value={draft.projectIds}
@@ -225,7 +224,6 @@ export function JobReviewDialog() {
                 />
                 <SearchableSelect
                   label={t("Lead project")}
-                  placeholder={t("Choose the lead project")}
                   value={draft.projectId}
                   disabled={jobReviewFrozen || !!pending || !draft.projectIds.length}
                   options={projects

@@ -105,7 +105,7 @@ it("reads the policy of this account and starts every action at Suggest only", a
     expect(levelTrigger(label)?.getAttribute("aria-label")).toBe(`${label}: Suggest only`);
   expect(AUTONOMY_ACTIONS.every((action) => stored.levels[action] === "suggest")).toBe(true);
   expect(button("Save autonomy")?.disabled).toBe(true);
-  expect(element.textContent).toContain("No changes to save.");
+  expect(element.textContent).not.toContain("No changes to save.");
 });
 
 it("says plainly when the policy cannot be read and shows no editable levels", async () => {

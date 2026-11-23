@@ -125,10 +125,7 @@ async function pollOnce() {
 }
 
 async function openInstallStep(client: DecisionModelsClient) {
-  const view = await renderWizard(client);
-  clickButton("Continue");
-  await settleDecisionUi();
-  return view;
+  return renderWizard(client);
 }
 
 describe("LocalInstallWizard", () => {
@@ -156,7 +153,6 @@ describe("LocalInstallWizard", () => {
         }),
     );
     const { onClose } = await renderWizard(client);
-    clickButton("Continue");
     clickButton("Install");
     await settleDecisionUi();
     const close = document.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!;
@@ -176,13 +172,11 @@ describe("LocalInstallWizard", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("installs the recommended model only after an explicit confirmation", async () => {
+  it("installs the recommended model only when Install is pressed", async () => {
     const { client, mocks } = createClient({
       recommendation: { tier: "strong", modelId: "clef-flash-9b" },
     });
     await renderWizard(client);
-    clickButton("Continue");
-    await settleDecisionUi();
     expect(mocks.install).not.toHaveBeenCalled();
     clickButton("Install");
     await settleDecisionUi();
@@ -316,23 +310,22 @@ describe("LocalInstallWizard", () => {
     expect(bodyText()).toContain(
       `Not enough free disk space: ${formatBytes(5 * 1024 ** 3)} needed.`,
     );
-    expect(buttonByText("Continue")).toBeUndefined();
     expect(buttonByText("Install")).toBeUndefined();
     expect(buttonByText("Choose an API provider")).toBeDefined();
   });
 
-  it("holds install while its plan is unknown and retries a failed plan before enabling Continue", async () => {
+  it("holds install while its plan is unknown and retries a failed plan before enabling Install", async () => {
     const { client, mocks } = createClient({
       recommendation: { tier: "strong", modelId: "clef-flash-9b" },
     });
     mocks.plan.mockRejectedValueOnce(new Error("Disk unavailable"));
     await renderWizard(client);
-    expect(buttonByText("Continue")?.disabled).toBe(true);
+    expect(buttonByText("Install")?.disabled).toBe(true);
     expect(mocks.install).not.toHaveBeenCalled();
-    clickButton("Try again");
+    clickButton("Retry");
     await settleDecisionUi();
     expect(mocks.plan).toHaveBeenCalledTimes(2);
-    expect(buttonByText("Continue")?.disabled).toBe(false);
+    expect(buttonByText("Install")?.disabled).toBe(false);
   });
 
   it("offers a retry when the hardware check fails", async () => {
@@ -342,7 +335,7 @@ describe("LocalInstallWizard", () => {
     });
     await renderWizard(client);
     expect(bodyText()).toContain("Could not check this computer.");
-    clickButton("Try again");
+    clickButton("Retry");
     await settleDecisionUi();
     expect(mocks.hardware).toHaveBeenCalledTimes(2);
     expect(bodyText()).toContain("Processor: 8 cores");

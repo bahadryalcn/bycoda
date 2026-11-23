@@ -738,22 +738,26 @@ describe("settings navigation", () => {
     ).toBe(true);
   });
 
-  it("lists every section under exactly one rail group", () => {
+  it("lists each main destination under exactly one settings area", () => {
     const groups = settingsSectionsByGroup();
     expect(groups.map((group) => group.id)).toEqual([
-      "app",
-      "agents",
-      "tools",
-      "code",
-      "connections",
-      "about",
       "account",
+      "app",
+      "conversation",
+      "models",
+      "workspace",
+      "connections",
+      "privacy",
+      "tools",
+      "help",
     ]);
-    expect(groups.at(-1)?.sections.map((section) => section.id)).toEqual(["account"]);
+    expect(groups[0]?.sections.map((section) => section.id)).toEqual(["account"]);
     const ids = groups.flatMap((group) => group.sections.map((section) => section.id));
-    expect(ids).toHaveLength(23);
-    expect(new Set(ids).size).toBe(23);
-    expect([...ids].sort()).toEqual(SETTINGS_SECTIONS.map((section) => section.id).sort());
+    expect(ids).toHaveLength(21);
+    expect(new Set(ids).size).toBe(21);
+    expect([...ids].sort()).toEqual(
+      SETTINGS_SECTIONS.map((section) => section.id).filter((id) => id !== "tools" && id !== "archive").sort(),
+    );
     for (const group of groups) {
       expect(group.sections.every((section) => section.group === group.id)).toBe(true);
     }
@@ -783,39 +787,63 @@ describe("settings navigation", () => {
     ).toBe(true);
   });
 
-  it("maps the sections into IDE-style groups", () => {
+  it("groups the sections by outcome", () => {
     const byGroup = Object.fromEntries(
       settingsSectionsByGroup().map((group) => [group.id, group.sections.map((s) => s.id)]),
     );
     expect(byGroup.app).toEqual([
       "general",
       "appearance",
-      "chat",
-      "voice",
-      "notifications",
-      "permissions",
       "keybindings",
-      "groupLock",
-      "archive",
     ]);
-    expect(byGroup.agents).toEqual(["providers", "decisionModels", "usage"]);
-    expect(byGroup.tools).toEqual(["skills", "mcp", "secrets", "tools"]);
-    expect(byGroup.code).toEqual(["workspace", "terminal", "worktrees"]);
+    expect(byGroup.conversation).toEqual(["chat", "voice", "notifications"]);
+    expect(byGroup.models).toEqual(["providers", "decisionModels", "usage"]);
+    expect(byGroup.tools).toEqual(["skills", "mcp"]);
+    expect(byGroup.workspace).toEqual(["workspace", "terminal", "worktrees"]);
     expect(byGroup.connections).toEqual(["connections", "integrations"]);
-    expect(byGroup.about).toEqual(["policies"]);
+    expect(byGroup.privacy).toEqual(["groupLock", "permissions", "secrets"]);
+    expect(byGroup.help).toEqual(["policies"]);
   });
 
   it("points every indexed setting at a real section", () => {
-    const sections = new Set(
-      settingsSectionsByGroup().flatMap((group) => group.sections.map((section) => section.id)),
-    );
+    const sections = new Set(SETTINGS_SECTIONS.map((section) => section.id));
     for (const entry of SETTINGS_INDEX) {
       expect(sections.has(entry.section), entry.id).toBe(true);
     }
   });
+
+  it.each([
+    ["general", "remote-media", "connections"],
+    ["general", "performance-trace", "policies"],
+    ["general", "getting-started", "policies"],
+    ["general", "import-history", "archive"],
+    ["general", "session-folder", "workspace"],
+    ["workspace", "exact-git-rewind", "worktrees"],
+    ["account", "anonymous-statistics", "groupLock"],
+    ["mcp", "external-mcp-access", "groupLock"],
+    ["tools", "bykit-instructions", "providers"],
+    ["notifications", "project-notifications", "notifications"],
+  ] as const)("resolves %s/%s to %s", (oldSection, anchor, section) => {
+    expect(settingsSectionForAnchor(oldSection, anchor)).toBe(section);
+  });
 });
 
 describe("settings search", () => {
+  it.each([
+    "transcript-preset",
+    "transcript-surface",
+    "transcript-surface-opacity",
+    "transcript-surface-blur",
+    "chat-message-color",
+    "user-message-opacity",
+    "transcript-body-ink",
+    "transcript-chrome-ink",
+    "transcript-cards",
+    "transcript-actions",
+  ])("opens Chat for the transcript setting %s", (id) => {
+    expect(settingsSectionForAnchor("appearance", id)).toBe("chat");
+  });
+
   it("routes tool search results to one page with stable row anchors", () => {
     for (const query of ["viewport", "device", "logs", "development servers", "search engine"]) {
       const matches = searchSettings(query, 100).filter((result) => result.section === "tools");
@@ -848,6 +876,7 @@ describe("settings search", () => {
       ...(IS_LINUX ? [] : ["Window glass"]),
       "Blur radius",
       "Main pane opacity",
+      "Reading look",
       "Sidebar opacity",
       "Your message opacity",
       "Appearance",

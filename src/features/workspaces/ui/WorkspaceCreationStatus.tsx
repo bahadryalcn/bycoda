@@ -27,6 +27,8 @@ export function WorkspaceCreationStatus({
   // A machine connection failure is explained once by the central notice, which owns reconnecting.
   const centrally = useConnectionErrorShownCentrally(error);
   if (!error && !preview) return null;
+  // A session without a project has no managed workspace to create: nothing to explain or retry.
+  if (error === t("Choose a project to use managed workspaces.")) return null;
   if (centrally && !onUseCurrentCheckout) return null;
   return (
     <Text
@@ -41,7 +43,7 @@ export function WorkspaceCreationStatus({
         <>
           {centrally ? null : (
             <Text size="inherit" tone="danger" className="min-w-0 flex-1 break-words">
-              {t(error)}
+              {error}
             </Text>
           )}
           {onUseCurrentCheckout ? (

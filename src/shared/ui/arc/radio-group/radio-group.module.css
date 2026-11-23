@@ -86,7 +86,8 @@
 .group[data-variant="inline"] .options {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
+  /* Independent bordered choices keep the standard 8px control gap so they never read as joined. */
+  gap: var(--ui-space-2);
 }
 .group[data-variant="inline"] .option {
   align-items: center;

@@ -142,15 +142,10 @@ export function TranslationResultDialog({
     runnable,
     routingReady,
   ]);
-  const hintText = pending
-    ? elapsed >= 12
+  const hintText =
+    pending && elapsed >= 12
       ? t("Taking longer than usual. You can cancel or choose another model.")
-      : null
-    : result && !error && reprompt
-      ? t("After applying: ↑ original, ↓ rewritten prompt.")
-      : result && !error
-        ? t("After applying: ↑ original, ↓ translation.")
-        : null;
+      : null;
   return (
     <Modal
       title={
@@ -159,11 +154,6 @@ export function TranslationResultDialog({
           : target === "en"
             ? t("Translate to English")
             : t("Translate to Chinese")
-      }
-      description={
-        reprompt
-          ? t("Review the clearer prompt before applying it to your text.")
-          : t("Review the translation before applying it to your text.")
       }
       size="lg"
       onClose={onClose}
@@ -189,11 +179,6 @@ export function TranslationResultDialog({
               }}
             >
               {reprompt ? t("Reprompt") : t("Translate selected text")}
-            </Button>
-          ) : null}
-          {error ? (
-            <Button variant="secondary" onClick={() => setAttempt(attempt + 1)}>
-              {t("Retry")}
             </Button>
           ) : null}
           {result && !pending && !error ? (
@@ -231,9 +216,6 @@ export function TranslationResultDialog({
         className={`bycoda-arc ${styles.content}`}
       >
         <div className={styles.modelRow}>
-          <Text size="caption" tone="secondary" leading="inherit">
-            {reprompt ? t("Reprompt model") : t("Translation model")}
-          </Text>
           <ModelPicker
             harness={translator.harness}
             model={translator.model ?? ""}
@@ -307,13 +289,7 @@ export function TranslationResultDialog({
                 role="status"
               >
                 {pending ? <Spinner size="xs" /> : null}
-                {pending
-                  ? reprompt
-                    ? t("Rewriting…")
-                    : t("Translating…")
-                  : result && !error
-                    ? t("Ready")
-                    : t("Preview")}
+                {pending ? (reprompt ? t("Rewriting…") : t("Translating…")) : null}
                 {pending ? (
                   <span aria-hidden="true" className={styles.elapsed}>
                     {elapsed}s
@@ -337,7 +313,10 @@ export function TranslationResultDialog({
                   </div>
                 </Text>
               ) : error ? (
-                <Alert tone="danger">
+                <Alert
+                  tone="danger"
+                  action={{ label: t("Retry"), onClick: () => setAttempt(attempt + 1) }}
+                >
                   {error === "authentication"
                     ? reprompt
                       ? t(
@@ -392,9 +371,7 @@ export function TranslationResultDialog({
                       ? reprompt
                         ? t("Choose a reprompt model.")
                         : t("Choose a translation model.")
-                      : reprompt
-                        ? t("Reprompt")
-                        : t("Translate selected text")}
+                      : null}
                 </Text>
               )}
             </div>
@@ -406,8 +383,7 @@ export function TranslationResultDialog({
               ? t("The text changed. Select it again to reprompt.")
               : t("The text changed. Select it again to translate.")}
           </Alert>
-        ) : null}
-        {copyFailed && result && !error ? (
+        ) : copyFailed && result && !error ? (
           <Alert tone="danger">
             {reprompt
               ? t(

@@ -3,7 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useMemo, useState, type CSSProperties } from "react";
-import { formatNumber, t, useLocale } from "../../../shared/i18n";
+import { formatDate, formatNumber, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import {
@@ -95,8 +95,8 @@ export function UsageTrend({
         label: formatBucket(bucket.start, resolution),
         axisLabel:
           index % Math.max(1, Math.ceil(buckets.length / 6)) === 0
-            ? new Date(bucket.start).toLocaleString(
-                locale,
+            ? formatDate(
+                bucket.start,
                 resolution === "hour" || resolution === "15m"
                   ? { hour: "2-digit", minute: "2-digit", hour12: false }
                   : { month: "short", day: "numeric" },
@@ -124,27 +124,9 @@ export function UsageTrend({
       data-usage-chart="trend"
     >
       <div className="usage-section-heading">
-        <div>
-          <Heading size="item" level={3}>
-            {t("Usage over time")}
-          </Heading>
-          <Text as="p" leading="inherit" className="usage-muted">
-            {t(metricNames[metric])} ·{" "}
-            {t({ "15m": "15 minutes", hour: "Hourly", day: "Daily", week: "Weekly" }[resolution])}
-          </Text>
-        </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={!point && buckets.length !== 1}
-          disabledReason={t("Hover or focus a point first")}
-          onClick={() => {
-            const interval = point ?? (buckets.length === 1 ? buckets[0] : undefined);
-            if (interval) onSelect({ start: interval.start, end: interval.end });
-          }}
-        >
-          {t("Select interval")}
-        </Button>
+        <Heading size="item" level={3}>
+          {t("Usage over time")}
+        </Heading>
       </div>
       {buckets.length === 1 ? (
         <div className="usage-single-period">
@@ -196,6 +178,18 @@ export function UsageTrend({
               </Button>
             ))}
           </div>
+          {/* Clicking (or Enter on) the hovered or focused point selects its interval. */}
+          {/* oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Enter handler for the chart's own focusable points; pointer click on the active point. */}
+          <div
+            onClick={() => {
+              if (point) onSelect({ start: point.start, end: point.end });
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || !point) return;
+              event.preventDefault();
+              onSelect({ start: point.start, end: point.end });
+            }}
+          >
           <LineChart
             label={t("Usage over time")}
             data={series.length ? data : []}
@@ -219,6 +213,7 @@ export function UsageTrend({
             // The chart reports null when the pointer leaves, focus leaves or the data changes; clear the selection with it.
             onActiveChange={(_, datum) => setActive(datum?.key ?? null)}
           />
+          </div>
         </>
       )}
       <Disclosure
@@ -357,9 +352,6 @@ export function Contribution({
         <Heading size="item" level={3}>
           {title}
         </Heading>
-        <Text as="span" leading="inherit">
-          {t("Share of selected usage")}
-        </Text>
       </div>
       <div className="usage-contributions">{rows.slice(0, 5).map(renderRow)}</div>
       {!rows.length && (
@@ -371,21 +363,16 @@ export function Contribution({
         />
       )}
       {rows.length > 5 && (
-        <>
-          <Text as="p" leading="inherit" className="usage-muted">
-            {t("Top 5 shown")}
-          </Text>
-          <Disclosure
-            size="sm"
-            summary={t("Show all")}
-            count={rows.length - 5}
-            open={expanded}
-            onOpenChange={setExpanded}
-          >
-            {/* Rows past the first five mount only while open, so long tails stay cheap. */}
-            {expanded && <div className="usage-contributions">{rows.slice(5).map(renderRow)}</div>}
-          </Disclosure>
-        </>
+        <Disclosure
+          size="sm"
+          summary={t("Show all")}
+          count={rows.length - 5}
+          open={expanded}
+          onOpenChange={setExpanded}
+        >
+          {/* Rows past the first five mount only while open, so long tails stay cheap. */}
+          {expanded && <div className="usage-contributions">{rows.slice(5).map(renderRow)}</div>}
+        </Disclosure>
       )}
     </section>
   );
@@ -534,7 +521,7 @@ export function TimeDistribution({
           label: formatBucket(bucket.start, chronologicalResolution),
           axisLabel:
             index % Math.max(1, Math.ceil(all.length / 6)) === 0
-              ? new Date(bucket.start).toLocaleString(locale, {
+              ? formatDate(bucket.start, {
                   month: "short",
                   day: "numeric",
                   hour: "2-digit",
@@ -557,8 +544,7 @@ export function TimeDistribution({
     focusStart.getTime() + 3_600_000 > window.start
       ? focus
       : `${new Date(Math.max(from, window.start)).getHours()}:0`;
-  const dateLabel = (at: number) =>
-    new Date(at).toLocaleDateString(locale, { month: "short", day: "numeric" });
+  const dateLabel = (at: number) => formatDate(at, { month: "short", day: "numeric" });
   const calendarDays = [];
   for (let date = Math.max(startDay, addDays(endDay, -89)); date <= endDay; date = addDays(date, 1))
     calendarDays.push({ date: dayKey(date), count: daily.get(dayKey(date)) ?? 0 });
@@ -695,9 +681,9 @@ export function TimeDistribution({
                 role="columnheader"
               >
                 <Text as="b" size="inherit" tone="primary" weight="medium">
-                  {new Date(date).toLocaleDateString(locale, { weekday: "short" })}
+                  {formatDate(date, { weekday: "short" })}
                 </Text>
-                {new Date(date).toLocaleDateString(locale, { day: "numeric" })}
+                {formatDate(date, { day: "numeric" })}
               </Text>
             ))}
           </div>

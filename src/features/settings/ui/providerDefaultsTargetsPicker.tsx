@@ -141,9 +141,9 @@ export function DefaultsTargetsPicker({
           kind="dialog"
           aria-label={t("Apply defaults to")}
           onDismiss={() => setOpen(false)}
-          className="provider-targets-popover"
+          variant="panel"
         >
-          <div className="p-2">
+          <div>
             <SegmentedControl
               label={t("Defaults scope")}
               value={mode}
@@ -157,11 +157,7 @@ export function DefaultsTargetsPicker({
               }}
             />
           </div>
-          {mode === "default" ? (
-            <Text as="p" size="secondary" tone="secondary" wrap="normal" className="px-3 pb-3">
-              {t("New conversations use these defaults unless a project has its own settings.")}
-            </Text>
-          ) : (
+          {mode === "projects" ? (
             <>
               <PopoverSearchHeader
                 {...list.searchProps}
@@ -184,7 +180,7 @@ export function DefaultsTargetsPicker({
                 className="min-h-0 overflow-y-auto"
               />
             </>
-          )}
+          ) : null}
           <PickerFooter align="between">
             {mode === "projects" ? (
               <Text size="caption" tone="secondary">
@@ -229,16 +225,14 @@ export function ProviderDefaultsScopeRow({
   );
   if (!values.length) values.push("global");
   return (
-    <Group id="defaults-scope" layout="full" title={t("Applies to")}>
+    <Group id="defaults-scope" layout="full" title={null}>
       <Row label={t("Defaults saved to")}>
         <DefaultsTargetsPicker
           values={values}
           options={options}
           onChange={(next) => onTargetChange(JSON.stringify(next))}
         />
-      </Row>
-      {draft && onDraftChange ? (
-        <Row label={t("Apply to")}>
+        {draft && onDraftChange ? (
           <SegmentedControl
             label={t("Provider scope")}
             value={draft.providerScope ?? "this"}
@@ -260,8 +254,8 @@ export function ProviderDefaultsScopeRow({
               onDraftChange({ ...draft, providerScope: value === "all" ? "all" : undefined })
             }
           />
-        </Row>
-      ) : null}
+        ) : null}
+      </Row>
     </Group>
   );
 }

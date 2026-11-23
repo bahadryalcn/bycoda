@@ -2,7 +2,6 @@ import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import type { CrewManagedSession } from "../model/crewManagedSessions";
 import { openCrewsPageAt } from "../model/crewsPage";
 import { roleLabel } from "./CrewMemberForm";
@@ -27,7 +26,6 @@ export function CrewManagedBar({
   const role = managed.memberName
     ? `${managed.memberName} · ${roleLabel(managed.role)}`
     : roleLabel(managed.role);
-  const managedNote = `${role} · ${t("Managed from Crews")}`;
   return (
     <Surface
       data-crew-managed-bar=""
@@ -40,11 +38,7 @@ export function CrewManagedBar({
         <Text size="secondary" tone="inherit" weight="medium" truncate>
           {managed.crewName}
         </Text>
-        <OverflowTooltip label={managedNote}>
-          <Text truncate tabIndex={0}>
-            {managedNote}
-          </Text>
-        </OverflowTooltip>
+        <Text truncate>{role}</Text>
       </span>
       <Button
         variant="primary"

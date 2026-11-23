@@ -5,6 +5,7 @@ import { AssistantView } from "../surfaces/lazySurfaces";
 import { isProjectLocked } from "../../../features/group-lock/model/groupLock";
 import { invoke } from "@tauri-apps/api/core";
 import { remoteRequest } from "../../../features/connections/model/connections";
+import { t } from "../../../shared/i18n";
 import type { HostGoal } from "../../../features/tasks/model/hostGoals";
 import { AssistantResponseValidationSchema } from "../../../shared/model/host-contracts/assistant";
 import { HostAutomationSchema } from "../../../shared/model/host-contracts/automations";
@@ -57,6 +58,12 @@ type InboxProps = ComponentProps<typeof InboxView>;
 type NotesProps = ComponentProps<typeof NotesView>;
 type AutomationsProps = ComponentProps<typeof AutomationsView>;
 type SetBoolean = Dispatch<SetStateAction<boolean>>;
+
+class LinkedTargetUnavailable extends Error {
+  constructor(readonly reason: "host" | "target") {
+    super(reason === "host" ? t("Host unavailable. Try again.") : t("The linked item is unavailable."));
+  }
+}
 
 export interface WorkspaceToolPanelsProps {
   serverAgent?: ContextType<typeof ServerAgentContext>;
@@ -314,15 +321,14 @@ function WorkspaceToolPanelsComponent({
             onOpenProject={
               onSelectAssistantProject
                 ? (path) => {
-                    if (!canOpenAssistantProject(path))
-                      throw new Error("The linked project is unavailable.");
+                    if (!canOpenAssistantProject(path)) throw new LinkedTargetUnavailable("target");
                     onSelectAssistantProject(path);
                   }
                 : undefined
             }
             onOpenGoal={async (target) => {
               const machine = await invoke<RemoteMachine | null>("local_host_connect");
-              if (!machine) throw new Error("The approval's original Host is unavailable.");
+              if (!machine) throw new LinkedTargetUnavailable("host");
               const [environment, projects, goals] = await Promise.all([
                 remoteRequest<{ environmentId: string }>(
                   machine.id,
@@ -369,16 +375,14 @@ function WorkspaceToolPanelsComponent({
                 goal.updatedAt !== target.updatedAt ||
                 JSON.stringify(goal.plan) !== target.planIdentity
               )
-                throw new Error(
-                  "The original goal approval changed or its project is unavailable.",
-                );
+                throw new LinkedTargetUnavailable("target");
               setGoalReveal({ machineId: machine.id, goalId: goal.id, token: Date.now() });
               onSelectTool("tasks");
             }}
             onReviewJobTasks={async (target) => {
               const machine = await invoke<RemoteMachine | null>("local_host_connect");
               if (!machine || !target.environmentId)
-                throw new Error("The linked job's Host identity is unavailable.");
+                throw new LinkedTargetUnavailable("host");
               const [environment, projects, response, goals] = await Promise.all([
                 remoteRequest<{ environmentId: string }>(
                   machine.id,
@@ -415,7 +419,7 @@ function WorkspaceToolPanelsComponent({
               ]);
               const current = await invoke<RemoteMachine | null>("local_host_connect");
               if (current?.id !== machine.id || current.environmentId !== target.environmentId)
-                throw new Error("The linked job's Host identity is unavailable.");
+                throw new LinkedTargetUnavailable("host");
               const goal = assistantJobTasksGoal(
                 target,
                 environment.environmentId,
@@ -429,10 +433,10 @@ function WorkspaceToolPanelsComponent({
             }}
             onOpenAutomation={async (target) => {
               const machine = await invoke<RemoteMachine | null>("local_host_connect");
-              if (!machine) throw new Error("This computer's Host is unavailable.");
+              if (!machine) throw new LinkedTargetUnavailable("host");
               const expectedEnvironmentId = target.environmentId ?? machine.environmentId;
               if (!expectedEnvironmentId)
-                throw new Error("The linked automation's Host identity is unavailable.");
+                throw new LinkedTargetUnavailable("host");
               const [environment, projects, automations] = await Promise.all([
                 remoteRequest<{ environmentId: string }>(
                   machine.id,
@@ -461,7 +465,7 @@ function WorkspaceToolPanelsComponent({
               ]);
               const current = await invoke<RemoteMachine | null>("local_host_connect");
               if (current?.id !== machine.id || current.environmentId !== expectedEnvironmentId)
-                throw new Error("The linked automation's Host identity is unavailable.");
+                throw new LinkedTargetUnavailable("host");
               assistantAutomationProject(
                 target,
                 expectedEnvironmentId,
@@ -481,10 +485,10 @@ function WorkspaceToolPanelsComponent({
             }}
             onOpenSession={async (sessionId, sourceEnvironmentId?: string) => {
               const machine = await invoke<RemoteMachine | null>("local_host_connect");
-              if (!machine) throw new Error("This computer's Host is unavailable.");
+              if (!machine) throw new LinkedTargetUnavailable("host");
               const expectedEnvironmentId = sourceEnvironmentId ?? machine.environmentId;
               if (!expectedEnvironmentId)
-                throw new Error("The linked session's Host identity is unavailable.");
+                throw new LinkedTargetUnavailable("host");
               const [host, projects] = await Promise.all([
                 remoteRequest<HostSession | null>(
                   machine.id,
@@ -509,7 +513,7 @@ function WorkspaceToolPanelsComponent({
               ]);
               const project = projects.projects?.find((value) => value.id === host?.projectId);
               if (!host || !project || !canOpenAssistantProject(project.path))
-                throw new Error("The linked session is unavailable.");
+                throw new LinkedTargetUnavailable("target");
               await onOpenBackgroundSession({
                 machineId: machine.id,
                 projectId: host.projectId,
@@ -653,7 +657,7 @@ function WorkspaceToolPanelsComponent({
             revealAutomation={automationReveal}
             onOpenTask={(target) => {
               if (isProjectLocked(target.cwd))
-                throw new Error("The linked project is unavailable.");
+                throw new LinkedTargetUnavailable("target");
               setTaskReveal({ ...target, token: Date.now() });
               onSelectTool("tasks");
             }}

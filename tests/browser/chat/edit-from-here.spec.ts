@@ -53,7 +53,9 @@ for (const worktree of [false, true]) {
     page,
   }) => {
     await open(page, worktree ? "worktree" : "");
-    await expect(dialog(page)).toContainText("Your files stay as they are.");
+    await expect(
+      dialog(page).getByRole("switch", { name: "Also revert file changes" }),
+    ).not.toBeChecked();
     await dialog(page).getByRole("button", { name: "Edit from here", exact: true }).click();
     await restored(page);
     expect((await fixture(page)).calls.map((call) => call.command)).toEqual([
@@ -214,7 +216,9 @@ for (const width of [1280, 800])
         animations: "disabled",
       });
       await page.keyboard.press("Enter");
-      await expect(dialog(page)).toContainText("Your files stay as they are.");
+      await expect(
+        dialog(page).getByRole("switch", { name: "Also revert file changes" }),
+      ).not.toBeChecked();
       await page.screenshot({
         path: `temp/verification/v94w2/dialog-${width}-${theme}.png`,
         animations: "disabled",

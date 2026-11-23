@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   registerSshWorkspaceUi,
   type SshWorkspaceUiOwner,
@@ -7,7 +7,8 @@ import {
 } from "../model/sshMobileWorkspaceControl";
 import { invoke } from "@tauri-apps/api/core";
 import { TerminalView } from "../../terminal/ui/TerminalView";
-import { ToolHeader } from "../../../app/shell/ToolNavigation";
+import { ToolHeader, ToolNavigationContext } from "../../../app/shell/ToolNavigation";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
@@ -48,6 +49,8 @@ export function ServersTerminalWorkspace({
   visible?: boolean;
 }) {
   useLocale();
+  const navigation = useContext(ToolNavigationContext);
+  const windowControls = !IS_MAC ? <WindowControls /> : null;
   const proxyApproval = useSshHttpProxyApproval();
   const startupNotified = useRef(new Set<string>());
   const mounted = useRef(true);
@@ -278,10 +281,7 @@ export function ServersTerminalWorkspace({
       {
         id,
         restoreId,
-        name:
-          shellIntegration && shellIntegration !== "auto"
-            ? `${name} · ${shellIntegration === "powershell" ? "PowerShell 7" : shellIntegration === "zsh" ? "Zsh" : "Bash"}`
-            : name,
+        name,
         server,
         expectedConfigurationDigest,
         shellIntegration,
@@ -391,10 +391,16 @@ export function ServersTerminalWorkspace({
             className={active ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"}
             inert={!active ? true : undefined}
           >
+            {/* The tool navigation (when present) is the only title row; the tab strip below names each terminal. */}
+            {navigation?.active ? (
+              <PaneHeader dragRegion trailing={windowControls}>
+                <ToolHeader>{null}</ToolHeader>
+              </PaneHeader>
+            ) : null}
             <div
               {...surfaceAttributes(
-                { frame: "pane", edge: "bottom" },
-                "flex h-10 min-w-0 shrink-0 items-center",
+                { frame: "pane", edge: "bottom", variant: "workspace-panel" },
+                "flex shrink-0 items-start gap-1 px-2 py-1",
               )}
             >
               <Button
@@ -406,38 +412,16 @@ export function ServersTerminalWorkspace({
               >
                 <ArrowLeft className="icon-sm" />
               </Button>
-              <ToolHeader>
-                <Text
-                  as="div"
-                  size="body"
-                  tone="inherit"
-                  className="flex min-w-0 items-center gap-2 px-3"
-                >
-                  <Terminal aria-hidden className="icon-sm shrink-0" tone="secondary" />
-                  {/* The tab strip below names each terminal and its state; the header only says where we are. */}
-                  <Text size="inherit" tone="inherit" truncate>
-                    {t("SSH terminal")}
-                  </Text>
-                </Text>
-              </ToolHeader>
-              {!IS_MAC ? <WindowControls /> : null}
-            </div>
-            <Tabs
-              value={active ?? ""}
-              onValueChange={(id) => {
-                const next = terminals.find((item) => item.id === id);
-                if (!next) return;
-                setActive(next.id);
-                serverTerminalRestoreState.activate(next.restoreId);
-              }}
-            >
-              <TabList
-                {...surfaceAttributes(
-                  { frame: "pane", edge: "bottom", variant: "workspace-panel" },
-                  "flex shrink-0 gap-1 overflow-x-auto px-2 py-1",
-                )}
-                label={t("SSH terminals")}
+              <Tabs
+                value={active ?? ""}
+                onValueChange={(id) => {
+                  const next = terminals.find((item) => item.id === id);
+                  if (!next) return;
+                  setActive(next.id);
+                  serverTerminalRestoreState.activate(next.restoreId);
+                }}
               >
+                <TabList className="min-w-0 flex-1" scroll="wrap" label={t("SSH terminals")}>
                 {terminals.map((terminal) => (
                   <ActionHost
                     key={terminal.id}
@@ -488,8 +472,10 @@ export function ServersTerminalWorkspace({
                     </InlineAction>
                   </ActionHost>
                 ))}
-              </TabList>
-            </Tabs>
+                </TabList>
+              </Tabs>
+              {navigation?.active ? null : windowControls}
+            </div>
             {terminals.map((terminal) => (
               <div
                 key={terminal.id}
@@ -500,11 +486,6 @@ export function ServersTerminalWorkspace({
                   active === terminal.id ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"
                 }
               >
-                {terminal.keyGenerationPath ? (
-                  <Text wrap="anywhere" as="p" tone="muted" className="shrink-0 px-3 py-2">
-                    {t("Identity file")}: {terminal.keyGenerationPath}
-                  </Text>
-                ) : null}
                 <ServerTerminalAgent
                   visible={visible && active === terminal.id}
                   target={
@@ -520,8 +501,6 @@ export function ServersTerminalWorkspace({
                   {(actions, onSendToAgent, onSendToHost) => (
                     <ServerTerminalSession
                       actions={actions}
-                      name={terminal.name}
-                      lifecycle={terminal.lifecycle}
                       keyGenerationPath={terminal.keyGenerationPath}
                       target={terminal.server?.machine?.ssh?.target}
                       port={terminal.server?.machine?.ssh?.port}
@@ -674,7 +653,7 @@ export function ServersTerminalWorkspace({
                                     {
                                       id,
                                       restoreId,
-                                      name: `${terminal.name} · ${shell === "powershell" ? "PowerShell 7" : shell === "zsh" ? "Zsh" : "Bash"}`,
+                                      name: terminal.name,
                                       server: terminal.server,
                                       endpoint: terminal.endpoint
                                         ? { ...terminal.endpoint }

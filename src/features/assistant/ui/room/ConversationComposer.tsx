@@ -33,7 +33,6 @@ export function ConversationComposer({
     <div className={styles.composer}>
       <AssistantChatComposer
         label={t("Message {p0}", { p0: name })}
-        placeholder={t("Message {p0}", { p0: name })}
         value={
           threadId && (!isTauri() || nativeDraftDisplayed === nativeDraftKey)
             ? (drafts[threadId] ?? "")

@@ -373,17 +373,15 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
                 onEdit={editCollection}
                 onDelete={(list) => void removeCollection(list)}
               />
-              <div className="audience-row">
-                <SearchInput
-                  containerClassName="audience-search"
-                  appearance="field"
-                  aria-label={t("Search people")}
-                  placeholder={t("Search by name")}
-                  value={query}
-                  onChange={(event) => changeQuery(event.target.value)}
-                  clearable
-                />
-              </div>
+              <SearchInput
+                containerClassName="audience-search"
+                appearance="field"
+                aria-label={t("Search people")}
+                placeholder={t("Search by name")}
+                value={query}
+                onChange={(event) => changeQuery(event.target.value)}
+                clearable
+              />
               {selected.size ? (
                 <BulkBar
                   count={selected.size}

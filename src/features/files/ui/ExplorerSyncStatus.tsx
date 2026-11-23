@@ -22,9 +22,6 @@ export function ExplorerSyncStatus({
   const busy = state.phase === "loading" || state.phase === "refreshing";
   const shownCentrally = useConnectionErrorShownCentrally(state.error);
   const warn = (state.phase === "error" || state.phase === "stale") && !shownCentrally;
-  const time = state.updatedAt
-    ? formatDate(state.updatedAt, { hour: "2-digit", minute: "2-digit" })
-    : undefined;
   // The failure is visible text in the row, so keyboard and screen-reader users reach it too;
   // a long or multi-line error keeps its full text behind Details.
   const shownError = warn ? state.error : undefined;
@@ -55,12 +52,7 @@ export function ExplorerSyncStatus({
           <LiveText className="sr-only" mode="assertive" text={state.error ?? ""} />
         )}
         {warn ? (
-          <span className="inline-flex items-center gap-1">
-            <CircleAlert aria-hidden tone="warning" className="icon-xs shrink-0" />
-            {time ? (
-              <span className="hidden tabular-nums @min-[200px]/explorer-root:inline">{time}</span>
-            ) : null}
-          </span>
+          <CircleAlert aria-hidden tone="warning" className="icon-xs shrink-0" />
         ) : null}
         {shownError ? (
           <Text size="inherit" tone="inherit" truncate className="min-w-0 max-w-40">
@@ -81,8 +73,6 @@ export function ExplorerSyncStatus({
               ? t("Retry loading files")
               : t("Refresh files")
           }
-          motion="none"
-          type="button"
           onClick={onRefresh}
           loading={busy}
         >

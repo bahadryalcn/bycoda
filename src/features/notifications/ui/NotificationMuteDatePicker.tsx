@@ -85,12 +85,11 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
           "mt-3 flex items-center justify-between gap-2 pt-2.5",
         )}
       >
-        <Button type="button" onClick={onCancel} aria-label={t("Cancel")} variant="ghost">
+        <Button type="button" onClick={onCancel} variant="ghost">
           {t("Cancel")}
         </Button>
         <Button
           type="submit"
-          aria-label={t("Mute until then")}
           disabled={!projectIds.length || unavailable}
           variant="primary"
         >

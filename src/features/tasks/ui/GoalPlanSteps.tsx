@@ -41,12 +41,11 @@ export function GoalPlanSteps({ goal }: { goal: BoardGoal }) {
                   {task.title}
                 </Text>
                 <Text size="micro" tone="secondary" leading="inherit" className="goal-plan-meta">
-                  {t("in ")}
-                  {projectOf(task.projectId, task.project)}
+                  {t("in {p0}", { p0: projectOf(task.projectId, task.project) })}
                 </Text>
                 {task.dependsOn.length ? (
                   <Text size="micro" tone="secondary" leading="inherit" className="goal-plan-meta">
-                    <span className="shrink-0">{t("· after ")}</span>
+                    <span className="shrink-0">{t("After")}</span>
                     <BadgeList
                       label={t("After")}
                       size="xs"

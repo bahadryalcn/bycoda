@@ -29,16 +29,11 @@ it("shows read failure as offline inside the health popover, then recovers", asy
     presence: { state: "present" },
   } as AssistantSnapshot;
   try {
-    await act(async () =>
-      root.render(createElement(RoomStatusPopovers, { snapshot, workLabel: "Ready" })),
-    );
+    await act(async () => root.render(createElement(RoomStatusPopovers, { snapshot })));
     expect(container.textContent).toContain("Offline");
     room.readError = "";
-    await act(async () =>
-      root.render(createElement(RoomStatusPopovers, { snapshot, workLabel: "Ready" })),
-    );
+    await act(async () => root.render(createElement(RoomStatusPopovers, { snapshot })));
     expect(container.textContent).toContain("Here");
-    expect(container.textContent).toContain("Ready");
   } finally {
     await act(async () => root.unmount());
     container.remove();

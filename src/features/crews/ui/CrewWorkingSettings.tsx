@@ -1,5 +1,3 @@
-import { Button } from "../../../shared/ui/Button";
-import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
 import { Text } from "../../../shared/ui/Text";
 import { useId, type ReactNode } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -88,7 +86,7 @@ function Line({
       <div
         role="group"
         aria-labelledby={labelId}
-        className={`flex min-w-0 items-center gap-2 [&_.bycoda-arc-select]:min-h-(--ui-control-height-compact) [&_.bycoda-arc-select]:py-0 [&_.bycoda-arc]:[--control-height-md:var(--ui-control-height-compact)] ${stacked ? "" : "min-w-28 shrink-0 justify-end"}`}
+        className={`flex min-w-0 items-center gap-2 ${stacked ? "" : "min-w-28 shrink-0 justify-end"}`}
       >
         {children}
       </div>
@@ -120,6 +118,7 @@ function LimitLine({
         <NumberField
           label={label}
           hideLabel
+          fieldVariant="compact"
           min={min}
           max={max}
           value={value}
@@ -132,8 +131,8 @@ function LimitLine({
 }
 
 /**
- * The crew's advanced settings in two compact columns: model rules, execution limits,
- * appearance and maintenance. Permissions and bulk models live above the roster. Everything
+ * The crew's advanced settings: execution limits, appearance and maintenance. Model rules are
+ * managed from the member model picker. Permissions and bulk models live above the roster. Everything
  * except appearance is part of the crew draft. The draft stays with the editor; this
  * component only edits it. It lays out inside the editor's `crew-editor` container.
  */
@@ -163,12 +162,6 @@ export function CrewWorkingSettings({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="grid min-w-0 gap-x-10 gap-y-5 @min-[48rem]/crew-editor:grid-cols-2">
-        <Section title={t("Models")}>
-          <Button variant="link" onClick={() => openModelsSettings("order")}>
-            {t("Manage models")}
-          </Button>
-        </Section>
-
         <div className="flex min-w-0 flex-col gap-5">
           <Section title={t("Execution limits")}>
             <LimitLine

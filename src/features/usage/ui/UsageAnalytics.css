@@ -1,6 +1,6 @@
 .usage-analytics {
   display: grid;
-  gap: 20px;
+  gap: var(--ui-space-5);
   min-inline-size: 0;
   container-type: inline-size;
 }
@@ -16,7 +16,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .usage-section-heading {
@@ -25,18 +25,18 @@
 /* One compact top band: view switch, scope caption, then period and filter actions.
    It stays one row while there is room and wraps as a unit when there is not. */
 .usage-band {
-  gap: 8px 16px;
+  gap: var(--ui-space-2) var(--ui-space-4);
 }
 .usage-band-scope {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ui-space-1);
   flex: 0 0 auto;
   min-inline-size: 0;
 }
 .usage-band .usage-analytics-actions {
   margin-inline-start: auto;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 .usage-analytics-actions {
   max-inline-size: 100%;
@@ -50,32 +50,32 @@
 }
 .usage-filter-panel {
   display: grid;
-  gap: 12px;
+  gap: var(--ui-space-3);
 }
 /* Key numbers are the first read: open tiles separated by space, no rules. */
 .usage-details-disclosure {
   justify-self: start;
-  margin-block-start: -12px;
+  margin-block-start: calc(-1 * var(--ui-space-3));
 }
 .usage-search-actions {
   flex-wrap: nowrap;
 }
 .usage-sessions {
   display: grid;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .usage-metrics {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px 32px;
+  gap: var(--ui-space-4) var(--ui-space-8);
 }
 .usage-metrics > div {
   flex: 1 1 9rem;
   display: grid;
   align-content: start;
-  gap: 6px;
-  padding-block: 4px;
+  gap: var(--ui-space-1);
+  padding-block: var(--ui-space-1);
   min-inline-size: 0;
 }
 .usage-metrics > div > button {
@@ -92,22 +92,22 @@
 .usage-facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 24px;
+  gap: var(--ui-space-2) var(--ui-space-6);
 }
 .usage-facts b {
-  margin-inline-start: 6px;
+  margin-inline-start: var(--ui-space-1);
   font-variant-numeric: tabular-nums;
 }
 .usage-panel {
   min-inline-size: 0;
-  padding: 16px;
+  padding: var(--ui-space-4);
 }
 .usage-panel > .usage-muted {
-  margin-block: 8px;
+  margin-block: var(--ui-space-2);
 }
 .usage-panel details,
 .usage-display-preferences {
-  margin-block-start: 12px;
+  margin-block-start: var(--ui-space-3);
 }
 .usage-display-preferences summary {
   cursor: pointer;
@@ -115,31 +115,35 @@
 .usage-overview-main {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(19rem, 1fr);
-  gap: 16px;
+  gap: var(--ui-space-4);
+}
+/* Without the provider share beside it, the breakdown takes the full row. */
+.usage-overview-main:has(> :only-child) {
+  grid-template-columns: minmax(0, 1fr);
 }
 .usage-share {
   display: grid;
   align-content: start;
-  gap: 16px;
+  gap: var(--ui-space-4);
 }
 .usage-analysis-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
-  gap: 16px;
+  gap: var(--ui-space-4);
   align-items: stretch;
 }
 .usage-trend > .bycoda-arc-chart {
-  margin-block-start: 12px;
+  margin-block-start: var(--ui-space-3);
 }
 .usage-contributions {
   display: grid;
-  gap: 12px;
-  margin-block-start: 16px;
+  gap: var(--ui-space-3);
+  margin-block-start: var(--ui-space-4);
 }
 .usage-contribution {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
-  gap: 4px 12px;
+  gap: var(--ui-space-1) var(--ui-space-3);
   align-items: center;
 }
 .usage-contribution > button {
@@ -151,8 +155,9 @@
   font-variant-numeric: tabular-nums;
 }
 .usage-contribution small {
-  margin-inline-start: 8px;
+  margin-inline-start: var(--ui-space-2);
 }
+/* shortcut: a bar per ranked row in the series colour; shared Meter has no per-series colour, upgrade when it gains one. */
 .usage-rank-track {
   grid-column: 1 / -1;
   block-size: 4px;
@@ -168,37 +173,37 @@
 }
 .usage-pagination {
   justify-content: end;
-  margin-block-start: 8px;
+  margin-block-start: var(--ui-space-2);
 }
 .usage-pagination > span {
   margin-inline-end: auto;
 }
 .usage-data-notes p {
-  margin-block-start: 6px;
+  margin-block-start: var(--ui-space-1);
 }
 /* Summary charts sit above the full-width heatmap, so no column is left half empty. */
 .usage-time-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 16px;
+  gap: var(--ui-space-4);
   min-inline-size: 0;
 }
 .usage-time-secondary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
-  gap: 16px;
+  gap: var(--ui-space-4);
   min-inline-size: 0;
   align-items: start;
 }
 .usage-hourly-chart > .bycoda-arc-chart {
-  margin-block-start: 16px;
+  margin-block-start: var(--ui-space-4);
 }
 .usage-week-grid {
   grid-template-columns: 3.5rem repeat(var(--usage-week-columns), minmax(0, 1fr));
   display: grid;
-  gap: 4px;
-  margin-block-start: 16px;
+  gap: var(--ui-space-1);
+  margin-block-start: var(--ui-space-4);
   min-inline-size: 0;
 }
 .usage-week-row {
@@ -206,9 +211,9 @@
 }
 .usage-week-row > [role="columnheader"] {
   display: grid;
-  gap: 4px;
+  gap: var(--ui-space-1);
   text-align: center;
-  padding-block-end: 8px;
+  padding-block-end: var(--ui-space-2);
 }
 .usage-week-row > [role="rowheader"] {
   align-self: center;
@@ -241,33 +246,33 @@
 .usage-limits-view:not([hidden]),
 .usage-limits-content {
   display: grid;
-  gap: 12px;
+  gap: var(--ui-space-3);
 }
 .usage-limits-view .usage-panel {
-  padding: 12px;
+  padding: var(--ui-space-3);
 }
 .usage-limits-view .usage-panel details {
-  margin-block-start: 8px;
+  margin-block-start: var(--ui-space-2);
 }
 .usage-quota-plot {
   /* Chart axis labels reserve their own gutter, independent of control spacing. */
   --usage-quota-axis-gutter: 36px;
   position: relative;
   block-size: 88px;
-  margin-block: 12px 8px;
-  margin-inline: var(--usage-quota-axis-gutter) 8px;
+  margin-block: var(--ui-space-3) var(--ui-space-2);
+  margin-inline: var(--usage-quota-axis-gutter) var(--ui-space-2);
 }
 .usage-quota-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-block-start: 12px;
+  gap: var(--ui-space-2) var(--ui-space-4);
+  margin-block-start: var(--ui-space-3);
 }
 .usage-quota-legend-item {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
   overflow-wrap: anywhere;
 }
@@ -291,7 +296,7 @@
 .usage-quota-max,
 .usage-quota-zero {
   position: absolute;
-  inset-inline-end: calc(100% + 8px);
+  inset-inline-end: calc(100% + var(--ui-space-2));
 }
 .usage-quota-max {
   inset-block-start: 0;
@@ -300,7 +305,7 @@
   inset-block-end: 0;
 }
 .usage-empty {
-  padding-block: 12px;
+  padding-block: var(--ui-space-3);
 }
 @container (max-width: 900px) {
   .usage-overview-main,
@@ -317,7 +322,7 @@
   .usage-metrics > div {
     flex-basis: 100%;
     padding-block: 2px;
-    gap: 4px;
+    gap: var(--ui-space-1);
   }
   .usage-filter-panel .usage-controls {
     display: grid;
@@ -328,7 +333,7 @@
     inline-size: 100%;
   }
   .usage-panel {
-    padding: 12px;
+    padding: var(--ui-space-3);
   }
   .usage-week-grid {
     gap: 2px;
@@ -343,24 +348,24 @@
 
 .usage-single-period {
   display: grid;
-  gap: 8px;
-  padding-block: 12px;
+  gap: var(--ui-space-2);
+  padding-block: var(--ui-space-3);
 }
 .usage-single-period > p {
   display: flex;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 .usage-history-table {
   max-block-size: 26rem;
   overflow: auto;
-  margin-block-start: 12px;
+  margin-block-start: var(--ui-space-3);
 }
 .usage-quota-axis {
   display: flex;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
   font-variant-numeric: tabular-nums;
 }

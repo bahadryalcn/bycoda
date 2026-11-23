@@ -7,7 +7,6 @@ import { t } from "../../../shared/i18n";
 export type VoiceTurnAction = {
   id: "manual" | "automatic";
   label: string;
-  description: string;
   checked: boolean;
   onSelect: () => void;
 };
@@ -21,14 +20,12 @@ export function voiceTurnActions(
     {
       id: "manual",
       label: t("I'll finish when ready"),
-      description: t("Press Finish turn to send your speech."),
       checked: manual,
       onSelect: () => onManualChange(true),
     },
     {
       id: "automatic",
       label: t("Reply when I pause"),
-      description: t("Reply after a pause in your speech."),
       checked: !manual,
       onSelect: () => onManualChange(false),
     },
@@ -85,7 +82,6 @@ export function VoiceTurnControl({
         kind: "item" as const,
         id: action.id,
         label: action.label,
-        description: action.description,
         checked: action.checked,
         selectionRole: "radio" as const,
       }))}

@@ -36,7 +36,7 @@ describe("ModelSwitchRow", () => {
     expect(row?.getAttribute("aria-label")).toBe(
       "Switched from Claude Code · work · Opus 5.5 to Codex · GPT-5.5",
     );
-    expect(row?.textContent).toContain("Summary goes with next message");
+    expect(row?.querySelector('[aria-label="Summary goes with next message"]')).not.toBeNull();
     expect(container.querySelector("button")).toBeNull();
   });
 
@@ -54,15 +54,15 @@ describe("ModelSwitchRow", () => {
     expect(button.textContent).toContain("work");
     expect(button.textContent).toContain("Personal");
     expect(button.textContent).toContain("3");
-    expect(button.textContent).toContain("Next message");
+    expect(button.querySelector('[aria-label="Next message"]')).not.toBeNull();
     expect(container.querySelector("ol")).toBeNull();
     act(() => button.click());
     const rows = [...container.querySelectorAll("li")].map((item) => item.textContent ?? "");
     expect(rows).toHaveLength(4);
-    expect(rows[0]).toContain("Before");
-    expect(rows[1]).toContain("Account");
-    expect(rows[2]).toContain("Model");
-    expect(rows[3]).toContain("Now");
+    expect(rows[0]).toContain("Personal");
+    expect(rows[1]).toContain("work");
+    expect(rows[2]).toContain("Sonnet 5.5");
+    expect(rows[3]).toContain("Personal");
     expect(container.querySelectorAll("li time")).toHaveLength(3);
   });
 

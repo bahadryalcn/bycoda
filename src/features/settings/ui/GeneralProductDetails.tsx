@@ -1,12 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
-import { Check, Copy, Globe } from "../../../shared/ui/icons";
-import { InboxProviderMark } from "../../inbox/public/workItemMentions";
+import { Check, Copy } from "../../../shared/ui/icons";
 import { startContribution, useContributeFlow } from "../../projects/public/contribute";
 import { Row, SettingsFeedback } from "../../../shared/ui/settings";
 
@@ -22,8 +21,6 @@ function ContributeRow() {
         address={repositoryUrl}
         href={repositoryUrl}
         displayAddress={repositoryUrl.replace(/^https:\/\/github\.com\//, "")}
-        openLabel={t("View on GitHub")}
-        openIcon={<InboxProviderMark provider="github" className="icon-sm" />}
       />
       <Row
         id="contribute"
@@ -31,7 +28,6 @@ function ContributeRow() {
         description={t("Clone the open-source repository and open it as a project.")}
       >
         <Button
-          className="general-action shrink-0"
           loading={flow.status === "cloning"}
           onClick={() => startContribution().catch(() => undefined)}
         >
@@ -51,7 +47,6 @@ export function ProductDetails() {
           size="secondary"
           tone="primary"
           leading="normal"
-          className="general-about-value"
         >
           {PRODUCT_IDENTITY.developerName}
         </Text>
@@ -61,8 +56,6 @@ export function ProductDetails() {
         address={PRODUCT_IDENTITY.websiteUrl}
         href={PRODUCT_IDENTITY.websiteUrl}
         displayAddress={PRODUCT_IDENTITY.websiteUrl.replace("https://", "")}
-        openLabel={t("Open website")}
-        openIcon={<Globe aria-hidden className="icon-sm" strokeWidth={1.75} />}
       />
       <ProductLink
         label={t("Contact")}
@@ -86,17 +79,12 @@ function ProductLink({
   address,
   href,
   displayAddress = address,
-  openLabel,
-  openIcon,
 }: {
   id?: string;
   label: string;
   address: string;
   href: string;
   displayAddress?: string;
-  /** Accessible name and tooltip of the icon-only open action shown with `openIcon`. */
-  openLabel?: string;
-  openIcon?: ReactNode;
 }) {
   const [pending, setPending] = useState<"open" | "retry" | "copy" | null>(null);
   const [failure, setFailure] = useState<"open" | "copy" | null>(null);
@@ -229,20 +217,6 @@ function ProductLink({
           )}
         </Button>
       )}
-      {openLabel && openIcon ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={openLabel}
-          tooltip={openLabel}
-          disabled={pending !== null}
-          loading={pending === "open"}
-          onClick={() => run("open").catch(() => undefined)}
-        >
-          {openIcon}
-        </Button>
-      ) : null}
       <span role="status" className="sr-only">
         {copied ? t("Copied") : ""}
       </span>

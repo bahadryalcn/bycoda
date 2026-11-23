@@ -69,21 +69,19 @@ export function ServerItem({
   const tags = server.metadata.tags;
   const groupTags = [group, ...tags].filter(Boolean).join(", ");
   const badges = [
-    { id: "kind", label: server.machine ? "Host" : "SSH" },
     ...(group ? [{ id: `group:${group}`, label: group }] : []),
     ...tags.map((tag, index) => ({ id: `tag:${index}:${tag}`, label: tag })),
   ];
-  // Kind (machine vs plain SSH endpoint) is identity and always shows in the same
-  // place; the status slot only ever carries live connection state.
-  const kind = server.machine ? "Host" : "SSH";
+  // Kind (machine vs plain SSH endpoint) is identity: it rides on the glyph, never a text tag;
+  // the status slot only ever carries live connection state.
   const status = server.machine ? (
-    <MachineStatus machine={server.machine} compact={!cards} quiet />
+    <MachineStatus machine={server.machine} quiet />
   ) : null;
   const favorite = server.metadata.favorite ? (
     <Star aria-label={t("Favorite")} className="icon-xs shrink-0" tone="muted" />
   ) : null;
   // The user-chosen color identifies the server; it never implies connection health.
-  const identityIcon = <ServerIdentity accent={accent} />;
+  const identityIcon = <ServerIdentity accent={accent} kind={server.machine ? "host" : "ssh"} />;
 
   const onContextMenu = (event: MouseEvent<HTMLElement>) => {
     event.preventDefault();
@@ -181,7 +179,11 @@ export function ServerItem({
         checked={checked}
         disabled={busy}
         onChange={(event) => onCheck(event.target.checked)}
-        className="server-selection"
+        className={
+          cards
+            ? "flex shrink-0 basis-8 cursor-pointer items-start justify-center self-stretch pt-3 pointer-coarse:min-h-11"
+            : "server-selection"
+        }
       />
     ) : null;
   const moreAction = (
@@ -208,7 +210,6 @@ export function ServerItem({
         secondary={groupTags ? `${address}, ${groupTags}` : address}
         trailing={
           <>
-            {kind}
             {favorite}
             {status}
           </>
@@ -236,7 +237,7 @@ export function ServerItem({
       onClick={onClick}
     >
       <span className="flex min-w-0 flex-col gap-2 p-3">
-        <span className="server-card-head flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 items-center gap-2 pe-12">
           {identityIcon}
           <OverflowTooltip label={server.name}>
             <Text as="span" size="body" tone="inherit" weight="medium" truncate>
@@ -271,10 +272,13 @@ export function ServerItem({
       as="li"
       variant="card"
       padding="none"
-      className="server-card min-w-0 overflow-hidden"
+      className="flex min-w-0 overflow-hidden"
       {...rootProps}
     >
-      <ActionHost selected={selectionMode ? checked : selected} className="w-full min-w-0">
+      <ActionHost
+        selected={selectionMode ? checked : selected}
+        className="w-full min-w-0 items-stretch self-stretch"
+      >
         {checkbox}
         <div className="relative flex min-w-0 flex-1">
           {identityButton}
@@ -287,7 +291,7 @@ export function ServerItem({
             </div>
           ) : null}
         </div>
-        <div className="server-row-actions">
+        <div className="absolute end-2 top-3 flex items-center gap-1 @max-[37.5rem]/server-catalog:gap-0">
           {canConnect ? (
             <InlineAction
               reveal="always"

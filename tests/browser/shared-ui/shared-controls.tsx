@@ -21,7 +21,7 @@ function PickersFixture() {
   });
   return (
     <main className="min-h-screen bg-background-base p-6 text-content">
-      <div className="flex max-w-md min-w-0 flex-col gap-4">
+      <div data-pane="pickers" className="flex max-w-md min-w-0 flex-col gap-4">
         <DatePicker label="Due date" value={day} onChange={setDay} clearable />
         <DatePicker label="Start date" value={empty} onChange={setEmpty} placeholder="Pick a day" />
         <DatePicker
@@ -49,7 +49,9 @@ function Fixture() {
   if (new URLSearchParams(location.search).has("mute"))
     return (
       <main className="min-h-screen bg-background-base p-2 text-content">
-        <NotificationMuteControl projectIds={["fixture-project"]} />
+        <div data-pane="mute" className="min-w-0">
+          <NotificationMuteControl projectIds={["fixture-project"]} />
+        </div>
       </main>
     );
   return (

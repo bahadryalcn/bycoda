@@ -91,12 +91,10 @@
     font-size: var(--ui-font-caption);
     font-variant-numeric: tabular-nums;
   }
-  .day:hover,
-  .option:hover {
+  .day:hover {
     background: var(--ui-surface-hover);
   }
-  .day:active,
-  .option:active {
+  .day:active {
     background: var(--ui-surface-pressed);
   }
   .option[aria-selected="true"] {
@@ -207,17 +205,26 @@
   }
   .endpoints {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--space-2);
   }
   .endpoints > * {
-    flex: 1;
+    flex: 1 1 var(--picker-time);
+    min-inline-size: 0;
+  }
+  .popover .panel,
+  .rangeMain {
+    max-inline-size: 100%;
   }
   /* A window too narrow for the side-by-side layout stacks it again. */
   @media (max-width: 40rem) {
     .range[data-presets],
     .range[data-time] .rangeMain,
     .popover .panel[data-mode="datetime"] {
-      grid-template-columns: var(--picker-calendar);
+      grid-template-columns: minmax(0, var(--picker-calendar));
+    }
+    .range[data-presets] {
+      grid-template-columns: minmax(0, 1fr);
     }
     .presets {
       display: flex;

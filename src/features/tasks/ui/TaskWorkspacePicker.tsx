@@ -1,4 +1,5 @@
-import { Alert } from "../../../shared/ui/Alert";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
@@ -202,21 +203,21 @@ export function TaskWorkspacePicker({
         className="task-workspace-fields"
       >
         {supported === false ? (
-          <p>{t("Update the selected host to choose a branch or worktree.")}</p>
+          <InlineMessage tone="warning">
+            {t("Update the selected host to choose a branch or worktree.")}
+          </InlineMessage>
         ) : null}
         {error ? (
-          <Alert tone="danger">
+          <InlineError
+            retry={{
+              label: t("Retry"),
+              pending: fetching,
+              disabled: disabled || busy,
+              onRetry: () => setRevision((count) => count + 1),
+            }}
+          >
             {error}
-            <Button
-              variant="ghost"
-              type="button"
-              loading={fetching}
-              disabled={disabled || busy}
-              onClick={() => setRevision((count) => count + 1)}
-            >
-              {t("Retry")}
-            </Button>
-          </Alert>
+          </InlineError>
         ) : null}
         {inventory ? (
           <>
@@ -289,13 +290,13 @@ export function TaskWorkspacePicker({
               {t("Create a separate worktree")}
             </Button>
             {isolate === undefined ? null : (
-              <p>
+              <InfoPopover>
                 {t(
                   isolate
                     ? "Tasks start from committed changes. A separate integration worktree keeps the queue independent of edits in your project checkout."
                     : "Direct tasks preserve existing uncommitted changes and write to the selected checkout.",
                 )}
-              </p>
+              </InfoPopover>
             )}
             {branchName ? (
               <TextField

@@ -74,11 +74,9 @@ for (const theme of ["light", "dark"])
       await capture(page, `memory-search-empty-${theme}-${width}`);
       await search.fill("");
       await row(page, edited).getByRole("button", { name: "Delete memory", exact: true }).click();
-      const confirmation = page.getByRole("dialog", { name: "Delete memory?", exact: true });
-      await expect(confirmation).toContainText(edited);
-      await capture(page, `memory-delete-${theme}-${width}`);
-      await confirmation.getByRole("button", { name: "Delete", exact: true }).click();
       await expect(row(page, edited)).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeVisible();
+      await capture(page, `memory-delete-${theme}-${width}`);
       await page.getByRole("button", { name: "Undo", exact: true }).click();
       await expect(row(page, edited)).toBeVisible();
       await expect(

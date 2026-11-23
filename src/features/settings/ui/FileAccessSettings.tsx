@@ -14,7 +14,6 @@ import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { RefreshCw } from "../../../shared/ui/icons";
 import { errorText } from "../../../shared/lib/errors";
 
 export function FileAccessSettings({ embedded = false }: { embedded?: boolean }) {
@@ -121,39 +120,14 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
       <Row
         id="file-access"
         label={t("Current access")}
-        description={t("Agent approval rules still control commands and tools.")}
         info={
           <InfoPopover className="shrink-0" label={t("About file access")}>
             <p>
               {t(
-                "All files access allows reading and editing files on this computer. Selected-folder grants may be read-only. Change file access opens the native consent flow.",
+                "Selected folders may be read-only. Agent approval rules still apply. Remote hosts manage their own file access.",
               )}
             </p>
           </InfoPopover>
-        }
-        scope={
-          <>
-            <LiveText
-              size="caption"
-              tone="secondary"
-              leading="inherit"
-              text={
-                statusUnavailable
-                  ? t("Status unavailable")
-                  : mode === null
-                    ? error
-                      ? t("Status unavailable")
-                      : t("Loading…")
-                    : modeLabel
-              }
-            />
-            {statusUnavailable && mode !== null ? (
-              <Text as="span" size="caption" tone="secondary" leading="inherit">
-                {" · "}
-                {t("Last known access: {p0}", { p0: modeLabel })}
-              </Text>
-            ) : null}
-          </>
         }
         feedback={
           recoveries.length > 0 || error || pending ? (
@@ -209,23 +183,26 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
           ) : null
         }
       >
-        <div className="flex flex-nowrap items-center gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          {statusUnavailable || mode !== null ? (
+            <LiveText
+              size="caption"
+              tone="secondary"
+              leading="inherit"
+              text={statusUnavailable ? t("Status unavailable") : modeLabel}
+            />
+          ) : null}
+          {statusUnavailable && mode !== null ? (
+            <Text as="span" size="caption" tone="secondary" leading="inherit">
+              {t("Last known access: {p0}", { p0: modeLabel })}
+            </Text>
+          ) : null}
           <Button
             loading={pending === "configure"}
             disabled={pending !== null || mode === null || statusUnavailable}
             onClick={() => void review()}
           >
             {t("Change file access…")}
-          </Button>
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Refresh")}
-            loading={pending === "read"}
-            disabled={pending !== null}
-            onClick={() => void refresh()}
-          >
-            <RefreshCw aria-hidden="true" className="icon-sm" strokeWidth={1.75} />
           </Button>
         </div>
       </Row>
@@ -237,7 +214,6 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
     <Group
       id="file-access-permissions"
       title={t("File access")}
-      description={t("Remote hosts manage their own file access.")}
     >
       {content}
     </Group>

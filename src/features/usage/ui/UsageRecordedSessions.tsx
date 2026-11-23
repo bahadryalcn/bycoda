@@ -1,6 +1,5 @@
 import type { ComponentProps } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
@@ -27,12 +26,8 @@ export function UsageRecordedSessions({
   onSelectSession: (key: string | null) => void;
 }) {
   useLocale();
-  if (unavailable)
-    return (
-      <Alert tone="info">
-        {t("Session duration data is unavailable on this app version or could not be read.")}
-      </Alert>
-    );
+  // A failed read of the session logs is reported once, in the notice above the results.
+  if (unavailable) return null;
   return (
     <section className="usage-sessions">
       <div className="usage-section-heading">

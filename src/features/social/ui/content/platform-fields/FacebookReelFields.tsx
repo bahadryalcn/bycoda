@@ -34,7 +34,6 @@ export function FacebookReelFields({ value, media, disabled, onChange }: Platfor
         min={REEL_MIN_FPS}
         step="any"
         required
-        description={t("Check the file's frame rate. At least {p0} fps.", { p0: REEL_MIN_FPS })}
         value={value.facebook?.frameRate ?? ""}
         error={frameRateError}
         onChange={(event) =>

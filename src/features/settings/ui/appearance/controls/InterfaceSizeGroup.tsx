@@ -1,4 +1,3 @@
-import { Tooltip } from "../../../../../shared/ui/Tooltip";
 import { Text } from "../../../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
@@ -20,7 +19,6 @@ import {
 import { Group, Row, Segmented, Toggle } from "../../../../../shared/ui/settings";
 import { resetSessionRows } from "../appearanceResets";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
-import { SidebarRowPreview } from "./SidebarRowPreview";
 import "./InterfaceSections.css";
 
 const SCALE_MIN = Math.round(UI_SCALE_MIN * 100);
@@ -30,7 +28,7 @@ const SCALE_DEFAULT = Math.round(UI_SCALE_DEFAULT * 100);
 const SCALE_MARKS = [80, 100, 125, 150].map((value) => ({ value }));
 const percent = (value: number) => `${value}%`;
 
-/** Interface scale, control density and sidebar row density, with a live sidebar preview. */
+/** Interface scale, control density and sidebar row density; the sidebar itself is the preview. */
 export function InterfaceSizeGroup({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
   const p = a.preferences;
@@ -121,30 +119,20 @@ export function InterfaceSizeGroup({ appearance: a }: { appearance: AppearanceSe
         onReset={resetSessionRows}
         feedback={
           <div className="interface-row-details">
-            <SidebarRowPreview
-              density={display.density}
-              showModel={display.showModel}
-              showBranch={display.showBranch}
-            />
             <Switch
               compact
               label={t("Show model")}
               checked={display.showModel}
               onCheckedChange={(showModel) => updateSessionListDisplay({ showModel })}
             />
-            <Tooltip
-              label={display.density === "compact" ? t("Compact rows have no branch line") : ""}
-              asChild
-            >
+            {display.density === "compact" ? null : (
               <Switch
                 compact
                 label={t("Show branch")}
                 checked={display.showBranch}
-                disabled={display.density === "compact"}
-
                 onCheckedChange={(showBranch) => updateSessionListDisplay({ showBranch })}
               />
-            </Tooltip>
+            )}
           </div>
         }
       >

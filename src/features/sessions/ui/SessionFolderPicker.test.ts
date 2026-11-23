@@ -90,7 +90,7 @@ describe("session folder picker", () => {
       ),
     );
     expect(container.querySelector('[data-list-height="standard"]')).not.toBeNull();
-    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Cancel"]')!.click());
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click());
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });

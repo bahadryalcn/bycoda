@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Heading } from "../../../shared/ui/Heading";
-import { Plus } from "../../../shared/ui/icons";
+import { ArrowLeft, MoreHorizontal, Plus } from "../../../shared/ui/icons";
 import { Progress } from "../../../shared/ui/Progress";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import {
@@ -47,6 +48,7 @@ export function SprintManagement({
   const [editing, setEditing] = useState<HostSprint | "new" | null>(null);
   const [completing, setCompleting] = useState<SprintReport | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [menu, setMenu] = useState<HTMLButtonElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The summary belongs to the inputs it was read for; any other key shows none.
   const [answer, setAnswer] = useState<{
@@ -148,7 +150,6 @@ export function SprintManagement({
       board={board}
       busy={!!busy}
       error={error}
-      showRefresh={false}
       onCoordinatorChange={() => onSelect("")}
     />
   );
@@ -173,6 +174,17 @@ export function SprintManagement({
         <>
           <div className="sprint-heading">
             <div className="sprint-title">
+              {selected ? (
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  label={t("All sprints")}
+                  disabled={!!busy}
+                  onClick={() => onSelect("")}
+                >
+                  <ArrowLeft aria-hidden className="icon-sm" strokeWidth={1.75} />
+                </Button>
+              ) : null}
               <OverflowTooltip label={selected?.name}>
                 <Heading size="section" lines={2}>
                   {selected?.name ?? t("Sprints")}
@@ -181,24 +193,17 @@ export function SprintManagement({
               {selected ? <SprintStatusBadge state={selected.state} /> : null}
               {selected && (selected.startsAt !== undefined || selected.endsAt !== undefined) ? (
                 <Text tone="secondary" size="caption" leading="inherit" className="sprint-dates">
-                  {displayDate(selected.startsAt, t("No start date"))} ·{" "}
-                  {displayDate(selected.endsAt, t("No end date"))}
+                  {selected.startsAt !== undefined && selected.endsAt !== undefined
+                    ? `${displayDate(selected.startsAt, "")} · ${displayDate(selected.endsAt, "")}`
+                    : selected.startsAt !== undefined
+                      ? t("From {p0}", { p0: displayDate(selected.startsAt, "") })
+                      : t("Until {p0}", { p0: displayDate(selected.endsAt, "") })}
                 </Text>
               ) : null}
             </div>
             <div className="sprint-actions">
-              {selected ? (
-                <Button variant="ghost" disabled={!!busy} onClick={() => onSelect("")}>
-                  {t("All sprints")}
-                </Button>
-              ) : null}
               {selected && fullyAccessible(selected) ? (
                 <>
-                  {selected.state === "planned" || selected.state === "active" ? (
-                    <Button disabled={!!busy} onClick={() => setEditing(selected)}>
-                      {t("Edit sprint")}
-                    </Button>
-                  ) : null}
                   {selected.state === "planned" ? (
                     <Button
                       loading={busy === "start"}
@@ -232,7 +237,21 @@ export function SprintManagement({
                   ) : null}
                 </>
               ) : null}
-              {newSprint}
+              {selected ? (
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  label={t("More actions")}
+                  aria-haspopup="menu"
+                  aria-expanded={menu !== null}
+                  disabled={!!busy}
+                  onClick={(event) => setMenu(event.currentTarget)}
+                >
+                  <MoreHorizontal aria-hidden className="icon-sm" strokeWidth={1.75} />
+                </Button>
+              ) : (
+                newSprint
+              )}
             </div>
           </div>
           {hostBar}
@@ -275,6 +294,29 @@ export function SprintManagement({
           projectKey={projectKey}
           environmentId={environmentId}
           onSelect={onSelect}
+        />
+      ) : null}
+      {menu && selected ? (
+        <DropdownMenu
+          anchor={menu}
+          label={t("More actions")}
+          items={[
+            ...(fullyAccessible(selected) &&
+            (selected.state === "planned" || selected.state === "active")
+              ? [{ kind: "item" as const, id: "edit", label: t("Edit sprint") }]
+              : []),
+            {
+              kind: "item" as const,
+              id: "new",
+              label: t("New sprint"),
+              disabled: !board.supported || !projects.length,
+            },
+          ]}
+          onClose={() => setMenu(null)}
+          onPick={(id) => {
+            if (id === "edit") setEditing(selected);
+            else if (id === "new") setEditing("new");
+          }}
         />
       ) : null}
       {editing ? (

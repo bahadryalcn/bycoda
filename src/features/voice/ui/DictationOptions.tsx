@@ -107,7 +107,6 @@ export function DictationOptions({
         iconOnly
         className={styles.options}
         label={t("Dictation options")}
-        tooltip={t("Recognition, model and language")}
         aria-haspopup="menu"
         expanded={open}
         opens="up"

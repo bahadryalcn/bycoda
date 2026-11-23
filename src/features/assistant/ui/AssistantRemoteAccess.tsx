@@ -204,13 +204,14 @@ export function AssistantRemoteAccess({
           }
         >
           <div className={styles.body}>
-            <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.status}>
-              {sourceStatus === "registered"
-                ? t("This Room is registered on its original Host.")
-                : sourceStatus === "unavailable"
+            {/* A healthy registration needs no sentence; only the checking and failed states do. */}
+            {sourceStatus !== "registered" && (
+              <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.status}>
+                {sourceStatus === "unavailable"
                   ? t("Room registration is unavailable. Reopen the Room to retry.")
                   : t("Checking Room registration…")}
-            </Text>
+              </Text>
+            )}
             <div className={styles.grid}>
               <Select
                 label={t("Paired Host")}

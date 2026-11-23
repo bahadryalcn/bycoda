@@ -1,7 +1,6 @@
 import type { CSSProperties } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { useColorScheme } from "../../../../../shared/hooks/useColorScheme";
-import { Text } from "../../../../../shared/ui/Text";
 import {
   THEME_DARK_LIGHTNESS_MAX,
   THEME_DARK_LIGHTNESS_MIN,
@@ -18,8 +17,7 @@ import { Row } from "../../../../../shared/ui/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { DraftSlider } from "./DraftSlider";
 import "./ThemeControls.css";
-import "./ToneSliders.css";
-import { ThemePreview } from "./ThemePreview";
+import { CanvasBackgroundRow } from "./CanvasBackgroundRow";
 
 /** The hue slider's rainbow: seven stops at one lightness, built from the wheel itself. */
 const HUE_TRACK = `linear-gradient(to right, ${[0, 60, 120, 180, 240, 300, 360]
@@ -27,16 +25,16 @@ const HUE_TRACK = `linear-gradient(to right, ${[0, 60, 120, 180, 240, 300, 360]
   .join(", ")})`;
 const HUE_TRACK_STYLE = { "--ui-hue-track": HUE_TRACK } as CSSProperties;
 
-/** Hue, saturation and depth as labelled sliders, then the four surface steps they produce. */
+/** Background tone, hue, saturation, depth (dark only) and surface contrast as Advanced rows. */
 export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
   const light = useColorScheme() === "light";
   const { themeHue: hue, themeSaturation: saturation, themeDarkLightness: depth } = appearance;
   const { surfaceContrast } = appearance.preferences;
   return (
-    <div className="theme-detail-split">
-      <div className="theme-detail-controls">
-        <Row id="hue" label={t("Hue")}>
+    <>
+      <CanvasBackgroundRow appearance={appearance} />
+      <Row id="hue" label={t("Hue")}>
           <div className="theme-hue-field" style={HUE_TRACK_STYLE}>
             <DraftSlider
               label={t("Hue")}
@@ -61,23 +59,19 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
             commit={(next) => appearance.onTint(hue, next)}
           />
         </Row>
-        <Row
-          id="dark-lightness"
-          label={t("Depth")}
-          description={t("Dark mode only. Sets how deep the dark canvas is.")}
-          disabled={light}
-        >
-          <DraftSlider
-            label={t("Depth")}
-            value={depth}
-            format={String}
-            min={THEME_DARK_LIGHTNESS_MIN}
-            max={THEME_DARK_LIGHTNESS_MAX}
-            disabled={light}
-            apply={applyThemeDarkLightness}
-            commit={appearance.onDarkLightness}
-          />
-        </Row>
+        {light ? null : (
+          <Row id="dark-lightness" label={t("Depth")}>
+            <DraftSlider
+              label={t("Depth")}
+              value={depth}
+              format={String}
+              min={THEME_DARK_LIGHTNESS_MIN}
+              max={THEME_DARK_LIGHTNESS_MAX}
+              apply={applyThemeDarkLightness}
+              commit={appearance.onDarkLightness}
+            />
+          </Row>
+        )}
         <Row
           id="surface-contrast"
           label={t("Surface contrast")}
@@ -98,34 +92,6 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
             }
           />
         </Row>
-      </div>
-      <div className="theme-detail-preview">
-        <ThemePreview appearance={appearance} />
-        <Row
-          stacked
-          density="compact"
-          label={t("Surfaces")}
-          description={t("The four steps the tint produces, from the canvas up to a selected row.")}
-        >
-          <div className="tone-ramp" aria-hidden="true">
-            {(
-              [
-                ["base", t("Base")],
-                ["surface", t("Surface")],
-                ["line", t("Line")],
-                ["selected", t("Selected")],
-              ] as const
-            ).map(([step, label]) => (
-              <span key={step} className="tone-step" data-step={step}>
-                <span className="tone-swatch" />
-                <Text as="span" size="caption" tone="secondary" truncate>
-                  {label}
-                </Text>
-              </span>
-            ))}
-          </div>
-        </Row>
-      </div>
-    </div>
+    </>
   );
 }

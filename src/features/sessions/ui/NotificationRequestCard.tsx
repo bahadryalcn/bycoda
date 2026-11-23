@@ -4,15 +4,15 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
-import { Badge } from "../../../shared/ui/Badge";
+import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
 import { X } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
-import { HARNESS_TITLE, sessionDisplayTitle } from "../model/session";
+import { sessionDisplayTitle } from "../model/session";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import type { Notice } from "./ApprovalToasts";
 import { HarnessIcon } from "./HarnessIcon";
-import { NotificationProjectLabel, NotificationTime } from "./NotificationHistoryItem";
+import { NotificationProjectLabel } from "./NotificationHistoryItem";
 import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { bycodaToolCall } from "../model/bycodaToolCall";
 import { approvalTitle } from "./approvalPresentation";
@@ -84,7 +84,7 @@ export function NotificationRequestCard({
         </ClampText>
         <ClampText
           as="span"
-          lines={3}
+          lines={1}
           expandable={false}
           size="caption"
           tone="secondary"
@@ -103,7 +103,6 @@ export function NotificationRequestCard({
           variant="ghost"
           type="button"
           onClick={onDismiss}
-          aria-label={t("Dismiss notice")}
           className="notification-popup-dismiss"
           data-no-drag=""
         >
@@ -120,34 +119,25 @@ export function NotificationRequestCard({
       >
         <span className="notification-request-source flex min-w-0 items-center gap-2">
           <NotificationProjectLabel cwd={session.cwd} />
-          <span className="flex min-w-0 shrink-0 items-center gap-1.5">
-            <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
-            <Text size="inherit" tone="inherit" truncate>
-              {HARNESS_TITLE[session.harness]}
-            </Text>
-          </span>
-          {occurredAt != null ? <NotificationTime at={occurredAt} /> : null}
+          <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
+          {occurredAt != null ? <Timestamp value={occurredAt} format="relative" /> : null}
         </span>
-        <span
-          className="notification-request-actions flex shrink-0 items-center gap-1"
-          data-no-drag=""
-        >
-          {notice.kind === "question" ? <Badge tone="warning">{t("Question")}</Badge> : null}
+        {notice.kind === "question" ? (
           <Button
+            className="ms-auto shrink-0"
             variant="ghost"
             size="sm"
             type="button"
             onClick={() => onFocusSession(session.id)}
           >
-            {notice.kind === "question" ? t("Answer") : t("Open session")}
+            {t("Answer")}
           </Button>
-        </span>
+        ) : null}
       </Text>
       {notice.kind === "approval" ? (
         <div className="px-3 pb-2">
           <ApprovalRequest
             title={approvalTitle(block, t)}
-            context={[session.cwd, t("This request only")]}
             detail={detail}
             details={
               block && hasToolInspection(block)

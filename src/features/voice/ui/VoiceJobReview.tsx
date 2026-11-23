@@ -17,7 +17,6 @@ import { t } from "../../../shared/i18n";
 import type { VoiceJobDraft, VoiceJobReviewState } from "../model/voiceJobs";
 import styles from "./VoiceJobReview.module.css";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -94,7 +93,7 @@ export function VoiceJobReview({
       footer={
         <ModalActions>
           <Button variant="ghost" disabled={review.busy} onClick={onCancel}>
-            {t("Cancel review")}
+            {t("Cancel")}
           </Button>
           {start}
         </ModalActions>
@@ -103,9 +102,10 @@ export function VoiceJobReview({
       <div className={styles.review}>
         {rows.map((row, index) => (
           <FieldGroup
-            {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, styles.job)}
+            variant="card"
             key={row.id}
             legend={t("Job {p0}", { p0: index + 1 })}
+            hideLegend={rows.length === 1}
             disabled={locked}
           >
             <Select

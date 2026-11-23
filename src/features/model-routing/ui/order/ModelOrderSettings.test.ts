@@ -328,7 +328,7 @@ it("reorders with the grip only and removes from the overflow", async () => {
   await openMore();
   await act(() =>
     [...document.body.querySelectorAll("button")]
-      .find((button) => button.textContent === "Remove model 1")!
+      .find((button) => button.textContent === "Remove")!
       .click(),
   );
   expect(props.onRemove).toHaveBeenCalledOnce();

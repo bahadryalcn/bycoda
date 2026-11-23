@@ -3,7 +3,7 @@ import { ContextMenu } from "../../../../shared/ui/ContextMenu";
 import type { AssistantNote } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { actionContentAttributes } from "../../../../shared/ui/ActionHost";
-import { Badge } from "../../../../shared/ui/Badge";
+import { Calendar } from "../../../../shared/ui/icons";
 import { CollectionRow } from "../../../../shared/ui/CollectionRow";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Timestamp } from "../../../../shared/ui/Timestamp";
@@ -13,7 +13,7 @@ import styles from "./NotesTab.module.css";
 
 /**
  * Note rows: a selection checkbox (revealed on hover, focus or while any note is checked)
- * and the open-note button with title, age, one-line preview and a Daily badge.
+ * and the open-note button with title, age, one-line preview and a calendar icon on daily notes.
  */
 export function NotesList({
   notes,
@@ -78,7 +78,7 @@ export function NotesList({
               secondary={preview || undefined}
               trailing={
                 <>
-                  {dailyNoteDay(note) !== undefined && <Badge size="xs">{t("Daily")}</Badge>}
+                  {dailyNoteDay(note) !== undefined && <Calendar className="icon-sm" />}
                   <Timestamp
                     value={note.updatedAt}
                     format="relative"

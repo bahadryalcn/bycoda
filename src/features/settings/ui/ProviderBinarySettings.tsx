@@ -3,7 +3,7 @@ import { SettingsFeedback } from "../../../shared/ui/settings";
 
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
-import { Surface } from "../../../shared/ui/Surface";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ExternalLink, FolderOpen, Pencil, RefreshCw } from "../../../shared/ui/icons";
@@ -274,7 +274,7 @@ export function ProviderBinaryControl({
     </ModalActions>
   );
   const pathForm = (
-    <form id={formId} className="mt-2" onSubmit={submit}>
+    <form id={formId} className="grid gap-2" onSubmit={submit}>
       <TextField
         label={t("CLI path")}
         id={`${provider}-binary-path`}
@@ -282,6 +282,9 @@ export function ProviderBinaryControl({
         type="text"
         value={draft}
         placeholder={inspection?.path ?? t("Auto-detected path")}
+        description={t("Enter the absolute path to the CLI executable. Changes apply after restarting {p0}.", {
+          p0: PRODUCT_IDENTITY.displayName,
+        })}
         disabled={working}
         autoFocus
         onChange={(event) => {
@@ -289,12 +292,7 @@ export function ProviderBinaryControl({
           setError(null);
         }}
       />
-      {inline ? <div className="mt-2">{chooseExecutable}</div> : null}
-      <Text as="p" size="caption" tone="secondary" className="mt-1.5">
-        {t("Enter the absolute path to the CLI executable. Changes apply after restarting {p0}.", {
-          p0: PRODUCT_IDENTITY.displayName,
-        })}
-      </Text>
+      {inline ? chooseExecutable : null}
       {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       {inline ? <ModalFooter>{pathActions}</ModalFooter> : null}
     </form>
@@ -346,57 +344,27 @@ export function ProviderBinaryControl({
         <Modal
           size="sm"
           title={t("{p0} CLI details", { p0: title })}
-          description={t(
-            "The CLI path selects an executable on this machine. Account sign-in and model defaults are managed separately.",
-          )}
           onClose={() => dismiss(true)}
           footer={editing ? pathActions : undefined}
         >
-          <div aria-busy={working} id={`${provider}-binary-popover`}>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Badge size="sm" tone={error ? "warning" : restartRequired ? "warning" : "neutral"}>
-                {working
-                  ? t("Checking…")
-                  : error
-                    ? t("Needs attention")
-                    : restartRequired
-                      ? t("Restart required")
-                      : overridden
-                        ? t("Configured")
-                        : inspection
-                          ? t("Auto-detected")
-                          : t("Not checked yet")}
-              </Badge>
-            </div>
+          <div className="grid gap-2" aria-busy={working} id={`${provider}-binary-popover`}>
+            {restartRequired ? <Badge size="sm" tone="warning">{t("Restart required")}</Badge> : null}
             {editing ? (
               pathForm
             ) : (
               <>
-                <Surface variant="inset" padding="sm" className="mt-2">
-                  <Text
-                    size="caption"
-                    tone="secondary"
-                    className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono"
-                  >
-                    {inspection?.path ??
-                      (error ? t("CLI could not be resolved") : t("Checking the selected CLI…"))}
-                  </Text>
-                  <Text
-                    size="caption"
-                    tone="secondary"
-                    className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words"
-                  >
-                    {inspection?.version ??
-                      (error ? t("Retry to check this CLI") : t("Checking version…"))}
-                  </Text>
-                </Surface>
+                {inspection ? (
+                  <OutputBlock frame="filled">{[inspection.path, inspection.version].filter(Boolean).join("\n")}</OutputBlock>
+                ) : !error ? (
+                  <Text size="caption" tone="secondary">{t("Checking the selected CLI…")}</Text>
+                ) : null}
                 {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
                 {revealError ? (
                   <SettingsFeedback state="error">
                     {t("Could not open the CLI location: {p0}", { p0: revealError })}
                   </SettingsFeedback>
                 ) : null}
-                <div className="mt-3 flex justify-end gap-2">
+                <ModalActions>
                   {error ? (
                     <Button
                       className="shrink-0"
@@ -435,7 +403,7 @@ export function ProviderBinaryControl({
                     <Pencil className="icon-sm" strokeWidth={1.75} />
                     {t("Edit path")}
                   </Button>
-                </div>
+                </ModalActions>
               </>
             )}
           </div>

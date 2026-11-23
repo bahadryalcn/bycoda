@@ -33,14 +33,14 @@ export function ModelRoutingResolution({
     { role, choice, fixed },
   );
   const result = query.data;
+  // No loading line: the answer appears when it arrives. Only a failure or a problem is worth a line.
+  if (!query.isError && !result) return null;
   if (problemsOnly && !query.isError && (!result || result.ok)) return null;
   return (
     <Text as="p" tone="secondary">
       {query.isError ? (
         t("Current model could not be checked. You can still edit this choice.")
-      ) : !result ? (
-        t("Checking current model…")
-      ) : result.ok ? (
+      ) : !result ? null : result.ok ? (
         <span className="inline-flex items-center gap-1">
           {t("Now uses")}
           <ModelLabel model={result.target.model} harness={result.target.harness} />

@@ -11,7 +11,7 @@ vi.mock("../../workspace/model/tabGroups", () => ({
   tabGroupLogoDisplayRevision: vi.fn().mockReturnValueOnce(0).mockReturnValue(1),
 }));
 
-it("shows an accessible fallback for broken images and retries changed assets", () => {
+it("falls back silently to the folder icon for broken images and retries changed assets", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -20,9 +20,7 @@ it("shows an accessible fallback for broken images and retries changed assets", 
     act(() => root.render(createElement(ProjectLogoIcon, { path: "/broken.png" })));
     act(() => container.querySelector("img")!.dispatchEvent(new Event("error")));
     expect(container.querySelector("img")).toBeNull();
-    expect(container.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
-      "Project logo could not be loaded",
-    );
+    expect(container.querySelector('[role="img"]')).toBeNull();
     expect(container.querySelector("svg")).not.toBeNull();
     act(() => window.dispatchEvent(new Event(TAB_GROUP_LOGOS_CHANGED)));
     expect(container.querySelector("img")?.getAttribute("src")).toBe("/broken.png");

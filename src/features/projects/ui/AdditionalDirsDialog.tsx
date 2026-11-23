@@ -44,6 +44,13 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
     (path, index, all) => all.findIndex((other) => pathKey(other) === pathKey(path)) === index,
   );
 
+  const nameCounts = new Map<string, number>();
+  for (const path of candidates) {
+    const key = basename(path).toLocaleLowerCase();
+    nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+  }
+  const sharedNames = new Set([...nameCounts].filter(([, count]) => count > 1).map(([key]) => key));
+
   const needle = query.trim().toLocaleLowerCase();
   const visible = candidates.filter((path) =>
     `${basename(path)} ${path}`.toLocaleLowerCase().includes(needle),
@@ -62,10 +69,7 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
     <Modal
       padding="none"
       title={t("Additional folders")}
-      description={t(
-        "Folders agents in {p0} can also read and edit. Applies to Claude Code and Codex, from the next message.",
-        { p0: name },
-      )}
+      description={t("Folders agents in {p0} can also read and edit.", { p0: name })}
       size="sm"
       fitViewport
       onClose={onClose}
@@ -106,13 +110,16 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
                   onChange={() => toggle(path)}
                   label={
                     <>
-                      <span className="flex min-w-0 flex-col">
+                      <span className="flex min-w-0 flex-col" title={path}>
                         <Text wrap="anywhere" size="secondary" tone="primary">
                           {basename(path)}
                         </Text>
-                        <Text wrap="anywhere" size="micro" tone="muted">
-                          {path}
-                        </Text>
+                        {/* The full path only tells same-named folders apart; otherwise it is a hover. */}
+                        {sharedNames.has(basename(path).toLocaleLowerCase()) ? (
+                          <Text wrap="anywhere" size="micro" tone="muted">
+                            {path}
+                          </Text>
+                        ) : null}
                       </span>
                     </>
                   }

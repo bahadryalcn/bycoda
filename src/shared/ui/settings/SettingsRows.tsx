@@ -38,7 +38,7 @@ export function SettingResetButton({
   disabled = false,
 }: {
   onReset: () => void;
-  /** Accessible name and tooltip. Defaults to "Restore default". */
+  /** Accessible name. Defaults to "Restore default". */
   label?: string;
   disabled?: boolean;
 }) {
@@ -75,7 +75,7 @@ type SettingReset = {
   modified?: boolean;
   /** Restores this row's (or group's) default. The reset icon renders only with `modified`. */
   onReset?: () => void;
-  /** Accessible name and tooltip of the reset icon. Defaults to "Restore default". */
+  /** Accessible name of the reset icon. Defaults to "Restore default". */
   resetLabel?: string;
 };
 
@@ -583,6 +583,7 @@ export function Row({
   });
 
   const rowSurface = surfaceAttributes({ radius: "none", reveal: "row" }, "settings-row");
+  const feedbackContent = feedback ? <div className="settings-row-feedback">{feedback}</div> : null;
   return (
     <div
       id={id ? settingDomId(id) : undefined}
@@ -592,7 +593,7 @@ export function Row({
       data-revealed={flash || undefined}
       data-stacked={stacked || undefined}
       data-control-width={controlWidth === "default" ? undefined : controlWidth}
-      data-density={density === "default" ? undefined : density}
+      data-density={layerEditor ? "compact" : density === "default" ? undefined : density}
       data-feedback-position={feedbackPosition === "end" ? undefined : feedbackPosition}
       data-dependent={dependsOn !== undefined || undefined}
       data-disabled={inactive || undefined}
@@ -608,6 +609,7 @@ export function Row({
       aria-describedby={inactive && hasDescription ? descriptionId : undefined}
       aria-disabled={inactive || undefined}
     >
+      {feedbackPosition === "start" ? feedbackContent : null}
       <div className="settings-row-label">
         <div className="settings-title-line">
           {controlId ? (
@@ -670,7 +672,7 @@ export function Row({
       >
         {children}
       </div>
-      {feedback ? <div className="settings-row-feedback">{feedback}</div> : null}
+      {feedbackPosition === "end" ? feedbackContent : null}
       {reasonTip.tooltip}
     </div>
   );

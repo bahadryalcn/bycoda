@@ -31,7 +31,7 @@ export type TranscriptPreviewValues = Pick<
  * `styles/transcript-surface.css` styles it exactly as it styles the transcript; this file draws
  * only the frame and the backdrop. Not interactive: the content is `inert`.
  * @group display
- * @use The Appearance Chat tab, above the reading settings.
+ * @use Settings > Chat, above the reading presets.
  * @avoid A second copy of reading rules: add them to styles/transcript-surface.css.
  */
 export function TranscriptPreview({

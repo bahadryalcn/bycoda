@@ -43,9 +43,7 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
       disabled={locked}
     >
       {!creator ? (
-        <LoadingText delay={false} className="content-platform-note">
-          {t("Loading your TikTok options…")}
-        </LoadingText>
+        <LoadingText delay={false}>{t("Loading your TikTok options…")}</LoadingText>
       ) : null}
       {duration ? (
         <InlineMessage tone="info" live="off">
@@ -75,12 +73,7 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
             <>
               {item.label}
               {item.blocked ? (
-                <Text
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                  className="content-check-reason"
-                >
+                <Text size="caption" tone="secondary" leading="inherit">
                   {t("Turned off in your TikTok settings")}
                 </Text>
               ) : null}

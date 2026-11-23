@@ -49,7 +49,7 @@
   overflow-y: auto;
 }
 .row {
-  padding: 10px 16px;
+  padding: var(--ui-row-inset-block) var(--ui-row-inset-inline);
 }
 .list:empty {
   display: none;
@@ -60,11 +60,6 @@
   min-inline-size: 0;
   flex: 1 1 180px;
   overflow-wrap: anywhere;
-}
-.metadata {
-}
-.help {
-  padding: 12px;
 }
 .scope > span {
   flex: 1 1 120px;

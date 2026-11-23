@@ -8,6 +8,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Alert } from "../../../shared/ui/Alert";
 import { sshEndpointPreview } from "../model/sshEndpointReview";
+import { sshProxyEndpointText } from "./sshProxyEndpointText";
 import {
   approveSshHttpProxy,
   revokeSshHttpProxyApproval,
@@ -75,9 +76,6 @@ function ProxyApprovalDialog({
           </Button>
           <Button
             variant="primary"
-            label={
-              mode === "basic" ? t("Approve this operation") : t("Continue without authentication")
-            }
             disabled={busy || (mode === "basic" && (!consent || !valid))}
             onClick={() => {
               if (locked.current) return;
@@ -119,13 +117,10 @@ function ProxyApprovalDialog({
       <div className="flex min-w-0 flex-col gap-3">
         <Text as="div" tone="inherit">
           <Text wrap="anywhere" as="p" size="inherit" tone="inherit" weight="medium">
-            {secure ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
-            {sshEndpointPreview(request.endpoint.httpProxy!)}
+            {sshProxyEndpointText(request.endpoint.httpProxy!)}
           </Text>
           <Text wrap="anywhere" as="p" size="inherit" tone="muted" className="mbs-1">
-            {t("SSH target")}: {sshEndpointPreview(request.endpoint)}
-          </Text>
-          <Text as="p" size="inherit" tone="muted" className="mbs-1">
+            {t("SSH target")}: {sshEndpointPreview(request.endpoint)} ·{" "}
             {t(
               {
                 terminal: "Terminal",
@@ -204,25 +199,12 @@ function ProxyApprovalDialog({
               onChange={(event) => setConsent(event.target.checked)}
               label={t(
                 secure
-                  ? "I approve these Basic credentials for this TLS-verified HTTPS proxy and this operation."
-                  : "I allow sending these Basic credentials to this HTTP proxy without TLS for this operation.",
+                  ? "I approve these Basic credentials for this TLS-verified HTTPS proxy and this operation only. They are never saved."
+                  : "I allow sending these Basic credentials to this HTTP proxy without TLS for this operation only. They are never saved.",
               )}
-              size="caption"
-              className="flex items-start gap-2"
             />
-            <Text as="p" tone="muted">
-              {t(
-                "SSH traffic remains encrypted after CONNECT. Proxy credentials are temporary and never saved; another operation needs a new approval.",
-              )}
-            </Text>
           </>
-        ) : (
-          <Text as="p" tone="muted">
-            {t(
-              "Continue without credentials. A proxy authentication error will not retry automatically.",
-            )}
-          </Text>
-        )}
+        ) : null}
       </div>
     </Modal>
   );

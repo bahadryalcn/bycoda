@@ -90,8 +90,6 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
           variant="ghost"
           size="sm"
           type="button"
-          tooltip={t("Remove")}
-          aria-label={t("Remove note {p0}", { p0: card.title || t("Untitled") })}
           onClick={onDismiss}
           iconOnly
           label={t("Remove note {p0}", { p0: card.title || t("Untitled") })}

@@ -17,7 +17,7 @@
 .onboarding-topline {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 10px;
   padding-inline-end: var(--modal-close-clearance);
@@ -27,27 +27,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.onboarding-brand {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: var(--ui-font-title);
-  font-weight: 500;
-  letter-spacing: -0.025em;
-}
-.onboarding-brand img {
-  inline-size: 25px;
-  block-size: 25px;
-  object-fit: contain;
-}
-.onboarding-brand small {
-  padding-inline-start: 10px;
-  font-size: var(--ui-font-caption);
-  font-weight: 400;
-  letter-spacing: normal;
-  color: var(--ui-text-muted);
 }
 .onboarding-stepper-wrap {
   container: onboarding-stepper / inline-size;
@@ -171,8 +150,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
-.onboarding-feature,
-.onboarding-card {
+.onboarding-feature {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -182,11 +160,7 @@
   padding: 12px;
   cursor: pointer;
 }
-.onboarding-feature[data-fixed] {
-  cursor: default;
-}
-.onboarding-feature > div,
-.onboarding-card > div {
+.onboarding-feature > div {
   flex: 1;
   min-inline-size: 0;
 }
@@ -196,11 +170,6 @@
 }
 .onboarding-feature > svg {
   flex: none;
-}
-.onboarding-included {
-  display: flex;
-  align-items: center;
-  gap: 4px;
 }
 
 /* Step 2: visual choice cards (mode, crew) */
@@ -226,11 +195,6 @@
   padding: 8px;
   text-align: start;
 }
-.onboarding-choice-text strong {
-}
-.onboarding-choice-text small {
-  margin-block-start: 2px;
-}
 /* Still frames only: previews keep their aspect ratio and never stretch or animate. */
 .onboarding-crew-preview {
   position: relative;
@@ -240,8 +204,8 @@
   aspect-ratio: 2.8;
   border-radius: var(--ui-control-radius);
   /* The crew scene is always drawn on a dark stage, whatever the app theme. */
-  background: var(--palette-canvasPureDark);
-  color: var(--palette-solidInk);
+  background: var(--ui-crew-stage-surface);
+  color: var(--ui-crew-stage-ink);
   overflow: clip;
 }
 .onboarding-crew-preview canvas {
@@ -365,9 +329,6 @@
 }
 
 /* Step 4: connections */
-.onboarding-card {
-  margin-block-end: 8px;
-}
 .onboarding-actions {
   display: flex;
   flex-wrap: wrap;
@@ -393,9 +354,6 @@
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
-}
-.onboarding-body .onboarding-selection-note {
-  margin: 0 0 0 auto;
 }
 .onboarding-project {
   display: flex;
@@ -430,9 +388,6 @@ div.onboarding-project {
   display: flex;
   flex: none;
   gap: 4px;
-}
-.onboarding-error {
-  overflow-wrap: anywhere;
 }
 
 /* Footer: one rule for every step */
@@ -493,9 +448,6 @@ div.onboarding-project {
   }
 }
 @media (width < 520px) {
-  .onboarding-save-note {
-    display: none;
-  }
   .onboarding-header {
     padding-block: 14px 10px;
   }

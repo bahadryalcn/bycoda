@@ -4,7 +4,7 @@
   gap: var(--space-4);
   max-width: 60rem;
   margin: 0 auto;
-  padding: 0;
+  padding: var(--space-4);
 }
 
 .header {
@@ -44,16 +44,6 @@
   min-width: 0;
 }
 
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.lead {
-  margin: 0;
-}
-
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -73,63 +63,8 @@
   overflow-wrap: anywhere;
 }
 
-.rows {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding-block: var(--space-2);
-}
-
-.rowMain {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-  flex: 1;
-}
-
-.rowTitle {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.gridHead {
-  text-align: center;
-}
-
-.gridHead:first-child {
-  text-align: start;
-}
-
-.cell {
-  display: flex;
-  justify-content: center;
-}
-
-@media (max-width: 40rem) {
-  .screen {
-    padding: var(--space-3);
-  }
-}
-
 .tabs {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-.benefits {
-  margin: 0;
-  padding-inline-start: var(--space-4);
 }

@@ -173,8 +173,6 @@ function LargeTextFileView({ path, onRetry }: { path: string; onRetry: () => voi
         <Button
           size="sm"
           variant="ghost"
-          motion="none"
-          type="button"
           disabled={history.length === 0}
           onClick={() => {
             setOffset(history[history.length - 1] ?? 0);
@@ -186,8 +184,6 @@ function LargeTextFileView({ path, onRetry }: { path: string; onRetry: () => voi
         <Button
           size="sm"
           variant="ghost"
-          motion="none"
-          type="button"
           disabled={!hasNext}
           onClick={() => {
             setHistory((current) => [...current, page.offset]);
@@ -200,11 +196,9 @@ function LargeTextFileView({ path, onRetry }: { path: string; onRetry: () => voi
           <Button
             size="sm"
             variant="ghost"
-            motion="none"
-            type="button"
+            startIcon={<Folder className="icon-xs" strokeWidth={1.75} />}
             onClick={() => reveal(path)}
           >
-            <Folder className="icon-xs" strokeWidth={1.75} />
             {t(REVEAL_LABEL)}
           </Button>
         ) : (

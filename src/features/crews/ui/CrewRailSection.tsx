@@ -149,18 +149,6 @@ export function CrewRailSection({
         data-reorder-fold-body
         className={`flex-col gap-0 px-2 ${collapsed ? "hidden" : "flex"}`}
       >
-        {data.definitions.length === 0 ? (
-          <span className="@max-[140px]/rail:hidden">
-            <Button
-              variant="ghost"
-              motion="none"
-              startIcon={<Plus className="icon-sm" />}
-              onClick={() => setDialog({ kind: "edit", createScope: "project" })}
-            >
-              {t("Create your first crew")}
-            </Button>
-          </span>
-        ) : null}
         {data.definitions.map((crew) => {
           const runs = activeCrewRuns(data.runs, crew.id);
           const { attention, execution } = crewSignal(runs);
@@ -259,7 +247,6 @@ export function CrewRailSection({
                 {/* Start is the rail's frequent action, visible at rest as before; More reveals. */}
                 <InlineMoreAction
                   label={t("{p0} options", { p0: crew.name })}
-                  tooltip={t("More actions")}
                   motion="none"
                   type="button"
                   data-no-drag

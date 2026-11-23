@@ -762,7 +762,7 @@ it("badges unread log entries on the trigger until they are marked read", () => 
   // Looking at the sheet does not mark anything read.
   act(() => button("Notifications").click());
   expect(badge()?.textContent).toBe("2");
-  expect(document.body.textContent).toContain("2 unread");
+  expect(document.body.textContent).not.toContain("2 unread");
   act(() => button("Mark all read").click());
   expect(badge()).toBeNull();
   expect(button("Mark all read")).toBeUndefined();
@@ -785,7 +785,7 @@ it("marks one row read from its hover action and keeps the others unread", async
   await act(async () => rowButton(first, "Mark read").click());
   expect(historyRows()[0].getAttribute("data-unread")).toBeNull();
   expect(historyRows()[1].getAttribute("data-unread")).toBe("true");
-  expect(document.body.textContent).toContain("1 unread");
+  expect(button("Notifications").querySelector(".notification-trigger-count")?.textContent).toBe("1");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)[0].read).toBe(true);
 });
 
@@ -856,7 +856,7 @@ it("marks a row that arrived after the last look as new while the sheet is open"
   expect(row("Fresh").getAttribute("data-unread")).toBe("true");
   expect(row("Fresh").textContent).toContain("Unread");
   expect(row("Stale").getAttribute("data-unread")).toBeNull();
-  expect(document.body.textContent).toContain("1 unread");
+  expect(button("Notifications").querySelector(".notification-trigger-count")?.textContent).toBe("1");
 });
 
 it("opens a history conversation from its row and reports an unavailable one", async () => {

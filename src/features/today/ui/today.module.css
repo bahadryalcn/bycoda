@@ -47,7 +47,7 @@
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--ui-space-1);
   min-width: 0;
 }
 

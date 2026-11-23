@@ -138,9 +138,8 @@ function TurnActivityClock({ origin }: { origin?: number }) {
 
 function TurnActivityIcon({ phase }: { phase: TurnActivityPhase }) {
   const props = {
-    className: "size-3.5 shrink-0",
+    className: "icon-sm shrink-0",
     tone: "secondary",
-    strokeWidth: 1.75,
   } as const;
   if (phase === "thinking") return <Brain {...props} />;
   if (phase === "waiting") return <Clock {...props} />;

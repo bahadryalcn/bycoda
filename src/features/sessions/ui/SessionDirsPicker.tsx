@@ -1,13 +1,12 @@
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { PickerList, PopoverSearchHeader, usePickerList } from "../../../shared/ui/picker";
+import { PickerFooter, PickerList, PopoverSearchHeader, usePickerList } from "../../../shared/ui/picker";
 import { useT, type t as Translate } from "../../../shared/i18n";
 import { useRef, useState } from "react";
 import { basename, pickFolders } from "../../../platform/tauri/fs";
-import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { pathKey, prettyCwd } from "../../../shared/lib/paths";
-import { Folder, Plus } from "../../../shared/ui/icons";
+import { Check, Folder, Home, Plus, RotateCcw } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import {
   additionalDirsForSession,
@@ -159,8 +158,7 @@ export function SessionDirsPicker({
   const label =
     effective.length === 1
       ? basename(workingDirectory) || prettyCwd(workingDirectory)
-      : `${effective.length} folders`;
-  const browserLabel = IS_MAC ? "Finder" : IS_WIN ? "Explorer" : "file manager";
+      : t("{p0} folders", { p0: effective.length });
 
   const toggle = (path: string) => {
     if (pathKey(path) === pathKey(workingDirectory)) return;
@@ -212,10 +210,10 @@ export function SessionDirsPicker({
     meta:
       mode === "project"
         ? pathKey(path) === pathKey(project)
-          ? t("Current")
+          ? <Check className="icon-sm" role="img" aria-label={t("Current")} />
           : undefined
         : pathKey(path) === pathKey(workingDirectory)
-          ? t("Working folder")
+          ? <Home className="icon-sm" role="img" aria-label={t("Working folder")} />
           : undefined,
     disabled:
       picking ||
@@ -241,9 +239,9 @@ export function SessionDirsPicker({
   });
 
   return (
-    <div ref={root} className="relative shrink-0">
+    <div ref={root} className="relative min-w-0 max-w-40">
       <Button
-        variant="ghost"
+        variant="chip"
         type="button"
         tooltip={effective.map(prettyCwd).join("\n")}
         aria-label={t("Folders for this session")}
@@ -260,14 +258,13 @@ export function SessionDirsPicker({
             setOpen(true);
           }
         }}
-        className="max-w-40"
       >
         <Folder
           className="icon-sm shrink-0"
           tone={overridden ? "accent" : undefined}
           strokeWidth={1.75}
         />
-        <Text data-session-dirs-label size="micro" tone="inherit" truncate className="min-w-0">
+        <Text data-session-dirs-label size="inherit" tone="inherit" truncate>
           {label}
         </Text>
       </Button>
@@ -283,25 +280,6 @@ export function SessionDirsPicker({
           }
           className="flex min-h-0 flex-col"
         >
-          <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-0.5">
-            <Text as="p" weight="medium">
-              {mode === "project" ? t("Change project") : t("Folders for this session")}
-            </Text>
-            {onProjectChange ? (
-              <Button
-                variant="ghost"
-                type="button"
-                disabled={picking || !enabled}
-                onClick={() => {
-                  setMode(mode === "folders" ? "project" : "folders");
-                  setQuery("");
-                  setError(undefined);
-                }}
-              >
-                {mode === "folders" ? t("Change project…") : t("Back")}
-              </Button>
-            ) : null}
-          </div>
           <PopoverSearchHeader
             type="search"
             label={t("Search projects and folders")}
@@ -317,38 +295,48 @@ export function SessionDirsPicker({
             emptyLabel={t("No matching folders")}
             className="max-h-64"
           />
-          <Button
-            variant="ghost"
-            type="button"
-            disabled={picking || !enabled}
-            onClick={() => void browse()}
-            loading={picking}
-            startIcon={<Plus className="icon-sm shrink-0" />}
-            className="mt-1 text-left"
-          >
-            {picking ? t("Choosing folders…") : t("Choose from {p0}…", { p0: browserLabel })}
-          </Button>
           {error ? <Alert tone="danger">{error}</Alert> : null}
-          <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5">
-            <Text as="p" size="micro" tone="secondary" className="min-w-0 flex-1">
-              {mode === "project"
-                ? t("Existing conversations open a new session in the chosen project.")
-                : overridden
-                  ? t("Extra folders apply to this session from the next message.")
-                  : t("Working folder included. Extra folders follow the project setting.")}
-            </Text>
-            {overridden && mode === "folders" ? (
+          <PickerFooter align="start">
+            {onProjectChange ? (
               <Button
                 variant="ghost"
                 type="button"
                 disabled={picking || !enabled}
-                onClick={() => saveSessionAdditionalDirs(sessionId, project, null)}
-                className="shrink-0"
+                tooltip={mode === "folders"
+                  ? t("Existing conversations open a new session in the chosen project.")
+                  : undefined}
+                onClick={() => {
+                  setMode(mode === "folders" ? "project" : "folders");
+                  setQuery("");
+                  setError(undefined);
+                }}
               >
-                {t("Reset")}
+                {mode === "folders" ? t("Change project…") : t("Back")}
               </Button>
             ) : null}
-          </div>
+            <Button
+              variant="ghost"
+              type="button"
+              disabled={picking || !enabled}
+              onClick={() => void browse()}
+              loading={picking}
+              startIcon={<Plus className="icon-sm" />}
+            >
+              {mode === "project" ? t("Open a project") : t("Add folder…")}
+            </Button>
+            {overridden && mode === "folders" ? (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Reset")}
+                type="button"
+                disabled={picking || !enabled}
+                onClick={() => saveSessionAdditionalDirs(sessionId, project, null)}
+              >
+                <RotateCcw className="icon-sm" />
+              </Button>
+            ) : null}
+          </PickerFooter>
         </Popover>
       ) : null}
     </div>

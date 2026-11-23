@@ -235,16 +235,11 @@ export function SessionWorkspaceActions({
   if (!workspace && connectionIssueHandled) return null;
   if (!workspace && !error && !pending) return null;
   const removed = workspace?.directoryState === "removed";
-  const quickDelete =
-    workspace &&
-    (workspace.state === "finished" ||
-      workspace.state === "merged" ||
-      workspace.state === "abandoned") &&
-    !removed;
+  // Active and idle are the normal state and need no tag; only a finished outcome is named.
   const lifecycleLabel = workspace
     ? {
-        active: t("Active"),
-        idle: t("Idle"),
+        active: "",
+        idle: "",
         finished: t("Finished"),
         merged: t("Merged"),
         abandoned: t("Closed"),
@@ -262,7 +257,8 @@ export function SessionWorkspaceActions({
         {workspace ? (
           <>
             <Text size="caption" tone="secondary" className="min-w-0 flex-1 break-all">
-              {workspace.branchRef.replace(/^refs\/heads\//, "")} · {lifecycleLabel}
+              {workspace.branchRef.replace(/^refs\/heads\//, "")}
+              {lifecycleLabel ? ` · ${lifecycleLabel}` : ""}
             </Text>
             {removed ? (
               <Button
@@ -288,17 +284,6 @@ export function SessionWorkspaceActions({
                 {t("Review changes")}
               </Button>
             )}
-            {quickDelete && (
-              <Button
-                variant="ghost"
-                disabled={
-                  !!pending || !!session?.busy || !capabilities.includes("workspaces.lifecycle.v1")
-                }
-                onClick={() => setRemove(true)}
-              >
-                {t("Delete directory")}
-              </Button>
-            )}
             <Button
               ref={menuTrigger}
               variant="ghost"
@@ -318,11 +303,6 @@ export function SessionWorkspaceActions({
       {removed && (
         <Text as="p" size="caption" tone="secondary">
           {t("The directory was removed. Your conversation and branch are retained.")}
-        </Text>
-      )}
-      {workspace && !removed && !capabilities.includes("workspaces.delivery.v1") && (
-        <Text as="p" size="caption" tone="secondary">
-          {t("Update bycoda Host to review and deliver workspace changes.")}
         </Text>
       )}
       {error && !connectionIssueHandled && (
@@ -358,7 +338,6 @@ export function SessionWorkspaceActions({
               kind: "item",
               id: "close",
               label: t("Close"),
-              description: t("Keep the conversation and branch without delivery."),
               disabled: workspace.state === "merged" || workspace.state === "abandoned",
             },
             { kind: "sep" },

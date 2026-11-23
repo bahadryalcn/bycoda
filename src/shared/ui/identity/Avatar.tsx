@@ -3,18 +3,19 @@ import { surfaceAttributes } from "../Surface";
 import { Text, type TextSize } from "../Text";
 import styles from "./Avatar.module.css";
 
-/** Avatar box on the doubled icon scale: 16, 20, 24 and 32px. */
-export type AvatarSize = "xs" | "sm" | "md" | "lg";
+/** Avatar image sizes, with a larger portrait for visual choices. */
+export type AvatarSize = "xs" | "sm" | "md" | "lg" | "portrait";
 
 const TEXT_SIZE: Record<AvatarSize, TextSize> = {
   xs: "micro",
   sm: "micro",
   md: "caption",
   lg: "secondary",
+  portrait: "title",
 };
 
 export type AvatarProps = Omit<ComponentPropsWithoutRef<"span">, "children" | "className"> & {
-  /** 16 / 20 / 24 / 32 px. Default `md`. */
+  /** 16 / 20 / 24 / 32 px, or 40 px for `portrait`. Default `md`. */
   size?: AvatarSize;
   /** `circle` for a person or assistant, `control` (radius 8) for a crew or provider mark. */
   shape?: "circle" | "control";

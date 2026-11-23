@@ -5,7 +5,6 @@ import { useRef, useState, type ComponentType, type ReactNode } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
-import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { ScrollArea } from "../../../../shared/ui/ScrollArea";
 import { Text } from "../../../../shared/ui/Text";
@@ -33,13 +32,11 @@ export type AccountFormProps = {
 /** Saved accounts of one provider plus the add/edit form. Drafts live in the mounted form. */
 export function MessagingAccountsCard({
   provider,
-  emptyLabel,
   addLabel,
   describe,
   Form,
 }: {
   provider: MessagingProvider;
-  emptyLabel: string;
   addLabel: string;
   describe: (account: MessagingAccount) => string;
   Form: ComponentType<AccountFormProps>;
@@ -49,7 +46,6 @@ export function MessagingAccountsCard({
   const [editing, setEditing] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<MessagingAccount | null>(null);
   const [drafts, setDrafts] = useState<string[]>([]);
   const [saving, setSaving] = useState<string[]>([]);
   const empty = accounts !== null && accounts.length === 0;
@@ -73,7 +69,6 @@ export function MessagingAccountsCard({
     try {
       await removeMessagingAccount(account.id);
       setEditing((current) => (current === account.id ? null : current));
-      setSaved((current) => (current?.id === account.id ? null : current));
     } catch (err: unknown) {
       setRemoveError(presentRemoteError(err, { explicit: true }));
     } finally {
@@ -85,7 +80,7 @@ export function MessagingAccountsCard({
     <>
       <Row
         stacked
-        label={t("Accounts")}
+        label={null}
         info={t("Credentials are stored on this computer. Disconnect removes them.")}
         feedback={
           error ? (
@@ -108,21 +103,7 @@ export function MessagingAccountsCard({
           loading ? (
             <LoadingText />
           ) : null
-        ) : empty ? (
-          <EmptyState
-            size="inline"
-            {...surfaceAttributes(
-              { variant: "card", frame: "card", radius: "card" },
-              "settings-collection settings-collection-empty",
-            )}
-            descriptionText={{
-              size: "caption",
-              tone: "secondary",
-              leading: "normal",
-            }}
-            description={emptyLabel}
-          />
-        ) : (
+        ) : !empty ? (
           <div
             {...surfaceAttributes(
               { variant: "card", frame: "card", radius: "card" },
@@ -160,13 +141,11 @@ export function MessagingAccountsCard({
                     </Text>
                   </div>
                   <div className="settings-collection-actions">
-                    <Badge
-                      size="sm"
-                      appearance="subtle"
-                      tone={account.connected ? "neutral" : "warning"}
-                    >
-                      {account.connected ? t("Configured") : t("Credentials missing")}
-                    </Badge>
+                    {!account.connected ? (
+                      <Badge size="sm" appearance="subtle" tone="warning">
+                        {t("Credentials missing")}
+                      </Badge>
+                    ) : null}
                     <Button
                       disabled={saving.length > 0 || removing !== null || target === account.id}
                       onClick={() => open(account.id)}
@@ -185,9 +164,9 @@ export function MessagingAccountsCard({
               ))}
             </ScrollArea>
           </div>
-        )}
+        ) : null}
         {accounts !== null && !empty && target !== "new" ? (
-          <div className="integration-actions integration-actions-bar">
+          <div className="integration-actions">
             <Button
               disabled={saving.length > 0 || removing !== null}
               startIcon={<Plus className="icon-sm" />}
@@ -199,11 +178,6 @@ export function MessagingAccountsCard({
         ) : null}
       </Row>
       <InboxConnectionError error={removeError} />
-      {saved && !formOpen ? (
-        <SettingsFeedback state="success" onDismiss={() => setSaved(null)}>
-          {t("Connected as {p0}.", { p0: saved.identity || saved.label })}
-        </SettingsFeedback>
-      ) : null}
       {[...new Set([...drafts, ...(formOpen && target ? [target] : [])])].map((id) => {
         const account = accounts?.find((item) => item.id === id) ?? null;
         if (id !== "new" && !account) return null;
@@ -218,10 +192,7 @@ export function MessagingAccountsCard({
                     : current.filter((owner) => owner !== id),
                 )
               }
-              onSaved={(value) => {
-                setSaved(value);
-                close(id);
-              }}
+              onSaved={() => close(id)}
               onCancel={empty ? undefined : () => close(id)}
             />
           </div>
@@ -281,12 +252,7 @@ export function AccountFormActions({
 }) {
   return (
     <>
-      <div
-        {...surfaceAttributes(
-          { frame: "pane", edge: "block-start" },
-          "integration-actions integration-actions-bar",
-        )}
-      >
+      <div className="integration-actions">
         {children}
         <Button
           variant="primary"

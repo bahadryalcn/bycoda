@@ -4,17 +4,9 @@
   inline-size: 100%;
   min-inline-size: 0;
 }
-.wideRow {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-inline-size: 0;
-}
 .switchRow {
   display: grid;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
   align-content: start;
 }
@@ -23,21 +15,6 @@
   padding-inline-start: 2px;
 }
 
-.roleToggle {
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.fields {
-  gap: 16px;
-  align-items: start;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-}
-.fields > * {
-  min-inline-size: 0;
-}
 .presetControls {
   display: grid;
   gap: 6px;
@@ -62,19 +39,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
-  gap: 6px;
-}
-.inlineControls,
-.actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-inline-size: 0;
-  flex-wrap: wrap;
-}
-.actions {
-  grid-column: 1 / -1;
-  flex-wrap: wrap;
+  gap: var(--ui-space-2);
 }
 /* A text field inside a settings row fills the row's control column. */
 .grow {

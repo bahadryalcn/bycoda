@@ -1024,7 +1024,7 @@ export function JiraBoardView({
           setReload((value) => value + 1);
         }}
       />
-      {backlogUnavailable ? (
+      {backlogUnavailable && (mode === "planning" || scope === "backlog") ? (
         <Text as="p" size="inherit" tone="secondary" className="jira-board-hint">
           {t(
             "Backlog is not enabled for this Jira board. Enable it in Jira board settings to use backlog planning. Available board issues remain visible.",
@@ -1047,7 +1047,7 @@ export function JiraBoardView({
           padding="sm"
           className="jira-board-transition"
           role="group"
-          aria-label={t("Choose Jira transition")}
+          aria-label={pick.issue.identifier}
         >
           <Text as="strong" size="inherit" tone="inherit" weight="medium">
             {pick.issue.identifier} · {t("Choose Jira transition")}

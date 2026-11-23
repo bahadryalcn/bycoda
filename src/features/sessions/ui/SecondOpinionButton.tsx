@@ -43,7 +43,6 @@ type Props = {
   icon?: IconComponent;
   title?: string;
   disabledTitle?: string;
-  description?: string;
   menuLabel?: string;
   includeCurrent?: boolean;
   /**
@@ -76,7 +75,6 @@ export function HandoffButton({
       icon={Replace}
       title={t("Handoff")}
       disabledTitle={t("Install another provider to hand off")}
-      description={t("Hand this session to another agent to continue the work.")}
       menuLabel={t("Hand this session to another agent")}
     />
   );
@@ -105,7 +103,6 @@ export function BuildTargetButton({
       icon={ChevronDown}
       title={t("Build with another model")}
       disabledTitle={t("No build providers are available")}
-      description={t("Choose the model and provider that should build this plan.")}
       menuLabel={t("Build this plan with another model or provider")}
       includeCurrent
       disabled={disabled}
@@ -122,7 +119,6 @@ export function SecondOpinionButton({
   icon: Icon = MessageMultiple,
   title,
   disabledTitle,
-  description,
   menuLabel,
   includeCurrent = false,
   excludeFromModel = false,
@@ -136,7 +132,6 @@ export function SecondOpinionButton({
   // so a caller that omits a prop still gets the active language.
   const titleText = title ?? t("Second opinion");
   const disabledText = disabledTitle ?? t("No different model available for a second opinion");
-  const descriptionText = description ?? t("Send this turn to another agent to review the work.");
   const menuLabelText = menuLabel ?? t("Send this turn to another agent");
   const availabilityVersion = useSyncExternalStore(
     subscribeHarnessAvailability,
@@ -226,22 +221,6 @@ export function SecondOpinionButton({
     onPick({ harness: model.harness, model: model.id, modelSettings });
   };
   const menuItems = (): DropdownMenuItem[] => [
-    {
-      kind: "content",
-      id: "description",
-      node: (
-        <Text
-          as="p"
-          size="micro"
-          tone="secondary"
-          leading="none"
-          className="px-1.5 py-1 text-balance"
-        >
-          {descriptionText}
-        </Text>
-      ),
-    },
-    { kind: "sep" },
     ...(targets.length === 0
       ? [
           {
@@ -264,7 +243,7 @@ export function SecondOpinionButton({
             kind: "item",
             id: harness,
             label: HARNESS_TITLE[harness],
-            icon: <HarnessIcon harness={harness} className="size-3.5" />,
+            icon: <HarnessIcon harness={harness} size="sm" />,
             disabled: !isHarnessAvailable(harness) && probed,
             submenu: list.length
               ? list.map((model): DropdownMenuAction => {
@@ -332,7 +311,7 @@ export function SecondOpinionButton({
             setOpen((value) => !value);
           }}
         >
-          <Icon className="size-3.5" strokeWidth={1.75} />
+          <Icon className="icon-sm" strokeWidth={1.75} />
         </Button>
       )}
       {open && button ? (

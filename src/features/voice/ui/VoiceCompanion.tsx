@@ -3540,9 +3540,11 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
               />
             ) : (
               <div>
-                <p>{t("The selected project is no longer visible.")}</p>
+                <Text as="p" size="inherit" tone="inherit">
+                  {t("The selected project is no longer visible.")}
+                </Text>
                 <Button disabled={jobReview.busy} onClick={cancelJobReview}>
-                  {t("Cancel review")}
+                  {t("Cancel")}
                 </Button>
               </div>
             )

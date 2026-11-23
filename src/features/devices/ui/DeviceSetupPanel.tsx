@@ -3,7 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Text } from "../../../shared/ui/Text";
-import { t } from "../../../shared/i18n/technical";
+import { t, useLocale } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Check, Download, Play, RefreshCw, Square } from "../../../shared/ui/icons";
@@ -45,6 +45,7 @@ export function DeviceSetupPanel({
   start: Action;
   stop: Action;
 }) {
+  useLocale();
   const running = status.running && !unknown;
   return (
     <div className="device-panel-setup">
@@ -78,7 +79,7 @@ export function DeviceSetupPanel({
           {status.running ? (
             <Text as="div" size="caption" tone="secondary">
               {deviceCount === undefined
-                ? `${t("Devices")} · ${t("Unknown")}`
+                ? t("{p0} · {p1}", { p0: t("Devices"), p1: t("Unknown") })
                 : deviceCount === 1
                   ? t("1 device found")
                   : t("{p0} devices found", { p0: deviceCount })}
@@ -136,9 +137,7 @@ export function DeviceSetupPanel({
             disabled: refresh.disabled,
             onClick: refresh.onClick,
           }}
-          extra={
-            <ErrorDetails title={t("Device host reported an error")} detail={status.lastError} />
-          }
+          extra={<ErrorDetails detail={status.lastError} />}
         />
       ) : null}
       <div className="host-tool-actions device-panel-setup-actions">

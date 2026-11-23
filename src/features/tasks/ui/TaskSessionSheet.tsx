@@ -190,7 +190,7 @@ export function TaskSessionSheet({
           </Alert>
         ) : null}
         {!session && !error ? <LoadingText /> : null}
-        {conversation.map((block) => (
+        {conversation.map((block, index) => (
           <section
             {...surfaceAttributes(
               block.role === "user" ? { variant: "card", frame: "card", radius: "card" } : {},
@@ -199,9 +199,12 @@ export function TaskSessionSheet({
             data-role={block.role}
             key={block.id}
           >
-            <SectionLabel as="h3" className="task-session-heading">
-              {t(block.role === "user" ? "Task prompt" : "Agent")}
-            </SectionLabel>
+            {/* Only the first message of a run of one role is labelled; the user card carries the rest. */}
+            {conversation[index - 1]?.role !== block.role && block.role !== "user" ? (
+              <SectionLabel as="h3" className="task-session-heading">
+                {t("Agent")}
+              </SectionLabel>
+            ) : null}
             <AgentMarkdown text={block.text} />
           </section>
         ))}
@@ -218,7 +221,7 @@ export function TaskSessionSheet({
               {operational.map((block) => (
                 <section className="task-session-activity-item" key={block.id}>
                   <SectionLabel as="h3" className="task-session-heading">
-                    {t(operationalRoleLabel(block.role))}
+                    {operationalRoleLabel(block.role)}
                   </SectionLabel>
                   <AgentMarkdown text={block.text} />
                 </section>
@@ -239,16 +242,16 @@ function operationalRoleLabel(role: string): string {
     case "reasoning":
       return t("Reasoning");
     case "tool":
-      return "Tool";
+      return t("Tool");
     case "approval":
-      return "Approval";
+      return t("Approval");
     case "plan":
-      return "Plan";
+      return t("Plan");
     case "tasks":
-      return "Tasks";
+      return t("Tasks");
     case "handoff":
-      return "Handoff";
+      return t("Handoff");
     default:
-      return "Status";
+      return t("Status");
   }
 }

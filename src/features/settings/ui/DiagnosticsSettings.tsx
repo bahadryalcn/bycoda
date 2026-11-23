@@ -20,9 +20,11 @@ function HostStallProfilesRow() {
   const [enabled, setEnabled] = useState<boolean>();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+  const [readAttempt, setReadAttempt] = useState(0);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Sync the mounted switch with the local Host setting and discard late replies when it closes.
   useEffect(() => {
     let active = true;
+    setError(undefined);
     loadHostStallProfiles().then(
       (value) => {
         if (active) setEnabled(value);
@@ -34,7 +36,7 @@ function HostStallProfilesRow() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [readAttempt]);
   const onChange = (next: boolean) => {
     setSaving(true);
     setError(undefined);
@@ -47,13 +49,15 @@ function HostStallProfilesRow() {
       id="host-stall-profiles"
       label={t("Host CPU profiles")}
       description={t(
-        "Save a 30-second CPU profile to the Host log folder when its event loop stalls repeatedly.",
+        "Save a 30-second CPU profile to the Host log folder when the event loop stalls repeatedly. Starting a profile briefly freezes the Host.",
       )}
-      info={t("For developers. Starting a profile briefly freezes the Host, so keep this off.")}
       feedback={
         error ? (
-          <SettingsFeedback state="error">
-            {t("Could not reach this computer's Host setting: {p1}", { p1: error })}
+          <SettingsFeedback
+            state="error"
+            action={{ label: t("Retry"), onClick: () => setReadAttempt((attempt) => attempt + 1) }}
+          >
+            {t("Could not confirm the Host setting.")}
           </SettingsFeedback>
         ) : undefined
       }
@@ -131,12 +135,11 @@ export function DiagnosticsGroup() {
   };
 
   return (
-    <Group title={null}>
+    <Group title={t("Diagnostics")}>
       <Row
         id="performance-trace"
         label={t("Performance trace")}
-        description={t("Record startup timing, rendering stalls and long main-thread tasks.")}
-        info={t("Only durations are kept, never message text, paths or script names.")}
+        description={t("Record startup and rendering timings. Only durations are kept, never message text, paths or script names.")}
         feedback={
           unsaved ? (
             <SettingsFeedback
@@ -159,9 +162,7 @@ export function DiagnosticsGroup() {
       <Row
         id="performance-trace-data"
         label={t("Trace data")}
-        description={t("Copy the recorded timings as JSON, or clear them.")}
         dependsOn={enabled}
-        disabledReason={t("Turn on Performance trace first")}
       >
         <Text role="status" size="caption" tone="secondary" className="empty:hidden">
           {result === "cleared" ? t("Cleared") : ""}

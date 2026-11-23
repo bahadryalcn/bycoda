@@ -3,16 +3,14 @@ import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useEffect, useId, useRef, useState } from "react";
 import { Modal, ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { Divider } from "../../../shared/ui/Divider";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Surface } from "../../../shared/ui/Surface";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { ArrowUp, ChevronRight, Folder, FolderPlus } from "../../../shared/ui/icons";
+import { ChevronRight, Folder, FolderPlus } from "../../../shared/ui/icons";
 import { OPEN_CONNECTIONS_EVENT, remoteRequest, useRemoteMachines } from "../model/connections";
 import { remoteProjectMachines } from "../model/localSync";
 import { openRemoteProject } from "../model/remoteProjects";
@@ -58,13 +56,6 @@ export function AddRemoteProjectDialog({
   return (
     <Modal
       title={t("Open folder on a machine")}
-      description={
-        t(
-          "Sessions in this project run on that machine, using its checkout and its Codex or Claude Code sign-in. They keep running when you close ",
-        ) +
-        PRODUCT_IDENTITY.displayName +
-        t(" here.")
-      }
       size="md"
       onClose={onCancel}
     >
@@ -305,9 +296,7 @@ function AddRemoteProjectForm({
             description={
               fixedMachine
                 ? t("That machine is not available.")
-                : t(
-                    "No computers are connected yet. Pick one found on your account in Settings, then open a folder on it here.",
-                  )
+                : t("No computers are connected yet.")
             }
           />
         </>
@@ -328,14 +317,7 @@ function AddRemoteProjectForm({
               }}
               searchable={false}
             />
-          ) : (
-            <Text as="p" tone="muted">
-              {t("On ")}
-              <Text size="inherit" tone="primary">
-                {machine.name}
-              </Text>
-            </Text>
-          )}
+          ) : null}
           <TextField
             aria-label={t("Folder path on the machine")}
 
@@ -360,20 +342,9 @@ function AddRemoteProjectForm({
           <nav aria-label={t("Locations")} className="flex flex-wrap items-center gap-1">
             <Button
               type="button"
-              aria-label={t("Parent folder")}
-              disabled={!directory?.parent || loading || creating || opening}
-              onClick={() => void browse(directory?.parent ?? undefined)}
-              variant="secondary"
-              iconOnly
-              label={t("Parent folder")}
-            >
-              <ArrowUp className="icon-md" />
-            </Button>
-            <Button
-              type="button"
               disabled={loading || creating || opening}
               onClick={() => void browse(directory?.home)}
-              variant="secondary"
+              variant="ghost"
             >
               {t("Home folder")}
             </Button>
@@ -383,7 +354,7 @@ function AddRemoteProjectForm({
                 type="button"
                 disabled={loading || creating || opening}
                 onClick={() => void browse(root.path)}
-                variant="secondary"
+                variant="ghost"
               >
                 {root.name}
               </Button>
@@ -392,7 +363,7 @@ function AddRemoteProjectForm({
               type="button"
               disabled={!directory || loading || creating || opening || !!browseError}
               onClick={() => setNewName("")}
-              variant="secondary"
+              variant="ghost"
             >
               <FolderPlus className="icon-md" />
               {t("New folder")}
@@ -430,31 +401,18 @@ function AddRemoteProjectForm({
               </Button>
             </div>
           ) : null}
-          <RemoteDataStatus
-            label={t("folders")}
-            state={{
-              phase: loading
-                ? directory
-                  ? "refreshing"
-                  : "loading"
-                : browseError
-                  ? "error"
-                  : directory
-                    ? directory.entries.length
-                      ? "ready"
-                      : "empty"
-                    : "loading",
-              error: browseError,
-              updatedAt: verifiedAt,
-            }}
-            onRefresh={() => void browse(browseError ? requestedPath.current : directory?.path)}
-            disabled={opening || creating}
-          />
-          {directory && (loading || browseError) ? (
-            <InlineMessage tone="neutral" icon={null}>
-              {t("Showing last loaded folder: ")}
-              {directory.path}
-            </InlineMessage>
+          {/* The list loads itself: the strip appears only while it works or after it failed. */}
+          {loading || browseError ? (
+            <RemoteDataStatus
+              label={t("folders")}
+              state={{
+                phase: loading ? (directory ? "refreshing" : "loading") : "error",
+                error: browseError,
+                updatedAt: verifiedAt,
+              }}
+              onRefresh={() => void browse(browseError ? requestedPath.current : directory?.path)}
+              disabled={opening || creating}
+            />
           ) : null}
           <Surface
             variant="card"

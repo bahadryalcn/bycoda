@@ -73,6 +73,14 @@ function button(label: string, scope: ParentNode = document): HTMLButtonElement 
   return found!;
 }
 
+/** The list rescans when the window regains focus; there is no manual refresh control. */
+async function refocusWindow() {
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+  });
+}
+
 async function click(label: string) {
   const target = button(label);
   await act(async () => {
@@ -114,7 +122,7 @@ it("keeps Advanced controls outside the single skill scroller", async () => {
   expect(container.querySelectorAll("[data-skill-list]")).toHaveLength(1);
   expect(scroller.querySelector("[data-continuous-list]")).toBeNull();
   expect(scroller.textContent).not.toContain("Skill folders");
-  await chooseFromMenu("More", "Skill folders");
+  await chooseFromMenu("New", "Skill folders");
   const dialog = document.querySelector('[role="dialog"]')!;
   expect(dialog.textContent).toContain("D:/repo/.agents/skills");
   expect(dialog.textContent).not.toContain("Disabled skills stay on disk.");
@@ -224,7 +232,7 @@ it("keeps policy explanations collapsed without changing owner restrictions", as
       .querySelector('[role="switch"][aria-label="Enable Project guide in bycoda"]')
       ?.getAttribute("aria-checked"),
   ).toBe("false");
-  await chooseFromMenu("More", "Skill folders");
+  await chooseFromMenu("New", "Skill folders");
   expect(
     document.querySelector('[role="dialog"] [data-setting-id="skill-folders"]'),
   ).not.toBeNull();
@@ -346,8 +354,8 @@ describe("Settings skill preview", () => {
     expect(disk).toBe("---\nname: guide\n---\n\n# Updated instructions\n");
     expect(container.textContent).not.toContain("Skill saved.");
     expect(button("Saved").disabled).toBe(true);
-    // Success shows on the Save control itself, not as a separate toast.
-    expect(container.querySelector("footer")?.textContent).toContain("Saved");
+    // Success shows on the Save control itself, not as a toast or a footer status.
+    expect(container.querySelector("footer")).toBeNull();
     edit("# Another draft");
     expect(button("Save").disabled).toBe(false);
   });
@@ -493,7 +501,7 @@ describe("Settings skill preview", () => {
     await click(label);
     const reload = deferred<DiscoveredSkill[]>();
     vi.mocked(invoke).mockImplementationOnce(() => reload.promise);
-    await click("Refresh skills");
+    await refocusWindow();
     // The list stays mounted while it refreshes, so the opener can be kept or replaced.
     await act(async () => reload.resolve(skills));
     const replacement = button(label);
@@ -505,7 +513,7 @@ describe("Settings skill preview", () => {
     await render();
     await openPreview("Project guide");
     vi.mocked(invoke).mockResolvedValueOnce([skills[2]]);
-    await click("Refresh skills");
+    await refocusWindow();
     await click("Close skill preview");
     expect(document.activeElement?.getAttribute("aria-label")).toBe("Filter skills");
   });

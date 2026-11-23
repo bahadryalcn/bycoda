@@ -5,9 +5,10 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { MACHINE_SEARCH_FROM } from "./machineListSearch";
 import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import {
@@ -40,11 +41,14 @@ function MachineIcon({ machine }: { machine: DiscoveredMachine }) {
 function CandidateRow({
   machine,
   busy,
+  showSource,
   onAdd,
   onPair,
 }: {
   machine: DiscoveredMachine;
   busy: boolean;
+  /** The group label does not already name the source, so the row does. */
+  showSource: boolean;
   onAdd: (plan: SshAddPlan) => void;
   onPair: (plan: AccountPairPlan) => void;
 }) {
@@ -59,42 +63,38 @@ function CandidateRow({
         <Text truncate weight="medium" tone="primary">
           {machine.name}
         </Text>
-        <Text truncate size="caption" tone="muted">
-          {sources.join(" · ")}
-        </Text>
+        {showSource ? (
+          <Text truncate size="caption" tone="muted">
+            {sources.join(" · ")}
+          </Text>
+        ) : null}
       </div>
-      {machine.online !== undefined ? (
-        <Badge variant="dot" size="sm" tone={machine.online ? "success" : "neutral"}>
-          {machine.online ? t("Online") : t("Offline")}
+      {machine.online === false ? (
+        <Badge variant="dot" size="sm" tone="neutral">
+          {t("Offline")}
         </Badge>
       ) : null}
-      <div className="flex shrink-0 items-center gap-1">
-        {plan || pair ? null : (
-          <InfoPopover label={t("Why Add is unavailable")} width={280}>
-            <p>
-              {machine.sources.includes("account")
-                ? t(
-                    "This computer has not published an address another computer can use. Turn on Tailscale or a tunnel there, or add it by its SSH address under Enter address.",
-                  )
-                : t("This computer has no SSH address to set it up from here yet.")}
-            </p>
-          </InfoPopover>
-        )}
-        <Button
-          stableWidth
-          variant="secondary"
-          disabled={busy || (!plan && !pair)}
-          onClick={() => (plan ? onAdd(plan) : pair && onPair(pair))}
-        >
-          {t("Add")}
-        </Button>
-      </div>
+      <Button
+        stableWidth
+        variant="secondary"
+        disabled={busy || (!plan && !pair)}
+        disabledReason={
+          plan || pair
+            ? undefined
+            : machine.sources.includes("account")
+              ? t(
+                  "This computer has not published an address another computer can use. Turn on Tailscale or a tunnel there, or add it by its SSH address under Enter address.",
+                )
+              : t("This computer has no SSH address to set it up from here yet.")
+        }
+        onClick={() => (plan ? onAdd(plan) : pair && onPair(pair))}
+      >
+        {t("Add")}
+      </Button>
     </div>
   );
 }
 
-/** Rows shown before Show all; a search always shows every match. */
-const COLLAPSED_ROWS = 5;
 const GROUP_ORDER = { shared: 1, mobile: 2 } as const;
 
 /** Splits rows into sections by shared/phone group, else by their first source, keeping order. */
@@ -130,7 +130,6 @@ export function DiscoveredMachines({
   saved,
   active,
   busy,
-  query = "",
   onAdd,
   onPaired,
 }: {
@@ -138,15 +137,13 @@ export function DiscoveredMachines({
   /** The list is visible; it refreshes only then. */
   active: boolean;
   busy: boolean;
-  /** The page search; rows filter by name and address. */
-  query?: string;
   onAdd: (plan: SshAddPlan) => void;
   /** An account-paired machine was saved; the caller refreshes its machine list. */
   onPaired: () => void;
 }) {
   useLocale();
   const [pairing, setPairing] = useState<AccountPairPlan | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [query, setQuery] = useState("");
   const { signIn } = useAccount();
   const { machines, loading, signedOut } = useDiscoveredMachines(saved, active);
   const open = machines
@@ -160,11 +157,22 @@ export function DiscoveredMachines({
     .map(({ machine }) => machine);
   const searching = query.trim() !== "";
   const found = open.filter((machine) => matches(machine, query));
-  const shown = searching || expanded ? found : found.slice(0, COLLAPSED_ROWS);
-  const hidden = found.length - shown.length;
+  const shown = found;
   const showGroupLabels = groupBySource(shown).length > 1;
   return (
     <section aria-label={t("Available to add")} className="flex flex-col gap-2">
+      {/* Search earns its row only once the list is long enough to scan. */}
+      {open.length > MACHINE_SEARCH_FROM || searching ? (
+        <SearchInput
+          standalone
+          appearance="field"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          textSize="secondary"
+          placeholder={t("Search by name or address")}
+          aria-label={t("Search by name or address")}
+        />
+      ) : null}
       {signedOut ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Text tone="muted">{t("Sign in to also find computers on your account.")}</Text>
@@ -183,6 +191,7 @@ export function DiscoveredMachines({
                     key={machine.key}
                     machine={machine}
                     busy={busy}
+                    showSource={!showGroupLabels}
                     onAdd={onAdd}
                     onPair={setPairing}
                   />
@@ -191,16 +200,6 @@ export function DiscoveredMachines({
             </div>
           ))
         : null}
-      {hidden > 0 ? (
-        <Button variant="ghost" className="self-start" onClick={() => setExpanded(true)}>
-          {t("Show all ({p0})", { p0: found.length })}
-        </Button>
-      ) : null}
-      {expanded && !searching && found.length > COLLAPSED_ROWS ? (
-        <Button variant="ghost" className="self-start" onClick={() => setExpanded(false)}>
-          {t("Show less")}
-        </Button>
-      ) : null}
       {found.length === 0 && loading ? (
         <LoadingText>{t("Looking for machines…")}</LoadingText>
       ) : null}

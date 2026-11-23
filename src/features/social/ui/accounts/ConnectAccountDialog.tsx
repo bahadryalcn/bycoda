@@ -10,13 +10,11 @@ import { Select } from "../../../../shared/ui/Select";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { HostProject } from "../../../connections/public/protocol";
 import {
-  SOCIAL_PLATFORMS,
   SOCIAL_PLATFORM_NAMES,
   type SocialAccount,
   type SocialPlatform,
 } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
-import { gateReason, type ActionGate } from "../common/DisabledReason";
 import {
   accountTypesFor,
   connectionMethods,
@@ -24,11 +22,10 @@ import {
   hostConnection,
   type ConnectionMethod,
 } from "./connectOptions";
-import { AddAccountKind } from "./AddAccountKind";
 import { EmailAccountDialog } from "./EmailAccountDialog";
+import { ProviderSelect } from "./ProviderSelect";
 import { SignupAccountDialog } from "./SignupAccountDialog";
 import { canCreateAccount } from "./signupModel";
-import { PlatformIcon } from "../common/PlatformIcon";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -91,13 +88,23 @@ export function ConnectAccountDialog({
   );
   const { error, is, write } = useAccountWrite(t("The account could not be added. Try again."));
 
+  const choosePlatform = (next: SocialPlatform) => {
+    const nextMethod = defaultConnectionMethod(next);
+    setPlatform(next);
+    setMethod(nextMethod);
+    setAccountType(accountTypesFor(next, nextMethod)[0] ?? "");
+  };
+
   if (kind === "email")
     return (
       <EmailAccountDialog
         client={client}
         onClose={onClose}
         onCreated={onCreated}
-        onSwitchToAccount={() => setKind("account")}
+        onSwitchToAccount={(next) => {
+          choosePlatform(next);
+          setKind("account");
+        }}
       />
     );
 
@@ -115,22 +122,14 @@ export function ConnectAccountDialog({
     );
 
   const types = accountTypesFor(platform, method);
-  const choosePlatform = (next: SocialPlatform) => {
-    const nextMethod = defaultConnectionMethod(next);
-    setPlatform(next);
-    setMethod(nextMethod);
-    setAccountType(accountTypesFor(next, nextMethod)[0] ?? "");
-  };
+  const methods = connectionMethods(platform);
   const chooseMethod = (next: ConnectionMethod) => {
     setMethod(next);
     if (!accountTypesFor(platform, next).includes(accountType))
       setAccountType(accountTypesFor(platform, next)[0] ?? "");
   };
-  const gate: ActionGate = !name.trim()
-    ? { disabled: true, disabledReason: t("Enter a name for this account.") }
-    : !accountType
-      ? { disabled: true, disabledReason: t("Choose an account type.") }
-      : { disabled: false };
+  // An empty name is obvious from the required field, so the button is off without a sentence.
+  const blocked = !name.trim() || !accountType;
 
   const submit = () =>
     void write("create", () =>
@@ -153,7 +152,7 @@ export function ConnectAccountDialog({
       }}
       size="md"
       footer={
-        <ModalActions reason={gateReason(gate)}>
+        <ModalActions>
           <Button variant="ghost" disabled={is("create")} onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -162,8 +161,7 @@ export function ConnectAccountDialog({
             form={formId}
             variant="primary"
             loading={is("create")}
-            disabled={gate.disabled}
-            disabledReason={gateReason(gate)}
+            disabled={blocked}
           >
             {t("Connect")}
           </Button>
@@ -175,35 +173,33 @@ export function ConnectAccountDialog({
         className="social-field-row"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!gate.disabled) submit();
+          if (!blocked) submit();
         }}
       >
-        <AddAccountKind kind="account" disabled={is("create")} onChange={() => setKind("email")} />
-        <Select
-          label={t("Platform")}
+        <ProviderSelect
           value={platform}
-          options={SOCIAL_PLATFORMS.map((item) => ({
-            value: item,
-            label: SOCIAL_PLATFORM_NAMES[item],
-            icon: <PlatformIcon platform={item} />,
-          }))}
-          onValueChange={(value) => choosePlatform(value as SocialPlatform)}
+          onChange={(value) => (value === "email" ? setKind("email") : choosePlatform(value))}
         />
-        <Select
-          label={t("How to connect")}
-          value={method}
-          options={connectionMethods(platform).map((item) => ({
-            value: item,
-            label: methodText(item),
-          }))}
-          onValueChange={(value) => chooseMethod(value as ConnectionMethod)}
-        />
-        <Select
-          label={t("Account type")}
-          value={accountType}
-          options={types.map((item) => ({ value: item, label: accountTypeText(item) }))}
-          onValueChange={setAccountType}
-        />
+        {/* A single valid choice is not a question: the select appears only when there is a pick. */}
+        {methods.length > 1 ? (
+          <Select
+            label={t("How to connect")}
+            value={method}
+            options={methods.map((item) => ({
+              value: item,
+              label: methodText(item),
+            }))}
+            onValueChange={(value) => chooseMethod(value as ConnectionMethod)}
+          />
+        ) : null}
+        {types.length > 1 ? (
+          <Select
+            label={t("Account type")}
+            value={accountType}
+            options={types.map((item) => ({ value: item, label: accountTypeText(item) }))}
+            onValueChange={setAccountType}
+          />
+        ) : null}
         <TextField
           label={t("Name")}
           value={name}

@@ -142,7 +142,6 @@ export function CrewWorkDetail({
                 loading={pendingAction === `stop:${run.id}`}
                 startIcon={<Square className="icon-sm" />}
                 label={t("Stop work")}
-                tooltip={t("Stop work and cancel running assignments")}
                 onClick={() =>
                   void confirm({
                     title: t("Stop work"),

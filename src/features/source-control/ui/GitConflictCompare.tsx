@@ -85,7 +85,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
         emptyMessage: selected.unavailable
           ? selected.unavailable
           : unified && unified.additions === 0 && unified.deletions === 0
-            ? "These two versions are identical"
+            ? t("These two versions are identical")
             : undefined,
         additions: unified?.additions ?? 0,
         deletions: unified?.deletions ?? 0,
@@ -95,7 +95,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
   }, [load, relative, selected]);
 
   const notes = load.status === "ready" ? missingSideNotes(load.stages) : [];
-  const title = `Compare ${relative}${
+  const title = `${t("Compare {p0}", { p0: relative })}${
     load.status === "ready" ? ` · ${conflictKindInfo(load.stages.kind).label}` : ""
   }`;
 

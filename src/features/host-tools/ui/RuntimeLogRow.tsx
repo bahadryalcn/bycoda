@@ -11,7 +11,7 @@ import { Button } from "../../../shared/ui/Button";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import type { OpenFileFn } from "../../search/model/search";
 import { runtimeLogDisplayLevel, type RuntimeLogDisplayLevel } from "../runtimeLogPresentation";
 import { runtimeLogFileTarget, type RuntimeLogGroup } from "../runtimeLogsModel";
@@ -123,21 +123,16 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
                 </Text>
               </OverflowTooltip>
               {group.entries.length > 1 ? (
-                <Tooltip label={t("{p0} repeated events", { p0: group.entries.length })}>
-                  <Badge
-                    variant="count"
-                    size="xs"
-                    tone="neutral"
-                    className="runtime-log-count"
-                    label={t("{p0} repeated events", { p0: group.entries.length })}
-                  >
-                    {group.entries.length}
-                  </Badge>
-                </Tooltip>
+                <Badge
+                  variant="count"
+                  size="xs"
+                  tone="neutral"
+                  className="runtime-log-count"
+                  label={t("{p0} repeated events", { p0: group.entries.length })}
+                >
+                  {group.entries.length}
+                </Badge>
               ) : null}
-              <Text tone="secondary" size="inherit" className="runtime-log-details-trigger">
-                {t("Details")}
-              </Text>
             </Text>
             <Text
               as="p"

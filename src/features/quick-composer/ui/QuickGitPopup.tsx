@@ -145,7 +145,7 @@ export function QuickGitPopupPicker({
           tone="secondary"
           text={settled ? t("Couldn’t load branches for this project.") : t("Loading…")}
         />
-        <Button variant="ghost" motion="none" type="button" className="" onClick={() => finish()}>
+        <Button variant="ghost" motion="none" onClick={() => finish()}>
           {t("Close")}
         </Button>
       </Text>

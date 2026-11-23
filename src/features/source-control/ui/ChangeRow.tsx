@@ -159,7 +159,8 @@ export const ChangeRow = memo(function ChangeRow({
               if (!event.ctrlKey && !event.metaKey && !event.shiftKey)
                 onOpenFile(file.path, kind, true);
             }}
-            className="flex min-w-0 flex-1 select-none items-center gap-1.5 text-left "
+            align="start"
+            className="min-w-0 flex-1 select-none"
           >
             {tree ? <span className="size-4 shrink-0" /> : null}
             <FileTypeIcon name={name} isDir={false} />
@@ -167,7 +168,7 @@ export const ChangeRow = memo(function ChangeRow({
               <Text
                 size="secondary"
                 tone="primary"
-                weight="regular"
+                weight="medium"
                 truncate
                 className={`max-w-full shrink-0 ${file.status === "deleted" ? "line-through" : ""}`}
               >
@@ -213,20 +214,11 @@ export const ChangeRow = memo(function ChangeRow({
             kind === "unstaged" ? "pointer-fine:w-17" : "pointer-fine:w-11"
           }`}
         >
-          <Tooltip
-            label={t("{p0} lines added, {p1} lines removed", {
-              p0: file.additions,
-              p1: file.deletions,
-            })}
-            asChild
-          >
-            <DiffStat additions={file.additions} deletions={file.deletions} />
-          </Tooltip>
+          <DiffStat additions={file.additions} deletions={file.deletions} />
           <Tooltip label={statusLabel(file.status)} asChild>
             <Text
               size="inherit"
               tone={statusTone(file.status)}
-
               className="w-3.5 text-center font-mono"
             >
               {statusLetter(file.status)}

@@ -273,11 +273,6 @@ export function CrewWorkManager({
               variant={savedCrew ? (noWork ? "secondary" : "ghost") : "primary"}
               disabled={!data || pending}
               startIcon={savedCrew ? <Pencil className="icon-sm" /> : <Plus className="icon-sm" />}
-              tooltip={
-                savedCrew
-                  ? t("Changes apply to future work. Work already started keeps its own team.")
-                  : undefined
-              }
               onClick={() => {
                 setEditorReturn("work");
                 setPage("edit");

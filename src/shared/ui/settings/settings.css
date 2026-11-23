@@ -4,16 +4,16 @@
 .settings-group {
   display: block;
   min-inline-size: 0;
-  padding-block: var(--settings-group-gap, 28px) 0;
+  padding-block: var(--settings-group-gap, var(--ui-space-6, 1.5rem)) 0;
 }
 .settings-group:first-child {
   padding-block-start: 0;
 }
-/* Topic collections own the 28px rhythm between groups, wherever the wrapper sits. */
+/* Topic collections own the rhythm between groups, wherever the wrapper sits. */
 .settings-topics {
   display: flex;
   flex-direction: column;
-  gap: var(--settings-group-gap, 28px);
+  gap: var(--settings-group-gap, var(--ui-space-6, 1.5rem));
   min-inline-size: 0;
 }
 .settings-topics > .settings-group {
@@ -23,8 +23,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 16px;
-  padding-block-end: 8px;
+  gap: var(--ui-space-1, 0.25rem) var(--ui-space-4, 1rem);
+  padding-block-end: var(--ui-space-2, 0.5rem);
 }
 .settings-group-title,
 .settings-row-label {
@@ -35,13 +35,13 @@
 .settings-title-line {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ui-space-1, 0.25rem);
   min-inline-size: 0;
 }
 /* Info and reset icons are 28px targets; they must not make a titled row taller than a plain one,
    and the reset icon appearing must not move anything. */
 .settings-title-line > button {
-  margin-block: -4px;
+  margin-block: calc(-1 * var(--ui-space-1, 0.25rem));
 }
 .settings-row-title {
   margin: 0;
@@ -63,16 +63,19 @@
 /* One row inset role (--ui-row-inset-*) and one minimum height for every row. Dividers are hairlines
    between rows; nothing inside the frame has a fill at rest. */
 .settings-row {
-  display: flex;
+  display: grid;
+  container: settings-row / inline-size;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   align-items: center;
   min-inline-size: 0;
   min-block-size: 3rem;
   padding: var(--ui-row-inset-block) var(--ui-row-inset-inline);
-  gap: 12px 24px;
+  column-gap: var(--ui-space-6, 1.5rem);
+  row-gap: var(--ui-space-2, 0.5rem);
 }
 /* Dense rows: a short control or no description; the inset steps down, the control height stays. */
 .settings-row[data-density="compact"] {
-  min-block-size: 0;
+  min-block-size: var(--ui-control-height-compact);
   padding-block: var(--ui-row-inset-block-compact);
 }
 /* Dependent sub-row: indented under its parent; dimmed and inert (with a tooltip reason) when the
@@ -113,11 +116,11 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  min-inline-size: min(12rem, 100%);
+  inline-size: max-content;
+  min-inline-size: 12rem;
   max-inline-size: 18rem;
-  flex: 0 1 auto;
   align-self: center;
-  gap: 8px;
+  gap: var(--ui-space-2, 0.5rem);
   overflow-wrap: anywhere;
 }
 /* One right column: every control kind ends on the row's right edge at the compact height, and a
@@ -147,31 +150,23 @@
 }
 /* Control width: `wide` widens the column for a pair of selects or a short field; `fill` lets it take
    all the room the label leaves, right aligned, so a segmented choice or card strip fits. */
-@container (width >= 560px) {
-  .settings-row[data-control-width="wide"] > .settings-row-control {
+@container settings-row (inline-size >= 35rem) {
+  .settings-row[data-control-width="wide"]:not([data-stacked]) > .settings-row-control {
     max-inline-size: 28rem;
-    flex-basis: 24rem;
+    min-inline-size: 24rem;
   }
-  .settings-row[data-control-width="fill"] > .settings-row-control {
-    max-inline-size: 100%;
-    flex: 1 1 18rem;
+  .settings-row[data-control-width="fill"]:not([data-stacked]) > .settings-row-control {
+    max-inline-size: 67cqi;
+    min-inline-size: 18rem;
   }
 }
 /* Wide controls (fields, editors, lists) sit under their label at full width. */
 .settings-row[data-stacked] {
-  flex-direction: column;
+  grid-template-columns: minmax(0, 1fr);
   align-items: stretch;
-  gap: 8px;
-}
-/* In a column the 100% basis would mean the row's height and squeeze the feedback below its
-   content (the crew preview then overlapped the label and picker); size it by content instead. */
-.settings-row[data-stacked] > .settings-row-feedback {
-  flex-basis: auto;
-  /* A definite width: flex sizes the height before stretching, and width-contained content
-     (scenes, cards) would otherwise be measured at its narrow intrinsic width. */
-  inline-size: 100%;
 }
 .settings-row[data-stacked] > .settings-row-control {
+  inline-size: 100%;
   min-inline-size: 0;
   max-inline-size: 100%;
   align-self: stretch;
@@ -179,16 +174,9 @@
 }
 
 /* Feedback follows the operation and never competes with its input or card. */
-.settings-row:has(> .settings-row-feedback) {
-  flex-wrap: wrap;
-}
 .settings-row-feedback {
-  flex-basis: 100%;
   grid-column: 1 / -1;
   min-inline-size: 0;
-}
-.settings-row[data-feedback-position="start"] > .settings-row-feedback {
-  order: -1;
 }
 .settings-feedback {
   display: grid;
@@ -224,21 +212,13 @@
   overflow-wrap: anywhere;
 }
 
-/* A row responds to its nearest topic container, or the caller's container for
-   standalone rows. This owns the former index.css settings behavior as well. */
-@container (width < 560px) {
-  .settings-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
+/* Each row measures its own content area, including standalone rows. */
+@container settings-row (inline-size < 35rem) {
+  .settings-row > :is(.settings-row-label, .settings-row-control) {
+    grid-column: 1 / -1;
   }
-  /* Column rows only: a lone switch keeps its row, where 100% still wraps feedback below. */
-  .settings-row:not(:has(> .settings-row-control > [role="switch"]:only-child))
-    > .settings-row-feedback {
-    flex-basis: auto;
+  .settings-row > .settings-row-control {
     inline-size: 100%;
-  }
-  .settings-row-control {
     min-inline-size: 0;
     max-inline-size: 100%;
     align-self: stretch;
@@ -249,15 +229,6 @@
   .settings-row-control > .ms-auto {
     margin-inline-start: 0;
   }
-  .settings-row:has(> .settings-row-control > [role="switch"]:only-child) {
-    flex-direction: row;
-    align-items: center;
-  }
-  .settings-row-control:has(> [role="switch"]:only-child) {
-    min-inline-size: 0;
-    align-self: center;
-    flex-shrink: 0;
-  }
 }
 
 /* Shared metadata wraps with its control instead of competing for its space. */
@@ -265,8 +236,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
-  margin-block-start: 6px;
+  gap: var(--ui-space-1, 0.25rem) var(--ui-space-2, 0.5rem);
+  margin-block-start: var(--ui-space-1, 0.25rem);
   overflow-wrap: anywhere;
 }
 .settings-group-title,
@@ -313,7 +284,7 @@
 }
 
 /* Flat settings (Group/Row inside a layer editor panel): the shared heading, title and rows at panel
-   density, with no second frame, row inset or description line. Set by the Group/Row themselves
+   density, with no second frame or inline row inset. Set by the Group/Row themselves
    (`LayerEditorHeadings`), so panels never reach into these classes. */
 .settings-group[data-settings-flat] {
   display: block;
@@ -321,9 +292,6 @@
 }
 .settings-group[data-settings-flat] > .settings-group-heading {
   padding-block-end: 4px;
-}
-.settings-group[data-settings-flat] .settings-group-heading .settings-description {
-  display: none;
 }
 .settings-group[data-settings-flat][data-settings-variant][data-settings-layout]
   > .settings-group-content {

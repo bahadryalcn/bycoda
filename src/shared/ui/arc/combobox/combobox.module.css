@@ -139,6 +139,11 @@
 .choice[aria-disabled="true"] {
   cursor: not-allowed;
 }
+.choice[aria-disabled="true"][data-highlighted]:not(:disabled) {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: calc(-1 * var(--ui-focus-width));
+  opacity: 1;
+}
 .choiceCheck {
   composes: check from "../../ListRow.module.css";
 }

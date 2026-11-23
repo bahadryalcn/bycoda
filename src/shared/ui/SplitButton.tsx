@@ -24,7 +24,7 @@ export type SplitButtonProps = Omit<ButtonProps, "children" | "iconOnly" | "labe
   actions: readonly SplitButtonAction[];
   groupRef?: Ref<HTMLDivElement>;
   menuOpen?: boolean;
-  /** Independent menu gate, for choices that remain available while the primary action is disabled. Loading and aria-disabled always block both. */
+  /** Independent menu gate: `disabled` gates the primary part, `menuDisabled` the menu part. Unset, the menu follows `disabled`; `menuDisabled={false}` keeps the alternatives reachable while the primary is off. Loading and aria-disabled always block both. */
   menuDisabled?: boolean;
   onMenuOpenChange?: (open: boolean) => void;
   /** Native menus can escape a small native webview. Popover remains the default. */
@@ -129,7 +129,6 @@ export function SplitButton({
         ref={trigger}
         iconOnly
         label={menuLabel}
-        tooltip={menuLabel}
         disabled={blocked || !actions.length}
         aria-haspopup="menu"
         aria-expanded={menuSurface === "native" ? undefined : open}

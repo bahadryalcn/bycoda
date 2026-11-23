@@ -109,11 +109,11 @@ export function GroupGitPopover({
       className={popupListClassName}
     >
       <Text as="p" size="caption" tone="muted" className="px-2.5 pb-1 pt-1.5">
-        {summary.known}
-        {t(" of ")}
-        {summary.local}
-        {t(" local projects loaded ·")} {summary.dirty}{" "}
-        {summary.dirty === 1 ? t("project has") : t("projects have")} {t("uncommitted changes")}
+        {t("{p0} of {p1} local projects loaded · {p2} with uncommitted changes", {
+          p0: summary.known,
+          p1: summary.local,
+          p2: summary.dirty,
+        })}
         {summary.syncKnown > 0 ? ` · ↑${summary.ahead} ↓${summary.behind}` : ""}
       </Text>
       <ul>
@@ -126,18 +126,13 @@ export function GroupGitPopover({
                 variant="item"
                 motion="none"
                 type="button"
-                tooltip={t("Open this project's Changes tab")}
+                tooltip={path}
                 onClick={() => onSelect(path)}
                 className="flex w-full flex-wrap items-center gap-2 text-left"
               >
-                <span className="min-w-0 flex-1">
-                  <Text as="div" size="inherit" tone="inherit" wrap="anywhere">
-                    {basename(path)}
-                  </Text>
-                  <Text as="div" size="micro" tone="muted" wrap="anywhere">
-                    {path}
-                  </Text>
-                </span>
+                <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0 flex-1">
+                  {basename(path)}
+                </Text>
                 {!local ? (
                   <Text size="micro" tone="muted" className="shrink-0">
                     {t("remote")}

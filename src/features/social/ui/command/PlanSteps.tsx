@@ -28,20 +28,10 @@ export function PlanSteps({ plan, results, approved, busy, onApprove, onRun }: P
           return (
             <li key={step.id} className="command-step">
               <div className="command-step-head">
-                <Text
-                  size="secondary"
-                  tone="primary"
-                  leading="inherit"
-                  className="command-step-summary"
-                >
+                <Text size="secondary" tone="primary" leading="inherit">
                   {step.summary}
                 </Text>
-                <Text
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                  className="command-step-status"
-                >
+                <Text size="caption" tone="secondary" leading="inherit">
                   {stepStatusLabel(step, result, isApproved)}
                 </Text>
               </div>

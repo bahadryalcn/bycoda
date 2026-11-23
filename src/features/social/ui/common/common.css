@@ -10,31 +10,11 @@
   overflow-wrap: anywhere;
 }
 
-.social-screen-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
-  min-width: 0;
-}
-
-.social-screen-heading {
+.social-capability-groups {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--space-2);
   min-width: 0;
-}
-
-.social-screen-description {
-  margin: 0;
-}
-
-.social-screen-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
 }
 
 .social-capability-list {
@@ -73,13 +53,8 @@
   gap: 0.5rem;
 }
 
-.social-confirm-autonomy p,
-.social-confirm-autonomy ul {
+.social-confirm-autonomy p {
   margin: 0;
-}
-
-.social-confirm-autonomy ul {
-  padding-inline-start: 1rem;
 }
 
 /* Platform marks: monochrome glyphs on a neutral tile; no brand colors. */

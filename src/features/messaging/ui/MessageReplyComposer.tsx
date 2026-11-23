@@ -19,14 +19,16 @@ import {
 } from "../model/replyDrafts";
 
 /**
- * Only the destinations the header does not already show. Slack and Discord replies go to the
- * open thread, which the heading and provider subtitle above the timeline already name.
+ * Only a destination the header does not already show. Chat replies go to the open thread, which
+ * the heading and participant line name; an email reply names its address only when the
+ * participant line does not contain it.
  */
 function destinationHint(thread: MessageThread, replyAddress: string | null): string | null {
-  if (thread.provider === "email")
-    return replyAddress ? t("Reply to {p0}", { p0: replyAddress }) : null;
-  if (thread.provider === "teams") return t("Sends to this Teams chat");
-  return null;
+  if (thread.provider !== "email" || !replyAddress) return null;
+  const shown = thread.participants.some((participant) =>
+    participant.toLowerCase().includes(replyAddress.toLowerCase()),
+  );
+  return shown ? null : t("Reply to {p0}", { p0: replyAddress });
 }
 
 /**

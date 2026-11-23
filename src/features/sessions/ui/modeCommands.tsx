@@ -161,7 +161,7 @@ export function ModeCommandText({
   text,
   mode,
   indent = MODE_COMMAND_INDENT,
-  iconClassName = "size-3.5",
+  iconClassName = "icon-sm",
 }: {
   text: string;
   mode: ModeCommandToken;
@@ -179,7 +179,7 @@ export function ModeCommandText({
       <span className="relative">
         <span className="text-transparent">{text[0]}</span>
         <mode.style.Icon
-          className={`absolute top-1/2 -translate-y-1/2 left-(--mode-icon-offset) ${iconClassName}`}
+          className={`absolute top-1/2 -translate-y-1/2 start-(--mode-icon-offset) ${iconClassName}`}
           style={{ "--mode-icon-offset": `-${indent}` } as React.CSSProperties}
         />
       </span>
@@ -201,12 +201,11 @@ export function ModeCommandPill({ name, onClear }: { name: string; onClear: () =
       className="shrink-0"
       variant="ghost"
       type="button"
-      tooltip={t("Turn off {p0}", { p0: pill.title })}
       aria-label={t("Turn off {p0}", { p0: pill.title })}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClear}
     >
-      <Icon className="size-3.5" />
+      <Icon className="icon-sm" />
       <span className="composer-mode-shimmer">{pill.label}</span>
       <X className="icon-xs" />
     </Button>

@@ -133,7 +133,7 @@ describe("BinaryFileView image copy", () => {
     expect(event.defaultPrevented).toBe(true);
     const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="Image actions"]')!;
     const copy = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
-      (button) => button.textContent === "Copy Original File",
+      (button) => button.textContent === "Copy original file",
     )!;
 
     await act(async () => copy.click());

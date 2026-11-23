@@ -4,7 +4,6 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ToolPreview } from "../model/session";
 import { FilePreview } from "../../files/public/FilePreview";
 import { Popover } from "../../../shared/ui/Popover";
-import { X } from "../../../shared/ui/icons";
 
 type Props = {
   preview: ToolPreview;
@@ -87,7 +86,6 @@ export function ToolDiffPreview({
         motion="none"
         ref={trigger}
         type="button"
-
         aria-label={
           onOpen
             ? t("Open {p0}", { p0: label })
@@ -165,20 +163,6 @@ export function ToolDiffPreview({
             }
           }}
         >
-          <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-1.5 font-sans text-ui-micro text-(--ui-text-secondary)">
-            <span className="min-w-0 flex-1">{description}</span>
-            <Button
-              iconOnly
-              label={t("Close preview")}
-              variant="ghost"
-              type="button"
-              aria-label={t("Close preview")}
-              className="shrink-0"
-              onClick={() => dismiss(true)}
-            >
-              <X className="icon-xs" />
-            </Button>
-          </div>
           <FilePreview
             preview={preview}
             status={status}

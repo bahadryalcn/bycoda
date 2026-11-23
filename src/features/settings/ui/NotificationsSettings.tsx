@@ -173,7 +173,7 @@ export function NotificationAlerts() {
   };
   return (
     <div className="notification-alert-settings settings-topics">
-      <Group title={t("Application alerts")} persistence={{ mode: "automatic" }}>
+      <Group title={t("This computer")}>
         <Row id="sounds" label={t("Sounds")} feedback={saveFeedback("sounds")}>
           <Toggle label={t("Sounds")} on={soundsEnabled} onChange={onSoundsEnabled} />
         </Row>

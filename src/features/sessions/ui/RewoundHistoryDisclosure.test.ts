@@ -57,11 +57,12 @@ describe("RewoundHistoryDisclosure scroll ownership", () => {
     expect(markup.slice(summaryAt, regionAt)).not.toContain("First rewound prompt");
   });
 
-  it("renders the preview note outside the scroller so it stays visible", () => {
+  it("marks a truncated preview with a quiet ellipsis outside the scroller, not a sentence", () => {
     const markup = markupFor(true);
-    const noteAt = markup.indexOf("Showing a preview of rewound history.");
+    const noteAt = markup.indexOf("…");
     const regionAt = markup.indexOf('role="region"');
 
+    expect(markup).not.toContain("Showing a preview of rewound history.");
     expect(noteAt).toBeGreaterThan(-1);
     expect(noteAt).toBeLessThan(regionAt);
   });

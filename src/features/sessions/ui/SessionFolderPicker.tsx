@@ -13,11 +13,12 @@ import {
 
 type Props = {
   folders: SessionFolder[];
+  saving?: boolean;
   onPick: (target: SessionFolderTarget) => void;
   onDismiss: () => void;
 };
 
-export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
+export function SessionFolderPicker({ folders, saving, onPick, onDismiss }: Props) {
   const t = useT();
   const [query, setQuery] = useState("");
   const name = query.trim();
@@ -73,12 +74,15 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
         onValueChange={setQuery}
         onEscape={onDismiss}
         {...list.searchProps}
-        trailing={<PickerCloseButton label={t("Cancel")} onClick={onDismiss} />}
+        trailing={<PickerCloseButton label={t("Close")} onClick={onDismiss} />}
       />
       <PickerList
         label={t("Session folders")}
         controller={list}
-        emptyLabel={t("Type a name to create the first folder")}
+        disabled={saving}
+        loading={saving}
+        loadingLabel={t("Saving…")}
+        emptyLabel={false}
         listHeight="standard"
       />
     </div>

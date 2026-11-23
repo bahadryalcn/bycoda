@@ -60,36 +60,10 @@
   flex: 1 1 16rem;
   flex-wrap: wrap;
 }
-.notification-request-footer .notification-request-actions {
-  margin-inline-start: auto;
-}
 .notification-popup-dismiss {
   position: absolute;
   inset-block-start: 4px;
   inset-inline-end: 4px;
-}
-.notification-empty {
-  margin: 0;
-  padding: 12px 10px;
-}
-.notification-history-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px 8px;
-}
-.notification-history-status > :first-child {
-  flex: 1;
-  min-inline-size: 0;
-}
-/* Header actions sit on the title's baseline: the header is top-aligned, so the group is a
-   baseline row whose first line is offset to the heading's. */
-.notification-header-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-inline-size: 0;
-  padding-block-start: 2px;
 }
 .notification-section-label {
   padding-inline: 10px;
@@ -192,10 +166,4 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 8px;
-}
-.notification-options {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
 }

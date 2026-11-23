@@ -13,7 +13,6 @@ import {
   readDiffCommentDraft,
   writeDiffCommentDraft,
 } from "../model/diffComment";
-import { MOD } from "../../../platform/tauri/platform";
 import { requestAddToChat } from "../../sessions/public/quoteDraft";
 import type { UnifiedLine } from "../model/unifiedDiff";
 
@@ -117,20 +116,16 @@ function DiffCommentComposerBody({ path, target, onDismiss }: DiffCommentCompose
           placeholder={t("Leave a comment…")}
           className="w-full"
         />
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <Text size="caption" tone="secondary">
-            {MOD}
-            {t("↩ to add")}
-          </Text>
+        <div className="mt-2 flex justify-end">
           <Button
             size="sm"
             variant="primary"
             motion="none"
             type="submit"
+            shortcut="Mod+Enter"
             disabled={!comment.trim()}
-            className="inline-flex items-center gap-1.5 disabled:cursor-default"
+            startIcon={<MessageSquarePlus className="icon-sm" strokeWidth={1.75} />}
           >
-            <MessageSquarePlus className="icon-sm" strokeWidth={1.75} />
             {t("Add to chat")}
           </Button>
         </div>

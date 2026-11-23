@@ -35,6 +35,7 @@ import {
   Globe,
   CheckList,
   MoreHorizontal,
+  Pencil,
   Play,
   Plus,
   Terminal,
@@ -245,33 +246,22 @@ function ProjectQuickActionsFor({
     {
       kind: "item",
       id: "folder",
-      label: IS_MAC ? "Finder" : "File Explorer",
-      icon: <FolderOpen tone="warning" className="icon-md" />,
+      label: IS_MAC ? t("Finder") : t("File Explorer"),
+      icon: <FolderOpen tone="warning" className="icon-sm" />,
     },
   ];
   const actionItems: ExplorerMenuItem[] = [
+    // One click runs an action; editing is a separate submenu below.
     ...actions.map((action) => {
       const Icon = ICONS[action.icon];
       return {
         kind: "item" as const,
-        id: action.id,
+        id: `run:${action.id}`,
         label: action.name,
         description: action.command || action.url,
         shortcut: action.shortcut ? quickComposerShortcutLabel(action.shortcut) : undefined,
-        icon: <Icon className="size-4" />,
-        submenu: [
-          {
-            kind: "item" as const,
-            id: `run:${action.id}`,
-            label: t("Run action"),
-            disabled: Boolean(action.command.trim() && !action.devServer && !onRun),
-          },
-          {
-            kind: "item" as const,
-            id: `edit:${action.id}`,
-            label: t("Edit action"),
-          },
-        ],
+        icon: <Icon className="icon-sm" />,
+        disabled: Boolean(action.command.trim() && !action.devServer && !onRun),
       };
     }),
     ...(actions.length ? [{ kind: "sep" as const }] : []),
@@ -279,8 +269,23 @@ function ProjectQuickActionsFor({
       kind: "item",
       id: "add",
       label: t("Add action…"),
-      icon: <Plus className="icon-md" />,
+      icon: <Plus className="icon-sm" />,
     },
+    ...(actions.length
+      ? [
+          {
+            kind: "item" as const,
+            id: "edit-menu",
+            label: t("Edit action"),
+            icon: <Pencil className="icon-sm" />,
+            submenu: actions.map((action) => ({
+              kind: "item" as const,
+              id: `edit:${action.id}`,
+              label: action.name,
+            })),
+          },
+        ]
+      : []),
   ];
   const selected = actions[0];
   const SelectedIcon = selected ? ICONS[selected.icon] : Play;
@@ -292,8 +297,9 @@ function ProjectQuickActionsFor({
             label: selected.name,
             shortcut: selected.shortcut ? quickComposerShortcutLabel(selected.shortcut) : undefined,
             ariaLabel: t("Run {p0}", { p0: selected.name }),
-            tooltip: `${selected.name}\n${selected.command || selected.url}\n${cwd}`,
-            icon: <SelectedIcon className="size-3.5" />,
+            // The name is the visible label; the tooltip adds only what it runs.
+            tooltip: selected.command || selected.url,
+            icon: <SelectedIcon className="icon-sm" />,
             disabled:
               Boolean(selected.command.trim() && !selected.devServer && !onRun) ||
               !!launch?.pending,
@@ -397,6 +403,7 @@ function ProjectQuickActionsFor({
               const action = actions.find((value) => value.id === id.replace(/^(run|edit):/, ""));
               if (!action) return;
               if (id.startsWith("edit:")) {
+                // `edit-menu` is only the submenu parent and never reaches here.
                 setMenu(null);
                 setEditing(true);
                 setDraft({ ...action });

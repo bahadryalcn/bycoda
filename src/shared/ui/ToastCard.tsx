@@ -245,8 +245,9 @@ export function ToastCard({
   const actionRow = (placement: "header" | "footer") =>
     hasActions && actionsPlacement === placement ? (
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {actions?.map((item) => (
-          <NoticeButton key={item.label} action={item} />
+        {actions?.map((item, index) => (
+          // Labels can repeat (two "Retry" rows); position is the stable identity inside one card.
+          <NoticeButton key={`${index}:${item.label}`} action={item} />
         ))}
         {extra}
         {actionButton}
@@ -262,8 +263,8 @@ export function ToastCard({
       }}
       tone={tone}
       count={count}
-      // The dismiss control stays visible on an error that does not expire by itself.
-      closeAlways={tone === "danger" && durationMs === null}
+      // The dismiss control stays visible on any notice that does not expire by itself.
+      closeAlways={durationMs === null}
       title={title}
       description={message}
       action={hasActions ? null : actionButton}

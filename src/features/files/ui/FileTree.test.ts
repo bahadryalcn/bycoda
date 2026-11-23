@@ -336,7 +336,7 @@ describe("NameRow IME composition", () => {
 });
 
 describe("FileTree render isolation", () => {
-  it.each(["New File", "New folder", "Rename"])(
+  it.each(["New file", "New folder", "Rename"])(
     "commits %s once and retries only the failed listing",
     async (action) => {
       props.onFileMoved = vi.fn();
@@ -371,7 +371,7 @@ describe("FileTree render isolation", () => {
           `${cwd}/first.ts`,
           `${cwd}/new-entry`,
         );
-      if (action === "New File")
+      if (action === "New file")
         expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${cwd}/new-entry`, undefined, {
           exact: true,
         });
@@ -676,7 +676,6 @@ describe("FileTree excluded files", () => {
     act(() => saveShowExcludedFiles(false));
     expect(row("debug.log")).toBeNull();
     const scope = container.querySelector("[data-explorer-selection-scope]");
-    expect(scope?.textContent).toContain("Selected: 2");
     expect(scope?.textContent).toContain("Selection includes hidden items: 1");
     const confirm = vi.fn(() => false);
     vi.stubGlobal("confirm", confirm);

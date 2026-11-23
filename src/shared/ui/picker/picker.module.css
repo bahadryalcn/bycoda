@@ -60,7 +60,7 @@
   contain: inline-size;
   color: var(--ui-text-muted);
   font-size: var(--ui-font-caption);
-  line-height: 1.35;
+  line-height: var(--ui-leading-caption);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -80,11 +80,7 @@
   margin-block-start: 0.25rem;
 }
 .groupHeading {
-  padding: 0.375rem 0.5rem 0.125rem;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-micro);
-  font-weight: 500;
-  line-height: 1.35;
+  padding: var(--ui-space-1, 0.25rem) var(--ui-space-2, 0.5rem);
 }
 
 .footer {
@@ -101,20 +97,6 @@
 }
 .footer[data-align="between"] > :first-child {
   margin-inline-end: auto;
-}
-
-.selectionStart {
-  position: relative;
-}
-.selectionStart::before {
-  content: "";
-  position: absolute;
-  inset-block: var(--space-1);
-  inset-inline-start: 0;
-  inline-size: 2px;
-  border-radius: var(--radius-pill);
-  background: var(--ui-interaction-accent);
-  pointer-events: none;
 }
 
 /* Primary choice and separately focusable inline actions share the row host. */

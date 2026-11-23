@@ -9,6 +9,7 @@ import {
   PopoverSearchHeader,
   filterPickerOptions,
   usePickerList,
+  usePointerMovement,
   type PickerOption,
 } from "../../../shared/ui/picker";
 import { t, useLocale } from "../../../shared/i18n";
@@ -98,9 +99,12 @@ export function WorkspacePicker({
     onOpenChange?.(modeOpen || baseOpen);
   }, [modeOpen, baseOpen, onOpenChange]);
   useEffect(() => () => onOpenChange?.(false), [onOpenChange]);
-  const { branches, settled } = useProjectBranchesState(cwd, enabled && !!cwd && cwd !== "~");
+  // Without a project folder there is no checkout to choose, so the chip does not exist.
+  const projectless = !cwd || cwd === "~";
+  const { branches, settled } = useProjectBranchesState(cwd, enabled && !projectless);
   const resolvedBase = base || branches?.current || undefined;
   const effectiveBase = resolvedBase || "HEAD";
+  if (projectless) return <>{children}</>;
 
   return (
     <>
@@ -109,8 +113,9 @@ export function WorkspacePicker({
         cwd={cwd}
         mode={mode}
         enabled={enabled && !!resolvedBase}
+        // A busy composer disables the chip for its own reason, which the chip needs no sentence for.
         disabledReason={
-          enabled && !settled ? t("Loading branches…") : t("This folder is not a Git repository")
+          !enabled ? undefined : !settled ? t("Loading branches…") : t("This folder is not a Git repository")
         }
         onChange={(next) => onModeChange(next, next === "worktree" ? effectiveBase : undefined)}
         onSelectWorktree={onSelectWorktree}
@@ -178,7 +183,7 @@ function WorkspaceModePicker({
   cwd: string;
   mode: WorkspaceMode;
   enabled: boolean;
-  disabledReason: string;
+  disabledReason?: string;
   onChange: (mode: WorkspaceMode) => void;
   onSelectWorktree?: (tree: Worktree) => Promise<void>;
   onOpenSettings?: () => void;
@@ -203,6 +208,7 @@ function WorkspaceModePicker({
   const existingRowId = `${listId}-option-${encodeURIComponent("existing")}`;
   const flyoutListId = `${listId}-worktrees`;
   const [flyoutFocus, setFlyoutFocus] = useState(false);
+  const pointerMoved = usePointerMovement();
   const { data, error: loadError } = useProjectWorktrees(
     cwd,
     enabled && open && worktreeMenu && !!onSelectWorktree,
@@ -236,10 +242,10 @@ function WorkspaceModePicker({
       setBusyPath(undefined);
     }
   };
-  // The flyout opens on click, Enter or ArrowRight only (never on hover) and takes focus.
-  const openWorktreeMenu = () => {
+  // Pointer hover leaves focus on the parent list. Explicit activation enters the flyout.
+  const openWorktreeMenu = (focus = true) => {
     worktreeAnchor.current = document.getElementById(existingRowId);
-    setFlyoutFocus(true);
+    setFlyoutFocus(focus);
     setWorktreeMenu(true);
   };
   const closeWorktreeMenu = () => {
@@ -270,7 +276,7 @@ function WorkspaceModePicker({
             title: t("Existing worktree…"),
             icon: <FolderTree className="icon-md" />,
             trailing: <ChevronRight aria-hidden className="icon-sm" strokeWidth={1.75} />,
-            onAction: openWorktreeMenu,
+            onAction: () => openWorktreeMenu(),
             popup: { listId: flyoutListId, expanded: worktreeMenu },
           },
         ]
@@ -302,7 +308,7 @@ function WorkspaceModePicker({
     <div ref={anchor} className="relative flex min-w-0 shrink-0">
       {!host ? (
         <Button
-          variant="ghost"
+          variant="chip"
           motion="none"
           type="button"
           disabled={!enabled}
@@ -312,6 +318,7 @@ function WorkspaceModePicker({
           aria-label={t("Workspace {p0}", { p0: label })}
           aria-keyshortcuts={shortcutTokens ?? undefined}
           aria-haspopup="dialog"
+          data-composer-chip="checkout"
           expanded={open}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
@@ -321,7 +328,7 @@ function WorkspaceModePicker({
             }
             setOpen(true);
           }}
-          className="-ml-1.5 flex min-w-0 max-w-48 items-center gap-1.5"
+          className="flex min-w-0 max-w-48 items-center gap-1.5"
         >
           <Icon className="icon-sm shrink-0" />
           <Text size="inherit" tone="inherit" truncate>
@@ -360,7 +367,18 @@ function WorkspaceModePicker({
           ) : null
         }
       >
-        <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onListKeyDown}>
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          onKeyDown={onListKeyDown}
+          onPointerMove={(event) => {
+            if (event.pointerType !== "mouse" || !pointerMoved(event)) return;
+            if (!(event.target instanceof Element)) return;
+            const option = event.target.closest('[role="option"]');
+            if (!worktreeMenu && onSelectWorktree && option?.id === existingRowId) {
+              openWorktreeMenu(false);
+            }
+          }}
+        >
           <PickerList
             id={listId}
             label={t("Workspace")}

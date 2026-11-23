@@ -55,7 +55,6 @@ import {
   type McpSettingsSnapshot,
 } from "../model/mcpSettingsCache";
 import { invokeMcpConfig, type RemoteMcpConfigTarget } from "../model/mcpConfigTarget";
-import { ExternalMcpAccess } from "./ExternalMcpAccess";
 import { AddServerModal, PROVIDERS, scopeDescription, type Provider } from "./McpAddServer";
 import {
   McpServerDetail,
@@ -161,6 +160,7 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
             cwd={project}
             railCwd={cwd}
             recents={recents}
+            chooseLabel={t("Choose project")}
             disabled={disabled}
             appearance="filled"
             className="w-fit max-w-full min-w-0"
@@ -180,7 +180,7 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
     </div>
   );
   return (
-    <div className="grid min-w-0 gap-8">
+    <div className="settings-topics">
       {targetError ? (
         <div
           className={styles.connections}
@@ -216,7 +216,6 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
           machineName={machineName}
         />
       )}
-      <ExternalMcpAccess cwd={source ? "" : project} />
     </div>
   );
 }
@@ -766,7 +765,6 @@ function McpConnections({
             <>
               <Button
                 disabled={busy !== ""}
-                disabledReason={t("Wait for the current change to finish.")}
                 onClick={() => setRemoveTarget(null)}
               >
                 {t("Cancel")}

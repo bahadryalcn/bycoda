@@ -205,3 +205,17 @@ Owner decision, 2026-11-16:
 > let us gather the alerts in one single place […] and show them at the top centre of the page; the same errors are shown in so many places … not only errors, infos and warnings arrive like this too (translated)
 
 Recorded direction: every toast, warning and information notice, including feature cards in `ToastSlot`, uses the shared `top-center` stack (`DEFAULT_TOAST_PLACEMENT`). A machine connection failure is shown once there; panes, rows and fields do not repeat it or add their own small retry while it is shown (`connectionErrorGate`). Redundant information and success toasts are removed rather than moved.
+
+## UI hardening: one design system, one owner per message
+
+Owner decision, 2026-11-23, source: owner UI review (translated):
+
+> Remove all unnecessary text, content, popovers, tooltips, buttons — everything. An action should need as little user input as possible. I do not want repeated text, content, errors, info or notifications. Layouts must adapt to every size. Design must be coherent with the theme. A component that is not special must not contain customized code; we shape components through variants. We need a design system, and everything must follow it consistently.
+
+Recorded decision:
+
+- One fact has one owner and is rendered once. A tooltip appears only when it adds a shortcut, a reason or detail; an icon-only action has an accessible name, not a tooltip. `disabledReason` only for non-obvious causes. No inline help paragraphs; optional help is an info (ⓘ) control on demand. Visible labels are not required everywhere: a familiar icon needs only its name.
+- Looks come from variants (`Button` chip, `SectionLabel` rail, `RadioGroup` `tileLayout`, `PaneHeader` `primaryAction`/`overflow`) and tokens (`--ui-space-*`, `--ui-list-gutter`, `--ui-floating-edge`, `--ui-floating-shadow`, `--ui-radius-floating`), never feature styling.
+- All overlays are opaque and theme-bound, with no private frost or palette. Density is the saved preference; narrow panes (down to 320 px) change arrangement only. Product code imports shared adapters, never `src/shared/ui/arc/*`.
+
+Rule text: docs/reference/DESIGN.md, docs/reference/ui-design-system.md, docs/reference/arc-ui.md

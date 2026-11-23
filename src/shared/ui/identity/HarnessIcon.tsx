@@ -66,7 +66,7 @@ export function HarnessIcon({
   size?: IdentitySize;
   className?: string;
 }) {
-  const className = identityClassName(size, classNameProp, "size-3.5");
+  const className = identityClassName(size, classNameProp, "icon-sm shrink-0");
   if (harness === "cursor") {
     return (
       <MonoIcon className={className}>

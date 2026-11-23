@@ -3,10 +3,8 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { formatDate, t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import "./UsagePage.css";
 import { RefreshCw, MoreHorizontal } from "../../../shared/ui/icons";
 import { WORKSPACE_REFRESH_EVENT } from "../../../app/shell/WorkspaceControls";
@@ -19,11 +17,8 @@ import {
   subscribeProviderAccounts,
 } from "../../providers/model/providerAccounts";
 import { loadRateLimits, useCachedRateLimits } from "../../providers/model/rateLimitsCache";
-import {
-  clampUsedPercent,
-  formatResetCountdown,
-  type RateLimitProvider,
-} from "../../providers/model/rateLimits";
+import type { RateLimitProvider } from "../../providers/model/rateLimits";
+import { UsageQuotaWindows } from "./UsageQuotaWindows";
 import { UsageProviderIdentity } from "./UsageProviderIdentity";
 import { UsageOverview } from "./UsageOverview";
 import { usageLabel } from "./UsageVisualizations";
@@ -39,7 +34,6 @@ import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubti
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface } from "../../../shared/ui/Surface";
 import { UsageBudgets } from "./UsageBudgets";
 import { UsageActiveTime } from "./UsageActiveTime";
@@ -122,17 +116,6 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
   );
 }
 
-/**
- * Reset countdown on the shared minute clock. Only this text re-renders each
- * minute, and the clock stops while the window is hidden, so the account
- * section itself never re-renders for time alone.
- */
-function ResetCountdown({ resetsAt }: { resetsAt: number }) {
-  const tick = useMinuteNow();
-  const [mountedAt] = useState(Date.now);
-  return <>{formatResetCountdown(resetsAt - (tick || mountedAt))}</>;
-}
-
 function AccountLimits({
   provider,
   account,
@@ -171,26 +154,10 @@ function AccountLimits({
               <UsageProviderIdentity provider={provider} />
             </Text>
             <span className="usage-account-name">{label}</span>
-            {account.isDefault && label !== t("Default account") ? (
-              <Text
-                size="caption"
-                tone="muted"
-                weight="regular"
-                leading="inherit"
-                className="usage-account-default"
-              >
-                {t("Default account")}
-              </Text>
-            ) : null}
           </Heading>
           <ProviderAccountSubtitle
             identity={identity}
             wrap
-            fallback={
-              identity === undefined
-                ? t("Loading account identity…")
-                : t("Account identity unavailable")
-            }
             size="caption"
             tone="secondary"
             className="usage-account-subtitle"
@@ -261,65 +228,12 @@ function AccountLimits({
           />
         ) : null}
       </div>
-      <div className="usage-quota-list">
-        {windows.map(({ kind, window }) => {
-          const used = clampUsedPercent(window.usedPercent);
-          const shown = showRemaining ? 100 - used : used;
-          const direction = showRemaining ? t("left") : t("used");
-          const windowLabel = t(
-            kind === "session" && window.windowMinutes === 300
-              ? "5 hours"
-              : kind === "session"
-                ? "Session"
-                : kind === "weekly"
-                  ? "Weekly"
-                  : "Monthly",
-          );
-          return (
-            <div key={kind} className="usage-quota">
-              <Text
-                as="div"
-                size="caption"
-                tone="inherit"
-                leading="inherit"
-                className="usage-quota-heading"
-              >
-                <SectionLabel as="h4" classNames={{ label: "usage-quota-title" }}>
-                  {windowLabel}
-                  <Text size="inherit" tone="muted" weight="regular" className="usage-quota-reset">
-                    {window.resetsAt == null ? (
-                      t("Reset time unavailable")
-                    ) : (
-                      <>
-                        <ResetCountdown resetsAt={window.resetsAt} />
-                        <br />
-                        <Timestamp value={window.resetsAt} format="auto" tooltip={false} />
-                      </>
-                    )}
-                  </Text>
-                </SectionLabel>
-                <Text as="p" size="inherit" tone="secondary">
-                  <Text as="strong" size="body" tone="primary" weight="medium" leading="inherit">
-                    {Math.round(shown)}%
-                  </Text>
-                  <span>{showRemaining ? t("left") : t("used")}</span>
-                </Text>
-              </Text>
-              <UsageMeter
-                label={`${label} · ${windowLabel} · ${direction}`}
-                segments={[{ id: "used", label: t("used"), value: used }]}
-                limit={100}
-                unit="%"
-                decimals={0}
-                compact
-                showLegend={false}
-                showRemaining={showRemaining}
-                color={color}
-              />
-            </div>
-          );
-        })}
-      </div>
+      <UsageQuotaWindows
+        name={label}
+        windows={windows}
+        showRemaining={showRemaining}
+        color={color}
+      />
       {limits.error ? (
         <InlineError
           className="usage-account-error"
@@ -332,18 +246,17 @@ function AccountLimits({
           {limits.error}
         </InlineError>
       ) : null}
-      {windows.length > 0 && (limits.status === "fetching" || limits.status === "idle") ? (
-        <LoadingText size="caption" tone="secondary">
-          {t("Refreshing account limits… Previous limits remain visible.")}
-        </LoadingText>
-      ) : null}
+      {/* Stale windows stay visible while refreshing (aria-busy on the section says so). */}
       {!windows.length && !limits.error ? (
-        <Text as="p" tone="muted">
-          {label}:{" "}
-          {limits.status === "fetching" || limits.status === "idle"
-            ? t("Loading account limits…")
-            : t("Account limits unavailable.")}
-        </Text>
+        limits.status === "fetching" || limits.status === "idle" ? (
+          <LoadingText size="caption" tone="secondary">
+            {t("Loading account limits…")}
+          </LoadingText>
+        ) : (
+          <Text as="p" size="caption" tone="muted">
+            {t("Account limits unavailable.")}
+          </Text>
+        )
       ) : null}
     </section>
   );

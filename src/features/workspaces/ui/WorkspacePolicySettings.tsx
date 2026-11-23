@@ -373,6 +373,16 @@ export function WorkspacePolicySettings({
             })}
       </SettingsFeedback>
     ) : null;
+  // An older Host lacks some controls; one notice names the most consequential gap, not three.
+  const hostUpdateNotice = !capabilities
+    ? undefined
+    : !capabilities.includes("workspaces.policy.v1")
+      ? t("Update the execution Host to configure worktree defaults and retention.")
+      : !capabilities.includes("workspaces.lifecycle.v1")
+        ? t("Update the execution Host to inspect storage and safely remove managed directories.")
+        : !capabilities.includes(WORKSPACE_PINNING_CAPABILITY)
+          ? t("Update the execution Host to pin or unpin individual workspaces.")
+          : undefined;
   if (!cwd || cwd === "~") return renderHeader?.(async () => {}, false, true) ?? null;
 
   return (
@@ -399,14 +409,10 @@ export function WorkspacePolicySettings({
       )}
       {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
       {stageNotice("inventory", t("Managed workspace directories"), inventoryLoaded)}
+      {hostUpdateNotice ? <SettingsFeedback state="warning">{hostUpdateNotice}</SettingsFeedback> : null}
       {showRoster && (
         <section aria-label={t("Worktrees")} className="flex min-w-0 flex-col gap-2">
           {!renderHeader && <Heading size="item">{t("Worktrees")}</Heading>}
-          {capabilities && !capabilities.includes(WORKSPACE_PINNING_CAPABILITY) && (
-            <SettingsFeedback state="warning">
-              {t("Update the execution Host to pin or unpin individual workspaces.")}
-            </SettingsFeedback>
-          )}
           {!onDisk.length && !renderWorktrees ? (
             <Text as="p" size="caption" tone="secondary" role="status">
               {t(
@@ -425,7 +431,7 @@ export function WorkspacePolicySettings({
                 query={query}
                 onQueryChange={setQuery}
                 count={
-                  renderWorktrees
+                  renderWorktrees || visibleWorkspaces.length === onDisk.length
                     ? undefined
                     : t("Showing {p0} of {p1} workspaces", {
                         p0: visibleWorkspaces.length,
@@ -532,11 +538,6 @@ export function WorkspacePolicySettings({
       )}
       {stageNotice("policy", t("Workspace policy"), !!policy)}
       {/* No wrapper: the editor's Group and Rows carry the settings-search anchors. */}
-      {capabilities && !capabilities.includes("workspaces.policy.v1") && (
-        <SettingsFeedback state="warning">
-          {t("Update the execution Host to configure worktree defaults and retention.")}
-        </SettingsFeedback>
-      )}
       {draft && policy && (
         <WorkspacePolicyEditor
           draft={draft}
@@ -553,15 +554,6 @@ export function WorkspacePolicySettings({
           onKeepEdits={() => setPolicyConflict(false)}
         />
       )}
-      {capabilities &&
-        capabilities.includes("workspaces.policy.v1") &&
-        !capabilities.includes("workspaces.lifecycle.v1") && (
-          <SettingsFeedback state="warning">
-            {t(
-              "Update the execution Host to inspect storage and safely remove managed directories.",
-            )}
-          </SettingsFeedback>
-        )}
       {revealError && <SettingsFeedback state="error">{revealError}</SettingsFeedback>}
       {cleanup && (
         <WorkspaceDirectoryRemoval

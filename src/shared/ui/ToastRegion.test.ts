@@ -277,6 +277,65 @@ it("keeps routine notices at top-end, warnings and errors centered, and explicit
   }
 });
 
+it("never merges identical toasts that carry their own action, each keeps its own callback", () => {
+  const unmount = mount();
+  try {
+    const first = vi.fn();
+    const second = vi.fn();
+    act(() => {
+      toast.show({ tone: "danger", message: "Could not save", action: { label: "Retry", onClick: first } });
+      toast.show({ tone: "danger", message: "Could not save", action: { label: "Retry", onClick: second } });
+    });
+    const retries = () =>
+      [...document.querySelectorAll<HTMLButtonElement>("[data-toast-item] button")].filter(
+        (button) => button.textContent === "Retry",
+      );
+    expect(retries()).toHaveLength(2);
+    expect(document.body.textContent).not.toContain("×2");
+    // The newest card is in front; each Retry reaches only its own operation.
+    act(() => retries()[1]!.click());
+    act(() => retries()[0]!.click());
+    expect(first.mock.calls.length + second.mock.calls.length).toBe(2);
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).toHaveBeenCalledOnce();
+  } finally {
+    unmount();
+  }
+});
+
+it("counts an actionless repeat once but keeps a callback-bearing or progress toast separate", () => {
+  const unmount = mount();
+  try {
+    act(() => {
+      toast.show({ tone: "info", message: "Copied" });
+      toast.show({ tone: "info", message: "Copied" });
+      toast.show({ tone: "info", message: "Copied", progress: { value: 0.5, label: "Copying" } });
+      toast.show({ tone: "info", message: "Copied", onDismiss: () => {} });
+    });
+    expect(items()).toHaveLength(3);
+    expect(document.body.textContent).toContain("×2");
+  } finally {
+    unmount();
+  }
+});
+
+it("updates a bound toast id in place instead of adding a second card", () => {
+  const unmount = mount();
+  try {
+    act(() => {
+      toast.show({ id: "op-1", tone: "info", message: "Sending", durationMs: null });
+    });
+    act(() => {
+      toast.show({ id: "op-1", tone: "danger", message: "Could not send", durationMs: null });
+    });
+    expect(items()).toHaveLength(1);
+    expect(items()[0]!.textContent).toContain("Could not send");
+    expect(items()[0]!.textContent).not.toContain("Sending");
+  } finally {
+    unmount();
+  }
+});
+
 it("announces each toast once through its own role, never through a live corner", () => {
   const unmount = mount();
   try {

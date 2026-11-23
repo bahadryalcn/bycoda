@@ -4,7 +4,7 @@ import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { Check, Trash2, X } from "../../../shared/ui/icons";
+import { Check, X } from "../../../shared/ui/icons";
 
 export type SessionBulkDeletionFeedback = {
   progress: {
@@ -34,7 +34,7 @@ export function SessionBulkDeletionNotice({
     <InlineMessage
       tone={error && !progress ? "danger" : "neutral"}
       icon={
-        progress ? <Spinner tone="danger" /> : success ? <Check className="icon-sm" /> : undefined
+        progress ? <Spinner /> : success ? <Check className="icon-sm" /> : undefined
       }
       data-session-delete-status
       aria-label={
@@ -56,7 +56,6 @@ export function SessionBulkDeletionNotice({
             {progress.completed}/{progress.total}
           </span>
         ) : null}
-        <Trash2 className="icon-sm shrink-0" tone="danger" aria-hidden />
         {!progress ? (
           <Button
             variant="ghost"

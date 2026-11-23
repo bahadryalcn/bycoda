@@ -2,7 +2,6 @@ import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useRef } from "react";
 import { X } from "../../../shared/ui/icons";
-import { Stepper } from "../../../shared/ui/Stepper";
 import { LiveText } from "../../../shared/ui/LiveText";
 import type { TooltipRenderProps } from "react-joyride";
 import { t } from "../../../shared/i18n";
@@ -10,24 +9,12 @@ import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 
-const guides = [
-  { name: "Obi-Wan Kenobi", asset: "obi-wan" },
-  { name: "Leia Organa", asset: "leia" },
-  { name: "Yoda", asset: "yoda" },
-  { name: "Luke Skywalker", asset: "luke" },
-  { name: "Chewbacca", asset: "chewbacca" },
-];
-
 /**
- * Joyride owns positioning, focus management and tour actions; Arc owns the controls.
- * Steps flagged `data: { compact: true }` (first-run and "What's new" tours) get the compact card.
+ * The one tour card for every spotlight tour (first-run, "What's new" and the Guide's quick
+ * tours). Joyride owns positioning, focus management and tour actions; Arc owns the controls.
+ * One short step: progress, title, a sentence, an optional Try it (in `content`), Skip/Back/Next.
  */
-export function UsageGuideTooltip(props: TooltipRenderProps) {
-  return props.step.data?.compact ? <TourCard {...props} /> : <UsageGuidePanel {...props} />;
-}
-
-/** One short step: progress, title, a sentence, an optional Try it (in `content`), Skip/Back/Next. */
-function TourCard({
+export function UsageGuideTooltip({
   backProps,
   closeProps,
   index,
@@ -113,107 +100,6 @@ function TourCard({
           <Button {...withoutTitle(primaryProps)} size="sm">
             {t(isLastStep ? "Done" : "Next")}
           </Button>
-        </div>
-      </footer>
-    </Text>
-  );
-}
-
-function UsageGuidePanel({
-  backProps,
-  closeProps,
-  index,
-  isLastStep,
-  primaryProps,
-  skipProps,
-  size,
-  step,
-  tooltipProps,
-}: TooltipRenderProps) {
-  const guide = guides[index % guides.length];
-  return (
-    <Text
-      as="section"
-      size="body"
-      tone="primary"
-      leading="normal"
-      {...tooltipProps}
-      {...surfaceAttributes(
-        { variant: "floating", frame: "card", radius: "panel" },
-        "bycoda-arc usage-guide-panel",
-      )}
-      data-joyride-step={index}
-      aria-labelledby="usage-guide-title"
-      aria-describedby="usage-guide-description"
-    >
-      <Text
-        as="header"
-        size="caption"
-        tone="secondary"
-        leading="normal"
-        {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "usage-guide-toolbar")}
-      >
-        <span>{t("Usage guide")}</span>
-        <LiveText
-          className="sr-only usage-guide-progress"
-          text={t("Step {p0} of {p1}", { p0: index + 1, p1: size })}
-        />
-        <Button
-          {...closeProps}
-          variant="ghost"
-          iconOnly
-          label={closeProps["aria-label"] ?? closeProps.title ?? t("Close")}
-        >
-          <X className="icon-lg" aria-hidden="true" />
-        </Button>
-      </Text>
-      <ScrollArea gutter="stable" className="usage-guide-scroll" key={index}>
-        <div className="usage-guide-hero">
-          <div className="usage-guide-intro">
-            <Heading size="page" level={2} id="usage-guide-title">
-              {step.title}
-            </Heading>
-            <Text size="caption" tone="muted" leading="inherit" className="usage-guide-companion">
-              {guide.name}
-            </Text>
-          </div>
-          <img
-            className="usage-guide-character"
-            src={`/crew/star-wars/${guide.asset}.svg`}
-            alt=""
-            width={104}
-            height={144}
-          />
-        </div>
-        {step.content}
-      </ScrollArea>
-      <footer {...surfaceAttributes({ frame: "pane", edge: "top" }, "usage-guide-footer")}>
-        <Stepper
-          label={t("Usage guide")}
-          steps={Array.from({ length: size }, (_, position) => ({
-            id: String(position),
-            label: t("{p0} / {p1}", { p0: position + 1, p1: size }),
-          }))}
-          current={index}
-          compact
-        />
-        <div className="usage-guide-actions">
-          {size > 1 && !isLastStep ? (
-            <Button
-              {...withoutTitle(skipProps)}
-              variant="ghost"
-              aria-label={t("Skip tour")}
-              className="usage-guide-skip"
-            >
-              {t("Skip tour")}
-            </Button>
-          ) : null}
-          {size > 1 ? (
-            <Button {...withoutTitle(backProps)} variant="secondary" disabled={index === 0}>
-              {t("Back")}
-            </Button>
-          ) : null}
-          <Button {...withoutTitle(primaryProps)}>{t(isLastStep ? "Done" : "Next")}</Button>
         </div>
       </footer>
     </Text>

@@ -12,6 +12,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useRef, useState } from "react";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { RemoteMachine } from "../../connections";
 import { DAILY_LIMIT_CHOICES, formatAgentMinutes, type HostSettings } from "../model/hostSettings";
@@ -180,12 +181,11 @@ export function MachineConcurrency({
         />
         {saving ? <Spinner /> : null}
       </Text>
-      <p>
-        {t("Applies to all epics and tasks on this machine.")}{" "}
+      <InfoPopover>
         {t("Saved immediately for {p0}; it is not part of this task.", {
           p0: limit.machineName,
         })}
-      </p>
+      </InfoPopover>
     </Text>
   );
 }
@@ -278,9 +278,14 @@ export function LimitsPanel({
                 leading="inherit"
                 className="task-ops-caption task-ops-num"
               >
-                {entry.stale && !entry.pendingRefresh ? `${t("Out of date")} ·` : t("Used today: ")}
-                {formatAgentMinutes(entry.usedMinutes)}
-                {limited ? t(" of {p0}", { p0: formatAgentMinutes(entry.dailyAgentMinutes) }) : ""}
+                {entry.stale && !entry.pendingRefresh
+                  ? t("Out of date · {p0}", { p0: formatAgentMinutes(entry.usedMinutes) })
+                  : limited
+                    ? t("Used today: {p0} of {p1}", {
+                        p0: formatAgentMinutes(entry.usedMinutes),
+                        p1: formatAgentMinutes(entry.dailyAgentMinutes),
+                      })
+                    : t("Used today: {p0}", { p0: formatAgentMinutes(entry.usedMinutes) })}
               </Text>
             </div>
             {limited ? (
@@ -315,8 +320,12 @@ export function LimitsPanel({
             ) : null}
             <SettingFrame>
               <SettingRow
-                title={t("Max concurrent tasks")}
-                description={t("Applies to all epics and tasks on this machine.")}
+                title={
+                  <>
+                    {t("Max concurrent tasks")}
+                    <InfoPopover>{t("Applies to all epics and tasks on this machine.")}</InfoPopover>
+                  </>
+                }
               >
                 <TaskConcurrencyField
                   hideLabel

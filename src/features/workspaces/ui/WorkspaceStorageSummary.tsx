@@ -1,7 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { RefreshCw } from "../../../shared/ui/icons";
@@ -44,13 +43,7 @@ export function WorkspaceStorageSummary({
             {storage.root}
           </Text>
         }
-        scope={
-          busy
-            ? t("Refreshing storage…")
-            : stale
-              ? t("Showing the last storage reading.")
-              : undefined
-        }
+        scope={stale && !busy ? t("Showing the last storage reading.") : undefined}
         info={
           <InfoPopover>
             <p>
@@ -94,11 +87,6 @@ export function WorkspaceStorageSummary({
                 })}
               </Text>
             </span>
-            {warning && (
-              <Badge size="sm" tone="warning">
-                {t("Storage warning")}
-              </Badge>
-            )}
             <Text size="inherit" tone="secondary" leading="inherit" className={styles.free}>
               {t("Free on disk {p0}", { p0: measure(storage.freeBytes) })}
             </Text>
@@ -120,19 +108,13 @@ export function WorkspaceStorageSummary({
             />
           ) : null}
           <DescriptionList columns="auto" size="sm">
-            <DescriptionItem term={t("Worktree folders")}>
-              {measure(storage.materializedBytes)}
-            </DescriptionItem>
             <DescriptionItem term={t("Recovery objects")}>
               {measure(storage.recoveryBytes)}
             </DescriptionItem>
           </DescriptionList>
         </Text>
         {storage.materialization !== "allowed" && (
-          <SettingsFeedback
-            state="warning"
-            action={{ label: t("Refresh storage"), disabled, onClick: onRefresh }}
-          >
+          <SettingsFeedback state="warning">
             {storage.materialization === "paused"
               ? t("New workspaces are paused. Required free space: {p0}.", {
                   p0: workspaceStorageSize(storage.requiredFreeBytes),

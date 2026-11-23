@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { ClampText } from "../../../shared/ui/ClampText";
@@ -6,39 +5,15 @@ import { DescriptionItem, DescriptionList } from "../../../shared/ui/Description
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
-import {
-  CircleAlert,
-  Clock,
-  FolderTree,
-  MessageMultiple,
-  UserRound,
-} from "../../../shared/ui/icons";
+import { Clock, UserRound } from "../../../shared/ui/icons";
 import type { InboxItem } from "../model/githubTasks";
 import { InboxPerson, inboxLabelItems } from "./InboxPresentation";
-import { InboxProviderMark } from "./InboxProviderMark";
 
 /**
- * Hover preview of one inbox row: the full title, reference, source, people, labels and
- * times the narrow row cannot show. Everything here is also in the item's detail view.
+ * Hover preview of one inbox row: only what the narrow row cannot show, the full title,
+ * assignees, labels and times. Reference, status, project and sessions stay on the row.
  */
-export function InboxCardPreview({
-  item,
-  reference,
-  kindLabel,
-  source,
-  status,
-  attention,
-  sessionLabel,
-}: {
-  item: InboxItem;
-  reference: string;
-  kindLabel: string;
-  source: string;
-  /** The row's status mark (StatusText), reused so both read the same. */
-  status: ReactNode;
-  attention: string;
-  sessionLabel: string;
-}) {
+export function InboxCardPreview({ item }: { item: InboxItem }) {
   useLocale();
   const updated = Date.parse(item.updatedAt);
   const created = item.createdAt ? Date.parse(item.createdAt) : Number.NaN;
@@ -47,16 +22,6 @@ export function InboxCardPreview({
   const iconClass = "icon-xs shrink-0";
   return (
     <>
-      <Text as="div" size="caption" tone="secondary" className="flex min-w-0 items-center gap-1.5">
-        <InboxProviderMark provider={item.provider} tone="secondary" className={iconClass} />
-        <Text as="span" size="inherit" tone="primary" weight="medium" className="shrink-0">
-          {reference}
-        </Text>
-        <Text as="span" size="inherit" tone="muted" truncate className="min-w-0 flex-1">
-          {kindLabel}
-        </Text>
-        <span className="min-w-0 shrink">{status}</span>
-      </Text>
       <ClampText
         as="p"
         lines={3}
@@ -70,18 +35,7 @@ export function InboxCardPreview({
       >
         {item.title}
       </ClampText>
-      {/* Every row shares one icon column, so values line up like the session preview. */}
       <DescriptionList hideTerms size="sm" className="items-center gap-y-1.5">
-        {source ? (
-          <DescriptionItem
-            term={t("Project")}
-            icon={<FolderTree className={iconClass} strokeWidth={1.75} />}
-          >
-            <Text as="span" truncate size="inherit" tone="primary" className="min-w-0">
-              {source}
-            </Text>
-          </DescriptionItem>
-        ) : null}
         <DescriptionItem
           term={t("Assignees")}
           icon={<UserRound className={iconClass} strokeWidth={1.75} />}
@@ -109,26 +63,6 @@ export function InboxCardPreview({
             </Text>
           )}
         </DescriptionItem>
-        {attention ? (
-          <DescriptionItem
-            term={t("Status")}
-            icon={<CircleAlert className={iconClass} strokeWidth={1.75} />}
-          >
-            <Text as="span" size="inherit" tone="primary">
-              {attention}
-            </Text>
-          </DescriptionItem>
-        ) : null}
-        {sessionLabel ? (
-          <DescriptionItem
-            term={t("Sessions")}
-            icon={<MessageMultiple className={iconClass} strokeWidth={1.75} />}
-          >
-            <Text as="span" size="inherit" tone="primary">
-              {sessionLabel}
-            </Text>
-          </DescriptionItem>
-        ) : null}
       </DescriptionList>
       {item.labels.length ? (
         <BadgeList

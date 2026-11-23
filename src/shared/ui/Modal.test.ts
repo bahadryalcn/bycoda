@@ -1,18 +1,24 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ModalPanel } from "./Modal";
+import { Button } from "./Button";
+import { ModalActions, ModalPanel } from "./Modal";
+import { floatingFrameClassName } from "./NativePopupHost";
 import { Sheet } from "./Sheet";
 
 describe("ModalPanel", () => {
-  it("opts into the floating surface without changing the default", () => {
+  it("uses one opaque ground for default, explicit floating and centered workspace dialogs", () => {
     const props = { title: "Preview", onClose: vi.fn(), children: "Body" };
-    expect(renderToStaticMarkup(createElement(ModalPanel, props))).not.toContain(
-      'data-surface-variant="floating"',
+    for (const surface of [undefined, "floating", "workspace-panel"] as const) {
+      const markup = renderToStaticMarkup(createElement(ModalPanel, { ...props, surface }));
+      expect(markup.match(/popover-backdrop/g)).toHaveLength(1);
+      expect(markup).toContain(floatingFrameClassName);
+    }
+    const docked = renderToStaticMarkup(
+      createElement(ModalPanel, { ...props, surface: "workspace-panel", placement: "end" }),
     );
-    expect(
-      renderToStaticMarkup(createElement(ModalPanel, { ...props, surface: "floating" })),
-    ).toContain('data-surface-variant="floating"');
+    expect(docked).toContain("bg-(--ui-surface-panel)");
+    expect(docked).not.toContain("popover-backdrop");
   });
   it("names the dialog and close action", () => {
     const markup = renderToStaticMarkup(
@@ -107,6 +113,20 @@ describe("ModalPanel", () => {
     const footer = markup.indexOf("<footer");
     expect(scroller).toBeLessThan(footer);
     expect(markup.slice(scroller, footer)).not.toContain("Actions");
+    expect(markup.slice(footer)).toContain("overflow-y-auto");
+  });
+
+  it("can associate the visible blocker directly with its action", () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        ModalActions,
+        { reason: "Review required", reasonId: "review-blocker" },
+        createElement(Button, { "aria-disabled": true, "aria-describedby": "review-blocker" }, "Save"),
+      ),
+    );
+    expect(markup).toContain('id="review-blocker"');
+    expect(markup).toContain('aria-describedby="review-blocker"');
+    expect(markup.match(/Review required/g)).toHaveLength(1);
   });
 
   it("owns the body padding by default and drops it with padding none or scroll none", () => {
@@ -144,7 +164,8 @@ describe("ModalPanel geometry variants", () => {
     const standard = render({ size: "settings" });
     expect(standard).toContain("w-[min(88rem,calc(100vw-24px))]");
     expect(standard).toContain("h-[min(60rem,calc(100dvh-32px))]");
-    expect(standard).toContain("--modal-frame-color:var(--ui-dialog-frame)");
+    expect(standard).toContain(floatingFrameClassName);
+    expect(standard).not.toContain("--modal-frame-color");
     const maximized = render({ size: "settings", maximized: true });
     expect(maximized).toContain("w-[calc(100vw-24px)]");
     expect(maximized).toContain("h-[calc(100dvh-32px)]");

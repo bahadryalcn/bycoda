@@ -58,11 +58,7 @@ it("shows the complete command instead of the shortened notice label and preserv
     expect(dismiss).toHaveBeenCalledOnce();
     act(() => buttons[0].click());
     expect(focus).toHaveBeenCalledWith(session.id);
-    focus.mockClear();
-    const open = buttons.find((button) => button.textContent === "Open session");
-    expect(open).toBeDefined();
-    act(() => open!.click());
-    expect(focus).toHaveBeenCalledWith(session.id);
+    expect(buttons.filter((button) => button.textContent?.includes("Open session"))).toHaveLength(1);
   } finally {
     act(() => root.unmount());
     host.remove();

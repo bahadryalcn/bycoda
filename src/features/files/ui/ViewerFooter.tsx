@@ -45,18 +45,15 @@ export function OpenInDefaultAppButton({
     <Button
       size="sm"
       variant="ghost"
-      motion="none"
-      type="button"
       loading={loading}
+      startIcon={<ExternalLink className="icon-xs" strokeWidth={1.75} />}
       tooltip={
         localCopy
           ? t("Changes to this local copy are not saved to the connected machine.")
           : undefined
       }
       onClick={onOpen}
-      className="flex items-center gap-1.5"
     >
-      <ExternalLink className="icon-xs" strokeWidth={1.75} />
       {t(localCopy ? "Open local copy" : "Open in default app")}
     </Button>
   );

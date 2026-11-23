@@ -11,6 +11,7 @@ import { isRemoteProjectPath, type RecentProject } from "../model/recents";
 import { projectDisplayNameFrom, useProjectLabels } from "../model/projectNames";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { ProjectMascot } from "./ProjectMascot";
+import { duplicateProjectNames, isDuplicateProjectName, parentFolderLabel } from "./projectIdentity";
 import {
   resolveTabGroupColor,
   resolveTabGroupMascot,
@@ -64,17 +65,31 @@ export function NewSessionProjectDialog({
     projects.map(({ path }) => projectKey(path)),
     logos,
   );
+  // A path is shown only to tell two projects with the same name apart.
+  const duplicates = duplicateProjectNames(
+    projects.map(({ path }) => ({ path, name: projectDisplayNameFrom(path, labels) })),
+  );
   const options = filterPickerOptions(
     [
+      {
+        value: NO_PROJECT_CWD,
+        title: t("No project"),
+        icon: <Chatting className="icon-sm" />,
+        disabled: busy,
+      },
       ...projects.map(({ path }) => {
         const key = projectKey(path);
         const seed = projectName(path);
         const logo = resolvedLogos[key];
+        const title = projectDisplayNameFrom(path, labels);
         return {
           value: path,
-          title: projectDisplayNameFrom(path, labels),
-          description: isRemoteProjectPath(path) ? `${t("Remote")} · ${path}` : path,
-          group: t("Projects"),
+          title,
+          description: isDuplicateProjectName(duplicates, title)
+            ? isRemoteProjectPath(path)
+              ? `${t("Remote")} · ${path}`
+              : parentFolderLabel(path) || path
+            : undefined,
           icon: logo ? (
             <ProjectLogoIcon path={logo} className="icon-sm rounded-sm" imageClassName="icon-sm" />
           ) : (
@@ -88,14 +103,6 @@ export function NewSessionProjectDialog({
           disabled: busy,
         };
       }),
-      {
-        value: NO_PROJECT_CWD,
-        title: t("No project"),
-        description: t("Runs in your default folder for sessions without a project"),
-        group: t("Without a project"),
-        icon: <Chatting className="icon-sm" />,
-        disabled: busy,
-      },
     ],
     query,
   );
@@ -121,7 +128,7 @@ export function NewSessionProjectDialog({
   return (
     <Modal
       padding="none"
-      title={t("Choose a project for the new session")}
+      title={t("New session in")}
       size="md"
       motion="none"
       onClose={() => {
@@ -138,7 +145,7 @@ export function NewSessionProjectDialog({
           {...picker.searchProps}
         />
         <PickerList
-          label={t("Projects")}
+          label={t("New session in")}
           controller={picker}
           query={query}
           checkPlacement="none"

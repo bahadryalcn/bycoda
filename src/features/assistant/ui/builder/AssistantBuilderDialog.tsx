@@ -3,7 +3,7 @@ import { t } from "../../../../shared/i18n";
 import { LANGUAGES as APP_LANGUAGES } from "../../../../shared/i18n/languages";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { Button } from "../../../../shared/ui/Button";
-import { Check, Square, X } from "../../../../shared/ui/icons";
+import { Square } from "../../../../shared/ui/icons";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
@@ -63,12 +63,7 @@ export function AssistantBuilderDialog({
       footer={
         proposal ? undefined : (
           <ModalActions>
-            <Button
-              variant="ghost"
-              type="button"
-              startIcon={<X className="icon-sm" />}
-              onClick={close}
-            >
+            <Button variant="ghost" type="button" onClick={close}>
               {t("Cancel")}
             </Button>
             {interview.busy ? (
@@ -83,7 +78,6 @@ export function AssistantBuilderDialog({
               <Button
                 variant="primary"
                 type="button"
-                startIcon={<Check className="icon-sm" />}
                 disabled={!canFinish || !available || interview.failure !== null}
                 onClick={finish}
               >

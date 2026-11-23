@@ -4,6 +4,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Modal, ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
 import type { BoardGoal } from "../model/goalClient";
@@ -60,14 +61,16 @@ function GoalSettingsForm({
       }}
     >
       <div className="task-form-body">
-        <Text as="p" size="inherit" tone="inherit" weight="medium" className="break-words">
-          {goal.title}
-        </Text>
-        <Text as="p" size="micro" tone="secondary" leading="inherit" className="task-form-hint">
-          {t(
-            "Applies to existing unfinished tasks. Delivery requires approval of the reviewed source and target.",
-          )}
-        </Text>
+        <div className="flex min-w-0 items-center gap-1">
+          <Text as="p" size="inherit" tone="inherit" weight="medium" className="min-w-0 break-words">
+            {goal.title}
+          </Text>
+          <InfoPopover label={t("About epic settings")} className="shrink-0">
+            {t(
+              "Applies to existing unfinished tasks. Delivery requires approval of the reviewed source and target.",
+            )}
+          </InfoPopover>
+        </div>
         <FieldGroup variant="bare" disabled={saving}>
           <div className="goal-form-sections mt-3 min-w-0">
             <GoalSection title={t("How it runs")}>
@@ -142,7 +145,6 @@ function GoalSettingsForm({
             form={formId}
             loading={saving}
             disabled={!valid}
-            disabledReason={valid ? undefined : t("Enter a run limit between 0 and 10080 minutes.")}
           >
             {t("Save")}
           </Button>

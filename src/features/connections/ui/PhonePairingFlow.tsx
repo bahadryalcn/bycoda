@@ -7,16 +7,13 @@ import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { Divider } from "../../../shared/ui/Divider";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Field } from "../../../shared/ui/Field";
 import { Switch } from "../../../shared/ui/Switch";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useRef, useState } from "react";
 import { watchPairingView } from "../../account";
-import { CopyButton } from "../../../shared/ui/CopyButton";
 import { t, useLocale } from "../../../shared/i18n";
-import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { ModalActions, ModalFooter } from "../../../shared/ui/Modal";
@@ -26,7 +23,6 @@ import type {
   PhonePairingFlowProps,
   PhonePairingLinkProps,
   PhonePairingLinkStatus,
-  PhonePairingCopyProps,
 } from "../model/phonePairingTypes";
 
 const accessCopy = {
@@ -78,25 +74,6 @@ function PhonePairingLink({ url, label }: PhonePairingLinkProps) {
   );
 }
 
-function PhonePairingCopy({ code }: PhonePairingCopyProps) {
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <CopyButton
-        stableWidth
-        type="button"
-        className="shrink-0"
-        label={t("Copy pairing code")}
-        copiedLabel={t("Pairing code copied")}
-        text={() => {
-          // An expired code must not reach the clipboard; the failed state asks for a retry.
-          if (Date.parse(code.expiresAt) <= Date.now()) throw new Error("Pairing code expired");
-          return JSON.stringify(code);
-        }}
-      />
-    </div>
-  );
-}
-
 /**
  * The phone pairing steps, shared by the inline Phone tab and the pairing dialog so both show
  * the same access checks, QR code and paired states. In the inline variant `children` are extra
@@ -120,7 +97,6 @@ export function PhonePairingFlow({
   useLocale();
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps account mailbox discovery responsive while pairing controls are mounted.
   useEffect(watchPairingView, []);
-  const [confirmDisable, setConfirmDisable] = useState(false);
   const [address, setAddress] = useState("");
   const inline = variant === "inline";
   const localNetwork = !fixedEndpoint && state.mode === "lan";
@@ -129,13 +105,12 @@ export function PhonePairingFlow({
   const networkHint = state.stage === "access" ? state.access.networkHint : undefined;
   const addresses = state.stage === "access" ? (state.access.addresses ?? []) : [];
   const selectedAddress = addresses.includes(address) ? address : (addresses[0] ?? "");
-  const machineLabel = isLocalSyncMachine(state.machine) ? t("This computer") : state.machine.name;
   const localToggle =
     localNetwork &&
     (state.stage === "qr" || (state.stage === "access" && state.access.state === "ready")) ? (
       <Switch
         checked
-        onCheckedChange={() => setConfirmDisable(true)}
+        onCheckedChange={() => onDisable?.()}
         label={t("Local network access")}
       />
     ) : null;
@@ -162,38 +137,19 @@ export function PhonePairingFlow({
             label: isLocalSyncMachine(machine) ? t("This computer") : machine.name,
           }))}
         />
-      ) : inline ? null : (
-        <Text as="p" size="secondary" tone="primary" weight="medium">
-          {machineLabel}
-        </Text>
-      )}
+      ) : null}
 
       {!fixedEndpoint ? (
-        <Field
+        <RadioGroup
+          variant="inline"
           label={t("Phone network")}
-          description={
-            state.stage === "qr"
-              ? undefined
-              : localNetwork
-                ? t("Your phone and this computer must be on the same Wi-Fi or local network.")
-                : t(
-                    "Works from any network. Tailscale must be signed in to the same account on this computer and your phone.",
-                  )
-          }
-        >
-          <div className="flex">
-            <RadioGroup
-              variant="inline"
-              label={t("Phone network")}
-              value={localNetwork ? "lan" : "tailscale"}
-              options={[
-                { value: "lan", label: t("Same Wi-Fi") },
-                { value: "tailscale", label: t("Anywhere (Tailscale)") },
-              ]}
-              onValueChange={(value) => onMode?.(value as "lan" | "tailscale")}
-            />
-          </div>
-        </Field>
+          value={localNetwork ? "lan" : "tailscale"}
+          options={[
+            { value: "lan", label: t("Same Wi-Fi") },
+            { value: "tailscale", label: t("Anywhere (Tailscale)") },
+          ]}
+          onValueChange={(value) => onMode?.(value as "lan" | "tailscale")}
+        />
       ) : null}
 
       {busy ? (
@@ -208,11 +164,11 @@ export function PhonePairingFlow({
 
       {state.stage === "access" ? (
         <div className="flex flex-col gap-4">
-          {localNetwork && networkHint ? (
-            <InlineMessage tone="warning">{t(networkHint)}</InlineMessage>
-          ) : null}
-          {localNetwork && state.access.state === "ready" && state.access.reason ? (
-            <InlineMessage tone="info">{t(state.access.reason)}</InlineMessage>
+          {/* One message per state: the first that applies. */}
+          {state.access.state === "ready" && localNetwork && (networkHint || state.access.reason) ? (
+            <InlineMessage tone={networkHint ? "warning" : "info"}>
+              {t((networkHint ?? state.access.reason)!)}
+            </InlineMessage>
           ) : null}
           {state.access.state === "ready" ? (
             inline ? (
@@ -226,7 +182,9 @@ export function PhonePairingFlow({
             <>
               <InlineMessage tone="info">
                 {localNetwork
-                  ? state.access.reason
+                  ? networkHint
+                    ? t(networkHint)
+                    : state.access.reason
                     ? t(state.access.reason)
                     : state.access.state === "setup-required"
                       ? t(
@@ -343,7 +301,6 @@ export function PhonePairingFlow({
             </Alert>
           ) : null}
           <div className="phone-pairing-actions">
-            <PhonePairingCopy key={state.session.pairingId} code={state.session.code} />
             <Button stableWidth type="button" className="shrink-0" onClick={onRegenerate}>
               <RefreshCw className="icon-sm" aria-hidden />
               {t("Create a new code")}
@@ -376,16 +333,6 @@ export function PhonePairingFlow({
             <CheckCircle className="icon-lg" tone="success" />
             {t("Your phone is connected")}
           </Text>
-          <Text as="p" size="secondary" tone="muted" leading="relaxed">
-            {state.deviceName
-              ? t("{p0} can now manage {p1}.", {
-                  p0: state.deviceName,
-                  p1: machineLabel,
-                })
-              : t("You can now manage {p0} from your phone.", {
-                  p0: machineLabel,
-                })}
-          </Text>
           {inline ? (
             <Button
               stableWidth
@@ -404,20 +351,15 @@ export function PhonePairingFlow({
       ) : null}
 
       {state.stage === "error" ? (
-        <div className="flex flex-col gap-3">
-          <Alert tone="danger">
-            {state.error === "host-update"
-              ? t("Update the host on this machine to connect your phone.")
-              : state.error === "invalid-response"
-                ? t(
-                    "This machine returned an invalid pairing response. Check its host and try again.",
-                  )
-                : t("This machine could not be reached. Reconnect it and try again.")}
-          </Alert>
-          <Button stableWidth type="button" className="shrink-0" onClick={onRefresh}>
-            {t("Check again")}
-          </Button>
-        </div>
+        <Alert tone="danger" action={{ label: t("Check again"), onClick: onRefresh }}>
+          {state.error === "host-update"
+            ? t("Update the host on this machine to connect your phone.")
+            : state.error === "invalid-response"
+              ? t(
+                  "This machine returned an invalid pairing response. Check its host and try again.",
+                )
+              : t("This machine could not be reached. Reconnect it and try again.")}
+        </Alert>
       ) : null}
       {inline ? (
         <>
@@ -430,19 +372,6 @@ export function PhonePairingFlow({
           <Divider />
           {localToggle}
         </>
-      ) : null}
-      {confirmDisable ? (
-        <ConfirmDialog
-          request={{
-            title: t("Turn off local network access?"),
-            message: t("Phones on this network will lose access to this computer."),
-            confirmLabel: t("Turn off local network access"),
-          }}
-          onSettle={(confirmed) => {
-            setConfirmDisable(false);
-            if (confirmed) onDisable?.();
-          }}
-        />
       ) : null}
     </div>
   );

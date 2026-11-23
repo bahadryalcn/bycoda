@@ -42,14 +42,7 @@ export function ImageAltText({ alt, title }: { alt?: string; title?: string }) {
   if (!text) return null;
   return (
     <Tooltip label={title} asChild>
-      <Text
-        as="em"
-        size="inherit"
-        tone="secondary"
-        data-image-alt=""
-
-        className="text-[0.92em]"
-      >
+      <Text as="em" size="inherit" tone="secondary" data-image-alt="">
         {text}
       </Text>
     </Tooltip>
@@ -164,7 +157,6 @@ function ProjectImage({
       <img
         src={url}
         alt={alt ?? ""}
-
         width={width}
         height={height}
         {...(align ? { align } : {})}

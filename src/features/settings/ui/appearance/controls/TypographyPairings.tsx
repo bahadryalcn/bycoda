@@ -34,7 +34,6 @@ export function TypographyPairings({ appearance: a }: { appearance: AppearanceSe
   return (
     <Group
       title={t("Pairings")}
-      description={t("Set an interface font and a code font together.")}
       action={
         <Button
           size="sm"

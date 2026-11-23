@@ -4,6 +4,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -94,14 +95,20 @@ export function SprintCompletion({
           }
         }}
       >
-        <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
-          {t(
-            "The sprint report will be frozen. Select unfinished tasks to move; other tasks keep their sprint history.",
-          )}
-        </Text>
         {unfinished.length ? (
           <section className="sprint-form-section">
-            <SectionLabel count={unfinished.length}>{t("Tasks")}</SectionLabel>
+            <SectionLabel
+              count={unfinished.length}
+              actions={
+                <InfoPopover>
+                  {t(
+                    "The sprint report will be frozen. Select unfinished tasks to move; other tasks keep their sprint history.",
+                  )}
+                </InfoPopover>
+              }
+            >
+              {t("Tasks")}
+            </SectionLabel>
             <ul className="sprint-complete-tasks">
               {unfinished.map((task) => {
                 const key = sprintTaskKey(task);
@@ -124,7 +131,11 @@ export function SprintCompletion({
               })}
             </ul>
           </section>
-        ) : null}
+        ) : (
+          <Text as="p" size="inherit" tone="secondary" className="sprint-muted">
+            {t("The sprint report will be frozen.")}
+          </Text>
+        )}
         {selected.length ? (
           <SearchableSelect
             label={t("Move selected tasks to")}

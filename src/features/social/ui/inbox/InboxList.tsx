@@ -65,23 +65,11 @@ function InboxRow({
             />
           </span>
           {item.person && item.title !== name && item.title !== item.preview ? (
-            <Text
-              size="secondary"
-              tone="secondary"
-              leading="inherit"
-              truncate
-              className="inbox-row-subject"
-            >
+            <Text size="secondary" tone="secondary" leading="inherit" truncate>
               {item.title}
             </Text>
           ) : null}
-          <Text
-            size="caption"
-            tone="muted"
-            leading="inherit"
-            truncate
-            className="inbox-row-preview"
-          >
+          <Text size="caption" tone="muted" leading="inherit" truncate>
             {item.preview}
           </Text>
           {unread ? null : (

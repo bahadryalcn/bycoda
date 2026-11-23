@@ -1,4 +1,4 @@
-import { Text } from "../../../shared/ui/Text";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useLayoutEffect, useRef } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -106,19 +106,21 @@ export function SshJumpChainEditor({
           </div>
         </div>
       ))}
-      <Button
-        variant="ghost"
-        disabled={disabled || value.length >= MAX_SSH_JUMP_HOSTS}
-        onClick={() => onChange([...value, ""])}
-      >
-        <Plus className="icon-xs" />
-        {t("Add jump host")}
-      </Button>
-      {value.length > 1 ? (
-        <Text as="p" tone="muted">
-          {t("Hops follow this order. Each hop requires its own trusted host key.")}
-        </Text>
-      ) : null}
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          startIcon={<Plus className="icon-xs" />}
+          disabled={disabled || value.length >= MAX_SSH_JUMP_HOSTS}
+          onClick={() => onChange([...value, ""])}
+        >
+          {t("Add jump host")}
+        </Button>
+        {value.length > 1 ? (
+          <InfoPopover>
+            {t("Hops follow this order. Each hop requires its own trusted host key.")}
+          </InfoPopover>
+        ) : null}
+      </div>
     </div>
   );
 }

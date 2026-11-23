@@ -67,11 +67,6 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
     .join(" · ");
 
   const typeText = presentation.typeExtension ?? t(presentation.label);
-  // The app tooltip carries what a native `title` would: the full path (or name), type and size.
-  const fileTooltip = {
-    label: attachment.path ?? attachment.name,
-    details: [[typeText, size].filter(Boolean).join(" · ")],
-  };
   const fileBody = (
     <span className={styles.fileBody}>
       <span className={styles.fileIcon}>
@@ -116,7 +111,6 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
               label={t("Open {p0} full screen", { p0: attachment.name })}
               variant="ghost"
               type="button"
-              aria-label={t("Open {p0} full screen", { p0: attachment.name })}
               tooltip={imageDetails}
               disabled={loading}
               loading={loading}
@@ -143,31 +137,6 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 <AttachmentIdentity attachment={attachment} />
               )}
             </Button>
-            {token && onInsertToken ? (
-              <Button
-                motion="none"
-                {...motionAttributes({ transition: "opacity" })}
-                {...actionContentAttributes(
-                  { phase: "interaction", hide: "opacity", focus: "within" },
-                  "absolute bottom-1 left-1",
-                )}
-                size="sm"
-                iconOnly
-                label={t("Insert {p0} into the message", { p0: token })}
-                variant="secondary"
-                shape="pill"
-                type="button"
-                aria-label={t("Insert {p0} into the message", { p0: token })}
-                // Keeps focus, and so the caret, in the message box.
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onInsertToken();
-                }}
-              >
-                <Link className="icon-xs" />
-              </Button>
-            ) : null}
           </span>
         ) : (
           <>
@@ -185,8 +154,7 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 aria-label={t("Open {p0} full screen", {
                   p0: attachment.name,
                 })}
-                tooltip={fileTooltip.label}
-                tooltipDetails={fileTooltip.details}
+                tooltip={attachment.path}
                 tooltipWide
                 onClick={(event) => {
                   event.stopPropagation();
@@ -199,52 +167,48 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
                 {fileBody}
               </Button>
             ) : (
-              <Tooltip {...fileTooltip} wide>
+              <Tooltip label={attachment.path} wide>
                 <span className={styles.thumbnail}>{fileBody}</span>
               </Tooltip>
             )}
-            {token && onInsertToken ? (
-              <Button
-                motion="none"
-                {...motionAttributes({ transition: "opacity" })}
-                {...actionContentAttributes(
-                  { phase: "interaction", hide: "opacity", focus: "within" },
-                  "absolute bottom-1 left-1",
-                )}
-                size="sm"
-                iconOnly
-                label={t("Insert {p0} into the message", { p0: token })}
-                variant="secondary"
-                shape="pill"
-                type="button"
-                aria-label={t("Insert {p0} into the message", { p0: token })}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onInsertToken();
-                }}
-              >
-                <Link className="icon-xs" />
-              </Button>
-            ) : null}
           </>
         )}
-        {saveCopy.canSave ? (
-          <Button
-            motion="none"
+        {((token && onInsertToken) || saveCopy.canSave || onRemove) ? (
+          <div
             {...motionAttributes({ transition: "opacity" })}
             {...actionContentAttributes(
               { phase: "interaction", hide: "opacity", focus: "within" },
-              "absolute bottom-1 right-1",
+              "absolute end-0 top-1 flex",
             )}
+          >
+          {token && onInsertToken ? (
+            <Button
+              motion="none"
+              size="sm"
+              iconOnly
+              label={t("Insert {p0} into the message", { p0: token })}
+              variant="secondary"
+              shape="pill"
+              type="button"
+              // Keep the composer caret where the token will be inserted.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onInsertToken();
+              }}
+            >
+              <Link className="icon-xs" />
+            </Button>
+          ) : null}
+          {saveCopy.canSave ? (
+          <Button
+            motion="none"
             size="sm"
             iconOnly
             label={t("Save {p0}", { p0: attachment.name })}
             variant="secondary"
             shape="pill"
             type="button"
-            tooltip={t("Download")}
-            aria-label={t("Save {p0}", { p0: attachment.name })}
             disabled={saveCopy.saving}
             loading={saveCopy.saving}
             onClick={(event) => {
@@ -258,19 +222,12 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
         {onRemove ? (
           <Button
             motion="none"
-            {...motionAttributes({ transition: "opacity" })}
-            {...actionContentAttributes(
-              { phase: "interaction", hide: "opacity", focus: "within" },
-              "absolute right-1 top-1",
-            )}
             size="sm"
             iconOnly
             label={t("Remove {p0}", { p0: attachment.name })}
             variant="secondary"
             shape="pill"
             type="button"
-            tooltip={t("Remove")}
-            aria-label={t("Remove {p0}", { p0: attachment.name })}
             onClick={(event) => {
               event.stopPropagation();
               onRemove();
@@ -279,8 +236,10 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
             <X className="icon-xs" strokeWidth={2} />
           </Button>
         ) : null}
+          </div>
+        ) : null}
       </div>
-      {previewError ? (
+      {previewError && !previewOpen ? (
         <InlineMessage tone="warning" live="assertive">
           {t("Preview unavailable. Try again.")}
         </InlineMessage>

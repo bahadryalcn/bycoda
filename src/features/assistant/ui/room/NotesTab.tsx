@@ -158,31 +158,14 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                     <Heading size="item" level={3}>
                       {t("Daily summary")}
                     </Heading>
-                    <Text
-                      as="p"
-                      size="caption"
-                      tone="muted"
-                      leading="inherit"
-                      className={styles.summaryMeta}
-                    >
-                      {t("Saved daily summary · {p0}", {
-                        p0: formatDate(dailySummary.snapshot.briefing.createdAt, {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        }),
-                      })}
-                    </Text>
                     <Text as="p" size="secondary" tone="inherit" leading="normal">
                       {dailySummary.snapshot.briefing.text}
                     </Text>
-                    <Text
-                      as="p"
-                      size="caption"
-                      tone="muted"
-                      leading="inherit"
-                      className={styles.summaryMeta}
-                    >
-                      {t("Today's summary is reused after it is generated.")}
+                    <Text as="p" size="caption" tone="muted" leading="inherit">
+                      {formatDate(dailySummary.snapshot.briefing.createdAt, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
                     </Text>
                   </>
                 ) : (

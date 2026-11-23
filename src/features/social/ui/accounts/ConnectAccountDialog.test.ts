@@ -119,8 +119,8 @@ it("defaults to the official API and asks for a name before it connects", () => 
   render(client);
   expect(element.querySelector('button[aria-label="Platform: X"]')).not.toBeNull();
   expect(element.querySelector('button[aria-label="How to connect: Official API"]')).not.toBeNull();
-  expect(button("Connect")?.getAttribute("aria-disabled")).toBe("true");
-  expect(document.body.textContent).toContain("Enter a name for this account.");
+  expect(button("Connect")?.disabled).toBe(true);
+  expect(document.body.textContent).not.toContain("Enter a name for this account.");
 });
 
 it("creates the account with the chosen projects and leaves the connection to its detail", async () => {
@@ -148,10 +148,9 @@ it("switches to a token connection and the bot type when Telegram is chosen", as
   const { client, create } = fakeClient();
   render(client);
   await choose("Platform", "Telegram");
-  expect(
-    element.querySelector('button[aria-label="How to connect: Token from this computer"]'),
-  ).not.toBeNull();
-  expect(element.querySelector('button[aria-label="Account type: Bot"]')).not.toBeNull();
+  // One possible method and type: nothing to choose, so no select is shown.
+  expect(element.querySelector('button[aria-label^="How to connect: "]')).toBeNull();
+  expect(element.querySelector('button[aria-label^="Account type: "]')).toBeNull();
   typeName("Channel bot");
   await submitForm();
   expect(create).toHaveBeenCalledWith(
@@ -202,13 +201,10 @@ it("closes without creating when the owner cancels", async () => {
   expect(create).not.toHaveBeenCalled();
 });
 
-it("switches to the email account form from the same dialog", async () => {
+it("switches to the email account form from the platform select", async () => {
   const { client } = fakeClient();
   render(client);
-  const emailOption = [...element.querySelectorAll<HTMLElement>('[role="radio"]')].find(
-    (node) => node.textContent?.trim() === "Email account",
-  );
-  await act(async () => emailOption?.click());
+  await choose("Platform", "Email");
   expect(element.querySelector('[data-testid="email-dialog"]')).not.toBeNull();
 });
 

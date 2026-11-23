@@ -2,7 +2,6 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
 import { formatRelativeTime } from "../../../../shared/i18n/format";
-import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { Plus } from "../../../../shared/ui/icons";
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
@@ -131,24 +130,21 @@ export function ConversationThreadList({
               disabled={clearing || summaryRefreshing}
               onClick={() => setThreadId(thread.id)}
             >
-              <span className={styles.threadRow}>
-                <span className={styles.threadTop}>
-                  <Text
-                    as="span"
-                    size="body"
-                    tone="inherit"
-                    weight="medium"
-                    leading="inherit"
-                    truncate
-                    className={styles.threadName}
-                  >
-                    {projectName || t("Global")}
-                  </Text>
-                  {thread.projectId && <Badge size="xs">{t("Project")}</Badge>}
-                  <Text size="micro" tone="muted" leading="inherit" className={styles.threadTime}>
-                    {threadTime(thread.updatedAt)}
-                  </Text>
-                </span>
+              <span className={styles.threadTop}>
+                <Text
+                  as="span"
+                  size="body"
+                  tone="inherit"
+                  weight="medium"
+                  leading="inherit"
+                  truncate
+                  className={styles.threadName}
+                >
+                  {projectName || t("Global")}
+                </Text>
+                <Text size="micro" tone="muted" leading="inherit" className={styles.threadTime}>
+                  {threadTime(thread.updatedAt)}
+                </Text>
               </span>
             </Button>
           );

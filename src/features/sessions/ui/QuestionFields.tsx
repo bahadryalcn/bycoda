@@ -136,11 +136,6 @@ export function QuestionFields({
         if (index >= 0) onOptionKeyDown(event, index);
       }}
     >
-      {question.multiSelect ? (
-        <Text as="p" size="caption" tone="secondary" className="[margin-block-start:0.5rem]">
-          {t("Select all that apply")}
-        </Text>
-      ) : null}
       {options.length === 0 && question.allowCustom ? (
         <TextareaField
           hideLabel
@@ -216,7 +211,6 @@ export function QuestionFields({
               onRejectedInput();
             }
           }}
-          aria-label={t("Type your answer")}
           placeholder={t("Type your answer")}
           fieldClassName={styles.answer}
         />

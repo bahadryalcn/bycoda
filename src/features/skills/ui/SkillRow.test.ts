@@ -83,11 +83,15 @@ describe("SkillRow accessible state", () => {
     );
   });
 
-  it("hides the visual Off label so the name button is the only announcement", () => {
-    const container = renderRow({ off: true });
-    const offLabel = Array.from(container.querySelectorAll("*")).find(
-      (element) => element.textContent === t("Off") && !element.closest("[data-action-primary]"),
+  it("marks Off and Draft with hidden icons, not text tags", () => {
+    const container = renderRow({ off: true, modified: true });
+    const textTag = Array.from(container.querySelectorAll("*")).find(
+      (element) =>
+        [t("Off"), t("Draft")].includes(element.textContent ?? "") &&
+        !element.closest("[data-action-primary]"),
     );
-    expect(offLabel?.getAttribute("aria-hidden")).toBe("true");
+    expect(textTag).toBeUndefined();
+    const marks = container.querySelectorAll('span[aria-hidden="true"] svg');
+    expect(marks.length).toBeGreaterThanOrEqual(2);
   });
 });

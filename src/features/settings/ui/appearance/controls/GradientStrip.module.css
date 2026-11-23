@@ -21,61 +21,12 @@
   width: 0.8rem;
   height: 0.8rem;
 }
-.label {
-  white-space: nowrap;
-}
 .controlRow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-}
-.typeGroup,
-.angleGroup {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-/* The Slider beside the dial already shows the degrees, so the dial's own readout is hidden. */
-.dialOnly > div > span:last-child {
-  display: none;
-}
-.dialWrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.dial {
-  width: 2rem;
-  height: 2rem;
-  position: relative;
-  cursor: grab;
-  touch-action: none;
-}
-.dial[aria-disabled="true"] {
-  opacity: 0.5;
-  cursor: default;
-}
-.needle {
-  transform: rotate(var(--dial-angle));
-  position: absolute;
-  inset: 3px;
-}
-.needle::before {
-  content: "";
-  position: absolute;
-  width: 2px;
-  height: 40%;
-  left: calc(50% - 1px);
-  top: 0;
-  background: var(--color-content);
-  border-radius: var(--radius-pill);
 }
 .presetRow {
   display: flex;

@@ -71,7 +71,6 @@ export function AccountUsageRefresh({ usage }: { usage: AccountUsage }) {
       loading={usage.refreshing}
       disabled={usage.refreshing}
       onClick={usage.refresh}
-      aria-label={t("Refresh usage limits")}
     >
       <RefreshCw className="icon-sm" strokeWidth={1.75} />
     </Button>

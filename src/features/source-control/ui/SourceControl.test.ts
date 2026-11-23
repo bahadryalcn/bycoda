@@ -200,7 +200,7 @@ it("shows no worktree discovery failure for a folder that is not a repository", 
   };
   await render();
   expect(container.querySelector("section")?.dataset.cwd).toBe("/repo");
-  expect(container.querySelector('[role="status"]')).toBeNull();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.textContent).not.toContain("Retry");
 });
 it("preserves the ordinary panel when discovery fails and keeps a usable list on refresh failure", async () => {
@@ -208,7 +208,9 @@ it("preserves the ordinary panel when discovery fails and keeps a usable list on
   await render();
   expect(container.querySelector("select")).toBeNull();
   expect(container.querySelector("section")?.dataset.cwd).toBe("/repo");
-  expect(container.querySelector('[role="status"]')?.textContent).toContain("Unavailable");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Couldn’t load worktrees",
+  );
   const initialPanel = container.querySelector("section");
   const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent === "Retry",
@@ -228,7 +230,7 @@ it("preserves the ordinary panel when discovery fails and keeps a usable list on
   };
   await render();
   expect(container.querySelectorAll("section")).toHaveLength(2);
-  expect(container.querySelector('[role="status"]')?.textContent).toContain(
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Could not refresh worktrees",
   );
 });

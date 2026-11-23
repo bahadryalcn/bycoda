@@ -36,15 +36,12 @@ function BootRestoreNotice({
   const confirmStartFresh = async () => {
     const accepted = await confirm({
       title: t("Replace your saved layout?"),
-      message: t(
-        "This window starts with a blank layout and saves over the saved one that could not be read.",
-      ),
+      message: null,
       consequences: [
         {
           tone: "danger",
           content: t("Your saved tabs and layout cannot be recovered once this window saves."),
         },
-        t("Retry instead to restore them from the saved layout."),
       ],
       confirmLabel: t("Start fresh"),
     });
@@ -59,10 +56,8 @@ function BootRestoreNotice({
         title={t("Could not restore your tabs")}
         message={
           stillFailing
-            ? t("The saved layout is still unreadable. It was not changed. Try again in a moment.")
-            : t(
-                "Your saved layout was not changed. Retry to restore it, or start fresh and let this window save over it.",
-              )
+            ? t("The saved layout is still unreadable.")
+            : undefined
         }
         durationMs={null}
         action={{ label: t("Retry"), onClick: () => void retry(), pending }}

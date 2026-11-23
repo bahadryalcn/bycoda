@@ -1,7 +1,6 @@
-import { Text } from "../../../shared/ui/Text";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { RotateCcw } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { loadSessionFolder, saveSessionFolder, type SessionFolder } from "../model/sessionFolder";
@@ -90,13 +89,11 @@ export function SessionFolderGroup() {
   };
 
   return (
-    <Group title={t("Sessions without a project")}>
+    <Group title={null}>
       <Row
         id="session-folder"
         label={t("Folder for sessions without a project")}
-        description={t(
-          "Older projectless sessions use this folder. New sessions get their own folder.",
-        )}
+        description={t("Older projectless sessions use this folder. New sessions get their own folder.")}
         feedback={
           error ? (
             <SettingsFeedback
@@ -105,28 +102,23 @@ export function SessionFolderGroup() {
             >
               {error}
             </SettingsFeedback>
-          ) : operation === "read" ? (
-            <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
           ) : undefined
         }
       >
-        <OverflowTooltip label={folder?.chosen ?? folder?.home ?? ""}>
-          <Text size="caption" tone="secondary" truncate tabIndex={0}>
-            {folder?.chosen ?? folder?.home ?? ""}
-          </Text>
-        </OverflowTooltip>
         <Button
-          className="shrink-0"
+          variant="link"
           onClick={() => choose().catch(setErrorFrom)}
           disabled={busy}
           loading={operation === "choose"}
           loadingLabel={t("Choosing folder…")}
         >
-          {t("Choose folder…")}
+          {folder?.chosen ?? folder?.home ?? t("Choose folder…")}
         </Button>
         {folder?.chosen ? (
           <Button
-            className="shrink-0"
+            variant="ghost"
+            iconOnly
+            label={t("Use home folder")}
             onClick={() => {
               if (inFlight.current) return;
               inFlight.current = true;
@@ -141,7 +133,7 @@ export function SessionFolderGroup() {
             loading={operation === "reset"}
             loadingLabel={t("Saving…")}
           >
-            {t("Use home folder")}
+            <RotateCcw aria-hidden />
           </Button>
         ) : null}
       </Row>

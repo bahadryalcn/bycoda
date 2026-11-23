@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Copy } from "../../../shared/ui/icons";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { sshJumpChain } from "../model/sshEndpointReview";
 import type { ServerRecord, SshEndpoint } from "../model/serverInventory";
@@ -56,41 +57,34 @@ export function ConfigImportChoices({
         </Text>
       ) : null}
       {sshJumpChain(host.endpoint).length ? (
-        <>
-          <Text wrap="anywhere" as="p" tone="muted">
+        <div className="flex min-w-0 items-center gap-1">
+          <Text wrap="anywhere" as="p" tone="muted" className="min-w-0">
             {t("Jump chain")}: {sshJumpChain(host.endpoint).join(" → ")}
           </Text>
           <JumpAuthenticationHelp />
-        </>
+        </div>
       ) : null}
-      {existing.length ? (
-        <Text as="p" tone="muted">
-          {t("This endpoint is already saved. Choose an existing connection.")}
-        </Text>
-      ) : host.duplicate ? (
+      {!existing.length && host.duplicate ? (
         <Text as="p" tone="muted">
           {t("Duplicate entry in this import.")}
         </Text>
       ) : null}
-      {existing.map((candidate) => (
-        <div key={candidate.id} className="flex flex-wrap items-center justify-between gap-2">
-          <Text tone="inherit" className="min-w-0 break-words">
-            {candidate.name}
-          </Text>
-          <div className="flex gap-2">
-            {onUse ? (
-              <Button disabled={busy} onClick={() => onUse(candidate)}>
-                {t("Use existing")}
-              </Button>
-            ) : null}
-            {onEdit ? (
-              <Button variant="ghost" disabled={busy} onClick={() => onEdit(candidate)}>
-                {t("Edit existing")}
+      {existing.map((candidate) => {
+        const open = onUse ?? onEdit;
+        return (
+          <div key={candidate.id} className="flex flex-wrap items-center justify-between gap-2">
+            <Text tone="inherit" className="flex min-w-0 items-center gap-2 break-words">
+              <Copy className="icon-xs shrink-0" />
+              {candidate.name}
+            </Text>
+            {open ? (
+              <Button disabled={busy} onClick={() => open(candidate)}>
+                {t("Open existing")}
               </Button>
             ) : null}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

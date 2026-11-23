@@ -219,7 +219,7 @@ describe("removing media and disabled state", () => {
     render({ editor, media: [saved("a", "m1"), saved("b")] });
     act(() =>
       [...element.querySelectorAll("button")]
-        .find((item) => item.textContent === "Remove a.png")!
+        .find((item) => item.getAttribute("aria-label") === "Remove a.png")!
         .click(),
     );
     expect((onChange.mock.calls[0]![0] as ContentMedia[]).map((item) => item.localId)).toEqual([
@@ -233,7 +233,7 @@ describe("removing media and disabled state", () => {
     render({ editor, media: [saved("b")] });
     act(() =>
       [...element.querySelectorAll("button")]
-        .find((item) => item.textContent === "Remove b.png")!
+        .find((item) => item.getAttribute("aria-label") === "Remove b.png")!
         .click(),
     );
     expect(onChange).toHaveBeenCalledWith([]);
@@ -249,7 +249,7 @@ describe("removing media and disabled state", () => {
     render({ editor, media: [saved("a", "m1")] });
     act(() =>
       [...element.querySelectorAll("button")]
-        .find((item) => item.textContent === "Remove a.png")!
+        .find((item) => item.getAttribute("aria-label") === "Remove a.png")!
         .click(),
     );
     await flush();
@@ -265,7 +265,7 @@ describe("removing media and disabled state", () => {
     expect(fileInput().disabled).toBe(true);
     expect(text()).toContain("Photos and video: Not available yet");
     const remove = [...element.querySelectorAll("button")].find(
-      (item) => item.textContent === "Remove a.png",
+      (item) => item.getAttribute("aria-label") === "Remove a.png",
     )!;
     expect(remove.disabled).toBe(true);
   });

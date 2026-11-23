@@ -386,6 +386,28 @@ it.each([
   }
 });
 
+it("keeps one detached ground and bounds a bottom sheet against its container", () => {
+  const props = {
+    modal: false,
+    anchor: "container",
+    side: "bottom",
+    size: 720,
+    title: "Panel",
+    onClose: () => undefined,
+    footer: "Actions",
+    children: "x",
+  } as const;
+  const detached = renderToStaticMarkup(createElement(Sheet, props));
+  expect(detached.match(/popover-backdrop/g)).toHaveLength(1);
+  expect(detached).toContain("max-block-size:100%");
+  expect(detached).toContain("block-size:720px");
+  expect(detached.slice(detached.indexOf("<footer"))).toContain("overflow-y-auto");
+
+  const docked = renderToStaticMarkup(createElement(Sheet, { ...props, surface: "canvas" }));
+  expect(docked).toContain('data-sheet-docked="true"');
+  expect(docked).not.toContain("popover-backdrop");
+});
+
 it("resolves named sizes and leaves CSS lengths alone", () => {
   const width = (size: string) => {
     const html = renderToStaticMarkup(
@@ -398,6 +420,7 @@ it("resolves named sizes and leaves CSS lengths alone", () => {
         children: "x",
       }),
     );
+    expect(html).toContain("min(100%, max(20rem, 94%))");
     return html.match(/inline-size:min\(([^,]+),/)?.[1];
   };
   expect(width("sm")).toBe("380px");

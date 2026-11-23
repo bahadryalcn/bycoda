@@ -35,7 +35,7 @@ export function FileTransferProgress({
         }
       />
       {onCancel ? (
-        <Button size="sm" variant="ghost" motion="none" type="button" onClick={onCancel}>
+        <Button size="sm" variant="ghost" onClick={onCancel}>
           {t("Cancel")}
         </Button>
       ) : null}

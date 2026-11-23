@@ -149,7 +149,7 @@ export function TimelineInput({ step, input }: { step: AgentStep; input: StepInp
         ) : null}
         <CopyButton
           iconOnly
-          className="ml-auto shrink-0"
+          className="ms-auto shrink-0"
           type="button"
           label={t("Copy message")}
           resetKeys={[step.id]}

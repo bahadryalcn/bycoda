@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
-import { DEFAULT_RUNTIME_MODE, type RuntimeMode } from "../model/session";
+import type { RuntimeMode } from "../model/session";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { runtimeModeCopy } from "./runtimeModeCopy";
@@ -28,8 +28,6 @@ export function AccessPicker({
 }: Props) {
   const t = useT();
   const current = runtimeModeCopy(t, value);
-  // The compact trigger is icon-only just for the default mode; a changed mode names itself so the lock or bolt never has to be decoded.
-  const compact = iconOnly && value === DEFAULT_RUNTIME_MODE;
   return (
     <div data-usage-guide="access-mode">
       <SearchableSelect
@@ -55,10 +53,10 @@ export function AccessPicker({
         onClose={(restoreFocus) => {
           if (restoreFocus) onClose?.();
         }}
-        tooltip={compact ? current.label : current.hint}
+        tooltip={current.hint}
         triggerProps={{
           "data-access-picker-trigger": "",
-          "data-access-picker-compact": compact || undefined,
+          "data-access-picker-compact": iconOnly || undefined,
           "aria-label": current.label,
           onMouseDown: (event) => event.preventDefault(),
         }}

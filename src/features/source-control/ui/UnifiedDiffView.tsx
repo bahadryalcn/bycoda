@@ -1,7 +1,7 @@
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { DiffStat } from "../../../shared/ui/DiffStat";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
@@ -257,29 +257,33 @@ export function UnifiedDiffView({
             className="flex shrink-0 items-center gap-0.5"
           >
             <DiffLayoutToggle className="mr-0.5" />
-            <Button
-              size="sm"
-              iconOnly
-              label={t("Expand all files")}
-              variant="ghost"
-              motion="none"
-              type="button"
-              onClick={() => setOpen(new Set(files.map((file) => file.id)))}
-            >
-              <UnfoldVertical className="icon-sm" strokeWidth={1.75} />
-            </Button>
-            <Button
-              size="sm"
-              iconOnly
-              label={t("Collapse all files")}
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={open.size === 0}
-              onClick={() => setOpen(new Set())}
-            >
-              <FoldVertical className="icon-sm" strokeWidth={1.75} />
-            </Button>
+            {files.length > 1 ? (
+              <>
+                <Button
+                  size="sm"
+                  iconOnly
+                  label={t("Expand all files")}
+                  variant="ghost"
+                  motion="none"
+                  type="button"
+                  onClick={() => setOpen(new Set(files.map((file) => file.id)))}
+                >
+                  <UnfoldVertical className="icon-sm" strokeWidth={1.75} />
+                </Button>
+                <Button
+                  size="sm"
+                  iconOnly
+                  label={t("Collapse all files")}
+                  variant="ghost"
+                  motion="none"
+                  type="button"
+                  disabled={open.size === 0}
+                  onClick={() => setOpen(new Set())}
+                >
+                  <FoldVertical className="icon-sm" strokeWidth={1.75} />
+                </Button>
+              </>
+            ) : null}
           </span>
         }
       />
@@ -441,9 +445,9 @@ const FileSection = memo(function FileSection({
       data-diff-file={file.path}
       className={`${
         fileLayout === "cards"
-          ? "overflow-hidden rounded-md border border-[var(--color-stroke)]"
+          ? "overflow-hidden rounded-md border border-stroke"
           : ""
-      } ${focused ? "bg-[var(--ui-surface-hover)]" : ""}`}
+      } ${focused ? "bg-(--ui-surface-hover)" : ""}`}
     >
       <ActionHost
         role="group"
@@ -452,7 +456,7 @@ const FileSection = memo(function FileSection({
         padding={{ inline: "xl", block: "sm" }}
         className={`${
           fileLayout === "stacked" ? "sticky top-0 z-3 " : ""
-        } flex items-center gap-2 bg-[var(--ui-surface)] ${
+        } flex items-center gap-2 bg-(--ui-surface) ${
           fileLayout === "stacked" || expanded ? "border-b border-stroke" : ""
         }`}
       >
@@ -463,7 +467,8 @@ const FileSection = memo(function FileSection({
           expanded={expanded}
           chevron="start"
           onClick={() => onToggle(file.id)}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          align="start"
+          className="min-w-0 flex-1"
         >
           <FileTypeIcon name={name} isDir={false} />
           <MiddleTruncate
@@ -1035,7 +1040,7 @@ function VirtualRows({
       {splitRows ? (
         <div
           aria-hidden="true"
-          className="flex border-b border-stroke text-ui-micro text-[var(--ui-text-muted)]"
+          className="flex border-b border-stroke text-ui-micro text-(--ui-text-muted)"
         >
           <span className="min-w-0 flex-1 px-3 py-0.5">{t("Before")}</span>
           <span className="min-w-0 flex-1 border-l border-stroke px-3 py-0.5">{t("After")}</span>
@@ -1199,12 +1204,12 @@ const SplitLane = memo(function SplitLane({
     return side === "before" ? (
       <DiffLineRow line={row.line} lane={lane} hovered={false} commenting={false} />
     ) : (
-      <div className="bg-[var(--ui-workspace-canvas-surface)]" style={HUNK_HEIGHT} />
+      <div className="bg-(--ui-workspace-canvas-surface)" style={HUNK_HEIGHT} />
     );
   }
   const line = side === "before" ? row.left : row.right;
   if (!line) {
-    return <div className="bg-[var(--ui-workspace-canvas-surface)]" style={LINE_HEIGHT} />;
+    return <div className="bg-(--ui-workspace-canvas-surface)" style={LINE_HEIGHT} />;
   }
   return (
     <DiffLineRow
@@ -1293,7 +1298,7 @@ function FoldBar({
   useLocale();
   return (
     <div
-      className="flex items-center gap-1 bg-[var(--ui-workspace-reading-muted)] px-2"
+      className="flex items-center gap-1 bg-(--ui-workspace-reading-muted) px-2"
       style={FOLD_HEIGHT}
     >
       <Button
@@ -1327,7 +1332,8 @@ function FoldBar({
         motion="none"
         type="button"
         onClick={() => onReveal(foldId, "all")}
-        className="min-w-0 flex-1 text-left font-mono"
+        align="start"
+        className="min-w-0 flex-1 font-mono"
       >
         {hidden === 1
           ? t("{p0} unmodified line", { p0: hidden })
@@ -1372,11 +1378,11 @@ const DiffLineRow = memo(function DiffLineRow({
   if (line.kind === "hunk") {
     return (
       <div
-        className="flex items-center bg-[var(--ui-workspace-canvas-surface)]"
+        className="flex items-center bg-(--ui-workspace-canvas-surface)"
         style={HUNK_HEIGHT}
       >
         {lane === "code" ? (
-          <span className="px-3 font-mono diff-meta-text leading-none text-[var(--ui-text-muted)]">
+          <span className="px-3 font-mono diff-meta-text leading-none text-(--ui-text-muted)">
             {line.text}
           </span>
         ) : null}
@@ -1393,7 +1399,7 @@ const DiffLineRow = memo(function DiffLineRow({
     ? "text-diff-add-fg"
     : deleted
       ? "text-diff-del-fg"
-      : "text-[var(--ui-text-muted)]";
+      : "text-(--ui-text-muted)";
 
   if (lane === "gutter") {
     return (
@@ -1472,9 +1478,7 @@ const DiffLineRow = memo(function DiffLineRow({
         ) : null}
       </span>
       <span
-        className={`whitespace-pre pr-3 font-mono diff-code-text leading-none ${line.kind === "context" ? "" : "text-[var(--color-content)]"} ${
-          line.kind === "context" ? "text-[var(--ui-text-secondary)]" : ""
-        }`}
+        className={`whitespace-pre pr-3 font-mono diff-code-text leading-none ${line.kind === "context" ? "text-(--ui-text-secondary)" : "text-content"}`}
       >
         {renderLineText(line, tokens)}
       </span>
@@ -1508,20 +1512,14 @@ function EmptyBody({ children }: { children: string }) {
 }
 
 function DiffCounts({ additions, deletions }: { additions: number; deletions: number }) {
-  useLocale();
   return (
-    <Tooltip
-      label={t("{p0} lines added, {p1} lines removed", { p0: additions, p1: deletions })}
-      asChild
-    >
-      <DiffStat
-        additions={additions}
-        deletions={deletions}
-        size="micro"
-        weight="medium"
-        className="font-sans"
-      />
-    </Tooltip>
+    <DiffStat
+      additions={additions}
+      deletions={deletions}
+      size="micro"
+      weight="medium"
+      className="font-sans"
+    />
   );
 }
 

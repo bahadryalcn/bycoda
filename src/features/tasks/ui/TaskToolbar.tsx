@@ -169,9 +169,10 @@ export function TaskToolbar(props: TaskToolbarProps) {
           flow="scroll"
           onDismiss={() => setScopeAnchor(null)}
           variant="panel"
-          className="grid gap-2"
+          className="grid w-64 max-w-full gap-2"
         >
-          <div className="task-project-scope">
+          {/* The server only matters when there is more than one to choose from. */}
+          {filters.machines.length > 1 ? (
             <SearchableSelect
               label={t("Server")}
               value={filters.values.machine}
@@ -181,15 +182,13 @@ export function TaskToolbar(props: TaskToolbarProps) {
                 ...filters.machines.map((machine) => ({ value: machine.id, label: machine.name })),
               ]}
             />
-          </div>
-          <div className="task-project-scope">
-            <SearchableSelect
-              label={t("Project")}
-              value={props.projectFilter}
-              options={props.projectOptions}
-              onChange={props.onProject}
-            />
-          </div>
+          ) : null}
+          <SearchableSelect
+            label={t("Project")}
+            value={props.projectFilter}
+            options={props.projectOptions}
+            onChange={props.onProject}
+          />
         </Popover>
       ) : null}
       {props.search.visible ? (

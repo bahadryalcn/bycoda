@@ -8,9 +8,9 @@
 .recovery-pane {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--ui-space-2);
   min-block-size: 0;
-  padding: 0.75rem;
+  padding: var(--ui-space-3);
 }
 .recovery-pane > :not(.recovery-body, .recovery-list) {
   flex-shrink: 0;
@@ -19,7 +19,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--ui-space-2);
 }
 .recovery-toolbar-search {
   flex: 1 1 10rem;
@@ -29,8 +29,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  column-gap: 0.75rem;
-  row-gap: 0.125rem;
+  column-gap: var(--ui-space-3);
+  row-gap: calc(var(--ui-space-1) / 2);
 }
 .recovery-body {
   flex: 0 1 auto;
@@ -49,14 +49,14 @@
 .recovery-footer {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding-block-start: 0.5rem;
+  gap: var(--ui-space-2);
+  padding-block-start: var(--ui-space-2);
 }
 .recovery-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--ui-space-2);
 }
 .recovery-actions-end {
   margin-inline-start: auto;

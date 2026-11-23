@@ -416,7 +416,7 @@ export function ExpandingSearch({
         ? [{ name: suggestionsLabel, items: suggestions }]
         : mode === "results"
           ? externalResults
-            ? groupBy(results, results)
+            ? [{ name: "", items: results }]
             : groupBy(results, items)
           : [],
     [mode, suggestions, suggestionsLabel, results, items, externalResults],

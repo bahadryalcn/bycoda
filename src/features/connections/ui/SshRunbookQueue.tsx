@@ -7,6 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
+import { Badge } from "../../../shared/ui/Badge";
 import { refreshSshRunbookQueue, useSshRunbookQueue } from "../model/sshRunbookQueue";
 import {
   dismissSshRunbookIntent,
@@ -43,6 +44,21 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
       mounted.current = false;
     };
   }, []);
+  const [names, setNames] = useState<Record<string, string>>({});
+  // Read-only runbook names for the open list; they never grant review or execution authority.
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    listSshRunbooks().then(
+      (profiles) => {
+        if (current) setNames(Object.fromEntries(profiles.map((entry) => [entry.id, entry.name])));
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [open]);
   const operation = async (action: () => Promise<void>) => {
     if (operationPending.current) return;
     operationPending.current = true;
@@ -60,34 +76,39 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
   return (
     <>
       {queue.intents.length || queue.error || review?.runId ? (
-        <Text
-          as="div"
-          tone="inherit"
-          {...surfaceAttributes(
-            { frame: "pane", edge: "bottom" },
-            "flex shrink-0 items-center justify-end gap-2 px-3 py-1",
-          )}
-        >
+        <div className="flex shrink-0 items-center justify-end px-3 py-1">
           <Button variant="ghost" onClick={() => setOpen(true)}>
             {t("SSH reviews")}
-            {!queue.error || queue.intents.length ? ` · ${queue.intents.length}` : ""}
+            {!queue.error || queue.intents.length ? (
+              <Badge variant="count" size="xs" tone="warning">
+                {queue.intents.length}
+              </Badge>
+            ) : null}
           </Button>
-        </Text>
+        </div>
       ) : null}
       {open && !reviewOpen ? (
         <Modal title={t("SSH reviews")} onClose={() => setOpen(false)} size="md">
           <div className="flex min-w-0 flex-col gap-2">
-            {error || queue.error ? <Alert tone="danger">{error || queue.error}</Alert> : null}
-            <div className="flex justify-end gap-2">
-              {review?.runId ? (
+            {error || queue.error ? (
+              <Alert
+                tone="danger"
+                action={
+                  error
+                    ? undefined
+                    : { label: t("Retry"), onClick: () => void operation(refreshSshRunbookQueue) }
+                }
+              >
+                {error || queue.error}
+              </Alert>
+            ) : null}
+            {review?.runId ? (
+              <div className="flex justify-end">
                 <Button disabled={busy} onClick={() => setReviewOpen(true)}>
                   {t("Last execution")}
                 </Button>
-              ) : null}
-              <Button disabled={busy} onClick={() => void operation(refreshSshRunbookQueue)}>
-                {t("Refresh")}
-              </Button>
-            </div>
+              </div>
+            ) : null}
             {queue.intents.map((intent) => (
               <Text
                 key={intent.id}
@@ -100,7 +121,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
               >
                 <span className="min-w-0 break-all">
                   {t(intent.trigger === "startup" ? "Startup" : "Scheduled")} ·{" "}
-                  {intent.automationId} · r{intent.revision}
+                  {names[intent.automationId] ?? intent.automationId} · r{intent.revision}
                 </span>
                 <div className="flex gap-2">
                   <Button

@@ -4,9 +4,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Combobox, ComboboxChoice, ComboboxItem } from "./arc/combobox/combobox";
 import { SearchableSelect } from "./SearchableSelect";
+import { DropdownMenu } from "./DropdownMenu";
 import { ContextMenu } from "./arc/context-menu/context-menu";
 import {
   NativePopupHost,
+  floatingFrameClassName,
   useNativePopupFrame,
   PopupBackdrop,
   nativePopupFrameClassName,
@@ -194,7 +196,7 @@ it("renders native-window choices through the same row and label components", as
   }
 });
 
-it("hosts native popover children and clears the owner ref", async () => {
+it("hosts native popover children in one opaque frame and clears the owner ref", async () => {
   let host: HTMLDivElement | null = null;
   function Content() {
     const native = useNativePopoverHost();
@@ -216,6 +218,8 @@ it("hosts native popover children and clears the owner ref", async () => {
     ),
   );
   expect(host).toBe(container.firstElementChild);
+  expect(container.firstElementChild?.classList.contains(floatingFrameClassName)).toBe(true);
+  expect(container.querySelectorAll(".popover-backdrop")).toHaveLength(1);
   expect(container.querySelector('[data-native-child="true"]')?.textContent).toBe("Native choices");
   expect(container.querySelectorAll("[data-popover-flow]")).toHaveLength(1);
   expect(
@@ -223,6 +227,61 @@ it("hosts native popover children and clears the owner ref", async () => {
   ).toContain("520px");
   await act(async () => root.render(null));
   expect(host).toBeNull();
+});
+
+it("shares one frame across composer, preview, and solid popovers", async () => {
+  const variants = [
+    { appearance: "composer" },
+    { variant: "preview", frosted: true },
+    { solid: true },
+  ] as const;
+  for (const props of variants) {
+    await act(async () =>
+      root.render(createElement(Popover, { anchor: container, ...props }, "Details")),
+    );
+    const frame = document.querySelector("[data-popover-side]")!;
+    expect(frame.classList.contains(floatingFrameClassName)).toBe(true);
+    expect(frame.querySelectorAll(".popover-backdrop, .popover-solid")).toHaveLength(1);
+    expect(frame.querySelector(".popover-frosted, [data-surface-material]")).toBeNull();
+  }
+});
+
+it("opens the highlighted submenu from the menu and leaves another control's keys alone", async () => {
+  const outside = document.createElement("input");
+  document.body.append(outside);
+  const pick = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(DropdownMenu, {
+          anchor: container,
+          label: "Commands",
+          highlight: "state",
+          items: [
+            { kind: "item", id: "leaf", label: "Leaf" },
+            {
+              kind: "item",
+              id: "branch",
+              label: "Branch",
+              submenu: [{ kind: "item", id: "child", label: "Child" }],
+            },
+          ],
+          onPick: pick,
+          onClose: vi.fn(),
+        }),
+      ),
+    );
+    const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="Commands"]')!;
+    await key(menu, "ArrowDown");
+    outside.focus();
+    await key(outside, "Enter");
+    expect(pick).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="menu"][aria-label="Branch"]')).toBeNull();
+    await key(menu, "ArrowRight");
+    expect(document.querySelector('[role="menu"][aria-label="Branch"]')).not.toBeNull();
+  } finally {
+    outside.remove();
+  }
 });
 
 it("shares native frame/backdrop and reports bounded outer dimensions on mount and resize", async () => {

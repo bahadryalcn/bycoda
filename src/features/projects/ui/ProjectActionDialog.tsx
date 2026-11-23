@@ -1,5 +1,4 @@
 import { Text } from "../../../shared/ui/Text";
-import { Code } from "../../../shared/ui/Code";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useState } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -124,7 +123,7 @@ export function ProjectActionDialog({
     });
   const formId = useId();
   const shortcutError = projectActionShortcutError(draft.shortcut, actions, draft.id);
-  const missing = !draft.name.trim()
+  const fieldBlock = !draft.name.trim()
     ? t("Enter a name for this action.")
     : draft.devServer && !draft.command.trim()
       ? t("Enter a command to start the development server.")
@@ -134,7 +133,12 @@ export function ProjectActionDialog({
           ? t("Use an HTTP or HTTPS address.")
           : !draft.command.trim() && !draft.openUrlOnRun
             ? t("Enable the web address option so this action has something to run.")
-            : shortcutError;
+            : undefined;
+  const missing = fieldBlock ?? shortcutError;
+  // The reason shows once, in the footer, and only after the user has typed something. The
+  // shortcut error is shown at the recorder instead.
+  const touched = Boolean(draft.name || draft.command || draft.url);
+  const footerReason = touched ? fieldBlock : undefined;
   return (
     <Modal
       title={editing ? t("Edit action") : t("Add action")}
@@ -149,17 +153,11 @@ export function ProjectActionDialog({
         ) : undefined
       }
       footer={
-        <ModalActions reason={missing || undefined}>
+        <ModalActions reason={footerReason || undefined}>
           <Button type="button" variant="secondary" onClick={onClose}>
-            {t(editing ? "Cancel" : "Close")}
+            {t("Cancel")}
           </Button>
-          <Button
-            type="submit"
-            form={formId}
-            disabled={Boolean(missing)}
-            disabledReason={missing || undefined}
-            variant="primary"
-          >
+          <Button type="submit" form={formId} disabled={Boolean(missing)} variant="primary">
             {t("Save action")}
           </Button>
         </ModalActions>
@@ -241,30 +239,6 @@ export function ProjectActionDialog({
               ) : null}
             </div>
           ) : null}
-          {!editing && actions.length ? (
-            <Text as="section" aria-label={t("Project actions")} className="space-y-1">
-              <Text as="p" size="caption" tone="muted">
-                {t("Saved")}
-              </Text>
-              <Text as="ul" className="max-h-24 space-y-1 overflow-y-auto">
-                {actions.map((saved) => (
-                  <Text
-                    as="li"
-                    key={saved.id}
-                    className="flex min-w-0 items-center gap-3"
-                    size="secondary"
-                  >
-                    <Text truncate className="min-w-0 flex-1">
-                      {saved.name}
-                    </Text>
-                    <Text size="caption" tone="muted" truncate className="min-w-0 flex-1">
-                      <Code>{saved.command || saved.url}</Code>
-                    </Text>
-                  </Text>
-                ))}
-              </Text>
-            </Text>
-          ) : null}
           <Field label={t("Name")}>
             {(control) => (
               <div className="flex gap-2">
@@ -330,7 +304,7 @@ export function ProjectActionDialog({
               }}
             />
             <TextField
-              label={`${t("Web address")} ${t("(optional)")}`}
+              label={t("Web address")}
               type="url"
               placeholder="http://localhost:5173"
               value={draft.url}
@@ -347,7 +321,6 @@ export function ProjectActionDialog({
               checked={draft.devServer}
               onChange={(event) => setDraft({ ...draft, devServer: event.target.checked })}
               label={t("Manage as development server")}
-              description={t("Track server status and logs.")}
             />
             {!draft.devServer ? (
               <Checkbox
@@ -356,7 +329,6 @@ export function ProjectActionDialog({
                 disabled={!draft.url.trim()}
                 onChange={(event) => setDraft({ ...draft, openUrlOnRun: event.target.checked })}
                 label={t("Open web address when this action runs")}
-                description={t("Opens immediately; a dev server may still be starting.")}
               />
             ) : null}
           </div>

@@ -89,7 +89,6 @@ export function SessionSettleButton({
     <InlineAction
       label={`${label} ${title}`}
       tooltip={label}
-      tooltipDetails={[title]}
       motion="none"
       type="button"
       data-no-drag

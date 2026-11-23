@@ -113,14 +113,6 @@ export function SummaryPanel({
     !summary.suggestions.length &&
     !summary.goals.length &&
     !summary.goalsFinished.length;
-  const kpis = summary
-    ? [
-        { label: t("Finished"), value: summary.finished.length },
-        { label: t("Blocked"), value: summary.blocked.length },
-        { label: t("Waiting for you"), value: summary.waiting.length },
-        { label: t("New suggestions"), value: summary.suggestions.length },
-      ]
-    : [];
   return (
     <section
       aria-label={t("Summary")}
@@ -158,38 +150,7 @@ export function SummaryPanel({
         <>
           {empty ? (
             <EmptyState size="inline" description={t("No background activity.")} />
-          ) : (
-            <div className="task-ops-kpis">
-              {kpis.map((kpi) => (
-                <div
-                  key={kpi.label}
-                  {...surfaceAttributes(
-                    { frame: "card", edge: "all", radius: "card" },
-                    "task-ops-kpi",
-                  )}
-                >
-                  <Text
-                    as="span"
-                    size="heading"
-                    tone="primary"
-                    weight="medium"
-                    leading="inherit"
-                    className="task-ops-kpi-value"
-                  >
-                    {kpi.value}
-                  </Text>
-                  <Text
-                    size="caption"
-                    tone="secondary"
-                    leading="inherit"
-                    className="task-ops-caption"
-                  >
-                    {kpi.label}
-                  </Text>
-                </div>
-              ))}
-            </div>
-          )}
+          ) : null}
           {taskSection(
             t("Finished"),
             summary.finished,
@@ -252,8 +213,8 @@ export function SummaryPanel({
             >
               {t("Not included:")}{" "}
               {[
-                ...summary.unreachable.map((name) => `${name} (not reachable)`),
-                ...summary.outdated.map((name) => `${name} (host needs an update)`),
+                ...summary.unreachable.map((name) => t("{p0} (not reachable)", { p0: name })),
+                ...summary.outdated.map((name) => t("{p0} (host needs an update)", { p0: name })),
               ].join(", ")}
             </Text>
           ) : null}

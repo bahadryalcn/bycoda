@@ -315,61 +315,36 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               }}
               className="flex flex-col gap-3"
             >
-              {(
-                [
-                  {
-                    get label() {
-                      return t("Jira site");
-                    },
-                    value: site,
-                    set: setSite,
-                    type: "text",
-                    get placeholder() {
-                      return t("yourteam.atlassian.net");
-                    },
-                  },
-                  {
-                    get label() {
-                      return t("Atlassian email");
-                    },
-                    value: email,
-                    set: setEmail,
-                    type: "email",
-                    get placeholder() {
-                      return t("you@example.com");
-                    },
-                  },
-                  {
-                    get label() {
-                      return t("Jira API token");
-                    },
-                    value: token,
-                    set: setToken,
-                    type: "password",
-                    get placeholder() {
-                      return t("API token");
-                    },
-                  },
-                ] as const
-              ).map((field) => {
-                const Input = field.type === "password" ? PasswordField : TextField;
-                return (
-                  <Input
-                    key={field.label}
-                    label={field.label}
-                    aria-label={field.label}
-                    {...(field.type === "password" ? {} : { type: field.type })}
-                    value={field.value}
-                    onChange={(event) => field.set(event.target.value)}
-                    placeholder={field.placeholder}
-                    disabled={busy}
-                    required
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                );
-              })}
-              <div className="flex items-center gap-3">
+              <TextField
+                label={t("Jira site")}
+                placeholder="yourteam.atlassian.net"
+                value={site}
+                onChange={(event) => setSite(event.target.value)}
+                disabled={busy}
+                required
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <TextField
+                label={t("Atlassian email")}
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                disabled={busy}
+                required
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <PasswordField
+                label={t("Jira API token")}
+                value={token}
+                onChange={(event) => setToken(event.target.value)}
+                disabled={busy}
+                required
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <div className="flex flex-wrap items-center gap-3">
                 {status?.connected ? (
                   <Button
                     stableWidth
@@ -389,13 +364,8 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   type="submit"
                   loading={operation === "save"}
                   disabled={busy || !site.trim() || !email.trim() || !token.trim()}
-                  reserveLabels={[t("Saving and testing…"), t("Retry save and test")]}
                 >
-                  {busy
-                    ? t("Saving and testing…")
-                    : error
-                      ? t("Retry save and test")
-                      : t("Save and test connection")}
+                  {t("Connect")}
                 </Button>
                 <Button
                   stableWidth

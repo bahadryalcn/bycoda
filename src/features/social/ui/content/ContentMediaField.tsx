@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { X } from "../../../../shared/ui/icons";
 import { Text } from "../../../../shared/ui/Text";
 import { FileField } from "../../../../shared/ui/FileField";
 import type { SocialClient } from "../../model/socialClient";
@@ -83,7 +84,6 @@ export function ContentMediaField({
         accept="image/jpeg,image/png,video/mp4"
         disabled={disabled || busy}
         description={disabledReason ?? (busy ? t("Uploading…") : undefined)}
-        hint={t("JPEG or PNG images, or one MP4 video.")}
         error={error}
         onFiles={(files) =>
           void add(files).catch(() => setError(t("The file could not be attached.")))
@@ -99,10 +99,12 @@ export function ContentMediaField({
               <Button
                 variant="ghost"
                 size="sm"
+                iconOnly
+                label={t("Remove {p0}", { p0: item.name })}
                 disabled={disabled || busy}
                 onClick={() => remove(item)}
               >
-                {t("Remove {p0}", { p0: item.name })}
+                <X className="icon-sm" aria-hidden />
               </Button>
             </Text>
           ))}

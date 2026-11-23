@@ -17,6 +17,8 @@ import {
   cssSelectorRules,
   paneEdgeErased,
   scanViewGuards,
+  selectsSharedModuleSlot,
+  sharedModuleSlots,
   transcriptBaseInk,
 } from "./ui-drift-view-guards.mjs";
 import {
@@ -25,9 +27,12 @@ import {
   classTokenAt,
   controlSizeClass,
   end,
+  focusRuleOfDeclaration,
   isBespokePart,
   isBespokeSurface,
+  restylesSharedSlot,
   scanAppearanceTsx,
+  scanPaletteReferences,
   sizedControls,
   tw,
   variantChars,
@@ -39,22 +44,33 @@ const catalogModule = await import("./ui-catalog.mjs").catch(() => null);
 
 const defaultRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const baselineFile = "scripts/checks/ui-drift-baseline.json";
+const productScope = "CSS and TSX in src/app and src/features (excluding tests)";
+const viewScope = "TSX in src/app, src/features, src/shared (excluding tests)";
 export const ruleScopes = {
-  "inline-help-text": "TSX in src/app, src/features, src/shared (excluding tests)",
-  "one-primary-per-view": "TSX in src/app, src/features, src/shared (excluding tests)",
+  "inline-help-text": viewScope,
+  "duplicate-feedback-channel": viewScope,
   "nested-card": "TSX in src/app, src/features, src/shared (excluding tests)",
   "hover-only-reveal": "TSX in src/features, src/shared (excluding tests)",
   "nested-surface": "TSX in src/app, src/features, src/shared (excluding tests)",
-  "tooltip-repeats-label": "TSX in src/app, src/features, src/shared (excluding tests)",
+  "tooltip-repeats-label": viewScope,
+  "shared-internal-selector": "CSS in src/app and src/features, including CSS-module classes applied to shared UI slots (excluding tests)",
+  "spacing-step": productScope,
+  "arbitrary-spacing": productScope,
+  "radius-size": `${productScope}; radius literals in src/shared/ui/arc CSS`,
+  "inline-style-layout": "TSX in src/app and src/features (excluding tests)",
+  "theme-palette-literal": "CSS, TS and TSX in src/app and src/features (excluding tests)",
+  "feature-typography": productScope,
+  "focus-outline-removed": productScope,
+  typography: "CSS in src/shared/ui/arc",
   "transcript-assistant-surface": "TSX in src/features/sessions/ui (excluding tests)",
   "transcript-reply-fill": "TSX in src/features/sessions/ui (excluding tests)",
 };
 
 export const rules = {
   "inline-help-text":
-    "muted/secondary shared Text or p with a literal t() key over 100 characters directly in a settings Row/Field or following a settings label/heading (move optional help to InfoPopover or the info slot)",
-  "one-primary-per-view":
-    "multiple literal primary Buttons in one JSX return (one finding per file; keep one primary action, use secondary for peers)",
+    "settings Group, Row or Field repeats its label as help (delete the repeated copy; use the info slot or InfoPopover for distinct optional detail)",
+  "duplicate-feedback-channel":
+    "one operation or disabled action repeats the same message across feedback channels (keep one visible owner and associate its message with the control when needed)",
   "nested-card":
     "card Surface or surfaceAttributes({ variant: card }) nested lexically inside another card (use page or inset)",
   "hover-only-reveal":
@@ -62,16 +78,16 @@ export const rules = {
   "nested-surface":
     "settings Group nested in a Group or card Surface, or a card Surface inside a Group (a Group is already a framed card; flatten to rows or use one container)",
   "tooltip-repeats-label":
-    'tooltip= (or <Tooltip label>) whose static text equals the visible label of the same control (a hint must add a shortcut, detail or reason; drop it or use tooltipWhen="overflow")',
+    "tooltip repeats its visible trigger label (remove the repeated hint; keep shortcuts, reasons and details in Tooltip, or use OverflowTooltip to recover clipped text)",
   "undefined-var": "var(--x) / Tailwind (--x) with no definition in src CSS or inline style",
   "arc-var-outside-arc":
     "Arc-only variable (.bycoda-arc block in arc.css) used outside an Arc root",
   typography:
-    "literal font size: text-[Npx|rem], text-xs..xl, text-[length:], CSS font-size px or rem",
+    "literal px/rem font-size in Arc CSS (use the shared typography scale)",
   "radius-size":
-    "literal radius/size: rounded-[…], h-/w-/size-[Npx|rem], CSS border-radius px or rem",
+    "literal radius or private size (use a shared component size or a semantic radius token)",
   "shared-internal-selector":
-    "feature/app CSS selects a shared component's class, data hook or role (.modal-panel, .popover-*, .settings-row*, .settings-group*, .bycoda-arc-*, [data-slot], [role=tab|tablist], …); pass a prop, slot or variant to the shared component, or change the component",
+    "feature CSS selects shared UI internals or restyles a shared control through a local CSS module (use a public prop or variant, or change the shared owner)",
   "pane-edge-erased":
     "CSS that sets border, border-width or border-color to 0/none/hidden/transparent on a workbench pane root (.bycoda-sidebar, .bycoda-project-rail, .sidebar-pane, .body-glass, [data-side-pane], [data-surface-frame=pane]); the 1px edge between panes is owned by --ui-pane-border, so drop the frame through the Surface edge prop instead",
   "specificity-doubling":
@@ -93,7 +109,7 @@ export const rules = {
   "color-base-hue":
     "raw base hue var in feature CSS (var(--color-accent…)); the text|bg|border-danger… utilities are semantic and allowed",
   "color-base-opacity": "opacity-modified base token (bg-background-base/45, border-stroke/60…)",
-  "native-title": "title= tooltip (use tooltip=, Tooltip or OverflowTooltip)",
+  "native-title": "native title hint (remove repeated copy; use Tooltip for a shortcut, reason or detail, or OverflowTooltip to recover clipped text)",
   "role-alert-text": "<p role=alert> / <span role=alert> (use the shared inline error)",
   "role-alert-container": "<div>/<small>/<li>/<section> role=alert (use the shared inline error)",
   "role-status-banner":
@@ -132,13 +148,13 @@ export const rules = {
   "font-weight":
     "font-semibold/font-bold or CSS font-weight above 500 (the type scale uses 400 and 500 only)",
   "theme-palette-literal":
-    "themePalette.hex…/rgb…/hsl…/oklch… literal in feature or app code (use a semantic token: a --color-*/--ui-* CSS role or a semantic themePalette role)",
+    "literal palette paint in feature code (use a semantic --ui-* or --color-* CSS role or a semantic themePalette role)",
   "arbitrary-spacing":
-    "arbitrary spacing value (p-/m-/gap-/inset-/top-…[Npx]); use the spacing scale or --space-* tokens",
+    "arbitrary fixed spacing or inset in a utility (use the spacing scale or a semantic --ui-space-* token)",
   "inline-style-layout":
-    "literal layout number in style={{ width/height/margin/padding/top… }} (use classes or tokens)",
+    "literal fixed layout in an inline style (use a semantic spacing token or a responsive layout class)",
   "focus-outline-removed":
-    "outline-none / outline: none in feature code (the focus ring contract lives in arc.css; use data-ui-focus attributes)",
+    "feature code removes the focus outline or paints a shared control on pointer focus (use the shared focus-visible and input-modality contract)",
   "untranslated-jsx-text": "English sentence as raw JSX text (wrap user-visible copy in t())",
   "untranslated-prop":
     "English sentence as a literal label/placeholder/tooltip/aria-label prop (wrap in t())",
@@ -336,7 +352,15 @@ export function cssDeclarations(text) {
     if (start < 0) return;
     const raw = source.slice(start, end);
     const colon = raw.indexOf(":");
-    if (colon > 0 && !raw.trimStart().startsWith("@")) {
+    if (/^@apply\s/.test(raw)) {
+      declarations.push({
+        offset: start,
+        property: "@apply",
+        value: raw.slice(6),
+        valueOffset: start + 6,
+        selectors: [...stack],
+      });
+    } else if (colon > 0 && !raw.startsWith("@")) {
       declarations.push({
         offset: start,
         // Custom property names are case-sensitive (--palette-solidInk).
@@ -477,6 +501,9 @@ export function collectDefinitions(sources, tailwindTheme = "", catalog = []) {
   const prefixes = new Set();
   const nonArc = new Set();
   const arcBlock = new Set();
+  const sharedSlots = new Map();
+  const modulesByImporter = new Map();
+  const catalogNames = new Set(catalog.map((entry) => entry?.name).filter(Boolean));
   for (const match of tailwindTheme.matchAll(cssVarDefinition)) {
     defined.add(match[1]);
     nonArc.add(match[1]);
@@ -502,6 +529,14 @@ export function collectDefinitions(sources, tailwindTheme = "", catalog = []) {
       }
       for (const match of text.matchAll(/@property\s+(--[\w-]+)/g)) defined.add(match[1]);
     } else if (!isTestPath(file)) {
+      if (/^src\/(?:app|features)\//.test(file))
+        sharedModuleSlots(file, text, catalogNames, (module, member) => {
+          if (scopeOf(module) !== "app") return;
+          if (!sharedSlots.has(module)) sharedSlots.set(module, new Set());
+          sharedSlots.get(module).add(member);
+          if (!modulesByImporter.has(file)) modulesByImporter.set(file, new Set());
+          modulesByImporter.get(file).add(module);
+        });
       for (const pattern of tsVarDefinitions)
         for (const match of text.matchAll(pattern)) defined.add(match[1]);
       for (const match of text.matchAll(/["'`](--[\w-]{3,})\$\{/g)) prefixes.add(match[1]);
@@ -512,6 +547,8 @@ export function collectDefinitions(sources, tailwindTheme = "", catalog = []) {
     defined,
     prefixes: [...prefixes],
     arcOnly,
+    sharedSlots,
+    modulesByImporter,
     catalog: catalogRules(catalog),
   };
 }
@@ -524,11 +561,6 @@ const isDefined = (name, definitions) =>
 /* ---------- scanning ---------- */
 
 const twRules = [
-  ["typography", tw(String.raw`text-\[\d*\.?\d+(?:px|rem)\]`)],
-  ["typography", tw(String.raw`text-(?:xs|sm|base|lg|xl)` + end)],
-  ["typography", tw(String.raw`text-(?:\[length:|\(length:)`)],
-  ["radius-size", tw(String.raw`rounded(?:-[a-z]{1,2})?-\[[^\]\s]+\]`)],
-  ["radius-size", tw(String.raw`(?:h|w|size)-\[\d*\.?\d+(?:px|rem)\]`)],
   // z-[var(--layer-*)] is the token form of a layer; any other literal is drift.
   ["layer", tw(String.raw`-?z-(?:\[(?!var\(--layer-)[^\]\s]+\]|10|20|30|40|50)` + end)],
   [
@@ -537,25 +569,16 @@ const twRules = [
       String.raw`(?:bg|text|border(?:-[trblxyse])?|divide|ring|outline|fill|stroke|from|via|to)-(?:background-base|stroke|content)\/(?:\d+|\[[^\]\s]+\]|\([^)\s]+\))`,
     ),
   ],
-  ["hover-bg", new RegExp(String.raw`(?<![\w\-:])(?:${variantChars}+:)*hover:bg-[\w\-[(]`, "g")],
-  ["theme-palette-literal", /(?<![\w$])themePalette\.(?:hex|rgb|hsl|oklch)[0-9A-Za-z]/g],
   ["font-weight", tw(String.raw`font-(?:semibold|bold|extrabold|black)` + end)],
-  [
-    "arbitrary-spacing",
-    tw(
-      String.raw`(?:p|px|py|ps|pe|pt|pb|pl|pr|m|mx|my|ms|me|mt|mb|ml|mr|gap|gap-x|gap-y|space-x|space-y|top|left|right|bottom|inset|inset-x|inset-y|translate-x|translate-y)-\[\d+(?:\.\d+)?(?:px|rem|em)\]`,
-    ),
-  ],
-  ["focus-outline-removed", tw(String.raw`outline-none` + end)],
 ];
+const hoverBackground = new RegExp(String.raw`(?<![\w\-:])(?:${variantChars}+:)*hover:bg-[\w\-[(]`, "g");
+const sizingRules = new Set(["radius-size", "arbitrary-spacing", "spacing-step"]);
 
 const translatableProps =
   /\s(?:label|placeholder|aria-label|tooltip|description|confirmLabel|cancelLabel|loadingLabel|pendingLabel|emptyLabel|title)=["']([A-Z][a-z]+(?: [a-z]+){2,}[.…!?]?)["']/g;
 // A capitalized word followed by at least two lowercase words between tags: prose, not an
 // identifier, code sample or a single product name.
 const jsxProse = />\s*([A-Z][a-z]+(?: [a-z]+){2,}[.…!?]?)\s*</g;
-const inlineStyleLayout =
-  /style=\{\{[^}]*\b(?:width|height|minWidth|maxWidth|minHeight|maxHeight|margin\w*|padding\w*|top|left|right|bottom|gap|inset\w*)\s*:\s*-?\d/g;
 
 const varUse = /var\(\s*(--[\w-]+)(?![\w-]|\$\{)/g;
 const twVarUse = /-\((?:[a-z-]+:)?(--[\w-]+)\)/g;
@@ -627,7 +650,7 @@ export function scanFile(file, text, definitions) {
   const reported = new Set();
   const appearance = scope === "app" && !isBespokeSurface(file);
   const add = (rule, offset) => {
-    if (rule in appearanceRules && reported.has(offset)) return;
+    if ((rule in appearanceRules || rule === "hover-bg") && reported.has(offset)) return;
     reported.add(offset);
     const line = lineAt(starts, offset);
     if (ignoredOn(lines[line - 2], rule)) return;
@@ -689,7 +712,7 @@ export function scanFile(file, text, definitions) {
       for (const { selector, offset } of cssSelectorPreludes(text))
         for (const rule of cssSelectorRules(selector)) add(rule, offset);
     for (const declaration of cssDeclarations(text)) {
-      const { property, value, valueOffset, selectors } = declaration;
+      const { property, value, offset, valueOffset, selectors } = declaration;
       const arc = underArc(selectors);
       if (scope === "arc-css") {
         // Arc modules own their layout; only literal type/radius px and motion are tracked.
@@ -704,13 +727,6 @@ export function scanFile(file, text, definitions) {
         for (const match of value.matchAll(varUse))
           checkVar(match[1], valueOffset + match.index, arc);
       if (scope === "app") {
-        if (property === "font-size" && /\d(?:\.\d+)?(?:px|rem)\b/.test(value))
-          add("typography", valueOffset);
-        if (
-          /^border(?:-[a-z]+)*-radius$/.test(property) &&
-          /(?<![\w.])(?:0?\.\d+|[1-9]\d*(?:\.\d+)?)(?:px|rem)\b/.test(value)
-        )
-          add("radius-size", valueOffset);
         for (const match of value.matchAll(
           /var\(\s*--color-(?:accent|danger|warning|success)(?![\w-])/g,
         ))
@@ -720,8 +736,6 @@ export function scanFile(file, text, definitions) {
           /\b(?:[6-9]\d\d|5(?:0[1-9]|[1-9]\d)|bold|bolder)\b/.test(value)
         )
           add("font-weight", valueOffset);
-        if (property === "outline" && /^\s*none\b/.test(value))
-          add("focus-outline-removed", valueOffset);
       }
       if (scope !== "arc-css" && property === "z-index" && Number.parseInt(value, 10) > 10)
         add("layer", valueOffset);
@@ -742,9 +756,15 @@ export function scanFile(file, text, definitions) {
         if (transcriptBaseInk(file, declaration, isTokenBlock(selectors)))
           add("transcript-base-ink", valueOffset);
       if (appearance && !isTokenBlock(selectors)) {
-        const rule = appearanceRuleOfDeclaration(declaration);
+        const explicitHook = selectors.some((selector) =>
+          cssSelectorRules(selector).includes("shared-internal-selector"));
+        const sharedSlot = !explicitHook &&
+          selectsSharedModuleSlot(selectors, definitions.sharedSlots?.get(file));
+        const rule = focusRuleOfDeclaration(declaration, sharedSlot || explicitHook) ??
+          (sharedSlot && restylesSharedSlot(declaration) ? "shared-internal-selector" : null) ??
+          (explicitHook && restylesSharedSlot(declaration) ? null : appearanceRuleOfDeclaration(declaration));
         if (rule && !isBespokePart(file, rule, { selectors, text: `${property}:${value}` }))
-          add(rule, valueOffset);
+          add(rule, rule === "shared-internal-selector" ? offset : valueOffset);
       }
     }
     return findings;
@@ -755,6 +775,7 @@ export function scanFile(file, text, definitions) {
   for (const match of source.matchAll(varUse)) checkVar(match[1], match.index, arcFile);
   for (const match of source.matchAll(twVarUse)) checkVar(match[1], match.index, arcFile);
 
+  if (appearance) scanPaletteReferences(file, text, add);
   for (const [rule, pattern] of twRules)
     for (const match of source.matchAll(pattern)) add(rule, match.index);
 
@@ -951,11 +972,16 @@ export function scanFile(file, text, definitions) {
     if (/^<(?:code|kbd|pre|samp)\b/.test(source.slice(before, before + 6))) continue;
     add("untranslated-jsx-text", match.index + 1);
   }
-  for (const match of source.matchAll(inlineStyleLayout)) add("inline-style-layout", match.index);
   if (appearance)
     scanAppearanceTsx(source, (rule, offset) => {
-      if (!isBespokePart(file, rule, { text: classTokenAt(source, offset) })) add(rule, offset);
+      if (reported.has(offset)) return;
+      const token = classTokenAt(source, offset);
+      if (rule === "interaction-state" && /(?:^|:)hover:bg-/.test(token)) return;
+      if (sizingRules.has(rule) && sizedControls.has(containing(offset)?.name) && controlSizeClass.test(token))
+        return;
+      if (!isBespokePart(file, rule, { text: token })) add(rule, offset);
     });
+  for (const match of source.matchAll(hoverBackground)) add("hover-bg", match.index);
   return findings;
 }
 
@@ -1095,7 +1121,10 @@ export function checkUiDrift({ root = defaultRoot, overrides = new Map(), files,
       regressions: [],
     };
   const { sources, definitions } = readTree(root, overrides, catalog);
-  const targets = files ? [...files].filter((file) => scopeOf(file)) : [...sources.keys()];
+  const targets = files
+    ? [...new Set([...files].filter((file) => scopeOf(file)).flatMap((file) =>
+        [file, ...(definitions.modulesByImporter.get(file) ?? [])]))]
+    : [...sources.keys()];
   const findings = targets.flatMap((file) =>
     sources.has(file) ? scanFile(file, sources.get(file), definitions) : [],
   );

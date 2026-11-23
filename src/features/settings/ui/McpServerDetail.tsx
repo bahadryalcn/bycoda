@@ -110,13 +110,11 @@ export function McpServerDetail({
   const staleReason = stale ? t("This server is no longer listed.") : undefined;
   const hubLockedReason =
     staleReason ??
-    (hub.saving || hub.busy
-      ? t("Wait for the current change to finish.")
-      : hub.loading?.corrupt
-        ? t("Hub settings could not be read.")
-        : managed?.enabled === false
-          ? t("Enable this server first.")
-          : undefined);
+    (hub.loading?.corrupt
+      ? t("Hub settings could not be read.")
+      : managed?.enabled === false
+        ? t("Enable this server first.")
+        : undefined);
   const [fileError, setFileError] = useState("");
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [managedEditor, setManagedEditor] = useState<
@@ -207,7 +205,6 @@ export function McpServerDetail({
               {credentialRequest && (!globalOnly || managed?.scope === "user") ? (
                 <Row
                   label={globalOnly ? t("Credentials") : t("Project credentials")}
-                  descriptionVisible
                   description={
                     globalOnly
                       ? undefined
@@ -222,9 +219,7 @@ export function McpServerDetail({
                     disabled={configLocked || managed?.enabled === false}
                     disabledReason={
                       staleReason ??
-                      (actions.locked
-                        ? t("Wait for the current change to finish.")
-                        : t("Enable this server first."))
+                      (managed?.enabled === false ? t("Enable this server first.") : undefined)
                     }
                     onClick={() => setCredentialsOpen(true)}
                   >

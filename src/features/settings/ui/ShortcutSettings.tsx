@@ -2,7 +2,6 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
@@ -76,6 +75,7 @@ export function ShortcutEditor({
   onFeedbackChange,
   onApply,
   onDisable,
+  onEnable,
   onReset,
 }: {
   name: string;
@@ -84,6 +84,7 @@ export function ShortcutEditor({
   disabled?: boolean;
   onApply: (shortcut: string) => void | Promise<void>;
   onDisable: () => void | Promise<void>;
+  onEnable?: () => void | Promise<void>;
   onReset: () => void | Promise<void>;
 } & ShortcutFeedbackProps) {
   useLocale();
@@ -293,7 +294,6 @@ export function ShortcutEditor({
                 variant="ghost"
                 iconOnly
                 label={t("Reset {p0} shortcut", { p0: name })}
-                tooltip={t("Restore default")}
                 disabled={busy || disabled}
                 onClick={() => void run(onReset)}
               >
@@ -303,6 +303,11 @@ export function ShortcutEditor({
           </span>
         </div>
       </Tooltip>
+      {!display && onEnable ? (
+        <Button variant="ghost" disabled={busy || disabled} onClick={() => void run(onEnable)}>
+          {t("Enable")}
+        </Button>
+      ) : null}
       {onFeedbackChange ? null : error ? (
         <SettingsFeedback state="error">{error}</SettingsFeedback>
       ) : busy || saved ? (
@@ -364,6 +369,11 @@ export function QuickComposerShortcutEditor({
       onApply={apply}
       onDisable={async () => {
         await persist(false, loadQuickComposerShortcut(), false, true);
+      }}
+      onEnable={async () => {
+        const current = loadQuickComposerShortcut();
+        validateKeybindingShortcut("App: Quick Composer", current);
+        await persist(true, current, false, true);
       }}
       onReset={reset}
     />
@@ -610,18 +620,6 @@ export function KeybindingsPage() {
         >
           <ListFilter aria-hidden strokeWidth={1.75} />
         </Button>
-        <InfoPopover label={t("Shortcut help")}>
-          <p>
-            {t(
-              "Most shortcuts apply while this app is focused. Stop computer use and Quick composer use global shortcuts on this computer.",
-            )}
-          </p>
-          <p>
-            {t(
-              "Click a shortcut to record new keys. Conflicting shortcuts are rejected. Press Escape to cancel, Delete to disable, or use Reset to restore the default.",
-            )}
-          </p>
-        </InfoPopover>
         {query.trim() || filtered ? (
           <Text
             size="caption"

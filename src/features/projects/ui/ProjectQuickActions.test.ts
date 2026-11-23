@@ -86,9 +86,6 @@ it("keeps adding actions in the open dialog and persists each action with a new 
     expect(button("test").disabled).toBe(true);
     expect(button("Save action").getAttribute("aria-disabled") === "true").toBe(true);
     expect(document.querySelector<HTMLInputElement>('input[maxlength="80"]')!.value).toBe("");
-    expect(document.querySelector('[aria-label="Project actions"] ul')?.textContent).toContain(
-      "test",
-    );
     await act(async () => button("build").click());
     await act(async () => button("Save action").click());
     const saved = loadProjectActions("C:/project");
@@ -108,7 +105,7 @@ it("keeps adding actions in the open dialog and persists each action with a new 
     } finally {
       storage.mockRestore();
     }
-    await act(async () => button("Close").click());
+    await act(async () => button("Cancel").click());
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     await openProjectMenu(host, "Project actions");
     expect(document.querySelector('[role="menu"]')?.textContent).toContain("test");

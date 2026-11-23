@@ -24,10 +24,6 @@ export function RenameProjectFolderDialog({
   const [error, setError] = useState<RemoteErrorView | null>(null);
   const invalid = folderRenameErrorWith(name, t);
   const formId = useId();
-  const blockedReason = busy
-    ? undefined
-    : (invalid ??
-      (name === basename(path) ? t("Change the name to rename the folder.") : undefined));
   return (
     <Modal
       title={t("Rename folder")}
@@ -37,7 +33,8 @@ export function RenameProjectFolderDialog({
         if (!busy) onClose();
       }}
       footer={
-        <ModalActions reason={blockedReason}>
+        // The invalid-name sentence shows once, on the field; an unchanged name needs no message.
+        <ModalActions>
           <Button type="button" disabled={busy} onClick={onClose} variant="ghost">
             {t("Cancel")}
           </Button>
@@ -45,7 +42,6 @@ export function RenameProjectFolderDialog({
             type="submit"
             form={formId}
             disabled={busy || !!invalid || name === basename(path)}
-            disabledReason={blockedReason}
             variant="primary"
             loading={busy}
             loadingLabel={t("Renaming…")}

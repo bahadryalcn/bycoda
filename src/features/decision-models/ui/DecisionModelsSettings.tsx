@@ -289,11 +289,6 @@ export function DecisionModelsSettings({
             onRetry={() => void actions.reloadSources().catch(() => undefined)}
             actions={actions}
             isPending={model.isPending}
-            emptyAction={
-              <Button variant="secondary" size="sm" onClick={() => pick("folder")}>
-                {t("Add from folder")}
-              </Button>
-            }
             onEdit={(source) => setDialog({ kind: "edit", source })}
             onRemove={(source, mode) =>
               void remove(source, mode).catch((error: unknown) => setTopError(error))

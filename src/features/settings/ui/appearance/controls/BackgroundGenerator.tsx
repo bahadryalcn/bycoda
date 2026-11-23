@@ -66,11 +66,6 @@ export function BackgroundGenerator({
           onChange={(event) => setPrompt(event.target.value)}
           onKeyDown={onKeyDown}
         />
-        <span>
-          {t("Model: {p0}", {
-            p0: `${choice.harness} / ${choice.model}${choice.providerAccountId ? ` / ${choice.providerAccountId}` : ""}`,
-          })}
-        </span>
         <Button
           variant="primary"
           tone="accent"
@@ -89,7 +84,6 @@ export function BackgroundGenerator({
           {t("Generate gradient")}
         </Button>
       </div>
-      <span>{t("Applies when ready")}</span>
       {failure !== null ? (
         <SettingsFeedback state="error">
           {t("Gradient generation failed. Try again.")} {failure}

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { Heading } from "../../../../shared/ui/Heading";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
 import type { SocialScreenProps } from "../shell/screens";
@@ -64,7 +63,12 @@ export function CommandScreen({
         <AiSetupCard busy={state.busy === "model"} onSave={state.saveModel} />
       ) : null}
       {state.error && !modelRequired ? <InlineError>{state.error}</InlineError> : null}
-      <SummaryCards summary={state.summary} />
+      {/* Four empty tiles say nothing, so the row appears once there is something to count. */}
+      {state.summary &&
+      state.summary.sentToday + state.summary.pending + state.summary.newPeople + state.summary.replyRate >
+        0 ? (
+        <SummaryCards summary={state.summary} />
+      ) : null}
       <div className="command-layout">
         <div className="command-main">
           {state.plan ? (
@@ -77,7 +81,6 @@ export function CommandScreen({
               onRun={state.runPlan}
             />
           ) : null}
-          <Heading size="section">{t("Activity")}</Heading>
           <ActivityFeed items={state.actions} onUndo={state.undo} />
           <CollectionFooter
             hasMore={!!state.next}

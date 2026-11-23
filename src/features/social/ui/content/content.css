@@ -160,22 +160,10 @@
   overflow-wrap: anywhere;
 }
 
-.content-chip-status {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  min-width: 0;
-}
-
-/* Narrow columns (about 800 px window): the dot stays, its word stays readable to assistive tech. */
-@container (max-width: 8rem) {
-  .content-chip-status > span:last-child {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+/* The day's "+" shows on hover or keyboard focus; touch screens have no hover, so it stays visible there. */
+@media (hover: hover) {
+  .content-day:not(:hover, :focus-within) .content-day-add {
+    opacity: 0;
   }
 }
 
@@ -266,10 +254,6 @@
   margin-block: 0.75rem 0.5rem;
 }
 
-.content-platform-note {
-  margin: 0;
-}
-
 .content-fields {
   display: flex;
   flex-direction: column;
@@ -296,11 +280,6 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
-}
-
-.content-check-reason {
-  flex-basis: 100%;
-  padding-inline-start: 0;
 }
 
 /* Account toggle chip: the checkbox stays the control; glyph and name sit in one rounded chip. */
@@ -371,7 +350,6 @@
   overflow-wrap: anywhere;
 }
 
-.content-preview-note,
 .content-preview-count {
   margin: 0;
 }
@@ -395,11 +373,6 @@
   align-items: center;
   justify-content: flex-end;
   gap: 0.5rem;
-}
-
-.content-blocked {
-  margin: 0;
-  padding-inline-start: 1rem;
 }
 
 @container (max-width: 32rem) {

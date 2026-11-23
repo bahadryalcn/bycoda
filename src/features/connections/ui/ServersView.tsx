@@ -1,7 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
-import { Heading } from "../../../shared/ui/Heading";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Activity, useLayoutEffect, useRef, useState } from "react";
 import { registerSshWorkspaceCatalog } from "../model/sshMobileWorkspaceControl";
@@ -32,7 +31,7 @@ import { Popover } from "../../../shared/ui/Popover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
-import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { QuickConnect } from "./QuickConnect";
 import {
   useOpenQuickServerTerminal,
@@ -55,11 +54,9 @@ import {
   LayoutGrid,
   ListBullet,
   Plus,
-  RefreshCw,
   Server,
   ListFilter,
   X,
-  Lock,
   Pencil,
   MoreHorizontal,
   Trash2,
@@ -142,10 +139,13 @@ export function ServersView({
     clearTimeout(detailOpenTimer.current);
     setDetailReady(true);
     setSelectedId(server.id);
-    void openTerminal?.(server).catch((reason) => {
-      setActionTitle(t("Couldn’t open a terminal on {p0}", { p0: server.name }));
-      setActionError(errorText(reason));
-    });
+    void openTerminal?.(server).catch((reason) =>
+      setFailure({
+        title: t("Couldn’t open a terminal on {p0}", { p0: server.name }),
+        error: errorText(reason),
+        retry: () => connect(server),
+      }),
+    );
   };
   const [quickConnect, setQuickConnect] = useState(false);
   const [sshSettings, setSshSettings] = useState(false);
@@ -162,11 +162,8 @@ export function ServersView({
   }>();
   const [deleteTarget, setDeleteTarget] = useState<{ server: ServerRecord }>();
   const [deleting, setDeleting] = useState<string>();
-  const [actionError, setActionError] = useState("");
-  // Names what could not be done (and on which server) so the raw cause is never the headline.
-  const [actionTitle, setActionTitle] = useState("");
-  // The retry belongs to the failure that produced it; any other failure text shows no Retry.
-  const [actionRetry, setActionRetry] = useState<{ text: string; retry: () => void }>();
+  // One failure: the title names what could not be done, and the retry belongs to this failure only.
+  const [failure, setFailure] = useState<{ title: string; error: string; retry?: () => void }>();
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [bulkTargets, setBulkTargets] = useState<ServerRecord[]>();
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -235,9 +232,6 @@ export function ServersView({
     setFavoritesOnly(false);
     setRecentFirst(false);
   };
-  const filterSummary = [group, tag, favoritesOnly ? t("Favorites only") : ""]
-    .filter(Boolean)
-    .join(" · ");
   // Membership is separate from the inspected row. Hidden selections remain explicit.
   const checkedServers = servers.filter((server) => checkedIds.has(server.id));
   const visibleChecked = filtered.filter((server) => checkedIds.has(server.id)).length;
@@ -252,7 +246,7 @@ export function ServersView({
     if (bulkLock.current) return;
     bulkLock.current = true;
     setBulkBusy(true);
-    setActionError("");
+    setFailure(undefined);
     const failed: ServerRecord[] = [];
     const failures: string[] = [];
     try {
@@ -271,12 +265,12 @@ export function ServersView({
       }
       if (remove) setBulkTargets(failed.length ? failed : undefined);
       if (failures.length)
-        setActionTitle(
-          remove
+        setFailure({
+          title: remove
             ? t("Couldn’t delete {p0} servers", { p0: failures.length })
             : t("Couldn’t favorite {p0} servers", { p0: failures.length }),
-        );
-      setActionError(failures.join("\n"));
+          error: failures.join("\n"),
+        });
       return failures.join("\n");
     } finally {
       bulkLock.current = false;
@@ -285,14 +279,15 @@ export function ServersView({
   };
 
   const runAction = async (work: () => Promise<unknown>, title: string) => {
-    setActionError("");
+    setFailure(undefined);
     try {
       await work();
     } catch (reason) {
-      const text = errorText(reason);
-      setActionTitle(title);
-      setActionError(text);
-      setActionRetry({ text, retry: () => void runAction(work, title) });
+      setFailure({
+        title,
+        error: errorText(reason),
+        retry: () => void runAction(work, title),
+      });
     }
   };
   const menuItems = (server: ServerRecord): ContextMenuItem[] => [
@@ -383,7 +378,7 @@ export function ServersView({
         t("Couldn’t copy the address of {p0}", { p0: server.name }),
       );
     else if (id === "delete") {
-      setActionError("");
+      setFailure(undefined);
       setDeleteTarget({ server });
     }
   };
@@ -392,7 +387,7 @@ export function ServersView({
   const deleteServer = async (server: ServerRecord) => {
     if (deleting || bulkLock.current) return;
     setDeleting(server.id);
-    setActionError("");
+    setFailure(undefined);
     try {
       if (server.kind === "ssh") await removeSshConnection(server.id);
       else await disconnectMachine(server.id);
@@ -520,37 +515,11 @@ export function ServersView({
               <ViewToggle layout={layout} onChange={setLayout} />
             </>
           ) : null}
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Refresh servers")}
-            loading={loading && !error}
-            disabled={loading && !!error}
-            onClick={refresh}
-          >
-            <RefreshCw aria-hidden className="icon-sm" />
-          </Button>
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("SSH settings")}
-            onClick={() => setSshSettings(true)}
-          >
-            <Lock aria-hidden className="icon-sm" />
-          </Button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {openQuick ? (
-            <Button
-              variant={loaded && servers.length === 0 ? "secondary" : "primary"}
-              onClick={() => setQuickConnect(true)}
-            >
-              {t("Quick connect")}
-            </Button>
-          ) : null}
           <Button
             ref={actionsAnchor}
-            variant={openQuick || (loaded && servers.length === 0) ? "secondary" : "primary"}
+            variant="primary"
             aria-expanded={actionsOpen}
             aria-haspopup="menu"
             startIcon={<Plus aria-hidden className="icon-sm" />}
@@ -575,14 +544,20 @@ export function ServersView({
                   label: t("Add a computer"),
                   description: t("Connect a computer running bycoda Host"),
                 },
+                ...(openQuick
+                  ? [{ kind: "item" as const, id: "quick-connect", label: t("Quick connect") }]
+                  : []),
                 { kind: "sep" },
                 { kind: "item", id: "import-termius", label: t("Import from Termius") },
+                { kind: "item", id: "ssh-settings", label: t("SSH settings") },
               ]}
               onClose={() => setActionsOpen(false)}
               onPick={(id) => {
                 setActionsOpen(false);
                 if (id === "add-ssh") setEditor("new");
                 else if (id === "add-machine") requestMachineAdd();
+                else if (id === "quick-connect") setQuickConnect(true);
+                else if (id === "ssh-settings") setSshSettings(true);
                 else setTermiusImport(true);
               }}
             />
@@ -598,24 +573,20 @@ export function ServersView({
                 : t("Couldn’t load servers.")
             }
             error={describeRemoteError(error)}
-            action={{ label: t("Try again"), pending: loading, onClick: refresh }}
+            action={{ label: t("Retry"), pending: loading, onClick: refresh }}
           />
         </div>
       ) : null}
-      {actionError ? (
+      {failure ? (
         <div className="px-3 pt-2">
           <RemoteActionError
-            title={actionTitle || t("Couldn’t complete the action")}
-            error={describeRemoteError(actionError)}
-            action={
-              actionRetry?.text === actionError
-                ? { label: t("Try again"), onClick: actionRetry.retry }
-                : undefined
-            }
+            title={failure.title}
+            error={describeRemoteError(failure.error)}
+            action={failure.retry ? { label: t("Retry"), onClick: failure.retry } : undefined}
           />
         </div>
       ) : null}
-      {loading && !loaded ? <LoadingText inset="row">{t("Loading servers…")}</LoadingText> : null}
+      {loading && !loaded && !error ? <LoadingText inset="row">{t("Loading servers…")}</LoadingText> : null}
       {groups.length > 0 ? (
         <div
           aria-label={t("Group")}
@@ -654,7 +625,6 @@ export function ServersView({
               icon={<Server aria-hidden className="icon-lg" />}
               title={t("No servers yet.")}
               action={{ label: t("Add SSH server"), onClick: () => setEditor("new") }}
-              secondaryAction={{ label: t("Add a computer"), onClick: requestMachineAdd }}
             />
           ) : null}
           {servers.length > 0 && filtered.length === 0 ? (
@@ -667,7 +637,7 @@ export function ServersView({
               resetLabel={t("Reset filters")}
             />
           ) : null}
-          {servers.length > 0 || !loaded ? (
+          {checkedServers.length > 0 ? (
             <Text
               as="div"
               size="caption"
@@ -678,84 +648,53 @@ export function ServersView({
                 "servers-selection-bar sticky top-0 z-1",
               )}
             >
-              {checkedServers.length > 0 ? (
-                <Checkbox
-                  aria-label={t("Select visible servers")}
-                  disabled={!filtered.length || bulkBusy}
-                  checked={filtered.length > 0 && visibleChecked === filtered.length}
-                  indeterminate={visibleChecked > 0 && visibleChecked < filtered.length}
-                  onChange={(event) => {
-                    const checked = event.target.checked;
-                    setCheckedIds((previous) => {
-                      const next = new Set(previous);
-                      for (const server of filtered) {
-                        if (checked) next.add(server.id);
-                        else next.delete(server.id);
-                      }
-                      return next;
-                    });
+              <Checkbox
+                aria-label={t("Select visible servers")}
+                disabled={!filtered.length || bulkBusy}
+                checked={filtered.length > 0 && visibleChecked === filtered.length}
+                indeterminate={visibleChecked > 0 && visibleChecked < filtered.length}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setCheckedIds((previous) => {
+                    const next = new Set(previous);
+                    for (const server of filtered) {
+                      if (checked) next.add(server.id);
+                      else next.delete(server.id);
+                    }
+                    return next;
+                  });
+                }}
+              />
+              <Text role="status" size="inherit">
+                {t("{p0} selected", { p0: checkedServers.length })}
+                {checkedServers.length > visibleChecked
+                  ? ` · ${t("{p0} hidden", { p0: checkedServers.length - visibleChecked })}`
+                  : ""}
+              </Text>
+              <Button variant="ghost" disabled={bulkBusy} onClick={() => setCheckedIds(new Set())}>
+                {t("Clear selection")}
+              </Button>
+              <div className="ms-auto flex gap-1">
+                <Button
+                  variant="ghost"
+                  disabled={bulkBusy}
+                  onClick={() => void runBulk(checkedServers, false)}
+                  startIcon={<Star className="icon-sm" />}
+                >
+                  {t("Favorite")}
+                </Button>
+                <Button
+                  tone="danger"
+                  disabled={bulkBusy}
+                  onClick={() => {
+                    setFailure(undefined);
+                    setBulkTargets([...checkedServers]);
                   }}
-                />
-              ) : null}
-              <Heading size="section" level={2} className="min-w-0">
-                {t("Servers")}{" "}
-                <Text size="inherit" tone="muted" className="tabular-nums">
-                  {loaded
-                    ? filtered.length === servers.length
-                      ? servers.length
-                      : `${filtered.length} / ${servers.length}`
-                    : null}
-                </Text>
-              </Heading>
-              {checkedServers.length ? (
-                <>
-                  <Text role="status" size="inherit">
-                    {t("{p0} selected", { p0: checkedServers.length })}
-                    {checkedServers.length > visibleChecked
-                      ? ` · ${t("{p0} hidden", { p0: checkedServers.length - visibleChecked })}`
-                      : ""}
-                  </Text>
-                  <Button
-                    variant="ghost"
-                    disabled={bulkBusy}
-                    onClick={() => setCheckedIds(new Set())}
-                  >
-                    {t("Clear selection")}
-                  </Button>
-                  <div className="ms-auto flex gap-1">
-                    <Button
-                      variant="ghost"
-                      disabled={bulkBusy}
-                      onClick={() => void runBulk(checkedServers, false)}
-                      startIcon={<Star className="icon-sm" />}
-                    >
-                      {t("Favorite")}
-                    </Button>
-                    <Button
-                      tone="danger"
-                      disabled={bulkBusy}
-                      onClick={() => {
-                        setActionError("");
-                        setBulkTargets([...checkedServers]);
-                      }}
-                      startIcon={<Trash2 className="icon-sm" />}
-                    >
-                      {t("Delete selected")}
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <Text size="inherit" tone="muted" className="ms-auto min-w-0 text-right">
-                  {filterSummary ? (
-                    <Tooltip label={filterSummary} when="overflow">
-                      <Text size="inherit" tone="inherit" truncate className="block">
-                        {filterSummary}
-                      </Text>
-                    </Tooltip>
-                  ) : null}
-                  {recentFirst ? <span className="block">{t("Recently used first")}</span> : null}
-                </Text>
-              )}
+                  startIcon={<Trash2 className="icon-sm" />}
+                >
+                  {t("Delete selected")}
+                </Button>
+              </div>
             </Text>
           ) : null}
           <ul
@@ -831,20 +770,8 @@ export function ServersView({
                         </Text>
                       </OverflowTooltip>
                     }
-                    meta={selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : undefined}
                     actions={
                       <>
-                        <Button
-                          variant="ghost"
-                          iconOnly
-                          label={t("Server color")}
-                          aria-haspopup="dialog"
-                          onClick={(event) =>
-                            setColorTarget({ serverId: selected.id, at: event.currentTarget })
-                          }
-                        >
-                          <Palette aria-hidden className="icon-sm" />
-                        </Button>
                         <Button
                           variant="ghost"
                           iconOnly

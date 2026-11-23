@@ -12,6 +12,8 @@ import type { DecisionSource } from "../model/decisionTypes";
 import { moveSource, sourceOptions } from "../model/routingEditor";
 import { SourceKindIcon } from "./SourceIcon";
 
+const SEARCH_FROM = 8;
+
 /** Membership and fallback order share one keyboard-accessible popover. */
 export function SourceOrderPicker({
   label,
@@ -28,7 +30,9 @@ export function SourceOrderPicker({
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [search, setSearch] = useState("");
-  const ordered = sourceOptions(value, sources, search);
+  // A handful of sources needs no search; the popover closes on outside click or Escape.
+  const searchable = sources.length > SEARCH_FROM;
+  const ordered = sourceOptions(value, sources, searchable ? search : "");
   return (
     <>
       <Button
@@ -80,16 +84,15 @@ export function SourceOrderPicker({
           onDismiss={() => setAnchor(null)}
         >
           <div className="flex flex-col gap-2">
-            <TextField
-              label={t("Search sources")}
-              hideLabel
-              placeholder={t("Search sources")}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <Text size="caption" tone="secondary">
-              {t("Select sources, then use the arrows to set fallback order.")}
-            </Text>
+            {searchable ? (
+              <TextField
+                label={t("Search sources")}
+                hideLabel
+                placeholder={t("Search sources")}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            ) : null}
             {ordered.map((id) => {
               const source = sources.find((item) => item.id === id);
               const index = value.indexOf(id);
@@ -153,11 +156,6 @@ export function SourceOrderPicker({
                 resetLabel={t("Clear search")}
               />
             ) : null}
-            <div className="flex justify-end">
-              <Button variant="ghost" size="sm" onClick={() => setAnchor(null)}>
-                {t("Done")}
-              </Button>
-            </div>
           </div>
         </Popover>
       ) : null}

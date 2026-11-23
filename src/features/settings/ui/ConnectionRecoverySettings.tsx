@@ -17,14 +17,12 @@ export function RemoteReconnectGroup() {
     () => true,
   );
   return (
-    <Group title={t("Options")}>
+    <Group title={null}>
       <Row
         id="remote-auto-reconnect"
         persistence={{ mode: "automatic" }}
-        label={t("Connection recovery")}
-        info={t(
-          "Reconnect saved computers when the network returns. You can still reconnect manually when this is off.",
-        )}
+        label={t("Automatically reconnect to machines")}
+        info={t("You can still reconnect manually when this is off.")}
       >
         <Toggle
           label={t("Automatically reconnect to machines")}

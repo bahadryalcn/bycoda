@@ -118,7 +118,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "notifications",
-    group: "app",
+    group: "conversation",
     get label() {
       return t("Notifications");
     },
@@ -129,7 +129,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "permissions",
-    group: "app",
+    group: "privacy",
     get label() {
       return t("Permissions");
     },
@@ -151,7 +151,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "groupLock",
-    group: "app",
+    group: "privacy",
     get label() {
       return t("Privacy and security");
     },
@@ -165,9 +165,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "workspace",
-    group: "code",
+    group: "workspace",
     get label() {
-      return t("Workspace");
+      return t("Files and folders");
     },
     get description() {
       return t("Workspace tools, file tabs and editing.");
@@ -176,7 +176,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "terminal",
-    group: "code",
+    group: "workspace",
     get label() {
       return t("Terminal");
     },
@@ -189,7 +189,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "connections",
     group: "connections",
     get label() {
-      return t("Connections");
+      return t("Computers");
     },
     get description() {
       return t("Manage your computers, phone access, and tunnels.");
@@ -198,7 +198,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "worktrees",
-    group: "code",
+    group: "workspace",
     get label() {
       return t("Source Control");
     },
@@ -212,7 +212,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "integrations",
     group: "connections",
     get label() {
-      return t("Integrations");
+      return t("Services");
     },
     get description() {
       return t("Connect the services {p0} reads from and replies through.", {
@@ -220,7 +220,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       });
     },
     keywords:
-      "inbox github gitlab azure devops jira atlassian linear slack discord teams email gmail outlook hotmail yahoo icloud imap smtp connect token integration",
+      "inbox github gitlab azure devops jira atlassian linear slack discord teams email gmail outlook hotmail yahoo icloud imap smtp connect token integrations",
   },
   {
     id: "archive",
@@ -235,7 +235,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "chat",
-    group: "app",
+    group: "conversation",
     get label() {
       return t("Chat");
     },
@@ -246,7 +246,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "voice",
-    group: "app",
+    group: "conversation",
     get label() {
       return t("Voice assistant");
     },
@@ -258,9 +258,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "providers",
-    group: "agents",
+    group: "models",
     get label() {
-      return t("Models");
+      return t("Accounts and defaults");
     },
     get description() {
       return t(
@@ -272,20 +272,20 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "decisionModels",
-    group: "agents",
+    group: "models",
     get label() {
-      return t("Decision models");
+      return t("Decision support");
     },
     get description() {
       return t(
         "Local and connected models that decide small things for the app, such as routing and privacy scans.",
       );
     },
-    keywords: "local model ollama gguf clef classifier routing threshold scan privacy decision",
+    keywords: "decision models local model ollama gguf clef classifier routing threshold scan privacy",
   },
   {
     id: "usage",
-    group: "agents",
+    group: "models",
     get label() {
       return t("Usage & limits");
     },
@@ -319,26 +319,30 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   SECRETS_SECTION,
   {
     id: "policies",
-    group: "about",
+    group: "help",
     get label() {
-      return t("Policies");
+      return t("Help and About");
     },
     get description() {
       return t("Privacy, terms of use, third-party services and software license.");
     },
     keywords:
-      "privacy policy terms legal license data deletion tracking gizlilik politika koşullar lisans veri silme takip",
+      "help about guide feedback setup diagnostics privacy policy policies terms legal license data deletion tracking gizlilik politika koşullar lisans veri silme takip",
   },
 ];
 
-export function settingsSectionsByGroup(): {
+export function settingsSectionsByGroup(active?: SettingsSectionId): {
   id: SettingsGroupId;
   label: string;
   sections: SettingsSection[];
 }[] {
   return SETTINGS_GROUPS.map((group) => ({
     ...group,
-    sections: SETTINGS_SECTIONS.filter((section) => section.group === group.id).sort(
+    sections: SETTINGS_SECTIONS.filter(
+      (section) =>
+        section.group === group.id &&
+        (section.id === active || (section.id !== "archive" && section.id !== "tools")),
+    ).sort(
       (a, b) => SETTINGS_SECTION_ORDER.indexOf(a.id) - SETTINGS_SECTION_ORDER.indexOf(b.id),
     ),
   })).filter((group) => group.sections.length > 0);
@@ -451,7 +455,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "remote-media",
-    section: "general",
+    section: "connections",
     get label() {
       return t("Remote media");
     },
@@ -525,7 +529,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "external-mcp-access",
-    section: "mcp",
+    section: "groupLock",
     get label() {
       return t("External MCP access");
     },
@@ -623,7 +627,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "import-history",
-    section: "general",
+    section: "archive",
     get label() {
       return t("Import history");
     },
@@ -686,7 +690,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     ? [
         {
           id: "quick-composer",
-          section: "workspace" as const,
+          section: "keybindings" as const,
           get label() {
             return t("Quick composer");
           },
@@ -696,7 +700,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     : []),
   {
     id: "usage-guide",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Usage guide");
     },
@@ -704,7 +708,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "send-feedback",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Send feedback");
     },
@@ -712,7 +716,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "star-github",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Star on GitHub");
     },
@@ -720,7 +724,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "contribute",
-    section: "general",
+    section: "policies",
     get label() {
       return t("Contribute to bycoda");
     },
@@ -736,7 +740,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "exact-git-rewind",
-    section: "workspace",
+    section: "worktrees",
     get label() {
       return t("Exact Git rewind (experimental)");
     },
@@ -1157,7 +1161,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     },
     {
       id: "getting-started",
-      section: "general",
+      section: "policies",
       label: "Getting started",
       keywords: "setup onboarding guide help kurulum başlangıç",
     },
@@ -1338,9 +1342,10 @@ export function settingsSectionForAnchor(
   section: SettingsSectionId | undefined,
   anchor?: string | null,
 ): SettingsSectionId | undefined {
+  if (anchor?.startsWith("keybinding-")) return "keybindings";
   const target =
     (anchor && SETTINGS_INDEX.find((entry) => entry.id === anchor)?.section) || section;
-  return target === "models" || target === "work"
+  return target === "models" || target === "work" || target === "bykit"
     ? "providers"
     : target === "inbox"
       ? "integrations"
@@ -1349,8 +1354,22 @@ export function settingsSectionForAnchor(
         : target;
 }
 
+/** Default anchor for historical section-only links. */
+export function settingsAnchorForSection(section: SettingsSectionId | undefined): string | null {
+  if (section === "models") return "models-chat";
+  if (section === "work") return "models-order";
+  return toolSettingsAnchorForSection(section);
+}
+
 /** Shared with shortcut rows so search uses the same stable anchor. */
 export const keybindingSettingId = (command: string) => `keybinding-${encodeURIComponent(command)}`;
+
+/** Retain the reveal target when a setting is consolidated into an existing row. */
+export function settingsRevealAnchor(anchor: string | null): string | null {
+  if (anchor === "quick-composer") return keybindingSettingId("App: Quick Composer");
+  if (anchor === "show-archived") return "archived-conversations";
+  return anchor;
+}
 
 /** Labels of controls inside a group target, searched in both UI and source language. */
 const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
@@ -1538,6 +1557,7 @@ export function isSettingsSectionId(value: unknown): value is SettingsSectionId 
   return (
     value === "models" ||
     value === "work" ||
+    value === "inbox" ||
     !!toolSettingsTabForSection(value) ||
     SETTINGS_SECTIONS.some((section) => section.id === value)
   );

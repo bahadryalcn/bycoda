@@ -8,6 +8,8 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { UserRound } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
+import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { PrivateEmail } from "../../../shared/ui/PrivateEmail";
 import { RevealedSetting } from "../../../shared/ui/settings";
 import {
@@ -92,6 +94,7 @@ export function TerminalProfileDiscovery({
   const providerRevision = useRef(0);
   const operationBusy = useRef(false);
   const discoveryRevision = useRef(0);
+  const shouldDiscover = autoDiscover || openPopover;
 
   // Callers key this control by provider; unmounting retires in-flight operations.
   useEffect(() => {
@@ -102,7 +105,7 @@ export function TerminalProfileDiscovery({
   }, []);
 
   useEffect(() => {
-    if (!autoDiscover || disabled) return;
+    if (!shouldDiscover || disabled) return;
     let cancelled = false;
     const revision = ++discoveryRevision.current;
     void invoke<TerminalProfile[]>("provider_terminal_profiles", { provider }).then(
@@ -119,7 +122,7 @@ export function TerminalProfileDiscovery({
     return () => {
       cancelled = true;
     };
-  }, [provider, autoDiscover, disabled]);
+  }, [provider, shouldDiscover, disabled]);
 
   useEffect(() => {
     if (!revealProfiles) {
@@ -236,26 +239,17 @@ export function TerminalProfileDiscovery({
             id={`setting-${settingId}`}
             data-setting-id={settingId}
             tabIndex={-1}
-            className="max-h-[min(65vh,24rem)] min-w-0 space-y-2 overflow-y-auto"
+            className="min-w-0 space-y-2"
             role="group"
             aria-label={t("Terminal account profiles")}
             aria-busy={busy}
           >
-            <Text as="p" size="secondary" weight="medium">
-              {t("Account profiles")}
-            </Text>
-            {disabled ? (
-              <Text role="status" as="p" size="caption" tone="secondary" leading="relaxed">
-                {t(
-                  "Wait for the current account operation to finish, then discover or connect a terminal profile.",
-                )}
-              </Text>
-            ) : null}
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 aria-label={t("Find terminal profiles")}
                 loading={activeOperation === "find"}
                 disabled={disabled || busy}
+                disabledReason={disabled ? t("Wait for the current account operation to finish, then discover or connect a terminal profile.") : undefined}
                 onClick={() =>
                   void run("find", async (current) => {
                     const found = await invoke<TerminalProfile[]>("provider_terminal_profiles", {
@@ -291,6 +285,7 @@ export function TerminalProfileDiscovery({
                 )}
               </SettingsFeedback>
             ) : null}
+            <ScrollArea gutter="stable" className="max-h-[min(55vh,20rem)]">
             <ul className="min-w-0 list-none p-0">
               {providerProfiles?.map((profile) => {
                 const connected = connectedIds.has(profile.id);
@@ -301,17 +296,16 @@ export function TerminalProfileDiscovery({
                 return (
                   <li key={profile.id} className="flex min-w-0 items-center gap-3 py-3">
                     <div className="min-w-0 flex-1">
-                      <Text as="p" size="secondary" weight="medium" wrap="anywhere">
-                        {label}
-                      </Text>
+                      <Tooltip label={profile.path} asChild>
+                        <Text as="p" size="secondary" weight="medium" truncate tabIndex={0}>
+                          {label}
+                        </Text>
+                      </Tooltip>
                       {email ? (
                         <Text as="p" size="caption" tone="secondary" wrap="anywhere">
                           <PrivateEmail email={email} wrap />
                         </Text>
                       ) : null}
-                      <Text as="p" size="caption" tone="secondary" wrap="anywhere">
-                        {profile.path}
-                      </Text>
                     </div>
                     <Button
                       disabled={(connected && !onConnected) || disabled || busy}
@@ -326,6 +320,7 @@ export function TerminalProfileDiscovery({
                 );
               })}
             </ul>
+            </ScrollArea>
             {message ? <SettingsFeedback state="success">{message}</SettingsFeedback> : null}
             {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
           </div>

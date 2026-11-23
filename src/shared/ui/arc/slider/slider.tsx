@@ -53,6 +53,8 @@ export interface SliderProps<T extends SliderValue = number> {
   format?: (value: number) => string;
   /** Show the value beside the label. The bubble over the thumb still appears while dragging or focused. */
   showValue?: boolean;
+  /** Place the readout beside the track, for rows that supply the visible label. */
+  valuePlacement?: "label" | "track";
   /** The surrounding settings row already supplies the visible label. */
   hideLabel?: boolean;
   /** Accessible names for the two range thumbs. */
@@ -361,6 +363,7 @@ export function Slider<T extends SliderValue = number>({
   minStepsBetweenThumbs = 0,
   format,
   showValue = true,
+  valuePlacement = "label",
   hideLabel = false,
   thumbLabels,
   start,
@@ -673,6 +676,25 @@ export function Slider<T extends SliderValue = number>({
   const inRange = (mark: number) =>
     isRange ? mark >= values[0]! && mark <= values[1]! : mark <= values[0]!;
   const names = thumbLabels ?? [`${label}, minimum`, `${label}, maximum`];
+  const readout = showValue ? (
+    <span className={styles.readout} aria-hidden="true">
+      {valuePlacement === "track" ? (
+        formatValue(values[0]!)
+      ) : (
+        <RollingNumber value={values[0]!} text={formatValue(values[0]!)} />
+      )}
+      {isRange && (
+        <>
+          <span className={styles.dash}>–</span>
+          {valuePlacement === "track" ? (
+            formatValue(values[1]!)
+          ) : (
+            <RollingNumber value={values[1]!} text={formatValue(values[1]!)} />
+          )}
+        </>
+      )}
+    </span>
+  ) : null;
 
   return (
     <div
@@ -685,17 +707,7 @@ export function Slider<T extends SliderValue = number>({
         <span id={labelId} className={styles.label}>
           {label}
         </span>
-        {showValue && (
-          <span className={styles.readout} aria-hidden="true">
-            <RollingNumber value={values[0]!} text={formatValue(values[0]!)} />
-            {isRange && (
-              <>
-                <span className={styles.dash}>–</span>
-                <RollingNumber value={values[1]!} text={formatValue(values[1]!)} />
-              </>
-            )}
-          </span>
-        )}
+        {valuePlacement === "label" ? readout : null}
       </div>
       <div className={styles.body}>
         {start && <div className={styles.start}>{start}</div>}
@@ -756,7 +768,12 @@ export function Slider<T extends SliderValue = number>({
             ))}
           </div>
         </div>
-        {end && <div className={styles.end}>{end}</div>}
+        {end || (valuePlacement === "track" && readout) ? (
+          <div className={styles.end}>
+            {end}
+            {valuePlacement === "track" ? readout : null}
+          </div>
+        ) : null}
         {labelled.length > 0 && (
           <div className={styles.marks} aria-hidden="true">
             {labelled.map((mark) => (

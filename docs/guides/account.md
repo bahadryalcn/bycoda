@@ -137,9 +137,8 @@ requests) and how long it is kept, and never your sessions, prompts, code or fil
 **Save file** downloads it. Statistics and diagnostic logs below are choices of this computer.
 
 **Share anonymous usage statistics** is off by default and needs no account. bycoda asks
-once: in the first-run setup, or for existing installations in a small notice that never
-blocks your work (if you ignore it, it comes back on the next launch, three times at most,
-and statistics stay off). When on, bycoda sends at most once a day a random install id, the
+once in first-run setup or in a small non-blocking notice for existing installations.
+Statistics stay off until you opt in. When on, bycoda sends at most once a day a random install id, the
 app version, operating system, release channel and date, and nothing else. Without an account
 the same switch is in Settings → Privacy. Turning it off stops sending immediately.
 

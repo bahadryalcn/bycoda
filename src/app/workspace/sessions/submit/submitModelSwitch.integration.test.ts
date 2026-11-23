@@ -273,6 +273,48 @@ async function submit(
   expect(settled.mock.calls[0][0]).toMatchObject({ status });
 }
 
+it("dispatches two projectless sends using scratch without reading the Host workspace policy", async () => {
+  const session = {
+    ...newSession("antigravity", "~"),
+    model: "antigravity:gemini-3.8-flash-high",
+  };
+  const scratchCwd = `~/.bycoda-host/scratch/session-${session.id}`;
+  resetSessionsStore([session]);
+
+  await submit("completed", {}, "First projectless request");
+  expect(getSessions()[0].blocks.some((block) => block.workspacePreparationPending)).toBe(false);
+
+  const completed = getSessions()[0];
+  resetSessionsStore([
+    {
+      ...completed,
+      worktreePreparing: true,
+      blocks: completed.blocks.map((block) =>
+        block.role === "user" ? { ...block, workspacePreparationPending: true } : block,
+      ),
+    },
+  ]);
+  await submit("completed", {}, "Second projectless request");
+
+  expect(getWorkspaceCapabilities).not.toHaveBeenCalled();
+  expect(workspaceRequest).not.toHaveBeenCalled();
+  expect(sends.map(({ harness, input }) => [harness, input.cwd])).toEqual([
+    ["antigravity", scratchCwd],
+    ["antigravity", scratchCwd],
+  ]);
+  expect(sends[0].input.text).toContain("First projectless request");
+  expect(sends[1].input.text).toContain("Second projectless request");
+  const saved = getSessions()[0];
+  expect(saved).toMatchObject({ cwd: "~", scratchWorkspace: true });
+  expect(saved.workspaceMode).toBeUndefined();
+  expect(saved.worktreePreparing).toBeUndefined();
+  expect(
+    saved.blocks.filter((block) => block.role === "user").map((block) => block.text),
+  ).toEqual(["First projectless request", "Second projectless request"]);
+  expect(saved.blocks.some((block) => block.workspacePreparationPending)).toBe(false);
+  expect(saved.blocks.some((block) => block.notice === "error")).toBe(false);
+});
+
 it("retries a transient first-send preparation failure in Current after persistence reload", async () => {
   const original = {
     ...newSession("antigravity", "/repo"),

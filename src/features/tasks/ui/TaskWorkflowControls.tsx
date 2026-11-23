@@ -9,6 +9,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { X } from "../../../shared/ui/icons";
 import {
   applyTaskWorkflow,
   BUILTIN_TASK_WORKFLOWS,
@@ -342,6 +343,8 @@ function ScopedTaskWorkflowControls({
                 />
                 <Button
                   variant="ghost"
+                  iconOnly
+                  label={t("Remove {p1}: {p2}", { p1: kindName, p2: shownReference })}
                   disabled={blocked}
                   onClick={() => {
                     setRowKeys(removeRequirementRowKey(rowKeys, requirements.length, index));
@@ -351,7 +354,7 @@ function ScopedTaskWorkflowControls({
                     });
                   }}
                 >
-                  {t("Remove {p1}: {p2}", { p1: kindName, p2: shownReference })}
+                  <X aria-hidden className="icon-sm" strokeWidth={1.75} />
                 </Button>
               </div>
             );

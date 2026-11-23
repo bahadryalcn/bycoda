@@ -5,7 +5,7 @@ export type ProvidersTab = (typeof PROVIDERS_TABS)[number];
 /** The tab that holds a searched setting; undefined leaves the current tab. */
 export function providersTabForSetting(id: string | null): ProvidersTab | undefined {
   if (!id) return undefined;
-  if (id === "models-order" || id === "models-roles") return "work";
+  if (id === "models-order" || id === "models-roles" || id === "bykit-instructions") return "work";
   if (
     [
       "models-chat",

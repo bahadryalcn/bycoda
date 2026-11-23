@@ -23,8 +23,7 @@ export function CreateSkillDialog({
       <CreateSkillForm
         query=""
         cwd={cwd}
-        monospace={false}
-        className=""
+        variant="dialog"
         error={error}
         busy={busy}
         onCancel={onCancel}

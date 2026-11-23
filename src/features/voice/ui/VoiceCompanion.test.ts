@@ -1242,11 +1242,14 @@ it("keeps the panel in the app when the floating window cannot open", async () =
     await setup();
     await floatOut();
     expect(container.querySelector("section")).not.toBeNull();
-    // The error is a header mark that tints the card; its message is visible in the body.
-    expect(container.querySelector("[data-voice-error]")).not.toBeNull();
     const alert = "Voice needs attention: Window creation failed";
+    expect(container.querySelector("[data-voice-error]")).toBeNull();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(alert);
-    expect(container.textContent).toContain("Window creation");
+    await click("Compact voice companion");
+    const mark = container.querySelector<HTMLButtonElement>("[data-voice-error]")!;
+    expect(mark.getAttribute("aria-label")).toBe("Voice needs attention");
+    await act(() => mark.click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(alert);
     const ok = [...container.querySelectorAll("button")].find((b) => b.textContent === "Dismiss")!;
     await act(() => ok.click());
     expect(container.querySelector("[data-voice-error]")).toBeNull();

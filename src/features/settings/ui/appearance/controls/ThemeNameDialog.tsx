@@ -53,7 +53,7 @@ export function ThemeNameDialog({
         if (!busy) onClose();
       }}
       footer={
-        <ModalActions reason={clean ? undefined : t("Enter a name.")}>
+        <ModalActions>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             {t("Cancel")}
           </Button>
@@ -62,7 +62,6 @@ export function ThemeNameDialog({
             loading={busy}
             loadingLabel={t("Saving…")}
             disabled={!clean}
-            disabledReason={clean ? undefined : t("Enter a name.")}
             onClick={run}
           >
             {confirmLabel}

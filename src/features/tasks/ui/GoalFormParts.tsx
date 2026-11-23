@@ -105,10 +105,7 @@ export function GoalConcurrencyOption({
   const text = draft ?? String(value);
   const valid = text.trim() !== "" && Number.isSafeInteger(Number(text)) && Number(text) >= 0;
   return (
-    <GoalOption
-      title={t("Concurrent tasks in this epic")}
-      description={t("How many of this epic's tasks may run at once.")}
-    >
+    <GoalOption title={t("Concurrent tasks in this epic")}>
       <NumberField
         hideLabel
         label={t("Concurrent tasks in this epic")}

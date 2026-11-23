@@ -102,7 +102,7 @@ describe("NotificationMuteControl", () => {
     localStorage.setItem("bycoda.projectNotifications.v1", "{broken");
     act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
     const resume = buttonWithText("Resume notifications");
-    const mute = buttonWithText("Muted");
+    const mute = buttonWithText("Mute");
     expect(resume.disabled).toBe(true);
     expect(mute.disabled).toBe(true);
     act(() => {
@@ -207,7 +207,7 @@ describe("NotificationMuteControl", () => {
       new Date(2030, 0, 16, 17).getTime(),
     );
     expect(document.querySelector('[role="alert"]')).toBeNull();
-    expect(document.activeElement?.textContent).toBe("Muted");
+    expect(document.activeElement?.textContent).toBe("Mute");
   });
 
   it("names text triggers by their visible label and keeps the icon-only trigger named", () => {
@@ -224,7 +224,7 @@ describe("NotificationMuteControl", () => {
     act(() => root.unmount());
     root = createRoot(container);
     act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
-    expect(buttonWithText("Muted").hasAttribute("aria-label")).toBe(false);
+    expect(buttonWithText("Mute").hasAttribute("aria-label")).toBe(false);
     expect(buttonWithText("Resume notifications").hasAttribute("aria-label")).toBe(false);
   });
 });

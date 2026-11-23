@@ -57,12 +57,10 @@ it("makes Install the only primary action when Python is present", async () => {
   expect(primaries()).toEqual(["Install"]);
 });
 
-it("makes Get Python the only primary action and explains the disabled Install when Python is missing", async () => {
+it("makes Get Python the only primary action and offers no Install when Python is missing", async () => {
   const setup = await render({ pythonMissing: true });
   expect(button("Get Python")).toBeDefined();
-  const install = button("Install")!;
-  expect(install.getAttribute("aria-disabled") ?? String(install.disabled)).toBe("true");
-  await act(async () => install.click());
+  expect(button("Install")).toBeUndefined();
   expect(setup.install).not.toHaveBeenCalled();
   expect(primaries()).toEqual(["Get Python"]);
 });

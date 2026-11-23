@@ -59,8 +59,10 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
         </Fact>,
       );
   };
-  fact("error", t("Reason"), task.error);
-  fact("merge", t("Delivery"), task.mergeError);
+  // A message the alert already shows above is not repeated as a fact.
+  const unseen = (message: string | undefined) => (message === status.detail ? undefined : message);
+  fact("error", t("Reason"), unseen(task.error));
+  fact("merge", t("Delivery"), unseen(task.mergeError));
   fact("stop", t("Automatic correction"), task.repairStop?.message);
   fact("budget", t("Run budget"), task.budgetStop);
   fact("blocker", t("Blocker"), task.blockedTakeover?.blocker);

@@ -178,11 +178,11 @@ export function AccountConnection({
             {t("Check connection")}
           </Button>
           {browser?.status === "waiting" ? (
-            <InlineMessage tone="info" live="off">
+            <Text as="span" size="caption" tone="muted" className="social-muted">
               {t(
                 "Close the dedicated sign-in window after signing in so the connection can be verified.",
               )}
-            </InlineMessage>
+            </Text>
           ) : null}
           {browser?.status === "waiting" || browser?.status === "checking" ? (
             <Button
@@ -194,11 +194,6 @@ export function AccountConnection({
             >
               {t("Stop")}
             </Button>
-          ) : null}
-          {browser?.source === "existing-chrome" ? (
-            <InlineMessage tone="info" live="off">
-              {t("Uses your existing Chrome session.")}
-            </InlineMessage>
           ) : null}
           {browser ? (
             <Text as="span" tone="muted" leading="snug" className="social-muted">
@@ -322,7 +317,7 @@ export function AccountConnection({
         />
       ) : null}
       {account.platform === "x" && account.connected ? (
-        <XProfileEditor client={client} accountId={account.id} accountName={account.name} />
+        <XProfileEditor client={client} accountId={account.id} />
       ) : null}
       {browser?.error || oauth?.error ? (
         <InlineError>{browser?.error ?? oauth?.error}</InlineError>

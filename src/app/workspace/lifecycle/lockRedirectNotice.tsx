@@ -1,26 +1,9 @@
-import { createElement } from "react";
-import { createRoot } from "react-dom/client";
-import { Toast } from "../../../shared/ui/ToastRegion";
+import { toast } from "../../../shared/ui/ToastRegion";
 
 const LOCK_REDIRECT_NOTICE_MS = 12_000;
 
-/** Tell the person why the window left a project; the notice mounts on its own, outside the workspace tree. */
+/** Tell the person why the window left a project. */
 export function showLockRedirectNotice(message: string): void {
   if (typeof document === "undefined") return;
-  const host = document.createElement("div");
-  document.body.append(host);
-  const root = createRoot(host);
-  const close = () =>
-    queueMicrotask(() => {
-      root.unmount();
-      host.remove();
-    });
-  root.render(
-    createElement(Toast, {
-      tone: "warning",
-      message,
-      durationMs: LOCK_REDIRECT_NOTICE_MS,
-      onDismiss: close,
-    }),
-  );
+  toast.show({ tone: "warning", message, durationMs: LOCK_REDIRECT_NOTICE_MS });
 }

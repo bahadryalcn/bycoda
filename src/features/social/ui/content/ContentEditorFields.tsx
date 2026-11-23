@@ -1,5 +1,6 @@
-import type { SetStateAction } from "react";
+import { Fragment, type SetStateAction } from "react";
 import { Text } from "../../../../shared/ui/Text";
+import { Tooltip } from "../../../../shared/ui/Tooltip";
 import { t } from "../../../../shared/i18n";
 import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
@@ -123,7 +124,7 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
           accounts.map((account) => {
             const availability = accountAvailability(account, { projectId, snapshot });
             const checked = draft.accountIds.includes(account.id);
-            return (
+            const row = (
               <Checkbox
                 checked={checked}
                 disabled={availability.disabled && !checked}
@@ -134,21 +135,18 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
                   <>
                     <PlatformIcon platform={account.platform} className="icon-sm" />
                     <span>{account.name}</span>
-                    {availability.disabled ? (
-                      <Text
-                        size="caption"
-                        tone="secondary"
-                        leading="inherit"
-                        className="content-check-reason"
-                      >
-                        {availability.reason}
-                      </Text>
-                    ) : null}
                   </>
                 }
-                key={account.id}
                 className="content-check content-account"
               />
+            );
+            // The unavailable reason rides a tooltip on the row instead of a text line per account.
+            return availability.disabled && availability.reason ? (
+              <Tooltip key={account.id} label={availability.reason}>
+                {row}
+              </Tooltip>
+            ) : (
+              <Fragment key={account.id}>{row}</Fragment>
             );
           })
         )}
@@ -161,10 +159,8 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
               onChange={() =>
                 onDraft({ ...draft, accountIds: toggleAccount(draft.accountIds, id) })
               }
-              label={<span>{t("Account no longer available")}</span>}
+              label={<Text tone="secondary">{t("Account no longer available")}</Text>}
               key={id}
-              size="body"
-              leading="inherit"
               className="content-check content-account"
             />
           ))}

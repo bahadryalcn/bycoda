@@ -169,14 +169,15 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
       )}
       <header
         {...surfaceAttributes(
-          { frame: p.compact ? "none" : p.error ? "danger" : "pane", edge: "block-end" },
+          { frame: p.compact ? "none" : "pane", edge: "block-end" },
           styles.header,
         )}
         {...p.headerDrag}
       >
         {p.handle}
-        {p.error ? (
-          <VoiceErrorMark error={p.error} onShow={p.compact ? p.onToggleCompact : undefined} />
+        {/* The expanded panel shows the error notice itself; the mark only stands in when compact. */}
+        {p.error && p.compact ? (
+          <VoiceErrorMark error={p.error} onShow={p.onToggleCompact} />
         ) : null}
         {p.compact ? (
           <Text as="div" size="inherit" tone="inherit" leading="snug" className={styles.heading}>
@@ -344,7 +345,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               fullScreen={p.fullScreen}
               working={p.working}
               audioLevel={audioLevel}
-              statusText={p.fullScreen && p.error ? voiceErrorTitle(p.error) : p.statusText}
+              statusText={p.statusText}
               sessionStatusText={p.sessionStatusText}
               live={live}
               engine={p.engine}

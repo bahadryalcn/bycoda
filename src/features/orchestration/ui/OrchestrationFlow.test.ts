@@ -455,7 +455,7 @@ describe("orchestration composer and card", () => {
     expect(container.querySelector("textarea")).toBeNull();
     await click(document.querySelector('[aria-label="Details for Settings UI"]')!);
     await input(
-      document.querySelector('[aria-label="Instructions for task 1"]')!,
+      document.querySelector("textarea")!,
       "Build the accessible form and check keyboard navigation",
     );
     await click(
@@ -544,7 +544,7 @@ describe("orchestration composer and card", () => {
     expect(confirm).not.toHaveBeenCalled();
     await click(container.querySelector('[aria-label="Details for UI task"]')!);
     await input(
-      container.querySelector<HTMLTextAreaElement>('[aria-label="Instructions for task 1"]')!,
+      container.querySelector<HTMLTextAreaElement>("textarea")!,
       "Retained instructions\n".repeat(20),
     );
     const start = button("Confirm & start");
@@ -559,9 +559,7 @@ describe("orchestration composer and card", () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Approval unavailable",
     );
-    expect(
-      container.querySelector<HTMLTextAreaElement>('[aria-label="Instructions for task 1"]')?.value,
-    ).toBe("Retained instructions\n".repeat(20));
+    expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Retained instructions\n".repeat(20));
     expect(latest.settings.maxWorkers).toBe(3);
     expect(button("Confirm & start").disabled).toBe(false);
   });

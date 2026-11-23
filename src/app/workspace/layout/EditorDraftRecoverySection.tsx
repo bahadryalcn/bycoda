@@ -1,13 +1,12 @@
 import { Text } from "../../../shared/ui/Text";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { Alert } from "../../../shared/ui/Alert";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { LiveText } from "../../../shared/ui/LiveText";
-import { RefreshCw, Search } from "../../../shared/ui/icons";
+import { Check, Search } from "../../../shared/ui/icons";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { useT } from "../../../shared/i18n";
 import { formatRelative } from "../../../features/sessions/model/recentSessions";
 import { basename } from "../../../platform/tauri/fs";
@@ -28,10 +27,16 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
   const now = useMinuteNow();
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<"unsaved" | "all">("unsaved");
+  const { refresh } = recovery;
+  // Refresh when opening the recovery view so later captures appear automatically.
+  useEffect(() => {
+    void refresh().catch(console.error);
+  }, [refresh]);
   const candidates = records;
   const unsaved = candidates.filter(
     (row) => row.state === "retained" && row.serializedTextDigest !== row.baselineDigest,
   );
+  const canFilter = unsaved.length !== candidates.length;
   const scoped = mode === "all" ? candidates : unsaved;
   const needle = query.trim().toLocaleLowerCase();
   const rows = scoped
@@ -39,7 +44,8 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
     .sort((a, b) => b.updatedAt - a.updatedAt || a.path.localeCompare(b.path));
   return (
     <section className="recovery-pane" aria-label={t("File recovery copies")}>
-      <div className="recovery-toolbar">
+      {canFilter || scoped.length > 8 || query ? <div className="recovery-toolbar">
+        {canFilter ? (
         <SegmentedControl
           label={t("File recovery filters")}
           value={mode}
@@ -49,6 +55,8 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
             { value: "all", label: t("All copies"), accessory: candidates.length },
           ]}
         />
+        ) : null}
+        {scoped.length > 8 || query ? (
         <SearchInputGroup appearance="field" className="recovery-toolbar-search">
           <Search className="icon-sm shrink-0" aria-hidden="true" />
           <SearchInput
@@ -59,37 +67,12 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
             onChange={(event) => setQuery(event.target.value)}
           />
         </SearchInputGroup>
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Refresh copies")}
-          loading={recovery.loading}
-          onClick={() => void recovery.refresh()}
-        >
-          <RefreshCw className="icon-sm" strokeWidth={1.75} />
-        </Button>
-      </div>
-      {rows.length !== scoped.length ? (
-        <Text as="div" size="caption" tone="secondary" className="recovery-status">
-          <LiveText text={t("Showing {p0} of {p1}", { p0: rows.length, p1: scoped.length })} />
-        </Text>
-      ) : null}
+        ) : null}
+      </div> : null}
       {recovery.error ? (
-        <Alert tone="danger">
-          <span>
-            {t(
-              "File recovery copies could not be refreshed. The previous list is kept; try again.",
-            )}
-          </span>{" "}
-          <Button
-            variant="ghost"
-            size="sm"
-            loading={recovery.loading}
-            onClick={() => void recovery.refresh()}
-          >
-            {t("Retry")}
-          </Button>
-        </Alert>
+        <InlineError retry={{ pending: recovery.loading, onRetry: () => void recovery.refresh() }}>
+          {t("Couldn’t load file recovery copies")}
+        </InlineError>
       ) : null}
       <div className="recovery-body">
         {rows.length ? (
@@ -98,8 +81,8 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
               const key = editorDraftRecoveryKey(row);
               const pending = recovery.pendingKeys.has(key);
               const failed = recovery.errors.has(key);
-              const isUnsaved =
-                row.state !== "save-reported" && row.serializedTextDigest !== row.baselineDigest;
+              const name = basename(row.path);
+              const directory = row.path.slice(0, -name.length).replace(/[\\/]$/, "");
               return (
                 <li key={key} className="flex flex-wrap items-start gap-2 py-2">
                   <div className="min-w-0 basis-48 flex-1">
@@ -108,38 +91,29 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
                       size="secondary"
                       tone="inherit"
                       weight="medium"
-                      className="break-words"
+                      truncate
                     >
-                      {basename(row.path)}
+                      {name}
                     </Text>
                     <Text
                       as="p"
                       size="caption"
                       tone="secondary"
-                      className="select-text [overflow-wrap:anywhere]"
                     >
-                      {row.path}
+                      <MiddleTruncate mode="path">{directory}</MiddleTruncate>
                     </Text>
                     <Text as="p" size="caption" tone="secondary">
-                      <Text
-                        size="inherit"
-                        tone={isUnsaved ? "warning" : "inherit"}
-                        weight={isUnsaved ? "medium" : undefined}
-                      >
-                        {row.state === "save-reported"
-                          ? t("Save reported")
-                          : row.serializedTextDigest === row.baselineDigest
-                            ? t("Matches captured disk baseline")
-                            : t("Unsaved draft")}
-                      </Text>{" "}
-                      · {row.windowLabel} · {formatRelative(row.updatedAt, now)}
+                      {row.state === "save-reported" || row.serializedTextDigest === row.baselineDigest ? (
+                        <Check
+                          className="icon-xs me-(--ui-space-1) inline"
+                          role="img"
+                          aria-label={row.state === "save-reported" ? t("Save reported") : t("Matches captured disk baseline")}
+                        />
+                      ) : null}
+                      {row.windowLabel} · {formatRelative(row.updatedAt, now)}
                     </Text>
                     {failed ? (
-                      <InlineError>
-                        {t(
-                          "The copy could not be opened. Retry uses the same prepared copy; refresh if the source changed.",
-                        )}
-                      </InlineError>
+                      <InlineError>{t("The copy could not be opened.")}</InlineError>
                     ) : null}
                   </div>
                   <Button
@@ -148,7 +122,7 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
                     loading={pending}
                     onClick={() => void recovery.restore(row).catch(() => {})}
                   >
-                    {failed ? t("Retry opening copy") : t("Open copy in new tab")}
+                    {failed ? t("Retry") : t("Open")}
                   </Button>
                 </li>
               );
@@ -189,13 +163,6 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
             description={t("Recovery copies of unsaved editor text appear here.")}
           />
         )}
-      </div>
-      <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "recovery-footer")}>
-        <Text as="p" size="caption" tone="secondary">
-          {t(
-            "Open a separate unsaved file tab. The original recovery copy stays available; files are not written until you save.",
-          )}
-        </Text>
       </div>
     </section>
   );

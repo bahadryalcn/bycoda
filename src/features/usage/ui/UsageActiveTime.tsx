@@ -8,7 +8,6 @@ import {
 import { t, useLocale } from "../../../shared/i18n";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Surface } from "../../../shared/ui/Surface";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 
 /** Active time (today, week, month, year) with its source scope: this machine, connected machines or all devices. */
@@ -19,7 +18,7 @@ export function UsageActiveTime() {
   const value = (minutes: number | undefined) =>
     minutes == null ? "—" : formatActiveMinutes(minutes);
   return (
-    <Surface variant="card" padding="sm" className="usage-active-time">
+    <section className="usage-active-time" aria-label={t("Active time")}>
       <div className="usage-active-heading">
         <SectionLabel>{t("Active time")}</SectionLabel>
         <Text size="caption" tone="muted" leading="inherit" className="usage-active-source">
@@ -40,6 +39,6 @@ export function UsageActiveTime() {
           {t("Active time is unavailable right now.")}
         </Text>
       ) : null}
-    </Surface>
+    </section>
   );
 }

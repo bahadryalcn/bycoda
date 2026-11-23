@@ -139,6 +139,11 @@ export function TerminalControls({
   };
   const showInsertion = initialCommand === undefined && integrated;
   const snapshot = shell.state;
+  const canInsert =
+    showInsertion &&
+    snapshot?.id === id &&
+    snapshot.status === "suggestions" &&
+    snapshot.prefix === "";
   const enableShellIntegration =
     !integrated || (autoIntegration && nextReportedId !== id)
       ? onEnableShellIntegration
@@ -202,12 +207,15 @@ export function TerminalControls({
               <Button variant="ghost" size="sm" loading={waiting} onClick={() => void request()}>
                 {t("Refresh")}
               </Button>
-              <Text size="caption" tone="muted">
-                {(shell.error ? t(shell.error) : "") ||
-                  t(
-                    "Insert commands at an empty shell prompt. Press Enter in the terminal to run.",
-                  )}
-              </Text>
+              {/* The hint explains why Insert is unavailable; it is silent while insertion works. */}
+              {shell.error || !canInsert ? (
+                <Text size="caption" tone="muted">
+                  {(shell.error ? t(shell.error) : "") ||
+                    t(
+                      "Insert commands at an empty shell prompt. Press Enter in the terminal to run.",
+                    )}
+                </Text>
+              ) : null}
             </div>
           ) : null}
           <Suspense fallback={<LoadingText />}>
@@ -223,10 +231,7 @@ export function TerminalControls({
                 onAlreadySaved();
               }}
               onInsert={
-                showInsertion &&
-                snapshot?.id === id &&
-                snapshot.status === "suggestions" &&
-                snapshot.prefix === ""
+                canInsert && snapshot?.status === "suggestions"
                   ? async (value) => {
                       if (!snapshot.requestId)
                         throw new Error("Request a fresh snapshot at an empty shell prompt");

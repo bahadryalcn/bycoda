@@ -42,13 +42,13 @@ it("keeps the last activity warning and marks it stale after an unsuccessful ref
     ])
     .mockRejectedValueOnce(new Error("unavailable"));
   await act(async () => root.render(createElement(UpdateImpact, { target: "app" })));
-  expect(container.textContent).toContain("This computer");
+  // One affected machine is a single notice, not a table.
+  expect(container.querySelector("table")).toBeNull();
   expect(container.textContent).toContain("Sessions that may be interrupted: 2.");
   await act(async () => vi.advanceTimersByTimeAsync(10_000));
   expect(container.textContent).toContain(
     "Could not refresh machine activity. Showing the last known activity.",
   );
-  expect(container.textContent).toContain("This computer");
   expect(container.textContent).toContain("Sessions that may be interrupted: 2.");
 });
 

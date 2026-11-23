@@ -64,12 +64,6 @@ export function LinkSessionWorkItemDialog({
           autoFocus
           type="url"
           value={url}
-          aria-label={t("GitHub issue or pull request URL")}
-          description={
-            error
-              ? undefined
-              : t("Paste the full github.com URL. The linked item will appear on the session card.")
-          }
           error={error || undefined}
           placeholder="https://github.com/owner/repo/pull/123"
           onChange={(event) => {

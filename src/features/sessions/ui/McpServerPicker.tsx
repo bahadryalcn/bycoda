@@ -5,7 +5,6 @@ import { useState } from "react";
 import { Settings } from "../../../shared/ui/icons";
 import {
   PickerCloseButton,
-  PickerFooter,
   PickerList,
   PopoverSearchHeader,
   usePickerList,
@@ -92,12 +91,22 @@ export function McpServerPicker({
         onValueChange={setQuery}
         {...list.searchProps}
         trailing={
-          <PickerCloseButton
-            label={t("Close MCP picker")}
-            tooltip={t("Back to the conversation")}
-            shortcut="Esc"
-            onClick={() => onDismiss("escape")}
-          />
+          <div className="flex items-center gap-1">
+            <Button
+              iconOnly
+              label={t("Manage MCP Servers…")}
+              variant="ghost"
+              size="sm"
+              onClick={onManage}
+            >
+              <Settings className="icon-sm" />
+            </Button>
+            <PickerCloseButton
+              label={t("Close MCP picker")}
+              shortcut="Esc"
+              onClick={() => onDismiss("escape")}
+            />
+          </div>
         }
       />
       <PickerList
@@ -110,12 +119,6 @@ export function McpServerPicker({
         emptyLabel={query ? t("No matching MCP servers") : t("No MCP servers found")}
         listHeight="standard"
       />
-      <PickerFooter align="start">
-        <Button variant="ghost" size="sm" type="button" onClick={onManage}>
-          <Settings className="icon-sm" />
-          {t("Manage MCP Servers…")}
-        </Button>
-      </PickerFooter>
     </div>
   );
 }

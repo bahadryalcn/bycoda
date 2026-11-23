@@ -5,7 +5,6 @@ import { t, useLocale } from "../../../shared/i18n";
 export type NoteSaveState =
   | "deleting"
   | "failed"
-  | "attention"
   | "conflict"
   | "recovering"
   | "saving"
@@ -15,7 +14,6 @@ export type NoteSaveState =
 const LABELS: Record<NoteSaveState, string> = {
   deleting: "Deleting…",
   failed: "Save failed",
-  attention: "Title needs attention",
   conflict: "Changed elsewhere",
   recovering: "Saving recovery copy…",
   saving: "Saving…",
@@ -26,18 +24,16 @@ const LABELS: Record<NoteSaveState, string> = {
 /** Notes save automatically, so routine save progress stays silent. */
 const QUIET: ReadonlySet<NoteSaveState> = new Set(["saved", "unsaved", "saving"]);
 
-/** Recovery and errors take precedence over a pending or clean draft. */
+/** Recovery and errors take precedence over a pending or clean draft; title errors show on the title field only. */
 export function noteSaveState(state: {
   deleting: boolean;
   saveError: string | null;
-  titleError: string | undefined;
   recovering: boolean;
   saving: boolean;
   dirty: boolean;
 }): NoteSaveState {
   if (state.deleting) return "deleting";
   if (state.saveError) return "failed";
-  if (state.titleError) return "attention";
   if (state.recovering) return "recovering";
   if (state.saving) return "saving";
   return state.dirty ? "unsaved" : "saved";
@@ -47,7 +43,7 @@ export function noteSaveState(state: {
 export function NoteSaveStatus({ state, className }: { state: NoteSaveState; className?: string }) {
   useLocale();
   if (QUIET.has(state)) return null;
-  const attention = state === "failed" || state === "attention" || state === "conflict";
+  const attention = state === "failed" || state === "conflict";
   return (
     <Text
       size="caption"

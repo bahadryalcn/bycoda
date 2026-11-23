@@ -8,7 +8,7 @@ export type FilterTriggerProps = Omit<
   ButtonProps,
   "variant" | "iconOnly" | "label" | "children" | "selected" | "startIcon" | "inset"
 > & {
-  /** Accessible name and tooltip, for example "Filter sessions". */
+  /** Accessible name, for example "Filter sessions". */
   label: string;
   /** How many filters narrow the collection. Zero renders the plain ghost icon button. */
   activeCount?: number;
@@ -54,7 +54,6 @@ export function FilterTrigger({
         iconOnly={!active}
         selected={active}
         label={label}
-        tooltip={label}
         startIcon={active ? glyph : undefined}
         data-action-primary=""
       >

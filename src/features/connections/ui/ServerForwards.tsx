@@ -26,6 +26,9 @@ import {
   validateForwardRule,
 } from "../model/sshForwards";
 
+/** Forwarding rules show a search field only past this many rules. */
+const SEARCH_FROM = 8;
+
 /** Saved rules belong to canonical records. Mounting/restoring never starts SSH. */
 export function ServerForwards({
   server,
@@ -85,7 +88,7 @@ export function ServerForwards({
   const content = (
     <>
       <div className="mbs-3 flex min-w-0 flex-col gap-3">
-        {rules.length ? (
+        {rules.length > SEARCH_FROM || search ? (
           <SearchInput
             appearance="field"
             aria-label={t("Search forwarding rules")}
@@ -93,9 +96,10 @@ export function ServerForwards({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
-        ) : (
+        ) : null}
+        {rules.length === 0 ? (
           <EmptyState size="inline" description={t("No forwarding rules yet.")} />
-        )}
+        ) : null}
         {rules.length > 0 && matchingRules.length === 0 ? (
           <EmptyState
             size="inline"
@@ -160,9 +164,11 @@ export function ServerForwards({
               </Text>
               {status?.error ? <InlineError details={status.error} /> : null}
               <div className="flex flex-wrap gap-2">
+                {/* Until the status is verified the badge says so; no second "unknown" control. */}
+                {verified ? (
                 <Button
                   loading={busy === rule.id}
-                  disabled={Boolean(busy) || stopping || !verified}
+                  disabled={Boolean(busy) || stopping}
                   onClick={() =>
                     void run(rule.id, async () => {
                       if (running) return stopSshForward(runtimeId);
@@ -188,16 +194,15 @@ export function ServerForwards({
                     })
                   }
                 >
-                  {!verified
-                    ? t(statusError ? "Status unknown" : "Checking…")
-                    : stopping
-                      ? t("Stopping")
-                      : unknown
-                        ? t("Retry stop")
-                        : running
-                          ? t("Stop")
-                          : t("Start")}
+                  {stopping
+                    ? t("Stopping")
+                    : unknown
+                      ? t("Retry stop")
+                      : running
+                        ? t("Stop")
+                        : t("Start")}
                 </Button>
+                ) : null}
                 <span className="ms-auto">
                   <ConfirmMorph
                     label={t("Remove")}
@@ -302,15 +307,8 @@ export function ServerForwards({
                   }
                 />
               </>
-            ) : (
-              <Text wrap="anywhere" as="p" size="inherit" tone="muted">
-                SOCKS5 · 127.0.0.1:{draft.localPort || "…"}
-              </Text>
-            )}
-            <div className="col-span-full flex flex-wrap items-center justify-between gap-2">
-              <Text size="inherit" tone="muted">
-                {t("Loopback only. Start separately after saving.")}
-              </Text>
+            ) : null}
+            <div className="col-span-full flex flex-wrap items-center justify-end gap-2">
               <Button type="submit" loading={busy === "save"} disabled={Boolean(busy)}>
                 {t("Save rule")}
               </Button>

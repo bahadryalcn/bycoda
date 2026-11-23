@@ -52,11 +52,6 @@ const FIRST_LINE: Record<NoticeSize, string> = {
  * @use Internal part of the notice anatomy shared by Alert, InlineMessage, Toast and empty states.
  * @avoid Direct use in a feature: use Alert, InlineMessage/InlineError, Toast or EmptyState.
  * @status internal
- *
- * @group feedback
- * @use Internal part of the notice anatomy shared by Alert, InlineMessage, Toast and empty states.
- * @avoid Direct use in a feature: use Alert, InlineMessage/InlineError, Toast or EmptyState.
- * @status internal
  */
 export function NoticeSlot({
   size,
@@ -116,6 +111,7 @@ export function NoticeGlyph({
  * Inner spacing of a state (EmptyState, LoadingText, InlineError, InlineMessage), on the Surface
  * padding scale. `none` (default) adds nothing: the surrounding row, panel or form owns the gap.
  * `row` (8/12) sits a state inside a list row or form; `panel` (12/16) gives it a panel's breathing room.
+ * Alert and the toast card use the same 8/12 inset through `--ui-space-2` / `--ui-space-3`.
  */
 export type StateInset = "none" | "row" | "panel";
 

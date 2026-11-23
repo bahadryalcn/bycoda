@@ -1,16 +1,15 @@
-/* First-load placeholder for the Settings dialog: fills the dialog body and lets the shared
-   LoadingCard centre the section title, status and row skeleton. */
+/* First-load placeholder fills the Settings dialog body. */
 .settings-loading {
-  display: flex;
   flex: 1 1 0;
   min-block-size: 0;
   min-inline-size: 0;
+  padding: var(--space-4);
 }
 
 /* In-page placeholder (SettingsPageLoading): holds a page-sized block while first data loads. */
 .settings-page-loading {
   min-block-size: 16rem;
-  padding-block: 8px;
+  padding-block: var(--space-2);
 }
 /* Inside the shared loading delay the shapes keep their box but stay invisible, so warm data
    never flashes them. */
@@ -22,27 +21,27 @@
 .settings-skeleton-groups {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: var(--space-8);
 }
 .settings-skeleton-group {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .settings-skeleton-frame .settings-skeleton-row {
-  padding-inline: 16px;
+  padding-inline: var(--ui-row-inset-inline);
 }
 .settings-skeleton-row {
   display: flex;
   align-items: center;
-  gap: 24px;
-  min-block-size: 3.5rem;
-  padding-block: 10px;
+  gap: var(--space-6);
+  min-block-size: calc(var(--ui-control-height-compact) + 2 * var(--ui-row-inset-block));
+  padding-block: var(--ui-row-inset-block);
 }
 .settings-skeleton-label {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   min-inline-size: 0;
 }

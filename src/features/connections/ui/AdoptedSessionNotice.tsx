@@ -19,6 +19,9 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { describeRemoteError, type RemoteErrorView } from "../model/remoteFailure";
 
+/** The strip's own gutter above the composer; both states share it. */
+const NOTICE_SLOT = "shrink-0 px-4 py-2";
+
 /** Keeps the composer mounted (and its draft/attachments intact) during refresh. */
 export function AdoptedSessionNotice({
   session,
@@ -112,7 +115,7 @@ export function AdoptedSessionNotice({
   if (!session.adoptedSyncConflict && !feedback && !refreshing)
     // The first comparison with the other computer's copy; a quick one shows nothing.
     return syncing ? (
-      <div className="shrink-0 px-4 py-2">
+      <div className={NOTICE_SLOT}>
         <LoadingText>{t("Syncing with the local Host…")}</LoadingText>
       </div>
     ) : null;
@@ -123,10 +126,7 @@ export function AdoptedSessionNotice({
     !choosing &&
     (!!session.adoptedSyncConflict || !!feedback?.failure || refreshing);
   const syncBlocked = refreshing || session.busy;
-  const keepBothTooltip = t(
-    "Keep the other version here and save this computer's version as a new conversation.",
-  );
-  // Up to three follow-ups: the two structured slots plus one Button in `extra` (it keeps its tooltip).
+  // Up to three follow-ups: the two structured slots plus one Button in `extra`.
   const noticeActions: Pick<AlertProps, "action" | "secondaryAction" | "extra"> = confirming
     ? {
         action: { label: t("Discard and keep this"), onClick: keep, disabled: refreshing },
@@ -143,7 +143,6 @@ export function AdoptedSessionNotice({
             onClick={() => void refresh("keep-both")}
             disabled={syncBlocked}
             aria-busy={refreshing}
-            tooltip={keepBothTooltip}
           >
             {t("Keep both")}
           </Button>
@@ -176,9 +175,6 @@ export function AdoptedSessionNotice({
               size="sm"
               onClick={() => setConfirmingId(session.id)}
               disabled={refreshing}
-              tooltip={t(
-                "Keep this computer's version. The other computer catches up with it. Nothing is copied.",
-              )}
             >
               {t("Keep this")}
             </Button>
@@ -203,7 +199,7 @@ export function AdoptedSessionNotice({
       <ErrorDetails title={failure.message} detail={failure.details} />
     ) : undefined;
   return (
-    <div className="shrink-0 px-4 py-2">
+    <div className={NOTICE_SLOT}>
       <Alert
         tone={attention ? "warning" : "info"}
         {...noticeActions}

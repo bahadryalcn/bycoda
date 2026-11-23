@@ -1499,7 +1499,7 @@ it("shows a preloaded conversation's transcript on its first render", async () =
   expect(document.body.textContent).not.toContain("Work on repo.");
 });
 
-it("shows an unavailable branch when Git lookup fails", async () => {
+it("omits the branch chip when the remote folder has no repository", async () => {
   branchFailure = "fatal: not a git repository";
   // A remote project keeps the branches it last had, so use one never looked up.
   const unlisted = rememberRemoteProject("env", {
@@ -1508,9 +1508,8 @@ it("shows an unavailable branch when Git lookup fails", async () => {
     cwd: "/home/me/unlisted",
   });
   await render({ ...shell(), cwd: unlisted.key, workspaceMode: "current" });
-  const picker = byLabel("No git repository");
-  expect(picker).not.toBeNull();
-  expect((picker as HTMLButtonElement).disabled).toBe(true);
+  expect(document.querySelector('[data-composer-chip="branch"]')).toBeNull();
+  expect(byLabel("No git repository")).toBeNull();
 });
 
 it("holds explicit worktree remote creation and drafts when the Host lacks managed creation", async () => {
@@ -2377,8 +2376,8 @@ it("asks to connect the machine when it is not set up on this computer", async (
     command === "remote_machines" ? [] : undefined,
   );
   await render();
-  // The reason sits behind the info button; the page states the status and offers Connections.
-  expect(document.body.textContent).toContain("Not added on this computer");
+  // The reason sits behind the info button; the page states the title and offers Connections.
+  expect(document.body.textContent).toContain("This project’s machine isn’t available");
   expect(container.querySelector('[data-machine-unavailable="not-added"]')).not.toBeNull();
   expect(container.querySelector("textarea")).toBeNull();
 });

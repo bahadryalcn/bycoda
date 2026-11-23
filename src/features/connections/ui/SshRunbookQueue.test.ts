@@ -47,7 +47,9 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   native.queue = { intents: [intent], error: "" };
   native.rendered = undefined;
-  native.list.mockResolvedValue([{ id: "book", revision: 4, targetIds: [server.id] }]);
+  native.list.mockResolvedValue([
+    { id: "book", name: "Nightly", revision: 4, targetIds: [server.id] },
+  ]);
   native.invoke.mockResolvedValue([server]);
   native.dismiss.mockResolvedValue(undefined);
   native.refresh.mockResolvedValue(undefined);
@@ -61,10 +63,10 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 const button = (name: string) =>
-  [...document.querySelectorAll("button")].find((item) => item.textContent?.trim() === name)!;
+  [...document.querySelectorAll("button")].find((item) => item.textContent?.trim().startsWith(name))!;
 async function open() {
   await act(async () => root.render(createElement(SshRunbookQueue)));
-  await act(async () => button("SSH reviews · 1").click());
+  await act(async () => button("SSH reviews").click());
 }
 
 it.each([false, true])(
@@ -72,19 +74,20 @@ it.each([false, true])(
   async (stale) => {
     native.queue = { intents: stale ? [intent] : [], error: "Queue read unavailable" };
     await act(async () => root.render(createElement(SshRunbookQueue)));
-    await act(async () => button(stale ? "SSH reviews · 1" : "SSH reviews").click());
+    await act(async () => button("SSH reviews").click());
     expect(document.body.textContent).toContain("Queue read unavailable");
     expect(document.body.textContent).not.toContain("No pending SSH reviews.");
     expect(document.body.textContent).not.toContain("SSH reviews · 0");
-    if (stale) expect(document.body.textContent).toContain("book · r4");
+    if (stale) expect(document.body.textContent).toContain("Nightly · r4");
     expect(native.dismiss).not.toHaveBeenCalled();
   },
 );
 it("shows pending reviews without lookup or execution on mount, and dismisses metadata explicitly", async () => {
   await open();
-  expect(document.body.textContent).toContain("book · r4");
+  expect(document.body.textContent).toContain("Nightly · r4");
   expect(native.invoke).not.toHaveBeenCalled();
-  expect(native.list).not.toHaveBeenCalled();
+  // Opening only reads runbook names; no review lookup happens.
+  expect(native.list).toHaveBeenCalledOnce();
   expect(native.rendered).toBeUndefined();
   await act(async () => button("Dismiss").click());
   expect(native.dismiss).toHaveBeenCalledExactlyOnceWith("intent");
@@ -133,7 +136,6 @@ it("opens an explicitly requested empty startup queue and can be reopened withou
   await act(async () => root.render(createElement(SshRunbookQueue, { openRequest: 2 })));
   expect(document.body.textContent).toContain("No pending SSH reviews.");
   expect(native.invoke).not.toHaveBeenCalled();
-  expect(native.list).not.toHaveBeenCalled();
 });
 it("retains the visible native intent and error message when dismiss fails", async () => {
   native.dismiss.mockRejectedValueOnce(new Error("not dismissed"));
@@ -141,7 +143,7 @@ it("retains the visible native intent and error message when dismiss fails", asy
   await act(async () => button("Dismiss").click());
   expect(document.body.textContent).toContain("not dismissed");
   expect(document.body.textContent).not.toContain("Error: not dismissed");
-  expect(document.body.textContent).toContain("book · r4");
+  expect(document.body.textContent).toContain("Nightly · r4");
   expect(native.refresh).not.toHaveBeenCalled();
 });
 it("synchronously prevents duplicate review lookup before a pending render", async () => {
@@ -158,7 +160,8 @@ it("synchronously prevents duplicate review lookup before a pending render", asy
     button("Review execution").click();
   });
   expect(native.invoke).toHaveBeenCalledOnce();
-  expect(native.list).toHaveBeenCalledOnce();
+  // One name read on open plus one review lookup.
+  expect(native.list).toHaveBeenCalledTimes(2);
   await act(async () => answer([server]));
   expect(native.rendered.intentId).toBe("intent");
 });

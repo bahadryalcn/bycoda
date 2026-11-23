@@ -24,7 +24,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
-import { MoreHorizontal, Plus, RefreshCw } from "../../../shared/ui/icons";
+import { ExternalLink, MoreHorizontal, Plus, RefreshCw } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { supportsHarnessLogin } from "../../../integrations/harness/core/authSupport";
 import {
@@ -57,7 +57,6 @@ import {
   readHarnessAuthStatus,
   type HarnessAuthStatus,
 } from "../../../integrations/harness/core/authStatus";
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import { LiveText } from "../../../shared/ui/LiveText";
 const GenericAcpSettings = lazy(() =>
   import("../../providers/ui/GenericAcpSettings").then((module) => ({
@@ -209,21 +208,16 @@ export function OnboardingAgents({
       </div>
       <div className="onboarding-scroll">
         {checking && listed.length === 0 ? (
-          <>
-            <LoadingText>{t("Scanning this computer…")}</LoadingText>
-            <div className="onboarding-agent-skeleton" aria-hidden="true">
-              {[0, 1, 2].map((row) => (
-                <Skeleton key={row} aria-hidden className="h-9 w-full" />
-              ))}
-            </div>
-          </>
+          // The skeleton and the single live line below are the only scanning indicators.
+          <div className="onboarding-agent-skeleton" aria-hidden="true">
+            {[0, 1, 2].map((row) => (
+              <Skeleton key={row} aria-hidden className="h-9 w-full" />
+            ))}
+          </div>
         ) : null}
         {probed && listed.length === 0 ? (
           <div className="onboarding-provider-empty" role="status">
             <EmptyState size="inline" kind="empty" description={t("No providers found")} />
-            <Text as="p" size="caption" tone="secondary" leading="normal">
-              {t("Already installed one? Choose its executable, or install it and scan again.")}
-            </Text>
           </div>
         ) : null}
         <div
@@ -284,7 +278,8 @@ export function OnboardingAgents({
                   variant="secondary"
                   type="button"
                 >
-                  {t("Install guide ↗")}
+                  {t("Install guide")}
+                  <ExternalLink aria-hidden className="icon-sm" />
                 </Button>
               );
             } else if (probed && !available) {
@@ -351,9 +346,6 @@ export function OnboardingAgents({
                 <div className="onboarding-agent-controls">
                   <span className="onboarding-agent-primary">{primary}</span>
                   <span className="onboarding-agent-visibility">
-                    <Text size="micro" tone="muted" leading="inherit">
-                      {t("In picker")}
-                    </Text>
                     <Switch
                       aria-label={t("Use {p0}", { p0: title })}
                       checked={visible}
@@ -381,12 +373,6 @@ export function OnboardingAgents({
                               setDefaultProviderAccount(account.provider, account.id)
                             }
                           />
-                        ) : null}
-                        {available ? (
-                          <Button variant="ghost" size="sm" disabled={checking} onClick={refresh}>
-                            <RefreshCw className="icon-sm" />
-                            {t("Check again")}
-                          </Button>
                         ) : null}
                       </AgentMore>
                     ) : null}
@@ -462,7 +448,8 @@ export function OnboardingAgents({
                       )
                     }
                   >
-                    {t("Install guide ↗")}
+                    {t("Install guide")}
+                    <ExternalLink aria-hidden className="icon-sm" />
                   </Button>
                 ) : null}
               </>

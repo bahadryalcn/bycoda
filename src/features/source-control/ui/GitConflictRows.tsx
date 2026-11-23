@@ -74,7 +74,8 @@ export function GitConflictRows({
                 disabled={!hasFile || disabled}
                 onClick={() => onOpen(row)}
                 onDoubleClick={() => onOpen(row, true)}
-                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                align="start"
+                className="min-w-0 flex-1"
               >
                 <FileTypeIcon name={name} isDir={false} />
                 <Text

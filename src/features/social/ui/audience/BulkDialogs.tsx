@@ -157,7 +157,7 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
           />
         ) : null}
         {action === "sequence" ? (
-          <>
+          <div className="audience-row">
             <LabeledSelect
               label={t("Sequence")}
               value={sequenceId}
@@ -171,12 +171,12 @@ export function BulkDialog({ client, action, people, lists, onClose, onDone }: B
               ]}
               onChange={setSequenceId}
             />
-            <InfoPopover className="self-end shrink-0">
+            <InfoPopover>
               {t(
                 "The sequence runs for its own list, so the selected people are added to that list.",
               )}
             </InfoPopover>
-          </>
+          </div>
         ) : null}
         {result ? (
           <section aria-label={t("Result")} className="audience-stack">

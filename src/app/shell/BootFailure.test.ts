@@ -23,7 +23,7 @@ it("uses the configured brand in startup recovery without native APIs", () => {
   expect(markup).toContain("Your saved workspace is still available.");
   expect(markup).not.toContain("Bycoda");
   expect(markup).toContain('role="alert"');
-  expect(markup).toContain("Reload app");
+  expect(markup).toContain("Reload");
 });
 
 it("shows the configured brand lockup above the startup failure", () => {

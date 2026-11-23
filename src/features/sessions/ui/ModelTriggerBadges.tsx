@@ -16,8 +16,7 @@ export type ModelTriggerBadgeData = {
 
 /**
  * Setting badges of the field-style model trigger. Account and effort always stay; Fast and the
- * non-default extras are optional and drop out first when the field narrows. Every badge carries
- * its meaning in its accessible name.
+ * non-default extras are optional and drop out first when the field narrows.
  */
 export function ModelTriggerBadges({ account, effort, fast, extras = [] }: ModelTriggerBadgeData) {
   const t = useT();
@@ -59,25 +58,23 @@ export function ModelTriggerBadges({ account, effort, fast, extras = [] }: Model
           {effort}
         </Badge>
       ) : null}
-      {fast ? (
+      {fast === "on" ? (
         <Badge
           data-model-fast={fast}
           size="xs"
-          appearance={fast === "on" ? "subtle" : "outline"}
+          appearance="subtle"
           role="img"
-          aria-label={fast === "on" ? t("Fast on") : t("Fast off")}
+          aria-label={t("Fast on")}
           className="shrink-0 @max-[22rem]/model-trigger:hidden"
           icon={
             <Zap
               className="icon-xs"
-              fill={fast === "on" ? "currentColor" : "none"}
+              fill="currentColor"
               strokeWidth={1.75}
               aria-hidden
             />
           }
-        >
-          {fast === "on" ? t("Fast") : t("Fast off")}
-        </Badge>
+        />
       ) : null}
       {extras.map((extra) => (
         <Badge

@@ -1,5 +1,5 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
-import { Text } from "../../../shared/ui/Text";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -79,10 +79,6 @@ export function CreateWorktreeDialog({
     <Modal
       languageDomain="git"
       title={t("Create worktree")}
-      description={t(
-        "An independent worktree of {p0}. Existing uncommitted changes stay in their current worktree.",
-        { p0: prettyCwd(cwd) },
-      )}
       size="sm"
       onClose={() => {
         if (!busy) onCancel();
@@ -99,7 +95,6 @@ export function CreateWorktreeDialog({
             form={formId}
             loading={busy}
             disabled={busy || !name.trim()}
-            disabledReason={name.trim() ? undefined : t("Enter a name.")}
           >
             {t("Create")}
           </Button>
@@ -107,22 +102,33 @@ export function CreateWorktreeDialog({
       }
     >
       <form id={formId} className="flex flex-col gap-4" action={submit}>
-        <SegmentedControl
-          label={t("Branch type")}
-          value={existing ? "existing" : "new"}
-          options={[
-            { value: "new", label: t("Create a new branch") },
-            { value: "existing", label: t("Use an existing local branch") },
-          ]}
-          onValueChange={(value) => {
-            if (busy) return;
-            setExisting(value === "existing");
-            setName("");
-          }}
-        />
+        <div className="flex items-center gap-1">
+          <SegmentedControl
+            className="min-w-0 flex-1"
+            label={t("Branch type")}
+            value={existing ? "existing" : "new"}
+            options={[
+              { value: "new", label: t("New branch"), disabled: busy },
+              { value: "existing", label: t("Existing branch"), disabled: busy },
+            ]}
+            onValueChange={(value) => {
+              setExisting(value === "existing");
+              setName("");
+            }}
+          />
+          <InfoPopover className="shrink-0">
+            <span>
+              {t(
+                "An independent worktree of {p0}. Existing uncommitted changes stay in their current worktree.",
+                { p0: prettyCwd(cwd) },
+              )}
+            </span>
+            {defaultRoot ? <span>{t("Created in {p0}", { p0: prettyCwd(defaultRoot) })}</span> : null}
+          </InfoPopover>
+        </div>
         {existing ? (
           <SearchableSelect
-            label={t("Existing branch")}
+            label={t("Branch")}
             value={name}
             disabled={busy}
             options={localBranches}
@@ -158,14 +164,9 @@ export function CreateWorktreeDialog({
             loadingLabel={t("Loading branches…")}
             error={branchError}
             onChange={setBase}
-            searchPlaceholder="Search branches and refs…"
+            searchPlaceholder={t("Search branches and refs…")}
             layer={LAYER.dialogPopover}
           />
-        )}
-        {defaultRoot && (
-          <Text as="p" size="micro" tone="muted" className="break-all">
-            {t("Created in {p0}", { p0: prettyCwd(defaultRoot) })}
-          </Text>
         )}
         {error ? <InlineError>{error}</InlineError> : null}
       </form>

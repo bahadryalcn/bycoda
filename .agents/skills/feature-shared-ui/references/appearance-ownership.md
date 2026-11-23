@@ -22,7 +22,8 @@ Rule names and text are generated in [rules.md](../../../../docs/reference/rules
 
 - Layout is free: `display`, `grid`, `flex`, `gap`, `margin`, `width`, `overflow` and alignment
   belong to the feature.
-- Spacing: `var(--space-*)` is always allowed and is the preferred form. Only a literal off the
+- Spacing: the semantic `var(--ui-space-*)` steps and `var(--ui-list-gutter)` are the preferred form;
+  `var(--space-*)` is always allowed. Only a literal off the
   scale is reported: a bare px/rem value other than 0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 40 or 48
   px, or a Tailwind step other than 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10, 12.
 - Classes are read from `className`-like attributes, properties and variables and from the
@@ -130,7 +131,11 @@ with a one-line reason; the rest of the file still counts. The classes:
 
 Same job means the same shared component and appearance. A distinct component needs a distinct job.
 Import wrappers from `src/shared/ui/*`; Arc primitives and native-popup internals belong behind those
-wrappers. Only canonical shared overlay owners listed in `floatingSurfaceOwners` position floating
+wrappers, and product code never imports `src/shared/ui/arc/*` (`registry-import`). Overlay frames
+(ground, edge, shadow, radius) are the shared floating tokens: features pass no frame paint, frost
+or palette through `className`, `panelStyle` or glass hooks. A missing look is a variant of the
+shared component (`Button` chip, `SectionLabel` rail, `RadioGroup` `tileLayout`, `PaneHeader`
+`primaryAction`/`overflow`), never feature styling. Only canonical shared overlay owners listed in `floatingSurfaceOwners` position floating
 surfaces: `Popover`, `Modal`, `Sheet`, `ImageLightbox`, `ToastRegion` and the explicit OS-window
 owners. Dialog, sheet and media owners use the shared overlay stack; toast owners use its menu
 layer. This does not permit feature portals or legacy self-positioned notices. Features use

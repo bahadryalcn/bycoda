@@ -218,7 +218,6 @@ export function TabGroupMenu({
             variant="ghost"
             motion="none"
             type="button"
-            aria-label={logoPath ? t("Change project logo") : t("Add project logo")}
             loading={logoBusy}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
@@ -268,7 +267,6 @@ export function TabGroupMenu({
               variant="ghost"
               motion="none"
               type="button"
-              aria-label={t("Remove project logo")}
               disabled={logoBusy}
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
@@ -392,7 +390,8 @@ export function TabGroupMenu({
             value={name}
             disabled={logoBusy}
             onChange={(e) => setName(e.target.value)}
-            // Only Enter saves; closing the menu or Escape discards the typed name.
+            // A typed name is saved when the field loses focus, so clicking away never loses it.
+            onBlur={() => void commitName()}
             onKeyDown={(e) => {
               if (e.key !== "Enter" || isImeComposition(e.nativeEvent)) return;
               e.preventDefault();
@@ -469,6 +468,7 @@ function MenuRow({
     <SharedMenuRow
       destructive={item.danger}
       type="button"
+      role="menuitem"
       disabled={item.disabled}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onPick}

@@ -17,6 +17,8 @@ export function AssistantQuickNoteFields({
   const update = (patch: Partial<AssistantQuickNoteAction>) => {
     if (!disabled) onChange({ ...value, ...patch });
   };
+  // The normalized title is only worth showing when it differs from what the owner typed.
+  const savedTitle = normalizeAssistantQuickNoteAction(value).title;
   return (
     <div className={styles.quickFields}>
       <TextField
@@ -35,9 +37,11 @@ export function AssistantQuickNoteFields({
         disabled={disabled}
         onChange={(event) => update({ body: event.currentTarget.value })}
       />
-      <Text as="p" tone="muted" leading="inherit" className={styles.savedTitle}>
-        {t("Saved title")}: {normalizeAssistantQuickNoteAction(value).title}
-      </Text>
+      {savedTitle !== value.title && (
+        <Text as="p" tone="muted" leading="inherit" className={styles.savedTitle}>
+          {t("Saved title")}: {savedTitle}
+        </Text>
+      )}
     </div>
   );
 }

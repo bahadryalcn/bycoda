@@ -4,7 +4,6 @@ import {
   actionContentScopeAttributes,
 } from "../../../shared/ui/ActionHost";
 import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { Button } from "../../../shared/ui/Button";
@@ -68,7 +67,6 @@ export function ChatFilterBar({
         size="sm"
         tone="accent"
         label={t("Chat search filters")}
-        tooltip={t("Chat search filters")}
         selected={active}
         aria-expanded={filterOpen}
         onClick={() => setFilterOpen((value) => !value)}
@@ -229,7 +227,6 @@ export function ChatSearchResults({
   return (
     <PickerListRoot
       id={listId}
-
       label={t("Chat search results")}
       onMouseMove={onMouseMove}
       className="pb-2"
@@ -249,9 +246,7 @@ export function ChatSearchResults({
             classNames={{ label: "app-search-project-label" }}
           >
             <Folder className="icon-xs shrink-0" strokeWidth={1.75} />
-            <Tooltip label={group.cwd} asChild>
-              <span className="min-w-0 flex-1 break-words">{group.name}</span>
-            </Tooltip>
+            <span className="min-w-0 flex-1 break-words">{group.name}</span>
             {group.groupName ? (
               <Badge size="sm" appearance="subtle" className="shrink-0">
                 {group.groupName}

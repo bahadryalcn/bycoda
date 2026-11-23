@@ -180,7 +180,6 @@ export function CodeRunButton({
       motion="none"
       iconOnly
       label={t("Run in terminal")}
-      tooltip={t("Run in terminal")}
       className="markdown-code-copy markdown-code-run"
       disabled={incomplete || !code.trim()}
       onClick={() => execute(code.replace(/\r?\n$/, ""), shellKind)}

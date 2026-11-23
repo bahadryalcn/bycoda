@@ -3,6 +3,7 @@ import { DiffStat } from "../../../shared/ui/DiffStat";
 import { Text } from "../../../shared/ui/Text";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
+import { Divider } from "../../../shared/ui/Divider";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { CircleDashed, X } from "../../../shared/ui/icons";
 import { MAX_PREVIEW_LINES } from "../../../integrations/harness/core/preview";
@@ -96,8 +97,6 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
         {filePath && onOpenFile ? (
           <Button
             variant="ghost"
-            motion="none"
-            type="button"
             hoverUnderline
             className="min-w-0 flex-1 text-left font-mono"
             truncate
@@ -134,7 +133,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
       </div>
       {showDiff ? (
         <>
-          <div {...surfaceAttributes({ variant: "inset" }, "h-px")} />
+          <Divider decorative />
           <div
             className={
               variant === "popover"

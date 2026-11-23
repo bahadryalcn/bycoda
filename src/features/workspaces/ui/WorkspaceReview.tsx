@@ -24,6 +24,7 @@ import {
   type WorkspaceContext,
 } from "../model/workspaceClient";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Heading } from "../../../shared/ui/Heading";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { hostLifetimeDeadline, remainingUntil } from "../../../shared/lib/time/hostLifetime";
@@ -319,6 +320,11 @@ export function WorkspaceReview({
             <Button
               variant="secondary"
               disabled={!!pending || !capabilities.includes("workspaces.pr-publication.v1")}
+              disabledReason={
+                capabilities.includes("workspaces.pr-publication.v1")
+                  ? undefined
+                  : t("Update bycoda Host to review and deliver workspace changes.")
+              }
               onClick={() => {
                 setMode("publish");
                 setPlan(null);
@@ -343,11 +349,6 @@ export function WorkspaceReview({
         </div>
         {mode === "publish" && (
           <>
-            <Text as="p" size="inherit" tone="secondary">
-              {t(
-                "This action pushes the reviewed branch and creates a pull request. Both steps require your approval.",
-              )}
-            </Text>
             <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-3">
               {(
                 [
@@ -430,23 +431,22 @@ export function WorkspaceReview({
         )}
         {plan && (
           <>
-            <DescriptionList>
-              <DescriptionItem term={t("Source SHA")} monospace>
-                {plan.sourceHead}
-              </DescriptionItem>
-              <DescriptionItem term={t("Target SHA")} monospace>
-                {plan.targetHead}
-              </DescriptionItem>
-              <DescriptionItem term={t("Workspace revision")}>
-                {plan.expectedRevision}
-              </DescriptionItem>
-            </DescriptionList>
-            <Text as="p" size="caption" tone="secondary" className="break-all">
-              {t("Target status fingerprint")}: {plan.targetStatusFingerprint}
-            </Text>
-            <Text as="p" size="inherit" tone="secondary">
-              {t("Approval applies only to these revisions. Changes require a fresh review.")}
-            </Text>
+            <Disclosure summary={t("Details")}>
+              <DescriptionList>
+                <DescriptionItem term={t("Source SHA")} monospace>
+                  {plan.sourceHead}
+                </DescriptionItem>
+                <DescriptionItem term={t("Target SHA")} monospace>
+                  {plan.targetHead}
+                </DescriptionItem>
+                <DescriptionItem term={t("Workspace revision")}>
+                  {plan.expectedRevision}
+                </DescriptionItem>
+                <DescriptionItem term={t("Target status fingerprint")} monospace>
+                  {plan.targetStatusFingerprint}
+                </DescriptionItem>
+              </DescriptionList>
+            </Disclosure>
             {expired && (
               <InlineMessage tone="warning" live="assertive">
                 {t("This review expired. Refresh review before approving.")}

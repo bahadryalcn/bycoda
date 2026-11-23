@@ -12,9 +12,12 @@ import "./inbox.css";
 export function UnreadableNotice({
   accounts,
   names,
+  action,
 }: {
   accounts: UnreadableAccount[];
   names: Record<string, string>;
+  /** The one follow-up (open Accounts), rendered once on the notice. */
+  action?: { label: string; onClick: () => void };
 }) {
   if (accounts.length === 0) return null;
   const text = (account: UnreadableAccount) =>
@@ -22,12 +25,14 @@ export function UnreadableNotice({
   if (accounts.length === 1)
     return (
       <div className="inbox-notices">
-        <InlineMessage tone="warning">{text(accounts[0])}</InlineMessage>
+        <InlineMessage tone="warning" action={action}>
+          {text(accounts[0])}
+        </InlineMessage>
       </div>
     );
   return (
     <div className="inbox-notices">
-      <InlineMessage tone="warning">
+      <InlineMessage tone="warning" action={action}>
         {t("Can't read messages on {p0} accounts.", { p0: accounts.length })}
       </InlineMessage>
       <Text as="ul" size="caption" tone="secondary" leading="inherit" className="inbox-notice-list">

@@ -46,7 +46,12 @@ function messageItem(
     attachments: message.attachments.map((attachment, index) => {
       const size = attachment.size ? formatAttachmentSize(attachment.size) : null;
       return (
-        <Tooltip key={`${attachment.name}:${index}`} label={attachment.name} asChild>
+        <Tooltip
+          key={`${attachment.name}:${index}`}
+          label={attachment.name}
+          when="overflow"
+          asChild
+        >
           <Text
             as="span"
             size="micro"

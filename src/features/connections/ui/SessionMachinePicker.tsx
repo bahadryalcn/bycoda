@@ -1,7 +1,8 @@
-import { useSyncExternalStore, type Ref } from "react";
+import { useState, useSyncExternalStore, type ReactNode, type Ref, type RefObject } from "react";
 import { useT } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Laptop, Server } from "../../../shared/ui/icons";
-import { Select, type SelectChoice } from "../../../shared/ui/Select";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useRemoteMachines } from "../model/connections";
@@ -11,7 +12,9 @@ import { machineLabel } from "../model/machineIdentity";
 import { blocksSending, type RemoteConnectionStatus } from "../model/remoteConnection";
 import { readRemoteConnection, subscribeChanges } from "../model/remoteHealth";
 
-type MachineStatus = RemoteConnectionStatus | "disabled" | "missing";
+type SelectChoice = { value: string; label: string; icon: ReactNode; disabled?: boolean };
+
+type MachineStatus =RemoteConnectionStatus | "disabled" | "missing";
 
 function subscribeMachineStatus(listener: () => void) {
   const stopHealth = subscribeChanges(listener);
@@ -32,15 +35,19 @@ export function SessionMachinePicker({
   onSelect,
   disabled,
   triggerRef,
+  returnFocusRef,
   label,
 }: {
   environmentId?: string;
   onSelect?: (environmentId: string | undefined) => void;
   disabled?: boolean;
   triggerRef?: Ref<HTMLButtonElement>;
+  returnFocusRef?: RefObject<HTMLElement | null>;
   label?: string;
 }) {
   const t = useT();
+  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const { machines, loaded } = useRemoteMachines();
   const remoteMachines = remoteProjectMachines(machines);
   const selectedEnvironmentId = machines.some(
@@ -60,17 +67,11 @@ export function SessionMachinePicker({
   };
   const remoteChoice = (id: string, name: string, status: MachineStatus): SelectChoice => {
     const unavailable = status === "disabled" || status === "missing" || blocksSending(status);
-    const statusLabel =
-      status === "disabled"
-        ? t("Disabled")
-        : unavailable
-          ? t("Offline")
-          : status === "connecting"
-            ? t("Connecting")
-            : t("Connected");
+    // Only an unavailable machine is marked; a usable one reads as its plain name, like "This computer".
+    const statusLabel = status === "disabled" ? t("Disabled") : unavailable ? t("Offline") : "";
     return {
       value: id,
-      label: `${name} · ${statusLabel}`,
+      label: statusLabel ? `${name} · ${statusLabel}` : name,
       icon: <Server className="icon-xs" aria-hidden="true" />,
       disabled: unavailable,
     };
@@ -106,15 +107,52 @@ export function SessionMachinePicker({
     );
   }
 
+  const menuLabel = label ?? t("Run on");
   return (
-    <Select
-      ref={triggerRef}
-      label={label ?? t("Run on")}
-      hideLabel
-      fieldSize="sm"
-      value={value}
-      options={options}
-      onValueChange={(next) => onSelect(next || undefined)}
-    />
+    <>
+      <Button
+        ref={(node) => {
+          setAnchor(node);
+          if (typeof triggerRef === "function") triggerRef(node);
+          else if (triggerRef) triggerRef.current = node;
+        }}
+        type="button"
+        variant="chip"
+        data-composer-chip="machine"
+        aria-label={`${menuLabel}: ${selected.label}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        startIcon={selected.icon}
+        // Pointer presses must not move focus to the chip: no lingering focus frame (keyboard focus still shows the cue).
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => setOpen((current) => !current)}
+        className="min-w-0 max-w-52"
+      >
+        <Text truncate tone="inherit">
+          {selected.label}
+        </Text>
+      </Button>
+      {open ? (
+        <DropdownMenu
+          anchor={anchor}
+          label={menuLabel}
+          side="top"
+          align="start"
+          size="sm"
+          returnFocusRef={returnFocusRef}
+          items={options.map((option) => ({
+            kind: "item" as const,
+            id: option.value,
+            label: option.label,
+            icon: option.icon,
+            disabled: option.disabled,
+            checked: option.value === value,
+            selectionRole: "radio" as const,
+          }))}
+          onPick={(next) => onSelect(next || undefined)}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }

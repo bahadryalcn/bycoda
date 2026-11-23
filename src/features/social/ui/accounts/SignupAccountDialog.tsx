@@ -7,7 +7,6 @@ import { toLocalDateTime } from "../../../../shared/ui/DateTimePicker";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
-import { Stepper } from "../../../../shared/ui/Stepper";
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import { usePollingRefresh } from "../../hooks/usePollingRefresh";
@@ -195,7 +194,7 @@ export function SignupAccountDialog({
           ) : null}
           {live ? (
             <Button
-              variant="secondary"
+              variant="primary"
               loading={is("advance")}
               onClick={advance}
               disabled={advanceGate.disabled}
@@ -205,7 +204,7 @@ export function SignupAccountDialog({
             </Button>
           ) : null}
           {workflow?.status === "window_closed" && accountId ? (
-            <Button variant="secondary" onClick={() => onCreated(accountId)}>
+            <Button variant="primary" onClick={() => onCreated(accountId)}>
               {t("Continue to sign-in")}
             </Button>
           ) : null}
@@ -220,15 +219,6 @@ export function SignupAccountDialog({
           if (canStart && !startGate.disabled) start();
         }}
       >
-        <Stepper
-          label={t("Sign-up steps")}
-          current={workflow?.status === "window_closed" ? 2 : live ? 1 : 0}
-          steps={[
-            { id: "name", label: t("Name") },
-            { id: "window", label: t("Sign-up window") },
-            { id: "sign-in", label: t("Sign in") },
-          ]}
-        />
         {!workflow && !existingAccountId ? (
           <TextField
             label={t("Name")}
@@ -288,7 +278,7 @@ export function SignupAccountDialog({
             )
           : null}
         {problem ? <InlineMessage tone="warning">{problem}</InlineMessage> : null}
-        {pollError ? <InlineMessage tone="info">{pollError}</InlineMessage> : null}
+        {pollError ? <InlineMessage tone="warning">{pollError}</InlineMessage> : null}
         {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>

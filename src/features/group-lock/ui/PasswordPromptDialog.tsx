@@ -74,7 +74,8 @@ export const pause = (ms: number) => new Promise<void>((resolve) => window.setTi
 
 type Props = {
   title: string;
-  description: string;
+  /** Only when the title and submit label do not already say what the password is for. */
+  description?: string;
   submitLabel: string;
   danger?: boolean;
   /** Checks the password; the dialog closes through `onDone` when it passes. */
@@ -173,7 +174,6 @@ export function PasswordPromptDialog({
             type="submit"
             form={formId}
             disabled={busy || cooldown.remainingMs > 0}
-            disabledReason={busy ? undefined : (cooldownMessage(cooldown.remainingMs) ?? undefined)}
             variant="primary"
             tone={danger ? "danger" : "neutral"}
             loading={busy}

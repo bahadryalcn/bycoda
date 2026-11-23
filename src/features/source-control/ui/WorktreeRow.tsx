@@ -67,6 +67,7 @@ export function WorktreeRow({
   return (
     <ActionHost
       role="listitem"
+      aria-current={selected ? "true" : undefined}
       {...surfaceAttributes(
         { radius: "none", separator: "block" },
         `settings-collection-row ${styles.row}`,
@@ -89,29 +90,12 @@ export function WorktreeRow({
               {statusLabel}
             </Badge>
           )}
-          {selected && (
-            <Badge size="sm" tone="info">
-              {t("Selected project folder")}
-            </Badge>
-          )}
           {!!tree.unpushed && (
             <Tooltip label={t("Counted against remote branches already fetched locally.")} asChild>
               <Badge size="sm" tone="info">
                 {tree.unpushed === 1
                   ? t("{p0} unpublished commit", { p0: tree.unpushed })
                   : t("{p0} unpublished commits", { p0: tree.unpushed })}
-              </Badge>
-            </Tooltip>
-          )}
-          {tree.unpushed == null && !tree.missing && (
-            <Tooltip
-              label={t(
-                "Commits not on a remote could not be counted. Nothing was fetched or checked remotely.",
-              )}
-              asChild
-            >
-              <Badge size="sm" tone="neutral">
-                {t("Publication unknown")}
               </Badge>
             </Tooltip>
           )}

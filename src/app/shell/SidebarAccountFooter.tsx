@@ -8,7 +8,6 @@ import { VoiceLauncherSlot } from "../../features/voice/ui/companion/voiceLaunch
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { Badge } from "../../shared/ui/Badge";
-import { Tooltip } from "../../shared/ui/Tooltip";
 import { Settings, Wrench } from "../../shared/ui/icons";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 import styles from "./SidebarAccountFooter.module.css";
@@ -67,11 +66,9 @@ export function SidebarAccountFooter({
   );
   return (
     <div data-sidebar-account-footer={compact ? "compact" : ""} className={styles.footer}>
-      <VoiceLauncherSlot compact={compact} />
       <div className={styles.actions}>
-        {updateNotice}
+        <VoiceLauncherSlot compact={compact} />
         {import.meta.env.DEV ? (
-          <Tooltip label={t("Development build")} side={compact ? "right" : "top"}>
             <Badge
               data-dev-mode-indicator=""
               size="sm"
@@ -82,11 +79,13 @@ export function SidebarAccountFooter({
             >
               <Wrench className="icon-sm" strokeWidth={1.75} aria-hidden />
             </Badge>
-          </Tooltip>
         ) : null}
-        <SidebarUpdateFooter icon compact={compact} />
-        <div {...surfaceAttributes(compact ? { frame: "pane", edge: "top" } : {}, styles.personal)}>
+        <div className={styles.status}>
           {recoveryControl}
+          <div className={styles.updateNotice}>{updateNotice}</div>
+          <div className={styles.updateAction}><SidebarUpdateFooter icon compact={compact} /></div>
+        </div>
+        <div {...surfaceAttributes(compact ? { frame: "pane", edge: "top" } : {}, styles.personal)}>
           {settings}
           {account}
         </div>

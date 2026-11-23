@@ -67,7 +67,6 @@ it.each(["idle", "saved"] as const)(
         canStart: true,
         onCreate: vi.fn(),
         onStart: vi.fn(),
-        onDone: vi.fn(),
       }),
     );
     expect(html).not.toContain("All changes saved");
@@ -114,7 +113,8 @@ it.each([false, true])("retires only the submitted owner note, newer edit: %s", 
   if (newer) type("New unsent note");
   await act(async () => complete());
   expect(textarea.value).toBe(newer ? "New unsent note" : "");
-  expect(container.textContent?.includes("Note sent to the lead.")).toBe(!newer);
+  // A cleared textarea is the confirmation; no success line is shown.
+  expect(container.textContent?.includes("Note sent to the lead.")).toBe(false);
 });
 
 it("keeps an edited library profile until explicit discard", async () => {

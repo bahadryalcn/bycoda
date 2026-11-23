@@ -109,24 +109,26 @@ export function TelegramChannelConnect({
 
   return (
     <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}>
-      <InfoPopover className="self-end shrink-0" width={360}>
-        {t(
-          "Create the Telegram channel with your existing account and add the configured bot as an administrator with permission to post. Connecting here does not change those permissions.",
-        )}
-      </InfoPopover>
-      <TextField
-        label={t("Telegram channel ID or public username")}
-        value={target}
-        maxLength={100}
-        disabled={busy}
-        placeholder="@bycoda"
-        onChange={(event) => {
-          generation.current++;
-          setTarget(event.currentTarget.value);
-          setReview(undefined);
-          setError("");
-        }}
-      />
+      <div className="social-field-row">
+        <TextField
+          label={t("Telegram channel ID or public username")}
+          value={target}
+          maxLength={100}
+          disabled={busy}
+          placeholder="@bycoda"
+          onChange={(event) => {
+            generation.current++;
+            setTarget(event.currentTarget.value);
+            setReview(undefined);
+            setError("");
+          }}
+        />
+        <InfoPopover width={360}>
+          {t(
+            "Create the Telegram channel with your existing account and add the configured bot as an administrator with permission to post. Connecting here does not change those permissions.",
+          )}
+        </InfoPopover>
+      </div>
       <Button
         variant="secondary"
         size="sm"

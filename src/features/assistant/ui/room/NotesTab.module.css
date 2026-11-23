@@ -11,20 +11,20 @@
 .layout {
   display: grid;
   grid-template-columns: clamp(220px, 28%, 300px) minmax(0, 1fr);
-  gap: 24px;
+  gap: var(--ui-space-6);
   align-items: stretch;
   flex: 1 1 auto;
   min-block-size: 0;
   min-inline-size: 0;
 }
 .layout > .listPane {
-  padding-inline-end: 12px;
+  padding-inline-end: var(--ui-space-3);
 }
 @container (max-width: 640px) {
   .layout {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
-    gap: 16px;
+    gap: var(--ui-space-4);
   }
   .layout > .listPane {
     padding-inline-end: 0;
@@ -36,16 +36,16 @@
 .listPane {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
   min-block-size: 0;
 }
 .listHead {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-block-size: 2rem;
-  padding-inline: 8px 4px;
+  padding-inline: var(--ui-space-2) var(--ui-space-1);
 }
 .listHead > :first-child {
   flex: 1 1 auto;
@@ -72,24 +72,24 @@
 .reader {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--ui-space-4);
   min-inline-size: 0;
   min-block-size: 0;
   overflow-y: auto;
-  padding-block-start: 4px;
+  padding-block-start: var(--ui-space-1);
 }
 .readerHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  gap: var(--ui-space-2) var(--ui-space-4);
   min-inline-size: 0;
 }
 .readerTitle {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--ui-space-1);
   flex: 1 1 14rem;
   min-inline-size: 0;
 }
@@ -99,7 +99,7 @@
 .readerActions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--ui-space-1);
   flex: none;
 }
 
@@ -129,9 +129,9 @@
 .entry {
   display: grid;
   grid-template-columns: 3.25rem minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
-  padding-block: 6px;
+  padding-block: var(--ui-space-2);
   overflow-wrap: anywhere;
 }
 .entryTime {
@@ -142,18 +142,16 @@
 .summary {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--ui-space-2);
   max-inline-size: 48rem;
-  margin-block-end: 20px;
+  margin-block-end: var(--ui-space-5);
 }
 .summary p {
   margin: 0;
-}
-.summary p {
   overflow-wrap: anywhere;
 }
 .unavailable {
-  margin: 0 0 12px;
+  margin: 0 0 var(--ui-space-3);
 }
 .readerTitle h3 {
   overflow-wrap: anywhere;

@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
-import { GeneralPage, UpdateRow } from "./GeneralSettings";
+import { GeneralPage, HelpSettings, UpdateRow } from "./GeneralSettings";
 import { LANGUAGE_STORAGE_KEY, DOMAIN_LANGUAGE_STORAGE_KEYS } from "../../../shared/i18n";
 const mocks = vi.hoisted(() => ({
   reset: null as null | (() => Promise<void>),
@@ -52,18 +52,15 @@ vi.mock("./SessionFolderSettings", () => ({
   restoreSessionFolderDefault: mocks.session,
 }));
 vi.mock("./GeneralProductDetails", () => ({ ProductDetails: () => null }));
-it("restores canonical independent English domains and reports partial reset failure", async () => {
-  mocks.session
-    .mockRejectedValueOnce(new Error("native write failed"))
-    .mockResolvedValue(undefined);
+it("restores language preferences without resetting workspace folders", async () => {
   mocks.language.mockResolvedValue(undefined);
   mocks.domain.mockResolvedValue(undefined);
   renderToStaticMarkup(createElement(GeneralPage, { onOpenWhatsNew: () => {} }));
-  await expect(mocks.reset!()).rejects.toThrow("Some settings could not be reset");
+  await expect(mocks.reset!()).resolves.toBeUndefined();
   expect(mocks.language).toHaveBeenCalledWith("system");
   expect(mocks.domain).toHaveBeenCalledWith("git", "en");
   expect(mocks.domain).toHaveBeenCalledWith("technical", "en");
-  await expect(mocks.reset!()).resolves.toBeUndefined();
+  expect(mocks.session).not.toHaveBeenCalled();
 });
 
 it("does not hide a rejected durable preference write behind partial reset success", async () => {
@@ -71,7 +68,7 @@ it("does not hide a rejected durable preference write behind partial reset succe
   mocks.session.mockResolvedValue(undefined);
   renderToStaticMarkup(createElement(GeneralPage, { onOpenWhatsNew: () => {} }));
   await expect(mocks.reset!()).rejects.toThrow("Some settings could not be reset");
-  expect(mocks.session).toHaveBeenCalled();
+  expect(mocks.session).not.toHaveBeenCalled();
 });
 
 it("shows retry for unknown build metadata and keeps a verified fork disabled", async () => {
@@ -121,7 +118,7 @@ it("does not restate sleep and screen labels as row descriptions", () => {
   expect(markup).not.toContain("Choose when this computer can sleep again");
   expect(markup).not.toContain("Keep the display awake while sleep prevention is active.");
   expect(markup).not.toContain("Keep this computer awake while an agent is working.");
-  expect(markup).toContain("Applies to this computer, not remote computers running agents.");
+  expect(markup).not.toContain("Applies to this computer, not remote computers running agents.");
 });
 
 it("keeps feedback privacy guidance without repeating the action as a description", async () => {
@@ -129,7 +126,7 @@ it("keeps feedback privacy guidance without repeating the action as a descriptio
   document.body.append(container);
   const root = createRoot(container);
   try {
-    await act(async () => root.render(createElement(GeneralPage, { onOpenWhatsNew: () => {} })));
+    await act(async () => root.render(createElement(HelpSettings)));
     const row = container.querySelector('[data-setting-id="send-feedback"]')!;
     expect(row.textContent).not.toContain("Report a problem or suggest an improvement.");
     const help = row.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!;

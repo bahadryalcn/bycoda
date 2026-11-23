@@ -9,7 +9,6 @@ import unreachableScene from "../../../assets/connections/unreachable.webp";
 import unreachableStill from "../../../assets/connections/unreachable-still.webp?no-inline";
 import { t, useLocale } from "../../../shared/i18n";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { NoticeButton } from "../../../shared/ui/Notice";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Text } from "../../../shared/ui/Text";
 import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
@@ -81,22 +80,6 @@ function reasonText(reason: MachineUnavailableReason, networkDown: boolean): str
   }
 }
 
-/** The short muted line under the title. */
-function statusText(reason: MachineUnavailableReason, reconnecting: boolean): string {
-  switch (reason) {
-    case "not-added":
-      return t("Not added on this computer");
-    case "pairing-refused":
-      return t("Pairing refused");
-    case "needs-sign-in":
-      return t("Needs sign-in");
-    case "turned-off":
-      return t("Turned off on this computer");
-    case "offline":
-      return reconnecting ? t("Reconnecting…") : t("Waiting to reconnect");
-  }
-}
-
 function subscribeNetwork(listener: () => void) {
   window.addEventListener("online", listener);
   window.addEventListener("offline", listener);
@@ -125,10 +108,10 @@ function MachineSceneArt({ scene, size }: { scene: MachineScene; size: "page" | 
 
 /**
  * What every view of a remote project shows instead of its content while the project's
- * machine cannot be asked: the scene for the reason, one title, one muted status line (the reason
- * sits behind the info affordance) and the one next step. `page` (the session pane) is larger and
- * offers Manage connections; `panel` (side panels, the session list) is compact. An offline machine
- * shows "Reconnecting…" while an attempt runs and "Try now" between attempts.
+ * machine cannot be asked: one title (the reason sits behind the info affordance) and the one next
+ * step. `page` (the session pane) adds the scene for the reason and offers Manage connections;
+ * `panel` (side panels, the session list) is compact and has no art. An offline machine shows
+ * "Reconnecting…" while an attempt runs and "Try now" between attempts.
  * Renders nothing while the machine is available.
  */
 export function MachineUnavailable({
@@ -181,30 +164,29 @@ export function MachineUnavailable({
       context={size}
       role="status"
       className="h-full"
-      icon={<MachineSceneArt scene={machineScene(reason, networkDown)} size={size} />}
+      // The scene is for the page; a compact panel carries no art.
+      icon={
+        size === "page" ? (
+          <MachineSceneArt scene={machineScene(reason, networkDown)} size={size} />
+        ) : undefined
+      }
       title={title}
       description={reasonText(reason, networkDown)}
-      extra={
-        <div className="flex flex-col items-center gap-2">
-          <Text>{statusText(reason, reconnecting)}</Text>
-          {retryable ? (
-            <NoticeButton
-              action={{
-                label: t("Try now"),
-                // The attempt reports its own failure through the connection state shown here.
-                onClick: () => void reconnectRemoteMachine(environmentId).catch(() => undefined),
-              }}
-            />
-          ) : manage ? (
-            <NoticeButton
-              action={{
+      action={
+        retryable
+          ? {
+              label: t("Try now"),
+              // The attempt reports its own failure through the connection state shown here.
+              onClick: () => void reconnectRemoteMachine(environmentId).catch(() => undefined),
+            }
+          : manage
+            ? {
                 label: t("Manage machines"),
                 onClick: () => window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT)),
-              }}
-            />
-          ) : null}
-        </div>
+              }
+            : undefined
       }
+      extra={reconnecting ? <Text>{t("Reconnecting…")}</Text> : undefined}
     />
   );
 }

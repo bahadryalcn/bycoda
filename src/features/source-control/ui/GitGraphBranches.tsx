@@ -213,9 +213,9 @@ export function GitGraphBranches({
                             type="button"
                             disabled={disabled || current}
                             label={t("Switch to {p0}", { p0: reference(branch) })}
-                            tooltip={t("Switch to {p0}", { p0: reference(branch) })}
+                            align="start"
                             onClick={() => void pick("checkout", branch)}
-                            className="min-w-0 flex-1 justify-start gap-2"
+                            className="min-w-0 flex-1"
                           >
                             {current ? (
                               <Check className="icon-sm shrink-0" tone="accent" />
@@ -268,12 +268,11 @@ export function GitGraphBranches({
       ) : null}
       {naming ? (
         <RefNameDialog
-          title={t(naming.rename ? "Rename branch…" : "Create branch…")}
-          description={t("Reference: {p0}", { p0: naming.reference })}
+          title={t(naming.rename ? "Rename branch" : "New branch")}
           label={t("Branch name")}
-          placeholder="feature/my-branch"
+          placeholder={t("feature/my-branch")}
           initialValue={naming.rename ? naming.reference : ""}
-          submitLabel={naming.rename ? "Save" : "Create"}
+          submitLabel={naming.rename ? t("Save") : t("Create")}
           busy={disabled}
           error={nameError}
           onCancel={() => setNaming(null)}

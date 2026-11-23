@@ -1,5 +1,4 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { LiveText } from "../../../shared/ui/LiveText";
@@ -311,19 +310,15 @@ export function CheckRepairStatus({ item }: { item: RepairItem }) {
   useLocale();
   const status = states[item.state];
   return (
-    <Tooltip label={t(status.summary)} asChild>
-      <Badge
-        size="xs"
-        tone={status.color}
-        appearance="subtle"
-        icon={
-          status.Icon === "spinner" ? <Spinner size="sm" /> : <status.Icon strokeWidth={1.75} />
-        }
-        data-repair-status
-      >
-        {status.label}
-      </Badge>
-    </Tooltip>
+    <Badge
+      size="xs"
+      tone={status.color}
+      appearance="subtle"
+      icon={status.Icon === "spinner" ? <Spinner size="sm" /> : <status.Icon strokeWidth={1.75} />}
+      data-repair-status
+    >
+      {status.label}
+    </Badge>
   );
 }
 
@@ -431,35 +426,25 @@ function RepairCard({
           tone="secondary"
           {...surfaceAttributes({ frame: "pane", edge: "top" }, "space-y-2 py-2.5")}
         >
-          <p>{t("Included checks")}</p>
-          <ul className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">
+          <ul
+            aria-label={t("Included checks")}
+            className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto"
+          >
             {group.items.map(({ check }) => (
-              <Tooltip
+              <Text
+                as="li"
                 key={JSON.stringify([check.workflow, check.name, check.url])}
-                label={check.workflow}
-                asChild
+                size="inherit"
+                tone="secondary"
+                {...surfaceAttributes(
+                  { radius: "sm", variant: "card" },
+                  "max-w-full break-words px-2 py-1",
+                )}
               >
-                <Text
-                  as="li"
-                  key={JSON.stringify([check.workflow, check.name, check.url])}
-                  size="inherit"
-                  tone="secondary"
-
-                  {...surfaceAttributes(
-                    { radius: "sm", variant: "card" },
-                    "max-w-full break-words px-2 py-1",
-                  )}
-                >
-                  {check.name}
-                </Text>
-              </Tooltip>
+                {check.name}
+              </Text>
             ))}
           </ul>
-          <p>
-            {t("Latest PR commit:")}{" "}
-            <Code>{view.checks?.headOid.slice(0, 7) || t("Unavailable")}</Code>
-            {t(". Results appear in the checks below.")}
-          </p>
         </Text>
       </Disclosure>
     </Surface>

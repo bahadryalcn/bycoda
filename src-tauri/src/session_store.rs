@@ -790,12 +790,15 @@ fn validate_upsert(session: &SessionUpsert) -> Result<(), String> {
             validate_id(automation_id, "automation")?;
         }
     }
-    if session
-        .workspace_mode
-        .as_deref()
-        .is_some_and(|mode| !matches!(mode, "current" | "worktree"))
-    {
-        return Err("Invalid workspace mode".into());
+    match session.workspace_mode.as_deref() {
+        None | Some("current" | "worktree") => {}
+        Some("scratch")
+            if session.cwd == "~"
+                && session.workspace_id.is_none()
+                && session.workspace_revision.is_none()
+                && session.worktree_cwd.is_none()
+                && !session.worktree_removed => {}
+        _ => return Err("Invalid workspace mode".into()),
     }
     if let Some(workspace_id) = &session.workspace_id {
         validate_id(workspace_id, "workspace")?;
@@ -4998,18 +5001,65 @@ mod tests {
 
     #[test]
     fn scratch_mode_round_trips_and_lists_under_no_project() {
-        let store = SessionStore::open_in_memory().unwrap();
-        let conn = store.lock_conn().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("sessions.sqlite");
         let mut session = sample("scratch-session", "~", "Projectless chat");
         session.workspace_mode = Some("scratch".into());
-        upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+        {
+            let store = SessionStore::open(db.clone()).unwrap();
+            let conn = store.lock_conn().unwrap();
+            validate_upsert(&session).unwrap();
+            upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None).unwrap();
+        }
 
+        let reopened = SessionStore::open(db).unwrap();
+        let conn = reopened.lock_conn().unwrap();
         let saved = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(saved.cwd, "~");
         assert_eq!(saved.workspace_mode.as_deref(), Some("scratch"));
+        assert!(saved.workspace_id.is_none());
+        assert!(saved.worktree_cwd.is_none());
         let rows = list_by_project_with_git(&conn, "~", crate::fs::GitInfo::default()).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, session.id);
         assert_eq!(rows[0].cwd, "~");
+    }
+
+    #[test]
+    fn scratch_mode_rejects_project_and_checkout_identity() {
+        let mut scratch = sample("scratch-session", "~", "Projectless chat");
+        scratch.workspace_mode = Some("scratch".into());
+        for invalid in [
+            SessionUpsert {
+                cwd: "/project".into(),
+                ..scratch.clone()
+            },
+            SessionUpsert {
+                workspace_id: Some("managed-workspace".into()),
+                ..scratch.clone()
+            },
+            SessionUpsert {
+                workspace_revision: Some(1),
+                ..scratch.clone()
+            },
+            SessionUpsert {
+                worktree_cwd: Some("/project/worktree".into()),
+                ..scratch.clone()
+            },
+            SessionUpsert {
+                worktree_removed: true,
+                ..scratch.clone()
+            },
+            SessionUpsert {
+                workspace_mode: Some("unknown".into()),
+                ..scratch
+            },
+        ] {
+            assert_eq!(
+                validate_upsert(&invalid).unwrap_err(),
+                "Invalid workspace mode"
+            );
+        }
     }
 
     #[test]

@@ -11,6 +11,8 @@ export type PlanningRecovery = {
   id: string;
   title: string;
   sprintId: string;
+  /** Why the assignment failed; shown on the recovery row instead of a board-wide error. */
+  reason?: string;
   task?: BoardTask;
   goal?: { environmentId: string; goalId: string };
 };

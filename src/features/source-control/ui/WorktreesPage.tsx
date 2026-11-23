@@ -150,9 +150,8 @@ export function WorktreesPage({
                   type="button"
                   disabled={!data}
                   onClick={() => setCreating(true)}
-                  className="flex items-center gap-1.5"
+                  startIcon={<Plus className="icon-xs" />}
                 >
-                  <Plus className="icon-xs" />
                   {t("Create worktree")}
                 </Button>
                 <Button

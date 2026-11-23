@@ -53,7 +53,7 @@ export function AssistantKeepAwakeStatus({
     <div data-assistant-keep-awake={keepAwake}>
       <LiveText
         className={styles.muted}
-        size="micro"
+        size="caption"
         tone="secondary"
         leading="inherit"
         text={label}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { UpdateImpact } from "./UpdateImpact";
+import { hostRestartConsequences } from "./hostRestartConsequences";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConfirmDialog, type ConfirmRequest } from "../../../shared/ui/ConfirmDialog";
 import { updateBundledHostNow, useBundledHostStatus } from "../model/bundledHostStatus";
@@ -51,11 +52,7 @@ export function LocalHostVersionPrompt({
           message: versions,
           consequences: [
             sameVersion,
-            {
-              tone: "warning",
-              content: t("Running sessions and shells on this computer are interrupted."),
-            },
-            { content: t("Session history is kept.") },
+            ...hostRestartConsequences(),
           ],
           confirmLabel: t("Stop and update"),
           danger: true,

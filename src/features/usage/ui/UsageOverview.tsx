@@ -1,5 +1,4 @@
 import { Text } from "../../../shared/ui/Text";
-import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import {
@@ -13,9 +12,10 @@ import {
   type CSSProperties,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { t, useLocale } from "../../../shared/i18n";
+import { formatDate, t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
-import { LoadingText } from "../../../shared/ui/LoadingText";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { TabStrip } from "../../../shared/ui/Tabs";
@@ -495,7 +495,7 @@ export function UsageOverview({
                     {
                       ...row,
                       key: `${row.key}:${turn.startedAt}:${index}`,
-                      label: new Date(turn.startedAt).toLocaleString(locale),
+                      label: formatDate(turn.startedAt, { dateStyle: "short", timeStyle: "medium" }),
                       duration: row.timedTurns ? row.duration : null,
                       cost: row.meteredTurns > row.unpricedTurns ? row.cost : null,
                       tokens: row.meteredTurns ? row.tokens : null,
@@ -519,6 +519,8 @@ export function UsageOverview({
   const partial = !unavailable && (load.failed > 0 || load.turnsFailed || !!load.turns?.truncated);
   const hasFilteredData = filtered.length > 0 || runtime.length > 0;
   const showAnalytics = !firstLoad && !unavailable;
+  // True zero usage or an empty filter result: one empty state stands in for every panel.
+  const isEmptyPeriod = showAnalytics && !refreshing && !hasFilteredData && !partial;
   const metricUnavailable = metric === "duration" && load.turns === null;
   const refreshData = () => {
     if (refreshing) return;
@@ -547,7 +549,7 @@ export function UsageOverview({
       }
       aria-busy={refreshing}
     >
-      {view === "projects" && (!showAnalytics || metricUnavailable) && (
+      {view === "projects" && (!showAnalytics || metricUnavailable || isEmptyPeriod) && (
         <div id="setting-provider-usage" data-setting-id="provider-usage" />
       )}
       <div className="usage-band">
@@ -566,14 +568,14 @@ export function UsageOverview({
         )}
         <div className="usage-analytics-actions">
           <div className="usage-band-scope">
-            <Badge>{t("This machine")}</Badge>
             <InfoPopover label={t("Data sources and coverage")}>
               <p>{t(limitsOnly ? "This machine" : "This machine · Local session logs")}</p>
+              {/* shortcut: the zone id is shown as the platform reports it; no i18n formatter returns only the zone. */}
               <p>{Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
               {view !== "limits" && load.refreshedAt > 0 && !partial && !unavailable && (
                 <p>
                   {t("Updated")}{" "}
-                  {new Date(load.refreshedAt).toLocaleTimeString(locale, {
+                  {formatDate(load.refreshedAt, {
                     hour: "2-digit",
                     minute: "2-digit",
                     hour12: false,
@@ -740,14 +742,13 @@ export function UsageOverview({
       )}
       {view !== "limits" && firstLoad && <SettingsPageLoading label={t("Loading usage…")} />}
       {view !== "limits" && unavailable && (
-        <Alert tone="danger">
-          <p>
-            {t(
-              load.error ??
+        <InlineError retry={{ onRetry: refreshData, pending: refreshing }}>
+          {load.error
+            ? t("Usage could not be read for the selected accounts. Reload usage to try again.")
+            : t(
                 "Recorded session logs could not be read. Duration and session totals may be incomplete.",
-            )}
-          </p>
-        </Alert>
+              )}
+        </InlineError>
       )}
       {view !== "limits" && partial && (
         <Alert tone="warning">
@@ -773,12 +774,28 @@ export function UsageOverview({
       )}
       {view !== "limits" && showAnalytics && (
         <>
-          {refreshing && load.refreshedAt > 0 && (
-            <LoadingText size="caption" tone="secondary" leading="inherit" className="usage-muted">
-              {t("Refreshing usage… Previous results remain visible.")}
-            </LoadingText>
-          )}
-          {view === "overview" && (
+          {/* One empty state replaces every tile, chart and panel; refreshing is shown by aria-busy. */}
+          {isEmptyPeriod ? (
+            <EmptyState
+              size="inline"
+              kind={activeFilters.length ? "filtered" : "empty"}
+              description={t(
+                activeFilters.length
+                  ? "No usage matches these filters."
+                  : "No usage recorded in this period.",
+              )}
+              {...(activeFilters.length
+                ? {
+                    onReset: () => {
+                      setFilters(emptyUsageFilters());
+                      setSelectedSession(null);
+                    },
+                    resetLabel: t("Reset filters"),
+                  }
+                : {})}
+            />
+          ) : null}
+          {isEmptyPeriod ? null : view === "overview" && (
             <>
               <div className="usage-metrics">
                 {(
@@ -821,38 +838,23 @@ export function UsageOverview({
                           ? "—"
                           : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`}
                       </Text>
-                      {key === "cost" ? (
+                      {/* One subline at most: the change against the previous period. What the numbers
+                          are ("API-equivalent, not billed", elapsed time) is stated in the data notes. */}
+                      {key === "cost" && (!totals.tokens || pricedTokens < totals.tokens) ? (
                         <Text as="small" size="caption" tone="secondary" leading="inherit">
-                          {t("API-equivalent, not billed")}
-                          {/* Full coverage is stated in the data notes; only a gap needs the tile. */}
-                          {!totals.tokens || pricedTokens < totals.tokens
-                            ? ` · ${t("Priced token coverage")}: ${
-                                totals.tokens
-                                  ? formatUsagePercent((pricedTokens / totals.tokens) * 100)
-                                  : "—"
-                              }`
-                            : null}
+                          {`${t("Priced token coverage")}: ${
+                            totals.tokens
+                              ? formatUsagePercent((pricedTokens / totals.tokens) * 100)
+                              : "—"
+                          }`}
+                        </Text>
+                      ) : change != null ? (
+                        <Text as="small" size="caption" tone="secondary" leading="inherit">
+                          {t("{p0} vs previous period", {
+                            p0: `${change >= 0 ? "+" : ""}${formatUsagePercent(change)}`,
+                          })}
                         </Text>
                       ) : null}
-                      <Text
-                        as="small"
-                        size="caption"
-                        tone="secondary"
-                        leading="inherit"
-                        hidden={key === "cost" && change == null}
-                      >
-                        {change == null
-                          ? t(
-                              key === "cost"
-                                ? "API-equivalent, not billed"
-                                : key === "duration"
-                                  ? "Recorded turn elapsed time"
-                                  : "tokens",
-                            )
-                          : t("{p0} vs previous period", {
-                              p0: `${change >= 0 ? "+" : ""}${formatUsagePercent(change)}`,
-                            })}
-                      </Text>
                     </div>
                   );
                 })}
@@ -871,12 +873,6 @@ export function UsageOverview({
                   leading="inherit"
                   className="usage-facts"
                 >
-                  <span>
-                    {t("Total tokens")}{" "}
-                    <Text as="b" size="inherit" tone="primary" weight="medium">
-                      {formatMetric(totals.tokens, "tokens")}
-                    </Text>
-                  </span>
                   <span>
                     {t("Cache hit rate")}{" "}
                     <Text as="b" size="inherit" tone="primary" weight="medium">
@@ -908,34 +904,28 @@ export function UsageOverview({
               </Disclosure>
             </>
           )}
-          {view === "overview" && actualResolution !== resolution && (
+          {!isEmptyPeriod && view === "overview" && actualResolution !== resolution && (
             <Text as="p" leading="inherit" className="usage-muted">
               {t(
                 "The chart uses a coarser resolution to show the entire interval. Select a shorter range for more detail.",
               )}
             </Text>
           )}
-          {!refreshing && !hasFilteredData && !partial && (
-            <Alert tone="info">
-              {t(
-                activeFilters.length
-                  ? "No usage matches these filters."
-                  : "No usage recorded in this period.",
-              )}
-            </Alert>
-          )}
-          {!limitsOnly && view !== "limits" && (
+          {!isEmptyPeriod && !limitsOnly && view !== "limits" && (
             <div className="usage-controls usage-chart-options">
-              <Select
-                hideLabel
-                label={t("Chart metric")}
-                value={metric}
-                onValueChange={(v) => setMetric(v as UsageMetric)}
-                options={Object.entries(metricNames).map(([value, label]) => ({
-                  value,
-                  label: t(label),
-                }))}
-              />
+              {/* The metric tiles choose the metric on Overview; the other views have no tiles. */}
+              {view !== "overview" && (
+                <Select
+                  hideLabel
+                  label={t("Chart metric")}
+                  value={metric}
+                  onValueChange={(v) => setMetric(v as UsageMetric)}
+                  options={Object.entries(metricNames).map(([value, label]) => ({
+                    value,
+                    label: t(label),
+                  }))}
+                />
+              )}
               {view !== "time" && (
                 <Select
                   hideLabel
@@ -964,7 +954,7 @@ export function UsageOverview({
               )}
             </div>
           )}
-          {view === "overview" && !metricUnavailable && (
+          {!isEmptyPeriod && view === "overview" && !metricUnavailable && (
             <>
               <div className="usage-overview-main">
                 <UsageTrend
@@ -1004,7 +994,7 @@ export function UsageOverview({
               </div>
             </>
           )}
-          {view === "time" && !metricUnavailable && (
+          {!isEmptyPeriod && view === "time" && !metricUnavailable && (
             <TimeDistribution
               samples={chartSamples}
               metric={metric}
@@ -1012,7 +1002,7 @@ export function UsageOverview({
               onSelect={chooseInterval}
             />
           )}
-          {view === "projects" && !metricUnavailable && (
+          {!isEmptyPeriod && view === "projects" && !metricUnavailable && (
             <>
               <div
                 className="usage-section-heading"
@@ -1049,12 +1039,15 @@ export function UsageOverview({
                   colors={colors}
                   onSelect={(value) => chooseFilter(dimension, value)}
                 />
-                <UsageShare
-                  rows={providers}
-                  metric={metric}
-                  colors={providerColors}
-                  onSelect={(value) => chooseFilter("provider", value)}
-                />
+                {/* Grouped by provider, the breakdown already is the provider share. */}
+                {dimension === "provider" ? null : (
+                  <UsageShare
+                    rows={providers}
+                    metric={metric}
+                    colors={providerColors}
+                    onSelect={(value) => chooseFilter("provider", value)}
+                  />
+                )}
               </div>
               <Disclosure
                 summary={t("Show as table")}
@@ -1080,17 +1073,19 @@ export function UsageOverview({
               />
             </>
           )}
-          <UsageDataNotes
-            unpriced={unpriced}
-            pricedCoverage={
-              totals.tokens ? formatUsagePercent((pricedTokens / totals.tokens) * 100) : "—"
-            }
-            pricesUnavailable={prices === null}
-            sessionDurationUnavailable={load.turns === null}
-            timedTurns={sessions.reduce((n, s) => n + s.timedTurns, 0)}
-            turns={sessions.reduce((n, s) => n + s.turns, 0)}
-            truncated={Boolean(load.turns?.truncated)}
-          />
+          {isEmptyPeriod ? null : (
+            <UsageDataNotes
+              unpriced={unpriced}
+              pricedCoverage={
+                totals.tokens ? formatUsagePercent((pricedTokens / totals.tokens) * 100) : "—"
+              }
+              pricesUnavailable={prices === null}
+              sessionDurationUnavailable={load.turns === null}
+              timedTurns={sessions.reduce((n, s) => n + s.timedTurns, 0)}
+              turns={sessions.reduce((n, s) => n + s.turns, 0)}
+              truncated={Boolean(load.turns?.truncated)}
+            />
+          )}
         </>
       )}
       <div hidden={view !== "limits"} className="usage-limits-view">

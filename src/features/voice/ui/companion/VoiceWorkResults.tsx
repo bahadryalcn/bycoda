@@ -95,12 +95,10 @@ const ChangeResult = defineComponent({
     const t = useT();
     return (
       <ResultSection title={t("Changes")} value="done">
-        <Text as="div" className="flex min-w-0 flex-wrap items-baseline gap-x-3">
-          <span>
-            {t("Files")} · {formatNumber(props.files)}
-          </span>
-          <DiffStat additions={props.additions} deletions={props.deletions} />
-        </Text>
+        <StatRow label={t("Changes")}>
+          <StatTile label={t("Files")} value={formatNumber(props.files)} />
+        </StatRow>
+        <DiffStat additions={props.additions} deletions={props.deletions} />
       </ResultSection>
     );
   },
@@ -114,9 +112,9 @@ const FailedCommands = defineComponent({
     const t = useT();
     return (
       <ResultSection title={t("Commands")} value="failed">
-        <Text tone="secondary">
-          {t("Failed")} · {formatNumber(props.count)}
-        </Text>
+        <StatRow label={t("Commands")}>
+          <StatTile label={t("Failed")} value={formatNumber(props.count)} />
+        </StatRow>
       </ResultSection>
     );
   },
@@ -163,7 +161,7 @@ const LiveResults = defineComponent({
       .min(1),
   }),
   component: ({ props, renderNode }) => (
-    <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-6">
+    <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-4">
       {renderNode(props.results)}
     </div>
   ),

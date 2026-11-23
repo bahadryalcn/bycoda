@@ -1,6 +1,5 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { Group, Row, Select } from "../../../shared/ui/settings";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import {
   REMOTE_MEDIA_MODES,
   saveRemoteMediaMode,
@@ -21,19 +20,10 @@ export function RemoteMediaSettings() {
   useLocale();
   const mode = useRemoteMediaMode();
   return (
-    <Group title={t("Remote files")}>
+    <Group title={null}>
       <Row
         id="remote-media"
         label={t("Remote media")}
-        info={
-          <InfoPopover className="shrink-0" label={t("Remote media")}>
-            <p>
-              {t(
-                "Play right away streams from the connected computer as you watch. Download, then play copies the whole file first. Data saver transfers nothing until you choose Play or Download. A finished copy of the same file version is reused, and shared folders always play in place.",
-              )}
-            </p>
-          </InfoPopover>
-        }
       >
         <Select
           hideLabel
@@ -44,6 +34,12 @@ export function RemoteMediaSettings() {
             get label() {
               return modeLabel(value);
             },
+            description:
+              value === "stream"
+                ? t("Stream while you watch.")
+                : value === "download"
+                  ? t("Copy the whole file before playback.")
+                  : t("Transfer only when you choose Play or Download."),
           }))}
           onChange={(value) => {
             const next = REMOTE_MEDIA_MODES.find((item) => item === value);

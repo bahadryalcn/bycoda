@@ -57,6 +57,7 @@
     font: inherit;
     vertical-align: baseline;
     white-space: inherit;
+    overflow-wrap: anywhere;
     text-decoration: underline;
     text-underline-offset: 0.15em;
   }
@@ -414,8 +415,17 @@
     [data-button-hierarchy="link"],
     [data-button-hierarchy="item"],
     [data-button-hierarchy="tab"]
-  ):not([data-button-selected], :hover) {
-  color: var(--transcript-ink-chrome, var(--text-secondary));
+  ):not([data-button-selected], :disabled, [aria-disabled="true"]) {
+  color: var(--ui-quiet-chrome-ink, var(--text-secondary));
+}
+:global([data-transcript-reply])
+  .control[data-button-tone="neutral"]:is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="link"],
+    [data-button-hierarchy="item"],
+    [data-button-hierarchy="tab"]
+  ):is(:hover, :focus-visible):not([data-button-selected], :disabled, [aria-disabled="true"]) {
+  color: var(--ui-quiet-chrome-active-ink, var(--foreground));
 }
 .control[data-button-selected][data-button-tone="neutral"] {
   background: var(--ui-surface-selected);
@@ -961,6 +971,20 @@
 }
 .control[data-button-text-decoration="rest-underline"]:hover {
   text-decoration: none;
+}
+/* Chip: icon plus a readable value (machine, project, checkout, branch, model). Plain at
+   rest like a ghost; compact inline padding, secondary type, value truncates first. */
+@layer components {
+  .control[data-button-variant="chip"] {
+    min-block-size: var(--ui-control-height-compact);
+    padding-inline: var(--space-2);
+    gap: var(--space-1);
+    font-size: var(--ui-font-secondary);
+    font-weight: 400;
+  }
+}
+.control[data-button-variant="chip"][data-button-tone="neutral"] {
+  color: var(--ui-text-secondary);
 }
 /* Rail section headers share one fill across disclosure, navigation and menu controls. */
 :global([data-section-label][data-action-host][data-compact-rail])

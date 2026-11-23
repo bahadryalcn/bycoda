@@ -310,7 +310,7 @@ it("separates dev and host targets and routes host start to the selected compute
   expect(document.body.textContent).toContain(
     "Host access keeps device authentication and pairing.",
   );
-  await act(async () => button("Start sharing").click());
+  await act(async () => button("Share").click());
   expect(remoteRequest).toHaveBeenCalledWith(
     "remote",
     "tunnels.start",
@@ -344,7 +344,7 @@ it("shows missing dependencies and locked credentials and never renders secret d
   await render();
   await openShare();
   expect(container.textContent).not.toContain("Install cloudflared on This computer");
-  expect(button("Start sharing").disabled).toBe(false);
+  expect(button("Share").disabled).toBe(false);
   await choose("Tunnel provider", "ngrok");
   expect(container.textContent).toContain("secure credential store is unavailable");
   expect(container.querySelector('input[type="password"]')).not.toBeNull();
@@ -454,7 +454,8 @@ it.each([false, true])(
     expect(container.textContent).not.toContain("CLI needed");
     await choose("Tunnel provider", "ngrok");
     expect(container.textContent).not.toContain("needs a valid authtoken");
-    expect(button("Start sharing").getAttribute("aria-disabled")).toBe("true");
+    // The footer states the reason once; the button itself is simply disabled.
+    expect(button("Share").disabled).toBe(true);
     if (failed) expect(container.textContent).toContain("could not be reached");
   },
 );

@@ -275,10 +275,6 @@ export function GitGraphWorkspace({
     }
     try {
       await withGitOperation(cwd, t(label), action);
-      setGitFeedback(cwd, {
-        kind: "success",
-        title: t("Git operation complete"),
-      });
       return true;
     } catch (error) {
       setGitFeedback(cwd, {
@@ -313,6 +309,34 @@ export function GitGraphWorkspace({
   const showBusy =
     busy &&
     !(conflict && (busy === t("Saving conflict resolution…") || busy === t("Resolving conflict…")));
+  // One short sync action leads the header (Pull when behind, Push when ahead, otherwise Fetch);
+  // the other two live in the actions menu.
+  const syncActions = {
+    fetch: {
+      label: t("Fetch"),
+      count: 0,
+      disabled: !supported || !!busy || !index.data?.remote,
+      run: () => void run("Fetching…", () => gitFetch(cwd)),
+    },
+    pull: {
+      label: t("Pull"),
+      count: index.data?.behind ?? 0,
+      disabled: !supported || !!busy || !index.data?.upstream || !!index.data?.operation,
+      run: () => void run("Pulling…", () => gitPull(cwd)),
+    },
+    push: {
+      label: t("Push"),
+      count: index.data?.ahead ?? 0,
+      disabled: !supported || !!busy || !index.data?.remote || !!index.data?.operation,
+      run: () => void run("Pushing…", () => gitPush(cwd)),
+    },
+  };
+  const primarySync: keyof typeof syncActions = index.data?.behind
+    ? "pull"
+    : index.data?.ahead
+      ? "push"
+      : "fetch";
+  const primary = syncActions[primarySync];
   return (
     <Text
       ref={workspaceRef}
@@ -342,7 +366,7 @@ export function GitGraphWorkspace({
             <span>{folder}</span>
           </Tooltip>
         }
-        actions={
+        primaryAction={
           <>
             {showBusy ? <LoadingText className="me-1">{busy}</LoadingText> : null}
             <Button
@@ -350,40 +374,17 @@ export function GitGraphWorkspace({
               variant="ghost"
               motion="none"
               type="button"
-              disabled={!supported || !!busy || !index.data?.remote}
-              onClick={() => void run("Fetching…", () => gitFetch(cwd))}
+              disabled={primary.disabled}
+              onClick={primary.run}
               className={ACTION}
             >
-              {t("Fetch")}
+              {primary.label}
+              {primary.count ? <span className="ms-1 tabular-nums">{primary.count}</span> : null}
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={!supported || !!busy || !index.data?.upstream || !!index.data?.operation}
-              onClick={() => void run("Pulling…", () => gitPull(cwd))}
-              className={ACTION}
-            >
-              {t("Pull")}
-              {index.data?.behind ? (
-                <span className="ms-1 tabular-nums">{index.data.behind}</span>
-              ) : null}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              type="button"
-              disabled={!supported || !!busy || !index.data?.remote || !!index.data?.operation}
-              onClick={() => void run("Pushing…", () => gitPush(cwd))}
-              className={ACTION}
-            >
-              {t("Push")}
-              {index.data?.ahead ? (
-                <span className="ms-1 tabular-nums">{index.data.ahead}</span>
-              ) : null}
-            </Button>
+          </>
+        }
+        actions={
+          <>
             <Button
               size="sm"
               variant="ghost"
@@ -444,6 +445,15 @@ export function GitGraphWorkspace({
               label: t("Stash"),
               disabled: !!busy || !index.data?.files.length || !!index.data?.conflicts?.length,
             },
+            { kind: "sep" },
+            ...(["fetch", "pull", "push"] as const)
+              .filter((id) => id !== primarySync)
+              .map((id) => ({
+                kind: "item" as const,
+                id,
+                label: syncActions[id].label,
+                disabled: syncActions[id].disabled,
+              })),
           ]}
           onClose={() => setActionAnchor(null)}
           onPick={(id) => {
@@ -451,6 +461,7 @@ export function GitGraphWorkspace({
             if (id === "stage") void run("Staging…", () => gitStageAll(cwd));
             else if (id === "unstage") void run("Unstaging…", () => gitUnstageAll(cwd));
             else if (id === "stash") void run("Stashing…", () => gitStash(cwd));
+            else if (id === "fetch" || id === "pull" || id === "push") syncActions[id].run();
           }}
         />
       ) : null}

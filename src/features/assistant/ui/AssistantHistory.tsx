@@ -2,12 +2,12 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import type { AssistantActivity } from "../../../shared/model/host-contracts/assistant";
 import { dateTimeFormat, t, useLocale } from "../../../shared/i18n";
-import { ActionHost, InlineAction, InlineTextAction } from "../../../shared/ui/ActionHost";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Timestamp } from "../../../shared/ui/Timestamp";
-import { ExternalLink } from "../../../shared/ui/icons";
+import { Briefcase, ExternalLink } from "../../../shared/ui/icons";
 import styles from "./AssistantHistory.module.css";
 
 export const assistantActivityLabels: Record<string, string> = {
@@ -79,7 +79,11 @@ export function AssistantHistory({
               weekday: "long",
               day: "numeric",
               month: "long",
-              year: "numeric",
+              // The current year is understood; older days name it.
+              year:
+                new Date(events[0].createdAt).getFullYear() === new Date().getFullYear()
+                  ? undefined
+                  : "numeric",
             }).format(new Date(events[0].createdAt))}
           </SectionLabel>
           <ol className={styles.events}>
@@ -109,19 +113,18 @@ export function AssistantHistory({
                     ? `${entry.operation.tool} · ${entry.operation.target}`
                     : entry.summary}
                 </Text>
-                <Badge
-                  size="xs"
-                  className={styles.kind}
-                  tone={DANGER_KINDS.has(entry.kind) ? "danger" : "neutral"}
-                >
-                  {t(assistantActivityLabels[entry.kind] ?? "Activity")}
-                </Badge>
+                {/* The summary already says what happened; only problems earn a kind badge. */}
+                {DANGER_KINDS.has(entry.kind) && (
+                  <Badge size="xs" className={styles.kind} tone="danger">
+                    {t(assistantActivityLabels[entry.kind] ?? "Activity")}
+                  </Badge>
+                )}
                 {(entry.jobId || (entry.sessionId && onOpenSession)) && (
                   <div className={styles.actions}>
                     {entry.jobId && (
-                      <InlineTextAction reveal="interaction" onClick={() => onJob(entry.jobId!)}>
-                        {t("Job")}
-                      </InlineTextAction>
+                      <InlineAction label={t("Job")} onClick={() => onJob(entry.jobId!)}>
+                        <Briefcase className="icon-sm" />
+                      </InlineAction>
                     )}
                     {entry.sessionId && onOpenSession && (
                       <InlineAction

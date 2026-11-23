@@ -1,4 +1,4 @@
-import { useId, type ComponentProps, type FormEvent } from "react";
+import { useEffect, useId, type ComponentProps, type FormEvent } from "react";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalFooter, ModalActions } from "../../../shared/ui/Modal";
@@ -74,11 +74,15 @@ export function ProviderAccountEditor({
     : duplicate
       ? t("An account with this name already exists")
       : undefined;
-  const incomplete = Boolean(error) || !editor.kind;
-  const blockedReason = error ?? (!editor.kind ? t("Choose Personal or Work.") : undefined);
-  const reason = working ? undefined : blockedReason;
+  const incomplete = Boolean(error);
+  // Kind defaults to Personal, so a new account never waits on an extra choice.
+  const needsDefaultKind = Boolean(onMetadata) && !editor.kind;
+  useEffect(() => {
+    // Seeds the parent's draft once; a new account starts as Personal.
+    if (needsDefaultKind) onMetadata?.({ kind: "personal" });
+  }, [needsDefaultKind, onMetadata]);
   const actions = (
-    <ModalActions reason={reason}>
+    <ModalActions>
       <Button variant="ghost" disabled={working && !adding} onClick={onCancel}>
         {t("Cancel")}
       </Button>
@@ -89,7 +93,6 @@ export function ProviderAccountEditor({
         tone="accent"
         loading={working}
         disabled={working || incomplete}
-        disabledReason={reason}
         reserveLabels={adding ? [t("Waiting for browser…"), t("Sign in and add")] : undefined}
       >
         {adding ? (working ? t("Waiting for browser…") : t("Sign in and add")) : t("Save")}
@@ -124,23 +127,16 @@ export function ProviderAccountEditor({
         disabled={working}
         placeholder={t("Work or Personal")}
         error={adding && editor.label === "" ? undefined : error}
-        aria-label={t(adding ? "New {p1} account" : "Rename {p1} account", {
-          p1: HARNESS_TITLE[editor.provider],
-        })}
         onChange={(event) => onLabel(event.target.value)}
         fieldClassName="min-w-0 flex-1"
       />
       {onMetadata ? (
         <>
-          <Text size="secondary" weight="medium">
-            {t("Kind")}
-          </Text>
           <div className="flex flex-wrap items-center gap-2">
             <RadioGroup
               variant="inline"
               label={t("Kind")}
-              required
-              value={editor.kind ?? ""}
+              value={editor.kind ?? "personal"}
               options={[
                 {
                   value: "personal",

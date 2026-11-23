@@ -17,7 +17,6 @@ export function RedditFields({ value, disabled, onChange }: PlatformFieldProps) 
         label={t("Subreddit")}
         required
         value={options.subreddit}
-        description={t("One subreddit per post. Check the subreddit rules before posting.")}
         onChange={(event) =>
           onChange({
             ...value,

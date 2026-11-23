@@ -36,6 +36,11 @@ vi.mock("../../../platform/tauri/fs", async (importOriginal) => ({
   statFiles: actions.statFiles,
 }));
 
+const REVEAL_LABEL = IS_MAC
+  ? "Reveal in Finder"
+  : IS_WIN
+    ? "Reveal in File Explorer"
+    : "Open containing folder";
 let container: HTMLDivElement;
 let root: Root;
 let props: ComponentProps<typeof AgentMarkdown>;
@@ -87,30 +92,24 @@ afterEach(() => {
 });
 
 describe("AgentMarkdown file link context menu", () => {
-  it("opens a folder from its visible action without opening an editor", async () => {
+  it("opens a folder from the menu without opening an editor", async () => {
     props = { ...props, text: "`/repo/My Folder`" };
     render();
     actions.isLocalDirectory.mockResolvedValue(true);
     await act(async () => {});
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
-    );
+    await pick(REVEAL_LABEL, container.querySelector("code")!);
     expect(actions.openPathWithDefaultApp).toHaveBeenCalledWith("/repo/My Folder");
     expect(props.onOpenFile).not.toHaveBeenCalled();
   });
 
-  it("reveals a file from its visible action without opening an editor", async () => {
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
-    );
+  it("reveals a file from the menu without opening an editor", async () => {
+    await pick(REVEAL_LABEL);
     expect(actions.revealPath).toHaveBeenCalledWith("/repo/docs/guide.md");
     expect(props.onOpenFile).not.toHaveBeenCalled();
   });
   it("shows a failed open above the transcript instead of inside the message", async () => {
     actions.revealPath.mockRejectedValueOnce(new Error("Explorer is unavailable"));
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
-    );
+    await pick(REVEAL_LABEL);
     const alert = document.body.querySelector<HTMLElement>('[data-toast-region] [role="alert"]');
     expect(alert?.textContent).toContain("Explorer is unavailable");
     expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -136,12 +135,7 @@ describe("AgentMarkdown file link context menu", () => {
     await pick("Open in default app");
     expect(actions.openPathWithDefaultApp).toHaveBeenCalledWith("/repo/docs/guide.md");
 
-    const revealLabel = IS_MAC
-      ? "Reveal in Finder"
-      : IS_WIN
-        ? "Reveal in File Explorer"
-        : "Open containing folder";
-    await pick(revealLabel);
+    await pick(REVEAL_LABEL);
     expect(actions.revealPath).toHaveBeenCalledWith("/repo/docs/guide.md");
 
     await pick("Copy path");

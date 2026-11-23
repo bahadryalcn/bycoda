@@ -33,7 +33,7 @@ export function rowCopy(
     return {
       icon: <FileTypeIcon name={hit.name} isDir={false} size="md" />,
       title: <MatchText text={hit.name} positions={namePositions(hit)} active />,
-      meta: hit.path,
+      meta: directoryOf(hit),
     };
   }
   if (hit.kind === "content") {
@@ -41,7 +41,7 @@ export function rowCopy(
       icon: <FileTypeIcon name={hit.name} isDir={false} size="md" />,
       title: hit.name,
       preview: <Highlight text={hit.preview} query={query} />,
-      meta: `${hit.path}:${hit.line}:${hit.column}`,
+      meta: `${directoryOf(hit)}:${hit.line}`,
     };
   }
   return {
@@ -49,6 +49,12 @@ export function rowCopy(
     title: <MatchText text={hit.name} positions={hit.positions} active />,
     meta: prettyCwd(hit.path),
   };
+}
+
+/** Project-relative folder of a file hit; the name is already the row title. */
+function directoryOf(hit: { path: string; name: string; relative: string }) {
+  const folder = hit.relative.slice(0, Math.max(0, hit.relative.length - hit.name.length));
+  return folder.replace(/\/+$/, "") || prettyCwd(hit.path);
 }
 
 function Highlight({ text, query }: { text: string; query: string }) {

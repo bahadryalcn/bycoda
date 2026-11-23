@@ -8,7 +8,7 @@ import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { t, useLocale } from "../../../shared/i18n";
 import { formatArchiveDate as formatDate } from "../../../shared/i18n/format";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useCallback, useDeferredValue, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useDeferredValue, useMemo, useRef, useState } from "react";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 
@@ -32,15 +32,11 @@ import {
 
 import { sessionDisplayTitle } from "../../sessions/public/session";
 
-import {
-  loadSessionSidebarFilters,
-  saveSessionSidebarFilters,
-} from "../../sessions/public/sessionFilters";
 import type { SessionSummary } from "../../sessions";
 
 import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
 
-import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
+import { Group, RevealedSetting, Segmented, SettingsFeedback } from "../../../shared/ui/settings";
 import { CollectionToolbar } from "./SettingsCollection";
 import "./ArchiveSettings.css";
 
@@ -121,14 +117,23 @@ export function ArchivePage({
   onDeleteProject?: (path: string) => void | Promise<void>;
 }) {
   useLocale();
-  const [filters, setFilters] = useStoredPreferenceState(
-    loadSessionSidebarFilters,
-    subscribeWindowStorage,
-  );
+  const revealed = useContext(RevealedSetting);
+  const [selection, setSelection] = useState({
+    view: revealed === "archived-conversations" ? ("conversations" as const) : ("projects" as const),
+    revealed,
+  });
+  if (selection.revealed !== revealed) {
+    const view =
+      revealed === "archived-conversations"
+        ? "conversations"
+        : revealed === "archived-projects"
+          ? "projects"
+          : selection.view;
+    setSelection({ view, revealed });
+  }
   const [deleting, setDeleting] = useState<ArchivedProject | null>(null);
   const [projectQuery, setProjectQuery] = useState("");
   const [sessionQuery, setSessionQuery] = useState("");
-  const [filterError, setFilterError] = useState(false);
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const inFlight = useRef(new Set<string>());
@@ -213,33 +218,24 @@ export function ArchivePage({
     }
   };
 
-  const onShowArchived = (showArchived: boolean) => {
-    const next = { ...loadSessionSidebarFilters(), showArchived };
-    saveSessionSidebarFilters(next);
-    const saved = loadSessionSidebarFilters();
-    setFilters(saved);
-    setFilterError(saved.showArchived !== showArchived);
-  };
 
   const sessionsReady = !sessionsStatus || sessionsStatus.state === "ready";
   return (
     <div className="archive-settings settings-topics">
+      <Segmented
+        label={t("Archive")}
+        value={selection.view}
+        options={[
+          { value: "projects", label: t("Projects") },
+          { value: "conversations", label: t("Conversations") },
+        ]}
+        onChange={(view) => setSelection({ view, revealed })}
+      />
+      <div hidden={selection.view !== "projects"}>
       <Group
         id="archived-projects"
-        title={t("Archived projects")}
-        description={`${t(
-          "Scope: archived projects in this app. Locked projects appear after unlocking their group.",
-        )} ${t(
-          "Archive a project from the rail to keep its chats without listing it in the sidebar.",
-        )} ${t(
-          "Restore returns a project to the sidebar. Delete removes its conversations and app entry after confirmation; its folder stays on disk.",
-        )}`}
+        title={null}
       >
-        {!onRestoreProject || !onDeleteProject ? (
-          <Text as="p" leading="normal" className="archive-settings-note">
-            {t("Some project actions are unavailable in this view. Open the project to manage it.")}
-          </Text>
-        ) : null}
         {archivedProjectsUnavailable ? (
           <SettingsFeedback
             state="error"
@@ -351,14 +347,11 @@ export function ArchivePage({
           </div>
         )}
       </Group>
+      </div>
 
+      <div hidden={selection.view !== "conversations"}>
       <Group
         id="archived-conversations"
-        scope={
-          looksLikeProject(cwd)
-            ? t("Scope: conversations in {p0}", { p0: prettyCwd(cwd) })
-            : t("Select a project to manage archived conversations.")
-        }
         title={
           looksLikeProject(cwd)
             ? t("Archived in {p0}", { p0: projectName(cwd) })
@@ -491,27 +484,8 @@ export function ArchivePage({
           </div>
         )}
       </Group>
+      </div>
 
-      <Group title={t("Sidebar")}>
-        <Row
-          id="show-archived"
-          label={t("Archived conversations only")}
-          description={t(
-            "Show archived conversations instead of active conversations in the sidebar. This does not change the lists on this page.",
-          )}
-          feedback={
-            filterError ? (
-              <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
-            ) : undefined
-          }
-        >
-          <Toggle
-            label={t("Show archived in the sidebar")}
-            on={filters.showArchived}
-            onChange={onShowArchived}
-          />
-        </Row>
-      </Group>
 
       {deleting && archivedProjects.some((project) => project.path === deleting.path) ? (
         <RemoveProjectDialog

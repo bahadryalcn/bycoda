@@ -5,8 +5,8 @@ import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import type { AssistantTrash } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t } from "../../../../shared/i18n";
-import { InlineMoreAction, ActionHost } from "../../../../shared/ui/ActionHost";
-import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
+import { InlineAction, ActionHost } from "../../../../shared/ui/ActionHost";
+import { Trash2 } from "../../../../shared/ui/icons";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
@@ -33,7 +33,6 @@ export function TrashPanel({
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
-  const [menu, setMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   async function restore(id: string) {
     if (pending) return;
     setPending(id);
@@ -119,37 +118,27 @@ export function TrashPanel({
                 >
                   {t("Restore")}
                 </Button>
-                <InlineMoreAction
+                <InlineAction
                   reveal="always"
-                  label={t("More actions")}
+                  label={t("Delete permanently")}
                   disabled={Boolean(pending)}
-                  expanded={menu?.id === entry.id}
-                  onOpen={(anchor) => setMenu({ id: entry.id, anchor })}
-                />
+                  onClick={() =>
+                    setConfirm({
+                      title: t("Delete permanently?"),
+                      message: entry.title,
+                      confirmLabel: t("Delete permanently"),
+                      consequences: [t("This record cannot be restored.")],
+                      onConfirm: async () => {
+                        await assistantRequest({ op: "trash.purge", id: entry.id });
+                      },
+                    })
+                  }
+                >
+                  <Trash2 className="icon-sm" />
+                </InlineAction>
               </ActionHost>
             ))}
           </ul>
-        )}
-        {menu && (
-          <DropdownMenu
-            anchor={menu.anchor}
-            label={t("More actions")}
-            items={[{ kind: "item", id: "purge", label: t("Delete permanently"), danger: true }]}
-            onClose={() => setMenu(null)}
-            onPick={() => {
-              const entry = entries.find((item) => item.id === menu.id);
-              if (!entry) return;
-              setConfirm({
-                title: t("Delete permanently?"),
-                message: entry.title,
-                confirmLabel: t("Delete permanently"),
-                consequences: [t("This record cannot be restored.")],
-                onConfirm: async () => {
-                  await assistantRequest({ op: "trash.purge", id: entry.id });
-                },
-              });
-            }}
-          />
         )}
         {error && <InlineError className={styles.error}>{error}</InlineError>}
         {confirm && <ConfirmDialog request={confirm} onSettle={() => setConfirm(null)} />}

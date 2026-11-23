@@ -8,9 +8,7 @@ import {
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { FailureState } from "../../../../shared/ui/FailureState";
-import { Heading } from "../../../../shared/ui/Heading";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
-import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { Group } from "../../../../shared/ui/settings";
 import { LOCAL_MODEL_SOURCE, useModelSource } from "../../../sessions/public/modelSource";
@@ -198,7 +196,13 @@ export function ModelOrderList({
     clear();
   }
 
-  const row = (entry: ModelRoutingEntry, index: number, kind: EntryKind, grip: boolean) => (
+  const row = (
+    entry: ModelRoutingEntry,
+    index: number,
+    kind: EntryKind,
+    grip: boolean,
+    accountQuota?: string,
+  ) => (
     <ModelOrderRow
       key={entry.id}
       entry={entry}
@@ -210,6 +214,7 @@ export function ModelOrderList({
       status={statusOf(entry.id)}
       statusLoading={status.loading}
       statusError={statusFailed}
+      accountQuota={accountQuota}
       sortable={grip ? sortables[kind] : undefined}
       selected={chosen.has(entry.id)}
       onSelect={(on) => choose([entry.id], on)}
@@ -224,18 +229,19 @@ export function ModelOrderList({
   const accountSection = (group: AccountGroup, kind: EntryKind) => {
     const known = group.rows.map(({ entry }) => statusOf(entry.id));
     const quota = known.find((entryStatus) => entryStatus?.leftPercent != null) ?? known[0];
+    const accountQuota = quotaLabel(quota, status.loading, statusFailed);
     const ids = group.rows.map(({ entry }) => entry.id);
     return (
       <div key={group.key} role="group" aria-label={group.account?.label ?? group.harness}>
         <AccountGroupHeader
           group={group}
-          quota={quotaLabel(quota, status.loading, statusFailed)}
+          quota={accountQuota}
           selection={ids.filter((id) => chosen.has(id)).length}
           onSelectAll={(on) => choose(ids, on)}
           onRemoveAll={() => remove(ids)}
           onAddAll={() => addAll(group)}
         />
-        {group.rows.map(({ entry, index }) => row(entry, index, kind, false))}
+        {group.rows.map(({ entry, index }) => row(entry, index, kind, false, accountQuota))}
       </div>
     );
   };
@@ -266,39 +272,23 @@ export function ModelOrderList({
   );
   if (!entries.length)
     return (
-      <div className="grid gap-4">
-        <div className="grid gap-1">
-          <Heading as="h2" size="page">
-            {t("Model priority")}
-          </Heading>
-          <Text as="p" size="secondary" tone="secondary">
-            {t("Set the order Bycoda tries models for background jobs.")}
-          </Text>
-        </div>
-        <div
-          {...surfaceAttributes(
-            { variant: "canvas", frame: "pane", edge: "block-start" },
-            "grid gap-3 pt-4",
-          )}
-        >
-          <EmptyState
-            context="list"
-            icon={null}
-            title={t("No models configured")}
-            description={addChoice || !source.probed() ? "" : noProviderReason}
-            showDescription={!addChoice}
-            // oxlint-disable-next-line bycoda/shared-container-appearance -- list context pads 12px; this empty state sits inside a padded box and needs none
-            className="p-0"
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <SmartSetupAction variant="primary" onEdit={edit}>
-              {addChoice ? (
-                <Button size="sm" onClick={addEntry}>
-                  {t("Add model")}
-                </Button>
-              ) : null}
-            </SmartSetupAction>
-          </div>
+      <div className="grid gap-3">
+        <EmptyState
+          context="list"
+          icon={null}
+          inset="none"
+          title={t("No models configured")}
+          description={addChoice || !source.probed() ? "" : noProviderReason}
+          showDescription={!addChoice}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <SmartSetupAction variant="primary" onEdit={edit}>
+            {addChoice ? (
+              <Button size="sm" onClick={addEntry}>
+                {t("Add model")}
+              </Button>
+            ) : null}
+          </SmartSetupAction>
         </div>
       </div>
     );

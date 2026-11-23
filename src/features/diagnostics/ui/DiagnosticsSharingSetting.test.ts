@@ -45,7 +45,7 @@ it("asks for the note in a dialog and sends it with the manual trigger", async (
   typeNote("Original problem");
   await act(async () => {
     [...document.body.querySelectorAll("button")]
-      .filter((button) => button.textContent === "Send logs now")
+      .filter((button) => button.textContent === "Send")
       .at(-1)!
       .click();
   });

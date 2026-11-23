@@ -90,13 +90,6 @@
   white-space: nowrap;
 }
 
-.audience-badges {
-  flex-wrap: nowrap;
-}
-
-.audience-ellipsis {
-}
-
 .audience-person-text > * {
   max-inline-size: 100%;
   overflow: hidden;
@@ -114,9 +107,6 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-}
-
-.audience-person-name {
 }
 
 .audience-score {

@@ -26,6 +26,7 @@ it("titles the menu with the action and labels each row with only the provider",
       onClose: () => {},
     }),
   );
-  expect(markup).toContain("Connect an inbox source, GitHub");
+  expect(markup).toContain("GitHub");
   expect(markup).not.toContain("Connect GitHub");
+  expect(markup).not.toContain("Connect an inbox source");
 });

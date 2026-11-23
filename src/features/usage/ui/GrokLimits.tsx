@@ -1,28 +1,19 @@
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import { Heading } from "../../../shared/ui/Heading";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Timestamp } from "../../../shared/ui/Timestamp";
-import { UsageMeter } from "../../../shared/ui/UsageMeter";
-import {
-  useRateLimitQuery,
-  loadRateLimits,
-  formatResetCountdown,
-  formatWindowLabel,
-} from "../../providers/public/rateLimitsCache";
+import { useRateLimitQuery, loadRateLimits } from "../../providers/public/rateLimitsCache";
 import { useShowRemainingUsage } from "../../settings/public/settings";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
+import { UsageQuotaWindows } from "./UsageQuotaWindows";
 
 /** Grok exposes one CLI login, not isolated provider-account profiles. */
 export function GrokLimits({ refresh }: { refresh: number }) {
   useLocale();
   const limits = useRateLimitQuery("grok", "default", true);
-  const [initialNow] = useState(Date.now);
-  const now = useMinuteNow(true) || initialNow;
   const showRemaining = useShowRemainingUsage();
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Sync the shared Grok quota cache with the parent refresh generation.
   useEffect(() => {
@@ -46,61 +37,9 @@ export function GrokLimits({ refresh }: { refresh: number }) {
           </Text>
         ) : null}
       </div>
-      <div className="usage-quota-list">
-        {windows.map(({ kind, window }) => {
-          const windowLabel =
-            kind === "weekly"
-              ? t("Weekly")
-              : kind === "monthly"
-                ? t("Monthly")
-                : window.windowMinutes === 300
-                  ? t("5 hours")
-                  : `${t("Session")} · ${formatWindowLabel(window.windowMinutes)}`;
-          return (
-            <div className="usage-quota" key={kind}>
-              <Text
-                as="div"
-                size="caption"
-                tone="inherit"
-                leading="inherit"
-                className="usage-quota-heading"
-              >
-                <SectionLabel as="h4" classNames={{ label: "usage-quota-title" }}>
-                  {windowLabel}
-                  <Text size="inherit" tone="muted" weight="regular" className="usage-quota-reset">
-                    {window.resetsAt == null ? (
-                      t("Reset time unavailable")
-                    ) : (
-                      <>
-                        {formatResetCountdown(window.resetsAt - now)}
-                        <br />
-                        <Timestamp value={window.resetsAt} format="auto" tooltip={false} />
-                      </>
-                    )}
-                  </Text>
-                </SectionLabel>
-                <Text as="p" size="inherit" tone="secondary">
-                  <Text as="strong" size="body" tone="primary" weight="medium" leading="inherit">
-                    {Math.round(showRemaining ? 100 - window.usedPercent : window.usedPercent)}%
-                  </Text>
-                  <span>{showRemaining ? t("left") : t("used")}</span>
-                </Text>
-              </Text>
-              <UsageMeter
-                label={`Grok · ${windowLabel} · ${showRemaining ? t("left") : t("used")}`}
-                segments={[{ id: "used", label: t("used"), value: window.usedPercent }]}
-                limit={100}
-                unit="%"
-                decimals={0}
-                compact
-                showLegend={false}
-                showRemaining={showRemaining}
-              />
-            </div>
-          );
-        })}
-      </div>
-      {loading ? <LoadingText>{t("Loading usage…")}</LoadingText> : null}
+      <UsageQuotaWindows name="Grok" windows={windows} showRemaining={showRemaining} />
+      {/* The stale windows stay visible while refreshing; only an empty card shows a loading line. */}
+      {loading && !windows.length ? <LoadingText>{t("Loading usage…")}</LoadingText> : null}
       {limits.error ? (
         <InlineError
           retry={{ onRetry: () => void loadRateLimits("grok", "default", true), pending: loading }}

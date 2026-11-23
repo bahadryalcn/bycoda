@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { useFormat, useT } from "../../../../shared/i18n";
+import { useT } from "../../../../shared/i18n";
 import { HARNESS_TITLE } from "../../../../shared/model/harnessIdentity";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
@@ -29,7 +29,6 @@ export function AccountGroupHeader({
   onAddAll: () => void;
 }) {
   const t = useT();
-  const format = useFormat();
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   const { account, harness, rows } = group;
@@ -47,11 +46,6 @@ export function AccountGroupHeader({
       <HarnessIcon harness={harness} size="sm" />
       <Text size="secondary" weight="medium" truncate className="min-w-0">
         {label}
-      </Text>
-      <Text size="caption" tone="secondary" className="whitespace-nowrap">
-        {rows.length === 1
-          ? t("1 model listed")
-          : t("{p0} models listed", { p0: format.formatNumber(rows.length) })}
       </Text>
       <Text size="caption" tone="secondary" className="ms-auto whitespace-nowrap">
         {quota}

@@ -94,8 +94,8 @@ function toModel(
     emptyMessage:
       !file.binary && file.lines.length === 0
         ? truncated
-          ? "Patch unavailable because this change is too large"
-          : "No textual diff"
+          ? t("Patch unavailable because this change is too large")
+          : t("No textual diff")
         : undefined,
     additions: file.additions,
     deletions: file.deletions,

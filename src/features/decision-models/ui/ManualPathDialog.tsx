@@ -198,7 +198,7 @@ export function ManualPathDialog({
         {mode === "endpoint" ? (
           <TextField
             label={t("Address")}
-            description={t("For example http://127.0.0.1:8080/v1/systemone")}
+            placeholder="http://127.0.0.1:8080/v1/systemone"
             value={endpoint}
             monospace
             disabled={locked}
@@ -222,7 +222,7 @@ export function ManualPathDialog({
             />
             <TextField
               label={t("Runtime program (optional)")}
-              description={t("Leave empty to use the runtime that came with the model.")}
+              placeholder={t("Bundled with the model")}
               value={runtimePath}
               monospace
               disabled={locked}
@@ -247,7 +247,6 @@ export function ManualPathDialog({
         )}
         <Select
           label={t("Contract")}
-          description={t("The request format the service uses. The test checks it.")}
           value={adapter}
           disabled={locked}
           options={CONTRACT_ADAPTERS.map((value) => ({ value, label: contractLabel(value) }))}

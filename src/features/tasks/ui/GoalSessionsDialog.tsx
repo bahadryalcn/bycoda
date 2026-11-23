@@ -6,6 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { taskSessionIds } from "../model/backgroundSession";
 import type { BoardTask } from "../model/taskClient";
 import { STATUS_LABELS } from "./TaskDetail";
@@ -57,9 +58,15 @@ export function GoalSessionsDialog({
                   {t(STATUS_LABELS[task.status])}
                 </Badge>
               </div>
-              <Text size="micro" tone="secondary" className="break-all">
-                {task.branch} {task.worktreeCwd ?? task.workspace?.checkoutCwd ?? task.cwd}
-              </Text>
+              {task.branch ? (
+                <OverflowTooltip
+                  label={`${task.branch} ${task.worktreeCwd ?? task.workspace?.checkoutCwd ?? task.cwd}`}
+                >
+                  <Text size="micro" tone="secondary" truncate>
+                    {task.branch}
+                  </Text>
+                </OverflowTooltip>
+              ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 {sessions.worker ? (
                   <Button

@@ -1,5 +1,4 @@
 import { Code } from "../../../shared/ui/Code";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
@@ -17,6 +16,9 @@ import { SshIdentityField } from "./SshIdentityField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Alert } from "../../../shared/ui/Alert";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { X } from "../../../shared/ui/icons";
+import { sshProvenanceText } from "./sshProvenanceText";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { sshEndpointPreview } from "../model/sshEndpointReview";
 import type { ServerRecord } from "../model/serverInventory";
@@ -102,6 +104,7 @@ export function SshGroupSettings({
     reviewed: boolean;
   }>();
   const activePreview = preview?.scope === scope ? preview : undefined;
+  const editing = draft !== null;
   const operation = async (work: () => Promise<void>) => {
     if (locked.current) return;
     locked.current = true;
@@ -130,7 +133,7 @@ export function SshGroupSettings({
     if (results[1].status === "fulfilled") {
       const saved = results[1].value;
       if (saved.connectionId !== server.id) {
-        setError(t("SSH configuration changed. Refresh and preview again."));
+        setError(t("SSH configuration changed."));
         setLoading(false);
         return;
       }
@@ -157,6 +160,33 @@ export function SshGroupSettings({
       mounted.current = false;
     };
   }, [load]);
+  // The effective configuration is previewed automatically for every selection; Apply then
+  // writes only the digest the user can see below. `scope` covers the server and the selection.
+  useEffect(() => {
+    if (!initialized || loading || editing || preview?.scope === scope) return;
+    let current = true;
+    void previewSshConfiguration(server.id, inheritance, false).then(
+      (value) => {
+        if (!current || !mounted.current) return;
+        if (
+          value.connectionId !== server.id ||
+          !value.configuration.digest ||
+          JSON.stringify(value.inheritance) !== JSON.stringify(inheritance)
+        ) {
+          setError(t("SSH configuration changed."));
+          return;
+        }
+        setPreview({ value, scope, reviewed: true });
+      },
+      (reason) => {
+        if (current && mounted.current) setError(sanitizeConnectionError(errorText(reason)));
+      },
+    );
+    return () => {
+      current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `scope` encodes the server and inheritance this preview is for.
+  }, [scope, initialized, loading, editing, preview]);
   const change = (update: () => void) => {
     update();
     setPreview(undefined);
@@ -174,6 +204,193 @@ export function SshGroupSettings({
     if (draft) setDraft({ ...draft, value: { ...draft.value, ...patch } });
     setNotice("");
   };
+  if (draft)
+    return (
+      <Modal
+        title={`${t("Group defaults")} · ${server.name}`}
+        onClose={onClose}
+        size="md"
+        footer={
+          <ModalActions>
+            {draft.expectedRevision !== null ? (
+              <span className="me-auto">
+                <ConfirmMorph
+                  label={t("Delete group")}
+                  tone="danger"
+                  disabled={busy}
+                  onConfirm={() =>
+                    operation(async () => {
+                      await removeSshGroupDefaults(draft.value.id, draft.expectedRevision!);
+                      if (!mounted.current) return;
+                      setGroups((previous) =>
+                        previous.filter((group) => group.id !== draft.value.id),
+                      );
+                      setDraft(null);
+                      setPreview(undefined);
+                    })
+                  }
+                />
+              </span>
+            ) : null}
+            <Button variant="ghost" disabled={busy} onClick={() => setDraft(null)}>
+              {t("Close editor")}
+            </Button>
+            <Button
+              variant="primary"
+              disabled={busy || !profile}
+              success={notice === "saved"}
+              successLabel={t("Saved")}
+              onClick={() =>
+                void operation(async () => {
+                  if (!profile) return;
+                  const saved = await saveSshGroupDefaults(profile, draft.expectedRevision);
+                  if (!mounted.current) return;
+                  setGroups((previous) => [
+                    ...previous.filter((group) => group.id !== saved.id),
+                    saved,
+                  ]);
+                  setDraft({ value: sshGroupDraft(saved), expectedRevision: saved.revision });
+                  setPreview(undefined);
+                  setNotice("saved");
+                })
+              }
+            >
+              {t("Save group")}
+            </Button>
+          </ModalActions>
+        }
+      >
+        <div className="flex min-w-0 flex-col gap-3">
+          {error ? <Alert tone="danger">{error}</Alert> : null}
+          <TextField
+            label={t("Group name")}
+            value={draft.value.name}
+            disabled={busy}
+            onChange={(event) => editDraft({ name: event.target.value })}
+            maxLength={200}
+          />
+          <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-2">
+            <TextField
+              label={t("Default SSH user")}
+              value={draft.value.user}
+              disabled={busy}
+              onChange={(event) => editDraft({ user: event.target.value })}
+            />
+            <TextField
+              label={t("Default SSH port")}
+              value={draft.value.port}
+              inputMode="numeric"
+              disabled={busy}
+              onChange={(event) => editDraft({ port: event.target.value })}
+            />
+          </div>
+          <SshIdentityField
+            pathLabel={t("Default identity file")}
+            value={draft.value.identityFile}
+            disabled={busy}
+            onChange={(value) => editDraft({ identityFile: value })}
+          />
+          <div className="flex min-w-0 items-end gap-1">
+            <TextField
+              fieldClassName="min-w-0 flex-1"
+              label={t("Default certificate file")}
+              value={draft.value.certificateFile}
+              disabled={busy}
+              onChange={(event) => editDraft({ certificateFile: event.target.value })}
+            />
+            <InfoPopover>
+              {t("Use absolute paths or ~/ for group key and certificate references.")}
+            </InfoPopover>
+          </div>
+          <Disclosure
+            size="sm"
+            summary={t("Remote environment")}
+            summaryActions={
+              <InfoPopover>
+                {t(
+                  "Literal non-secret values apply only to new interactive SSH terminals. SFTP and port forwarding inherit connection defaults only. Do not put passwords, tokens or private keys here.",
+                )}
+              </InfoPopover>
+            }
+          >
+            <FieldGroup variant="bare" disabled={busy}>
+              <RadioGroup
+                variant="inline"
+                label={t("Environment shell")}
+                value={draft.value.shellKind}
+                onValueChange={(value) => editDraft({ shellKind: value as "posix" | "powershell" })}
+                options={[
+                  { value: "posix", label: "POSIX" },
+                  { value: "powershell", label: "PowerShell" },
+                ]}
+              />
+            </FieldGroup>
+            {draft.value.environment.map((entry, index) => (
+              <div
+                key={environmentIds[index]}
+                className="mbs-2 flex min-w-0 flex-wrap items-end gap-1"
+              >
+                <TextField
+                  fieldClassName="min-w-0 flex-1"
+                  label={`${t("Variable name")} ${index + 1}`}
+                  value={entry.name}
+                  disabled={busy}
+                  onChange={(event) =>
+                    editDraft({
+                      environment: draft.value.environment.map((item, i) =>
+                        i === index ? { ...item, name: event.target.value } : item,
+                      ),
+                    })
+                  }
+                />
+                <TextField
+                  fieldClassName="min-w-0 flex-1"
+                  label={`${t("Literal value")} ${index + 1}`}
+                  value={entry.value}
+                  disabled={busy}
+                  onChange={(event) =>
+                    editDraft({
+                      environment: draft.value.environment.map((item, i) =>
+                        i === index ? { ...item, value: event.target.value } : item,
+                      ),
+                    })
+                  }
+                />
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  label={`${t("Remove")} ${index + 1}`}
+                  disabled={busy}
+                  onClick={() => {
+                    environmentIds.splice(index, 1);
+                    editDraft({
+                      environment: draft.value.environment.filter((_, i) => i !== index),
+                    });
+                  }}
+                >
+                  <X className="icon-xs" />
+                </Button>
+              </div>
+            ))}
+            <Button
+              disabled={busy || draft.value.environment.length >= 32}
+              onClick={() =>
+                editDraft({
+                  environment: [...draft.value.environment, { name: "", value: "" }],
+                })
+              }
+            >
+              {t("Add environment value")}
+            </Button>
+          </Disclosure>
+          {!profile ? (
+            <InlineError live="polite">
+              {t("Enter valid group defaults and literal environment values.")}
+            </InlineError>
+          ) : null}
+        </div>
+      </Modal>
+    );
   return (
     <Modal
       title={`${t("SSH group settings")} · ${server.name}`}
@@ -182,26 +399,11 @@ export function SshGroupSettings({
       footer={
         <ModalActions>
           <Button
-            disabled={busy || loading || !initialized}
-            onClick={() =>
-              void operation(async () => {
-                const value = await previewSshConfiguration(server.id, inheritance, false);
-                if (!mounted.current) return;
-                if (
-                  value.connectionId !== server.id ||
-                  !value.configuration.digest ||
-                  JSON.stringify(value.inheritance) !== JSON.stringify(inheritance)
-                )
-                  throw new Error(t("SSH configuration changed. Refresh and preview again."));
-                setPreview({ value, scope, reviewed: true });
-              })
-            }
-          >
-            {t("Preview effective configuration")}
-          </Button>
-          <Button
             variant="primary"
             disabled={busy || !activePreview?.reviewed}
+            disabledReason={
+              activePreview || error ? undefined : t("Reviewing the configuration…")
+            }
             onClick={() =>
               void operation(async () => {
                 if (!activePreview?.reviewed) return;
@@ -224,7 +426,14 @@ export function SshGroupSettings({
       }
     >
       <div className="flex min-w-0 flex-col gap-3">
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? (
+          <Alert
+            tone="danger"
+            action={initialized ? undefined : { label: t("Retry"), onClick: () => void load() }}
+          >
+            {error}
+          </Alert>
+        ) : null}
         <LiveText
           text={notice === "applied" ? t("SSH inheritance updated.") : ""}
           size="caption"
@@ -234,9 +443,6 @@ export function SshGroupSettings({
           <div className="min-w-48 flex-1">
             <SearchableSelect
               label={t("SSH group")}
-              description={t(
-                "Local connection values stay saved. Only checked fields inherit from the selected group.",
-              )}
               value={selected || "none"}
               onChange={(value) => change(() => setSelected(value === "none" ? "" : value))}
               disabled={busy || loading}
@@ -246,9 +452,11 @@ export function SshGroupSettings({
               ]}
             />
           </div>
-          <Button disabled={busy || loading} onClick={() => void load()}>
-            {t("Refresh")}
-          </Button>
+          <InfoPopover>
+            {t(
+              "Local connection values stay saved. Only checked fields inherit from the selected group.",
+            )}
+          </InfoPopover>
           <Button
             disabled={busy}
             onClick={() => {
@@ -289,8 +497,6 @@ export function SshGroupSettings({
                 }
                 label={t(labels[field])}
                 key={field}
-                size="caption"
-                className="flex items-center gap-1"
               />
             ))}
             <Checkbox
@@ -298,8 +504,6 @@ export function SshGroupSettings({
               checked={environment}
               onChange={(event) => change(() => setEnvironment(event.target.checked))}
               label={t("Remote environment")}
-              size="caption"
-              className="flex items-center gap-1"
             />
           </div>
         </FieldGroup>
@@ -325,23 +529,17 @@ export function SshGroupSettings({
                       <Code className="block">{effectiveValue(field)}</Code>
                     ) : null}
                     <Text size="inherit" tone="muted">
-                      {t(
-                        source.source === "group"
-                          ? "Group"
-                          : source.source === "connection"
-                            ? "Connection"
-                            : "Default",
+                      {sshProvenanceText(
+                        source,
+                        groups.find((group) => group.id === source.groupId)?.name,
                       )}
-                      {source.groupId
-                        ? ` · ${groups.find((group) => group.id === source.groupId)?.name ?? source.groupId} · r${source.revision}`
-                        : ""}
                     </Text>
                   </DescriptionItem>
                 ),
               )}
             </DescriptionList>
             {activePreview.value.configuration.environment.length ? (
-              <Disclosure size="sm" className="mbs-2" summary={t("Remote environment")}>
+              <Disclosure size="sm" summary={t("Remote environment")}>
                 <p>
                   {t("Environment shell")}:{" "}
                   {activePreview.value.configuration.shellKind === "powershell"
@@ -358,179 +556,6 @@ export function SshGroupSettings({
               </Disclosure>
             ) : null}
           </Text>
-        ) : null}
-        {draft ? (
-          <section
-            aria-label={t("Group defaults")}
-            {...surfaceAttributes(
-              { frame: "pane", edge: "top" },
-              "flex min-w-0 flex-col gap-2 pbs-3",
-            )}
-          >
-            <TextField
-              label={t("Group name")}
-              value={draft.value.name}
-              disabled={busy}
-              onChange={(event) => editDraft({ name: event.target.value })}
-              maxLength={200}
-            />
-            <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-2">
-              <TextField
-                label={t("Default SSH user")}
-                value={draft.value.user}
-                disabled={busy}
-                onChange={(event) => editDraft({ user: event.target.value })}
-              />
-              <TextField
-                label={t("Default SSH port")}
-                value={draft.value.port}
-                inputMode="numeric"
-                disabled={busy}
-                onChange={(event) => editDraft({ port: event.target.value })}
-              />
-            </div>
-            <SshIdentityField
-              pathLabel={t("Default identity file")}
-              value={draft.value.identityFile}
-              disabled={busy}
-              onChange={(value) => editDraft({ identityFile: value })}
-            />
-            <TextField
-              label={t("Default certificate file")}
-              description={t("Use absolute paths or ~/ for group key and certificate references.")}
-              value={draft.value.certificateFile}
-              disabled={busy}
-              onChange={(event) => editDraft({ certificateFile: event.target.value })}
-            />
-            <Disclosure size="sm" textSize="caption" tone="muted" summary={t("Remote environment")}>
-              <Text as="div" size="caption" tone="muted">
-                <Alert tone="warning">
-                  {t(
-                    "Literal non-secret values apply only to new interactive SSH terminals. SFTP and port forwarding inherit connection defaults only. Do not put passwords, tokens or private keys here.",
-                  )}
-                </Alert>
-                <FieldGroup variant="bare" disabled={busy}>
-                  <RadioGroup
-                    variant="inline"
-                    label={t("Environment shell")}
-                    value={draft.value.shellKind}
-                    onValueChange={(value) =>
-                      editDraft({ shellKind: value as "posix" | "powershell" })
-                    }
-                    options={[
-                      { value: "posix", label: "POSIX" },
-                      { value: "powershell", label: "PowerShell" },
-                    ]}
-                  />
-                </FieldGroup>
-                {draft.value.environment.map((entry, index) => (
-                  <div
-                    key={environmentIds[index]}
-                    className="mbs-2 flex min-w-0 flex-wrap items-end gap-1"
-                  >
-                    <TextField
-                      fieldClassName="min-w-0 flex-1"
-                      label={`${t("Variable name")} ${index + 1}`}
-                      value={entry.name}
-                      disabled={busy}
-                      onChange={(event) =>
-                        editDraft({
-                          environment: draft.value.environment.map((item, i) =>
-                            i === index ? { ...item, name: event.target.value } : item,
-                          ),
-                        })
-                      }
-                    />
-                    <TextField
-                      fieldClassName="min-w-0 flex-1"
-                      label={`${t("Literal value")} ${index + 1}`}
-                      value={entry.value}
-                      disabled={busy}
-                      onChange={(event) =>
-                        editDraft({
-                          environment: draft.value.environment.map((item, i) =>
-                            i === index ? { ...item, value: event.target.value } : item,
-                          ),
-                        })
-                      }
-                    />
-                    <Button
-                      disabled={busy}
-                      onClick={() => {
-                        environmentIds.splice(index, 1);
-                        editDraft({
-                          environment: draft.value.environment.filter((_, i) => i !== index),
-                        });
-                      }}
-                    >
-                      {t("Remove")}
-                    </Button>
-                  </div>
-                ))}
-                <Button
-                  disabled={busy || draft.value.environment.length >= 32}
-                  onClick={() =>
-                    editDraft({
-                      environment: [...draft.value.environment, { name: "", value: "" }],
-                    })
-                  }
-                >
-                  {t("Add environment value")}
-                </Button>
-              </Text>
-            </Disclosure>
-            {!profile ? (
-              <InlineError live="polite">
-                {t("Enter valid group defaults and literal environment values.")}
-              </InlineError>
-            ) : null}
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button variant="ghost" disabled={busy} onClick={() => setDraft(null)}>
-                {t("Close editor")}
-              </Button>
-              {draft.expectedRevision !== null ? (
-                <span className="me-auto">
-                  <ConfirmMorph
-                    label={t("Delete group")}
-                    tone="danger"
-                    disabled={busy}
-                    onConfirm={() =>
-                      operation(async () => {
-                        await removeSshGroupDefaults(draft.value.id, draft.expectedRevision!);
-                        if (!mounted.current) return;
-                        setGroups((previous) =>
-                          previous.filter((group) => group.id !== draft.value.id),
-                        );
-                        setDraft(null);
-                        setPreview(undefined);
-                      })
-                    }
-                  />
-                </span>
-              ) : null}
-              <Button
-                disabled={busy || !profile}
-                success={notice === "saved"}
-                successLabel={t("Saved")}
-                onClick={() =>
-                  void operation(async () => {
-                    if (!profile) return;
-                    const saved = await saveSshGroupDefaults(profile, draft.expectedRevision);
-                    if (!mounted.current) return;
-                    setGroups((previous) => [
-                      ...previous.filter((group) => group.id !== saved.id),
-                      saved,
-                    ]);
-                    setDraft({ value: sshGroupDraft(saved), expectedRevision: saved.revision });
-                    setPreview(undefined);
-                    setNotice("saved");
-                  })
-                }
-              >
-                {t("Save group")}
-              </Button>
-            </div>
-          </section>
         ) : null}
       </div>
     </Modal>

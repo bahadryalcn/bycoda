@@ -3,7 +3,6 @@ import { Alert } from "../../../shared/ui/Alert";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Modal } from "../../../shared/ui/Modal";
-import { Button } from "../../../shared/ui/Button";
 import { featureHost } from "../model/hostFeatureClient";
 import { tunnelUiIssue } from "../model/externalTunnelController";
 import type { RemoteMachine } from "../model/protocol";
@@ -58,7 +57,7 @@ export function ProjectTunnelDialog({
     };
   }, [cwd, retry]);
   return (
-    <Modal title={t("External tunnels")} size="md" onClose={onClose}>
+    <Modal title={t("Create link")} size="md" onClose={onClose}>
       {machine ? (
         <TunnelControls
           key={`${machine.id}:${machine.environmentId}`}
@@ -66,28 +65,26 @@ export function ProjectTunnelDialog({
           initialLocalUrl={localUrl}
         />
       ) : error ? (
-        <div className="flex flex-col gap-3">
-          <Alert tone="danger">
-            {t(
-              update
-                ? "Update bycoda Host on this computer to manage external tunnels."
-                : "The selected computer could not be reached. Reconnect it and check again.",
-            )}
-          </Alert>
-          <Button
-            type="button"
-            className="shrink-0"
-            loading={loading}
-            onClick={() => {
+        <Alert
+          tone="danger"
+          action={{
+            label: t("Check again"),
+            ariaLabel: t("Check again"),
+            pending: loading,
+            onClick: () => {
               if (pending.current) return;
               pending.current = true;
               setLoading(true);
               setRetry((value) => value + 1);
-            }}
-          >
-            {t("Check again")}
-          </Button>
-        </div>
+            },
+          }}
+        >
+          {t(
+            update
+              ? "Update bycoda Host on this computer to manage external tunnels."
+              : "The selected computer could not be reached.",
+          )}
+        </Alert>
       ) : (
         <LoadingText>{t("Checking tunnel access…")}</LoadingText>
       )}

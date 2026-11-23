@@ -42,6 +42,7 @@ export function InboxConnectionStatus({
 }) {
   useLocale();
   const verified = configured && verifiedAt !== null && !checking && !error;
+  if (!verified && !error) return null;
   return (
     <Row
       label={t("Connection status")}
@@ -98,9 +99,7 @@ export function InboxConnectionStatus({
               : t("Not configured")}
         </Badge>
       </Tooltip>
-      <Button stableWidth className="shrink-0" loading={checking} disabled={busy} onClick={onCheck}>
-        {error ? t("Retry") : t("Check saved configuration")}
-      </Button>
+      {error ? <Button disabled={busy || checking} onClick={onCheck}>{t("Retry")}</Button> : null}
     </Row>
   );
 }

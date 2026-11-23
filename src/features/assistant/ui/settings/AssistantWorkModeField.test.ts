@@ -42,7 +42,7 @@ const execution = {
   maxRunMinutes: 45,
 };
 
-async function setup(initial: AssistantProfilePatch, unchosen = false, rows = true) {
+async function setup(initial: AssistantProfilePatch, rows = true) {
   observed.patches = [];
   observed.defaultAvailable = true;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -56,7 +56,6 @@ async function setup(initial: AssistantProfilePatch, unchosen = false, rows = tr
       { value: rows },
       createElement(AssistantWorkModeField, {
         value,
-        unchosen,
         onChange: (patch: AssistantProfilePatch) => {
           observed.patches.push(patch);
           setValue((current) => ({ ...current, ...patch }));
@@ -197,12 +196,4 @@ it("keeps the profile unchanged and asks for a worker when no default model is a
   await choose("watch");
   expect(observed.patches).toHaveLength(1);
   expect(container.querySelector('[role="alert"]')).toBeNull();
-});
-
-it("selects nothing and offers no Custom option on a first setup that has not chosen", async () => {
-  await setup({ autonomy: "report", execution: null }, true, false);
-  expect(radios().map((radio) => radio.value)).toEqual(["watch", "ask", "free"]);
-  expect(checked()).toEqual([]);
-  await choose("watch");
-  expect(checked()).toEqual(["watch"]);
 });

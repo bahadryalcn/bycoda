@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
@@ -74,13 +74,19 @@ export function SkillGroupDialogs({
       setError(String(cause));
     }
   };
+  const saveOnEnter = (event: KeyboardEvent) => {
+    if (event.key === "Enter" && !isImeComposition(event.nativeEvent) && name.trim()) {
+      event.preventDefault();
+      save();
+    }
+  };
   return (
     <Modal
       title={edit.kind === "create" ? t("New group") : t("Rename group")}
       onClose={onClose}
       size="sm"
       footer={
-        <ModalActions reason={name.trim() ? undefined : t("Enter a name.")}>
+        <ModalActions>
           <Button onClick={onClose}>{t("Cancel")}</Button>
           <Button
             variant="primary"
@@ -98,26 +104,19 @@ export function SkillGroupDialogs({
         value={name}
         onChange={(event) => setName(event.currentTarget.value)}
         autoFocus
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !isImeComposition(event.nativeEvent) && name.trim()) {
-            event.preventDefault();
-            save();
-          }
-        }}
+        onKeyDown={saveOnEnter}
       />
-      <TextField
-        label={t("Command")}
-        monospace
-        value={command}
-        placeholder={`/${skillGroupInvocation({ name })}`}
-        onChange={(event) => setCommand(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !isImeComposition(event.nativeEvent) && name.trim()) {
-            event.preventDefault();
-            save();
-          }
-        }}
-      />
+      {/* A new group derives its command from the name; it is editable when renaming. */}
+      {edit.kind === "rename" ? (
+        <TextField
+          label={t("Command")}
+          monospace
+          value={command}
+          placeholder={`/${skillGroupInvocation({ name })}`}
+          onChange={(event) => setCommand(event.currentTarget.value)}
+          onKeyDown={saveOnEnter}
+        />
+      ) : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
     </Modal>
   );

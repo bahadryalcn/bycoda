@@ -7,7 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { Modal } from "../../../shared/ui/Modal";
 import {
   loadBackgroundSessionSummary,
   type BackgroundSessionSummary,
@@ -78,13 +78,6 @@ export function BackgroundSessionDialog({
       title={summary?.title ?? t("Background session")}
       onClose={onClose}
       size="md"
-      footer={
-        <ModalActions>
-          <Button variant="ghost" type="button" onClick={onClose}>
-            {t("Close")}
-          </Button>
-        </ModalActions>
-      }
     >
       <div className="flex min-h-0 flex-col gap-3">
         {error ? (
@@ -107,18 +100,16 @@ export function BackgroundSessionDialog({
           <LoadingText delay={false} className="h-20 justify-center" />
         ) : (
           <>
-            <div className="flex flex-col gap-1">
-              <Text as="p" size="caption" leading="snug" tone="secondary">
-                {summary.status}
-              </Text>
-            </div>
+            <Text as="p" size="caption" leading="snug" tone="secondary">
+              {summary.status}
+            </Text>
             <Text
               as="div"
               size="secondary"
               leading="relaxed"
               {...surfaceAttributes(
-                { frame: "card", edge: "all" },
-                "min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words rounded-(--ui-radius-card)-(--ui-card-border) p-3",
+                { variant: "card", frame: "card", radius: "card" },
+                "min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words p-3",
               )}
             >
               {summary.reply || <EmptyState size="inline" description={t("No reply yet.")} />}

@@ -191,7 +191,6 @@ export function DictationButton({
         iconOnly
         label={label}
         shortcut={shortcut ?? undefined}
-        tooltip={state === "idle" ? t("Dictate: speak and the text appears here") : label}
         data-dictation-state={state}
         aria-busy={state === "starting" || state === "finishing" || undefined}
         pressed={listening || state === "starting"}

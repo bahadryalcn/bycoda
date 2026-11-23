@@ -17,7 +17,7 @@ export type VoiceVisualizerProps = {
   level?: { readonly current: number };
   /** `icon` fits inside a button next to a text label. */
   small?: boolean | "icon";
-  /** Settings-only demonstration. Never represents live microphone or playback. */
+  /** Settings-only still demonstration (no animation loop). Never represents live microphone or playback. */
   preview?: boolean;
 };
 
@@ -206,7 +206,7 @@ export function VoiceVisualizer({
         visible &&
         focused &&
         !calm &&
-        (preview || !STATIC_STATES.has(state));
+        (!preview && !STATIC_STATES.has(state));
       element!.dataset.animating = String(running);
       paint(1300, true);
       if (running) frame = requestAnimationFrame(tick);

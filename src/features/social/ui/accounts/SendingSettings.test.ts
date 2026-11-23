@@ -49,16 +49,13 @@ it("shows the sending copy the owner approved", () => {
   );
 });
 
-it("says why the controls are disabled when the Host is offline", () => {
+it("disables the controls when the Host is offline, with the reason in the tooltip only", () => {
   render({ snapshot: snapshot({ sendingEnabled: true }), hostOnline: false });
-  const reasons = [...element.querySelectorAll(".social-disabled-reason-text")].map(
-    (node) => node.textContent,
-  );
-  expect(reasons).toContain("Connect to this computer to change sending.");
+  expect(element.textContent).not.toContain("Connect to this computer to change sending.");
   const stop = [...element.querySelectorAll("button")].find(
     (button) => button.textContent?.trim() === "Stop",
   );
-  expect(stop?.disabled).toBe(true);
+  expect(stop?.getAttribute("aria-disabled")).toBe("true");
 });
 
 function buttonOf(text: string) {

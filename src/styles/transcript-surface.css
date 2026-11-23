@@ -109,6 +109,8 @@ html[data-performance-no-blur] {
 
 /* The reply wrapper: one surface per assistant answer. */
 [data-transcript-reply] {
+  --ui-quiet-chrome-ink: var(--transcript-ink-chrome);
+  --ui-quiet-chrome-active-ink: var(--transcript-ink-chrome-active);
   padding-block: var(--transcript-reply-pad-block);
   padding-inline: var(--transcript-gutter);
   border-radius: var(--ui-radius-popup);
@@ -177,16 +179,25 @@ html[data-performance-no-blur] {
 /* Message actions: "hover" shows the row on reply hover or focus; the live turn, keyboard focus
    and touch (no hover) always show it. "hidden" is not offered, so Copy stays reachable. */
 @media (hover: hover) {
-  :is(html, [data-transcript-preview])[data-transcript-actions="hover"]
-    [data-transcript-actions-row] {
-    opacity: 0;
+  :is(html, [data-transcript-preview]) {
+    --transcript-actions-opacity: 1;
+    --transcript-actions-pointer: auto;
+  }
+  :is(html, [data-transcript-preview])[data-transcript-actions="hover"] {
+    --transcript-actions-opacity: 0;
+    --transcript-actions-pointer: none;
+  }
+  :is([data-transcript-reply]:hover, [data-transcript-reply]:focus-within, .transcript-turn-live) {
+    --transcript-actions-opacity: 1;
+    --transcript-actions-pointer: auto;
+  }
+  [data-transcript-actions-row] {
+    opacity: var(--transcript-actions-opacity, 1);
+    pointer-events: var(--transcript-actions-pointer, auto);
     transition: opacity var(--ui-motion-fast, 120ms) ease;
   }
-  :is(html, [data-transcript-preview])[data-transcript-actions="hover"]
-    :is([data-transcript-reply]:hover, [data-transcript-reply]:focus-within, .transcript-turn-live)
-    [data-transcript-actions-row],
-  :is(html, [data-transcript-preview])[data-transcript-actions="hover"]
-    [data-transcript-actions-row]:focus-within {
+  [data-transcript-actions-row]:focus-within {
     opacity: 1;
+    pointer-events: auto;
   }
 }

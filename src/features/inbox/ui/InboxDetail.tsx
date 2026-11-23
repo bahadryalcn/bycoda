@@ -1,7 +1,6 @@
 import { errorText } from "../../../shared/lib/errors";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Timestamp } from "../../../shared/ui/Timestamp";
 import { InboxStatusBadge } from "./InboxStatusBadge";
 import { Alert } from "../../../shared/ui/Alert";
 import { InboxLoadError } from "./InboxLoadError";
@@ -419,16 +418,6 @@ export function InboxDetail({
                         )}
                       </span>
                     ) : null}
-                    {item.createdAt && hasInboxRelativeTime(item.createdAt) ? (
-                      <>
-                        {githubWorkspace ? null : <span aria-hidden>·</span>}
-                        <Timestamp
-                          value={Date.parse(item.createdAt)}
-                          format="relative"
-                          prefix={t("Created")}
-                        />
-                      </>
-                    ) : null}
                     {hasInboxRelativeTime(item.updatedAt) ? (
                       <>
                         {githubWorkspace ? null : <span aria-hidden>·</span>}
@@ -550,21 +539,8 @@ export function InboxDetail({
                         >
                           {starting ? t("Sending…") : t("Send to agent")}
                         </Button>
-                        {!chooseStartProject && item.repo && !githubWorkspace ? (
-                          <Text
-                            size="caption"
-                            tone="secondary"
-                            truncate
-                            className="min-w-0 max-w-48"
-                          >
-                            {t("in {p0}", { p0: item.repo })}
-                          </Text>
-                        ) : null}
                         {chooseStartProject ? (
-                          <div className="flex min-w-0 max-w-full items-center gap-1.5">
-                            <Text size="caption" tone="secondary" className="shrink-0">
-                              {t("Project")}
-                            </Text>
+                          <div className="min-w-0 max-w-full">
                             <InboxProjectPicker
                               projects={projects}
                               value={startProject}
@@ -656,7 +632,7 @@ export function InboxDetail({
             className={panel ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"}
           >
             <div
-              className={`flex w-full min-w-0 flex-col gap-4 px-4 py-4 ${tab === "code" ? "" : "mx-auto max-w-3xl"}`}
+              className={`flex w-full min-w-0 flex-col gap-4 px-4 py-4 ${tab === "code" ? "" : tab === "checks" ? "mx-auto max-w-5xl" : "mx-auto max-w-3xl"}`}
             >
               {isPr && tab === "code" ? (
                 diffLoading && !prDiff ? (

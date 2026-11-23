@@ -12,7 +12,10 @@ import styles from "./SceneStrip.module.css";
 
 const PREVIEW_MS = 4000;
 
-/** Radio selection with a short, optional preview on pointer or keyboard focus. */
+/**
+ * Radio selection with a short, optional preview on pointer or keyboard focus. Only the selected
+ * and the previewed tile mount a canvas, so the strip never holds one WebGL context per scene.
+ */
 export function SceneStrip({
   value,
   onChange,
@@ -93,7 +96,7 @@ export function SceneStrip({
             content: (
               <>
                 <span className={styles.thumb}>
-                  {visible && scene !== "none" ? (
+                  {visible && scene !== "none" && (scene === value || playing === scene) ? (
                     <LiveBackgroundCanvas
                       effect={scene}
                       intensity={1}

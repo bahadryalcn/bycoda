@@ -21,6 +21,17 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+.status {
+  display: flex;
+  min-inline-size: 0;
+}
+.status:has([data-recovery-control]) :is(.updateNotice, .updateAction),
+.status:has(.updateAction button) .updateNotice,
+.status:not(:has(button)),
+.updateNotice:empty,
+.updateAction:not(:has(button)) {
+  display: none;
+}
 .footer[data-sidebar-account-footer="compact"] {
   flex-direction: column;
   padding-inline: 0;

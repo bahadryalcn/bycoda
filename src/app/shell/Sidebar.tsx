@@ -4,6 +4,8 @@ import { actionContentAttributes } from "../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
 import { LiveText } from "../../shared/ui/LiveText";
+import { EmptyState } from "../../shared/ui/EmptyState";
+import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
 import { ScrollArea } from "../../shared/ui/ScrollArea";
 import { motionAttributes } from "../../shared/ui/Motion";
 import { ClampText } from "../../shared/ui/ClampText";
@@ -30,11 +32,10 @@ import { StatusDot } from "../../shared/ui/StatusDot";
 import { localReferenceForSession } from "../../features/sessions/model/localSessionNavigation";
 import { localSessionLinkFields } from "../../features/sessions/model/localSessionReference";
 import { Alert } from "../../shared/ui/Alert";
-import { ErrorDetails } from "../../shared/ui/ErrorDetails";
+import { InlineError } from "../../shared/ui/InlineError";
 import { TextField } from "../../shared/ui/TextField";
 import { Modal } from "../../shared/ui/Modal";
 import { Button } from "../../shared/ui/Button";
-import { ButtonGroup } from "../../shared/ui/ButtonGroup";
 import { Tab } from "../../shared/ui/Tabs";
 import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
 import { WorkspaceTabList } from "./WorkspaceTabList";
@@ -99,7 +100,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Archive,
   Chatting,
-  ChevronDown,
+  MoreHorizontal,
   CheckList,
   DashboardSquare,
   Bot,
@@ -384,7 +385,6 @@ import {
   reminderTime,
   type SessionReminder,
 } from "../../features/sessions/model/sessionReminders";
-import { SessionsEmpty } from "../../features/sessions/ui/SessionsEmpty";
 import { SessionsNoMatch } from "../../features/sessions/ui/SessionsNoMatch";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
@@ -1028,7 +1028,7 @@ function SidebarComponent({
   const [linkingSession, setLinkingSession] = useState<SessionSummary | null>(null);
   const [copyIdFailure, setCopyIdFailure] = useState<{
     value: string;
-    error: string;
+    error?: string;
   } | null>(null);
   const [referenceCopy, setReferenceCopy] = useState<{
     id: string;
@@ -2016,9 +2016,7 @@ function SidebarComponent({
   const canRemoveMenuSessionsFromFolders = multipleMenuSessions
     ? anyMenuSessionFoldered
     : !!menuSessionFolder;
-  // Without an open project folders have no home: items stay visible but inert, with the reason beneath.
   const organizable = canOrganizeSessions(cwd);
-  const noProjectReason = t("Open a project to use folders");
   const menuFolder = folderMenu
     ? sessionFolders.find((folder) => folder.id === folderMenu.folderId)
     : undefined;
@@ -2094,15 +2092,12 @@ function SidebarComponent({
               { kind: "sep" as const },
             ]
           : []),
-        ...(onPinSession || onPinSessions
+        ...((onPinSession || onPinSessions) && (organizable || !NATIVE_SESSION_ORGANIZATION_ACTIVE)
           ? [
               {
                 kind: "item" as const,
                 id: "pin",
-                label: allMenuSessionsPinned ? "Unpin" : "Pin",
-                disabled: NATIVE_SESSION_ORGANIZATION_ACTIVE && !organizable,
-                description:
-                  NATIVE_SESSION_ORGANIZATION_ACTIVE && !organizable ? noProjectReason : undefined,
+                label: allMenuSessionsPinned ? t("Unpin") : t("Pin"),
               },
             ]
           : []),
@@ -2236,24 +2231,18 @@ function SidebarComponent({
               },
             ]
           : []),
-        { kind: "sep" as const },
-        {
-          kind: "item" as const,
-          id: "folder-new",
-          get label() {
-            return t("New folder");
-          },
-          disabled: !organizable,
-          description: organizable ? undefined : noProjectReason,
-        },
-        ...(sessionFolders.length > 0
+        ...(organizable
+          ? [
+              { kind: "sep" as const },
+              { kind: "item" as const, id: "folder-new", label: t("New folder") },
+            ]
+          : []),
+        ...(organizable && sessionFolders.length > 0
           ? [
               {
                 kind: "item" as const,
                 id: "folder-add",
                 label: t("Add to"),
-                disabled: !organizable,
-                description: organizable ? undefined : noProjectReason,
                 submenuSearch: { placeholder: t("Search folders"), emptyLabel: t("No results") },
                 submenu: sessionFolders.map((folder) => ({
                   kind: "item" as const,
@@ -2266,14 +2255,12 @@ function SidebarComponent({
               },
             ]
           : []),
-        ...(canRemoveMenuSessionsFromFolders
+        ...(organizable && canRemoveMenuSessionsFromFolders
           ? [
               {
                 kind: "item" as const,
                 id: "folder-remove",
-                label: multipleMenuSessions ? "Remove from folders" : "Remove from folder",
-                disabled: !organizable,
-                description: organizable ? undefined : noProjectReason,
+                label: multipleMenuSessions ? t("Remove from folders") : t("Remove from folder"),
               },
             ]
           : []),
@@ -2422,8 +2409,8 @@ function SidebarComponent({
     if (id === "copy-harness-session-id" || id === "copy-bycoda-session-id") {
       const value = id === "copy-harness-session-id" ? providerSessionId : sessionId;
       if (value) {
-        void copyText(value).catch((error) => {
-          setCopyIdFailure({ value, error: errorText(error) });
+        void copyText(value).catch(() => {
+          setCopyIdFailure({ value });
         });
       }
       return;
@@ -3638,6 +3625,71 @@ function SidebarComponent({
   const workspaceHeader = (withVisitNav = false) => {
     const switcher = !lastSessionsOpen && !remoteProject && cwd && cwd !== "~";
     const createSession = lastSessionsOpen ? undefined : onNew;
+    const projectless = !lastSessionsOpen && cwd === "~";
+    const toolbarItems: DropdownMenuItem[] = sessionToolbar
+      ? [
+          {
+            kind: "item",
+            id: "search",
+            label: t("Search sessions"),
+            icon: <Search className="icon-sm" />,
+          },
+          ...(!lastSessionsOpen
+            ? [
+                {
+                  kind: "item" as const,
+                  id: "select",
+                  label: selectionMode ? t("Stop selecting") : t("Select sessions"),
+                  checked: selectionMode,
+                  icon: <CheckList className="icon-sm" />,
+                },
+              ]
+            : []),
+          {
+            kind: "item",
+            id: "filter",
+            label: t("Filter sessions"),
+            checked: filtersActive,
+            icon: <ListFilter className="icon-sm" />,
+          },
+        ]
+      : [];
+    const onToolbarPick = (id: string, anchor: HTMLButtonElement) => {
+      if (id === "search") sessionSearchRef.current?.expand();
+      else if (id === "filter") onFilterButtonClick({ currentTarget: anchor });
+      else if (id === "select") {
+        if (selectionMode) clearSessionSelection();
+        else {
+          setSessionMenu(null);
+          selection.enterMode();
+        }
+      }
+    };
+    const activeTools = selectionMode || filtersActive || searchQuery.trim().length > 0;
+    const sessionItems: DropdownMenuItem[] = [
+      ...(createSession && chooseNewSessionProject
+        ? [{ kind: "item" as const, id: "project", label: t("Choose project") }]
+        : []),
+      ...(createSession && onNewOnMachine
+        ? [{ kind: "item" as const, id: "machine", label: t("Run on") }]
+        : []),
+    ];
+    const sessionOptions =
+      projectless && (sessionItems.length || toolbarItems.length) ? (
+        <SessionOptions
+          items={[
+            ...sessionItems,
+            ...(sessionItems.length && toolbarItems.length ? [{ kind: "sep" as const }] : []),
+            ...toolbarItems,
+          ]}
+          active={activeTools}
+          onPick={(id, anchor) => {
+            if (id === "project") chooseNewSessionProject?.();
+            else if (id === "machine") onNewOnMachine?.();
+            else onToolbarPick(id, anchor);
+          }}
+        />
+      ) : undefined;
     return (
       <PaneHeader
         dragRegion
@@ -3656,21 +3708,23 @@ function SidebarComponent({
             />
           ) : remoteProject && !lastSessionsOpen ? (
             <SidebarRemoteWorkspaceTitle cwd={cwd} status={remoteWorkspaceStatus} />
-          ) : (
-            <Text as="span" size="title" weight="medium" tone="inherit">
-              {t(lastSessionsOpen ? "Last sessions" : cwd === "~" ? "No project" : "Workspace")}
-            </Text>
+          ) : lastSessionsOpen ? (
+            t("Last sessions")
+          ) : projectless ? undefined : (
+            t("Workspace")
           )
         }
-        trailing={
+        primaryAction={
           createSession || chooseNewSessionProject ? (
             <WorkspaceNewSessionButton
               onNew={createSession}
-              onChooseProject={chooseNewSessionProject}
-              onChooseMachine={createSession ? onNewOnMachine : undefined}
+              onChooseProject={projectless && createSession ? undefined : chooseNewSessionProject}
+              onChooseMachine={createSession && !projectless ? onNewOnMachine : undefined}
             />
           ) : null
         }
+        actions={sessionOptions}
+        overflow={sessionOptions}
       >
         {withVisitNav || (compactRailVisible && onToggleProjectRail) ? (
           <div className="flex shrink-0 items-center gap-1" data-workspace-navigation>
@@ -3694,46 +3748,13 @@ function SidebarComponent({
             ) : null}
           </div>
         ) : null}
-        {sessionToolbar ? (
+        {projectless && sessionToolbar ? (
+          <div className={styles.projectlessToolbar}>{sessionToolbar}</div>
+        ) : sessionToolbar ? (
           <WorkspaceToolbar
-            active={selectionMode || filtersActive || searchQuery.trim().length > 0}
-            items={[
-              {
-                kind: "item",
-                id: "search",
-                label: t("Search sessions"),
-                icon: <Search className="icon-sm" />,
-              },
-              ...(!lastSessionsOpen
-                ? [
-                    {
-                      kind: "item" as const,
-                      id: "select",
-                      label: selectionMode ? t("Stop selecting") : t("Select sessions"),
-                      checked: selectionMode,
-                      icon: <CheckList className="icon-sm" />,
-                    },
-                  ]
-                : []),
-              {
-                kind: "item",
-                id: "filter",
-                label: t("Filter sessions"),
-                checked: filtersActive,
-                icon: <ListFilter className="icon-sm" />,
-              },
-            ]}
-            onPick={(id, anchor) => {
-              if (id === "search") sessionSearchRef.current?.expand();
-              else if (id === "filter") onFilterButtonClick({ currentTarget: anchor });
-              else if (id === "select") {
-                if (selectionMode) clearSessionSelection();
-                else {
-                  setSessionMenu(null);
-                  selection.enterMode();
-                }
-              }
-            }}
+            active={activeTools}
+            items={toolbarItems}
+            onPick={onToolbarPick}
           >
             {sessionToolbar}
           </WorkspaceToolbar>
@@ -3893,13 +3914,12 @@ function SidebarComponent({
               onClose={closeFilesSearch}
             />
           ) : (
-            <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
-              {t("No project folder")}
-            </Text>
+            <EmptyState context="list" size="inline" description={t("No project folder")} />
           )}
         </div>
         {/* The tools live in the Workspace header row; without that row they get their own slim one. */}
         {sessionToolbar &&
+        cwd !== "~" &&
         !railVisible &&
         !compactRailVisible &&
         (!remoteProject || onSelectProject) ? (
@@ -4145,11 +4165,13 @@ function SidebarComponent({
                       )}
                     />
                   ) : (
-                    <SessionsEmpty
-                      message={
+                    <EmptyState
+                      context="list"
+                      size="inline"
+                      description={
                         narrowedByUser || lastSessionsData?.rows.length
-                          ? "No matching sessions"
-                          : "No sessions in the last 7 days"
+                          ? t("No matching sessions")
+                          : t("No sessions in the last 7 days")
                       }
                     />
                   );
@@ -4169,9 +4191,7 @@ function SidebarComponent({
               ) : null}
             </SessionSearchQueryContext.Provider>
           ) : !cwd ? (
-            <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
-              {t("No project folder")}
-            </Text>
+            <EmptyState context="list" size="inline" description={t("No project folder")} />
           ) : (
             <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
               <div className={sessionsStale ? "opacity-60" : undefined}>
@@ -4263,19 +4283,17 @@ function SidebarComponent({
                           {clearFilters}
                         </SessionsNoMatch>
                       ) : (
-                        <Text
-                          as="div"
-                          size="caption"
-                          tone="secondary"
-                          className="flex flex-col items-start gap-1.5 px-3 py-2"
-                        >
-                          <LiveText text={t("No sessions match these filters")} />
-                          {clearFilters}
-                        </Text>
+                        <EmptyState
+                          context="list"
+                          size="inline"
+                          kind="filtered"
+                          description={t("No sessions match these filters")}
+                          extra={clearFilters}
+                        />
                       );
                     })()
                   ) : (
-                    <SessionsEmpty message="Sessions you start will show up here" />
+                    null
                   )
                 ) : (
                   <>
@@ -4605,20 +4623,17 @@ function SidebarComponent({
       {copyIdFailure ? (
         <Modal title={t("Session ID")} size="sm" onClose={() => setCopyIdFailure(null)}>
           <div className="flex flex-col gap-3">
-            <Alert
-              tone="danger"
-              title={t("Could not copy the session ID")}
-              extra={<ErrorDetails detail={copyIdFailure.error} />}
-            >
-              {t("Select the ID below to copy it manually, or retry.")}
-            </Alert>
             <TextField
               label={t("Session ID")}
-              aria-label={t("Session ID")}
+              hideLabel
+              autoFocus
               value={copyIdFailure.value}
               readOnly
               onFocus={(event) => event.currentTarget.select()}
             />
+            {copyIdFailure.error ? (
+              <InlineError details={copyIdFailure.error}>{t("Could not copy the session ID")}</InlineError>
+            ) : null}
             <Button
               loading={copyIdRetrying}
               onClick={() => {
@@ -4633,7 +4648,7 @@ function SidebarComponent({
                   .finally(() => setCopyIdRetrying(false));
               }}
             >
-              {t("Retry")}
+              {t("Copy")}
             </Button>
           </div>
         </Modal>
@@ -5351,7 +5366,7 @@ function CompactProjectRail({
           onClick={action(assistantActive, () => openAssistantRoom())}
         />
         {/* Match the full sidebar's order: tools, then work sections. */}
-        <Divider decorative className="my-0.5 w-6 shrink-0 self-center" />
+        <Divider decorative inset="sm" className="my-(--ui-space-1) shrink-0" />
         {onOpenProjectNavigation ? (
           <Button
             variant="ghost"
@@ -5364,7 +5379,7 @@ function CompactProjectRail({
             selected={projectNavigationOpen}
             onClick={(event) => onOpenProjectNavigation(event.currentTarget)}
           >
-            <FolderTree className="icon-md" aria-hidden />
+            <FolderTree className="icon-sm" aria-hidden />
           </Button>
         ) : null}
         {onOpenLastSessions ? (
@@ -5379,7 +5394,7 @@ function CompactProjectRail({
         {!tabShown || !workspaceActive || lastSessionsOpen ? (
           <CompactRailAction
             label={t("Workspace")}
-            icon={FolderTree}
+            icon={Chatting}
             badge={workingSessionsBadge}
             onClick={onOpenWorkspace}
           />
@@ -5477,7 +5492,7 @@ function CompactRailAction({
       className="relative shrink-0"
     >
       <Icon
-        className={`icon-md ${dot ? "compact-rail-icon-with-dot" : ""}`}
+        className={`icon-sm ${dot ? "compact-rail-icon-with-dot" : ""}`}
         strokeWidth={1.75}
         aria-hidden
       />
@@ -5497,70 +5512,97 @@ function WorkspaceNewSessionButton({
 }) {
   const t = useT();
   const shortcut = useKeybindingShortcut("Tab: New");
-  const label = t("New session");
-  if (onNew && onChooseMachine)
+  const label = onNew ? t("New session") : t("Choose project");
+  const actions = [
+    ...(onChooseProject
+      ? [{ id: "project", label: t("Choose project"), onSelect: onChooseProject }]
+      : []),
+    ...(onChooseMachine ? [{ id: "machine", label: t("Run on"), onSelect: onChooseMachine }] : []),
+  ];
+  if (onNew && actions.length > 0)
     return (
       <SplitButton
         label={label}
         menuLabel={t("Session actions")}
         tone="accent"
         motion="none"
-        padding={{ inline: "sm" }}
+        variant="ghost"
+        size="sm"
         startIcon={<NewSession className="icon-sm" />}
         onClick={onNew}
+        onContextMenu={
+          onChooseProject &&
+          ((event) => {
+            event.preventDefault();
+            onChooseProject();
+          })
+        }
         shortcut={shortcut || undefined}
         data-session-selection-keep
         data-usage-guide="new-session"
-        actions={[
-          ...(onChooseProject
-            ? [{ id: "project", label: t("Choose project"), onSelect: onChooseProject }]
-            : []),
-          { id: "machine", label: t("Run on"), onSelect: onChooseMachine },
-        ]}
+        actions={actions}
       />
     );
-  const primary = (
+  return (
     <Button
-      aria-label={label}
       aria-haspopup={!onNew && onChooseProject ? "dialog" : undefined}
-      tooltip={label}
       shortcut={shortcut || undefined}
       motion="none"
-      padding={{ inline: "sm" }}
-      variant={onNew && onChooseProject ? "ghost" : undefined}
+      variant="ghost"
+      size="sm"
       tone="accent"
       startIcon={<NewSession className="icon-sm" />}
       onClick={onNew ?? onChooseProject}
-      onContextMenu={
-        onChooseProject &&
-        ((event) => {
-          event.preventDefault();
-          onChooseProject();
-        })
-      }
       data-session-selection-keep
       data-usage-guide="new-session"
     >
-      <span className={styles.newSessionLabel}>{label}</span>
+      {label}
     </Button>
   );
-  if (!onNew || !onChooseProject) return primary;
+}
+
+function SessionOptions({
+  items,
+  active,
+  onPick,
+}: {
+  items: DropdownMenuItem[];
+  active: boolean;
+  onPick: (id: string, anchor: HTMLButtonElement) => void;
+}) {
+  const t = useT();
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const label = t("Session actions");
   return (
-    <ButtonGroup aria-label={label}>
-      {primary}
+    <>
       <Button
+        ref={anchor}
         variant="ghost"
-        tone="accent"
         motion="none"
         iconOnly
-        label={t("Choose project")}
-        aria-haspopup="dialog"
-        onClick={onChooseProject}
+        label={label}
+        selected={open || active}
+        aria-haspopup="menu"
+        expanded={open}
+        onClick={() => setOpen(!open)}
         data-session-selection-keep
       >
-        <ChevronDown className="icon-sm" />
+        <MoreHorizontal className="icon-sm" />
       </Button>
-    </ButtonGroup>
+      {open ? (
+        <DropdownMenu
+          anchor={anchor}
+          label={label}
+          closeOnSelect
+          items={items}
+          onClose={() => setOpen(false)}
+          onPick={(id) => {
+            if (anchor.current) onPick(id, anchor.current);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -6752,9 +6794,11 @@ const SessionCard = memo(function SessionCard({
               </span>
               {pinAction("col-start-1 row-start-1")}
             </span>
-            <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-              {hideProjectName ? null : <SessionSearchText text={project.name} />}
-            </Text>
+            {hideProjectName ? null : (
+              <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
+                <SessionSearchText text={project.name} />
+              </Text>
+            )}
             {rowCommands}
             <span className="flex shrink-0 items-center gap-1.5">
               {linkedUpdateDot}

@@ -30,7 +30,7 @@ export function UpdateChannelRow() {
       id="update-channel"
       label={label}
       description={t(
-        "Get signed builds from main as soon as CI passes. They may contain unfinished features. Turning this off keeps your version until the next stable release.",
+        "Signed preview builds may include unfinished features. Switch off to wait for the next stable release.",
       )}
     >
       <Toggle

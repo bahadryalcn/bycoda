@@ -9,10 +9,9 @@ import {
   Minimize2,
   MoreHorizontal,
   RefreshCw,
-  VolumeX,
 } from "../../shared/ui/icons";
-import { FullscreenButton, useFullscreenToggle } from "./FullscreenButton";
-import { SoundsButton, useSoundsToggle } from "../../features/notifications/ui/SoundsButton";
+import { useFullscreenToggle } from "./FullscreenButton";
+import { useSoundsToggle } from "../../features/notifications/ui/SoundsButton";
 
 export const WORKSPACE_REFRESH_EVENT = "bycoda:refresh-workspace-view";
 
@@ -22,9 +21,7 @@ export { UsageIcon } from "../../shared/ui/icons";
 const refreshView = () => window.dispatchEvent(new Event(WORKSPACE_REFRESH_EVENT));
 
 /**
- * Window-wide controls at the end of the workspace footer. In a footer narrower than 640px
- * (the `@container/footer` set by WorkspaceFooter) they all move into one "More" menu;
- * wider, they sit inline and the menu trigger is gone.
+ * Window-wide controls share one overflow menu at every width.
  */
 export function WorkspaceControls({ canRefresh = true }: { canRefresh?: boolean }) {
   const t = useT();
@@ -36,24 +33,7 @@ export function WorkspaceControls({ canRefresh = true }: { canRefresh?: boolean 
       aria-label={t("Workspace controls")}
       className="ml-auto flex shrink-0 items-center justify-end gap-1"
     >
-      <span className="flex items-center gap-1 @max-[640px]/footer:hidden">
-        <Button
-          iconOnly
-          label={t("Refresh current view")}
-          variant="ghost"
-          motion="none"
-          type="button"
-          disabled={!canRefresh}
-          onClick={refreshView}
-        >
-          <RefreshCw className="icon-sm" />
-        </Button>
-        <SoundsButton />
-        <FullscreenButton />
-      </span>
-      <span className="hidden items-center @max-[640px]/footer:flex">
-        <WorkspaceControlsMenu canRefresh={canRefresh} />
-      </span>
+      <WorkspaceControlsMenu canRefresh={canRefresh} />
     </Text>
   );
 }
@@ -76,7 +56,7 @@ function WorkspaceControlsMenu({ canRefresh }: { canRefresh: boolean }) {
       kind: "item",
       id: "sounds",
       label: t("Sounds"),
-      icon: sounds.enabled ? <AudioLines className="icon-sm" /> : <VolumeX className="icon-sm" />,
+      icon: <AudioLines className="icon-sm" />,
       selectionRole: "checkbox",
       checked: sounds.enabled,
     },

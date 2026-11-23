@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
-import { Button } from "../../../shared/ui/Button";
 import { SettingsFeedback } from "../../../shared/ui/settings";
-import { Text } from "../../../shared/ui/Text";
 import { reconnectLocalHost } from "../model/localHostService";
 import type { RemoteMachine } from "../model/protocol";
 import { errorText } from "../../../shared/lib/errors";
@@ -57,32 +55,13 @@ export function LocalHostRevokedNotice({ machine }: { machine: RemoteMachine }) 
   const t = useT();
   const { pending, error, reconnect } = useReconnect(machine);
   return (
-    <Alert tone="warning">
-      <div className="min-w-0 flex-1">
-        <Text as="p" size="inherit" tone="inherit" weight="medium">
-          {t("This computer's connection to its Host was revoked.")}
-        </Text>
-        <Text
-          as="p"
-          size="inherit"
-          tone="inherit"
-          leading="relaxed"
-          className="ui-secondary-text mbs-0.5"
-        >
-          {error ??
-            t("Tasks, sessions and sync on this computer are unavailable until you reconnect.")}
-        </Text>
-        <Button
-          className="mbs-2"
-          variant="secondary"
-          size="sm"
-          loading={pending}
-          loadingLabel={t("Reconnecting…")}
-          onClick={() => void reconnect()}
-        >
-          {t("Reconnect")}
-        </Button>
-      </div>
+    <Alert
+      tone="warning"
+      title={t("This computer's connection to its Host was revoked.")}
+      action={{ label: t("Reconnect"), onClick: () => void reconnect(), pending }}
+    >
+      {error ??
+        t("Tasks, sessions and sync on this computer are unavailable until you reconnect.")}
     </Alert>
   );
 }

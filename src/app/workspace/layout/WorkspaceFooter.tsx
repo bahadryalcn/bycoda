@@ -13,7 +13,7 @@ import { UsageFooter } from "../../shell/UsageFooter";
 import { WorkspaceControls } from "../../shell/WorkspaceControls";
 import { useT } from "../../../shared/i18n";
 import { requestBackgroundTarget } from "../input/backgroundTargets";
-import type { WorkspaceNoticesProps } from "./WorkspaceNotices";
+import type { SettingsAnchor } from "../../../features/settings/ui/SettingsView";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 
 type UsageFooterProps = ComponentProps<typeof UsageFooter>;
@@ -29,7 +29,7 @@ export interface WorkspaceFooterProps {
   automationsViewOpen: boolean;
   settingsOpen: boolean;
   settingsSection: SettingsSectionId;
-  openSettings: WorkspaceNoticesProps["openSettings"];
+  openSettings: (section?: SettingsSectionId, anchor?: SettingsAnchor) => void;
   // Usage and project terminal
   active: Session | undefined;
   projectCwd: string;

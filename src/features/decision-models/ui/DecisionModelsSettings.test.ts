@@ -243,7 +243,7 @@ describe("DecisionModelsSettings sources", () => {
 
     expect(bodyText()).toContain("This did not work. Try again.");
 
-    clickButton("Try again");
+    clickButton("Retry");
 
     await settleDecisionUi();
 
@@ -290,7 +290,8 @@ describe("DecisionModelsSettings sources", () => {
 
     expect(document.querySelector('[role="combobox"]')).toBeNull();
 
-    expect(buttonByText("Add from folder")).toBeDefined();
+    // The section header's Add model menu is the only add action; the empty state has none.
+    expect(buttonByText("Add from folder")).toBeUndefined();
   });
 
   it("lists connected sources with their status", async () => {
@@ -308,7 +309,7 @@ describe("DecisionModelsSettings sources", () => {
 
     expect(mocks.list).toHaveBeenCalledTimes(1);
 
-    clickButton("Try again");
+    clickButton("Retry");
 
     await settleDecisionUi();
 
@@ -773,7 +774,7 @@ describe("DecisionModelsSettings scan settings", () => {
   });
 });
 
-it("sorts new discoveries first and offers no Add action on connected items", async () => {
+it("lists only new discoveries, leaving connected ones to Connected models", async () => {
   await renderSettings({
     sources: [{ ...source(), local: { modelPath: "C:/Models/connected.gguf" } }],
 
@@ -796,11 +797,11 @@ it("sorts new discoveries first and offers no Add action on connected items", as
 
   const rows = list.querySelectorAll("li");
 
+  expect(rows).toHaveLength(1);
+
   expect(rows[0].textContent).toContain("New file");
 
-  expect(rows[1].textContent).toContain("Connected");
-
-  expect(rows[1].querySelector("button")).toBeNull();
+  expect(list.textContent).not.toContain("Connected file");
 });
 
 it("tests all models and keeps each result visible after stale list refresh", async () => {
@@ -988,7 +989,7 @@ describe("decision source test freshness", () => {
 
     await settleDecisionUi();
 
-    clickButton("Try again");
+    clickButton("Retry");
 
     await settleDecisionUi();
 
@@ -1121,7 +1122,7 @@ it("retries a failed catalog read from the API dialog and recovers", async () =>
 
   await settleDecisionUi();
 
-  clickButton("Try again");
+  clickButton("Retry");
 
   await settleDecisionUi();
 
@@ -1473,7 +1474,7 @@ it("keeps Host routing draft through a failed initial read and retry", async () 
   await settleDecisionUi();
   expect(bodyText()).toContain("Could not load the routing.");
   expect(document.querySelector('input[inputmode="decimal"]')).toBeNull();
-  clickButton("Try again");
+  clickButton("Retry");
   await settleDecisionUi();
   clickButton("Customize");
   await settleDecisionUi();

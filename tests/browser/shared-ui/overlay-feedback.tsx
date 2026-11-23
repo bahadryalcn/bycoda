@@ -538,6 +538,41 @@ function LoadingSection() {
   );
 }
 
+const OPERATION_FAILURE = "Could not save the file.";
+
+/**
+ * Failed operations with identical copy. Each button starts one identified operation; failing it
+ * again (Retry) updates that operation's own toast. `history` is a stored record, never a notice.
+ */
+function OperationsFixture() {
+  const fail = (operation: string) =>
+    toast.show({
+      id: `operation-${operation}`,
+      tone: "danger",
+      message: OPERATION_FAILURE,
+      durationMs: null,
+      action: {
+        label: "Retry",
+        onClick: () => {
+          count(`retry-${operation}`);
+          fail(operation);
+        },
+      },
+    });
+  return (
+    <main className="min-h-screen bg-(--ui-surface) p-3 text-(--color-content)">
+      <div data-pane="operations" className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => fail("a")}>Fail operation A</Button>
+        <Button onClick={() => fail("b")}>Fail operation B</Button>
+      </div>
+      <ul data-testid="history" className="mt-3 text-ui-secondary">
+        <li>{OPERATION_FAILURE} (earlier attempt, 10:41)</li>
+      </ul>
+      <ToastRegion />
+    </main>
+  );
+}
+
 function Fixture() {
   const params = new URLSearchParams(location.search);
   if (params.get("view") === "dismiss-layout")
@@ -564,6 +599,45 @@ function Fixture() {
         </div>
       </main>
     );
+  if (params.get("view") === "pane")
+    return (
+      <main className="flex min-h-screen bg-(--ui-surface) p-3 text-(--color-content)">
+        <div data-pane="feedback" className="grid min-w-0 content-start gap-3">
+          <Alert tone="info" title="Indexing started">
+            Search results stay available while the index rebuilds.
+          </Alert>
+          <Alert
+            tone="warning"
+            title="Provider needs attention"
+            action={{ label: "Open provider", onClick: () => count("alert-open") }}
+          >
+            {LONG_COPY}
+          </Alert>
+          <Alert
+            tone="danger"
+            title="Could not reach the host"
+            action={{ label: "Retry", onClick: () => count("alert-retry") }}
+            onDismiss={() => count("dismiss-danger")}
+          >
+            {"VeryLongRemoteMachineName".repeat(6)}
+          </Alert>
+          <div className="grid gap-1.5 rounded-md border border-stroke p-3">
+            <InlineMessage tone="danger">
+              Inline danger with a longer sentence that wraps inside a narrow row
+            </InlineMessage>
+          </div>
+          <Frame name="pane-empty">
+            <EmptyState
+              context="panel"
+              title="No sessions match"
+              description="Clear the filters to see every session."
+              action={{ label: "Clear filters", onClick: () => count("empty-clear") }}
+            />
+          </Frame>
+        </div>
+      </main>
+    );
+  if (params.get("view") === "operations") return <OperationsFixture />;
   if (params.get("view") === "boot")
     return <BootFailure error={new Error(FULL_DIAGNOSTIC)} onRetry={() => count("boot-retry")} />;
   return (

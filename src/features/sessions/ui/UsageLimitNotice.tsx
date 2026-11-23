@@ -85,7 +85,8 @@ export function UsageLimitNotice({
       data-usage-limit
       actionsAlign="center"
       tone={ready ? "info" : "warning"}
-      title={ready ? t("Ready to continue") : t("Usage limit reached")}
+      // The failed turn's notice states the limit once; this strip only carries the reset and recovery.
+      title={ready ? t("Ready to continue") : undefined}
       icon={ready ? undefined : <Gauge className="icon-md" aria-hidden />}
       action={resume ?? (!ready ? switchModel : undefined)}
       secondaryAction={resume && !ready ? switchModel : undefined}

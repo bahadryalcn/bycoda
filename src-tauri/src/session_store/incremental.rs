@@ -1163,6 +1163,37 @@ mod tests {
         assert!(page(&conn, &session.id, first.before, Some(first.revision), 1).is_err());
     }
     #[test]
+    fn scratch_delta_preserves_projectless_identity_and_rejects_managed_metadata() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut session = session();
+        session.cwd = "~".into();
+        session.workspace_mode = Some("scratch".into());
+        let summary = upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None)
+            .unwrap()
+            .unwrap();
+
+        let mut invalid = session.clone();
+        invalid.workspace_id = Some("managed-workspace".into());
+        match apply(&conn, &delta(invalid, &summary)) {
+            Err(error) => assert_eq!(error, "Invalid workspace mode"),
+            Ok(_) => panic!("scratch delta accepted a managed workspace"),
+        }
+        apply(&conn, &delta(session.clone(), &summary))
+            .unwrap()
+            .unwrap();
+        let saved = get_session(&conn, &session.id).unwrap().unwrap();
+        assert_eq!(saved.cwd, "~");
+        assert_eq!(saved.workspace_mode.as_deref(), Some("scratch"));
+        assert!(saved.workspace_id.is_none());
+        assert!(saved.worktree_cwd.is_none());
+        assert_eq!(saved.blocks[1]["text"], "after");
+        let rows = list_by_project_with_git(&conn, "~", crate::fs::GitInfo::default()).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, session.id);
+    }
+
+    #[test]
     fn delta_updates_list_projection_atomically() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();

@@ -500,15 +500,12 @@ function FindToggle({
     <Button
       size="sm"
       variant="ghost"
-      motion="none"
-      type="button"
       tooltip={title}
       shortcut={shortcut}
       aria-label={title}
-      aria-pressed={pressed}
+      pressed={pressed}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
-      className="shrink-0 font-mono"
     >
       {label}
     </Button>

@@ -13,7 +13,6 @@ import { AdvancedSettings } from "../../../../shared/ui/settings";
 import { ProfileNumber } from "./ProfileControls";
 import { useProfileRows } from "./SettingsProfileRow";
 import styles from "./costUsage.module.css";
-import viewStyles from "../AssistantView.module.css";
 import { Text } from "../../../../shared/ui/Text";
 import roleStyles from "../AssistantProfileFields.module.css";
 
@@ -21,15 +20,15 @@ import roleStyles from "../AssistantProfileFields.module.css";
 export function AssistantCostInfo() {
   return (
     <InfoPopover label={t("About cost and context")}>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t("Local scheduling limits, not a provider billing cap.")}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Zero disables follow-ups and automatic recovery. Manual conversations always wait for you after their limit.",
         )}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Worker limits use the first threshold reached: token count or percentage of the provider context window.",
         )}

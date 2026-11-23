@@ -152,8 +152,9 @@ function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
                 variant="item"
                 motion="none"
                 type="button"
+                fullWidth
+                align="start"
                 onClick={() => onOpenCommit(commit)}
-                className="flex w-full items-center gap-2 text-left"
               >
                 <Text size="micro" tone="muted" className="shrink-0 font-mono">
                   {commit.shortSha}
@@ -252,9 +253,9 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
                   motion="none"
                   type="button"
                   disabled={uncommitted}
-                  tooltip={
-                    uncommitted ? t("Not committed yet") : `${entry.shortSha} ${entry.summary}`
-                  }
+                  align="start"
+                  tooltip={uncommitted ? undefined : entry.summary}
+                  tooltipDetails={uncommitted ? undefined : [entry.author]}
                   onClick={() =>
                     onOpenCommit({
                       sha: entry.sha,
@@ -267,13 +268,13 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
                       head: false,
                     })
                   }
-                  className="w-48 shrink-0 text-left"
+                  className="w-40 shrink-0"
                 >
                   <Text as="span" size="inherit" tone="inherit" truncate className="block">
                     {first
                       ? uncommitted
                         ? t("Not committed yet")
-                        : `${entry.author} · ${shortDate(entry.timestamp)} · ${entry.summary}`
+                        : `${entry.shortSha} · ${shortDate(entry.timestamp)}`
                       : ""}
                   </Text>
                 </Button>

@@ -3,11 +3,9 @@ import type { EntitlementsSummary, User } from "@bycoda/account-contracts";
 import { useState } from "react";
 import { dateTimeFormat, getLocale, t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { PrivateEmail } from "../../../shared/ui/PrivateEmail";
 import { Group, Row } from "../../../shared/ui/settings";
 import { localTimeZone, useProfileUpdate } from "../hooks/useAccountData";
 
@@ -26,14 +24,8 @@ export function memberSince(user: Pick<User, "createdAt">): string {
   return dateTimeFormat(getLocale(), { dateStyle: "long" }).format(new Date(user.createdAt));
 }
 
-/** Editable profile facts: name, e-mail, plan, membership and the account's time zone. */
-export function AccountProfile({
-  user,
-  entitlements,
-}: {
-  user: User;
-  entitlements: EntitlementsSummary;
-}) {
+/** Editable profile facts: name, membership and the account's time zone (identity lives in the header). */
+export function AccountProfile({ user }: { user: User }) {
   useLocale();
   const update = useProfileUpdate();
   const [zoneError, setZoneError] = useState("");
@@ -58,15 +50,6 @@ export function AccountProfile({
             validate={(next) => (next.trim() ? null : t("Enter a name."))}
             onSave={(next) => update.mutateAsync({ displayName: next.trim() })}
           />
-        </Row>
-        <Row
-          label={t("E-mail")}
-          description={t("Used to sign in and for messages about your account.")}
-        >
-          <PrivateEmail email={user.email} />
-        </Row>
-        <Row label={t("Plan")}>
-          <Badge tone="accent">{planLabel(entitlements.planTier)}</Badge>
         </Row>
         <Row label={t("Member since")}>
           <Text size="body" tone="muted">

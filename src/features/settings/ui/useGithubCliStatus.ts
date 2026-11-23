@@ -48,9 +48,12 @@ export function useGithubCliStatus() {
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Load the native GitHub CLI status on mount and invalidate the read on unmount.
   useEffect(() => {
+    const onFocus = () => void read(false);
     void read(false);
+    window.addEventListener("focus", onFocus);
     return () => {
       request.current += 1;
+      window.removeEventListener("focus", onFocus);
     };
   }, [read]);
 

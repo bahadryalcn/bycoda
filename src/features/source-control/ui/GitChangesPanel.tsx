@@ -543,68 +543,59 @@ export function GitChangesPanel({
             </>
           ) : null}
           {repository ? branchControl : null}
-          {/* Fixed icon columns keep these actions aligned with the section
-              actions below; controls owned by the header above leave their
-              column empty so the menu stays at the trailing edge. */}
           <div
             className={styles.branchSlots}
             // A section header offers its actions on hover or keyboard focus only.
             data-action-slot={repository ? "collapse" : undefined}
           >
-            <span className={styles.branchSlot}>
-              {detailsOpen && !refreshInTarget ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  iconOnly
-                  label={t("Refresh source control")}
-                  disabled={!enabled || !!busy}
-                  loading={loading}
-                  loadingLabel={t("Refreshing…")}
-                  onClick={() => {
-                    onMutated();
-                    checkout?.onRefresh();
-                    changesRef.current?.refreshPr?.();
-                  }}
-                >
-                  <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
-                </Button>
-              ) : null}
-            </span>
-            <span className={styles.branchSlot}>
-              {worktreesInTarget || notRepository ? null : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  iconOnly
-                  label={t("Manage worktrees…")}
-                  disabled={!enabled || !!busy}
-                  onClick={() => requestWorktreeManagement(cwd)}
-                >
-                  <FolderTree aria-hidden className="icon-sm" />
-                </Button>
-              )}
-            </span>
-            <span className={styles.branchSlot}>
-              {index && !notRepository ? (
-                <GitActionsMenu
-                  cwd={cwd}
-                  index={index}
-                  busy={busy}
-                  setBusy={setBusy}
-                  autoFetch={autoFetch}
-                  onToggleAutoFetch={toggleAutoFetch}
-                  changes={changesRef}
-                  onStatus={setStatus}
-                  onPending={setPending}
-                  onMutated={onMutated}
-                  onOpenCommit={onOpenCommit}
-                  toolbar={false}
-                  onRevealChanges={repository ? () => repository.onToggle(true) : undefined}
-                  repositoryScope={repository?.scope}
-                />
-              ) : null}
-            </span>
+            {detailsOpen && !refreshInTarget ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                label={t("Refresh source control")}
+                disabled={!enabled || !!busy}
+                loading={loading}
+                loadingLabel={t("Refreshing…")}
+                onClick={() => {
+                  onMutated();
+                  checkout?.onRefresh();
+                  changesRef.current?.refreshPr?.();
+                }}
+              >
+                <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
+              </Button>
+            ) : null}
+            {worktreesInTarget || notRepository ? null : (
+              <Button
+                size="sm"
+                variant="ghost"
+                iconOnly
+                label={t("Manage worktrees…")}
+                disabled={!enabled || !!busy}
+                onClick={() => requestWorktreeManagement(cwd)}
+              >
+                <FolderTree aria-hidden className="icon-sm" />
+              </Button>
+            )}
+            {index && !notRepository ? (
+              <GitActionsMenu
+                cwd={cwd}
+                index={index}
+                busy={busy}
+                setBusy={setBusy}
+                autoFetch={autoFetch}
+                onToggleAutoFetch={toggleAutoFetch}
+                changes={changesRef}
+                onStatus={setStatus}
+                onPending={setPending}
+                onMutated={onMutated}
+                onOpenCommit={onOpenCommit}
+                toolbar={false}
+                onRevealChanges={repository ? () => repository.onToggle(true) : undefined}
+                repositoryScope={repository?.scope}
+              />
+            ) : null}
           </div>
         </div>
       </Text>
@@ -657,7 +648,6 @@ export function GitChangesPanel({
               context="panel"
               kind="empty"
               title={t("This folder is not a Git repository")}
-              description={t("Initialize a repository to track changes in this folder.")}
               action={{
                 label: t("Initialize Repository"),
                 pending: busy === "init",
@@ -736,7 +726,6 @@ function ChangedFiles({
   textHarness,
   index,
   loadError,
-  loading,
   checking,
   files,
   submodules,
@@ -1397,6 +1386,8 @@ function ChangedFiles({
   return (
     <aside className={`flex min-h-0 min-w-0 flex-col ${fill ? "flex-1" : "shrink-0"}`}>
       <div {...surfaceAttributes({ frame: fill ? "pane" : undefined, edge: "bottom" }, "shrink-0")}>
+        {/* No repository data yet or a failed first read: there is nothing to commit, so no form. */}
+        {index ? (
         <div className="flex flex-col gap-1.5 p-2">
           <div className="relative min-w-0">
             <TextareaField
@@ -1488,27 +1479,19 @@ function ChangedFiles({
             />
           )}
         </div>
+        ) : null}
         {notices}
       </div>
-      {prLoading ? (
-        <Text role="status" as="p" size="micro" tone="secondary" className="px-3 py-1">
-          {t("Checking pull request…")}
-        </Text>
-      ) : prError ? (
+      {prLoading ? null : prError ? (
         <GitFeedback title={t("Couldn’t check pull request")} detail={prError} onRetry={reloadPr} />
       ) : null}
-      {loadError && !failure ? (
+      {loadError && !failure && !(!index && isMissingPathError(loadError)) ? (
         <GitFeedback
           title={t("Couldn’t load Git changes")}
           detail={loadError}
           stale={!!index}
           onRetry={() => onMutated()}
         />
-      ) : null}
-      {loading && index ? (
-        <Text role="status" as="p" size="micro" tone="secondary" className="px-3 py-1">
-          {t("Refreshing changes…")}
-        </Text>
       ) : null}
       {failure ? (
         <RemoteLoadError cwd={cwd} failure={failure} stale={!!index} onRetry={() => onMutated()} />

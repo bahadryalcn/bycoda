@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MobileAccessStatus } from "../../../integrations/mobile-access";
 import { t } from "../../../shared/i18n";
-import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Row } from "../../../shared/ui/settings";
 import { Switch } from "../../../shared/ui/Switch";
@@ -11,7 +10,7 @@ import { errorText } from "../../../shared/lib/errors";
 
 /**
  * This computer's local network listener for phones. Reading never enables anything;
- * turning it off asks first because phones on the network lose access.
+ * turning it off acts at once, since turning it on again is one click.
  */
 export function LocalNetworkAccessRow({
   machine,
@@ -23,7 +22,6 @@ export function LocalNetworkAccessRow({
   const [status, setStatus] = useState<MobileAccessStatus>();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const [confirmOff, setConfirmOff] = useState(false);
   const alive = useRef(true);
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reads the Host's network listener each time the tab shows; a late answer after unmount is dropped.
@@ -80,22 +78,9 @@ export function LocalNetworkAccessRow({
           checked={on}
           disabled={!status || pending}
           aria-label={t("Local network access")}
-          onCheckedChange={(next) => (next ? void change(true) : setConfirmOff(true))}
+          onCheckedChange={(next) => void change(next)}
         />
       </Row>
-      {confirmOff ? (
-        <ConfirmDialog
-          request={{
-            title: t("Turn off local network access?"),
-            message: t("Phones on this network will lose access to this computer."),
-            confirmLabel: t("Turn off local network access"),
-          }}
-          onSettle={(confirmed) => {
-            setConfirmOff(false);
-            if (confirmed) void change(false);
-          }}
-        />
-      ) : null}
     </>
   );
 }

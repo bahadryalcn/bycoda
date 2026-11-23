@@ -3,8 +3,7 @@ import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { UpdateImpact } from "./UpdateImpact";
-import { Button } from "../../../shared/ui/Button";
-import { Text } from "../../../shared/ui/Text";
+import { hostRestartConsequences } from "./hostRestartConsequences";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { buildIdentity } from "../../../shared/model/build-info";
 import { remoteRequest } from "../model/connections";
@@ -65,13 +64,7 @@ export function LocalHostUpdateNotice() {
     const approved = await confirm({
       title: t("Update this computer's host now?"),
       message: t("The host restarts to install the version included in this app."),
-      consequences: [
-        {
-          tone: "warning",
-          content: t("Running sessions and shells on this computer are interrupted."),
-        },
-        { content: t("Session history is kept.") },
-      ],
+      consequences: hostRestartConsequences(),
       confirmLabel: t("Stop and update"),
       danger: true,
       body: <UpdateImpact target="local-host" />,
@@ -89,27 +82,18 @@ export function LocalHostUpdateNotice() {
   };
   return (
     <>
-      <Alert tone={notice.tone}>
-        <div className="min-w-0 flex-1">
-          <Text as="span" size="inherit" tone="primary" weight="medium">
-            {t(notice.title)}
-          </Text>{" "}
-          {notice.details.map((line) => t(line.text, line.params)).join(" ")}
-          {error ? <p className="mbs-0.5">{t(error)}</p> : null}
-          {notice.canUpdateNow ? (
-            <div className="mbs-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                loading={updating}
-                loadingLabel={t("Updating host…")}
-                onClick={() => void updateNow()}
-              >
-                {t("Update host now")}
-              </Button>
-            </div>
-          ) : null}
-        </div>
+      <Alert
+        tone={notice.tone}
+        title={t(notice.title)}
+        action={
+          notice.canUpdateNow
+            ? { label: t("Update host now"), onClick: () => void updateNow(), pending: updating }
+            : undefined
+        }
+      >
+        {[...notice.details.map((line) => t(line.text, line.params)), error ? t(error) : ""]
+          .filter(Boolean)
+          .join(" ")}
       </Alert>
       {dialog}
     </>

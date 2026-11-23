@@ -240,6 +240,7 @@ export function GoalForm({
                   "goal-section-rows",
                 )}
               >
+                {machineOptions.length > 1 ? (
                 <GoalOption title={t("Machine")}>
                   <SearchableSelect
                     hideLabel
@@ -260,6 +261,7 @@ export function GoalForm({
                     }
                   />
                 </GoalOption>
+                ) : null}
                 <div className="goal-option-wide grid min-w-0 gap-2">
                   <Text
                     as="div"
@@ -331,18 +333,13 @@ export function GoalForm({
                   </Text>
                   {machine ? (
                     <Text size="caption" tone="secondary">
-                      {t("Runs on ")}
-                      {machine}
+                      {t("Runs on {p0}", { p0: machine })}
                     </Text>
                   ) : draft.cwds.length ? (
                     <InlineMessage tone="warning" live="assertive">
                       {taskClientErrors.machine()}
                     </InlineMessage>
-                  ) : (
-                    <Text size="caption" tone="secondary">
-                      {t("Choose the projects the job may touch, all on one machine.")}
-                    </Text>
-                  )}
+                  ) : null}
                 </div>
               </div>
               {draft.cwds.length === 1 || draft.crewDefinitionId ? (
@@ -398,10 +395,7 @@ export function GoalForm({
             </GoalSection>
 
             <GoalSection title={t("How it runs")}>
-              <GoalOption
-                title={t("Start planned tasks")}
-                description={t("Choose whether planned tasks start on their own.")}
-              >
+              <GoalOption title={t("Start planned tasks")}>
                 <SearchableSelect
                   hideLabel
                   label={t("Start planned tasks")}
@@ -440,21 +434,16 @@ export function GoalForm({
             <GoalSection title={t("Review and delivery")}>
               <GoalCheckOption
                 title={t("Review the plan before starting")}
-                description={t("The planned tasks are created only once you approve the plan.")}
                 checked={draft.approvePlan}
                 onChange={(checked) => update("approvePlan", checked)}
               />
               <GoalCheckOption
                 title={t("Review each task with a second agent")}
-                description={t("A second agent checks each task's result.")}
                 checked={draft.review}
                 onChange={(checked) => update("review", checked)}
               />
               <GoalCheckOption
                 title={t("Verify the integrated result before completing this epic")}
-                description={t(
-                  "Checks the combined result of all tasks before the epic completes.",
-                )}
                 checked={draft.finalReview === true}
                 onChange={(checked) => update("finalReview", checked)}
               />
@@ -493,7 +482,6 @@ export function GoalForm({
             form={formId}
             loading={saving}
             disabled={!valid || saving}
-            disabledReason={valid || saving ? undefined : invalidReason}
           >
             {t("Plan it")}
           </Button>

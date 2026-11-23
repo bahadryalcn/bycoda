@@ -5,6 +5,7 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { TimePicker } from "../../../../shared/ui/TimePicker";
 import { useEffect, useState } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
+import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
@@ -15,7 +16,6 @@ import { Switch } from "../../../../shared/ui/Switch";
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import { ConfirmAutonomy } from "../common/ConfirmAutonomy";
-import { DisabledReason, gateProps, type ActionGate } from "../common/DisabledReason";
 import {
   DEFAULT_AUTONOMY,
   type AutonomyAction,
@@ -158,11 +158,6 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
   const saved = payloadFrom(draftFrom(policy));
   const changed =
     !saved.ok || !built.ok || JSON.stringify(built.policy) !== JSON.stringify(saved.policy);
-  const saveGate: ActionGate = disabled
-    ? { disabled: true, disabledReason: t("Connect to this computer to change this account.") }
-    : !changed
-      ? { disabled: true, disabledReason: t("No changes to save.") }
-      : { disabled: false };
 
   const askLevel = (action: AutonomyAction, next: AutonomyLevel) => {
     if (next !== "autonomous") {
@@ -227,18 +222,19 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Autonomy")}
     >
-      <InfoPopover className="self-end shrink-0">
-        <p>{t("Platform limits, opt-outs, working hours and the global AI stop still apply.")}</p>
-        <p>{t("Leave a daily limit blank to use the default.")}</p>
-      </InfoPopover>
-      <div className="social-autonomy-row social-autonomy-header" aria-hidden>
-        <Text as="span" size="caption" tone="muted">
+      <div className="social-autonomy-row social-autonomy-header">
+        <Text as="span" size="caption" tone="muted" aria-hidden>
           {t("Action")}
         </Text>
-        <Text as="span" size="caption" tone="muted">
-          {t("Autonomy")}
-        </Text>
-        <Text as="span" size="caption" tone="muted">
+        <span className="social-autonomy-head-cell">
+          <Text as="span" size="caption" tone="muted" aria-hidden>
+            {t("Autonomy")}
+          </Text>
+          <InfoPopover>
+            {t("Platform limits, opt-outs, working hours and the global AI stop still apply.")}
+          </InfoPopover>
+        </span>
+        <Text as="span" size="caption" tone="muted" aria-hidden>
           {t("Per day")}
         </Text>
       </div>
@@ -327,15 +323,19 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
         </div>
       ) : null}
       <div className="social-field-row">
-        <DisabledReason
+        {/* Nothing to save is obvious from the untouched form, so only the offline reason is said. */}
+        <Button
           variant="primary"
           size="sm"
           loading={is("autonomy")}
           onClick={save}
-          {...gateProps(saveGate)}
+          disabled={disabled || !changed}
+          disabledReason={
+            disabled ? t("Connect to this computer to change this account.") : undefined
+          }
         >
           {t("Save autonomy")}
-        </DisabledReason>
+        </Button>
       </div>
       {formError ? <InlineError>{formError}</InlineError> : null}
       {error ? <InlineError>{error}</InlineError> : null}

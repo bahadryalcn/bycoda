@@ -103,6 +103,17 @@ export function GitGraphCommitInspector({
             {commit.shortSha}
           </Code>
           <div className="flex items-center gap-1">
+            {onMode ? (
+              <TabStrip
+                label={t("Commit view")}
+                value={mode}
+                items={[
+                  { value: "changes", label: t("Changes") },
+                  { value: "blame", label: t("Blame") },
+                ]}
+                onValueChange={(value) => onMode(value as "changes" | "blame")}
+              />
+            ) : null}
             <Button
               variant="ghost"
               size="sm"
@@ -111,7 +122,7 @@ export function GitGraphCommitInspector({
               onClick={onBranch}
               disabled={disabled}
             >
-              {t("Create branch…")}
+              {t("New branch")}
             </Button>
             {onClose ? (
               <Button
@@ -173,8 +184,9 @@ export function GitGraphCommitInspector({
               tooltipWhen="overflow"
               type="button"
               aria-pressed={relative === file.relative}
+              fullWidth
+              align="start"
               onClick={() => setPicked(file.relative)}
-              className="flex w-full items-center justify-start gap-2"
             >
               <FileTypeIcon name={file.relative} isDir={false} size="sm" />
               <Text as="span" size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
@@ -200,35 +212,8 @@ export function GitGraphCommitInspector({
           onRetry={files.refresh}
         />
       ) : null}
-      <Text
-        as="div"
-        size="caption"
-        tone="secondary"
-        {...surfaceAttributes(
-          { frame: "pane", edge: "bottom" },
-          "flex min-h-9 shrink-0 items-center justify-between border-(--ui-pane-border) px-3",
-        )}
-      >
-        <span>
-          {mode === "blame"
-            ? deleted
-              ? t("Blame at parent (deleted file)")
-              : t("Blame at commit")
-            : t("Parent → commit")}
-        </span>
-        {onMode ? (
-          <TabStrip
-            label={t("Commit view")}
-            value={mode}
-            items={[
-              { value: "changes", label: t("Changes") },
-              { value: "blame", label: t("Blame") },
-            ]}
-            onValueChange={(value) => onMode(value as "changes" | "blame")}
-          />
-        ) : null}
-      </Text>
-      {relative ? (
+      {/* The file list navigates; the diff header names the path. Blame has no header of its own. */}
+      {relative && mode === "blame" ? (
         <Text
           as="div"
           size="caption"

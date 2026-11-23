@@ -1,4 +1,3 @@
-import { Text } from "../../../../shared/ui/Text";
 import { Code } from "../../../../shared/ui/Code";
 import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
@@ -48,6 +47,7 @@ export function MicrosoftDeviceSignIn({
 }) {
   useLocale();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const [browserError, setBrowserError] = useState<string | null>(null);
   const request = useRef(0);
   const signedInCallback = useStableCallback(onSignedIn);
 
@@ -97,13 +97,22 @@ export function MicrosoftDeviceSignIn({
     return () => window.clearTimeout(timer);
   }, [phase, signedInCallback]);
 
+  const openSignIn = (start: MicrosoftDeviceStart, generation: number) => {
+    setBrowserError(null);
+    void openExternal(start.verificationUri).catch((error: unknown) => {
+      if (request.current === generation) setBrowserError(errorText(error));
+    });
+  };
+
   const begin = async () => {
     if (phase.kind === "starting" || disabled) return;
     const generation = ++request.current;
     setPhase({ kind: "starting" });
     try {
       const start = await startMicrosoftDeviceSignIn(purpose, clientId, tenant);
-      if (generation === request.current) setPhase({ kind: "waiting", start });
+      if (generation !== request.current) return;
+      setPhase({ kind: "waiting", start });
+      openSignIn(start, generation);
     } catch (err: unknown) {
       if (generation === request.current) setPhase({ kind: "failed", message: errorText(err) });
     }
@@ -118,9 +127,6 @@ export function MicrosoftDeviceSignIn({
     const { start } = phase;
     return (
       <div className="integration-device">
-        <Text as="p" size="caption" tone="secondary">
-          {t("Open the Microsoft sign-in page and enter this code:")}
-        </Text>
         <p>
           <Code
             variant="plain"
@@ -135,20 +141,13 @@ export function MicrosoftDeviceSignIn({
         </p>
         <div className="integration-actions">
           <CopyButton label={t("Copy code")} text={start.userCode} resetKeys={[start.userCode]} />
-          <Button
-            variant="primary"
-            startIcon={<ExternalLink className="icon-sm" />}
-            onClick={() => {
-              openExternal(start.verificationUri).catch((err: unknown) =>
-                setPhase({ kind: "failed", message: errorText(err) }),
-              );
-            }}
-          >
-            {t("Open sign-in page")}
+          <Button variant="ghost" startIcon={<ExternalLink className="icon-sm" />} onClick={() => openSignIn(start, request.current)}>
+            {t("Open again")}
           </Button>
           <Button onClick={cancel}>{t("Cancel")}</Button>
         </div>
         <LoadingText delay={false}>{t("Waiting for you to finish signing in…")}</LoadingText>
+        {browserError ? <SettingsFeedback state="error">{browserError}</SettingsFeedback> : null}
       </div>
     );
   }

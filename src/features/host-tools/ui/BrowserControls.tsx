@@ -1,7 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import type { RefObject } from "react";
 import { t } from "../../../shared/i18n/technical";
-import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Popover } from "../../../shared/ui/Popover";
@@ -18,9 +17,7 @@ import {
   Pause,
   Play,
 } from "../../../shared/ui/icons";
-import { Disclosure } from "../../../shared/ui/Disclosure";
-import { PanelHeader } from "../../../shared/ui/PanelHeader";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 
 type Request = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
@@ -54,12 +51,9 @@ export function BrowserLiveToggle({
       iconOnly
       label={t("Live view")}
       tooltip={live ? t("Pause live view") : t("Resume live view")}
-      tooltipDetails={[t("Viewing never takes control of the browser.")]}
       pressed={live}
       disabled={busy || !open || selecting}
-      disabledReason={
-        busy ? t("Working on the host…") : selecting ? t("Cancel selection") : t("Open a website")
-      }
+      disabledReason={selecting ? t("Cancel selection") : undefined}
       onClick={onToggle}
     >
       {live ? <Pause className="icon-sm" aria-hidden /> : <Play className="icon-sm" aria-hidden />}
@@ -106,14 +100,14 @@ export function BrowserAddressInput({
         label={t("Open website")}
         disabled={busy || selecting || setupRequired || !validUrl}
         disabledReason={
-          busy
-            ? t("Working on the host…")
-            : selecting
-              ? t("Cancel selection")
-              : setupRequired
-                ? t("Browser setup required")
+          selecting
+            ? t("Cancel selection")
+            : setupRequired
+              ? t("Browser setup required")
+              : !url.trim()
+                ? undefined
                 : searchEnabled
-                  ? t("Enter a website address or search term.")
+                  ? undefined
                   : t("Use an HTTP or HTTPS address.")
         }
       >
@@ -151,13 +145,7 @@ export function BrowserControlToggle({
         )
       }
       tooltip={controlling ? t("Release") : t("Claim control")}
-      tooltipDetails={[
-        controlling
-          ? t("Control active · 30 seconds after each action")
-          : t("View only · take control to interact"),
-      ]}
       disabled={busy}
-      disabledReason={t("Working on the host…")}
       onClick={() =>
         void action(() =>
           request(
@@ -227,26 +215,13 @@ export function BrowserControlsPopover({
       aria-label={t("Browser controls and setup")}
       data-dialog-popover
       className="host-browser-controls"
-      solid
+      variant="panel"
       onDismiss={onDismiss}
     >
-      <PanelHeader
-        title={t("Browser controls and setup")}
-        closeLabel={t("Close")}
-        onClose={() => onDismiss("escape")}
-      />
       <section className="host-browser-control-section" aria-label={t("Session")}>
-        <SectionLabel
-          actions={
-            <Text size="caption" tone="secondary">
-              {browserStatus}
-            </Text>
-          }
-        >
-          {t("Session")}
-        </SectionLabel>
         <Text size="caption" weight="medium">
           {state?.controlling ? t("Control active") : t("View only")}
+          {browserStatus ? ` · ${browserStatus}` : ""}
         </Text>
         {state?.url ? (
           <OverflowTooltip label={state.url}>
@@ -273,20 +248,42 @@ export function BrowserControlsPopover({
             type="button"
             variant={state?.controlling ? "ghost" : "secondary"}
             size="sm"
+            loading={busy}
             disabled={busy}
-            disabledReason={t("Working on the host…")}
-            tooltip={t("Control active · 30 seconds after each action")}
             onClick={() => run(() => request("browser.claim", { takeover: true }))}
           >
             {state?.controlling ? t("Renew control") : t("Claim control")}
           </Button>
+          {state?.controlling && !state.open ? (
+            <Button
+              motion="none"
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => run(() => request("browser.release"))}
+            >
+              {t("Release")}
+            </Button>
+          ) : null}
+          <InfoPopover label={t("About the host browser")}>
+            <p>
+              {t(
+                "Temporary Chromium runs on the selected machine. Authenticated devices share its view; one device controls it for 30 seconds. Setup runs only when requested.",
+              )}
+            </p>
+            {!annotationsAllowed ? (
+              <p>
+                {t("Browser selections can be attached only on this conversation's project host.")}
+              </p>
+            ) : null}
+          </InfoPopover>
         </div>
       </section>
       <section
         className="host-browser-control-section"
         aria-label={t("Keyboard and scroll controls")}
       >
-        <SectionLabel>{t("Keyboard and scroll controls")}</SectionLabel>
         <form
           className="host-browser-type"
           onSubmit={(event) => {
@@ -311,8 +308,7 @@ export function BrowserControlsPopover({
             iconOnly
             label={t("Type text")}
             disabled={!canPageInput || !text}
-            disabledReason={inputDisabledReason ?? t("Type text")}
-            tooltipDetails={[t("Type into the focused field on the page.")]}
+            disabledReason={inputDisabledReason}
           >
             <Keyboard className="icon-sm" aria-hidden />
           </Button>
@@ -326,7 +322,6 @@ export function BrowserControlsPopover({
             label={t("Enter")}
             disabled={!canPageInput}
             disabledReason={inputDisabledReason}
-            tooltipDetails={[t("Send Enter to the page.")]}
             onClick={() => run(() => input({ kind: "key", key: "Enter" }))}
           >
             <CornerDownRight className="icon-sm" aria-hidden />
@@ -340,7 +335,6 @@ export function BrowserControlsPopover({
             label={t("Scroll up")}
             disabled={!canPageInput}
             disabledReason={inputDisabledReason}
-            tooltipDetails={[t("Scroll the page up by 500 pixels.")]}
             onClick={() => run(() => input({ kind: "scroll", y: -500 }))}
           >
             <ChevronUp className="icon-sm" aria-hidden />
@@ -354,43 +348,25 @@ export function BrowserControlsPopover({
             label={t("Scroll down")}
             disabled={!canPageInput}
             disabledReason={inputDisabledReason}
-            tooltipDetails={[t("Scroll the page down by 500 pixels.")]}
             onClick={() => run(() => input({ kind: "scroll", y: 500 }))}
           >
             <ChevronDown className="icon-sm" aria-hidden />
             {t("Scroll down")}
           </Button>
         </ButtonGroup>
-        {state?.open && !state.controlling ? (
-          <Text as="p" size="caption" tone="secondary">
-            {t("View only · take control to interact")}
-          </Text>
-        ) : null}
       </section>
       {error ? <InlineError details={error}>{errorSummary}</InlineError> : null}
-      {busy ? <Alert tone="info">{t("Working on the host…")}</Alert> : null}
       <section className="host-browser-control-section" aria-label={t("Browser")}>
-        <SectionLabel>{t("Browser")}</SectionLabel>
         <div className="host-tool-actions">
-          <Button
-            motion="none"
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={() => run(() => request("browser.status"))}
-          >
-            {!state && error ? t("Retry") : t("Status")}
-          </Button>
-          {state?.controlling && !state.open ? (
+          {!state && error ? (
             <Button
               motion="none"
-              type="button"
               variant="ghost"
               size="sm"
               disabled={busy}
-              onClick={() => run(() => request("browser.release"))}
+              onClick={() => run(() => request("browser.status"))}
             >
-              {t("Release")}
+              {t("Retry")}
             </Button>
           ) : null}
           {state?.open ? (
@@ -422,21 +398,6 @@ export function BrowserControlsPopover({
           ) : null}
         </div>
       </section>
-      <Disclosure summary={t("Help")} size="sm">
-        <p>
-          {t(
-            "Enter a website address and open it on this computer. Click the preview to interact, or select an element to discuss with your agent.",
-          )}
-        </p>
-        {!annotationsAllowed ? (
-          <p>{t("Browser selections can be attached only on this conversation's project host.")}</p>
-        ) : null}
-        <p>
-          {t(
-            "Temporary Chromium runs on the selected machine. Authenticated devices share its view; one device controls it for 30 seconds. Setup runs only when requested.",
-          )}
-        </p>
-      </Disclosure>
     </Popover>
   );
 }

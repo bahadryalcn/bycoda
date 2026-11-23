@@ -5,7 +5,18 @@ import * as technicalI18n from "../../../shared/i18n/technical";
 import { useVisibleNow } from "../hooks/useVisibleNow";
 import type { DeviceFrame } from "../types";
 
-const { dateTimeFormat, getLocale, relativeTimeFormat, t } = technicalI18n;
+const { dateTimeFormat, getLocale, relativeTimeFormat, t, useLocale } = technicalI18n;
+
+/** Full capture date and time for the pill's hint; undefined when the Host sent no real timestamp. */
+function capturedTitle(capturedAt: string | undefined): string | undefined {
+  const at = capturedAt ? Date.parse(capturedAt) : NaN;
+  if (!Number.isFinite(at)) return undefined;
+  try {
+    return dateTimeFormat(getLocale(), { dateStyle: "medium", timeStyle: "medium" }).format(at);
+  } catch {
+    return undefined;
+  }
+}
 
 /** How long a live view may go without a new frame before it reads as refreshing. */
 const LIVE_FRAME_DELAY_MS = 3000;
@@ -72,6 +83,7 @@ export function DeviceFrameState({
   captureFailed,
   connectionUnavailable,
 }: DeviceFrameStateProps) {
+  useLocale();
   const now = useVisibleNow(visible && !streaming, live ? 1000 : 5000);
   const liveFrameDelayed =
     live &&
@@ -83,7 +95,7 @@ export function DeviceFrameState({
   if (!stateVisible) return null;
   const captured = shownFrame ? capturedLabel(shownFrame.capturedAt, now) : undefined;
   return (
-    <Tooltip label={shownFrame?.capturedAt} asChild>
+    <Tooltip label={capturedTitle(shownFrame?.capturedAt)} asChild>
       <Text
         truncate
         size="micro"

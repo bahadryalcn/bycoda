@@ -2,7 +2,7 @@ import { useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { loadStreamingTextMode, subscribeStreamingTextMode } from "../model/settings";
 import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
-import { Row, Select, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
+import { Row, Segmented, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 
 export function ConversationDisplaySettings({ appearance: a }: { appearance: AppearanceSettings }) {
@@ -31,15 +31,8 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
   );
   return (
     <>
-      <Row
-        id="chat-width"
-        label={t("Chat width")}
-        description={t(
-          "Limit message width on large screens. Full width uses all available space.",
-        )}
-      >
-        <Select
-          hideLabel
+      <Row id="chat-width" label={t("Chat width")}>
+        <Segmented
           label={t("Chat width")}
           value={p.chatWidth}
           options={[
@@ -65,18 +58,12 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
           onChange={(value) =>
             a.onPreferences({
               ...p,
-              chatWidth: value === "wide" || value === "full" ? value : "comfortable",
+              chatWidth: value,
             })
           }
         />
       </Row>
-      <Row
-        id="code-word-wrap"
-        label={t("Word wrap")}
-        description={t(
-          "Wrap long lines in chat code blocks. File editors keep their own wrap control.",
-        )}
-      >
+      <Row id="code-word-wrap" label={t("Word wrap")}>
         <Toggle
           label={t("Word wrap")}
           on={p.wordWrap}
@@ -100,18 +87,14 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
           ) : undefined
         }
         label={t("Streaming text animation")}
-        description={t(
-          "Paced reveals words steadily. Adaptive shows text as it arrives and adjusts the fade to the stream rhythm.",
-        )}
       >
-        <Select
-          hideLabel
+        <Segmented
           label={t("Streaming text animation")}
           value={streamingTextMode}
           disabled={modePending}
           options={[
-            { value: "paced", label: t("Paced (default)") },
-            { value: "adaptive", label: t("Immediate with adaptive fade") },
+            { value: "paced", label: t("Paced") },
+            { value: "adaptive", label: t("Instant") },
           ]}
           onChange={(value) => saveMode(value === "adaptive" ? "adaptive" : "paced")}
         />

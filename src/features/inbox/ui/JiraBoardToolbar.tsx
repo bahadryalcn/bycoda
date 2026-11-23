@@ -32,17 +32,14 @@ export function JiraBoardToolbar(props: Props) {
         <SearchableSelect
           hideLabel
           label={t("Jira board")}
-          options={
-            props.boards.length
-              ? props.boards.map((board) => ({
-                  value: String(board.id),
-                  label: board.name,
-                  description: board.kind,
-                }))
-              : [{ value: "0", label: t("Select allowed boards in Settings → Inbox → Jira") }]
-          }
-          disabled={props.locked}
-          value={String(props.boardId)}
+          options={props.boards.map((board) => ({
+            value: String(board.id),
+            label: board.name,
+            description: board.kind,
+          }))}
+          placeholder={t("Select allowed boards in Settings → Inbox → Jira")}
+          disabled={props.locked || props.boards.length === 0}
+          value={props.boards.length ? String(props.boardId) : ""}
           onChange={(value) => props.onBoardChange(Number(value))}
         />
       </div>

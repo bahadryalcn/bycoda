@@ -157,7 +157,7 @@
 }
 .panel:not([data-full-screen]):has(> .body[data-call-stage]) > .actions {
   grid-row: controls;
-  padding-block: 8px 12px;
+  padding-block: var(--ui-space-2, 0.5rem) var(--ui-space-3, 0.75rem);
 }
 /* Docked in the sidebar, the open panel starts above that footer instead of the far corner.
    VoiceCompanion sets data-dock from the slot it docks into; only the offset changes here, and
@@ -270,8 +270,8 @@
   display: flex;
   min-inline-size: 0;
   align-items: center;
-  gap: 4px;
-  padding: 6px;
+  gap: var(--ui-space-1, 0.25rem);
+  padding: var(--ui-space-2, 0.5rem);
   /* The header is a drag surface (useVoicePanelDrag). */
   touch-action: none;
   cursor: grab;
@@ -291,7 +291,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 10px 12px 12px;
+  padding: var(--ui-space-3, 0.75rem);
   overflow: auto;
   overflow-x: hidden;
   min-height: 0;
@@ -305,18 +305,18 @@
   display: none;
 }
 .body p {
-  margin: 8px 0;
+  margin: var(--ui-space-2, 0.5rem) 0;
   overflow-wrap: anywhere;
 }
 .actions {
-  padding: 8px 10px;
+  padding: var(--ui-space-2, 0.5rem) var(--ui-space-3, 0.75rem);
   min-width: 0;
 }
 .actions[hidden] {
   display: none;
 }
 .target {
-  margin: 0 0 10px;
+  margin: 0 0 var(--ui-space-3, 0.75rem);
 }
 .heading {
   display: grid;
@@ -333,8 +333,8 @@
   grid-template-rows: auto;
 }
 .panel[data-compact] .header {
-  gap: 6px;
-  padding: 4px 6px 4px 4px;
+  gap: var(--ui-space-1, 0.25rem);
+  padding: var(--ui-space-1, 0.25rem);
 }
 .panel[data-compact] .drag {
   block-size: auto;
@@ -347,6 +347,6 @@
 }
 @media (pointer: coarse) {
   .header {
-    gap: 8px;
+    gap: var(--ui-space-2, 0.5rem);
   }
 }

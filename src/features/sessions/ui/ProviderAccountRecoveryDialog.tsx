@@ -4,6 +4,8 @@ import { Button } from "../../../shared/ui/Button";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
+import { PickerList } from "../../../shared/ui/picker";
+import { Spinner } from "../../../shared/ui/Spinner";
 import { type ProviderAccountProvider } from "../../providers/model/providerAccounts";
 import { useProviderAccounts } from "../../providers/public/useProviderAccounts";
 import { AccountColorDot } from "../../providers/ui/AccountColorDot";
@@ -34,39 +36,40 @@ export function ProviderAccountRecoveryDialog({
       setPendingAccount,
       setBusy,
       setError,
-      failure: t(
-        "The account could not be switched. The conversation shows the reason; try again.",
-      ),
+      failure: t("The account could not be changed. Try again."),
     });
   return (
-    <Modal title={t("Continue with another account")} size="sm" onClose={onClose}>
-      <div className="space-y-2">
-        {accounts.map((account) => (
+    <Modal
+      title={t("Continue with another account")}
+      size="sm"
+      onClose={onClose}
+      footer={
           <Button
-            fullWidth
-            variant="item"
-            key={account.id}
+            variant="ghost"
             type="button"
             disabled={busy}
-            loading={pendingAccount === account.id}
-            className="w-full text-left"
-            onClick={() => void select(account.id)}
+            onClick={onManage}
           >
-            <AccountColorDot account={account} />
-            <span>{account.label}</span>
+            {t("Manage accounts")}
           </Button>
-        ))}
-        {error ? <Alert tone="danger">{error}</Alert> : null}
-        <Button
-          variant="ghost"
-          type="button"
-          disabled={busy}
-
-          onClick={onManage}
-        >
-          {t("Accounts")}
-        </Button>
-      </div>
+      }
+    >
+      <PickerList
+        label={t("Accounts")}
+        options={accounts.map((account) => ({
+          value: account.id,
+          title: account.label,
+          icon: <AccountColorDot account={account} />,
+          trailing: pendingAccount === account.id ? <Spinner aria-busy="true" /> : undefined,
+        }))}
+        value={null}
+        disabled={busy}
+        checkPlacement="none"
+        emptyLabel={t("No accounts. Add an account to sign in.")}
+        listHeight="standard"
+        onChange={(accountId: string) => void select(accountId)}
+      />
+      {error ? <Alert tone="danger">{error}</Alert> : null}
     </Modal>
   );
 }

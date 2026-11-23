@@ -5,6 +5,7 @@ import { copyText } from "../../../platform/tauri/clipboard";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { TextField } from "../../../shared/ui/TextField";
@@ -19,6 +20,9 @@ import {
   subscribeSshSnippets,
   type SshSnippet,
 } from "../model/sshSnippets";
+
+/** Saved commands show a search field only past this many entries. */
+const SEARCH_FROM = 8;
 
 type ServerSnippetsProps = {
   serverId: string;
@@ -87,7 +91,7 @@ function ServerSnippetsForm({
       <Text as="p" tone="muted" className="break-words">
         {t("Target")}: {serverName ?? serverId}
       </Text>
-      {!createOnly ? (
+      {!createOnly && snippets.length > SEARCH_FROM ? (
         <SearchInput
           appearance="field"
           aria-label={t("Search saved commands")}
@@ -131,7 +135,6 @@ function ServerSnippetsForm({
                     <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
                       {snippet.name}
                     </Text>
-                    <Text tone="muted">v{snippet.version}</Text>
                   </Button>
                 </li>
               ))}
@@ -192,10 +195,10 @@ function ServerSnippetsForm({
               setNotice("");
             }}
           />
-          <Text as="p" tone="muted">
-            {t("Commands are saved locally. Do not include secrets.")}
-          </Text>
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <InfoPopover>
+              <p>{t("Commands are saved locally. Do not include secrets.")}</p>
+            </InfoPopover>
             {!createOnly && selected ? (
               <Button
                 variant="ghost"
@@ -232,6 +235,7 @@ function ServerSnippetsForm({
                   !selected.reviewed ||
                   !isSingleLineCommand(command)
                 }
+                disabledReason={selected ? t("Save changes first") : t("Select a saved command")}
                 onClick={async () => {
                   if (!selected || busy) return;
                   setBusy(true);
@@ -260,6 +264,7 @@ function ServerSnippetsForm({
                   selected.command !== command ||
                   !isSingleLineCommand(command)
                 }
+                disabledReason={selected ? t("Save changes first") : t("Select a saved command")}
                 onClick={async () => {
                   if (!selected || busy) return;
                   setBusy(true);

@@ -384,21 +384,14 @@ export function WorkspaceSourceControl({
         </div>
       ) : null}
       {error && !connectionShownCentrally ? (
-        <Text
-          as="div"
-          size="caption"
-          tone="secondary"
-          className="flex shrink-0 flex-wrap items-center gap-x-2 px-2"
+        <InlineError
+          inset="row"
+          className="shrink-0"
+          details={error}
+          retry={{ onRetry: refreshAll, disabled: !enabled, label: t("Retry") }}
         >
-          <Tooltip label={error} asChild>
-            <InlineError className="min-w-0">
-              {t("Could not refresh repositories. Refresh source control to retry.")}
-            </InlineError>
-          </Tooltip>
-          <Button variant="link" size="sm" disabled={!enabled} onClick={refreshAll}>
-            {t("Retry")}
-          </Button>
-        </Text>
+          {t("Could not refresh repositories.")}
+        </InlineError>
       ) : null}
       {Object.keys(limits).length > 0 ? (
         <Text as="div" size="caption" tone="secondary" className="shrink-0 px-2">

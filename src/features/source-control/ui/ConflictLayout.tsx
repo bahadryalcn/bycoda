@@ -387,9 +387,6 @@ export function ConflictLayout({
             titleAs="div"
             className="conflict-pane-header"
             title={`${t("Resolved output")}${dirty ? " *" : ""}`}
-            meta={
-              <span className="conflict-result-meta">{`${t("Working tree")} · ${t("Editable")}`}</span>
-            }
             actions={resultActions}
           />
           {children}

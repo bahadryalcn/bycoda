@@ -1,5 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
-import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -9,7 +7,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
-import { Folder, RefreshCw } from "../../../shared/ui/icons";
+import { Folder } from "../../../shared/ui/icons";
 
 type PublicIdentity = {
   identityFile?: string;
@@ -48,6 +46,7 @@ export function SshIdentityField({
       mounted.current = false;
     };
   }, []);
+  // Keys load on mount and again on Retry; the dialog never needs a manual refresh.
   useEffect(() => {
     let current = true;
     void invoke<PublicIdentity[]>("ssh_public_keys_list").then(
@@ -69,12 +68,33 @@ export function SshIdentityField({
       current = false;
     };
   }, [attempt]);
-  const refreshKeys = () => {
+  const retryKeys = () => {
     setLoading(true);
     setFailed(false);
     setAttempt((previous) => previous + 1);
   };
-  const selectedKey = keys.find((key) => key.identityFile === value);
+  const browse = async () => {
+    if (disabled || picking.current) return;
+    picking.current = true;
+    setSelecting(true);
+    setPickerError(false);
+    try {
+      const path = await open({
+        title: t("Choose SSH key"),
+        directory: false,
+        multiple: false,
+        ...(value.startsWith("/") || value.startsWith("\\\\") || /^[A-Za-z]:[\\/]/.test(value)
+          ? { defaultPath: value }
+          : {}),
+      });
+      if (mounted.current && typeof path === "string") onChange(path);
+    } catch {
+      if (mounted.current) setPickerError(true);
+    } finally {
+      picking.current = false;
+      if (mounted.current) setSelecting(false);
+    }
+  };
   const options = [
     ...new Map(
       keys
@@ -97,24 +117,7 @@ export function SshIdentityField({
   }
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex items-center justify-between gap-2">
-        <Text as="span" size="caption" tone="primary" weight="medium">
-          {t("SSH key")}
-        </Text>
-        <Button
-          variant="ghost"
-          iconOnly
-          label={`${t("Refresh SSH keys")}: ${pathLabel}`}
-          tooltip={t("Refresh SSH keys")}
-          loading={loading}
-          disabled={disabled || selecting || loading}
-          onClick={refreshKeys}
-        >
-          <RefreshCw aria-hidden className="icon-sm" />
-        </Button>
-      </div>
       <SearchableSelect
-        hideLabel
         label={label}
         searchPlaceholder={t("Search SSH keys…")}
         value={value}
@@ -126,98 +129,48 @@ export function SshIdentityField({
         loading={loading}
         placeholder={loading ? t("Loading…") : t("SSH agent and default keys")}
         options={[{ value: "", label: t("SSH agent and default keys") }, ...options]}
-      />
-      {value ? (
-        <Text wrap="anywhere" as="p" tone="muted">
-          {value}
-        </Text>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="secondary"
-          aria-label={`${t("Choose key file…")}: ${pathLabel}`}
-          disabled={disabled}
-          loading={selecting}
-          onClick={async () => {
-            if (disabled || picking.current) return;
-            picking.current = true;
-            setSelecting(true);
-            setPickerError(false);
-            try {
-              const path = await open({
-                title: t("Choose SSH key"),
-                directory: false,
-                multiple: false,
-                ...(value.startsWith("/") ||
-                value.startsWith("\\\\") ||
-                /^[A-Za-z]:[\\/]/.test(value)
-                  ? { defaultPath: value }
-                  : {}),
-              });
-              if (mounted.current && typeof path === "string") onChange(path);
-            } catch {
-              if (mounted.current) setPickerError(true);
-            } finally {
-              picking.current = false;
-              if (mounted.current) setSelecting(false);
-            }
-          }}
-        >
-          <Folder aria-hidden className="icon-sm" />
-          {t("Choose key file…")}
-        </Button>
-        {value ? (
+        footer={({ close }) => (
           <Button
             variant="ghost"
-            disabled={disabled || selecting}
+            aria-label={`${t("Choose key file…")}: ${pathLabel}`}
+            disabled={disabled}
+            loading={selecting}
             onClick={() => {
-              setPickerError(false);
-              onChange("");
+              close();
+              void browse();
             }}
           >
-            {t("Use SSH defaults")}
+            <Folder aria-hidden className="icon-sm" />
+            {t("Choose key file…")}
           </Button>
-        ) : null}
-      </div>
-      {pickerError ? (
+        )}
+      />
+      {failed ? (
+        <Alert
+          tone="danger"
+          action={{ label: t("Retry"), onClick: retryKeys }}
+        >
+          {t("Could not load SSH keys. Enter a path or retry.")}
+        </Alert>
+      ) : pickerError ? (
         <Alert tone="danger">
           {t("Could not open the file picker. Enter a key path or try again.")}
-        </Alert>
-      ) : null}
-      {failed ? (
-        <Alert tone="danger">
-          {t("Could not load SSH keys. Enter a path or retry.")}
-          <Button disabled={disabled || selecting || loading} onClick={refreshKeys}>
-            {t("Retry")}
-          </Button>
         </Alert>
       ) : null}
       <Disclosure
         size="sm"
         open={pathOpen || failed || pickerError}
         onOpenChange={setPathOpen}
-        textSize="caption"
-        tone="muted"
         summary={t("Use a key file path")}
       >
-        <Text as="div" size="caption" tone="muted">
-          <TextField
-            label={pathLabel}
-            aria-label={pathLabel}
-            value={value}
-            maxLength={4096}
-            onChange={(event) => onChange(event.target.value)}
-            disabled={disabled || selecting}
-            description={t("Leave empty to use your SSH agent and default identities.")}
-          />
-        </Text>
+        <TextField
+          label={pathLabel}
+          value={value}
+          maxLength={4096}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled || selecting}
+        />
       </Disclosure>
-      {selectedKey ? (
-        <DescriptionList size="sm">
-          <DescriptionItem term={t("Key type")}>{selectedKey.keyType}</DescriptionItem>
-          <DescriptionItem term={t("Fingerprint")}>{selectedKey.fingerprint}</DescriptionItem>
-        </DescriptionList>
-      ) : null}
     </div>
   );
 }

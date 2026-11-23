@@ -17,7 +17,7 @@ import {
   type WorkingIndicatorColor,
   type WorkingIndicatorStyle,
 } from "../../../model/workingIndicator";
-import { Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
+import { AdvancedSettings, Group, Row, Segmented, Slider } from "../../../../../shared/ui/settings";
 import "./ThemeControls.css";
 
 const snapshot = () => JSON.stringify(loadWorkingIndicator());
@@ -39,11 +39,46 @@ export function WorkingIndicatorGroup() {
   return (
     <Group
       title={t("Working projects")}
-      description={t("How a project row looks while an agent works in it.")}
       modified={raw !== DEFAULT_SNAPSHOT}
       resetLabel={t("Reset working projects")}
       onReset={() => saveWorkingIndicator(WORKING_INDICATOR_DEFAULT)}
     >
+      <Row
+        id="working-indicator-style"
+        label={t("Working animation")}
+        description={t("Steady keeps the tint without the pulse; Off leaves only the spinner.")}
+      >
+        <Segmented<WorkingIndicatorStyle>
+          label={t("Working animation")}
+          value={value.style}
+          options={[
+            { value: "pulse", label: t("Pulse") },
+            { value: "steady", label: t("Steady") },
+            { value: "off", label: t("Off") },
+          ]}
+          onChange={(style) => update({ style })}
+        />
+      </Row>
+      <Row stacked label={t("Preview")}>
+        <Text
+          as="div"
+          size="inherit"
+          tone="primary"
+          aria-hidden="true"
+          data-project-row=""
+          data-project-working="true"
+          {...surfaceAttributes(
+            { radius: "row" },
+            "relative flex h-(--ui-control-height-compact) w-56 max-w-full items-center gap-2 px-2",
+          )}
+        >
+          <WorkingIndicator size="xs" />
+          <Text as="span" size="inherit" tone="inherit" truncate>
+            {t("Project")}
+          </Text>
+        </Text>
+      </Row>
+      <AdvancedSettings settingIds={["working-indicator-color", "working-indicator-strength"]}>
       <Row
         id="working-indicator-color"
         controlWidth="fill"
@@ -98,22 +133,6 @@ export function WorkingIndicatorGroup() {
           )}
         </div>
       </Row>
-      <Row
-        id="working-indicator-style"
-        label={t("Working animation")}
-        description={t("Steady keeps the tint without the pulse; Off leaves only the spinner.")}
-      >
-        <Segmented<WorkingIndicatorStyle>
-          label={t("Working animation")}
-          value={value.style}
-          options={[
-            { value: "pulse", label: t("Pulse") },
-            { value: "steady", label: t("Steady") },
-            { value: "off", label: t("Off") },
-          ]}
-          onChange={(style) => update({ style })}
-        />
-      </Row>
       <Row id="working-indicator-strength" label={t("Working strength")}>
         <Slider
           label={t("Working strength")}
@@ -126,25 +145,7 @@ export function WorkingIndicatorGroup() {
           onChange={(strength) => update({ strength })}
         />
       </Row>
-      <Row stacked label={t("Preview")}>
-        <Text
-          as="div"
-          size="inherit"
-          tone="primary"
-          aria-hidden="true"
-          data-project-row=""
-          data-project-working="true"
-          {...surfaceAttributes(
-            { radius: "row" },
-            "relative flex h-(--ui-control-height-compact) w-56 max-w-full items-center gap-2 px-2",
-          )}
-        >
-          <WorkingIndicator size="xs" />
-          <Text as="span" size="inherit" tone="inherit" truncate>
-            {t("Project")}
-          </Text>
-        </Text>
-      </Row>
+      </AdvancedSettings>
     </Group>
   );
 }

@@ -2,12 +2,10 @@ import { Badge } from "../../../../shared/ui/Badge";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Text } from "../../../../shared/ui/Text";
 import { Select } from "../../../../shared/ui/Select";
 import { Row } from "../../../../shared/ui/settings";
 import styles from "./costUsage.module.css";
-import viewStyles from "../AssistantView.module.css";
 
 /** Conversation retention draft and, when given, today's usage on the same row. Saved by the page footer. */
 export function AssistantRetentionField({
@@ -30,13 +28,7 @@ export function AssistantRetentionField({
             <Text as="p" size="secondary">
               {t("Older messages move to Recently deleted for seven days.")}
             </Text>
-            <Text
-              as="p"
-              size="micro"
-              tone="secondary"
-              leading="inherit"
-              className={viewStyles.muted}
-            >
+            <Text as="p" size="secondary">
               {t(
                 "Summaries and unsent drafts are kept. Choosing Forever does not restore deleted messages.",
               )}
@@ -104,9 +96,9 @@ export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage
         ))}
       </ul>
       {(usage.workerUsageIncomplete || !cache || !cache.complete) && (
-        <InlineMessage tone="warning" className={styles.usageNote}>
+        <Text size="caption" tone="secondary" className={styles.usageNote}>
           {t("Some usage is unavailable.")}
-        </InlineMessage>
+        </Text>
       )}
       {cache ? (
         <>
@@ -136,37 +128,19 @@ export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage
                 {t("Mean reported cache hit")}: {unavailable}
               </Text>
             )}
-            <Text
-              as="p"
-              size="micro"
-              tone="secondary"
-              leading="inherit"
-              className={viewStyles.muted}
-            >
+            <Text as="p" size="secondary">
               {t("{p0} of {p1} worker turns measured", {
                 p0: formatNumber(cache.measuredTurns),
                 p1: formatNumber(cache.totalTurns),
               })}
             </Text>
-            <Text
-              as="p"
-              size="micro"
-              tone="secondary"
-              leading="inherit"
-              className={viewStyles.muted}
-            >
+            <Text as="p" size="secondary">
               {t(
                 "Budgets count cache reads at one tenth of a new token. Cache reads re-read earlier context and cost far less than new tokens.",
               )}
             </Text>
             {cache.cacheHitPercent !== undefined && (
-              <Text
-                as="p"
-                size="micro"
-                tone="secondary"
-                leading="inherit"
-                className={viewStyles.muted}
-              >
+              <Text as="p" size="secondary">
                 {t(
                   "Average of {p0} provider-reported worker percentages. This is not a billing discount.",
                   { p0: formatNumber(cache.percentageTurns) },

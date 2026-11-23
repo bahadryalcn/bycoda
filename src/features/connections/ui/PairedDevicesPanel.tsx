@@ -7,7 +7,6 @@ import {
   useAccountState,
 } from "../../account";
 import { t, useFormat, useLocale } from "../../../shared/i18n";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -60,7 +59,6 @@ function DeviceRow({
           <Text truncate size="inherit" tone="inherit" className="min-w-0">
             {device.name}
           </Text>
-          {device.isCurrent ? <Badge tone="accent">{t("This desktop")}</Badge> : null}
         </span>
       }
       description={activity}
@@ -131,14 +129,7 @@ function ComputerDevices({
       </InlineMessage>
     );
   return (
-    <Group
-      title={title}
-      description={t(
-        "Every phone or computer that can manage {p0}. Revoking signs it out immediately; it needs a new QR code to connect again.",
-        { p0: title },
-      )}
-      feedback={feedback}
-    >
+    <Group title={title} feedback={feedback}>
       {devices.map((device) => (
         <DeviceRow
           key={device.id}
@@ -236,10 +227,6 @@ export function PairedDevicesPanel({
             <EmptyState
               kind="empty"
               title={t("No computer connected")}
-              description={t(
-                "Your local host is not connected yet. Check again after bycoda starts.",
-              )}
-              action={{ label: t("Check again"), onClick: () => void onRefresh() }}
             />
           ) : null}
           {ordered.map((machine) => (

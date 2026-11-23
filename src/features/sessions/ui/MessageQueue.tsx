@@ -6,7 +6,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { activeQueueFeedback, type QueueFeedback } from "./queueFeedback";
 import { canSendQueueMessage } from "../model/queueAction";
 import { useAcceptedQueueDeparture, type MessageQueueProps } from "./useAcceptedQueueDeparture";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import {
@@ -735,11 +735,11 @@ export function MessageQueue({
                     >
                       <HarnessIcon harness={target.harness} className="size-3 shrink-0" />
                       <span aria-hidden="true">·</span>
-                      <Tooltip label={t("Queued for {p0}", { p0: targetLabel })} asChild>
+                      <OverflowTooltip label={targetLabel}>
                         <Text size="inherit" tone="inherit" truncate>
                           {targetLabel}
                         </Text>
-                      </Tooltip>
+                      </OverflowTooltip>
                       {routeNote ? <span className="shrink-0">· {routeNote}</span> : null}
                     </Text>
                   ) : null}

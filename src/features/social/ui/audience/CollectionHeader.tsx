@@ -1,5 +1,4 @@
 import { t } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
 import { Pencil, Trash2 } from "../../../../shared/ui/icons";
@@ -15,41 +14,32 @@ export type CollectionHeaderProps = {
   onDelete: (list: SocialList) => void;
 };
 
-/** One line of plain words about what the open collection holds and how it is filled. */
-function collectionSummary(list: SocialList | undefined): string {
-  if (!list) return t("Everyone you collected, imported or added.");
+/**
+ * Plain words about a collection only where they add something: why the Commenters list is locked
+ * and what a segment matches. Everyone and plain lists need no sentence.
+ */
+function collectionSummary(list: SocialList | undefined): string | undefined {
+  if (!list) return undefined;
   const kind = collectionKind(list);
   if (kind === "commenters")
     return t("Filled by the Commenters rule. It cannot be renamed or deleted.");
-  if (kind === "list") return t("People you add by hand or with a capture rule.");
+  if (kind === "list") return undefined;
   const parts = filterSummary(list.filter);
   return parts.length
     ? t("Updates by itself. People who match all of: {p0}.", { p0: parts.join("; ") })
     : t("Updates by itself as people change.");
 }
 
-/** Title block above the people table: which collection is open, what kind it is, and its actions. */
+/** Title block above the people table: which collection is open and its actions. */
 export function CollectionHeader({ list, onEdit, onDelete }: CollectionHeaderProps) {
   const kind = list ? collectionKind(list) : undefined;
-  const kindLabel =
-    kind === "segment"
-      ? t("Segment")
-      : kind === "commenters"
-        ? t("Automatic list")
-        : kind === "list"
-          ? t("List")
-          : undefined;
+  const summary = collectionSummary(list);
   return (
     <header className="audience-collection-head">
       <div className="audience-collection-title">
         <Heading as="h2" size="section" truncate>
           {list ? listDisplayName(list) : t("All people")}
         </Heading>
-        {kindLabel ? (
-          <Badge size="sm" tone="neutral">
-            {kindLabel}
-          </Badge>
-        ) : null}
         {list && kind !== "commenters" ? (
           <span className="audience-collection-actions">
             <Button
@@ -72,9 +62,11 @@ export function CollectionHeader({ list, onEdit, onDelete }: CollectionHeaderPro
           </span>
         ) : null}
       </div>
-      <Text as="p" tone="secondary" leading="snug" className="audience-muted">
-        {collectionSummary(list)}
-      </Text>
+      {summary ? (
+        <Text as="p" tone="secondary" leading="snug" className="audience-muted">
+          {summary}
+        </Text>
+      ) : null}
     </header>
   );
 }

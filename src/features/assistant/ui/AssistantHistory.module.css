@@ -1,12 +1,12 @@
 .history {
   display: grid;
-  gap: 16px;
+  gap: var(--ui-space-4);
   inline-size: 100%;
   min-inline-size: 0;
 }
 .day {
   display: grid;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .events {
@@ -23,8 +23,8 @@
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 4px 12px;
-  padding: 8px 12px;
+  gap: var(--ui-space-1) var(--ui-space-3);
+  padding: var(--ui-space-2) var(--ui-space-3);
 }
 .kind {
   grid-column: 4;
@@ -51,7 +51,7 @@
 .empty {
   display: block;
   margin: 0;
-  padding-block: 24px;
+  padding-block: var(--ui-space-6);
   text-align: center;
 }
 /* An empty live region must keep no height; the empty state still occupies its place only while it has text. */

@@ -13,7 +13,6 @@ import { JiraCommentEditor } from "./JiraCommentEditor";
 import { InboxCommentPreview } from "./InboxCommentPreview";
 import type { JiraCommentImage } from "../model/jiraCommentDocument";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import { providerLabel } from "../../../shared/lib/providerLabel";
 import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
@@ -163,7 +162,6 @@ export function InboxComments({
   const commitLabel = t(commitCount === 1 ? "{p0} commit" : "{p0} commits", {
     p0: formatNumber(commitCount),
   });
-  const moreOn = providerLabel(provider);
 
   return (
     <section {...surfaceAttributes({ frame: "pane", edge: "top" }, "flex flex-col gap-3 pt-5")}>
@@ -179,12 +177,7 @@ export function InboxComments({
         ) : (
           <SectionLabel as="h2">{label}</SectionLabel>
         )}
-        {thread.truncated ? (
-          <span>
-            {t("Latest comments · more on ")}
-            {moreOn}
-          </span>
-        ) : null}
+        {thread.truncated ? <span>{t("Latest comments")}</span> : null}
         {loading ? <Spinner size="xs" tone="secondary" /> : null}
       </Text>
       {error ? <InboxLoadError title={t("Could not load the comments.")} error={error} /> : null}
@@ -475,7 +468,7 @@ function InboxComment({
       >
         <InboxCommentPerson
           avatar={!timeline}
-          name={comment.author || "ghost"}
+          name={authorName(comment.author)}
           avatarUrl={inboxPersonAvatarUrl(provider, comment.author, comment.authorAvatarUrl)}
         />
         {meta.map((part, index) => (
@@ -501,7 +494,7 @@ function InboxComment({
               onClick={() =>
                 onReply({
                   id: comment.id,
-                  author: comment.author || "ghost",
+                  author: authorName(comment.author),
                   threadId: (comment.threadId ?? "").trim(),
                 })
               }
@@ -657,7 +650,7 @@ function InboxTimelineComment({
   last: boolean;
 }) {
   useLocale();
-  const author = comment.author || "ghost";
+  const author = authorName(comment.author);
   const state = comment.state.trim().toUpperCase();
   if (isReviewEvent(comment)) {
     const verb =
@@ -713,7 +706,7 @@ function InboxCommitRun({
   last: boolean;
 }) {
   useLocale();
-  const name = author || "ghost";
+  const name = authorName(author);
   return (
     <>
       <TimelineStop
@@ -835,6 +828,11 @@ function InboxCommitStop({ commit, last }: { commit: InboxCommit; last: boolean 
       </div>
     </li>
   );
+}
+
+/** The shown name of a comment or commit author; the provider may omit it for deleted accounts. */
+function authorName(author: string): string {
+  return author || t("Unknown author");
 }
 
 function commentLocation(comment: InboxComment): string {

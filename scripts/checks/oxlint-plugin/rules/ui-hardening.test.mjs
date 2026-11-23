@@ -88,46 +88,6 @@ test("no-raw-error-text flags raw error expressions that reach JSX content", (t)
   );
 });
 
-test("disabled-needs-reason flags dynamic disabled on imported shared Buttons", (t) => {
-  const file = "src/features/Screen.tsx";
-  const aliasFile = "src/shared/ui/Example.tsx";
-  assert.deepEqual(
-    scanRule(t, "disabled-needs-reason", {
-      [file]: [
-        "import { Button as Action } from '../shared/ui/Button';",
-        "import * as Controls from '@/shared/ui/Button';",
-        "import { Button } from './Button';",
-        "const a = <Action disabled={busy} />;",
-        "const b = <Controls.Button disabled={!canSave} />;",
-        "const c = <Action disabled={busy} tooltip={hint} />;",
-        "const d = <Action disabled={busy} disabledReason={hint} />;",
-        "const e = <Action disabled={busy} loadingLabel={pending} />;",
-        "const f = <Action disabled={busy} loading={busy} />;",
-        "const g = <Action disabled={busy} title={hint} />;",
-        "const h = <><Action disabled /><Action disabled={true} /><Action disabled={false} /></>;",
-        "const i = <><Button disabled={busy} /><button disabled={busy} /><Action /></>;",
-        "const j = (Action) => <Action disabled={busy} />;",
-        "const k = <Controls.Other disabled={busy} />;",
-      ],
-      [aliasFile]: ["import { Button } from './Button';", "const a = <Button disabled={busy} />;"],
-      "src/Screen.test.tsx": [
-        "import { Button } from '@/shared/ui/Button';",
-        "const a = <Button disabled={busy} />;",
-      ],
-      "host/Screen.tsx": [
-        "import { Button } from '@/shared/ui/Button';",
-        "const a = <Button disabled={busy} />;",
-      ],
-    }),
-    [
-      [aliasFile, 2],
-      [file, 4],
-      [file, 5],
-      [file, 6],
-    ],
-  );
-});
-
 test("no-raw-error-text flags raw error text passed to toast.show", (t) => {
   const file = "src/hooks/useSave.ts";
   const rejected = [

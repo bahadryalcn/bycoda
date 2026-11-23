@@ -26,12 +26,12 @@ export function DelegationKeyMenu({
         variant="ghost"
         size="sm"
         type="button"
+        startIcon={<Plus />}
         disabled={disabled}
         aria-haspopup="menu"
         expanded={open}
         onClick={() => setOpen((next) => !next)}
       >
-        <Plus className="icon-xs" />
         {t("Add setting")}
       </Button>
       {open ? (

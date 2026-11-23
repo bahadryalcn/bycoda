@@ -154,7 +154,7 @@ export function UpdateImpactDetails({
           {t("Could not refresh machine activity. Showing the last known activity.")}
         </InlineError>
       ) : null}
-      {visible.length ? (
+      {visible.length > 1 || (visible.length === 1 && !(interrupted > 0 && visible[0].affected)) ? (
         <DataTable
           caption={t("Update impact by machine")}
           headers={[

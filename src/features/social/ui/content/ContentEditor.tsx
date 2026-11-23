@@ -51,6 +51,7 @@ export type ContentEditorProps = {
   mediaPending?: boolean;
   onBusyChange?: (busy: boolean) => void;
   onMediaBusyChange?: (busy: boolean) => void;
+  /** Surfaces a failure on the screen when this editor was unmounted mid-operation (project switch). */
   onOperationError?: (message: string) => void;
   /** The Host now holds this post under this identity; the screen keeps it on the draft. */
   onSaved: (identity: { campaignId: string; revision: number }) => void;
@@ -269,16 +270,11 @@ export function ContentEditor(props: ContentEditorProps) {
     >
       <div className="content-editor-body">
         {locked ? <InlineMessage tone="info">{locked}</InlineMessage> : null}
+        {/* One notice slot: a failure, or the accounts the post could not go to. */}
         {error ? <InlineError>{error}</InlineError> : null}
-        {blocked.length ? (
-          <InlineError>
-            <ul className="content-blocked">
-              {blocked.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </InlineError>
-        ) : null}
+        {!error
+          ? blocked.map((line) => <InlineError key={line}>{line}</InlineError>)
+          : null}
         <ContentEditorFields
           client={client}
           editor={editor}

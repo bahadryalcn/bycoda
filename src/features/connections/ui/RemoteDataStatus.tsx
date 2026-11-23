@@ -258,7 +258,7 @@ export function RemoteDataStatus({
                   <ErrorDetails title={message} detail={shownError} />
                 </p>
               )}
-              {replacedError && fitsOneLine(shownError) ? (
+              {replacedError && fitsOneLine(shownError) && errorView?.details !== shownError ? (
                 <p className="mt-1">
                   <ErrorDetails title={message} detail={errorView?.details ?? shownError} />
                 </p>

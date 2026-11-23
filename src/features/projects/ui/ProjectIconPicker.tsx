@@ -1,5 +1,4 @@
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Select } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
@@ -37,16 +36,9 @@ export function ProjectIconPicker({
           color={color}
           className="size-6 shrink-0"
         />
-        <div className="min-w-0 flex-1">
-          <Text as="p" size="micro" tone="secondary">
-            {t("Project icon")}
-          </Text>
-          <OverflowTooltip label={selected.label}>
-            <Text truncate as="p" size="caption" tone="primary">
-              {selected.label}
-            </Text>
-          </OverflowTooltip>
-        </div>
+        <Text truncate as="p" size="caption" tone="secondary" className="min-w-0 flex-1">
+          {t("Project icon")}
+        </Text>
         <Button
           variant="ghost"
           motion="none"
@@ -74,7 +66,7 @@ export function ProjectIconPicker({
           label={t("Project icon category")}
           value={category}
           onValueChange={(next) => setCategory(next as ProjectIconCategory | "All")}
-          className="w-24 shrink-0"
+          className="shrink-0"
           options={[
             { value: "All", label: t("All types") },
             ...PROJECT_ICON_CATEGORIES.map((group) => ({ value: group, label: group })),
@@ -88,10 +80,9 @@ export function ProjectIconPicker({
           value={selected.name}
           onValueChange={onPick}
           tile={{ motion: "none", layout: "stacked" }}
-          className="grid grid-cols-5 gap-1"
+          tileLayout="portrait"
           options={icons.map((icon) => ({
             value: icon.name,
-            tooltip: `${icon.label} · ${icon.category}`,
             ariaLabel: t("Project icon: {p0}", { p0: icon.label }),
             content: (
               <>
@@ -114,9 +105,7 @@ export function ProjectIconPicker({
         ) : null}
       </div>
       <p className="sr-only">
-        <LiveText
-          text={`${icons.length}${t(" icons · ")}${category === "All" ? t("All types") : category}`}
-        />
+        <LiveText text={t("{p0} matching icons", { p0: icons.length })} />
       </p>
     </div>
   );

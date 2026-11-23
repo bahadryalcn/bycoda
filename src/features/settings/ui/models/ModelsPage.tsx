@@ -42,6 +42,7 @@ import { saveDefaultsTargetsWithDelegation } from "../../model/providerDefaultsS
 import { useDelegationProfile } from "../../../model-routing/public/delegation";
 import { prepareDefaultsDraft } from "../../model/providerDefaultsSupport";
 import { ProviderDefaultsPanel } from "../ProviderDefaultsPanel";
+import { BykitSettingsPage } from "../ToolSettings";
 import { ProviderDefaultsScopeRow } from "../providerDefaultsTargetsPicker";
 import {
   ProviderDefaultsSaveBar,
@@ -249,7 +250,7 @@ export function ModelsPage({
   );
 
   return (
-    <div className="settings-topics grid min-w-0 gap-4">
+    <div className="settings-topics">
       {/* One failing Host shows one error here; nothing derived from it is shown below. */}
       {tab === "work" && scope.selected && pickedRouting.error ? (
         <SettingsHostFailure
@@ -280,6 +281,7 @@ export function ModelsPage({
             ) : null}
           </div>
         </div>
+        {tab === "work" ? <BykitSettingsPage /> : null}
       </div>
       <div
         id={settingDomId("models-chat")}
@@ -290,7 +292,7 @@ export function ModelsPage({
           selection={targetChoice}
           target={target}
           options={targetOptions}
-          draft={draft}
+          draft={changes.length > 0 ? draft : undefined}
           onDraftChange={setDraft}
           activeProvider={activeProvider ?? undefined}
           onTargetChange={(value) => {

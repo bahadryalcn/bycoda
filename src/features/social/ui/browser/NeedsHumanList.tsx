@@ -125,13 +125,7 @@ export function NeedsHumanList({
           >
             <PlatformMark platform={item.platform} size="md" />
             <div className="needs-human-text">
-              <Text
-                size="body"
-                tone="primary"
-                leading="inherit"
-                weight="medium"
-                className="needs-human-reason"
-              >
+              <Text size="body" tone="primary" leading="inherit" weight="medium">
                 {reasonLabel(item.reason)}
               </Text>
               <Text size="caption" tone="muted" leading="inherit" className="needs-human-platform">

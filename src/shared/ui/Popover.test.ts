@@ -123,7 +123,7 @@ it("places before first paint, coalesces scroll/resize bursts and cancels queued
   expect(measure).toHaveBeenCalledTimes(1);
 });
 
-it("keeps the frame but paints no backdrop glass when solid", async () => {
+it("keeps the shared opaque frame when solid is requested", async () => {
   await act(async () =>
     root.render(createElement(Popover, { anchor, solid: true }, createElement("p", null, "x"))),
   );
@@ -368,22 +368,23 @@ it("hides while its anchor is not rendered and returns once the anchor shows aga
   expect(Number.parseFloat(surface.style.left)).toBe(40);
 });
 
-it("blurs only the frosted hover card, never the opaque floating surface", async () => {
+it("uses the same opaque floating backdrop for legacy frosted requests", async () => {
   await act(async () =>
     root.render(createElement(Popover, { anchor }, createElement("p", null, "x"))),
   );
   const backdrop = document.body.querySelector(".popover-backdrop");
   expect(backdrop).not.toBeNull();
-  expect(backdrop!.className).not.toContain("backdrop-blur");
+  const defaultBackdropClass = backdrop!.className;
   await act(async () =>
     root.render(createElement(Popover, { anchor, frosted: true }, createElement("p", null, "x"))),
   );
-  expect(document.body.querySelector(".popover-frosted")!.className).not.toContain("backdrop-blur");
+  expect(document.body.querySelector(".popover-backdrop")?.className).toBe(defaultBackdropClass);
+  expect(defaultBackdropClass).not.toContain("backdrop-blur");
+  expect(document.body.querySelector(".popover-frosted")).toBeNull();
 
   const css = fs.readFileSync("src/styles/index.css", "utf8");
-  // A bare .popover-backdrop rule that sets a filter would blur every opaque popover, menu and dialog.
-  expect(css).not.toMatch(/(^|\n)\.popover-backdrop \{[^}]*backdrop-filter/);
   expect(css).toMatch(
-    /\.popover-backdrop\.popover-frosted,[^{]*\{[^}]*backdrop-filter: var\(--ui-frosted-filter\)/,
+    /\.popover-backdrop,[^{]*\.popover-solid,[^{]*\{[^}]*background: var\(--ui-surface-floating\)/,
   );
+  expect(css).not.toMatch(/[^{}]*\.popover-(?:backdrop|solid|frosted)[^{}]*\{[^}]*backdrop-filter/);
 });

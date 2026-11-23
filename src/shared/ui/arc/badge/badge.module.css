@@ -18,7 +18,7 @@
   background: var(--badge-background);
   font-size: var(--ui-font-caption);
   font-weight: 500;
-  line-height: var(--leading-body);
+  line-height: var(--ui-leading-caption);
   overflow: clip;
 }
 .body {

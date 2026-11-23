@@ -106,7 +106,6 @@ export function FindPeopleDialog({
             variant="primary"
             loading={running}
             disabled={Boolean(reason)}
-            disabledReason={reason}
             onClick={() => void run().catch(() => undefined)}
           >
             {t("Find people")}

@@ -97,26 +97,21 @@ it("lists chat models, marks those without tools and saves the chosen set", asyn
   expect(container.textContent).not.toContain("nomic-embed-text");
   expect(container.textContent).toContain("No tool support");
   expect(checkbox("qwen3:8b")?.checked).toBe(true);
-  expect(button("Save to OpenCode")?.disabled).toBe(true);
+  expect(button("Save to OpenCode")).toBeUndefined();
 
   await act(async () => checkbox("gemma:2b")?.click());
-  expect(button("Save to OpenCode")?.disabled).toBe(false);
-  await act(async () => button("Save to OpenCode")?.click());
 
   expect(mock.remote).toHaveBeenCalledWith("local", "ollama.opencode.save", {
     models: ["qwen3:8b", "gemma:2b"],
   });
   expect(mock.catalog).toHaveBeenCalledTimes(1);
-  expect(container.textContent).toContain("The chosen models appear in OpenCode's model list.");
-  expect(button("Save to OpenCode")?.disabled).toBe(true);
 });
 
 it("asks the owner to install OpenCode and keeps saving off without it", async () => {
   mock.remote.mockResolvedValue(running());
   await render(false);
   expect(container.textContent).toContain("Install OpenCode above to use these models.");
-  await act(async () => checkbox("gemma:2b")?.click());
-  expect(button("Save to OpenCode")?.disabled).toBe(true);
+  expect(checkbox("gemma:2b")?.disabled).toBe(true);
 });
 
 it("offers the download page when Ollama is missing and a start when it is stopped", async () => {
@@ -142,7 +137,6 @@ it("refuses to rewrite a config file with comments", async () => {
   await render();
   expect(container.textContent).toContain("has comments");
   expect(checkbox("qwen3:8b")?.disabled).toBe(true);
-  expect(button("Save to OpenCode")?.disabled).toBe(true);
 });
 
 it("starts a download and shows its progress", async () => {

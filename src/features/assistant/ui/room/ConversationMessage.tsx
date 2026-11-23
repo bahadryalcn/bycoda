@@ -5,7 +5,6 @@ import type { MessageTimelineItem } from "../../../../shared/ui/MessageTimeline"
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
-import { Tooltip } from "../../../../shared/ui/Tooltip";
 import { Trash2 } from "../../../../shared/ui/icons";
 import { assistantChatItem } from "./AssistantChat";
 import styles from "./Conversation.module.css";
@@ -48,7 +47,7 @@ export function conversationMessageItem({
     children: (
       <>
         {message.ownerQuestionId && (
-          <Text size="caption" tone="secondary" leading="inherit" className={styles.note}>
+          <Text size="caption" tone="secondary" leading="inherit">
             {t(message.ownerQuestionAction === "snooze" ? "Question postponed" : "Answer recorded")}
           </Text>
         )}
@@ -57,9 +56,7 @@ export function conversationMessageItem({
             <ul className={styles.detailsList}>
               {message.toolActions.map((action) => (
                 <li key={action.id}>
-                  <Tooltip label={`${action.family}.${action.action}`} asChild>
-                    <span>{recordedActionLabel(action.action)}</span>
-                  </Tooltip>
+                  <span>{recordedActionLabel(action.action)}</span>
                   {action.status === "completed" ? null : (
                     <Badge size="xs" tone="warning">
                       {t("Outcome unknown")}
@@ -85,18 +82,9 @@ export function conversationMessageItem({
                     {job.title}
                   </Button>
                 ) : (
-                  <Tooltip key={id} label={id} asChild>
-                    <span>
-                      <Text
-                        size="caption"
-                        tone="secondary"
-                        leading="inherit"
-                        className={styles.note}
-                      >
-                        {t("Job unavailable")}
-                      </Text>
-                    </span>
-                  </Tooltip>
+                  <Text key={id} size="caption" tone="secondary" leading="inherit">
+                    {t("Job unavailable")}
+                  </Text>
                 );
               })}
             </div>

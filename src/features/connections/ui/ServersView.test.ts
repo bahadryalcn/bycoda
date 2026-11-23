@@ -207,7 +207,7 @@ it("opens Termius migration from the Add menu", async () => {
   );
   expect(action).toBeTruthy();
   await act(async () => action!.click());
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Scan this computer");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Other location");
 });
 
 it("shows real recovery progress and keeps degraded features visible after Host recovery", async () => {
@@ -409,7 +409,7 @@ it("keeps the last list and selection visible when refresh fails and allows retr
   );
   expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(1);
   expect(document.body.querySelector('[aria-label="Server details"]')).toBeTruthy();
-  await click("Try again");
+  await click("Retry");
   expect(fixture.refresh).toHaveBeenCalledOnce();
 });
 
@@ -634,10 +634,8 @@ it("keeps sorting separate from filtering and exposes the applied filter summary
   await act(async () => favorites.click());
   expect(document.querySelectorAll("[data-server-row]")).toHaveLength(1);
   expect(trigger.textContent).toContain("1");
-  expect(document.querySelector(".servers-selection-bar")?.textContent).toContain("Favorites only");
-  expect(document.querySelector(".servers-selection-bar")?.textContent).toContain(
-    "Recently used first",
-  );
+  // The applied filters live on the filter button; no standing summary bar repeats them.
+  expect(document.querySelector(".servers-selection-bar")).toBeNull();
 });
 
 it("searches and displays the effective SSH destination while preserving the editable base", async () => {

@@ -1,7 +1,6 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { Group, Row } from "../../../../shared/ui/settings";
 import { Switch } from "../../../../shared/ui/Switch";
 
 import type { SocialClient } from "../../model/socialClient";
@@ -28,37 +27,26 @@ export function InboxSettings({ client, enabled, onChanged }: InboxSettingsProps
   }
 
   return (
-    <Group
-      title={t("Inbox")}
-      feedback={
-        error ? (
-          <InlineError live="assertive" icon={null}>
-            {error}
-          </InlineError>
-        ) : null
-      }
-    >
-      <Row
+    <div className="social-card">
+      <Switch
         label={t("Refresh the inbox automatically")}
-        description={t(
-          "Checks connected accounts for new messages and comments while the Host is running.",
-        )}
-      >
-        <Switch
-          aria-label={t("Refresh the inbox automatically")}
-          checked={value}
-          disabled={is("inbox.settings")}
-          onCheckedChange={(next) => {
-            setValue(next);
-            void write("inbox.settings", () => client.inbox.settings({ autoRefresh: next }))
-              .then((result) => {
-                if (result === undefined) setValue(enabled);
-                else onChanged();
-              })
-              .catch(() => undefined);
-          }}
-        />
-      </Row>
-    </Group>
+        checked={value}
+        disabled={is("inbox.settings")}
+        onCheckedChange={(next) => {
+          setValue(next);
+          void write("inbox.settings", () => client.inbox.settings({ autoRefresh: next }))
+            .then((result) => {
+              if (result === undefined) setValue(enabled);
+              else onChanged();
+            })
+            .catch(() => undefined);
+        }}
+      />
+      {error ? (
+        <InlineError live="assertive" icon={null}>
+          {error}
+        </InlineError>
+      ) : null}
+    </div>
   );
 }

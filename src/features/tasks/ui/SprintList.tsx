@@ -69,7 +69,6 @@ export function SprintList({
                 variant="link"
                 align="start"
                 disabled={sprint.unavailable}
-                disabledReason={sprint.unavailable ? t("Offline") : undefined}
                 onClick={() => onSelect(sprint.catalogKey ?? sprint.id)}
               >
                 {sprint.name}
@@ -82,8 +81,11 @@ export function SprintList({
               ) : null}
               {sprint.startsAt !== undefined || sprint.endsAt !== undefined ? (
                 <Text tone="muted" size="caption" leading="inherit" className="sprint-row-dates">
-                  {displayDate(sprint.startsAt, t("No start date"))} ·{" "}
-                  {displayDate(sprint.endsAt, t("No end date"))}
+                  {sprint.startsAt !== undefined && sprint.endsAt !== undefined
+                    ? `${displayDate(sprint.startsAt, "")} · ${displayDate(sprint.endsAt, "")}`
+                    : sprint.startsAt !== undefined
+                      ? t("From {p0}", { p0: displayDate(sprint.startsAt, "") })
+                      : t("Until {p0}", { p0: displayDate(sprint.endsAt, "") })}
                 </Text>
               ) : null}
             </div>
@@ -93,12 +95,15 @@ export function SprintList({
               className="sprint-row-projects"
               items={sprint.projects
                 .filter((project) => accessible.has(sprintProjectKey(project)))
-                .map((project, index) => ({
-                  id: `${index}:${project.name}`,
-                  label: manyServers
-                    ? `${project.name}${machines.find((machine) => machine.environmentId === project.environmentId) ? ` / ${machines.find((machine) => machine.environmentId === project.environmentId)!.name}` : ""}`
-                    : project.name,
-                }))}
+                .map((project, index) => {
+                  const machine = manyServers
+                    ? machines.find((entry) => entry.environmentId === project.environmentId)
+                    : undefined;
+                  return {
+                    id: `${index}:${project.name}`,
+                    label: machine ? `${project.name} / ${machine.name}` : project.name,
+                  };
+                })}
             />
             <SprintStatusBadge state={sprint.state} />
           </li>

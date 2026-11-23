@@ -411,7 +411,7 @@ it("starts across all projects and creates in the explicitly selected project", 
   await act(async () => button(container, "New task")!.click());
   const form = document.querySelector('form[aria-label="New task"]')!;
   await act(async () => type(form.querySelector('input[aria-label="Task title"]')!, "New B work"));
-  await act(async () => button(document.body, "Add to to-do")!.click());
+  await act(async () => button(document.body, "Add to To do")!.click());
   expect(saved).toHaveLength(1);
   expect(saved[0].projectId).toBe("project-2");
 });
@@ -515,7 +515,7 @@ it("lays tasks out in six columns with the actions each status allows", async ()
     Array.from(container.querySelectorAll("[data-task-column]"), (section) =>
       section.getAttribute("aria-label"),
     ),
-  ).toEqual(["To do", "Queued", "Running", "Review", "Done", "Needs attention"]);
+  ).toEqual(["To do", "Queued", "Running", "Review", "Done", "Blocked"]);
   const actions = (status: string) =>
     Array.from(column(status).querySelectorAll("button"), buttonName);
   // A card offers its lead action; everything else, Delete last, is in the menu.
@@ -565,9 +565,7 @@ it("searches goal filters in the compact popover, marks active scope and resets 
   expect(card("Goal task")).toBeTruthy();
   expect(card("Independent task")).toBeNull();
   expect(trigger.getAttribute("aria-pressed")).toBe("true");
-  await act(async () =>
-    button(document.body.querySelector('[role="dialog"][aria-label="Filters"]')!, "Reset")!.click(),
-  );
+  await act(async () => button(container, "Reset filters")!.click());
   expect(card("Independent task")).toBeTruthy();
   expect(trigger.getAttribute("aria-pressed")).toBe("false");
   expect(requests.some(({ method }) => /\.(create|update|move|delete|approve)$/.test(method))).toBe(
@@ -827,7 +825,7 @@ it("removes the old host's cards and write targets while a reused machine identi
   await act(async () =>
     type(form.querySelector<HTMLInputElement>('input[aria-label="Task title"]')!, "A new task"),
   );
-  expect(isDisabled(button(document.body, "Add to to-do")!)).toBe(true);
+  expect(isDisabled(button(document.body, "Add to To do")!)).toBe(true);
   expect(isDisabled(button(document.body, "Add and start")!)).toBe(true);
   await act(async () => releaseProbe({ capabilities: ["tasks", "tasks.todo"] }));
   await act(async () => {});
@@ -1158,7 +1156,7 @@ it("does not silently use a remote host in global scope when this computer is un
   const form = document.querySelector('form[aria-label="New task"]')!;
   expect(form.textContent).not.toContain("Runs on MacBook");
   expect(isDisabled(button(document.body, "Add and start")!)).toBe(true);
-  expect(isDisabled(button(document.body, "Add to to-do")!)).toBe(true);
+  expect(isDisabled(button(document.body, "Add to To do")!)).toBe(true);
 });
 
 it.each(["local", "remote"])(
@@ -1313,7 +1311,7 @@ it("says so when the project's machine cannot take a task", async () => {
   expect(form.querySelector('[role="alert"]')?.textContent).toContain(
     "isn’t connected, or its bycoda Host needs an update",
   );
-  expect(isDisabled(button(document.body, "Add to to-do")!)).toBe(true);
+  expect(isDisabled(button(document.body, "Add to To do")!)).toBe(true);
   expect(isDisabled(button(document.body, "Add and start")!)).toBe(true);
 });
 
@@ -1473,7 +1471,7 @@ it("shows a plan waiting for approval and asks the goal's machine to approve it"
   const card = container.querySelector<HTMLElement>('article[aria-label="Launch the beta"]')!;
   expect(card.textContent).toContain("Plan ready");
   expect(card.querySelector('[aria-label="Plan"]')!.textContent).toContain(
-    "Call the endpointin project· after Add the endpoint",
+    "Call the endpointin projectAfterAdd the endpoint",
   );
   // The project list keeps an inert measuring copy of its "+N" button.
   expect(
@@ -1680,10 +1678,10 @@ it("adds a to-do item with a title and description, or adds and starts it", asyn
 
   let form = await open();
   // Without a description it can be a to-do item but not start.
-  expect(isDisabled(button(document.body, "Add to to-do")!)).toBe(false);
+  expect(isDisabled(button(document.body, "Add to To do")!)).toBe(false);
   expect(isDisabled(button(document.body, "Add and start")!)).toBe(true);
   await describe(form, "About the card");
-  await act(async () => button(document.body, "Add to to-do")!.click());
+  await act(async () => button(document.body, "Add to To do")!.click());
   expect((saves()[0].params as any).task).toMatchObject({
     title: "Call the bank",
     prompt: "About the card",
@@ -1812,7 +1810,7 @@ it("offers to update an older host instead of adding a to-do item", async () => 
   expect(form.querySelector('[role="status"]')!.textContent).toBe(
     "Update bycoda Host on this computer to add to-do items",
   );
-  expect(isDisabled(button(document.body, "Add to to-do")!)).toBe(true);
+  expect(isDisabled(button(document.body, "Add to To do")!)).toBe(true);
   expect(requests.some((request) => request.method === "tasks.save")).toBe(false);
 });
 
@@ -2480,7 +2478,7 @@ it.each([
     expect(submitting.closest("fieldset[inert]")).toBeNull();
     expect(document.activeElement).toBe(submitting);
     if (label === "New task")
-      expect(button(document.body, "Add to to-do")!.getAttribute("aria-busy")).not.toBe("true");
+      expect(button(document.body, "Add to To do")!.getAttribute("aria-busy")).not.toBe("true");
     await act(async () => submitting.click());
     expect(
       invoke.mock.calls.filter(

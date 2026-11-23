@@ -23,7 +23,7 @@ it("keeps the new-branch field open when Escape cancels an IME composition", asy
       root.render(createElement(BranchManagerDialog, { cwd: "/repo", onClose: vi.fn() })),
     );
     const create = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.textContent?.includes("Create branch"),
+      button.textContent?.includes("New branch"),
     )!;
     await act(async () => create.click());
     const input = document.querySelector<HTMLInputElement>('input[aria-label="New branch name"]')!;

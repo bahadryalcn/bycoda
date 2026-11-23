@@ -1,7 +1,7 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { BtwStatusDot } from "./BtwStatusDot";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { Sheet } from "../../../shared/ui/Sheet";
@@ -9,7 +9,7 @@ import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { useT } from "../../../shared/i18n";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Plus, RefreshCw, X } from "../../../shared/ui/icons";
+import { Plus, X } from "../../../shared/ui/icons";
 
 import { Composer } from "./Composer";
 import {
@@ -577,7 +577,6 @@ export function BtwSheet({
                       tab.thread ? t("Delete “{p0}”", { p0: label }) : t("Discard new question")
                     }
                     type="button"
-                    tooltip={tab.thread ? t("Delete") : t("Discard")}
                     onClick={() => btw.closeTab(tab)}
                   >
                     <X className="icon-xs" strokeWidth={1.75} />
@@ -607,20 +606,9 @@ export function BtwSheet({
       </div>
       {persisted?.status === "error" ? (
         <div className="shrink-0 px-5 pb-3">
-          <Alert tone="danger">
-            <div className="min-w-0">
-              <Text as="div" size="caption" tone="danger" weight="medium">
-                {t("Couldn’t finish")}
-              </Text>
-              <Text as="div" tone="danger" leading="normal" className="mt-1">
-                {presentBtwThreadErrorWith(persisted, HARNESS_TITLE[harness], t)}
-              </Text>
-            </div>
-            <Button variant="ghost" type="button" onClick={btw.retry} className="shrink-0">
-              <RefreshCw className="icon-xs" strokeWidth={1.75} />
-              {t("Retry")}
-            </Button>
-          </Alert>
+          <InlineError retry={{ onRetry: btw.retry, label: t("Retry") }}>
+            {presentBtwThreadErrorWith(persisted, HARNESS_TITLE[harness], t)}
+          </InlineError>
         </div>
       ) : null}
 

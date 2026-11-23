@@ -104,13 +104,10 @@ export function GroupFetchPopover({
               size="secondary"
               tone="primary"
               key={path}
-              className="flex min-w-0 flex-col gap-1 px-2.5 py-1"
+              className="flex min-w-0 flex-wrap items-baseline gap-x-2 px-2.5 py-1"
             >
-              <Text size="inherit" tone="inherit" wrap="anywhere">
+              <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0 flex-1">
                 {basename(path)}
-              </Text>
-              <Text size="micro" tone="muted" wrap="anywhere">
-                {path}
               </Text>
               <Text
                 size="micro"

@@ -30,6 +30,7 @@ import {
   sentQueuedMessage,
 } from "../../../../features/sessions/model/messageQueue";
 import { resolveModel } from "../../../../features/sessions/model/models";
+import { isProjectlessCwd } from "../../../../features/sessions/model/recentSessions";
 import { SECOND_OPINION_TITLE } from "../../../../features/sessions/model/secondOpinion";
 import {
   HARNESS_LABEL,
@@ -206,7 +207,11 @@ export function prepareSubmittedTurn(
           usageLimit: undefined,
           // Automatic remains unresolved until the asynchronous policy read succeeds.
           workspaceMode: selected.workspaceMode,
-          worktreePreparing: createDraftWorktree ? true : selected.worktreePreparing,
+          worktreePreparing: createDraftWorktree
+            ? true
+            : isProjectlessCwd(selected.cwd)
+              ? undefined
+              : selected.worktreePreparing,
           inboxCard: rawCommand || options?.ciRepair ? s.inboxCard : undefined,
           noteCard: rawCommand || options?.ciRepair ? s.noteCard : undefined,
           handoffCard: rawCommand || options?.ciRepair ? s.handoffCard : undefined,

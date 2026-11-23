@@ -134,9 +134,6 @@ export function NoteDraftRecoveryNotice() {
               {draft.error}
             </Text>
           ) : null}
-          <Text as="p" size="caption" tone="inherit">
-            {t("Your draft is retained for this app session.")}
-          </Text>
         </Toast>
       ))}
     </>
@@ -163,15 +160,6 @@ function PrivateInputRecovery({ input }: { input: NotePrivateRecovery }) {
             <p>{t("The original input could not be read.")}</p>
           ) : (
             <Disclosure size="sm" summary={t("View retained input")}>
-              <Text as="p" size="caption" tone="inherit">
-                {t(
-                  input.field === "tags"
-                    ? "Tags input"
-                    : input.field === "title"
-                      ? "Title input"
-                      : "Document input",
-                )}
-              </Text>
               {input.text === "" ? <p>{t("Empty input")}</p> : null}
               <TextareaField label={t("Retained input")} value={input.text} readOnly rows={2} />
             </Disclosure>

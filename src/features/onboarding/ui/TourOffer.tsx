@@ -21,10 +21,7 @@ export function TourOffer({ onStart, onLater }: { onStart: () => void; onLater: 
   return (
     <Toast
       tone="info"
-      title={t("Welcome to {p0}", { p0: appName() })}
-      message={t(
-        "New here? A one-minute tour shows where everything is. You can start it later from the Guide.",
-      )}
+      message={t("Welcome to {p0}", { p0: appName() })}
       aria-label={t("Tour")}
       durationMs={null}
       onDismiss={onLater}

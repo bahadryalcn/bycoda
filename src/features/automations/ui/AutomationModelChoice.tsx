@@ -29,7 +29,7 @@ export function AutomationModelChoice({
         onManage={() => openModelsSettings("roles")}
         fixed={
           <ModelPicker
-            presentation="field"
+            presentation="chip"
             accountChoices
             accountId={draft.providerAccountId}
             harness={draft.harness}
@@ -61,6 +61,7 @@ export function AutomationModelChoice({
       ) : null}
       {draft.harness !== "fx" ? (
         <AccessPicker
+          iconOnly
           value={draft.runtimeMode}
           onChange={(runtimeMode) => onChange({ ...draft, runtimeMode })}
         />

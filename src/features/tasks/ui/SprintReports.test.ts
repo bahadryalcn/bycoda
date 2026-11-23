@@ -64,7 +64,6 @@ it("lets the owner choose an existing sprint from the empty report", () => {
       }),
     ),
   );
-  expect(host.textContent).toContain("Choose a sprint to inspect its progress and burndown.");
   expect(host.querySelector('button[aria-label^="Sprint"], [aria-label="Sprint"]')).not.toBeNull();
   expect(button("Open sprints")).toBeDefined();
 });

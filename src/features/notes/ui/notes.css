@@ -1,7 +1,7 @@
 .note-library-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--ui-space-2);
 }
 
 .notes-workspace {
@@ -16,9 +16,10 @@
   .note-mobile-navigation {
     display: flex;
     flex: none;
-    gap: 4px;
-    padding: 4px 8px;
+    gap: var(--ui-space-1);
+    padding: var(--ui-space-1) var(--ui-space-2);
   }
+  /* shortcut: the Sidebar sets its saved width inline, so narrow mode needs !important until it takes a width override prop. */
   .note-library-sidebar {
     inline-size: 100% !important;
   }
@@ -34,7 +35,7 @@
 .session-note-picker {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--ui-space-1);
 }
 
 .session-note-picker-list {
@@ -48,14 +49,14 @@
   flex: none;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding: 8px;
+  gap: var(--ui-space-1);
+  padding: var(--ui-space-2);
 }
 
 .note-select-all {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ui-space-1);
   flex: 1;
   white-space: nowrap;
 }
@@ -63,13 +64,13 @@
 .note-selectable-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 
 .note-selectable-row > input {
   flex: none;
-  margin-inline-start: 6px;
+  margin-inline-start: var(--ui-space-1);
 }
 
 .note-group-heading {
@@ -81,9 +82,9 @@
   flex: none;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding-block: 8px;
-  padding-inline: 12px;
+  gap: var(--ui-space-2);
+  padding-block: var(--ui-space-2);
+  padding-inline: var(--ui-space-3);
 }
 
 .note-detail {
@@ -97,18 +98,18 @@
   flex-direction: column;
   flex: 1;
   min-block-size: 0;
-  gap: 8px;
-  padding-inline: clamp(16px, 2.5cqi, 40px);
-  padding-block: 10px;
+  gap: var(--ui-space-2);
+  padding-inline: clamp(var(--ui-space-4), 2.5cqi, var(--ui-space-10));
+  padding-block: var(--ui-space-2);
   min-inline-size: 0;
 }
 
-/* Title leads; one meta row (project, tags, words) sits under it. */
+/* Title leads; one meta row (project, words, tags) sits under it. */
 .note-detail-header {
   display: flex;
   min-inline-size: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 
 .note-detail-titlerow {
@@ -116,7 +117,7 @@
   min-inline-size: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: var(--ui-space-1) var(--ui-space-3);
 }
 
 .note-detail-title {
@@ -130,11 +131,11 @@
   flex-wrap: wrap;
   justify-content: end;
   align-items: center;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 
 .note-save-status {
-  padding-inline: 4px;
+  padding-inline: var(--ui-space-1);
   white-space: nowrap;
 }
 
@@ -143,7 +144,7 @@
   min-inline-size: 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: var(--ui-space-1) var(--ui-space-3);
 }
 
 .note-detail-tags {
@@ -155,11 +156,11 @@
 .note-details-popover {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--ui-space-2);
 }
 
 .note-details-title {
-  padding-block-end: 8px;
+  padding-block-end: var(--ui-space-2);
 }
 
 /* One strip that scrolls sideways. Each chip keeps its own width (no shrinking into
@@ -167,21 +168,12 @@
 .note-quick-tags {
   display: flex;
   flex: none;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: var(--ui-space-1);
+  padding: var(--ui-space-1) var(--ui-space-2);
 }
 .note-quick-tags > * {
   flex: none;
   max-inline-size: 12rem;
-}
-
-/* Status bar under the editor: the word count sits at the end, away from the title actions. */
-.note-detail-words {
-  flex: none;
-  text-align: end;
-  padding-inline: clamp(16px, 2.5cqi, 40px);
-  padding-block: 2px;
-  font-variant-numeric: tabular-nums;
 }
 
 .note-detail-error {
@@ -190,21 +182,13 @@
 
 .note-delete-description {
   margin: 0;
-  padding: 16px;
   overflow-wrap: anywhere;
-}
-
-.note-delete-actions {
-  display: flex;
-  justify-content: end;
-  gap: 8px;
-  padding: 12px 16px;
 }
 
 @container (max-width: 620px) {
   .note-detail-content {
-    padding: 8px;
-    gap: 6px;
+    padding: var(--ui-space-2);
+    gap: var(--ui-space-1);
   }
   .note-detail-actions {
     justify-content: start;
@@ -233,7 +217,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
+  gap: var(--ui-space-1) var(--ui-space-3);
   min-block-size: var(--ui-control-height-compact, 1.75rem);
 }
 
@@ -263,7 +247,7 @@
 
 .note-pane-label {
   flex: none;
-  padding: 6px 12px;
+  padding: var(--ui-space-1) var(--ui-space-3);
 }
 
 .note-pane-scroll {
@@ -277,7 +261,7 @@
   display: flex;
   flex-direction: column;
   min-block-size: 100%;
-  padding: 12px 16px;
+  padding: var(--ui-space-3) var(--ui-space-4);
   overflow-wrap: anywhere;
 }
 
@@ -286,7 +270,7 @@
   box-sizing: border-box;
   inline-size: min(100%, 46rem);
   margin-inline: auto;
-  padding-block: 20px 32px;
+  padding-block: var(--ui-space-5) var(--ui-space-8);
 }
 
 .note-pane-content > [data-note-editor] {
@@ -299,24 +283,15 @@
   flex: 1;
 }
 
-.note-pane-footer {
-  position: absolute;
-  inset-inline-end: 8px;
-  inset-block-end: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: end;
-}
-
 .note-preview-block {
-  margin-block-end: 4px;
+  margin-block-end: var(--ui-space-1);
 }
 
 .note-preview-content {
   min-inline-size: 0;
   flex: 1;
   cursor: text;
-  padding-block: 4px;
+  padding-block: var(--ui-space-1);
 }
 
 .note-preview-content :is(p, ul, ol, blockquote) {
@@ -325,8 +300,8 @@
 
 /* The block being edited is a quiet filled region, not an edge stripe. */
 .note-active-block {
-  margin-block: 4px;
-  padding: 4px 8px;
+  margin-block: var(--ui-space-1);
+  padding: var(--ui-space-1) var(--ui-space-2);
 }
 
 .note-edit-block {
@@ -335,11 +310,7 @@
 }
 .note-add-block {
   align-self: start;
-  margin-block-start: 8px;
-}
-
-/* Document title: one step up from body, medium weight. */
-.note-detail-title input {
+  margin-block-start: var(--ui-space-2);
 }
 
 /* Intermediate widths (721-900px): the library and the document share the row.

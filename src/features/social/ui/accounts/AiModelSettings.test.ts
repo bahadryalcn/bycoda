@@ -58,7 +58,7 @@ it("asks for a model and does not offer Do not use AI when no agent is set", () 
   expect(element.textContent).toContain("AI cannot write replies or plans until you do.");
 });
 
-it("explains what the saved agent does when one is set", () => {
+it("shows the saved agent without an explanatory sentence", () => {
   const policies: SocialPolicies = {
     global: { agent: { provider: "claude", model: "m" } },
     platforms: {},
@@ -72,7 +72,7 @@ it("explains what the saved agent does when one is set", () => {
       }),
     ),
   );
-  expect(element.textContent).toContain("AI uses this model to write replies, plans and reports.");
+  expect(element.textContent).not.toContain("AI uses this model to write replies");
 });
 
 it("reads saved effort and account and persists settings through the reviewed policy write", async () => {

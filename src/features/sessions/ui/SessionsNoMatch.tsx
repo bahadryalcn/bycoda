@@ -1,10 +1,7 @@
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { Search, X } from "../../../shared/ui/icons";
 import { ShortcutKeys } from "../../../shared/ui/ShortcutKbd";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 
@@ -13,7 +10,6 @@ import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortc
  * then the two ways forward (search every conversation, or clear the search).
  */
 export function SessionsNoMatch({
-  query,
   onSearchAll,
   onClear,
   children,
@@ -28,21 +24,11 @@ export function SessionsNoMatch({
   const searchShortcut = useKeybindingShortcut("App: Search");
   return (
     <div role="status" className="flex flex-col gap-2 px-3 py-2">
-      <div className="flex min-w-0 items-start gap-2">
-        <Search aria-hidden className="icon-sm mt-0.5 shrink-0" tone="muted" strokeWidth={1.75} />
-        <div className="min-w-0">
-          <EmptyState size="inline" kind="filtered" description={t("No matching sessions")} />
-          <OverflowTooltip label={query}>
-            <Text as="p" size="caption" tone="secondary" truncate>
-              “{query}”
-            </Text>
-          </OverflowTooltip>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-1 ps-6">
+      <EmptyState size="inline" context="list" kind="filtered" description={t("No matching sessions")} />
+      <div className="flex flex-wrap items-center gap-1">
         {onSearchAll ? (
           <Button
-            variant="secondary"
+            variant="ghost"
             size="sm"
             motion="none"
             type="button"
@@ -60,7 +46,6 @@ export function SessionsNoMatch({
           motion="none"
           type="button"
           onClick={onClear}
-          startIcon={<X className="icon-sm" strokeWidth={1.75} />}
         >
           {t("Clear search")}
         </Button>

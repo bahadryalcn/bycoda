@@ -6,7 +6,8 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 
 type Props = {
   title: string;
-  description: string;
+  /** Only when it adds a fact the title and field do not already state. */
+  description?: string;
   label: string;
   placeholder: string;
   submitLabel: string;
@@ -81,7 +82,6 @@ export function RefNameDialog({
             form={formId}
             loading={busy}
             disabled={!complete || busy}
-            disabledReason={complete ? undefined : t("Fill in every field.")}
           >
             {submitLabel}
           </Button>

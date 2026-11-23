@@ -250,7 +250,6 @@ it("retains the old folder during failed navigation and retries the requested fo
   expect((button("Open") as HTMLButtonElement).disabled).toBe(true);
   await act(async () => fail(new Error("Permission denied")));
   expect(document.body.textContent).toContain("Permission denied");
-  expect(document.body.textContent).toContain("Showing last loaded folder: /home/me");
   expect((button("Open") as HTMLButtonElement).disabled).toBe(true);
   await act(async () =>
     (document.querySelector('button[aria-label^="Retry loading"]') as HTMLButtonElement).click(),

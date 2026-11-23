@@ -46,8 +46,8 @@ export function VoiceSessionPicker({
     () => [
       {
         value: FOLLOW,
-        label: active ? active.title || t("Untitled session") : t("Follow active session"),
-        description: t("Follow active session"),
+        label: t("Follow active session"),
+        description: active ? active.title || t("Untitled session") : undefined,
       },
       ...targets.map((session) => {
         const project = projectDisplayName(session.cwd);
@@ -80,12 +80,12 @@ const MODES: { value: VoiceMode; label: () => string; icon: () => ReactNode }[] 
   {
     value: "grok",
     label: () => "Grok Voice",
-    icon: () => <HarnessIcon harness="grok" className="size-3.5" />,
+    icon: () => <HarnessIcon harness="grok" className="icon-sm" />,
   },
   {
     value: "openai",
     label: () => "OpenAI Realtime",
-    icon: () => <HarnessIcon harness="codex" className="size-3.5" />,
+    icon: () => <HarnessIcon harness="codex" className="icon-sm" />,
   },
 ];
 const REPLIES = [

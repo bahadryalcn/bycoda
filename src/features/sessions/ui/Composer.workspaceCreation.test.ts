@@ -193,3 +193,25 @@ it("shows the resolved current default and sends without managed admission", asy
   await act(async () => button("Send")!.click());
   expect(submit).toHaveBeenCalledWith("Preserve this draft", [], expect.anything());
 });
+
+it("shows machine and project controls without Git or folder actions in a projectless draft", async () => {
+  const onPlaceInFolder = vi.fn();
+  await draw({
+    cwd: "~",
+    executionCwd: "/scratch/session",
+    initialDraft: "/add-to-folder",
+    machinePicker: () => "This computer",
+    workspaceMode: "worktree",
+    onPlaceInFolder,
+  });
+  const workspace = container.querySelector("[data-composer-workspace-controls]")!;
+  expect(workspace.textContent).toContain("This computer");
+  expect(workspace.querySelector("[data-composer-context]")).not.toBeNull();
+  expect(workspace.textContent).not.toContain("Current checkout");
+  expect(workspace.textContent).not.toContain("main");
+  expect(button("Send")?.disabled).toBe(false);
+  await act(async () => button("Send")!.click());
+  expect(submit).toHaveBeenCalledWith("/add-to-folder", [], expect.anything());
+  expect(onPlaceInFolder).not.toHaveBeenCalled();
+  expect(container.querySelector("[data-session-folder-picker]")).toBeNull();
+});

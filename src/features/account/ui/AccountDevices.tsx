@@ -127,6 +127,7 @@ export function AccountDevices({
               {channel ? <Badge>{channel}</Badge> : null}
             </span>
           }
+          descriptionVisible
           description={deviceSummary(device, isThis)}
         >
           <Button
@@ -179,7 +180,6 @@ export function AccountDevices({
         ) : query.isSuccess ? (
           <Row
             label={t("No phone signed in")}
-            descriptionVisible
             description={t(
               "Sign in on the bycoda mobile app with the same account to see it here.",
             )}

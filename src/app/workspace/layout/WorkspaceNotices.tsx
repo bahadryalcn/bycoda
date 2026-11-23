@@ -5,18 +5,15 @@ import { ContributePrompt } from "../../../features/projects/ui/ContributePrompt
 import { HarnessUpdateNotice } from "../../../features/providers/ui/HarnessUpdateNotice";
 import { ReminderNotices } from "../../../features/sessions/ui/ReminderNotices";
 import type { useSessionReminders } from "../../../features/notifications/hooks/useSessionReminders";
-import type { SettingsAnchor } from "../../../features/settings/ui/SettingsView";
-import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import { ToastRegion } from "../../../shared/ui/ToastRegion";
 import { logToastAnnouncement } from "../../../features/notifications/model/notificationLog";
 import { WindowTransferNotice } from "../windows/WindowTransferNotice";
 
 export interface WorkspaceNoticesProps {
   sessionReminders: ReturnType<typeof useSessionReminders>;
-  openSettings: (section?: SettingsSectionId, anchor?: SettingsAnchor) => void;
 }
 
-export function WorkspaceNotices({ sessionReminders, openSettings }: WorkspaceNoticesProps) {
+export function WorkspaceNotices({ sessionReminders }: WorkspaceNoticesProps) {
   return (
     <>
       <HarnessUpdateNotice />
@@ -27,7 +24,6 @@ export function WorkspaceNotices({ sessionReminders, openSettings }: WorkspaceNo
         onSnooze={sessionReminders.schedule}
         onDismiss={sessionReminders.cancel}
         onRetry={sessionReminders.refresh}
-        onOpenSettings={() => openSettings("notifications", "notifications")}
       />
       <StatsConsentNotice />
       <CrashReportNotice />

@@ -54,7 +54,7 @@ describe("FindPeopleDialog", () => {
   it("cannot run without a connected account and says where to connect one", async () => {
     renderDialog(clientMock(), { accounts: [] });
     await flush();
-    expect(buttonByText("Find people")?.getAttribute("aria-disabled")).toBe("true");
+    expect(buttonByText("Find people")?.disabled).toBe(true);
     expect(bodyText()).toContain("Connect an account in Accounts & Settings first.");
   });
 
@@ -95,7 +95,7 @@ describe("FindPeopleDialog", () => {
     pickOption("Where to look", "Hashtag");
     await flush();
 
-    expect(buttonByText("Find people")?.getAttribute("aria-disabled")).toBe("true");
+    expect(buttonByText("Find people")?.disabled).toBe(true);
     expect(bodyText()).toContain("Enter a keyword or hashtag.");
     setFieldValue(fieldByLabel("Keyword or hashtag"), "#launch");
     expect(buttonByText("Find people")?.disabled).toBe(false);
@@ -141,7 +141,7 @@ describe("FindPeopleDialog", () => {
     await flush();
     for (const value of ["0", "501"]) {
       setFieldValue(fieldByLabel("Maximum people"), value);
-      expect(buttonByText("Find people")?.getAttribute("aria-disabled")).toBe("true");
+      expect(buttonByText("Find people")?.disabled).toBe(true);
       expect(bodyText()).toContain("Enter a whole number from 1 to 500.");
     }
     setFieldValue(fieldByLabel("Maximum people"), "500");

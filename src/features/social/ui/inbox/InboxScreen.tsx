@@ -4,7 +4,6 @@ import { t, useLocale } from "../../../../shared/i18n";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
-import { FailureState } from "../../../../shared/ui/FailureState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { socialQueryScope } from "../../model/socialQuery";
 import { Switch } from "../../../../shared/ui/Switch";
@@ -113,14 +112,11 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
   return (
     <section className="inbox-screen" aria-label={t("Inbox")}>
       {settingsError ? <InlineError>{settingsError}</InlineError> : null}
-      {unreadable.length > 0 ? (
-        <div className="inbox-account-failures">
-          <UnreadableNotice accounts={unreadable} names={names} />
-          <Button variant="secondary" size="sm" onClick={() => onNavigate("accounts")}>
-            {t("Manage accounts")}
-          </Button>
-        </div>
-      ) : null}
+      <UnreadableNotice
+        accounts={unreadable}
+        names={names}
+        action={{ label: t("Manage accounts"), onClick: () => onNavigate("accounts") }}
+      />
       <InboxFilters value={filter} accounts={accountOptions} onChange={setFilter}>
         <Text
           as="div"
@@ -138,23 +134,21 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
             onCheckedChange={(next) => void toggleAutoRefresh(next).catch(() => undefined)}
           />
         </Text>
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={checking}
-          loadingLabel={t("Checking…")}
-          disabled={!accounts.some((account) => account.connected)}
-          disabledReason={
-            !accounts.some((account) => account.connected)
-              ? t("Connect an account first.")
-              : undefined
-          }
-          onClick={() =>
-            void checkNow().catch(() => setSettingsError(t("Could not load the inbox. Try again.")))
-          }
-        >
-          {t("Check now")}
-        </Button>
+        {accounts.some((account) => account.connected) ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={checking}
+            loadingLabel={t("Checking…")}
+            onClick={() =>
+              void checkNow().catch(() =>
+                setSettingsError(t("Could not load the inbox. Try again.")),
+              )
+            }
+          >
+            {t("Check now")}
+          </Button>
+        ) : null}
       </InboxFilters>
 
       {snapshot.isError ? (
@@ -202,17 +196,9 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
                 onReset={() => setFilter(NO_FILTER)}
                 resetLabel={t("Clear filters")}
               />
-            ) : unreadable.length > 0 ? (
-              <FailureState
-                context="panel"
-                description={t(
-                  "Messages are unavailable for these accounts. Review their connection and inbox support.",
-                )}
-                action={{ label: t("Manage accounts"), onClick: () => onNavigate("accounts") }}
-              />
-            ) : !accounts.some((account) => account.connected) ? (
-              <FailureState
-                context="panel"
+            ) : unreadable.length === 0 && !accounts.some((account) => account.connected) ? (
+              <EmptyState
+                kind="empty"
                 description={t("Connect an account to check for new conversations.")}
                 action={{ label: t("Manage accounts"), onClick: () => onNavigate("accounts") }}
               />

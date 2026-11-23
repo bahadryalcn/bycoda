@@ -25,7 +25,7 @@ export function UsageRefreshButton({
       className="ms-auto shrink-0"
       loading={refreshing}
       disabled={disabled}
-      onClick={() => void onRefresh(accountId)}
+      onClick={() => void onRefresh(accountId).catch(console.error)}
     >
       <RefreshCw className="icon-sm" aria-hidden />
     </Button>

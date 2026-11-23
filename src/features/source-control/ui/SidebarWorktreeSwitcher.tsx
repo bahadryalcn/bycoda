@@ -328,7 +328,13 @@ function detachedLabel(head?: string) {
 function OpenTabs({ stats }: { stats?: { tabs: number; busy: boolean } }) {
   useLocale();
   if (!stats?.tabs) return null;
-  const label = `${stats.tabs} open tab${stats.tabs === 1 ? "" : "s"}${stats.busy ? ", working" : ""}`;
+  const label = stats.busy
+    ? stats.tabs === 1
+      ? t("{p0} open tab, working", { p0: stats.tabs })
+      : t("{p0} open tabs, working", { p0: stats.tabs })
+    : stats.tabs === 1
+      ? t("{p0} open tab", { p0: stats.tabs })
+      : t("{p0} open tabs", { p0: stats.tabs });
   return (
     <Tooltip label={label}>
       <Text

@@ -28,13 +28,12 @@ export function TaskAccountPicker({
   useEffect(() => subscribeProviderAccounts(() => refresh((version) => version + 1)), []);
   if (!supportsProviderAccounts(harness)) return null;
   if (!local)
-    return (
+    // The host's default account is the unremarkable case and says nothing.
+    return accountId && accountId !== "default" ? (
       <Text size="caption" tone="secondary" className="task-account-context">
-        {accountId && accountId !== "default"
-          ? t("Account selected on the host")
-          : t("Host default account")}
+        {t("Account selected on the host")}
       </Text>
-    );
+    ) : null;
   const missing =
     accountId !== undefined &&
     accountId !== "default" &&

@@ -6,7 +6,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { invoke } from "@tauri-apps/api/core";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { sshProxyEndpointText } from "./sshProxyEndpointText";
+import { sshProvenanceText } from "./sshProvenanceText";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { t } from "../../../shared/i18n";
@@ -53,7 +54,7 @@ function validReview(value: unknown): value is Review {
     (r.summary.configuration == null || validSshRuntimeConfiguration(r.summary.configuration))
   );
 }
-/** One interactive terminal authorization. No saved permission or auto-renewal. */
+/** One interactive terminal authorization. No saved permission; an expired review is refetched but never approved automatically. */
 export function SshAgentForwarding({
   server,
   onApprove,
@@ -86,11 +87,10 @@ export function SshAgentForwarding({
     loading: boolean;
     review?: Review;
     error?: string;
-    changed?: boolean;
   }>({ target, loading: true });
-  if (state.target !== target) setState({ target, loading: false, changed: true });
+  // A changed target drops the old review at once; the effect below asks for a fresh one.
+  if (state.target !== target) setState({ target, loading: true });
   const [consumedReview, setConsumedReview] = useState<string | undefined>(undefined);
-  const [clock, setClock] = useState(0);
   const request = useCallback(async () => {
     const selected = current.current;
     if (inFlight.current?.target === selected.target) return;
@@ -109,8 +109,13 @@ export function SshAgentForwarding({
         current.current.target !== selected.target
       )
         return;
-      if (!validReview(result) || result.expiresAt > Date.now() + 30_000)
-        throw new Error(t("Agent forwarding review is unavailable. Request a new review."));
+      if (
+        !validReview(result) ||
+        !result.agentAvailable ||
+        result.expiresAt <= Date.now() ||
+        result.expiresAt > Date.now() + 30_000
+      )
+        throw new Error(t("Agent forwarding review is unavailable."));
       const endpoint = selected.server.sshEndpoint;
       const inherited = Boolean(
         selected.server.metadata.sshInheritance &&
@@ -124,8 +129,7 @@ export function SshAgentForwarding({
             (result.summary.port !== endpoint.port ||
               (result.summary.user ?? "") !== (endpoint.user ?? ""))))
       )
-        throw new Error(t("Agent forwarding target changed. Request a new review."));
-      setClock(Date.now());
+        throw new Error(t("Agent forwarding target changed."));
       setState({ target: selected.target, loading: false, review: result });
     } catch (reason) {
       if (
@@ -142,6 +146,8 @@ export function SshAgentForwarding({
       if (inFlight.current?.generation === generation) inFlight.current = undefined;
     }
   }, []);
+  // Requests a review on open and again whenever the reviewed target changes; each review is
+  // one-use, and the dialog only shows what the native side returned for the current target.
   useEffect(() => {
     mounted.current = true;
     void request();
@@ -150,43 +156,20 @@ export function SshAgentForwarding({
       sequence.current += 1;
       inFlight.current = undefined;
     };
-  }, [request]);
+  }, [request, target]);
   const active = state.target === target ? state : undefined;
   const review = active?.review;
-  // The review expires by wall clock. Only the visible countdown needs periodic updates.
+  // An expired review is replaced by a fresh one; the user still approves explicitly.
   useEffect(() => {
     if (!review) return;
-    const { expiresAt } = review;
-    let interval: ReturnType<typeof setInterval> | undefined;
-    const stopCountdown = () => clearInterval(interval);
-    const updateCountdown = () => {
-      stopCountdown();
-      if (document.hidden) return;
-      const now = Date.now();
-      setClock(now);
-      if (now < expiresAt) interval = setInterval(() => setClock(Date.now()), 1_000);
-    };
-    document.addEventListener("visibilitychange", updateCountdown);
-    updateCountdown();
     const timeout = setTimeout(
-      () => {
-        stopCountdown();
-        document.removeEventListener("visibilitychange", updateCountdown);
-        setClock(expiresAt);
-      },
-      Math.max(0, expiresAt - Date.now()),
+      () => void request(),
+      Math.max(0, review.expiresAt - Date.now()),
     );
-    return () => {
-      clearTimeout(timeout);
-      stopCountdown();
-      document.removeEventListener("visibilitychange", updateCountdown);
-    };
-  }, [review]);
+    return () => clearTimeout(timeout);
+  }, [review, request]);
   const valid = Boolean(
-    review?.agentAvailable &&
-    review.expiresAt > clock &&
-    consumedReview !== review.reviewId &&
-    !active?.loading,
+    review?.agentAvailable && consumedReview !== review.reviewId && !active?.loading,
   );
   const approve = () => {
     if (
@@ -216,10 +199,12 @@ export function SshAgentForwarding({
           <Button variant="ghost" onClick={onClose}>
             {t("Cancel")}
           </Button>
-          <Button disabled={active?.loading} onClick={() => void request()}>
-            {t("Request new review")}
-          </Button>
-          <Button variant="primary" disabled={!valid} onClick={approve}>
+          <Button
+            variant="primary"
+            disabled={!valid}
+            disabledReason={active?.loading ? t("Reviewing the target…") : undefined}
+            onClick={approve}
+          >
             {t("Approve and connect")}
           </Button>
         </ModalActions>
@@ -228,11 +213,19 @@ export function SshAgentForwarding({
       <div className="flex min-w-0 flex-col gap-3">
         <Alert tone="warning">
           {t(
-            "The remote target can use identities from your SSH agent while this terminal is connected. Approve only a trusted target.",
+            "The remote target can use identities from your SSH agent while this one terminal is connected. Approval is not saved. Approve only a trusted target.",
           )}
         </Alert>
-        {active?.loading ? <LoadingText /> : null}
-        {active?.error ? <Alert tone="danger">{active.error}</Alert> : null}
+        {active?.error ? (
+          <Alert
+            tone="danger"
+            action={{ label: t("Retry"), onClick: () => void request() }}
+          >
+            {active.error}
+          </Alert>
+        ) : active?.loading ? (
+          <LoadingText />
+        ) : null}
         {review ? (
           <>
             <Text as="p" size="body" tone="inherit" weight="medium" className="break-all">
@@ -240,67 +233,38 @@ export function SshAgentForwarding({
             </Text>
             {server.sshEndpoint?.httpProxy ? (
               <Text as="p" tone="muted" className="break-all">
-                {server.sshEndpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}
-                : {sshEndpointPreview(server.sshEndpoint.httpProxy)}
+                {sshProxyEndpointText(server.sshEndpoint.httpProxy)}
               </Text>
             ) : null}
             {review.summary.configuration ? (
-              <Disclosure
-                size="sm"
-                textSize="caption"
-                tone="muted"
-                summary={t("Effective SSH configuration")}
-              >
-                <Text as="div" size="caption" tone="muted">
-                  <DescriptionList size="sm">
-                    {Object.entries(review.summary.configuration.provenance).map(
-                      ([field, source]) => (
-                        <DescriptionItem key={field} term={field}>
-                          {t(
-                            source.source === "group"
-                              ? "Group"
-                              : source.source === "connection"
-                                ? "Connection"
-                                : "Default",
-                          )}
-                          {source.groupId ? ` · ${source.groupId} · r${source.revision}` : ""}
-                        </DescriptionItem>
-                      ),
-                    )}
-                  </DescriptionList>
-                  {review.summary.configuration.environment.length ? (
-                    <p>
-                      {t("Environment shell")}:{" "}
-                      {review.summary.configuration.shellKind === "powershell"
-                        ? "PowerShell"
-                        : "POSIX"}
-                    </p>
-                  ) : null}
-                  {review.summary.configuration.environment.map((entry) => (
-                    <p key={entry.name} className="break-all">
-                      <Code>
-                        {entry.name}={entry.value}
-                      </Code>
-                    </p>
-                  ))}
-                </Text>
+              <Disclosure size="sm" summary={t("Effective SSH configuration")}>
+                <DescriptionList size="sm">
+                  {Object.entries(review.summary.configuration.provenance).map(
+                    ([field, source]) => (
+                      <DescriptionItem key={field} term={field}>
+                        {sshProvenanceText(source)}
+                      </DescriptionItem>
+                    ),
+                  )}
+                </DescriptionList>
+                {review.summary.configuration.environment.length ? (
+                  <p>
+                    {t("Environment shell")}:{" "}
+                    {review.summary.configuration.shellKind === "powershell"
+                      ? "PowerShell"
+                      : "POSIX"}
+                  </p>
+                ) : null}
+                {review.summary.configuration.environment.map((entry) => (
+                  <p key={entry.name} className="break-all">
+                    <Code>
+                      {entry.name}={entry.value}
+                    </Code>
+                  </p>
+                ))}
               </Disclosure>
             ) : null}
-            <Text as="p" tone="muted">
-              {t("One terminal only. Approval is not saved.")} ·{" "}
-              {Math.max(0, Math.ceil((review.expiresAt - clock) / 1000))} s
-            </Text>
-            {!valid ? (
-              <InlineMessage tone="warning">
-                {t("This review expired or is unavailable. Request a new review.")}
-              </InlineMessage>
-            ) : null}
           </>
-        ) : null}
-        {!active || active.changed ? (
-          <InlineMessage tone="warning">
-            {t("Agent forwarding target changed. Request a new review.")}
-          </InlineMessage>
         ) : null}
       </div>
     </Modal>

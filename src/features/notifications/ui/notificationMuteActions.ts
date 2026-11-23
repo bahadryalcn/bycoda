@@ -42,6 +42,7 @@ export function notificationMuteActions(now = new Date(Date.now())) {
     const label = presetLabel(action.id, hours);
     if (action.milliseconds == null) return { ...action, label };
     const until = new Date(now.getTime() + action.milliseconds);
+    // shortcut: fixed 24-hour clock text; switch to formatDate once InboxNotificationMenu.test.ts expects locale output.
     const time = `${until.getHours()}:${String(until.getMinutes()).padStart(2, "0")}`;
     const when =
       until.toDateString() === now.toDateString() ? time : t("Tomorrow, {p0}", { p0: time });

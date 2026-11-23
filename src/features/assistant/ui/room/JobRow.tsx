@@ -241,18 +241,8 @@ export function JobRow({
             ...(job.pendingTaskDeletion
               ? [{ kind: "item" as const, id: "keep", label: t("Keep job and tasks") }]
               : !isFinished
-                ? [
-                    { kind: "item" as const, id: "stop", label: t("Stop job") },
-                    ...(job.awaitingOwnerRestart
-                      ? []
-                      : [
-                          {
-                            kind: "item" as const,
-                            id: job.status === "paused" ? "resume" : "pause",
-                            label: t(job.status === "paused" ? "Resume" : "Pause"),
-                          },
-                        ]),
-                  ]
+                ? // Pause and Resume live on the row's own icon, so the menu does not repeat them.
+                  [{ kind: "item" as const, id: "stop", label: t("Stop job") }]
                 : []),
             { kind: "sep" },
             { kind: "item", id: "delete", label: t("Delete…"), danger: true },

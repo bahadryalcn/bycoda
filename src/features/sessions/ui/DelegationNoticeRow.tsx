@@ -1,8 +1,8 @@
 import { useContext } from "react";
 import { useT } from "../../../shared/i18n";
-import { Badge } from "../../../shared/ui/Badge";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { Check, CircleX, Square } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
 import { delegationNoticeSections } from "../model/delegationNotice";
 import type { Block } from "../model/session";
@@ -42,24 +42,12 @@ export function DelegationNoticeRow({ block }: { block: Block }) {
                   ? t("Result from {p0}", { p0: section.title })
                   : t("Message from {p0}", { p0: section.title })}
               </Text>
-              {section.status ? (
-                <Badge
-                  size="xs"
-                  appearance="subtle"
-                  tone={
-                    section.status === "succeeded"
-                      ? "success"
-                      : section.status === "failed"
-                        ? "danger"
-                        : "warning"
-                  }
-                >
-                  {section.status === "succeeded"
-                    ? t("Done")
-                    : section.status === "failed"
-                      ? t("Failed")
-                      : t("Stopped by you")}
-                </Badge>
+              {section.status === "succeeded" ? (
+                <Check className="icon-sm shrink-0" tone="success" aria-label={t("Done")} />
+              ) : section.status === "failed" ? (
+                <CircleX className="icon-sm shrink-0" tone="danger" aria-label={t("Failed")} />
+              ) : section.status ? (
+                <Square className="icon-sm shrink-0" tone="warning" aria-label={t("Stopped by you")} />
               ) : null}
             </span>
           }

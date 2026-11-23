@@ -197,8 +197,7 @@ export function QuotaHistory({
             onOpenChange={setTableOpen}
           >
             {tableOpen ? (
-              <>
-                <Text as="div" leading="inherit">
+              <Text as="div" leading="inherit">
                   <div
                     className="usage-history-table"
                     role="region"
@@ -235,10 +234,10 @@ export function QuotaHistory({
                         },
                         {
                           key: "minutes",
-                          label: t("Window (minutes)"),
+                          label: t("Window"),
                           numeric: true,
                           render: (value) =>
-                            `${Number(value) % 60 === 0 ? `${Number(value) / 60}h` : `${Number(value)}m`} (${value})`,
+                            Number(value) % 60 === 0 ? `${Number(value) / 60}h` : `${Number(value)}m`,
                         },
                         {
                           key: "reset",
@@ -250,19 +249,11 @@ export function QuotaHistory({
                     />
                   </div>
                 </Text>
-                <Text as="p" leading="inherit" className="usage-muted">
-                  {t("Latest 100 samples in the selected interval.")}
-                </Text>
-              </>
             ) : null}
           </Disclosure>
         </>
       ) : (
-        <EmptyState
-          size="inline"
-          title={t("No recorded limit history for this account and interval yet.")}
-          description=""
-        />
+        <EmptyState size="inline" description={t("No limit history yet")} />
       )}
     </section>
   );

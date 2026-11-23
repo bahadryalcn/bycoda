@@ -1,4 +1,3 @@
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { linkContentAttributes } from "../../../shared/ui/Link";
@@ -77,14 +76,12 @@ function TokenPill({ token, label, attachment }: PillProps) {
         variant="link"
         layout="text"
         type="button"
-        tooltip={t("Open {p0} full screen", { p0: attachment.name })}
         aria-label={t("Open {p0} ({p1}) full screen", {
           p0: token,
           p1: attachment.name,
         })}
         aria-haspopup="dialog"
-        aria-busy={loading}
-        disabled={loading}
+        loading={loading}
         onClick={(event) => {
           event.stopPropagation();
           if (canOpenFile) {
@@ -95,12 +92,7 @@ function TokenPill({ token, label, attachment }: PillProps) {
       >
         {body}
       </Button>
-      {loading ? (
-        <LoadingText as="span" delay={false}>
-          {t("Loading…")}
-        </LoadingText>
-      ) : null}
-      {error ? (
+      {error && !previewOpen ? (
         // Phrasing-only: this renders inside <pre>/<p> prose, where the block InlineMessage (a div) is invalid.
         <>
           {" "}

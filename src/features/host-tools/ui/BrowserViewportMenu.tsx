@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
-import { PanelHeader } from "../../../shared/ui/PanelHeader";
 import { Popover } from "../../../shared/ui/Popover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { BrowserViewportControls } from "./BrowserViewportControls";
@@ -41,7 +40,6 @@ export function BrowserViewportMenu({
         variant="ghost"
         className="host-browser-viewport-trigger"
         label={t("Browser viewport")}
-        tooltip={t("Change page dimensions to test responsive layouts.")}
         selected={open}
         aria-haspopup="dialog"
         expanded={open}
@@ -59,16 +57,9 @@ export function BrowserViewportMenu({
           initialFocus="input"
           aria-label={t("Browser viewport")}
           data-dialog-popover
-          solid
           variant="panel"
-          className="host-browser-viewport-popover"
           onDismiss={dismiss}
         >
-          <PanelHeader
-            title={t("Browser viewport")}
-            closeLabel={t("Close")}
-            onClose={() => dismiss("close")}
-          />
           <SegmentedControl
             label={t("Preview")}
             size="sm"

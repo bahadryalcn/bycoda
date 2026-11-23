@@ -14,6 +14,7 @@ import {
 import { optionalTextAttributes } from "./Text";
 import { Search } from "./icons";
 import { useT } from "../i18n";
+import styles from "./EmptyState.module.css";
 
 export type { EmptyStateContext } from "./arc/empty-state/empty-state";
 
@@ -93,7 +94,7 @@ function useSteps({
   return steps;
 }
 
-/** The compact row: caption copy and link-style recovery on one line, wrapping when narrow. */
+/** The compact row: muted caption copy at the list gutter and compact height, link-style recovery on the same line, wrapping when narrow. No glyph unless `icon` is passed. */
 function InlineEmptyState({
   className,
   inset,
@@ -128,7 +129,8 @@ function InlineEmptyState({
       data-kind={kind}
       data-size="inline"
       className={[
-        "flex min-w-0 items-start gap-1.5 text-ui-caption text-(--ui-text-secondary)",
+        "flex min-w-0 gap-1.5 text-ui-caption text-(--ui-text-secondary)",
+        styles.inline,
         stateInsetClass(inset),
         className,
       ]
@@ -137,7 +139,7 @@ function InlineEmptyState({
     >
       {icon ? <NoticeGlyph tone="neutral" size="inline" icon={icon} /> : null}
       <span {...optionalTextAttributes(descriptionText ?? {}, "min-w-0 flex-1 break-words")}>
-        {title ? <strong className="font-medium text-content">{title} </strong> : null}
+        {title ? <strong className="font-medium">{title} </strong> : null}
         {description}
         {extra ? <> {extra}</> : null}
         {steps.map((step) => (

@@ -156,7 +156,6 @@ export function AccountSupport() {
             size="sm"
             loading={busy}
             disabled={incomplete}
-            disabledReason={t("Add a subject and a message first.")}
             onClick={send}
           >
             {t("Send to support")}
@@ -211,19 +210,15 @@ export function AccountSupport() {
         </Row>
       </Group>
       <Group title={null}>
-        <Row label={t("Feedback")}>
-          <Button variant="secondary" size="sm" onClick={openFeedbackDialog}>
-            {t("Send feedback")}
-          </Button>
-        </Row>
-        <Row label={t("E-mail")}>
-          <ContactByEmail />
-        </Row>
-        {PRODUCT_IDENTITY.repositoryUrl ? (
-          <Row label={t("GitHub")}>
+        <Row label={t("Other ways to reach us")}>
+          <span className="flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={openFeedbackDialog}>
+              {t("Send feedback")}
+            </Button>
+            <ContactByEmail />
             <ProjectLinks />
-          </Row>
-        ) : null}
+          </span>
+        </Row>
       </Group>
     </>
   );

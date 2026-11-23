@@ -152,13 +152,10 @@ export function useTaskMutations({
             id: `task:${saved.machineId}:${saved.id}`,
             title: saved.title,
             sprintId: currentSprint.id,
+            reason: presentRemoteError(reason, { explicit: true }),
             task: saved,
           });
-          setError(
-            t("Task created. Sprint assignment failed: {p0}", {
-              p0: presentRemoteError(reason, { explicit: true }),
-            }),
-          );
+          setError(null);
           refresh().catch(report);
           return;
         }

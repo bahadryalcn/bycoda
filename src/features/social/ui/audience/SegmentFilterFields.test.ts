@@ -69,14 +69,6 @@ function checkbox(text: string): HTMLInputElement {
   return input;
 }
 
-function chip(text: string): HTMLButtonElement {
-  const button = Array.from(document.querySelectorAll("button")).find(
-    (item) => item.textContent?.trim() === text,
-  );
-  if (!button) throw new Error(`No chip "${text}"`);
-  return button;
-}
-
 describe("SegmentFilterFields", () => {
   it("toggles a platform on and off", () => {
     host.render(createElement(Harness));
@@ -92,7 +84,7 @@ describe("SegmentFilterFields", () => {
 
   it("filters by stage and by how the person came in", () => {
     host.render(createElement(Harness));
-    act(() => chip("Replied").click());
+    act(() => checkbox("Replied").click());
     act(() => checkbox("Comment").click());
     expect(latest).toEqual({ stages: ["replied"], sources: ["comment"] });
   });
@@ -101,7 +93,7 @@ describe("SegmentFilterFields", () => {
     host.render(createElement(Harness, { initial: { platforms: ["x"], stages: ["new"] } }));
     expect(checkbox("X").checked).toBe(true);
     expect(checkbox("Instagram").checked).toBe(false);
-    expect(chip("New").getAttribute("aria-pressed")).toBe("true");
+    expect(checkbox("New").checked).toBe(true);
   });
 
   it("stores the language trimmed and removes it when the field is emptied", () => {
@@ -143,7 +135,7 @@ describe("SegmentFilterFields", () => {
     host.render(createElement(Harness));
     expect(document.body.textContent).not.toContain("People who match all of");
     act(() => checkbox("X").click());
-    act(() => chip("Replied").click());
+    act(() => checkbox("Replied").click());
     expect(document.body.textContent).toContain(
       "People who match all of: Accounts on X; Stage Replied.",
     );
@@ -170,7 +162,7 @@ describe("SegmentFilterFields", () => {
   it("keeps the exact filter shape the Host expects when several fields change", () => {
     host.render(createElement(Harness));
     act(() => checkbox("X").click());
-    act(() => chip("New").click());
+    act(() => checkbox("New").click());
     setFieldValue(fieldByLabel("Minimum interest score"), "0");
     expect(latest).toEqual({ platforms: ["x"], stages: ["new"], minScore: 0 });
   });

@@ -11,6 +11,6 @@
 }
 .dismiss {
   position: absolute;
-  inset-inline-end: calc(-1 * var(--space-2));
-  inset-block-start: calc(-1 * var(--space-2));
+  inset-inline-end: 0;
+  inset-block-start: 0;
 }

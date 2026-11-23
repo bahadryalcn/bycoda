@@ -248,7 +248,7 @@ it("names the field after its target and badges an item's icon with a status", (
   expect(item.querySelector('[role="img"][aria-label="Not connected"]')).not.toBeNull();
 });
 
-it("does not take focus on open and saves a typed name only on Enter", () => {
+it("does not take focus on open and saves a typed name on blur or Enter", () => {
   const onRename = vi.fn();
   renderMenu(vi.fn(), { onRename, nameLabel: "Project name" });
   const input = document.querySelector<HTMLInputElement>('input[aria-label="Project name"]')!;
@@ -263,14 +263,10 @@ it("does not take focus on open and saves a typed name only on Enter", () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   act(() => input.blur());
-  expect(onRename).not.toHaveBeenCalled();
+  expect(onRename).toHaveBeenCalledExactlyOnceWith("private", "Renamed");
 
+  onRename.mockClear();
   act(() => input.focus());
-  act(() => {
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  });
-  expect(onRename).not.toHaveBeenCalled();
-
   act(() => {
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   });

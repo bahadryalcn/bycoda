@@ -12,6 +12,7 @@ document.body.append(host);
 const root = createRoot(host);
 afterEach(() => {
   act(() => root.render(null));
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -171,7 +172,7 @@ it("says the file index is incomplete instead of a bare no-match result", () => 
   expect(host.textContent).not.toContain("File index");
 
   render("incomplete");
-  expect(host.textContent).toContain("No matching files or folders");
+  expect(host.textContent).not.toContain("No matching files or folders");
   expect(host.textContent).toContain("File index is incomplete; some files may not appear.");
 
   render("unknown");
@@ -191,7 +192,7 @@ const row = (relative: string) => ({
   positions: [],
 });
 
-it("groups an empty query into project root and folders", () => {
+it("keeps a short project tree free of headings", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   act(() =>
     root.render(
@@ -204,28 +205,43 @@ it("groups an empty query into project root and folders", () => {
       }),
     ),
   );
-  expect(host.textContent).toContain("Project root");
-  expect(host.textContent).toContain("Folders");
+  expect(host.querySelector('[role="group"]')).toBeNull();
+  expect(host.querySelectorAll('[role="option"]')).toHaveLength(2);
 });
 
-it("offers a rescan when a search finds nothing and when the index is incomplete", () => {
+it("refreshes a missed search once per opening when the index may be incomplete", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
   const onRetry = vi.fn();
-  act(() =>
-    root.render(
-      createElement(FileMentionPicker, {
-        files: [],
-        query: "zzz",
-        active: 0,
-        indexNotice: "incomplete",
-        onRetry,
-        onActive: vi.fn(),
-        onPick: vi.fn(),
-      }),
-    ),
-  );
-  const rescan = [...host.querySelectorAll("button")].find((b) => b.textContent === "Rescan files");
-  expect(rescan).toBeDefined();
-  act(() => rescan!.click());
+  const render = (query: string, indexNotice?: "incomplete" | "unknown") =>
+    act(() =>
+      root.render(
+        createElement(FileMentionPicker, {
+          files: [],
+          query,
+          active: 0,
+          indexNotice,
+          onRetry,
+          onActive: vi.fn(),
+          onPick: vi.fn(),
+        }),
+      ),
+    );
+  render("zzz");
+  act(() => vi.advanceTimersByTime(250));
+  expect(onRetry).not.toHaveBeenCalled();
+  render("zzz", "incomplete");
+  act(() => vi.advanceTimersByTime(200));
+  render("zzzz", "unknown");
+  act(() => vi.advanceTimersByTime(200));
+  expect(onRetry).not.toHaveBeenCalled();
+  act(() => vi.advanceTimersByTime(50));
+  render("zzzzz", "unknown");
+  act(() => vi.advanceTimersByTime(250));
   expect(onRetry).toHaveBeenCalledOnce();
+  expect(host.textContent).not.toContain("Rescan files");
+  act(() => root.render(null));
+  render("zzz", "unknown");
+  act(() => vi.advanceTimersByTime(250));
+  expect(onRetry).toHaveBeenCalledTimes(2);
 });

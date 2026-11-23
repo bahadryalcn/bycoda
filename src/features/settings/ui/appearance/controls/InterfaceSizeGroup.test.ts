@@ -171,13 +171,10 @@ it("routes both density choices to their owners", () => {
   expect(state.update).toHaveBeenCalledWith({ density: "compact" });
 });
 
-it("keeps one preview row and the model/branch switches under Row density", () => {
+it("keeps the model/branch switches under Row density without a second preview", () => {
   render();
   const densityRow = host.querySelector('[data-row="Row density"]')!;
-  const preview = densityRow.querySelector(".sidebar-row-preview")!;
-  expect(preview.getAttribute("data-density")).toBe("standard");
-  expect(preview.querySelectorAll(".sidebar-row-preview-row")).toHaveLength(1);
-  expect(preview.textContent).toContain("main");
+  expect(densityRow.querySelector(".sidebar-row-preview")).toBeNull();
   const model = densityRow.querySelector('[role="switch"][aria-checked]') as HTMLButtonElement;
   expect(model.textContent).toContain("Show model");
   act(() => model.click());
@@ -189,21 +186,13 @@ it("keeps one preview row and the model/branch switches under Row density", () =
   expect(state.update).toHaveBeenCalledWith({ showBranch: false });
 });
 
-it("disables the branch switch while rows are compact, and marks changed rows", async () => {
+it("hides the branch switch while rows are compact, and marks changed rows", () => {
   state.display = { ...state.display, density: "compact", showModel: false };
   render();
   const row = host.querySelector('[data-row="Row density"]')!;
   const branch = [...row.querySelectorAll<HTMLButtonElement>('[role="switch"]')].find((el) =>
     el.textContent?.includes("Show branch"),
-  )!;
-  expect(branch.disabled).toBe(true);
-  expect(branch.hasAttribute("title")).toBe(false);
-  await act(async () => {
-    branch.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  });
-  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
-    "Compact rows have no branch line",
   );
+  expect(branch).toBeUndefined();
   expect(row.getAttribute("data-modified")).toBe("true");
 });

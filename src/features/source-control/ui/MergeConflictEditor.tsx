@@ -14,7 +14,7 @@ import { displayPath } from "../../../shared/lib/paths";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { Button } from "../../../shared/ui/Button";
 import { Search } from "../../../shared/ui/icons";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { languageForPath } from "../../files/public/editorLanguage";
@@ -401,11 +401,6 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
   return (
     <div className="merge-conflict-editor">
       {error ? <InlineError className="conflict-editor-status">{error}</InlineError> : null}
-      {resolved ? (
-        <InlineMessage tone="success" className="conflict-editor-status">
-          {t("All conflicts resolved")}
-        </InlineMessage>
-      ) : null}
       {!initial ? (
         <LoadingText className="conflict-editor-status">
           {t("Loading conflict versions")}
@@ -483,13 +478,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
               size="sm"
               motion="none"
               disabled={!initial || disabled || busy || preparing || pending > 0 || resolved}
-              tooltip={
-                pending
-                  ? t("Resolve every conflict first")
-                  : resolved
-                    ? t("Saved and staged")
-                    : t("Save the file and stage it")
-              }
+              tooltip={pending ? t("Resolve every conflict first") : undefined}
               onClick={() => void stage()}
             >
               {resolved ? t("Staged") : t("Save and stage")}

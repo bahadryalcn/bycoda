@@ -2,13 +2,13 @@
 .cost {
   container-type: inline-size;
   display: grid;
-  gap: 14px;
+  gap: var(--ui-space-4);
   min-inline-size: 0;
 }
 .fieldGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
-  gap: 12px 16px;
+  gap: var(--ui-space-3) var(--ui-space-4);
   align-items: start;
   min-inline-size: 0;
 }
@@ -20,7 +20,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 .usageNote {
@@ -31,11 +31,8 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-start;
-  gap: 6px 8px;
+  gap: var(--ui-space-2);
   margin: 0;
   padding: 0;
   list-style: none;
-}
-.note {
-  margin: 0;
 }

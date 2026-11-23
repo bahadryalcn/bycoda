@@ -3,7 +3,6 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { BadgeTone } from "../../../shared/ui/Badge";
 import { CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Text } from "../../../shared/ui/Text";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { type BoardTask, taskTimeLabel } from "../model/taskClient";
 import { taskColumn, type TaskColumn } from "../model/hostTasks";
@@ -28,14 +27,9 @@ export const COLUMN_LABELS: Record<TaskColumn, string> = {
   running: "Running",
   review: "Review",
   done: "Done",
-  blocked: "Needs attention",
+  blocked: "Blocked",
 };
 
-/** Only the lanes a person fills or reads say they are empty; the count in the header covers the rest. */
-const COLUMN_EMPTY: Partial<Record<TaskColumn, string>> = {
-  todo: "Nothing to do yet",
-  done: "Nothing done yet",
-};
 const COLUMN_TONES: Partial<Record<TaskColumn, BadgeTone>> = {
   queued: "info",
   running: "accent",
@@ -51,7 +45,6 @@ type TaskContext = { project: string; goal?: string; waitingFor: string[] };
 export const TaskBoardColumn = memo(function TaskBoardColumn({
   status,
   column,
-  showEmptyNote,
   compactSelected,
   drag,
   findTask,
@@ -69,8 +62,6 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
 }: {
   status: TaskColumn;
   column: readonly BoardTask[];
-  /** Another lane has cards, so this empty one explains itself. */
-  showEmptyNote: boolean;
   compactSelected: boolean;
   drag: TaskBoardDrag;
   findTask: (key: string | null) => BoardTask | undefined;
@@ -87,7 +78,6 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
   onOpen: (key: string) => void;
 }) {
   const dropActive = useTaskBoardDrag(drag, (state) => state.dropColumn === status);
-  const emptyNote = COLUMN_EMPTY[status];
   const [limit, setLimit] = useState(COLUMN_WINDOW);
   const list = useRef<HTMLUListElement>(null);
   // Written by focus events, read only while sizing the window.
@@ -195,19 +185,6 @@ export const TaskBoardColumn = memo(function TaskBoardColumn({
         {size < column.length ? (
           <li>
             <CollectionFooter standalone hasMore onLoadMore={loadMore} />
-          </li>
-        ) : null}
-        {column.length === 0 && showEmptyNote && emptyNote ? (
-          <li>
-            <Text
-              as="p"
-              size="caption"
-              tone="muted"
-              leading="inherit"
-              className="task-column-empty"
-            >
-              {t(emptyNote)}
-            </Text>
           </li>
         ) : null}
       </ul>

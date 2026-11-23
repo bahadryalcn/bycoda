@@ -5,7 +5,6 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatDate, t } from "../../../../shared/i18n";
 import { truncateGraphemes } from "../../../../shared/lib/text/truncate";
-import { Heading } from "../../../../shared/ui/Heading";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { ActivityRow, type ActivityKind } from "../common/ActivityRow";
 import { TechnicalDetails } from "../common/TechnicalDetails";
@@ -178,7 +177,6 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Activity")}
     >
-      <Heading size="item">{t("Activity")}</Heading>
       {loadError ? (
         <InlineError retry={{ onRetry: reload, label: t("Try again") }}>{loadError}</InlineError>
       ) : null}

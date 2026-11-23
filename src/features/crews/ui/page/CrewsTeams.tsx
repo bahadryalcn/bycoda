@@ -47,7 +47,6 @@ export function CrewsTeams({
         context="page"
         kind="empty"
         title={t("No crews yet")}
-        description={t("Create a team of members that works on a task together.")}
         action={{
           label: t("Create your first crew"),
           onClick: () => setDialog({ kind: "edit", createScope: "project" }),
@@ -102,7 +101,6 @@ export function CrewsTeams({
               deleteSupported={data.deleteSupported}
               canOpenCoordinator={!!onOpenSession}
               onStart={() => setDialog({ kind: "start", definitionId: crew.id })}
-              onEdit={() => setDialog({ kind: "edit", crewId: crew.id })}
               onPick={(id, single) => {
                 if (id === "open" && single) openCoordinator(single);
                 else {

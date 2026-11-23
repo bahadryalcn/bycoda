@@ -45,13 +45,13 @@ export function StatsConsentNotice() {
   return (
     <Toast
       tone="info"
-      title={t("Share anonymous statistics?")}
+      title={t("Anonymous statistics")}
       message={statsDisclosure()}
       durationMs={null}
       width="lg"
       actionsPlacement="footer"
       actions={[
-        { label: t("Share anonymous statistics"), onClick: () => answer("on") },
+        { label: t("Share"), onClick: () => answer("on") },
         { label: t("Don't share"), onClick: () => answer("off") },
       ]}
       onDismiss={() => setShown(false)}

@@ -59,7 +59,7 @@ export function SidebarSessionSearch({
       items={NO_SEARCH_ITEMS}
       label={t("Search sessions")}
       activeLabel={t("Search sessions, filtering by “{p0}”", { p0: draft.trim() })}
-      placeholder={t("Search sessions…")}
+      placeholder={t("Search…")}
       query={draft}
       onQueryChange={change}
     />

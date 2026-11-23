@@ -66,7 +66,9 @@ describe("announcement notices", () => {
     mocks.state = signedIn;
     mocks.listAnnouncements.mockResolvedValue({ items: [news] });
     await act(async () => root.render(createElement(AnnouncementNotices)));
-    await act(async () => button("Dismiss").click());
+    await act(async () =>
+      (document.querySelector('button[aria-label="Dismiss notice"]') as HTMLButtonElement).click(),
+    );
     expect(text()).not.toContain("Maintenance tonight");
     expect(localStorage.getItem("bycoda.account.announcements.dismissed.v1")).toContain("ann_1");
   });

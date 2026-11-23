@@ -14,7 +14,6 @@ import { useLocale, useT } from "../../../shared/i18n";
 import { toast } from "../../../shared/ui/ToastRegion";
 import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
 import { useSessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
-import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import { useCitedTurnHistory } from "./useCitedTurnHistory";
 import {
   memo,
@@ -63,8 +62,9 @@ import {
 } from "../../orchestration/model/orchestration";
 import { DiscussionEmpty } from "./DiscussionEmpty";
 import { LinkedWorkItemUpdateNotice } from "../../inbox/ui/LinkedWorkItemUpdateNotice";
-import { orchestrationLocksUndo } from "./SessionReview";
+import { orchestrationLocksUndo, useSessionReviewEligibility } from "./SessionReview";
 import { LatestTurnAccessory } from "./LatestTurnAccessory";
+import { isProjectlessCwd } from "../model/recentSessions";
 import { SessionProviderGoal, type SessionProviderGoalCommand } from "./SessionProviderGoal";
 import { PromptOutline } from "./PromptOutline";
 import {
@@ -151,7 +151,6 @@ import { SessionNotesPanel } from "../../notes/ui/SessionNotesPanel";
 import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/public/settings";
 import { setComposerDraft } from "../model/draftCache";
 import { useSessionComposerDraft } from "./useSessionComposerDraft";
-import { BycodaWelcome } from "./BycodaWelcome";
 import { projectKey } from "../../../shared/lib/paths";
 import { userPromptHistory } from "../model/composerHistory";
 import { currentSessionAccessor } from "../model/paneSessionAccess";
@@ -859,15 +858,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
     id: string;
     value: LastTurnRecall;
   } | null>(null);
-  const modelWelcomeSequence = useRef(0);
-  const decorativeMotionEnabled = useDecorativeMotionEnabled();
-  const [modelWelcome, setModelWelcome] = useState<{
-    run: number;
-    harness: HarnessId;
-  } | null>(null);
-  const dismissModelWelcome = useCallback(() => setModelWelcome(null), []);
-  // A hidden pane, or one without decorative motion, shows no welcome.
-  if (modelWelcome && (!visible || !decorativeMotionEnabled)) setModelWelcome(null);
   // Restore a saved run for this lead; its agents render on the sidebar card.
   useEffect(() => {
     if (!remote && !session.inboxAsk && !session.worktreeRemoved)
@@ -1028,6 +1018,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
 
   const workCwd = sessionWorkCwd(session);
+  const reviewApplicable = !session.inboxAsk && !session.worktreeRemoved && !draftBlock;
+  const showReview = useSessionReviewEligibility(session.cwd, reviewApplicable ? workCwd : "");
   const showDeckProjectPicker = isEmpty && !looksLikeProject(session.cwd);
   const dockComposer =
     remoteSessionLoading ||
@@ -1123,13 +1115,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   const composerNewTerminal = useStableCallback(() => onNewTerminal(session.id));
   const composerModelChange = useStableCallback(
-    (harness: HarnessId, model: string, accountId?: string) => {
-      onModelChange(session.id, harness, model, accountId);
-      // A new key restarts the animation and its cleanup timer on every pick.
-      setModelWelcome(
-        decorativeMotionEnabled ? { run: ++modelWelcomeSequence.current, harness } : null,
-      );
-    },
+    (harness: HarnessId, model: string, accountId?: string) =>
+      onModelChange(session.id, harness, model, accountId),
   );
   const composerModelSettingsChange = useStableCallback((settings: Record<string, string>) =>
     onModelSettingsChange(session.id, settings),
@@ -1304,7 +1291,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         session={stableSession}
         blocked={managed || editingLastTurn || !!sendBlockedReason}
         onSubmit={composerSubmit}
-        showReview={!session.inboxAsk && !session.worktreeRemoved && !draftBlock}
+        showReview={showReview}
         sessionId={session.id}
         cwd={workCwd}
         enabled={visible}
@@ -1326,10 +1313,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
       editingLastTurn,
       sendBlockedReason,
       composerSubmit,
-      draftBlock,
+      showReview,
       session.id,
-      session.inboxAsk,
-      session.worktreeRemoved,
       session.busy,
       workCwd,
       visible,
@@ -1458,6 +1443,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       runtimeMode={session.runtimeMode}
       cwd={session.cwd}
       executionCwd={workCwd}
+      indexScratchFiles={isProjectlessCwd(session.cwd) && Boolean(session.providerSessionId)}
       sessionId={session.id}
       compactSupported={canCompactHarnessContext(session.harness)}
       recents={recents}
@@ -1474,6 +1460,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
               <SessionMachinePicker
                 environmentId={remoteExecutionEnvironment(session)}
                 triggerRef={(trigger) => onSessionMachinePickerTrigger?.(session.id, trigger)}
+                returnFocusRef={{
+                  get current() {
+                    return (
+                      paneRef.current?.querySelector<HTMLElement>("[data-composer-box] textarea") ??
+                      null
+                    );
+                  },
+                }}
                 onSelect={
                   !locked &&
                   !remoteSessionStarted &&
@@ -1536,6 +1530,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onWorktreeChange={composerWorktreeChange}
       draftWorkspace={
         !embedded &&
+        !isProjectlessCwd(session.cwd) &&
         !session.remoteExecutionEnvironmentId &&
         !session.inboxAsk &&
         !session.worktreeRemoved &&
@@ -1679,7 +1674,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
             variant="ghost"
             size="sm"
             type="button"
-            tooltip={t("Close pane")}
             shortcut={closeShortcut}
             onClick={() => onClose(session.id)}
           >
@@ -1695,6 +1689,19 @@ const LocalSessionPane = memo(function LocalSessionPane({
     />
   ) : null;
 
+  const headerActions = (
+    <>
+      <AssistantManagedBadge management={session.managedBy} local={!remote} />
+      <AssistantSessionControl
+        sessionId={session.id}
+        cwd={session.cwd}
+        management={session.managedBy}
+        local={!remote}
+      />
+      {headerStatus}
+      {projectActions}
+    </>
+  );
   const pane = (
     <div
       ref={setPane}
@@ -1721,13 +1728,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
       (!projectBackground && globalBackgroundPath && globalBackgroundEffect === "gradient-blur") ? (
         <GradientBlurBackground />
       ) : null}
-      {modelWelcome && visible && decorativeMotionEnabled ? (
-        <BycodaWelcome
-          key={modelWelcome.run}
-          harness={modelWelcome.harness}
-          onDone={dismissModelWelcome}
-        />
-      ) : null}
       {hasPaneHeader ? (
         <div
           data-session-header
@@ -1746,73 +1746,31 @@ const LocalSessionPane = memo(function LocalSessionPane({
             {onPaneDragStart ? (
               <GripVertical className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
             ) : null}
-            <span
-              {...surfaceAttributes(
-                {
-                  radius: "pill",
-                  variant: focused ? undefined : "page",
-                  tone: focused ? "accent" : undefined,
-                },
-                "size-2 shrink-0",
-              )}
-            />
             <OverflowTooltip label={title}>
               <Text
                 size="caption"
                 tone={focused ? "primary" : "secondary"}
                 truncate
-                className={`min-w-0 flex-1   `}
+                className="min-w-0 flex-1"
               >
                 {title}
               </Text>
             </OverflowTooltip>
           </div>
-          <div className="session-pane-header-actions">
-            <AssistantManagedBadge management={session.managedBy} local={!remote} />
-            <AssistantSessionControl
-              sessionId={session.id}
-              cwd={session.cwd}
-              management={session.managedBy}
-              local={!remote}
-            />
-            {headerStatus}
-            {projectActions}
-          </div>
+          <div className="session-pane-header-actions">{headerActions}</div>
         </div>
       ) : null}
       {!hasPaneHeader && !embedded && !hideSessionToolbar ? (
         titleBarSlot ? (
           // A lone chat's actions live in the title bar's chrome row beside its tab (pane-hosted portal,
           // not a popover: the target is the title bar slot).
-          visible ? (
-            <Portal target={titleBarSlot}>
-              <>
-                <AssistantManagedBadge management={session.managedBy} local={!remote} />
-                <AssistantSessionControl
-                  sessionId={session.id}
-                  cwd={session.cwd}
-                  management={session.managedBy}
-                  local={!remote}
-                />
-                {headerStatus}
-                {projectActions}
-              </>
-            </Portal>
-          ) : null
+          visible ? <Portal target={titleBarSlot}>{headerActions}</Portal> : null
         ) : (
           <div
             data-session-toolbar
             className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center justify-end gap-1 px-2 py-0.5"
           >
-            <AssistantManagedBadge management={session.managedBy} local={!remote} />
-            <AssistantSessionControl
-              sessionId={session.id}
-              cwd={session.cwd}
-              management={session.managedBy}
-              local={!remote}
-            />
-            {headerStatus}
-            {projectActions}
+            {headerActions}
           </div>
         )
       ) : null}

@@ -57,7 +57,7 @@ afterEach(() => {
   state.rename.mockClear();
 });
 
-it("keeps the theme and action labels without tooltip triggers", () => {
+it("keeps the theme label and one actions menu button without tooltip triggers", () => {
   act(() =>
     root.render(
       createElement(SavedThemes, {
@@ -71,7 +71,7 @@ it("keeps the theme and action labels without tooltip triggers", () => {
     Array.from(container.querySelectorAll(".theme-saved-actions button"), (button) =>
       button.getAttribute("aria-label"),
     ),
-  ).toEqual(["Rename", "Overwrite with current look", "Delete"]);
+  ).toEqual(["More actions"]);
   expect(container.querySelector("[data-tooltip-owner]")).toBeNull();
 });
 
@@ -87,7 +87,14 @@ it.each([
       }),
     ),
   );
-  act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Rename"]')!.click());
+  act(() =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!.click(),
+  );
+  act(() =>
+    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.includes("Rename"))!
+      .click(),
+  );
   const input = document.querySelector<HTMLInputElement>("input[maxlength]")!;
   expect(input.value).toBe("Siyah Ufuk");
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;

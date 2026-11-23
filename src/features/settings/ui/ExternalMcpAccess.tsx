@@ -10,7 +10,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
-import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
@@ -269,7 +269,6 @@ function CreateToken({
                     size="caption"
                     tone="secondary"
                     leading="inherit"
-                    className={styles.metadata}
                   >
                     {t("Runtime logs are read-only.")}
                   </Text>
@@ -277,17 +276,18 @@ function CreateToken({
               </div>
             ))}
           </FieldGroup>
-          <NumberField
-            label={t("Duration (days)")}
-
-            min={1}
-            max={366}
-            step={1}
-            required
-            value={days}
-            disabled={busy}
-            onChange={(e) => setDays(e.target.value)}
-          />
+          <Disclosure summary={t("Advanced")} variant="row">
+            <NumberField
+              label={t("Duration (days)")}
+              min={1}
+              max={366}
+              step={1}
+              required
+              value={days}
+              disabled={busy}
+              onChange={(e) => setDays(e.target.value)}
+            />
+          </Disclosure>
           {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
         </Text>
       )}
@@ -310,8 +310,6 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
   const [help, setHelp] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const filterAnchor = useRef<HTMLButtonElement>(null);
   const [now, setNow] = useState(Date.now);
   const info = useRef<HTMLButtonElement>(null);
   const pending = useRef(false);
@@ -459,42 +457,6 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             />
           </div>
           <div className={styles.toolbarSlot}>
-            <FilterTrigger
-              ref={filterAnchor}
-              label={t("Filters")}
-              activeCount={filter !== "all" ? 1 : 0}
-              onReset={() => {
-                setFilter("all");
-                setQuery("");
-              }}
-              resetLabel={t("Reset filters")}
-              aria-expanded={filtersOpen}
-              aria-haspopup="dialog"
-              onClick={() => setFiltersOpen(!filtersOpen)}
-            />
-            {data ? (
-              <Text
-                size="caption"
-                tone="secondary"
-                leading="inherit"
-                className={`${styles.metadata} ${styles.count}`}
-                role="status"
-              >
-                {t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}
-              </Text>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-      {filtersOpen ? (
-        <Popover
-          anchor={filterAnchor}
-          kind="dialog"
-          aria-label={t("Filter tokens")}
-          onDismiss={() => setFiltersOpen(false)}
-          width={260}
-        >
-          <Text as="div" tone="primary" leading="inherit" className={styles.help}>
             <Select
               hideLabel
               label={t("Status")}
@@ -507,8 +469,19 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                 { value: "revoked", label: t("Revoked") },
               ]}
             />
-          </Text>
-        </Popover>
+            {data ? (
+              <Text
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                className={styles.count}
+                role="status"
+              >
+                {t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}
+              </Text>
+            ) : null}
+          </div>
+        </div>
       ) : null}
       {!loading && !error && data && !data.projects.length && (
         <EmptyState
@@ -532,7 +505,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
           <ActionHost key={grant.id} variant="settings" separator className={styles.row}>
             <div className={styles.identity}>
               <span>{grant.name}</span>
-              <Text size="caption" tone="secondary" leading="inherit" className={styles.metadata}>
+              <Text size="caption" tone="secondary" leading="inherit">
                 {data?.projects.find((p) => p.id === grant.projectId)?.name ?? grant.projectId}{" "}
                 <Badge
                   tone={
@@ -548,7 +521,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                   }
                 </Badge>
               </Text>
-              <Text size="caption" tone="secondary" leading="inherit" className={styles.metadata}>
+              <Text size="caption" tone="secondary" leading="inherit">
                 {t("Expires")}:{" "}
                 {format.formatDate(grant.expiresAt, { dateStyle: "medium", timeStyle: "short" })}
               </Text>
@@ -561,7 +534,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                   size="caption"
                   tone="secondary"
                   leading="inherit"
-                  className={`${styles.metadata} w-0 min-w-full`}
+                  className="w-0 min-w-full"
                 >
                   <BadgeList
                     label={t("Scopes")}
@@ -594,6 +567,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       {help && (
         <Popover
           anchor={info}
+          variant="panel"
           width={420}
           onDismiss={() => setHelp(false)}
           kind="dialog"

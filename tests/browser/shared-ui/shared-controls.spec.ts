@@ -1,4 +1,10 @@
 import { expect, test } from "@playwright/test";
+import {
+  PANE_MATRIX,
+  expectFailureShownOnce,
+  expectLayoutContracts,
+  openPane,
+} from "../support/uiLayoutAssertions";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
@@ -67,3 +73,42 @@ test("color input accepts partial edits and hue works by keyboard", async ({ pag
   await hue.press("ArrowRight");
   await expect(hue).toHaveAttribute("aria-valuenow", "1");
 });
+
+// Runtime layout contracts for the shared controls inside a real 320 px pane. The beforeEach above
+// opens the modal fixture; these tests navigate to their own fixture view first.
+for (const { theme, width } of PANE_MATRIX) {
+  test(`date pickers keep their layout contracts in a 320px pane ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await page.goto("/tests/browser/shared-ui/shared-controls.html?pickers");
+    await openPane(page, { theme, width, pane: '[data-pane="pickers"]' });
+    await expectLayoutContracts(page, {
+      surface: "shared-controls pickers (320px pane)",
+      root: '[data-pane="pickers"]',
+      checks: ["overflow", "clip", "overlap"],
+    });
+    // The picker rows are independent controls stacked in a column: 8px between them.
+    await expectLayoutContracts(page, {
+      surface: "shared-controls pickers column gaps (320px pane)",
+      root: '[data-pane="pickers"]',
+      checks: ["gap"],
+      axis: "both",
+    });
+    // The invalid picker states its error once (field description), not again elsewhere.
+    await expectFailureShownOnce(page, {
+      surface: "shared-controls DatePicker error",
+      message: "Choose a date.",
+    });
+  });
+
+  test(`notification mute control keeps its layout contracts in a 320px pane ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await page.goto("/tests/browser/shared-ui/shared-controls.html?mute");
+    await openPane(page, { theme, width, pane: '[data-pane="mute"]' });
+    await expectLayoutContracts(page, {
+      surface: "shared-controls notification mute (320px pane)",
+      root: '[data-pane="mute"]',
+    });
+  });
+}

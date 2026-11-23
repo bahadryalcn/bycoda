@@ -150,12 +150,7 @@ function button(label: string) {
   return found!;
 }
 async function openDeleteMenu() {
-  await click("More actions");
-  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((entry) =>
-    entry.textContent?.includes("Delete note"),
-  );
-  expect(item).toBeTruthy();
-  await act(async () => item!.click());
+  await click("Delete note");
 }
 async function click(label: string) {
   await act(async () => button(label).click());
@@ -195,13 +190,15 @@ function body() {
   };
 }
 
-it("saves explicitly before the autosave delay and keeps routine status quiet", async () => {
+it("autosaves after the delay and keeps routine status quiet", async () => {
   await render();
   expect(container.querySelector("[data-note-save-state]")).toBeNull();
   vi.useFakeTimers();
   await input(body(), "Save this note now");
   expect(container.querySelector("[data-note-save-state]")).toBeNull();
-  await click("Save");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(500);
+  });
   expect(stored.find((note) => note.sourceSessionId === sessionId)?.body).toBe(
     "Save this note now",
   );

@@ -4,6 +4,6 @@
   display: inline-flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }

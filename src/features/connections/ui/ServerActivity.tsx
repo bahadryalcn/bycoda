@@ -31,13 +31,15 @@ export function ServerActivity({
   );
   const content = (
     <>
-      <div className="my-3">
-        <Switch
-          label={t("Bookmarked only")}
-          checked={bookmarkedOnly}
-          onCheckedChange={setBookmarkedOnly}
-        />
-      </div>
+      {activity.some((event) => event.bookmarked) || bookmarkedOnly ? (
+        <div className="my-3">
+          <Switch
+            label={t("Bookmarked only")}
+            checked={bookmarkedOnly}
+            onCheckedChange={setBookmarkedOnly}
+          />
+        </div>
+      ) : null}
       <Text as="p" size="inherit" tone="muted" className="mbs-2">
         {t("Launch metadata only. Terminal contents are not recorded.")}
       </Text>

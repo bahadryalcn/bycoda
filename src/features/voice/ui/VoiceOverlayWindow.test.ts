@@ -181,7 +181,7 @@ it("keeps a question answerable and says so when the answer cannot be delivered"
   vi.mocked(emitTo).mockResolvedValue(undefined);
 });
 
-it("keeps the compact pill to the microphone, a labelled End and one More menu", async () => {
+it("keeps the compact pill to icon-only microphone, speaker and End plus one More menu", async () => {
   const { saveVoiceSettings, loadVoiceSettings } = await import("../model/voiceSettings");
   saveVoiceSettings({ ...loadVoiceSettings(), compact: true });
   await act(async () => root.render(createElement(VoiceOverlayWindow, { owner: "main" })));
@@ -193,8 +193,9 @@ it("keeps the compact pill to the microphone, a labelled End and one More menu",
   expect(names).toEqual([
     "Move voice window",
     "Mute microphone",
+    "Mute speaker",
     "Disconnect voice",
     "More voice options",
   ]);
-  expect(header.textContent).toContain("End call");
+  expect(header.textContent).not.toContain("End call");
 });

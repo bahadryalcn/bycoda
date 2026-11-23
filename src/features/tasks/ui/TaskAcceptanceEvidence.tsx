@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
 import type { HostTask } from "../model/hostTasks";
@@ -70,12 +71,17 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
             tone="secondary"
             className="flex flex-wrap items-center justify-between gap-1"
           >
-            <Timestamp
-              value={report.checkedAt}
-              format="datetime-seconds"
-              prefix={t("Reviewed")}
-              tooltip={false}
-            />
+            <span className="inline-flex items-center gap-1">
+              <Timestamp
+                value={report.checkedAt}
+                format="datetime-seconds"
+                prefix={t("Reviewed")}
+                tooltip={false}
+              />
+              <InfoPopover>
+                {t("Recorded reviewer evidence. Files may have changed since this review.")}
+              </InfoPopover>
+            </span>
             {report.sessionId ? (
               <Button
                 variant="ghost"
@@ -87,17 +93,17 @@ export function TaskAcceptanceEvidence({ task, onOpenReview, isOpeningSession }:
             ) : null}
           </Text>
         ) : null}
-        <Text as="p" size="micro" tone="secondary">
-          {report && !matches
-            ? t(
-                "The recorded evidence does not match the current acceptance criteria. Recheck the task.",
-              )
-            : report
-              ? t("Recorded reviewer evidence. Files may have changed since this review.")
+        {report && matches ? null : (
+          <Text as="p" size="micro" tone="secondary">
+            {report
+              ? t(
+                  "The recorded evidence does not match the current acceptance criteria. Recheck the task.",
+                )
               : t(
                   "No criterion evidence recorded. A passing review alone does not verify these criteria.",
                 )}
-        </Text>
+          </Text>
+        )}
         <Text as="ol" size="caption" tone="inherit" className="space-y-3">
           {rows.map(({ criterion, record, verdict }, index) => (
             <li key={index} className="min-w-0 space-y-1" data-acceptance-verdict={verdict}>

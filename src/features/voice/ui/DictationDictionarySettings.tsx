@@ -5,9 +5,7 @@ import { loadVoiceSettings, normalizeVoiceSettings } from "../model/voiceSetting
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
-import { Divider } from "../../../shared/ui/Divider";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { MoreHorizontal } from "../../../shared/ui/icons";
+import { Pencil, Trash2 } from "../../../shared/ui/icons";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { TagInput } from "../../../shared/ui/TagInput";
@@ -22,54 +20,6 @@ type Entry = VoiceSettings["dictationDictionary"][number];
 
 /** Stored dictionaries are clamped to this many entries by the settings model. */
 const DICTIONARY_LIMIT = 500;
-
-/** One saved term's actions in a single menu: Edit and Remove. */
-function DictionaryTermMenu({
-  term,
-  disabled,
-  onEdit,
-  onRemove,
-}: {
-  term: string;
-  disabled: boolean;
-  onEdit: () => void;
-  onRemove: () => void;
-}) {
-  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
-  return (
-    <>
-      <Button
-        iconOnly
-        variant="ghost"
-        size="sm"
-        disabled={disabled}
-        label={t("Actions for {p0}", { p0: term })}
-        aria-haspopup="menu"
-        aria-expanded={Boolean(anchor)}
-        onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
-      >
-        <MoreHorizontal className="icon-sm" />
-      </Button>
-      {anchor ? (
-        <DropdownMenu
-          anchor={anchor}
-          align="end"
-          label={t("Actions for {p0}", { p0: term })}
-          items={[
-            { kind: "item", id: "edit", label: t("Edit") },
-            { kind: "item", id: "remove", label: t("Remove"), danger: true },
-          ]}
-          onClose={() => setAnchor(null)}
-          onPick={(id) => {
-            setAnchor(null);
-            if (id === "edit") onEdit();
-            else onRemove();
-          }}
-        />
-      ) : null}
-    </>
-  );
-}
 
 /** Same spelling in the same scope; case and surrounding spaces do not make a different term. */
 function scopedTermKey(entry: Pick<Entry, "term" | "projectId">) {
@@ -208,39 +158,51 @@ export function DictationDictionarySettings({
                 itemKey={(row) => row.key}
                 requiredKey={editingIndex === null ? null : (rows[editingIndex]?.key ?? null)}
                 renderItem={({ entry, index }) => (
-                  <>
-                    {index > 0 ? <Divider decorative /> : null}
-                    <div className="flex min-w-0 items-start gap-2 py-2">
-                      <div className="min-w-0 flex-1">
-                        <Text as="div" wrap="anywhere">
-                          {entry.term}
-                        </Text>
-                        <Text as="div" size="caption" tone="secondary" wrap="anywhere">
-                          {entry.projectId
-                            ? projectDisplayNameFrom(entry.projectId, labels)
-                            : t("Shared across projects")}
-                          {entry.aliases.length ? ` · ${entry.aliases.join(", ")}` : ""}
-                        </Text>
-                      </div>
-                      <DictionaryTermMenu
-                        term={entry.term}
-                        disabled={editing !== null}
-                        onEdit={() => begin(index)}
-                        onRemove={() => {
-                          const dictationDictionary = entries.filter((_, item) => item !== index);
-                          try {
-                            change({ dictationDictionary });
-                            setRemoveError(
-                              JSON.stringify(loadVoiceSettings().dictationDictionary) !==
-                                JSON.stringify(dictationDictionary),
-                            );
-                          } catch {
-                            setRemoveError(true);
-                          }
-                        }}
-                      />
+                  <div className="flex min-w-0 items-start gap-2 py-2">
+                    <div className="min-w-0 flex-1">
+                      <Text as="div" wrap="anywhere">
+                        {entry.term}
+                      </Text>
+                      <Text as="div" size="caption" tone="secondary" wrap="anywhere">
+                        {entry.projectId
+                          ? projectDisplayNameFrom(entry.projectId, labels)
+                          : t("Shared across projects")}
+                        {entry.aliases.length ? ` · ${entry.aliases.join(", ")}` : ""}
+                      </Text>
                     </div>
-                  </>
+                    <Button
+                      iconOnly
+                      variant="ghost"
+                      size="sm"
+                      disabled={editing !== null}
+                      label={t("Edit {p0}", { p0: entry.term })}
+                      onClick={() => begin(index)}
+                    >
+                      <Pencil className="icon-sm" />
+                    </Button>
+                    <Button
+                      iconOnly
+                      variant="ghost"
+                      size="sm"
+                      tone="danger"
+                      disabled={editing !== null}
+                      label={t("Remove {p0}", { p0: entry.term })}
+                      onClick={() => {
+                        const dictationDictionary = entries.filter((_, item) => item !== index);
+                        try {
+                          change({ dictationDictionary });
+                          setRemoveError(
+                            JSON.stringify(loadVoiceSettings().dictationDictionary) !==
+                              JSON.stringify(dictationDictionary),
+                          );
+                        } catch {
+                          setRemoveError(true);
+                        }
+                      }}
+                    >
+                      <Trash2 className="icon-sm" />
+                    </Button>
+                  </div>
                 )}
               />
             </>

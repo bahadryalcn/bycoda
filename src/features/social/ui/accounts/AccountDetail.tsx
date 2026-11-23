@@ -1,22 +1,28 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { t } from "../../../../shared/i18n";
+import { Button } from "../../../../shared/ui/Button";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
+import { DropdownMenu, type DropdownMenuItem } from "../../../../shared/ui/DropdownMenu";
 import type { HostProject } from "../../../connections/public/protocol";
 import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
-import { Globe, MessageSquare, Shield, SlidersHorizontal } from "../../../../shared/ui/icons";
+import {
+  Globe,
+  MessageSquare,
+  MoreHorizontal,
+  Shield,
+  SlidersHorizontal,
+} from "../../../../shared/ui/icons";
 import { PlatformMark } from "../common/PlatformIcon";
-import { ScreenHeader, type ScreenHeaderMenuItem } from "../common/ScreenHeader";
-import { SOCIAL_PLATFORM_NAMES, type SocialAccount, type SocialSnapshot } from "../../model/social";
+import type { SocialAccount, SocialSnapshot } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { AccountConnection } from "./AccountConnection";
 import { AccountPermissions } from "./AccountPermissions";
 import { AutonomySettings } from "./AutonomySettings";
 import { BrowserSettings } from "./BrowserSettings";
 import { ReplyRules } from "./ReplyRules";
-import { accountHealth, accountModeText } from "./accountsModel";
+import { accountHealth } from "./accountsModel";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -54,6 +60,8 @@ export function AccountDetail({
   const [openedAt] = useState(Date.now);
   const { error, is, write } = useAccountWrite(t("The account could not be changed. Try again."));
   const confirmation = useConfirm();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
   const capabilities = snapshot.capabilities[account.id] ?? [];
   const health = accountHealth({ account, capabilities, needsHuman, now: now ?? openedAt });
   const onThisComputer = account.executorId === snapshot.executorId;
@@ -82,45 +90,66 @@ export function AccountDetail({
       })
       .catch(() => undefined);
 
-  const menu: ScreenHeaderMenuItem[] = [
+  const menu: DropdownMenuItem[] = [
     {
+      kind: "item",
       id: "pause",
       label: account.paused ? t("Resume account") : t("Pause account"),
-      onSelect: pause,
       disabled: disabled || is("pause"),
     },
     {
+      kind: "item",
       id: "remove",
       label: t("Remove connection"),
       danger: true,
-      onSelect: remove,
       disabled: disabled || !account.connected,
     },
   ];
+  const pick = (id: string) => {
+    setMenuOpen(false);
+    if (id === "pause") pause();
+    else remove();
+  };
 
   return (
     <div className="social-accounts-screen">
-      <ScreenHeader
-        title={SOCIAL_PLATFORM_NAMES[account.platform]}
-        description={`${accountModeText(account)} · ${onThisComputer ? t("On this computer") : t("On another computer")}`}
-        secondary={menu}
-      />
       <div className="social-detail-status">
         <PlatformMark platform={account.platform} size="lg" />
-        <Badge tone={HEALTH_TONE[health.status]} size="sm">
-          {health.text}
-        </Badge>
+        {/* The sheet title names the account; health shows only when it needs attention. */}
+        {health.status !== "ok" ? (
+          <Badge tone={HEALTH_TONE[health.status]} size="sm">
+            {health.text}
+          </Badge>
+        ) : null}
         {account.paused ? (
           <Badge tone="warning" size="sm">
             {t("Paused")}
           </Badge>
         ) : null}
+        <Button
+          ref={menuTrigger}
+          className="social-detail-menu"
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("More actions")}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((value) => !value)}
+        >
+          <MoreHorizontal className="icon-sm" aria-hidden />
+        </Button>
+        {menuOpen ? (
+          <DropdownMenu
+            anchor={menuTrigger}
+            label={t("More actions")}
+            items={menu}
+            returnFocusRef={menuTrigger}
+            onPick={pick}
+            onClose={() => setMenuOpen(false)}
+          />
+        ) : null}
       </div>
-      {disabled ? (
-        <InlineMessage tone="warning" live="off">
-          {t("Could not reach this computer.")}
-        </InlineMessage>
-      ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
       <AccountConnection
         client={client}

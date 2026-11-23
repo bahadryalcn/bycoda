@@ -14,7 +14,6 @@ import {
   CloudUpload,
   FileDiff,
   Folder,
-  GitBranch,
   MessageSquare,
 } from "../../../shared/ui/icons";
 
@@ -113,23 +112,6 @@ export function DeleteWorktreeDialog({
         icon: CircleAlert,
         tone: "warning",
         content: t("Changes could not be checked. Anything uncommitted here is discarded."),
-      },
-      {
-        key: "branch",
-        icon: GitBranch,
-        tone: "neutral",
-        content: tree.branch ? (
-          <>
-            <Text size="inherit" tone="primary" weight="medium">
-              {tree.branch}
-            </Text>
-            {wantsBranchDelete
-              ? t(" branch is deleted if it is fully merged.")
-              : t(" branch and its commits are kept.")}
-          </>
-        ) : (
-          t("The branch is kept.")
-        ),
       },
       !!tree.unpushed && {
         key: "unpushed",

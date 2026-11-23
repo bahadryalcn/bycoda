@@ -5,21 +5,14 @@ import { Text } from "../../../../shared/ui/Text";
 import { Select } from "../../../../shared/ui/Select";
 import { Popover } from "../../../../shared/ui/Popover";
 import { DescriptionItem, DescriptionList } from "../../../../shared/ui/DescriptionList";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { AssistantKeepAwakeStatus } from "../AssistantKeepAwakeStatus";
 import { AssistantPresenceStatus } from "../AssistantPresenceStatus";
 import styles from "./RoomShell.module.css";
 import { date } from "./assistantRoomHelpers";
 import { useAssistantRoom } from "./assistantRoomContext";
 
-/** `workLabel` is the header chip's work state, so the panel names it instead of contradicting it. */
-export function RoomStatusPopovers({
-  snapshot,
-  workLabel,
-}: {
-  snapshot: AssistantSnapshot;
-  workLabel: string;
-}) {
+/** Presence, last check and usage. The header chip already shows the work state, so it is not repeated. */
+export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }) {
   const room = useAssistantRoom();
   const {
     setSettings,
@@ -44,20 +37,6 @@ export function RoomStatusPopovers({
         >
           <Text as="div" size="caption" tone="inherit" leading="inherit" className={styles.popover}>
             <DescriptionList size="sm">
-              <DescriptionItem
-                term={
-                  <>
-                    {t("Work")}
-                    <InfoPopover label={t("About work tracking")}>
-                      <Text as="p" tone="muted" leading="inherit">
-                        {t("Work tracking continues while voice is off.")}
-                      </Text>
-                    </InfoPopover>
-                  </>
-                }
-              >
-                {workLabel}
-              </DescriptionItem>
               <DescriptionItem term={t("Presence")}>
                 <AssistantPresenceStatus
                   snapshot={snapshot}

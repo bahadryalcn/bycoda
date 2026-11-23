@@ -212,7 +212,31 @@ controls together rather than inventing an edge treatment on each screen.
 Keep controls, panels and floating surfaces in their existing shared shape
 families. Choose an intentional shared variant rather than restyling the same
 control independently on each screen. Icon-only actions retain a full usable
-target, an accessible name and a tooltip.
+target and an accessible name. Use a tooltip for a shortcut, reason or detail.
+Use the Button chip variant for compact selectors that show an icon and a readable value.
+
+### Messages, hints and variants
+
+Provenance: owner decision 2026-11-23 (`feature-shared-ui/references/decisions.md`).
+
+- **One fact, one owner.** A message has one owner: the field, the row, the form
+  footer, a pane banner or one toast. Never repeat it in another channel or in a
+  tooltip, and an operation's retry updates its own card.
+- **Name versus hint.** An icon-only action needs an accessible name (`label`); that
+  name is not a tooltip. A tooltip appears only when it adds a shortcut, a reason or
+  detail. Familiar icons (close, add, search, settings) get no tooltip.
+- **Disabled reasons** only for a non-obvious cause with no visible explanation next
+  to the control. A visible message is associated with the control, not repeated.
+- **No inline help paragraphs.** Optional help sits behind an info (ⓘ) control on
+  demand; required validation, consequences and recovery stay visible. Delete a
+  redundant sentence before turning it into another info button.
+- **Variants, not feature styling.** Pick `Button` chip, `SectionLabel` rail,
+  `RadioGroup` tiles with `tileLayout`, or `PaneHeader` `primaryAction` and
+  `overflow`. A narrow pane keeps one short primary action and moves the rest into
+  overflow; it never changes density.
+- **Opaque, theme-bound overlays.** Modal, Sheet, Popover, menus, tooltips, toasts and
+  native popups share one floating ground, edge, shadow and radius. No private frost,
+  palette or per-feature frame.
 
 ## Components
 
@@ -391,7 +415,7 @@ around the same status.
 
 ## Review checklist
 
-Review redundancy, hierarchy, containment, density, consistency, states, copy, visual finish and accessibility. Check that status appears once, one primary action leads each view, controls retain keyboard access, and color never carries meaning alone. Keep optional help behind an info control; required errors and recovery remain visible. Fix repeated defects at the shared token or component default before local workarounds.
+Review redundancy, hierarchy, containment, density, consistency, states, copy, visual finish and accessibility. Check that status appears once (one owner per message), one primary action leads each action group, controls retain keyboard access, and color never carries meaning alone. Keep optional help behind an info control; required errors and recovery remain visible. Check each pane at 320 px. Fix repeated defects at the shared token or component default before local workarounds.
 
 Classify unreadable information, lost state or broken primary controls as S1; visible consistency and usability defects as S2; polish as S3. Route fixes through theme tokens, shared components, shared compositions, and drift checks before feature-local changes. A UI round ends by promoting recurring findings into the appropriate shared contract or check, or documenting why promotion is unnecessary.
 

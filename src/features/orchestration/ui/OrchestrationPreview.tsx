@@ -3,7 +3,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Surface } from "../../../shared/ui/Surface";
@@ -36,8 +36,8 @@ import {
 } from "../../sessions/model/models";
 import { OrchestrationActions } from "./OrchestrationActions";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { Popover } from "../../../shared/ui/Popover";
-import { CircleHelp, MessageMultiple, Play } from "../../../shared/ui/icons";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { MessageMultiple, Play } from "../../../shared/ui/icons";
 
 function AssignmentModel({
   task,
@@ -178,59 +178,21 @@ function AssignmentModel({
 
 function WorkerHelp() {
   useLocale();
-  const [hovered, setHovered] = useState(false);
-  const [open, setOpen] = useState(false);
-  const anchor = useRef<HTMLButtonElement>(null);
   return (
-    <>
-      <Button
-        iconOnly
-        label={t("What parallel workers means")}
-        variant="ghost"
-        type="button"
-        ref={anchor}
-        aria-label={t("What parallel workers means")}
-        selected={open}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        onFocus={() => setHovered(true)}
-        onBlur={() => setHovered(false)}
-        className="shrink-0"
-      >
-        <CircleHelp className="icon-sm" strokeWidth={1.75} />
-      </Button>
-      {(hovered || open) && (
-        <Popover
-          anchor={anchor}
-          side="top"
-          align="start"
-          width={250}
-          onDismiss={() => setOpen(false)}
-          variant="preview"
-          className={open ? "" : "pointer-events-none"}
-        >
-          <Text as="div" size="caption" tone="neutral">
-            {t("How many workers run at once")}
-          </Text>
-          <Text as="div" size="micro" tone="secondary" className="mt-1">
-            {t(
-              "Tasks wait for available workers and for their dependencies to finish. A lower number runs fewer agent sessions at the same time.",
-            )}
-          </Text>
-        </Popover>
-      )}
-    </>
+    <InfoPopover label={t("What parallel workers means")} className="shrink-0">
+      <p>
+        {t(
+          "Tasks wait for available workers and for their dependencies to finish. A lower number runs fewer agent sessions at the same time.",
+        )}
+      </p>
+    </InfoPopover>
   );
 }
 
 function InstructionsField({
-  label,
   value,
   onChange,
 }: {
-  label: string;
   value: string;
   onChange(value: string): void;
 }) {
@@ -245,8 +207,7 @@ function InstructionsField({
   }, [value]);
   return (
     <TextareaField
-      hideLabel
-      label=""
+      label={t("Instructions")}
       ref={(el) => {
         ref.current = el;
         lockOverscroll(el);
@@ -254,10 +215,7 @@ function InstructionsField({
       fieldClassName="w-full"
       resize="none"
       className="max-h-40 overscroll-none"
-
       rows={1}
-      aria-label={label}
-
       value={value}
       onChange={(event) => onChange(event.target.value)}
     />
@@ -332,25 +290,11 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           <Text as="div" size="secondary" tone="neutral" weight="medium" wrap="anywhere">
             {planning ? t("Planning assignments…") : proposal.title}
           </Text>
-          <Text
-            as="div"
-            size="micro"
-            tone="secondary"
-            leading="tight"
-            className="mt-1 flex items-center gap-1.5"
-          >
-            <HarnessIcon harness={proposal.author.harness} className="icon-xs shrink-0" />
-            <Tooltip label={HARNESS_TITLE[proposal.author.harness]} asChild>
-              <Text size="inherit" tone="inherit" truncate>
-                {t("Lead · {p0}", { p0: proposal.author.name })}
-              </Text>
-            </Tooltip>
-            {!!proposal.tasks.length && (
-              <span className="shrink-0">
-                · {proposal.tasks.length} {proposal.tasks.length === 1 ? t("task") : t("tasks")}
-              </span>
-            )}
-          </Text>
+          {!!proposal.tasks.length && (
+            <Text as="div" size="micro" tone="secondary" leading="tight" className="mt-1">
+              {proposal.tasks.length} {proposal.tasks.length === 1 ? t("task") : t("tasks")}
+            </Text>
+          )}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {!run && proposal.status === "invalid" && (
@@ -399,13 +343,9 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
       </div>
       {!!proposal.tasks.length && (
         <ul
-          {...surfaceAttributes(
-            { frame: "pane", edge: "top" },
-            "border-(--ui-tone-neutral-border) py-1",
-          )}
+          {...surfaceAttributes({ frame: "pane", edge: "top" }, "py-1")}
         >
           {visible.map((task) => {
-            const index = proposal.tasks.indexOf(task);
             const open = expanded.includes(task.id);
             const taskChoice = proposal.settings.choices.find(
               (choice) => choice.harness === task.harness && choice.model === task.model,
@@ -447,7 +387,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                       </Text>
                     </OverflowTooltip>
                   </Button>
-                  <div className={editable ? "max-w-[60%] min-w-0" : "min-w-0 w-full ps-6"}>
+                  <div className={editable ? "max-w-3/5 min-w-0" : "min-w-0 w-full ps-6"}>
                     {editable ? (
                       <AssignmentModel
                         task={task}
@@ -471,9 +411,6 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                           {taskChoice?.name ?? modelDisplayName(task.model, task.harness)}
                           {taskEffort ? ` · ${taskEffort}` : ""}
                         </Text>
-                        <Text size="inherit" tone="inherit" wrap="anywhere">
-                          {HARNESS_TITLE[task.harness]}
-                        </Text>
                       </Text>
                     )}
                   </div>
@@ -487,39 +424,15 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                   >
                     {editable ? (
                       <>
-                        <div className="block">
-                          <Text
-                            size="micro"
-                            tone="secondary"
-                            leading="tight"
-                            className="mb-1 block"
-                          >
-                            {t("Task")}
-                          </Text>
-                          <TextField
-                            hideLabel
-                            label=""
-                            aria-label={t("Title for task {p0}", { p0: index + 1 })}
-
-                            value={task.title}
-                            onChange={(event) => change(task.id, { title: event.target.value })}
-                          />
-                        </div>
-                        <div className="block">
-                          <Text
-                            size="micro"
-                            tone="secondary"
-                            leading="tight"
-                            className="mb-1 block"
-                          >
-                            {t("Instructions")}
-                          </Text>
-                          <InstructionsField
-                            label={t("Instructions for task {p0}", { p0: index + 1 })}
-                            value={task.prompt}
-                            onChange={(prompt) => change(task.id, { prompt })}
-                          />
-                        </div>
+                        <TextField
+                          label={t("Task")}
+                          value={task.title}
+                          onChange={(event) => change(task.id, { title: event.target.value })}
+                        />
+                        <InstructionsField
+                          value={task.prompt}
+                          onChange={(prompt) => change(task.id, { prompt })}
+                        />
                       </>
                     ) : (
                       <Text
@@ -534,7 +447,6 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                     )}
                     {!!task.dependsOn.length && (
                       <div className="flex min-w-0 items-center gap-1.5">
-                        <span className="shrink-0">{t("After")}</span>
                         <BadgeList
                           label={t("After")}
                           size="xs"
@@ -579,7 +491,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           tone="secondary"
           {...surfaceAttributes(
             { frame: "pane", edge: "top" },
-            "flex flex-wrap items-center justify-between gap-2 border-(--ui-tone-neutral-border) px-3 py-2",
+            "flex flex-wrap items-center justify-between gap-2 px-3 py-2",
           )}
         >
           <div className="flex items-center gap-1.5">
@@ -619,9 +531,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
               ? t(run.status.charAt(0).toUpperCase() + run.status.slice(1))
               : proposal.status === "approved"
                 ? t("Approved")
-                : proposal.status === "ready"
-                  ? t("Awaiting confirmation")
-                  : ""}
+                : ""}
           </span>
         </Text>
       )}

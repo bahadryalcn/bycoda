@@ -1,5 +1,4 @@
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
-import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { NativeSelect } from "../../../../../shared/ui/Select";
@@ -9,12 +8,7 @@ import type { PlatformFieldProps } from "./PlatformFields";
 /** Instagram and Facebook: feed or Reel for Facebook; carousel rules come from the attachment. */
 export function MetaFields({ account, value, disabled, onChange }: PlatformFieldProps) {
   const name = SOCIAL_PLATFORM_NAMES[account.platform];
-  if (account.platform !== "facebook")
-    return (
-      <InfoPopover className="self-start shrink-0">
-        {t("Attach either one video or up to four images.")}
-      </InfoPopover>
-    );
+  if (account.platform !== "facebook") return null;
   const target = value.facebook?.target ?? "feed";
   return (
     <FieldGroup

@@ -6,6 +6,7 @@ import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Switch } from "../../../shared/ui/Switch";
 import { Text } from "../../../shared/ui/Text";
 import { hostModeSwitchView, useHostLifecycleMode } from "../model/hostLifecycleMode";
+import { hostRestartConsequences } from "./hostRestartConsequences";
 
 /**
  * The "This computer" row's switch: keep the local Host running when bycoda is closed. While
@@ -24,13 +25,7 @@ export function LocalHostModeSwitch() {
     const approved = await confirm({
       title: t("Switch this computer's host now?"),
       message: t("The host restarts to apply the change."),
-      consequences: [
-        {
-          tone: "warning",
-          content: t("Running sessions and shells on this computer are interrupted."),
-        },
-        { content: t("Session history is kept.") },
-      ],
+      consequences: hostRestartConsequences(),
       confirmLabel: t("Stop and switch"),
       danger: true,
     });
@@ -57,22 +52,22 @@ export function LocalHostModeSwitch() {
             </Text>
           ) : null}
         </InfoPopover>
-        {switching ? (
-          <Text tone="muted" as="span">
-            {t("Switching…")}
-          </Text>
-        ) : null}
       </div>
-      {view.pending && !switching ? (
+      {/* One status line: switching, or the change waiting for idle with its way to force it. */}
+      {switching || view.pending ? (
         <div className="flex min-w-0 flex-wrap items-center gap-x-2">
           <Text tone="muted" as="span">
-            {view.pending === "service"
-              ? t("Turning on when running sessions finish")
-              : t("Turning off when running sessions finish")}
+            {switching
+              ? t("Switching…")
+              : view.pending === "service"
+                ? t("Turning on when running sessions finish")
+                : t("Turning off when running sessions finish")}
           </Text>
-          <Button variant="link" size="sm" onClick={() => void switchNow()}>
-            {t("Switch now")}
-          </Button>
+          {!switching ? (
+            <Button variant="link" size="sm" onClick={() => void switchNow()}>
+              {t("Switch now")}
+            </Button>
+          ) : null}
         </div>
       ) : null}
       {error ? <InlineMessage tone="danger">{error}</InlineMessage> : null}

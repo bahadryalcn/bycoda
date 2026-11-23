@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   loadProjectFiles,
   peekProjectFiles,
@@ -73,7 +73,11 @@ export function useComposerProjectFiles(input: {
   }));
   const [failedCwd, setFailedCwd] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const retry = () => setAttempt((count) => count + 1);
+  const retryCwd = useRef<string | null>(null);
+  const retry = () => {
+    retryCwd.current = cwd;
+    setAttempt((count) => count + 1);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -82,9 +86,11 @@ export function useComposerProjectFiles(input: {
       setState({ cwd, files });
       setFailedCwd(null);
     };
+    const forceRefresh = retryCwd.current === cwd;
+    retryCwd.current = null;
     apply(peekProjectFiles(cwd) ?? NO_FILES);
     if (!cwd) return;
-    void loadProjectFiles(cwd, mentionOpen && !remote)
+    void loadProjectFiles(cwd, forceRefresh || (mentionOpen && !remote))
       .then(apply)
       .catch((error) => {
         console.warn("Composer operation failed", error);
@@ -132,17 +138,18 @@ function useComposerNotes(active: boolean): NoteSummary[] | null {
 /** Mention catalogs and their ranking; draft text and tokens stay with the Composer. */
 export function useComposerMentionSources(input: {
   executionCwd: string;
+  indexFiles: boolean;
   remote: boolean;
   notesEnabled: boolean;
   mentionOpen: boolean;
   mentionQuery: string;
 }) {
-  const { executionCwd, remote, notesEnabled, mentionOpen, mentionQuery } = input;
+  const { executionCwd, indexFiles, remote, notesEnabled, mentionOpen, mentionQuery } = input;
   const {
     files,
     failed: filesFailed,
     retry: retryFiles,
-  } = useComposerProjectFiles({ cwd: executionCwd, remote, mentionOpen });
+  } = useComposerProjectFiles({ cwd: indexFiles ? executionCwd : "", remote, mentionOpen });
   const notesAvailable = !remote && notesEnabled;
   const loadedNotes = useComposerNotes(notesAvailable && mentionOpen);
   const notes = loadedNotes ?? NO_NOTES;

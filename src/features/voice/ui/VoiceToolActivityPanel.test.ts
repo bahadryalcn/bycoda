@@ -63,16 +63,14 @@ it("gives each stop button a name that identifies its own action", async () => {
   expect(new Set(names).size).toBe(names.length);
 });
 
-it("shows the target in the row and keeps the technical id behind Details", async () => {
+it("shows the target in the row and keeps the technical id out of the visible text", async () => {
   await renderOpen();
   const rows = [...document.querySelectorAll("li")];
   expect(rows).toHaveLength(2);
   expect(rows[0].textContent).toContain("Alpha");
   for (const [index, id] of ["req-1", "req-2"].entries()) {
-    const details = rows[index].querySelector("details")!;
-    expect(details.querySelector("summary")?.textContent).toBe("Details");
-    expect(details.textContent).toContain(id);
-    expect(rows[index].textContent?.replace(details.textContent ?? "", "")).not.toContain(id);
+    expect(rows[index].textContent).not.toContain(id);
+    expect(rows[index].querySelector("details")).toBeNull();
   }
 });
 

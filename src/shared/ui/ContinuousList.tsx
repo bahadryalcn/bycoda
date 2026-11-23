@@ -7,6 +7,7 @@ import {
 import { useRetainedScroll } from "../hooks/useRetainedScroll";
 import { useRetainedState } from "../hooks/useRetainedState";
 import { useT } from "../i18n";
+import { EmptyState } from "./EmptyState";
 import { InlineMessage } from "./InlineError";
 import { Button } from "./Button";
 import { Spinner } from "./Spinner";
@@ -29,7 +30,7 @@ export type CollectionFooterProps = {
 };
 
 /**
- * Footer for a loaded collection: spinner, error and partial-result messages, Retry, empty text and an explicit "Load more". A failed continuation never hides loaded rows; `standalone` renders only the Load more button.
+ * Footer for a loaded collection. With no rows (`empty`) it shows exactly one initial state: loading, failure with Retry, or the inline empty caption (with Load more when pages remain). With rows it is the continuation state: spinner, error and partial-result messages, Retry and an explicit "Load more"; a failed continuation never hides loaded rows. `standalone` renders only the Load more button.
  * @group data
  * @use Explicit remote continuation state under any list or table.
  * @avoid Page-level load failure: FailureState. Virtualized rows plus continuation: ContinuousList.
@@ -55,8 +56,34 @@ export function CollectionFooter({
       </Button>
     ) : null;
   }
+  // Initial state (no rows): exactly one of loading, failure or absence. Rows exist: the continuation
+  // state below keeps them and only adds its own message, retry and Load more.
+  if (empty) {
+    return (
+      <div className={styles.footer} data-collection-footer data-state="initial">
+        {loading ? (
+          <Spinner label={t("Loading…")} />
+        ) : error ? (
+          <>
+            <InlineMessage tone="danger">{error}</InlineMessage>
+            {onRetry ? (
+              <Button variant="ghost" size="sm" onClick={onRetry}>
+                {t("Retry")}
+              </Button>
+            ) : null}
+          </>
+        ) : (
+          <EmptyState
+            size="inline"
+            description={partial || (emptyMessage ?? t("No records"))}
+            action={hasMore && onLoadMore ? { label: t("Load more"), onClick: onLoadMore } : undefined}
+          />
+        )}
+      </div>
+    );
+  }
   return (
-    <div className={styles.footer} data-collection-footer>
+    <div className={styles.footer} data-collection-footer data-state="continuation">
       {loading && !(hasMore && onLoadMore) && !(error && onRetry) ? (
         <Spinner label={t("Loading…")} />
       ) : null}
@@ -67,7 +94,6 @@ export function CollectionFooter({
           {t("Retry")}
         </Button>
       ) : null}
-      {empty && !loading && !error ? <span>{emptyMessage ?? t("No records")}</span> : null}
       {hasMore && onLoadMore ? (
         <Button variant="ghost" size="sm" loading={loading} disabled={loading} onClick={onLoadMore}>
           {t("Load more")}

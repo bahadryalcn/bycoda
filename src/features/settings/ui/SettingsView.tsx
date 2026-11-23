@@ -16,13 +16,13 @@ import { ArrowLeft, Maximize2, Minimize2, RotateCcw } from "../../../shared/ui/i
 import { useCallback, useEffect, useId, useRef, useState, type ComponentProps } from "react";
 import "./BycodaSettings.css";
 import { AccountScreen } from "../../account";
+import { SignedInAccountNotifications } from "../../account/ui/AccountNotifications";
 import { SettingsAccountRow, accountRowId, navigationGroups } from "./SettingsAccountRow";
 import { SecretsSettings } from "../../secrets";
 import { McpSettings } from "./McpSettings";
 import { GroupLockSettings } from "../../group-lock/ui/GroupLockSettings";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { SETTINGS_SECTION_ICONS } from "../../../app/shell/SettingsRail";
-import { SidebarUpdateFooter } from "../../../app/shell/SidebarUpdate";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { type RecentProject } from "../../projects";
@@ -33,6 +33,8 @@ import {
   settingsSectionDescription,
   settingsSectionLabel,
   settingsSectionForAnchor,
+  settingsAnchorForSection,
+  settingsRevealAnchor,
   type CollapsedProjectRailMode,
   type SettingsSectionId,
 } from "../model/settings";
@@ -53,7 +55,13 @@ import {
 } from "../../../shared/ui/settings";
 import { SettingsSearch } from "./SettingsSearch";
 import { settingsRevealControl } from "./settingsReveal";
-import { GeneralPage } from "./GeneralSettings";
+import { GeneralPage, HelpSettings } from "./GeneralSettings";
+import { RemoteMediaSettings } from "./RemoteMediaSettings";
+import { SessionFolderGroup } from "./SessionFolderSettings";
+import { NewProjectFolderGroup } from "./NewProjectFolderSettings";
+import { ExternalMcpAccess } from "./ExternalMcpAccess";
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/public/importModel";
 import { PoliciesSettings } from "./PoliciesSettings";
 import { NotificationAlerts } from "./NotificationsSettings";
 import { ProjectNotificationSettings } from "../../notifications/ui/ProjectNotificationSettings";
@@ -71,7 +79,6 @@ import { ProvidersSection } from "./ProvidersSection";
 import { ProviderDecisionModels } from "./ProviderDecisionModels";
 import { ArchivePage } from "./ArchiveSettings";
 import { ToolSettingsPage } from "./ToolSettings";
-import { toolSettingsAnchorForSection } from "../model/toolSettingsSections";
 
 /**
  * The `data-setting-id` Settings should reveal when it opens: one of the ids in
@@ -81,7 +88,7 @@ export type SettingsAnchor = string;
 
 type Props = {
   section: SettingsSectionId;
-  /** Card to scroll to; the General page is too long to land at the top. */
+  /** Stable setting anchor to reveal after navigation. */
   anchor?: SettingsAnchor | null;
   /** Project to focus when opening notification settings from a quick action. */
   notificationProjectPath?: string | null;
@@ -152,18 +159,12 @@ export function SettingsView({
 }: Props) {
   useLocale();
   const section = settingsSectionForAnchor(requestedSection, requestedAnchor) ?? requestedSection;
-  const anchor =
-    requestedAnchor ??
-    (requestedSection === "models"
-      ? "models-chat"
-      : requestedSection === "work"
-        ? "models-order"
-        : toolSettingsAnchorForSection(requestedSection));
+  const anchor = requestedAnchor ?? settingsAnchorForSection(requestedSection);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const panelId = useId();
   const categoryRefs = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
   const panelRef = useRef<HTMLDivElement>(null);
-  const categoryGroups = settingsSectionsByGroup();
+  const categoryGroups = settingsSectionsByGroup(section);
   const categories = categoryGroups.flatMap((group) => group.sections);
   const [horizontalNavigation, setHorizontalNavigation] = useState(false);
   const navigationRef = useRef<HTMLDivElement>(null);
@@ -190,7 +191,7 @@ export function SettingsView({
     setRevealInputs({ anchor, request: notificationSettingsRequest, section });
   }
   if (currentReveal !== reveal) setReveal(currentReveal);
-  const revealed = currentReveal.id;
+  const revealed = settingsRevealAnchor(currentReveal.id);
   const notificationHighlightActive =
     section === "notifications" && revealed === "project-notifications";
   const notificationHighlightKey = `${section}|${revealed}|${revealRequest}|${notificationSettingsRequest}`;
@@ -283,16 +284,20 @@ export function SettingsView({
 
   const onReveal = useCallback(
     (next: SettingsSectionId, settingId: string | null) => {
-      if (next !== section) onSelectSection?.(next);
-      setReveal({ id: settingId, section: next });
-      setRevealRequest((request) => request + 1);
-      // The page title is the meaningful target; the tabpanel itself is not a keyboard stop.
-      if (!settingId)
-        requestAnimationFrame(() =>
-          panelRef.current?.querySelector<HTMLElement>(".settings-page-title")?.focus(),
-        );
+      const reveal = () => {
+        if (next !== section) onSelectSection?.(next);
+        setReveal({ id: settingId, section: next });
+        setRevealRequest((request) => request + 1);
+        // The page title is the meaningful target; the tabpanel itself is not a keyboard stop.
+        if (!settingId)
+          requestAnimationFrame(() =>
+            panelRef.current?.querySelector<HTMLElement>(".settings-page-title")?.focus(),
+          );
+      };
+      if (next === section) reveal();
+      else leave.guard(reveal);
     },
-    [onSelectSection, section],
+    [leave.guard, onSelectSection, section],
   );
 
   const selectCategory = (next: SettingsSectionId) => {
@@ -341,14 +346,10 @@ export function SettingsView({
             onChange={(value) => onReveal(value as SettingsSectionId, null)}
           />
         </div>
-        <Text as="span" size="secondary" tone="secondary" className="bycoda-settings-breadcrumb">
-          {t("Settings")} <span aria-hidden="true">/</span>
-        </Text>
         <Heading size="page" truncate className="settings-page-title" tabIndex={-1}>
           {settingsSectionLabel(section)}
         </Heading>
         <div className="bycoda-settings-toolbar-actions">
-          <SidebarUpdateFooter />
           <SettingsSearch onReveal={onReveal} />
           {headerAction}
           {pageReset ? (
@@ -531,7 +532,7 @@ export function SettingsView({
                 <PageAutomaticSaveHint.Provider value={AUTOMATIC_SAVE_SECTIONS.includes(section)}>
                   <SettingsPageResetRegistry.Provider value={setRegisteredReset}>
                     <ScrollArea
-                      axis="both"
+                      axis="y"
                       gutter="stable"
                       // Providers and Usage share account operation owners across navigation.
                       // Other section DOM/effects end on navigation. Feature model owners retain non-secret
@@ -555,7 +556,14 @@ export function SettingsView({
                             revealRequest={revealRequest + notificationSettingsRequest}
                           />
                         ) : null}
-                        {section === "connections" ? <ConnectionsSettings /> : null}
+                        {section === "connections" ? (
+                          <div className="settings-topics">
+                            <ConnectionsSettings />
+                            <Disclosure summary={t("Advanced")} variant="row">
+                              <RemoteMediaSettings />
+                            </Disclosure>
+                          </div>
+                        ) : null}
                         {section === "appearance" ? (
                           <AppearancePage appearance={appearance} revealRequest={revealRequest} />
                         ) : null}
@@ -579,6 +587,8 @@ export function SettingsView({
                                 />
                               </Row>
                             </Group>
+                            <SessionFolderGroup />
+                            <NewProjectFolderGroup />
                             <WorkspaceEditorSettings />
                           </WorkspacePage>
                         ) : null}
@@ -586,6 +596,7 @@ export function SettingsView({
                         {section === "notifications" ? (
                           <div className="settings-topics">
                             <NotificationAlerts />
+                            <SignedInAccountNotifications />
                             <div
                               id={settingDomId("project-notifications")}
                               data-setting-id="project-notifications"
@@ -602,7 +613,14 @@ export function SettingsView({
                         ) : null}
                         {section === "chat" ? <ChatPage appearance={appearance} /> : null}
                         {section === "voice" ? <VoicePage /> : null}
-                        {section === "policies" ? <PoliciesSettings /> : null}
+                        {section === "policies" ? (
+                          <div className="settings-topics">
+                            <HelpSettings />
+                            <Disclosure summary={t("Legal")} variant="row">
+                              <PoliciesSettings />
+                            </Disclosure>
+                          </div>
+                        ) : null}
                         {section === "keybindings" ? <KeybindingsPage /> : null}
                         {section === "terminal" ? <TerminalPage /> : null}
                         {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
@@ -628,22 +646,33 @@ export function SettingsView({
                           <div className="group-privacy settings-topics">
                             <PrivacyStartupSettings />
                             <GroupLockSettings controls={{ Group, Row, Toggle, Select }} />
+                            <ExternalMcpAccess cwd={cwd} />
                           </div>
                         ) : null}
                         {section === "integrations" ? <IntegrationsPage /> : null}
                         {section === "account" ? <AccountScreen /> : null}
                         {section === "secrets" ? <SecretsSettings /> : null}
                         {section === "archive" ? (
-                          <ArchivePage
-                            cwd={cwd}
-                            sessions={sessions}
-                            sessionsStatus={sessionsStatus}
-                            onOpenSession={onOpenSession}
-                            onArchiveSession={onArchiveSession}
-                            onDeleteSession={onDeleteSession}
-                            onRestoreProject={onRestoreProject}
-                            onDeleteProject={onDeleteProject}
-                          />
+                          <>
+                            <Row id="import-history" label={null}>
+                              <Button
+                                variant="ghost"
+                                onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}
+                              >
+                                {t("Import history")}
+                              </Button>
+                            </Row>
+                            <ArchivePage
+                              cwd={cwd}
+                              sessions={sessions}
+                              sessionsStatus={sessionsStatus}
+                              onOpenSession={onOpenSession}
+                              onArchiveSession={onArchiveSession}
+                              onDeleteSession={onDeleteSession}
+                              onRestoreProject={onRestoreProject}
+                              onDeleteProject={onDeleteProject}
+                            />
+                          </>
                         ) : null}
                       </div>
                     </ScrollArea>

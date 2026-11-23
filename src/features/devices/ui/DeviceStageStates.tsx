@@ -1,12 +1,47 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
-import { t } from "../../../shared/i18n/technical";
+import { t, useLocale } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Smartphone } from "../../../shared/ui/icons";
 import type { DeviceSummary } from "../types";
+
+/** The one "how to connect a device" help, shared by the connect and no-device states. */
+function HowToConnect() {
+  useLocale();
+  return (
+    <InfoPopover label={t("How to connect")}>
+      <Text as="p" size="caption" tone="secondary" leading="relaxed">
+        {t(
+          "Connect an Android phone with USB debugging, or use an emulator. iOS simulators require a Mac with Xcode.",
+        )}
+      </Text>
+    </InfoPopover>
+  );
+}
+
+/** The ghost action that opens the setup sheet, anchored to itself. */
+function SetupAccessButton({
+  onSetup,
+  expanded,
+}: {
+  onSetup: (anchor: HTMLElement) => void;
+  expanded?: boolean;
+}) {
+  useLocale();
+  return (
+    <Button
+      variant="ghost"
+      aria-haspopup="dialog"
+      aria-expanded={expanded}
+      onClick={(event) => onSetup(event.currentTarget)}
+    >
+      {t("Setup and access")}
+    </Button>
+  );
+}
 
 /** Device host is not running: one explanation and the start action, centered in the pane. */
 export function DeviceConnectState({
@@ -24,6 +59,7 @@ export function DeviceConnectState({
   onConnect: () => void;
   onSetup: (anchor: HTMLElement) => void;
 }) {
+  useLocale();
   return (
     <Text
       as="div"
@@ -44,13 +80,7 @@ export function DeviceConnectState({
         >
           {t("Connect a device")}
         </Text>
-        <InfoPopover label={t("How to connect")}>
-          <Text as="p" size="caption" tone="secondary" leading="relaxed">
-            {t(
-              "Connect an Android phone with USB debugging, or use an emulator. iOS simulators require a Mac with Xcode.",
-            )}
-          </Text>
-        </InfoPopover>
+        <HowToConnect />
       </div>
       <div className="device-panel-state-actions">
         <Button
@@ -61,14 +91,7 @@ export function DeviceConnectState({
         >
           {installed ? t("Connect devices") : t("Set up and connect")}
         </Button>
-        <Button
-          variant="ghost"
-          aria-haspopup="dialog"
-          aria-expanded={setupOpen}
-          onClick={(event) => onSetup(event.currentTarget)}
-        >
-          {t("Setup and access")}
-        </Button>
+        <SetupAccessButton onSetup={onSetup} expanded={setupOpen} />
       </div>
     </Text>
   );
@@ -143,6 +166,7 @@ function DeviceNoDevicesState({
   onRefresh: () => void;
   onSetup: (anchor: HTMLElement) => void;
 }) {
+  useLocale();
   return (
     <Text
       as="div"
@@ -164,25 +188,13 @@ function DeviceNoDevicesState({
         >
           {t("No devices found")}
         </Text>
-        <InfoPopover label={t("How to connect")}>
-          <Text as="p" size="caption" tone="secondary" leading="relaxed">
-            {t(
-              "Connect an Android phone with USB debugging, or use an emulator. iOS simulators require a Mac with Xcode.",
-            )}
-          </Text>
-        </InfoPopover>
+        <HowToConnect />
       </div>
       <div className="device-panel-state-actions">
         <Button loading={refreshing} disabled={refreshDisabled} onClick={onRefresh}>
           {t("Refresh devices")}
         </Button>
-        <Button
-          variant="ghost"
-          aria-haspopup="dialog"
-          onClick={(event) => onSetup(event.currentTarget)}
-        >
-          {t("Setup and access")}
-        </Button>
+        <SetupAccessButton onSetup={onSetup} />
       </div>
     </Text>
   );
@@ -225,6 +237,7 @@ export function DeviceWaitingState({
   onSetup: (anchor: HTMLElement) => void;
   onSelect: (id: string, booted: boolean) => void;
 }) {
+  useLocale();
   if (loadingDevices)
     return (
       <Text
@@ -272,13 +285,7 @@ export function DeviceWaitingState({
                 )}
               </p>
             </InfoPopover>
-            <Button
-              variant="ghost"
-              aria-haspopup="dialog"
-              onClick={(event) => onSetup(event.currentTarget)}
-            >
-              {t("Setup and access")}
-            </Button>
+            <SetupAccessButton onSetup={onSetup} />
           </div>
         ) : null}
       </Text>

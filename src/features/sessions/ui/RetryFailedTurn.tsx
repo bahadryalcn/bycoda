@@ -1,7 +1,5 @@
-import { useRef, useState } from "react";
-import { useT } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
-import { Text } from "../../../shared/ui/Text";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { lastUserTurnStartIndex, userBlockRecall } from "../model/editLastTurn";
 import { executionUserIndex } from "../model/executionTurn";
 import { lastHandoffBlock } from "../model/handoff";
@@ -20,7 +18,7 @@ function evaluateFailedTurn(session: Session):
         intent?: ComposerTurnOptions["intent"];
       };
     }
-  | { blocked: RetryBlock }
+  | { blocked: RetryBlock; errorId: string }
   | null {
   const handoff = lastHandoffBlock(session.blocks)?.handoff;
   const retryingSwitch = handoff?.status === "failed" || handoff?.status === "cancelled";
@@ -59,7 +57,8 @@ function evaluateFailedTurn(session: Session):
   if (!error) return null;
   // Admission failed before the new user block existed. Its input belongs to
   // the composer/queue; retrying the last transcript user would replay an older request.
-  if (/^Message not sent:/i.test(error.text.trim())) return { blocked: "not-sent" };
+  if (/^Message not sent:/i.test(error.text.trim()))
+    return { blocked: "not-sent", errorId: error.id };
   if (
     sessionErrorPresentation(error.text).usageLimit ||
     output.some(
@@ -80,12 +79,12 @@ function evaluateFailedTurn(session: Session):
       (block) => block.remoteContent || block.secondOpinion || block.noteCard || block.ciContext,
     )
   )
-    return { blocked: "unsupported" };
+    return { blocked: "unsupported", errorId: error.id };
   const recalls = sent.flatMap((block) => userBlockRecall(block) ?? []);
   const attachments = recalls.flatMap((recall) => recall.attachments);
-  if (!recalls.length) return { blocked: "unsupported" };
+  if (!recalls.length) return { blocked: "unsupported", errorId: error.id };
   if (attachments.some((attachment) => attachment.missing)) {
-    return { blocked: "attachments-missing" };
+    return { blocked: "attachments-missing", errorId: error.id };
   }
   return {
     retry: {
@@ -129,6 +128,45 @@ function submitRetry(
   }
 }
 
+/** The Retry a failure notice shows beside its reason. Absent when the turn cannot be resent. */
+export type FailedTurnRecovery = {
+  errorId: string;
+  pending: boolean;
+  retry: () => void;
+};
+
+const recoveries = new Map<string, FailedTurnRecovery>();
+const recoveryListeners = new Set<() => void>();
+
+function publishRecovery(errorId: string, next: FailedTurnRecovery | null) {
+  const current = recoveries.get(errorId);
+  if (current && next && current.pending === next.pending && current.retry === next.retry) return;
+  if (next) recoveries.set(errorId, next);
+  else if (!recoveries.delete(errorId)) return;
+  for (const listener of recoveryListeners) listener();
+}
+
+function subscribeRecovery(listener: () => void) {
+  recoveryListeners.add(listener);
+  return () => {
+    recoveryListeners.delete(listener);
+  };
+}
+
+/** The recovery bound to one error block, so its notice can show Retry beside the reason. */
+export function useFailedTurnRecovery(errorId: string | undefined): FailedTurnRecovery | undefined {
+  return useSyncExternalStore(
+    subscribeRecovery,
+    () => (errorId ? recoveries.get(errorId) : undefined),
+    () => undefined,
+  );
+}
+
+/**
+ * Owns the retry safeguards (latest turn, attachments, held queue, one send in flight) and hands
+ * the result to that turn's failure notice. It renders nothing itself: the notice shows the reason
+ * and Retry in one place.
+ */
 export function RetryFailedTurn({
   session,
   blocked,
@@ -142,51 +180,31 @@ export function RetryFailedTurn({
     options?: ComposerTurnOptions,
   ) => boolean | void;
 }) {
-  const t = useT();
   const [submitted, setSubmitted] = useState<string | null>(null);
   const submitting = useRef<string | null>(null);
-  const result = evaluateFailedTurn(session);
-  if (!result || blocked) return null;
-  if ("blocked" in result) {
-    // No retry exists: say why and what to do next instead of showing nothing.
-    return (
-      <div className="px-4 py-1" data-retry-unavailable={result.blocked}>
-        <Text as="p" size="caption" tone="secondary">
-          {result.blocked === "not-sent"
-            ? t("This message was not sent. It is still in the composer: send it again.")
-            : result.blocked === "attachments-missing"
-              ? t(
-                  "Attached files are no longer available. Edit the message, re-attach them and send it again.",
-                )
-              : t("This message cannot be retried automatically. Edit it and send it again.")}
-        </Text>
-      </div>
-    );
-  }
-  const retry = result.retry;
-  const key = `${session.id}:${retry.errorId}`;
-  const release = () => {
-    if (submitting.current === key) submitting.current = null;
-    setSubmitted((current) => (current === key ? null : current));
-    return false;
-  };
-  return (
-    <div className="px-4 py-1" data-retry-failed-turn>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        motion="none"
-        loading={submitted === key}
-        onClick={() => {
-          if (submitting.current === key) return;
-          submitting.current = key;
-          setSubmitted(key);
-          submitRetry(onSubmit, retry, release);
-        }}
-      >
-        {t("Retry")}
-      </Button>
-    </div>
-  );
+  const evaluated = evaluateFailedTurn(session);
+  const result = blocked || !evaluated || !("retry" in evaluated) ? null : evaluated;
+  const errorId = result?.retry.errorId;
+  const key = errorId ? `${session.id}:${errorId}` : undefined;
+  const pending = !!key && submitted === key;
+  const retry = useStableCallback(() => {
+    if (!result || !key) return;
+    if (submitting.current === key) return;
+    const release = () => {
+      if (submitting.current === key) submitting.current = null;
+      setSubmitted((current) => (current === key ? null : current));
+      return false;
+    };
+    submitting.current = key;
+    setSubmitted(key);
+    submitRetry(onSubmit, result.retry, release);
+  });
+  // Publishes the recovery to the notice of the error it belongs to: the notice and this
+  // owner sit in different parts of the transcript tree, so a keyed store links them.
+  useEffect(() => {
+    if (!errorId) return;
+    publishRecovery(errorId, { errorId, pending, retry });
+    return () => publishRecovery(errorId, null);
+  }, [errorId, pending, retry]);
+  return null;
 }

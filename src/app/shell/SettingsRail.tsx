@@ -90,7 +90,7 @@ export function SettingsNav({ section: requestedSection, onSelect, onClose }: Pr
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const rows = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
   // Account is not a list group: it is the avatar row under the list.
-  const groups = settingsSectionsByGroup().filter((group) => group.id !== "account");
+  const groups = settingsSectionsByGroup(section).filter((group) => group.id !== "account");
   const sections = groups.flatMap((group) => group.sections);
   // The account row sits outside the list; keep one list row tabbable while it is active.
   const stop = sections.some((item) => item.id === section) ? section : sections[0]?.id;
@@ -107,11 +107,17 @@ export function SettingsNav({ section: requestedSection, onSelect, onClose }: Pr
         ref={lockOverscroll}
         aria-label={t("Settings")}
         role="navigation"
-        className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-none px-2 py-3"
+        className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-none px-2 py-3 @max-[140px]/rail:gap-(--ui-space-1)"
       >
         {groups.map((group) => (
           <div key={group.id} className="flex flex-col gap-0">
-            <Text as="div" weight="medium" className="px-2 pb-1 @max-[140px]/rail:hidden">
+            <Text
+              as="div"
+              size="caption"
+              tone="muted"
+              weight="medium"
+              className="px-2 pb-1 @max-[140px]/rail:hidden"
+            >
               {group.label}
             </Text>
             {group.sections.map((item) => (
@@ -187,7 +193,7 @@ function NavRow({
       tooltipSide="right"
       aria-label={label}
       aria-current={active ? "true" : undefined}
-      className={`flex w-full items-center gap-2 @max-[140px]/rail:justify-center `}
+      className="flex w-full items-center gap-2 @max-[140px]/rail:justify-center"
     >
       <Icon
         aria-hidden="true"

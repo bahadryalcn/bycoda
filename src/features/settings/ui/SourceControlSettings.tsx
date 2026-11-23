@@ -10,6 +10,7 @@ import {
 import { Group, Row, Segmented, SettingsFeedback } from "../../../shared/ui/settings";
 import { Button } from "../../../shared/ui/Button";
 import { openModelsSettings } from "../public/modelsSettingsLink";
+import { ExactGitRewindSetting } from "./WorkspaceSettings";
 
 export function SourceControlSettings() {
   useLocale();
@@ -22,15 +23,11 @@ export function SourceControlSettings() {
     setDiffError(saved !== next);
   };
   return (
-    <div className="source-control-settings settings-topics flex min-w-0 flex-col gap-8">
-      <Group
-        title={t("Generation")}
-        description={t("Used across projects unless a project has its own generation selection.")}
-      >
+    <div className="source-control-settings settings-topics">
+      <Group title={t("Source Control")}>
         <Row
           id="git-generation-default"
           label={t("Model")}
-          description={t("Model set in Settings → Models → Background work.")}
         >
           <Button variant="link" onClick={() => openModelsSettings("roles")}>
             {t("Manage models")}
@@ -40,7 +37,6 @@ export function SourceControlSettings() {
         <Row
           id="diff-view"
           label={t("Diff view")}
-          description={t("Review changes in the editor or together in one unified view.")}
           feedback={
             diffError ? (
               <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
@@ -57,6 +53,7 @@ export function SourceControlSettings() {
             onChange={onDiffViewer}
           />
         </Row>
+        <ExactGitRewindSetting />
       </Group>
     </div>
   );

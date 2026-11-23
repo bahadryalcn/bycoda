@@ -14,17 +14,6 @@ import { useNotificationProjects } from "../../notifications/hooks/useNotificati
 import { historyTone, type NotificationHistoryEntry } from "../../notifications";
 import { HARNESS_LABEL, sessionDisplayTitle, type HarnessId } from "../model/session";
 
-/** Date and time of a pending request; log rows show a relative time instead. */
-export function NotificationTime({ at }: { at: number }) {
-  return (
-    <>
-      <Timestamp value={at} format="date" />
-      {" · "}
-      <Timestamp value={at} format="time" />
-    </>
-  );
-}
-
 /** The conversation title without the provider prefix stored for the tab strip. */
 function historyTitle(entry: NotificationHistoryEntry): string {
   const harnesses = entry.harness ? [entry.harness] : (Object.keys(HARNESS_LABEL) as HarnessId[]);

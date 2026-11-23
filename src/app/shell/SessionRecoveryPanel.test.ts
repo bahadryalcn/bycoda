@@ -172,7 +172,7 @@ describe("session recovery navigation", () => {
     );
     render();
     const button = [...container.querySelectorAll("button")].find((item) =>
-      item.textContent?.startsWith("Open all"),
+      item.textContent?.startsWith("Open sessions"),
     )!;
     button.focus();
     act(() => {
@@ -224,31 +224,31 @@ describe("session recovery navigation", () => {
     container.remove();
   });
   it("opens every project without a list count limit and restores layout separately", async () => {
-    await click("Open all");
+    await click("Open sessions");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], false);
     await chooseMore("Restore chat layout");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], true);
   });
   it("opens only selected conversations", async () => {
     act(() => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-    await click("Open selected");
+    await click("Open sessions");
     expect(onOpen).toHaveBeenCalledWith(["alpha"], false);
   });
   it("preserves the list and enables retry after an open failure", async () => {
     onOpen.mockRejectedValueOnce(new Error("missing"));
-    await click("Open all");
+    await click("Open sessions");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Check the open tabs before retrying",
     );
     expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
-    await click("Open all");
+    await click("Open sessions");
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
   it("does not reveal or bulk-open locked projects", async () => {
     locked.add("/beta");
     render();
     expect(container.textContent).not.toContain("beta");
-    await click("Open all");
+    await click("Open sessions");
     expect(onOpen).toHaveBeenCalledWith(["alpha"], false);
   });
   it("closing the dialog only acknowledges it", async () => {
@@ -267,8 +267,7 @@ describe("session recovery navigation", () => {
     expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
     expect(container.querySelector("ul")?.textContent).toContain("Interrupted");
     expect(container.querySelector("ul")?.textContent).not.toContain("beta");
-    expect(container.textContent).toContain("Open shown (1)");
-    await click("Open shown");
+    await click("Open sessions");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha"], false);
     await chooseMore("Open all");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], false);
@@ -349,7 +348,7 @@ describe("session recovery navigation", () => {
     render([{ ...summary, fresh: true }], remoteRecovery);
     expect(container.textContent).not.toContain("Status not verified");
     expect(container.textContent).toContain("Working");
-    await click("Open all");
+    await click("Open sessions");
     expect(onOpen).toHaveBeenCalledWith(["alpha"], false);
   });
   it("hides remote entries whose host session is already open and keeps the rest", () => {
@@ -397,12 +396,14 @@ describe("session recovery navigation", () => {
     expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual(["Clear recovery list (2)"]);
     expect(rows[0].getAttribute("aria-description")).toContain("history is kept");
   });
-  it("labels the primary action with what the filter shows, not everything", async () => {
-    expect(container.textContent).toContain("Open all (2)");
+  it("keeps the same primary label and counts the filtered sessions", async () => {
+    const primary = () => [...container.querySelectorAll("button")].find((item) =>
+      item.textContent?.startsWith("Open sessions"),
+    )!;
+    expect(primary().querySelector('[data-variant="count"]')?.textContent).toBe("2");
     const finished = [{ id: "done", role: "user" as const, text: "Task", durationMs: 10 }];
     render([], recovery, [{ ...sessions[0], busy: false, blocks: finished }, sessions[1]]);
-    expect(container.textContent).toContain("Open shown (1)");
-    expect(container.textContent).not.toContain("Open all (2)");
+    expect(primary().querySelector('[data-variant="count"]')?.textContent).toBe("1");
     await chooseMore("Open all (2)");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], false);
   });
@@ -435,7 +436,7 @@ describe("session recovery navigation", () => {
   });
   it("shows open failures next to the open actions and list failures with the list", async () => {
     onOpen.mockRejectedValueOnce(new Error("missing"));
-    await click("Open all");
+    await click("Open sessions");
     expect(container.querySelector(".recovery-footer [role='alert']")).not.toBeNull();
     onRemove.mockRejectedValueOnce(new Error("disk"));
     await maintain("Clear recovery list (2)");

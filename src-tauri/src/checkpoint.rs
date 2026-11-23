@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::fs::GitDiffStats;
 use crate::fs::{
     expand_home, git_checked, git_cmd, git_cmd_output, git_diff_files_for, git_output, path_to_js,
-    resolve_repo_path, GitChangedFile, GitDiffIndex, MAX_TEXT_FILE_BYTES,
+    resolve_repo_path, resolve_scratch_cwd, GitChangedFile, GitDiffIndex, MAX_TEXT_FILE_BYTES,
 };
 pub(crate) mod file_revert;
 pub(crate) mod turn;
@@ -156,12 +156,19 @@ impl CheckpointStore {
         deadline: Option<Instant>,
         operation: impl FnOnce(&Self) -> Result<T, String>,
     ) -> Result<T, String> {
+        let run = || {
+            // First-turn capture can precede provider launch. Create reserved
+            // scratch folders under mutation authority before gate resolution.
+            for cwd in cwds {
+                resolve_scratch_cwd(cwd.trim())?;
+            }
+            self.exclusive_read_until(session_id, cwds, deadline, operation)
+        };
         match &self.authority {
             Some(gate) => {
                 let mut completed = None;
                 let guarded = gate.guarded(session_id, "native-checkpoint", || {
-                    completed =
-                        Some(self.exclusive_read_until(session_id, cwds, deadline, operation)?);
+                    completed = Some(run()?);
                     Ok(())
                 });
                 if let Some(value) = completed {
@@ -174,7 +181,7 @@ impl CheckpointStore {
                     Err("Checkpoint operation did not complete".into())
                 }
             }
-            None => self.exclusive_read_until(session_id, cwds, deadline, operation),
+            None => run(),
         }
     }
 
@@ -2029,6 +2036,37 @@ mod tests {
     use std::process::Command;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn first_scratch_turn_captures_before_provider_launch() {
+        let Some(home) = crate::fs::isolated_scratch_test_home(
+            "checkpoint::tests::first_scratch_turn_captures_before_provider_launch",
+        ) else {
+            return;
+        };
+        let store = CheckpointStore::new(home.join("checkpoints"));
+        let session_id = "first-turn";
+        let cwd = "~/.bycoda-host/scratch/session-first-turn";
+        let folder = home.join(".bycoda-host/scratch/session-first-turn");
+        assert!(store
+            .coordinated(session_id, &[cwd], |store| store.status(session_id, cwd))
+            .is_err());
+        assert!(!folder.exists());
+
+        store
+            .exclusive_until(
+                session_id,
+                &[cwd],
+                Some(Instant::now() + BEGIN_GATE_WAIT),
+                |store| store.begin_checkpoint_turn(session_id, cwd, "turn", "user", false),
+            )
+            .unwrap();
+        assert!(folder.is_dir());
+        assert!(store.light_turn_active(session_id, "turn").unwrap());
+        let manifest = read_manifest(&store.session_dir(session_id)).unwrap().unwrap();
+        assert!(same_cwd(&manifest.cwd, cwd));
+        assert!(manifest.files.is_empty());
+    }
 
     #[test]
     fn authority_fence_blocks_checkpoint_and_recovery_mutations_but_allows_rescue_reads() {

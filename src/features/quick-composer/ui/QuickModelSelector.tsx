@@ -176,7 +176,7 @@ export function QuickModelSelector({
               {tabs.map((id) => {
                 const title = id === "favorites" ? t("Favorites") : HARNESS_TITLE[id];
                 return (
-                  <Tab key={id} value={id} aria-label={title} tooltip={title}>
+                  <Tab key={id} value={id} aria-label={title}>
                     {id === "favorites" ? (
                       <Star
                         className="icon-md"

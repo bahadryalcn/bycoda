@@ -367,14 +367,13 @@ export function AssistantView(props: AssistantViewProps) {
         ) : !snapshot.profile.setupComplete ? (
           <section className={shell.setupPrompt}>
             <Heading size="section">{t("Set up your personal assistant")}</Heading>
-            <p>{t("Choose a name, working permissions and a daily budget before starting.")}</p>
             <Button variant="primary" onClick={() => setSetup(true)}>
               {t("Set up")}
             </Button>
           </section>
         ) : (
           <>
-            <RoomStatusPopovers snapshot={snapshot} workLabel={mode.label} />
+            <RoomStatusPopovers snapshot={snapshot} />
             {errorFor("presence")}
             {errorFor("presence.return")}
             {returnMessage && (

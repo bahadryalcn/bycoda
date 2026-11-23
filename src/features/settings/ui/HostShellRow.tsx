@@ -5,7 +5,8 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Text } from "../../../shared/ui/Text";
-import { RefreshCw } from "../../../shared/ui/icons";
+import { MonitorSmartphone, Server, RefreshCw } from "../../../shared/ui/icons";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t } from "../../../shared/i18n";
 import { type ShellProfiles } from "../../terminal/public/terminalProfiles";
 import { RevealedSetting, settingDomId } from "../../../shared/ui/settings";
@@ -76,7 +77,6 @@ export function HostShellRow({
   const noShells = !!listed && listed.profiles.length === 0;
   const expanded = open || noShells;
   const systemDefault = listed?.profiles.find((profile) => profile.id === listed.defaultId);
-  const effective = listed?.profiles.find((profile) => profile.id === effectiveId);
   return (
     <div
       id={settingId ? settingDomId(settingId) : undefined}
@@ -104,25 +104,25 @@ export function HostShellRow({
             className="settings-collection-title terminal-host-name"
           >
             <span>{name}</span>
-            <Badge>
-              {kind === "local"
-                ? t("Local")
-                : kind === "synced"
-                  ? t("Local sync")
-                  : t("Remote server")}
-            </Badge>
+            {kind === "remote" ? (
+              <Server aria-label={t("Remote server")} className="icon-sm" />
+            ) : kind === "synced" ? (
+              <Tooltip label={t("Local sync")} asChild>
+                <MonitorSmartphone aria-label={t("Local sync")} className="icon-sm" />
+              </Tooltip>
+            ) : (
+              <MonitorSmartphone aria-hidden className="icon-sm" />
+            )}
           </Text>
-          <Text as="p" leading="normal" className="settings-collection-meta">
-            {missing
-              ? t("The shell you picked is no longer installed, so the system default is used.")
-              : effective
-                ? `${effective.name} · ${effective.path}`
-                : t("No shell detected yet")}
-          </Text>
+          {missing ? (
+            <Text as="p" leading="normal" className="settings-collection-meta">
+              {t("The shell you picked is no longer installed, so the system default is used.")}
+            </Text>
+          ) : null}
         </div>
-        <Badge tone={status.tone} role="status">
-          {status.label}
-        </Badge>
+        {status.tone === "warning" ? (
+          <Badge tone={status.tone} role="status">{status.label}</Badge>
+        ) : null}
         <div className="terminal-host-select">
           <SearchableSelect
             hideLabel
@@ -133,9 +133,7 @@ export function HostShellRow({
             options={[
               {
                 value: "",
-                label: !listed
-                  ? t("Not checked yet")
-                  : systemDefault
+                label: systemDefault
                     ? t("Automatic ({p0})", { p0: systemDefault.name })
                     : t("Automatic"),
               },
@@ -149,7 +147,7 @@ export function HostShellRow({
           />
         </div>
         <div className="settings-collection-actions">
-          <Button
+          {expanded ? <Button
             variant="ghost"
             iconOnly
             label={refreshLabel}
@@ -158,12 +156,11 @@ export function HostShellRow({
             onClick={onRefresh}
           >
             <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
-          </Button>
+          </Button> : null}
           <Button
             variant="ghost"
             iconOnly
             label={t("Available shells on {p0}", { p0: name })}
-            tooltip={t("Available shells")}
             expanded={expanded}
             aria-controls={detailPanel}
             disabled={!listed || noShells}

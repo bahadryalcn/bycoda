@@ -1,5 +1,6 @@
-import type { ComponentProps, ReactNode } from "react";
+import { useEffect, type ComponentProps, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Alert } from "../../../shared/ui/Alert";
 import type { UsageLimit } from "../model/session";
 import { ComposerNoticeStack } from "./ComposerNoticeStack";
@@ -27,8 +28,6 @@ type Props = {
   pasteErrorAction?: ReactNode;
   sessionFolderError: string | null;
   sessionFolderMutationBlocked: boolean;
-  sessionFolderPending: boolean;
-  sessionFolderSaving: boolean;
   onSessionFolderRecovered: (message: string | null) => void;
 };
 
@@ -49,11 +48,35 @@ export function ComposerNotices({
   pasteErrorAction,
   sessionFolderError,
   sessionFolderMutationBlocked,
-  sessionFolderPending,
-  sessionFolderSaving,
   onSessionFolderRecovered,
 }: Props) {
   const t = useT();
+  const recovered = useStableCallback(onSessionFolderRecovered);
+  // Read a blocked write's outcome twice while leaving manual recovery available.
+  useEffect(() => {
+    if (!sessionFolderMutationBlocked) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = (delay: number) => {
+      timer = setTimeout(() => {
+        void recheckSessionFolderState().then(
+          (message) => {
+            if (cancelled) return;
+            if (message === null) recovered(null);
+            else if (delay < 2000) check(2000);
+          },
+          () => {
+            if (!cancelled && delay < 2000) check(2000);
+          },
+        );
+      }, delay);
+    };
+    check(500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [sessionFolderMutationBlocked, recovered]);
   return (
     <ComposerNoticeStack>
       {leading}
@@ -101,9 +124,6 @@ export function ComposerNotices({
         >
           {sessionFolderError}
         </Alert>
-      ) : null}
-      {sessionFolderPending ? (
-        <Alert>{sessionFolderSaving ? t("Saving…") : t("Loading folders…")}</Alert>
       ) : null}
     </ComposerNoticeStack>
   );

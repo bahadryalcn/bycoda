@@ -2,10 +2,11 @@ import { useId, useRef, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 import { Button } from "./Button";
 import { Popover } from "./Popover";
+import { Text } from "./Text";
 import { Info } from "./icons";
 
 /**
- * Icon-only info button (name and tooltip default to "Help") that opens a click-toggled dialog Popover
+ * Icon-only info button (name defaults to "Help") that opens a click-toggled dialog Popover
  * with focus moved in and returned on close. `width` sizes the card; `className` styles the trigger only.
  * @group overlay
  * @use Optional explanation next to a label or setting that needs more than one line.
@@ -18,7 +19,7 @@ export function InfoPopover({
   className,
   icon,
 }: {
-  /** Accessible name and tooltip. Defaults to "Help". */
+  /** Accessible name. Defaults to "Help". */
   label?: string;
   children: ReactNode;
   width?: number;
@@ -41,7 +42,6 @@ export function InfoPopover({
         size="sm"
         iconOnly
         label={name}
-        tooltip={name}
         className={className}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -62,9 +62,10 @@ export function InfoPopover({
           flow="scroll"
           onDismiss={() => setOpen(false)}
           variant="panel"
-          className="flex flex-col gap-2 text-ui-secondary text-(--ui-text-secondary)"
         >
-          {children}
+          <Text as="div" size="secondary" wrap="anywhere" className="flex flex-col gap-2">
+            {children}
+          </Text>
         </Popover>
       ) : null}
     </>

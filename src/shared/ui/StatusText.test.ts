@@ -7,7 +7,7 @@ it("renders an icon and the word in the tone, with no pill", () => {
   const tones: StatusTextTone[] = ["running", "needs-you", "failed", "done", "idle"];
   for (const tone of tones) {
     const html = renderToStaticMarkup(createElement(StatusText, { tone, children: "Word" }));
-    expect(html).toContain(`data-tone="${tone}"`);
+    expect(html).toContain(`data-status="${tone}"`);
     expect(html).toContain("Word");
     expect(html).toContain('aria-hidden="true"');
   }

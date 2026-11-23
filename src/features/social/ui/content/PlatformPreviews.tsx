@@ -15,8 +15,9 @@ export type PlatformPreviewsProps = {
 
 /** One card per selected account, side by side: its text, count against the limit and its problems. */
 export function PlatformPreviews({ accounts, draft, policies, problems }: PlatformPreviewsProps) {
-  if (!accounts.length) return null;
   const text = draft.text.trim();
+  // Nothing to preview until there is text or media; the gate already says what is missing.
+  if (!accounts.length || (!text && !draft.media.length)) return null;
   const link = withUtm(draft.link, draft.utm);
   return (
     <section className="content-previews" aria-label={t("Previews")}>
@@ -37,26 +38,17 @@ export function PlatformPreviews({ accounts, draft, policies, problems }: Platfo
           >
             <header className="content-preview-head">
               <PlatformMark platform={account.platform} size="sm" />
-              <strong>{account.name}</strong>
+              <Text weight="medium">{account.name}</Text>
             </header>
-            <Text
-              as="p"
-              size="body"
-              tone="inherit"
-              leading="inherit"
-              className="content-preview-text"
-            >
-              {text || t("Your post text appears here.")}
-            </Text>
-            {draft.media.length ? (
+            {text ? (
               <Text
                 as="p"
-                size="caption"
-                tone="muted"
+                size="body"
+                tone="inherit"
                 leading="inherit"
-                className="content-preview-note"
+                className="content-preview-text"
               >
-                {t("{p0} attachments", { p0: draft.media.length })}
+                {text}
               </Text>
             ) : null}
             <Text

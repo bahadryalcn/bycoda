@@ -169,7 +169,7 @@ export function WorkspaceRewindPreview({
             disabled={pending || plan.blockers.length > 0 || expired}
             onClick={() => void apply()}
           >
-            {t(plan.direction === "undo" ? "Undo rewind" : "Rewind conversation and files")}
+            {t(plan.direction === "undo" ? "Undo" : "Rewind")}
           </Button>
         </ModalActions>
       }

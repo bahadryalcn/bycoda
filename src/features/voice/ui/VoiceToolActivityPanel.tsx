@@ -5,9 +5,6 @@ import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { StatusDot } from "../../../shared/ui/StatusDot";
-import { Divider } from "../../../shared/ui/Divider";
-import { Disclosure } from "../../../shared/ui/Disclosure";
-import { Heading } from "../../../shared/ui/Heading";
 import { Wrench } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { formatDuration } from "../../../shared/i18n/format";
@@ -69,7 +66,6 @@ export function VoiceToolActivityPanel({
         className={styles.trigger}
         data-running={running || undefined}
         label={`${label} (${entries.length})`}
-        tooltip={label}
         aria-haspopup="dialog"
         aria-expanded={Boolean(anchor)}
         onClick={(event) => setAnchor(anchor ? null : event.currentTarget)}
@@ -97,23 +93,16 @@ export function VoiceToolActivityPanel({
           kind="dialog"
           aria-label={t("Voice actions")}
           variant="panel"
-          width={340}
+          size="lg"
           flow="scroll"
           tabIndex={0}
           onDismiss={() => setAnchor(null)}
           className={styles.popover}
         >
-          <div className={styles.header}>
-            <Heading size="caption">{t("Voice actions")}</Heading>
-            <Text size="caption" tone="muted">
-              {entries.length}
-            </Text>
-          </div>
-          <Divider decorative />
           <ul className={styles.list}>
             {entries.map((entry) => {
               const live = entry.state === "running" || entry.state === "waiting-owner";
-              // The technical ids sit in the row's Details disclosure; the stop button's name keeps them so each action stays unique.
+              // Technical ids stay out of the row; the stop button's name keeps them so each action stays unique.
               const details = [entry.name, entry.target, entry.requestId]
                 .filter(Boolean)
                 .join(" · ");
@@ -152,11 +141,6 @@ export function VoiceToolActivityPanel({
                         {entry.target}
                       </Text>
                     ) : null}
-                    <Disclosure variant="plain" size="sm" summary={t("Details")}>
-                      <Text as="div" size="caption" tone="muted" wrap="anywhere">
-                        {[entry.name, entry.requestId].filter(Boolean).join(" · ")}
-                      </Text>
-                    </Disclosure>
                   </div>
                   <Text size="caption" tone="muted" className={styles.time}>
                     {formatDuration(entry.elapsedMs ?? elapsedSince(entry.startedAt))}

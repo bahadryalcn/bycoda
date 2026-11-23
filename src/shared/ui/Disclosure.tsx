@@ -38,8 +38,8 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
    * `plain` inline text-level, `row` list-row height, `card` framed like `Surface variant="card"`,
    * `step` one transcript line (28px, follows density): the whole row toggles (icon, label, gaps,
    * chevron), the chevron is always visible in the chrome ink and turns when open, hover washes the
-   * row but an open row keeps no wash, the body opens below. Keep the label on the gutter: the row
-   * overhangs it by its own negative margin, so callers add no `-mx`/`px`. Put at most two icon
+   * row but an open row keeps no wash, the body opens below. Hover and focus stay within the row.
+   * Put at most two icon
    * buttons in `summaryActions` (open in panel, stop); they act alone and never toggle. Use
    * `chevron="end"` and `collapsible={false}` for a row with nothing to open. Mount the body only
    * while `open` to keep long lists cheap.

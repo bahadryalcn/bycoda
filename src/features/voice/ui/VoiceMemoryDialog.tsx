@@ -123,7 +123,6 @@ export function VoiceMemoryDialog({ onClose }: { onClose: () => void }) {
                   size="sm"
                   iconOnly
                   label={t("Forget note: {p0}", { p0: note.text })}
-                  tooltip={t("Forget note")}
                   onClick={() => forgetVoiceNote(note.id)}
                 >
                   <Trash2 aria-hidden className="icon-sm" />
@@ -132,10 +131,7 @@ export function VoiceMemoryDialog({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
         ) : (
-          <EmptyState
-            title={t("Nothing remembered yet")}
-            description={t("Say “remember that…” while talking, or add a note above.")}
-          />
+          <EmptyState description={t("Say “remember that…” while talking, or add a note above.")} />
         )}
       </div>
     </Modal>

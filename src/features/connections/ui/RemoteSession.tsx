@@ -372,6 +372,7 @@ function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSessio
             ) : (
               <Alert
                 tone="warning"
+                action={{ label: t("Retry"), onClick: retry }}
                 extra={
                   fitsOneLine(state.error) ? undefined : (
                     <ErrorDetails title={review} detail={state.error} />
@@ -381,9 +382,11 @@ function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSessio
                 {fitsOneLine(state.error) ? `${review} ${state.error}` : review}
               </Alert>
             )}
-            <div>
-              <Button onClick={retry}>{t("Retry")}</Button>
-            </div>
+            {issues.length ? (
+              <div>
+                <Button onClick={retry}>{t("Retry")}</Button>
+              </div>
+            ) : null}
           </>
         ) : (
           <LoadingText>{t("Checking saved requests…")}</LoadingText>
@@ -4065,21 +4068,16 @@ function ConnectedRemoteSession({
                 ? t(
                     "Waiting for the bycoda Host to coordinate the queued messages. They send as soon as it answers.",
                   )
-                : t("Could not load queued messages. Use Reload queue above.")
+                : t("Could not load queued messages.")
               : snapshot?.historyLoading
                 ? t("Loading earlier messages…")
                 : outboxIssues.length
-                  ? t(
-                      "An unfinished request needs recovery. Check the host and review the request above.",
-                    )
+                  ? t("An unfinished request needs recovery.")
                   : blocksSending(connection.status)
                     ? needsSignIn(connection.status)
-                      ? t(
-                          "{p0} needs you to sign in first. Use the notice at the top of the window.",
-                          {
-                            p0: hostLabel,
-                          },
-                        )
+                      ? t("{p0} needs you to sign in first.", {
+                          p0: hostLabel,
+                        })
                       : t("Can’t reach {p0}. Send reconnects first.", { p0: hostLabel })
                     : undefined,
     allowedModelHarnesses:
@@ -4278,11 +4276,6 @@ function ConnectedRemoteSession({
               uploadProgress.size ? (uploadProgress.offset / uploadProgress.size) * 100 : 100,
             )}
             %
-          </LoadingText>
-        ) : null}
-        {snapshot?.historyLoading ? (
-          <LoadingText inset="panel" className="shrink-0">
-            {t("Loading earlier messages…")}
           </LoadingText>
         ) : null}
         <RemoteConnectionNotice

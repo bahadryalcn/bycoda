@@ -3,6 +3,7 @@ import { actionContentAttributes } from "../../shared/ui/ActionHost";
 import { Divider } from "../../shared/ui/Divider";
 import { Text } from "../../shared/ui/Text";
 import { ListRow } from "../../shared/ui/ListRow";
+import { EmptyState } from "../../shared/ui/EmptyState";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { InlineError } from "../../shared/ui/InlineError";
@@ -958,7 +959,7 @@ export function ProjectRail({
           <div
             hidden={rail.collapsed.groups}
             data-reorder-fold-body
-            className={`flex-col gap-0.5 px-2 ${rail.collapsed.groups ? "hidden" : "flex"}`}
+            className={`flex-col gap-0.5 ${rail.collapsed.groups ? "hidden" : "flex"}`}
           >
             {groupedProjectSections.grouped
               .filter((entry) => !entry.parentId)
@@ -1001,7 +1002,14 @@ export function ProjectRail({
               icon={<MessageSquare className="icon-sm" />}
               onClick={onOpenNoProject}
             >
-              <span className="@max-[140px]/rail:hidden">{t("No project")}</span>
+              <Text
+                size="inherit"
+                tone={cwd === "~" && !lastSessionsOpen && !searchOrPageActive ? "inherit" : "secondary"}
+                truncate
+                className="@max-[140px]/rail:hidden"
+              >
+                {t("No project")}
+              </Text>
             </ListRow>
           ) : undefined
         }
@@ -1009,14 +1017,12 @@ export function ProjectRail({
         nameCollisions={nameCollisions}
         focusHint={!navigator}
         emptyLabel={
-          sections.projects.length === 0 && projectGroups.length === 0
-            ? t("No projects yet")
-            : filterQuery &&
-                pinnedProjects.length === 0 &&
-                groupedProjectSections.ungrouped.length === 0 &&
-                groupedProjectSections.grouped.length === 0
-              ? t("No projects found")
-              : undefined
+          filterQuery &&
+          pinnedProjects.length === 0 &&
+          groupedProjectSections.ungrouped.length === 0 &&
+          groupedProjectSections.grouped.length === 0
+            ? t("No projects found")
+            : undefined
         }
         onAdd={onOpenProject}
         remoteOnly={remoteOnly}
@@ -1427,23 +1433,14 @@ function ProjectSection({
         collapsed={collapsed}
         onToggleCollapsed={onToggleCollapsed}
       />
-      {items.length === 0 && emptyLabel && !leadingRow && !collapsed ? (
-        <Text
-          as="p"
-          size="caption"
-          tone="secondary"
-          leading="tight"
-          className="px-4 pb-1 @max-[140px]/rail:hidden"
-          data-reorder-fold-body
-        >
-          {emptyLabel}
-        </Text>
-      ) : null}
       <div
         hidden={collapsed}
         data-reorder-fold-body
-        className={`flex-col gap-0.5 px-2 ${collapsed ? "hidden" : "flex"}`}
+        className={`flex-col gap-0.5 ${collapsed ? "hidden" : "flex"}`}
       >
+        {items.length === 0 && emptyLabel && !leadingRow ? (
+          <EmptyState size="inline" context="list" description={emptyLabel} />
+        ) : null}
         {leadingRow}
         {items.map((item) => (
           <ProjectCard
@@ -2304,7 +2301,7 @@ function ProjectCard({
   ]
     .filter(Boolean)
     .join(", ");
-  const labelClassName = context ? "min-w-0 max-w-[75%] @max-[140px]/rail:hidden" : nameClassName;
+  const labelClassName = context ? "min-w-0 @max-[140px]/rail:hidden" : nameClassName;
   // The wide "+a -d" needs room: the compact indicator replaces it once the row itself is narrower than
   // this bucket (see projectRailRow.css). Fixed items sharing the row make the detail need more.
   const detailBucket = change

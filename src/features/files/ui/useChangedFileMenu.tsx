@@ -7,8 +7,6 @@ import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { parentPath } from "../../../shared/lib/paths";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ExplorerMenu, type ExplorerMenuItem } from "./ExplorerMenu";
-import { canPreviewFile } from "../model/filePreview";
-import { setMarkdownViewMode } from "../../sessions/public/MarkdownModeToggle";
 
 type ChangedFileTarget = {
   path: string;
@@ -70,18 +68,6 @@ export function useChangedFileMenu({
             return t("View Changes");
           },
         },
-        ...(onOpenFile && canPreviewFile(path)
-          ? [
-              {
-                kind: "item" as const,
-                id: "preview",
-                get label() {
-                  return t("Preview");
-                },
-                disabled: targets.every((target) => target.deleted),
-              },
-            ]
-          : []),
         ...(onOpenFile
           ? [
               {
@@ -147,14 +133,6 @@ export function useChangedFileMenu({
       switch (id) {
         case "changes":
           for (const target of targets) target.onOpenChanges();
-          return;
-        case "preview":
-          for (const target of targets) {
-            if (!target.deleted && target.onOpenFile && canPreviewFile(target.path)) {
-              setMarkdownViewMode(target.path, "preview");
-              target.onOpenFile();
-            }
-          }
           return;
         case "open":
           for (const target of targets) if (!target.deleted) target.onOpenFile?.();

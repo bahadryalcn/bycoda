@@ -10,7 +10,6 @@ import { ProfileSelect } from "./ProfileControls";
 import { ScheduleHours } from "./ScheduleHours";
 import { ProfileSwitch, useProfileRows } from "./SettingsProfileRow";
 import styles from "./schedule.module.css";
-import viewStyles from "../AssistantView.module.css";
 import { Text } from "../../../../shared/ui/Text";
 import roleStyles from "../AssistantProfileFields.module.css";
 import { AdvancedSettings } from "../../../../shared/ui/settings";
@@ -25,15 +24,15 @@ const notificationOptions = [
 export function AssistantScheduleInfo() {
   return (
     <InfoPopover label={t("About presence and hours")}>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t("Idle and away are based on inactivity.")}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Outside work hours, new work waits and accepted turns can finish. Quiet hours hold notifications for the next briefing.",
         )}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Task observations use only projects enabled for manual supervision. Notifications still follow presence and quiet hours.",
         )}
@@ -61,20 +60,20 @@ export function AssistantScheduleFields({
     values.map((value) => ({ value, label: t("{p0} min", { p0: value }) }));
   const availabilityInfo = (
     <InfoPopover label={t("About availability")}>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Matching work hours allow work all day. Outside these hours, accepted turns can finish; new work waits.",
         )}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t("Do not disturb and quiet hours hold notifications for your next briefing.")}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t(
           "Prevents sleep while jobs run or away mode is enabled. Locking the screen still protects your desktop.",
         )}
       </Text>
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+      <Text as="p" size="secondary">
         {t("Work tracking continues while voice is off.")}
       </Text>
     </InfoPopover>
@@ -242,7 +241,7 @@ export function AssistantScheduleFields({
           />
         </div>
         <div className={styles.hintRow}>
-          <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
+          <Text as="p" size="secondary">
             {t("Observed tasks in projects enabled for manual supervision.")}
           </Text>
           {!observationTasksAvailable && (

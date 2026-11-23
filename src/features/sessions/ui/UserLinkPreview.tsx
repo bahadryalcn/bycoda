@@ -12,7 +12,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   CircleDot,
   CircleX,
-  ExternalLink,
   GitCompare,
   GitMerge,
   GitPullRequest,
@@ -69,7 +68,6 @@ export function UserLinkPreview({
 }
 
 function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
-  const t = useT();
   const [metadata, setMetadata] = useState<LinkPreviewMetadata | null>(null);
   const [faviconFailed, setFaviconFailed] = useState(false);
   const [openError, setOpenError] = useState<string>();
@@ -122,11 +120,10 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
   const favicon = faviconFailed ? null : metadata?.faviconDataUrl;
 
   const preview = (
-    <Tooltip label={link.url}>
+    <Tooltip label={title !== link.host ? link.url : undefined}>
       <Link
         href={link.url}
         data-user-link-preview
-        aria-label={t("Open {p0}", { p0: title })}
         className="user-link-preview group mx-0.5"
         onClick={open}
         onPointerEnter={(event) => {
@@ -151,7 +148,7 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
           weight="medium"
           {...surfaceAttributes(
             { radius: "sm", variant: "card" },
-            "mr-1 inline-flex size-4 items-center justify-center overflow-hidden   align-[-0.125em] uppercase",
+            "me-1 inline-flex icon-md items-center justify-center overflow-hidden align-[-0.125em] uppercase",
           )}
         >
           {favicon ? (
@@ -159,7 +156,7 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
               src={favicon}
               alt=""
               draggable={false}
-              className="size-3.5 object-contain"
+              className="icon-sm object-contain"
               onError={() => setFaviconFailed(true)}
             />
           ) : (
@@ -299,7 +296,7 @@ function GithubWorkItemPreview({
           weight="medium"
           {...surfaceAttributes(
             { radius: "row", tone: workItem.kind === "pr" ? "accent" : "success" },
-            ` inline-flex shrink-0 items-center  ${compact ? "h-4.5 gap-0.5  px-1.5" : "h-5 gap-1  px-1.5"}`,
+            `inline-flex shrink-0 items-center ${compact ? "h-4.5 gap-0.5 px-1.5" : "h-5 gap-1 px-1.5"}`,
           )}
         >
           {workItem.kind === "pr" ? (
@@ -344,17 +341,11 @@ function GithubWorkItemCard({
   const hasBranches = parsed.kind === "pr" && details?.baseRefName && details?.headRefName;
 
   return (
-    <div className="min-w-0 text-left">
+    <div className="min-w-0 text-start">
       <Text as="div" size="micro" tone="inherit" className="flex min-w-0 items-center gap-2">
-        <status.Icon className="size-4 shrink-0" tone={status.tone} aria-hidden="true" />
-        <Text size="inherit" tone="secondary" weight="medium" truncate className="min-w-0">
+        <status.Icon className="icon-md shrink-0" tone={status.tone} aria-hidden="true" />
+        <Text size="inherit" tone="secondary" weight="medium" truncate className="min-w-0 flex-1">
           {parsed.repo}
-        </Text>
-        <Text size="inherit" tone="secondary" className="shrink-0">
-          ·
-        </Text>
-        <Text size="inherit" tone="secondary" className="shrink-0 font-mono tabular-nums">
-          #{parsed.number}
         </Text>
         <Badge tone="neutral">{status.label}</Badge>
       </Text>
@@ -381,11 +372,7 @@ function GithubWorkItemCard({
             <ClampText as="p" lines={3} expandable={false} size="micro" className="mt-1.5">
               {summary}
             </ClampText>
-          ) : (
-            <Text as="p" size="micro" tone="secondary" leading="relaxed" className="mt-1">
-              {t("Details aren't available here, but the link can still be opened on GitHub.")}
-            </Text>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -440,7 +427,7 @@ function GithubWorkItemCard({
                   aria-hidden="true"
                   {...surfaceAttributes(
                     { radius: "pill", variant: "user-color" },
-                    "size-1.5 shrink-0 ",
+                    "size-1.5 shrink-0",
                   )}
                   style={{ "--surface-user-color": labelColor(label.color) } as React.CSSProperties}
                 />
@@ -466,19 +453,6 @@ function GithubWorkItemCard({
           ) : null}
         </div>
       ) : null}
-
-      <Text
-        as="div"
-        size="caption"
-        tone="secondary"
-        {...surfaceAttributes(
-          { frame: "pane", edge: "top" },
-          "mt-3 flex items-center gap-1.5 pt-2",
-        )}
-      >
-        <ExternalLink className="icon-xs" aria-hidden="true" />
-        {t("Click the chip to open on GitHub")}
-      </Text>
     </div>
   );
 }

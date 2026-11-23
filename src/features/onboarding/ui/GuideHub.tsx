@@ -1,6 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
@@ -102,7 +102,6 @@ export default function GuideHub({
   const [doneSteps, setDoneSteps] = useState(loadDoneGuideSteps);
   const [view, setView] = useState<"steps" | "wiki">("steps");
   const [wikiArticle, setWikiArticle] = useState("quick-start");
-  const wikiTab = useRef<HTMLButtonElement>(null);
   const index = Math.max(
     0,
     topics.findIndex((topic) => topic.id === activeId),
@@ -131,7 +130,6 @@ export default function GuideHub({
     run(topic.action.id);
   };
   const allSteps = topics.flatMap((item) => item.steps);
-  const finished = allSteps.filter(stepDone).length;
   const firstSteps = gettingStartedSteps().map((item) => ({
     ...item,
     done: allSteps.some((step) => step.id === item.stepId && stepDone(step)),
@@ -144,15 +142,8 @@ export default function GuideHub({
         <div {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "guide-hub-toolbar")}>
           <TabList label={t("Guide")}>
             <Tab value="steps">{t("Steps")}</Tab>
-            <Tab value="wiki" ref={wikiTab}>
-              {t("Wiki")}
-            </Tab>
+            <Tab value="wiki">{t("Wiki")}</Tab>
           </TabList>
-          {view === "steps" ? (
-            <Text as="span" size="caption" tone="secondary">
-              {t("{p0} of {p1} steps done", { p0: finished, p1: allSteps.length })}
-            </Text>
-          ) : null}
         </div>
         <TabPanel className="bycoda-arc guide-hub">
           {view === "wiki" ? (
@@ -304,16 +295,6 @@ export default function GuideHub({
                       {t("Tour this topic")}
                     </Button>
                   ) : null}
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setWikiArticle(topic.id);
-                      setView("wiki");
-                      wikiTab.current?.focus();
-                    }}
-                  >
-                    {t("Read the {p0} article", { p0: topic.title })}
-                  </Button>
                 </div>
                 {blocker ? (
                   <Text

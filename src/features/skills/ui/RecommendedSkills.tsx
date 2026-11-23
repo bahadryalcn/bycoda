@@ -203,15 +203,18 @@ export function RecommendedSkills({
           >
             {t("Install to…")}
           </Button>
-          <Text size="secondary" tone="secondary" leading="inherit" truncate className="min-w-0">
-            {[
-              selectedMachine?.name ?? t("This computer"),
-              scope === "user" ? t("Global · all projects") : t("This project"),
-              provider === "all"
-                ? t("All providers")
-                : (PROVIDERS.find(([value]) => value === provider)?.[1] ?? provider),
-            ].join(" · ")}
-          </Text>
+          {/* The target is spelled out only when it differs from the defaults the button implies. */}
+          {machineId !== "local" || scope !== "user" || provider !== "all" ? (
+            <Text size="secondary" tone="secondary" leading="inherit" truncate className="min-w-0">
+              {[
+                selectedMachine?.name ?? t("This computer"),
+                scope === "user" ? t("Global · all projects") : t("This project"),
+                provider === "all"
+                  ? t("All providers")
+                  : (PROVIDERS.find(([value]) => value === provider)?.[1] ?? provider),
+              ].join(" · ")}
+            </Text>
+          ) : null}
           <InfoPopover width={360}>
             <p>
               {t(
@@ -224,6 +227,16 @@ export function RecommendedSkills({
               )}
             </p>
             <p>{t(SKILLS_CLI_REQUIREMENTS)}</p>
+            <Button
+              variant="link"
+              onClick={() => {
+                void openExternal(SKILLS_CLI_REFERENCE).catch((error: unknown) =>
+                  setLinkError(errorText(error)),
+                );
+              }}
+            >
+              {t("Installer reference")}
+            </Button>
           </InfoPopover>
         </div>
         {targetOpen ? (
@@ -236,29 +249,34 @@ export function RecommendedSkills({
             onDismiss={() => setTargetOpen(false)}
             className="flex flex-col gap-3"
           >
-            <Select
-              label={t("Computer")}
-              value={machineId}
-              disabled={!!busy}
-              options={[
-                { value: "local", label: t("This computer") },
-                ...machines.map((machine) => ({
-                  value: machine.environmentId,
-                  label: machine.name,
-                })),
-              ]}
-              onValueChange={setMachineId}
-            />
-            <Select
-              label={t("Installation scope")}
-              value={scope}
-              disabled={!!busy}
-              options={[
-                { value: "user", label: t("Global · all projects") },
-                { value: "project", label: t("This project"), disabled: !targetCwd },
-              ]}
-              onValueChange={(value) => setScope(value as "user" | "project")}
-            />
+            {/* Computer and scope are choices only when there is something to choose between. */}
+            {machines.length || machineId !== "local" ? (
+              <Select
+                label={t("Computer")}
+                value={machineId}
+                disabled={!!busy}
+                options={[
+                  { value: "local", label: t("This computer") },
+                  ...machines.map((machine) => ({
+                    value: machine.environmentId,
+                    label: machine.name,
+                  })),
+                ]}
+                onValueChange={setMachineId}
+              />
+            ) : null}
+            {targetCwd || scope === "project" ? (
+              <Select
+                label={t("Installation scope")}
+                value={scope}
+                disabled={!!busy}
+                options={[
+                  { value: "user", label: t("Global · all projects") },
+                  { value: "project", label: t("This project"), disabled: !targetCwd },
+                ]}
+                onValueChange={(value) => setScope(value as "user" | "project")}
+              />
+            ) : null}
             <div className={styles.provider}>
               <Text size="secondary" tone="primary" weight="medium" leading="inherit">
                 {t("Provider")}
@@ -338,35 +356,16 @@ export function RecommendedSkills({
                     className={styles.recipe}
                     summary={t("Installation command")}
                   >
-                    <Text as="div" size="secondary" tone="secondary" leading="inherit">
-                      <p>
-                        {t(
-                          "Runs the public installer, then applies your selected scope and provider.",
-                        )}
-                      </p>
-                      <Code {...surfaceAttributes({ variant: "card", radius: "control" })}>
-                        {officialSkillInstallCommand(skill)}
-                      </Code>
-                      <div>
-                        <CopyButton
-                          variant="ghost"
-                          label={t("Copy")}
-                          text={() => officialSkillInstallCommand(skill)}
-                          resetKeys={[skill]}
-                          onCopyError={(error) => setLinkError(errorText(error))}
-                        />
-                        <Button
-                          variant="link"
-                          onClick={() => {
-                            void openExternal(SKILLS_CLI_REFERENCE).catch((error: unknown) =>
-                              setLinkError(errorText(error)),
-                            );
-                          }}
-                        >
-                          {t("Installer reference")}
-                        </Button>
-                      </div>
-                    </Text>
+                    <Code variant="block" className="break-all whitespace-pre-wrap">
+                      {officialSkillInstallCommand(skill)}
+                    </Code>
+                    <CopyButton
+                      variant="ghost"
+                      label={t("Copy")}
+                      text={() => officialSkillInstallCommand(skill)}
+                      resetKeys={[skill]}
+                      onCopyError={(error) => setLinkError(errorText(error))}
+                    />
                   </Disclosure>
                   {skill.note ? (
                     <Text as="p" size="secondary" leading="normal">

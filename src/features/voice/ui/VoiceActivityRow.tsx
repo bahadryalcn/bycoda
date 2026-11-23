@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { StatusDot } from "../../../shared/ui/StatusDot";
+import { Square } from "../../../shared/ui/icons";
 import { Row } from "../../../shared/ui/settings";
 import { useActiveDictations, type ActiveDictation } from "../model/dictationActivity";
 import {
@@ -39,7 +40,7 @@ export function VoiceActivityRow() {
 function ActivityLine({ label }: { label: string }) {
   return (
     <Text size="caption" tone="inherit" className="flex min-w-0 items-center gap-2">
-      <StatusDot tone="danger" appearance="solid" size="sm" />
+      <StatusDot tone="success" appearance="solid" size="sm" />
       <Text size="inherit" tone="inherit" truncate>
         {label}
       </Text>
@@ -53,8 +54,14 @@ function DictationLine({ run }: { run: ActiveDictation }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
       <ActivityLine label={label} />
-      <Button size="sm" disabled={run.state === "finishing"} onClick={run.stop}>
-        {t("Stop dictation")}
+      <Button
+        size="sm"
+        iconOnly
+        label={t("Stop dictation")}
+        disabled={run.state === "finishing"}
+        onClick={run.stop}
+      >
+        <Square className="icon-sm" strokeWidth={2} />
       </Button>
     </span>
   );

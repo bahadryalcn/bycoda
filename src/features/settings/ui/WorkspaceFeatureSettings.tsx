@@ -8,7 +8,6 @@ import {
   type WorkspaceFeatureId,
 } from "../model/workspaceFeatures";
 import { Row, SettingsFeedback, Toggle } from "../../../shared/ui/settings";
-import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 
 export const WORKSPACE_FEATURE_CHOICES = [
   {
@@ -57,14 +56,6 @@ export function WorkspaceToolsHelp() {
           "Controls navigation visibility. Hiding this tool does not stop work or change permissions.",
         )}
       </p>
-      <DescriptionList size="sm">
-        {WORKSPACE_FEATURE_CHOICES.map(({ id, label, description }) => (
-          <DescriptionItem key={id} term={t(label)}>
-            {t(description)}
-          </DescriptionItem>
-        ))}
-      </DescriptionList>
-      <p>{t("Controls project notes and note references in the composer.")}</p>
     </InfoPopover>
   );
 }
@@ -73,17 +64,11 @@ export function WorkspaceFeatureSettings() {
   useLocale();
   const features = useWorkspaceFeatures();
   const [errors, setErrors] = useState<Partial<Record<WorkspaceFeatureId, boolean>>>({});
-  return WORKSPACE_FEATURE_CHOICES.map(({ id, label, description }) => (
+  return WORKSPACE_FEATURE_CHOICES.map(({ id, label }) => (
     <Row
       key={id}
       id={id === "notes" ? "notes" : `workspace-${id}`}
       label={t(label)}
-      description={t(description)}
-      dependency={
-        id === "notes"
-          ? t("Controls project notes and note references in the composer.")
-          : undefined
-      }
       feedback={
         errors[id] ? (
           <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>

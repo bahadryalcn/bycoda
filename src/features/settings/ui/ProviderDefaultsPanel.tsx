@@ -134,10 +134,9 @@ export function ProviderDefaultsPanel({
         <Group
           id="default-provider"
           layout="full"
-          title={t("Default provider")}
-          description={t("New conversations start with this provider and its default model.")}
+          title={null}
         >
-          <Row label={t("Provider")}>
+          <Row label={t("Default provider")}>
             <Select
               hideLabel
               label={t("Default provider")}

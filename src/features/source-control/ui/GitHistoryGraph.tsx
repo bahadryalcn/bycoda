@@ -14,7 +14,7 @@ import { pathKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useDeferredValue, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { GitBranch, Maximize2, Search, RefreshCw } from "../../../shared/ui/icons";
+import { GitBranch, Maximize2, Search } from "../../../shared/ui/icons";
 import {
   gitCheckoutCommit,
   gitCherryPick,
@@ -140,12 +140,6 @@ export function GitHistoryGraph({
     if (!actions || busy || !(await discardResolution())) return;
     try {
       await withGitOperation(cwd, "Updating repository…", action);
-      setGitFeedback(cwd, {
-        kind: "success",
-        get title() {
-          return t("Git operation complete");
-        },
-      });
     } catch (error) {
       if (fullOpen) setFullCommit(null);
       setGitFeedback(cwd, {
@@ -410,19 +404,6 @@ export function GitHistoryGraph({
             ) : null}
             {expanded ? (
               <>
-                <Button
-                  size="sm"
-                  iconOnly
-                  label={t("Refresh commit graph")}
-                  variant="ghost"
-                  motion="none"
-                  type="button"
-                  loading={loading}
-                  loadingLabel={t("Refreshing…")}
-                  onClick={refresh}
-                >
-                  <RefreshCw className="icon-sm" />
-                </Button>
                 {showAllButton}
                 <Button
                   size="sm"
@@ -480,22 +461,6 @@ export function GitHistoryGraph({
           onClose={() => void closeFull()}
           toolbar={
             <>
-              <Button
-                size="sm"
-                iconOnly
-                label={t("Refresh full commit graph")}
-                variant="ghost"
-                motion="none"
-                type="button"
-                loading={loading}
-                loadingLabel={t("Refreshing…")}
-                onClick={() => {
-                  refresh();
-                  notifyGitChanged(cwd, "refs");
-                }}
-              >
-                <RefreshCw className="icon-sm" />
-              </Button>
               {repositories ? (
                 <div className={graphLayout.repository}>
                   <SearchableSelect
@@ -557,16 +522,9 @@ export function GitHistoryGraph({
       {naming ? (
         <RefNameDialog
           title={naming.kind === "branch" ? t("New branch") : t("New tag")}
-          description={
-            naming.kind === "branch"
-              ? t("Create and check out a branch at {p0}.", {
-                  p0: naming.commit.shortSha,
-                })
-              : t("Create a tag at {p0}.", { p0: naming.commit.shortSha })
-          }
           label={naming.kind === "branch" ? t("Branch name") : t("Tag name")}
-          placeholder={naming.kind === "branch" ? t("feature/my-branch") : "v1.0.0"}
-          submitLabel="Create"
+          placeholder={naming.kind === "branch" ? t("feature/my-branch") : t("v1.0.0")}
+          submitLabel={t("Create")}
           busy={namingBusy || !!busy}
           error={namingError}
           onSubmit={(name) => void submitName(name)}

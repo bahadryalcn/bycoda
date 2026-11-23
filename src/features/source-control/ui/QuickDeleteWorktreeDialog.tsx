@@ -133,7 +133,6 @@ export function QuickDeleteWorktreeDialog({
             tone="danger"
             loading={busy}
             disabled={!ready || !!error}
-            disabledReason={blockedReason}
             onClick={() => void remove()}
           >
             {t("Delete worktree")}
@@ -158,11 +157,6 @@ export function QuickDeleteWorktreeDialog({
             onChange={setPath}
           />
         ) : null}
-        {tree ? (
-          <Text as="p" size="inherit" tone="secondary" className="break-all">
-            {tree.branch} · {prettyCwd(tree.path)}
-          </Text>
-        ) : null}
         {(!trees && !error) || (tree && !tree.missing && !index && !error) ? (
           <GitLoading text={t("Loading worktrees…")} />
         ) : null}
@@ -172,7 +166,7 @@ export function QuickDeleteWorktreeDialog({
         {trees && request.deletePath && !tree ? (
           <InlineError>{t("This worktree is no longer available.")}</InlineError>
         ) : null}
-        {index ? (
+        {index && (tree?.dirty || tree?.unpushed || index.files.length > 0) ? (
           <DescriptionList size="sm">
             <DescriptionItem term={t("Changes")}>
               {index.files.filter((file) => file.unstaged).length + (index.conflicts?.length ?? 0)}
@@ -185,21 +179,13 @@ export function QuickDeleteWorktreeDialog({
             </DescriptionItem>
           </DescriptionList>
         ) : null}
-        {tree ? (
+        {tree && (tree.dirty || (index && index.files.length > 0)) ? (
           <ConfirmConsequences
             items={[
               {
                 key: "discard",
                 tone: "warning",
                 content: t("All uncommitted and untracked changes here are discarded."),
-              },
-              {
-                key: "branch",
-                tone: "neutral",
-                content:
-                  deleteBranch && !branchDeleteBlock(tree)
-                    ? t("The branch is deleted if it is fully merged.")
-                    : t("The branch is kept."),
               },
             ]}
           />

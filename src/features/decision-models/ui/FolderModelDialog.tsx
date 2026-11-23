@@ -235,6 +235,12 @@ export function FolderModelDialog({
           disabled={locked}
           error={!result ? fieldError : undefined}
           onChange={(event) => changePath(event.target.value)}
+          onKeyDown={(event) => {
+            // Typing a path needs no second click: Enter scans it.
+            if (event.key !== "Enter" || locked || scanning) return;
+            event.preventDefault();
+            void inspect(path).catch(() => undefined);
+          }}
           endAdornment={
             <Button
               variant="ghost"
@@ -277,11 +283,7 @@ export function FolderModelDialog({
                   if (model) chooseModel(model);
                 }}
               />
-            ) : (
-              <InlineMessage tone="success">
-                {t("Found: {p1}", { p1: selected.name })}
-              </InlineMessage>
-            )}
+            ) : null}
             <TextField
               label={t("Name")}
               value={name}

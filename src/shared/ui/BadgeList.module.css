@@ -81,7 +81,7 @@
 .cardList {
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
+  gap: var(--ui-space-1, 0.25rem);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -92,7 +92,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0.125rem var(--space-1);
+  padding: var(--ui-space-1, 0.25rem);
   color: var(--color-content);
   font-size: var(--ui-font-caption);
   line-height: var(--ui-leading-caption);

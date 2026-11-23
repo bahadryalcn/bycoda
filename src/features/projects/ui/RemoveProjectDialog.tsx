@@ -59,16 +59,16 @@ export function RemoveProjectDialog({
 
   const request: ConfirmRequest = {
     title: t("Delete {p0}", { p0: name }),
+    // The saved-session count below is the one statement about deleted sessions.
     message: paths
-      ? t(
-          "All sessions for the selected projects will be deleted. The projects leave the sidebar. Their folders on disk stay put.",
-        )
+      ? t("The projects leave the sidebar. Their folders on disk stay put.")
       : t(
-          "All sessions for this project will be deleted. It also leaves the sidebar. The folder on disk stays put, and opening it again brings the project back empty.",
+          "The project leaves the sidebar. The folder on disk stays put, and opening it again brings the project back empty.",
         ),
     confirmLabel: t("Delete"),
     pendingLabel: t("Deleting…"),
-    confirmDisabled: Boolean(confirmDisabled) || sessions == null || countError != null,
+    // The count is informational: deleting does not wait for it, only a failed count blocks.
+    confirmDisabled: Boolean(confirmDisabled) || countError != null,
     consequences:
       sessions != null && sessions > 0
         ? [

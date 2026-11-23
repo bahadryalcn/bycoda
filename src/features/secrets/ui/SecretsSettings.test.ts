@@ -182,7 +182,7 @@ it("keeps failed revocations retryable without displaying sensitive RPC payloads
   expect(api.revoke).toHaveBeenCalledWith("synthetic-ref");
 });
 
-it("clears the removal failure banner once the confirmation is cancelled", async () => {
+it("shows the removal failure only in the confirmation and clears it once cancelled", async () => {
   const api = client();
   vi.mocked(api.revoke).mockRejectedValueOnce(new Error("synthetic-private-error-payload"));
   mocks.client.mockReturnValue(api);
@@ -193,7 +193,10 @@ it("clears the removal failure banner once the confirmation is cancelled", async
       .find((node) => node.textContent === "Remove")!
       .click(),
   );
-  expect(container.textContent).toContain("Could not remove the secret.");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Could not remove the secret.",
+  );
+  expect(container.textContent).not.toContain("Could not remove the secret.");
   await act(async () => button("Cancel").click());
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(document.body.textContent).not.toContain("Could not remove the secret.");

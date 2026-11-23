@@ -1,5 +1,4 @@
 import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
@@ -140,28 +139,19 @@ export function TaskDetail({
           )}
         >
           {actions.pending ? <Spinner size="xs" label={t("Loading…")} /> : null}
-          <Tooltip
-            label={
-              status.label === t(STATUS_LABELS[task.status])
-                ? undefined
-                : t(STATUS_LABELS[task.status])
+          <Badge
+            data-task-status={status.kind}
+            tone={status.tone}
+            icon={
+              status.tone === "accent" ? (
+                <StatusDot tone="accent" label={status.label} />
+              ) : undefined
             }
-            asChild
           >
-            <Badge
-              data-task-status={status.kind}
-              tone={status.tone}
-              icon={
-                status.tone === "accent" ? (
-                  <StatusDot tone="accent" label={status.label} />
-                ) : undefined
-              }
-            >
-              {status.label}
-            </Badge>
-          </Tooltip>
+            {status.label}
+          </Badge>
           {task.source === "steward" ? (
-            <Badge data-task-suggested tone="info" className="">
+            <Badge data-task-suggested tone="info">
               {t("Suggested")}
             </Badge>
           ) : null}
@@ -171,7 +161,6 @@ export function TaskDetail({
             disabled={saving}
             variant="ghost"
             type="button"
-            aria-label={t("Close details")}
             onClick={onClose}
             className="ml-auto"
           >
@@ -227,14 +216,13 @@ export function TaskDetail({
                 </Heading>
                 {editable ? (
                   <Button
+                    iconOnly
                     variant="ghost"
                     type="button"
                     onClick={beginEdit}
-
-                    aria-label={t("Edit title and description")}
+                    label={t("Edit title and description")}
                   >
                     <Pencil className="icon-xs" />
-                    {t("Edit")}
                   </Button>
                 ) : null}
               </div>
@@ -250,10 +238,15 @@ export function TaskDetail({
                 </DescriptionItem>
                 <DescriptionItem term={t("Agent")} truncate>
                   <HarnessIcon harness={task.harness} className="icon-sm mr-1 inline shrink-0" />
-                  <TaskModelChoiceLabel
-                    choice={task.modelChoice}
-                    machineId={task.machineId}
-                  /> ·{" "}
+                  {task.modelChoice && task.modelChoice.kind !== "fixed" ? (
+                    <>
+                      <TaskModelChoiceLabel
+                        choice={task.modelChoice}
+                        machineId={task.machineId}
+                      />{" "}
+                      ·{" "}
+                    </>
+                  ) : null}
                   {model.name}
                 </DescriptionItem>
                 <DescriptionItem term={t("Created")} truncate>

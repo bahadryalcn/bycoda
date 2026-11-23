@@ -7,7 +7,6 @@ import { Check, Copy, ExternalLink, FolderOpen } from "../../../shared/ui/icons"
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { MediaToolbarButton } from "../../../shared/ui/MediaToolbar";
 import { Modal } from "../../../shared/ui/Modal";
-import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { lazySurface } from "../../../shared/ui/lazySurface";
@@ -134,19 +133,18 @@ function TranscriptVideoPreview({
         ) : "path" in source ? (
           <MediaView path={source.path} />
         ) : (
-          <div className="flex flex-col gap-2 p-3">
-            <InlineError>
-              {t("Could not read {p0}: {p1}", { p0: basename(path), p1: source.error })}
-            </InlineError>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setSource(undefined);
-                setAttempt((value) => value + 1);
+          <div className="p-3">
+            <InlineError
+              retry={{
+                label: t("Retry"),
+                onRetry: () => {
+                  setSource(undefined);
+                  setAttempt((value) => value + 1);
+                },
               }}
             >
-              {t("Retry")}
-            </Button>
+              {t("Could not read {p0}: {p1}", { p0: basename(path), p1: source.error })}
+            </InlineError>
           </div>
         )}
       </div>

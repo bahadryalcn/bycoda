@@ -2,14 +2,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../shared/lib/productIdentity", () => ({
-  PRODUCT_IDENTITY: {
-    displayName: "Test Product",
-    logoSrc: "/test-product.svg",
-    logoOnDarkSrc: "/test-product-dark.svg",
-  },
-}));
-
 import { UpdateRailCard } from "./UpdateRailCard";
 
 describe("UpdateRailCard", () => {
@@ -23,27 +15,22 @@ describe("UpdateRailCard", () => {
     );
 
     expect(markup).toContain('role="status"');
-    expect(markup).toMatch(/src="\/test-product(-dark)?\.svg"/);
-    expect(markup).not.toContain("bycoda.png");
-    expect(markup).toContain("Updated to 0.1.25");
-    expect(markup).toContain("What&#x27;s new");
+    expect(markup).toContain("What&#x27;s new in 0.1.25");
     expect(markup).toContain('aria-label="Dismiss update notification"');
   });
 
-  it("names the button with the complete message and keeps the logo as the narrow-rail icon", () => {
+  it("uses the shared label reveal in the compact rail", () => {
     const markup = renderToStaticMarkup(
       createElement(UpdateRailCard, {
         update: { version: "0.1.25" },
+        inline: true,
         onOpen: vi.fn(),
         onDismiss: vi.fn(),
       }),
     );
 
-    // Regression #529: no hand-joined em-dash name; the whole message is one translation key.
-    expect(markup).toContain('aria-label="Updated to 0.1.25"');
-    expect(markup).not.toContain(" — ");
-    // Regression #529: the text hides in the collapsed rail but the card (logo + dismiss) stays.
-    expect(markup).toContain("@max-[140px]/rail:hidden");
+    expect(markup).toContain('aria-label="What&#x27;s new in 0.1.25"');
+    expect(markup).toContain("data-button-reveal-label");
     expect(markup).toContain('aria-label="Dismiss update notification"');
   });
 

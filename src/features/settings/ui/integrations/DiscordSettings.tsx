@@ -17,7 +17,6 @@ export function DiscordSettings() {
   return (
     <MessagingAccountsCard
       provider="discord"
-      emptyLabel={t("No Discord bots connected yet.")}
       addLabel={t("Add bot")}
       describe={(account) => {
         const count = accountChannelIds(account).length;

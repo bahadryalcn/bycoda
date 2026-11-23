@@ -120,33 +120,31 @@ export function DictationSettings({
       ) : null}
       {settings.dictationEnabled && (
         <>
-          {settings.dictationEnabled ? (
-            <Row
-              id="dictation-engine"
+          <Row
+            id="dictation-engine"
+            label={t("Dictation recognition")}
+            description={
+              settings.dictationEngine === "local"
+                ? t("Speech is recognized on this computer.")
+                : t("Dictation audio is sent to {p1}. No transcription model is installed.", {
+                    p1: DICTATION_PROVIDER_NAMES[settings.dictationEngine],
+                  })
+            }
+          >
+            <Select
+              hideLabel
               label={t("Dictation recognition")}
-              description={
-                settings.dictationEngine === "local"
-                  ? t("Speech is recognized on this computer.")
-                  : t("Dictation audio is sent to {p1}. No transcription model is installed.", {
-                      p1: DICTATION_PROVIDER_NAMES[settings.dictationEngine],
-                    })
-              }
-            >
-              <Select
-                hideLabel
-                label={t("Dictation recognition")}
-                value={settings.dictationEngine}
-                options={[
-                  { value: "local", label: t("This computer") },
-                  // OpenAI and Grok use the Codex / Grok Build sign-in, like voice.
-                  { value: "openai", label: DICTATION_PROVIDER_NAMES.openai },
-                  { value: "xai", label: DICTATION_PROVIDER_NAMES.xai },
-                  { value: "openrouter", label: DICTATION_PROVIDER_NAMES.openrouter },
-                ]}
-                onChange={(value) => change({ dictationEngine: value as DictationEngine })}
-              />
-            </Row>
-          ) : null}
+              value={settings.dictationEngine}
+              options={[
+                { value: "local", label: t("This computer") },
+                // OpenAI and Grok use the Codex / Grok Build sign-in, like voice.
+                { value: "openai", label: DICTATION_PROVIDER_NAMES.openai },
+                { value: "xai", label: DICTATION_PROVIDER_NAMES.xai },
+                { value: "openrouter", label: DICTATION_PROVIDER_NAMES.openrouter },
+              ]}
+              onChange={(value) => change({ dictationEngine: value as DictationEngine })}
+            />
+          </Row>
           <Row
             id="dictation-shortcut-mode"
             label={t("Dictation shortcut mode")}

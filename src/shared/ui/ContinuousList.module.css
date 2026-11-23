@@ -35,6 +35,10 @@
 .footer:not(:empty) {
   padding-block: 8px;
 }
+/* The inline empty caption owns its own gutter and height. */
+.footer[data-state="initial"]:has([data-size="inline"]) {
+  padding-block: 0;
+}
 .settingsRow[data-row-divider] {
   border-block-start: 1px solid var(--ui-settings-hairline);
 }

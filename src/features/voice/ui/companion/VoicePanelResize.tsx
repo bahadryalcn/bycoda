@@ -12,6 +12,20 @@ type Direction = (typeof DIRECTIONS)[number];
 /** Single-axis edges are keyboard separators (Sash); corners drag on two axes and stay pointer-only. */
 const EDGES: readonly Direction[] = ["n", "s", "e", "w"];
 
+/** Screen readers get the edge, so the four sashes are not announced identically. */
+function edgeLabel(direction: Direction) {
+  switch (direction) {
+    case "n":
+      return t("Resize panel, top edge");
+    case "s":
+      return t("Resize panel, bottom edge");
+    case "e":
+      return t("Resize panel, right edge");
+    default:
+      return t("Resize panel, left edge");
+  }
+}
+
 const STORAGE_KEY = "bycoda:voice-size";
 const MIN = { width: 320, height: 260 };
 
@@ -251,7 +265,7 @@ export function VoicePanelResize({
           <Sash
             key={direction}
             orientation={direction === "e" || direction === "w" ? "vertical" : "horizontal"}
-            label={t("Resize panel")}
+            label={edgeLabel(direction)}
             appearance="hidden"
             data-resize-direction={direction}
             className={styles.resizeEdge}

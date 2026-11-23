@@ -1,5 +1,3 @@
-/* Hallmark · built: the project · redesign: polish · shape: app screen · theme: locked bycoda · scope: app */
-/* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V3 · weakest: V, retained familiar task lanes under the locked product system. */
 /* Board lanes and cards. Lanes are quiet fills on the canvas; cards are thin frames
    that step up only on hover, selection and drag. */
 .task-board-columns {
@@ -32,11 +30,6 @@
 }
 .task-board-column-picker {
   display: none;
-}
-.task-column-empty {
-  padding: 0.25rem 0.25rem 0;
-  text-align: start;
-  align-items: flex-start;
 }
 
 /* Drop cues use theme tokens only: the lane that would accept the card, and a line
@@ -90,26 +83,9 @@
 .task-board-card > * {
   min-inline-size: 0;
 }
-.task-card-goal {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  min-inline-size: 0;
-}
 .task-card-title {
   padding-inline-end: 1rem;
   overflow-wrap: anywhere;
-}
-.task-card-description {
-  white-space: pre-line;
-  overflow-wrap: anywhere;
-}
-.task-card-chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem;
-  min-inline-size: 0;
 }
 .task-card-actions {
   margin-block-start: 0.25rem;

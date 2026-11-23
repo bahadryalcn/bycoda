@@ -124,15 +124,13 @@ describe("InboxDetail layout", () => {
     expect(markup).not.toContain("backdrop-blur");
   });
 
-  it("shows when a PR was created alongside its last update", () => {
+  it("shows only the last update in the detail meta line", () => {
     const markup = renderDetail({
       ...item({ kind: "pr" }),
       createdAt: "2026-09-01T08:00:00Z",
     });
-    expect(markup).toContain("Created ");
-    expect(markup).toContain('dateTime="2026-09-01T08:00:00.000Z"');
+    expect(markup).not.toContain("Created ");
     expect(markup).toContain("Updated ");
-    expect(renderDetail(item({ kind: "pr" }))).not.toContain("Created ");
   });
 
   it("keeps issue identity and actions outside the body scroller", () => {

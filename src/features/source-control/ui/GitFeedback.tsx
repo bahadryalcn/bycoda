@@ -104,7 +104,8 @@ function GitFeedbackContent({
     </>
   );
   const noticeProps = {
-    className: "mx-2 my-0.5 min-w-0 shrink-0",
+    inset: "row" as const,
+    className: "min-w-0 shrink-0",
     action: detail ? { label: t("Details"), onClick: () => setOpen(true) } : undefined,
     retry: onRetry ? { onRetry, label: t("Retry") } : undefined,
     secondaryAction: onDismiss ? { label: t("Dismiss"), onClick: onDismiss } : undefined,

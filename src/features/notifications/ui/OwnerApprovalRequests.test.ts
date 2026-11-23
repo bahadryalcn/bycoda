@@ -147,7 +147,7 @@ it("shows an Inbox review as its line comments in a dialog the owner can approve
   }
 });
 
-it("approves an Inbox request from the chat directly, with Review opening the full view", async () => {
+it("approves an Inbox request from the chat directly, with one Details disclosure", async () => {
   const element = document.createElement("div");
   document.body.append(element);
   const root = createRoot(element);
@@ -179,8 +179,8 @@ it("approves an Inbox request from the chat directly, with Review opening the fu
     });
     const button = (label: string) =>
       [...document.querySelectorAll("button")].filter((item) => item.textContent === label);
-    await act(async () => button("Review")[0]!.click());
-    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(button("Review")).toHaveLength(0);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     await act(async () => button("Approve this operation")[0]!.click());
     expect(await answer).toBe(true);
     expect(document.querySelector('[role="dialog"]')).toBeNull();

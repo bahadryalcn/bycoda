@@ -10,6 +10,7 @@ import { NativeSelect } from "../../../shared/ui/Select";
 import { useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { SlidersHorizontal } from "../../../shared/ui/icons";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Popover } from "../../../shared/ui/Popover";
 import {
   defaultModelSettings,
@@ -189,18 +190,26 @@ export function ModelExtrasPanel({
         key={setting.id}
         {...surfaceAttributes(
           { frame: dependent ? "pane" : undefined, edge: "left" },
-          dependent ? "ml-2  border-(--ui-tone-neutral-border) pl-2.5" : undefined,
+          dependent ? "ms-2 border-s border-(--ui-tone-neutral-border) ps-2.5" : undefined,
         )}
       >
         <Text as="div" size="caption" tone="inherit" className="flex min-h-8 items-center gap-2">
           <Text
             size="inherit"
             tone={inactive ? "secondary" : "inherit"}
-            className={`flex min-w-0 flex-1 items-center gap-1 `}
+            className="flex min-w-0 flex-1 items-center gap-1"
           >
             <Text as="span" size="caption" tone="inherit" className="min-w-0 break-words">
               {label}
             </Text>
+            {setting.description ? (
+              <>
+                <InfoPopover>{t(setting.description)}</InfoPopover>
+                <span id={descriptionId} hidden>
+                  {t(setting.description)}
+                </span>
+              </>
+            ) : null}
             {modified && (
               <Tooltip label={t("Changed from default")} asChild>
                 <span
@@ -265,11 +274,6 @@ export function ModelExtrasPanel({
             </NativeSelect>
           )}
         </Text>
-        {setting.description && (
-          <Text id={descriptionId} as="p" size="caption" tone="muted" className="mb-1 px-1.5">
-            {t(setting.description)}
-          </Text>
-        )}
       </div>
     );
   };
@@ -295,21 +299,19 @@ export function ModelExtrasPanel({
             >
               {title ?? `${HARNESS_TITLE[harness]} · ${t("Extras")}`}
             </Text>
-            <Button
-              variant="ghost"
-              type="button"
-              disabled={disabled || changed === 0}
-              onClick={() => {
-                if (!disabled) onSettingsChange(defaultModelSettings(current));
-              }}
-              className="shrink-0"
-            >
-              {t("Reset extras")}
-            </Button>
+            {changed > 0 ? (
+              <Button
+                variant="ghost"
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  if (!disabled) onSettingsChange(defaultModelSettings(current));
+                }}
+              >
+                {t("Reset extras")}
+              </Button>
+            ) : null}
           </div>
-          <Text as="p" size="caption" tone="secondary" className="mt-0.5">
-            {t("Extras apply to this model selection. They do not change the main model.")}
-          </Text>
         </div>
       )}
       <div className="space-y-3 px-3 pt-2 pb-3">
@@ -378,7 +380,13 @@ export function ModelExtras({
         ref={anchor}
         type="button"
         data-model-control
-        aria-label={t("Extras")}
+        iconOnly={changed === 0}
+        label={t("Extras")}
+        tooltip={
+          showSummary && changed > 0
+            ? active.map((setting) => t(settingValueLabel(setting, effective))).join(" · ")
+            : undefined
+        }
         aria-haspopup="dialog"
         expanded={open}
         disabled={disabled}
@@ -387,7 +395,6 @@ export function ModelExtras({
         className="shrink-0"
       >
         <SlidersHorizontal className="icon-xs shrink-0" strokeWidth={1.75} />
-        <span data-extras-label>{t("Extras")}</span>
         {changed > 0 && (
           <Text
             as="span"
@@ -395,11 +402,6 @@ export function ModelExtras({
             {...surfaceAttributes({ radius: "sm", variant: "selection" }, "px-1")}
           >
             {changed}
-          </Text>
-        )}
-        {showSummary && changed > 0 && (
-          <Text data-extras-summary size="inherit" tone="secondary" truncate className="max-w-40">
-            {active.map((s) => t(settingValueLabel(s, effective))).join(" · ")}
           </Text>
         )}
       </Button>
@@ -441,20 +443,19 @@ export function TogglePill({
   const t = useT();
   const on = settingValue(setting, values) === "true";
   const label = t(settingLabel(setting));
-  const name = `${label}: ${t(on ? "On" : "Off")}`;
   return (
     <Button
-      variant="ghost"
+      variant="chip"
       type="button"
-      tooltip={name}
-      aria-label={name}
+      aria-label={label}
       aria-pressed={on}
+      selected={on}
       data-model-control
       onMouseDown={(event) => event.preventDefault()}
       onClick={() => onSettingsChange({ ...values, [setting.id]: on ? "false" : "true" })}
       className="max-w-28"
     >
-      <Text size="micro" tone={on ? "inherit" : "secondary"} truncate className={`min-w-0   `}>
+      <Text size="micro" tone={on ? "inherit" : "secondary"} truncate>
         {label}
       </Text>
     </Button>

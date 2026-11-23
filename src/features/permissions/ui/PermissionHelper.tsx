@@ -39,7 +39,6 @@ export function PermissionHelper() {
         </Text>
         <Button
           variant="ghost"
-          label={t("Close permission helper")}
           onClick={() => void closePermissionHelper().catch(() => setError(true))}
         >
           {t("Close")}

@@ -91,7 +91,7 @@ export function SkillPicker({
         />
       ) : (
         <>
-          <SkillList
+          <SkillPickerList
             skills={skills}
             prefix={prefix}
             query={query}
@@ -107,10 +107,10 @@ export function SkillPicker({
                 variant="secondary"
                 size="sm"
                 type="button"
+                startIcon={<Plus />}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={onStartCreate}
               >
-                <Plus className="icon-sm shrink-0" strokeWidth={1.75} aria-hidden />
                 {t("New skill")}
               </Button>
             </div>
@@ -121,7 +121,7 @@ export function SkillPicker({
   );
 }
 
-function SkillList({
+function SkillPickerList({
   skills,
   prefix,
   query,
@@ -268,13 +268,15 @@ function SkillList({
   );
 }
 
-/** Shared starter-skill form for the composer picker and Settings. */
+/**
+ * Shared starter-skill form. `inline` sits in the composer picker (padded, monospace name);
+ * `dialog` fills a modal body that already pads its content.
+ */
 export function CreateSkillForm({
   parentSessionId,
   query,
   cwd,
-  monospace = true,
-  className = "px-2.5 py-2",
+  variant = "inline",
   error,
   busy,
   onCancel,
@@ -283,8 +285,7 @@ export function CreateSkillForm({
   parentSessionId?: string;
   query: string;
   cwd: string;
-  monospace?: boolean;
-  className?: string;
+  variant?: "inline" | "dialog";
   error?: string | null;
   busy?: boolean;
   onCancel: () => void;
@@ -356,10 +357,10 @@ export function CreateSkillForm({
         parentInput();
         onCancel();
       }}
-      className={className}
+      className={variant === "inline" ? "px-2.5 py-2" : undefined}
     >
       <TextField
-        monospace={monospace}
+        monospace={variant === "inline"}
         label={t("Skill name")}
         ref={input}
         value={name}
@@ -381,23 +382,21 @@ export function CreateSkillForm({
           {t("Preparing session checkpoint. Your draft is kept.")}
         </Text>
       ) : null}
-      <SegmentedControl
-        label={t("Scope")}
-        value={scope}
-        onValueChange={(value) => {
-          if (busy || parentClosed || !parentInput.canMutate()) return;
-          setScope(value as "project" | "user");
-        }}
-        options={[
-          {
-            value: "project",
-            label: t("Project"),
-            tooltip: project ? undefined : t("Open a local project to enable project scope."),
-            disabled: !project,
-          },
-          { value: "user", label: t("Personal") },
-        ]}
-      />
+      {/* Without a local project the skill can only be personal, so there is nothing to choose. */}
+      {project ? (
+        <SegmentedControl
+          label={t("Scope")}
+          value={scope}
+          onValueChange={(value) => {
+            if (busy || parentClosed || !parentInput.canMutate()) return;
+            setScope(value as "project" | "user");
+          }}
+          options={[
+            { value: "project", label: t("Project") },
+            { value: "user", label: t("Personal") },
+          ]}
+        />
+      ) : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
       <div className="flex items-center justify-end gap-1">
         <Button
@@ -412,7 +411,12 @@ export function CreateSkillForm({
         >
           {t("Cancel")}
         </Button>
-        <Button variant="ghost" size="sm" type="submit" disabled={!valid || busy || parentClosed}>
+        <Button
+          variant="primary"
+          size="sm"
+          type="submit"
+          disabled={!valid || busy || parentClosed}
+        >
           {busy ? t("Creating…") : t("Create")}
         </Button>
       </div>

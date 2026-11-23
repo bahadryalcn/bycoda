@@ -29,21 +29,23 @@ vi.mock("../../../../shared/ui/ConfirmDialog", () => ({
     dialog: null,
   }),
 }));
-vi.mock("../common/ScreenHeader", () => ({
-  ScreenHeader: (props: {
-    title: string;
-    description?: string;
-    secondary?: { id: string; label: string; disabled?: boolean; onSelect: () => void }[];
+vi.mock("../../../../shared/ui/DropdownMenu", () => ({
+  DropdownMenu: (props: {
+    items: { id: string; label: string; disabled?: boolean }[];
+    onPick: (id: string) => void;
   }) =>
     createElement(
-      "header",
+      "div",
       null,
-      createElement("h2", null, props.title),
-      createElement("p", { "data-testid": "description" }, props.description),
-      ...(props.secondary ?? []).map((item) =>
+      ...props.items.map((item) =>
         createElement(
           "button",
-          { key: item.id, "data-menu": item.id, disabled: item.disabled, onClick: item.onSelect },
+          {
+            key: item.id,
+            "data-menu": item.id,
+            disabled: item.disabled,
+            onClick: () => props.onPick(item.id),
+          },
           item.label,
         ),
       ),
@@ -142,7 +144,14 @@ function render(
   return onChanged;
 }
 
-const menu = (id: string) => element.querySelector<HTMLButtonElement>(`button[data-menu="${id}"]`);
+const menu = (id: string) => {
+  // The overflow menu mounts on demand, like the real one.
+  if (!element.querySelector("[data-menu]"))
+    act(() =>
+      element.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')?.click(),
+    );
+  return element.querySelector<HTMLButtonElement>(`button[data-menu="${id}"]`);
+};
 
 it("pauses the account from the menu and refreshes", async () => {
   const request = vi.fn(async () => ({}));
@@ -218,14 +227,8 @@ it("disables both menu actions while the Host is offline", () => {
 it("tells the connection card whether the account lives on this computer", () => {
   render(vi.fn(), { account: account({ executorId: "other" }) });
   expect(seen.connection?.onThisComputer).toBe(false);
-  expect(element.querySelector('[data-testid="description"]')?.textContent).toContain(
-    "On another computer",
-  );
   render(vi.fn(), { account: account({ executorId: "e1" }) });
   expect(seen.connection?.onThisComputer).toBe(true);
-  expect(element.querySelector('[data-testid="description"]')?.textContent).toContain(
-    "On this computer",
-  );
 });
 
 it("shows the browser options only for a browser account and passes the waiting-for-you flag", () => {

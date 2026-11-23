@@ -158,6 +158,7 @@ import type {
   ComposerTurnOptions,
 } from "../model/session";
 import { parseShellCommand } from "../model/shellRun";
+import { isProjectlessCwd } from "../model/recentSessions";
 import { clearConversationBlocker } from "../model/clearConversation";
 import { getSessions } from "../model/sessionsStore";
 import {
@@ -361,6 +362,8 @@ type Props = {
   runtimeMode: RuntimeMode;
   cwd?: string;
   executionCwd: string;
+  /** The Host has admitted a provider session in this projectless execution directory. */
+  indexScratchFiles?: boolean;
   sessionId?: string;
   /** Nested composers keep their own draft ID; null means no known logical root. */
   parentSessionId?: string | null;
@@ -628,7 +631,8 @@ export const Composer = memo(function Composer({
   onCwdChange,
   onBranchChange,
   onWorktreeChange,
-  draftWorkspace = false,
+  draftWorkspace: allowDraftWorkspace = false,
+  indexScratchFiles = false,
   managedWorkspaceCreationReady = false,
   workspaceMode,
   worktreeBase,
@@ -860,6 +864,9 @@ export const Composer = memo(function Composer({
   // Updating defaultValue rewrites WebKit's text node and commits an active IME.
   // Apply later external drafts through the existing synchronization effect.
   const [mountDraft] = useState(() => (initialDraft === undefined ? undefined : initial.text));
+  const hasProject = looksLikeProject(cwd) && !isProjectlessCwd(cwd);
+  const draftWorkspace = allowDraftWorkspace && hasProject;
+  const indexMentionFiles = (hasProject || indexScratchFiles) && looksLikeProject(executionCwd);
   const { branches: draftBranches } = useProjectBranchesState(
     executionCwd,
     draftWorkspace && enabled && !busy,
@@ -872,7 +879,7 @@ export const Composer = memo(function Composer({
       : worktreeBase;
   const workspaceCreation = useWorkspaceCreation(
     cwd,
-    draftWorkspace && enabled && looksLikeProject(cwd),
+    draftWorkspace && enabled && hasProject,
     workspaceMode,
     effectiveWorktreeBase,
   );
@@ -899,6 +906,7 @@ export const Composer = memo(function Composer({
           : undefined));
   // Policy reads are short-bounded; only an explicit worktree error stops Send.
   const workspaceSendBlocked =
+    hasProject &&
     draftWorkspace &&
     (workspaceCreation.pending || (!!workspaceCreationError && workspaceMode === "worktree"));
   const resolvedWorktreeBase =
@@ -1104,12 +1112,16 @@ export const Composer = memo(function Composer({
     !noteCard &&
     !handoffCard;
   const skillPickerOpen = creatingSkill || slash !== null;
-  const pickerOpen = skillPickerOpen || sessionFolderOpen || mcpPickerOpen;
+  const canUseSessionFolders = hasProject && !!onPlaceInFolder && canOrganizeSessions(cwd);
+  const pickerOpen =
+    skillPickerOpen ||
+    (canUseSessionFolders && (sessionFolderOpen || sessionFolderPending)) ||
+    mcpPickerOpen;
   const {
     skillCatalog,
     promptTemplates,
     dollarSkills,
-    rankedSkills,
+    rankedSkills: slashInventory,
     skillNames,
     skillGroups,
     skillDetails,
@@ -1127,6 +1139,11 @@ export const Composer = memo(function Composer({
     slashTrigger: slash?.trigger,
     slashQuery: slash?.query ?? "",
   });
+  const rankedSkills = canUseSessionFolders
+    ? slashInventory
+    : slashInventory.filter(
+        (skill) => skill.kind !== "builtin" || skill.name !== SESSION_FOLDER_COMMAND.name,
+      );
   const hasGroupToken =
     skillGroups.length > 0 && expandSkillGroupTokens(draft, skillGroups) !== draft;
   const sessionDirsHarness =
@@ -1208,6 +1225,7 @@ export const Composer = memo(function Composer({
     retryServers,
   } = useComposerMentionSources({
     executionCwd,
+    indexFiles: indexMentionFiles,
     remote,
     notesEnabled,
     mentionOpen,
@@ -1669,10 +1687,7 @@ export const Composer = memo(function Composer({
   };
 
   const openSessionFolderPicker = useCallback(() => {
-    if (!canOrganizeSessions(cwd)) {
-      setSessionFolderError(t("Open a project to use folders"));
-      return;
-    }
+    if (!canUseSessionFolders) return;
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
       if (sessionFolderLoading.current) return;
       sessionFolderLoading.current = true;
@@ -1695,10 +1710,10 @@ export const Composer = memo(function Composer({
     }
     setSessionFolders(loadSessionFolders(cwd));
     setSessionFolderOpen(true);
-  }, [cwd, latestCwd, t]);
+  }, [canUseSessionFolders, cwd, latestCwd]);
 
   useEffect(() => {
-    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !sessionFolderOpen) return;
+    if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !canUseSessionFolders || !sessionFolderOpen) return;
     return subscribeSessionOrganization(
       () => {
         const snapshot = cachedSessionOrganization();
@@ -1711,7 +1726,7 @@ export const Composer = memo(function Composer({
       },
       (error) => setSessionFolderError(String(error)),
     );
-  }, [cwd, sessionFolderOpen]);
+  }, [canUseSessionFolders, cwd, sessionFolderOpen]);
 
   useEffect(() => {
     const el = ref.current;
@@ -1793,7 +1808,9 @@ export const Composer = memo(function Composer({
         return;
       }
       const sessionFolderCommand =
-        skill.kind === "builtin" && skill.name === SESSION_FOLDER_COMMAND.name && !!onPlaceInFolder;
+        canUseSessionFolders &&
+        skill.kind === "builtin" &&
+        skill.name === SESSION_FOLDER_COMMAND.name;
       if (sessionFolderCommand) {
         const next = replaceSlashToken(el.value, token, SESSION_FOLDER_COMMAND.invocation);
         el.value = next;
@@ -1886,7 +1903,7 @@ export const Composer = memo(function Composer({
       sessionId,
       t,
       publishDraft,
-      onPlaceInFolder,
+      canUseSessionFolders,
       openMcpPicker,
       onResumeProviderSession,
       openSessionFolderPicker,
@@ -2453,7 +2470,7 @@ export const Composer = memo(function Composer({
       syncHasText("");
       return;
     }
-    if (folderCommand.matched && onPlaceInFolder && !sessionFolderSelected) {
+    if (folderCommand.matched && canUseSessionFolders && !sessionFolderSelected) {
       openSessionFolderPicker();
       return;
     }
@@ -2492,7 +2509,9 @@ export const Composer = memo(function Composer({
     const command = consumePlanCommand(
       expandSkillGroupTokens(
         compactAttachmentDraftTokens(
-          folderCommand.matched && sessionFolderSelected ? folderCommand.text : value,
+          folderCommand.matched && canUseSessionFolders && sessionFolderSelected
+            ? folderCommand.text
+            : value,
           attachmentsRef.current,
         ),
         skillGroups,
@@ -2775,6 +2794,7 @@ export const Composer = memo(function Composer({
 
     if (
       e.key === " " &&
+      canUseSessionFolders &&
       runsSessionFolderCommandOnSpace({
         text: e.currentTarget.value,
         selectionStart: e.currentTarget.selectionStart,
@@ -2850,7 +2870,7 @@ export const Composer = memo(function Composer({
         isCompactCommand(e.currentTarget.value) ||
         isResumeCommand(e.currentTarget.value) ||
         isMcpCommand(e.currentTarget.value) ||
-        isSessionFolderCommand(e.currentTarget.value))
+        (canUseSessionFolders && isSessionFolderCommand(e.currentTarget.value)))
     ) {
       e.preventDefault();
       submit(e.currentTarget.value);
@@ -3338,7 +3358,7 @@ export const Composer = memo(function Composer({
 
   // Reading mode tucks the workspace row away unless it has something to say.
   const workspaceNeedsAttention =
-    !!workspaceCreationError || workspaceCreation.pending || !!worktreeRemoved;
+    hasProject && (!!workspaceCreationError || workspaceCreation.pending || !!worktreeRemoved);
 
   // The project picker belongs to the execution context under the writing
   // surface, beside workspace and branch, not inside the box.
@@ -3482,8 +3502,6 @@ export const Composer = memo(function Composer({
         pasteErrorAction={pasteError ? <VoiceRecoveryAction message={pasteError} /> : undefined}
         sessionFolderError={sessionFolderError}
         sessionFolderMutationBlocked={sessionFolderMutationBlocked}
-        sessionFolderPending={sessionFolderPending}
-        sessionFolderSaving={sessionFolderSaving}
         onSessionFolderRecovered={(message) => {
           if (!message) setSessionFolderMutationBlocked(false);
           setSessionFolderError(message);
@@ -3583,7 +3601,7 @@ export const Composer = memo(function Composer({
               }}
             />
           </ComposerSuggestions>
-        ) : sessionFolderOpen ? (
+        ) : canUseSessionFolders && sessionFolderOpen ? (
           <ComposerSuggestions
             anchor={boxRef}
             below={shell}
@@ -3597,6 +3615,7 @@ export const Composer = memo(function Composer({
           >
             <SessionFolderPicker
               folders={sessionFolders}
+              saving={sessionFolderSaving}
               onPick={(target) => {
                 if (
                   !canMutateDraft() ||
@@ -3658,6 +3677,12 @@ export const Composer = memo(function Composer({
                 ref.current?.focus();
               }}
             />
+          </ComposerSuggestions>
+        ) : canUseSessionFolders && sessionFolderPending ? (
+          <ComposerSuggestions anchor={boxRef} below={shell} solid>
+            <Text as="p" size="caption" tone="secondary" className="px-3 py-2">
+              {t("Loading folders…")}
+            </Text>
           </ComposerSuggestions>
         ) : skillPickerOpen ? (
           <ComposerSuggestions anchor={boxRef} below={shell} matchComposer>
@@ -3759,7 +3784,7 @@ export const Composer = memo(function Composer({
                 (!serversScoped &&
                   !workItemsScoped &&
                   !mentionScope &&
-                  looksLikeProject(executionCwd) &&
+                  indexMentionFiles &&
                   peekProjectFiles(executionCwd) == null)
               }
               workItemsScoped={workItemsScoped}
@@ -4409,15 +4434,15 @@ export const Composer = memo(function Composer({
             onPointerDown={focusFromComposerSpace}
             role="group"
             aria-label={t("Chat workspace")}
-            className="flex min-w-0 flex-nowrap items-center gap-x-3 gap-y-1 overflow-hidden px-2 pb-1 pt-1.5"
+            className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-1 pt-1.5"
           >
             <div
               data-composer-workspace-controls
-              className="flex min-w-0 flex-1 flex-nowrap items-center justify-start gap-x-3 gap-y-1"
+              className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-x-3 gap-y-1"
             >
               {machinePicker?.(!!submission || busy)}
               {projectContextPicker}
-              {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
+              {hasProject && draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
                 <>
                   {workspaceCreationError ? (
                     <WorkspaceIdentity worktree={workspaceCreation.mode === "worktree"} />
@@ -4455,6 +4480,7 @@ export const Composer = memo(function Composer({
                       <BranchPicker
                         cwd={executionCwd}
                         branch={branch}
+                        hideWithoutRepository
                         enabled={enabled && !busy}
                         onChange={
                           onBranchChange
@@ -4480,7 +4506,7 @@ export const Composer = memo(function Composer({
                     </div>
                   ) : null}
                 </>
-              ) : worktreeRemoved && onWorktreeChange ? (
+              ) : hasProject && worktreeRemoved && onWorktreeChange ? (
                 <>
                   <WorktreePicker
                     cwd={cwd}
@@ -4505,7 +4531,7 @@ export const Composer = memo(function Composer({
                     onClose={() => ref.current?.focus()}
                   />
                 </>
-              ) : (
+              ) : hasProject ? (
                 <>
                   {onWorktreeChange ? (
                     <WorkspaceIdentity worktree={pathKey(cwd) !== pathKey(executionCwd)} />
@@ -4514,6 +4540,7 @@ export const Composer = memo(function Composer({
                     <BranchPicker
                       cwd={executionCwd}
                       branch={branch}
+                      hideWithoutRepository
                       enabled={enabled && !busy}
                       onChange={
                         onBranchChange
@@ -4527,8 +4554,8 @@ export const Composer = memo(function Composer({
                     />
                   </div>
                 </>
-              )}
-              {sessionDirectoryPicker ? (
+              ) : null}
+              {hasProject && sessionDirectoryPicker ? (
                 <div data-composer-directories className="flex min-w-0 justify-end">
                   {sessionDirectoryPicker}
                 </div>
@@ -4536,7 +4563,7 @@ export const Composer = memo(function Composer({
               <RemoteOriginMark origin={remoteOrigin} labelled />
             </div>
             <ComposerTips active={focused && !disabled} />
-            {draftWorkspace ? (
+            {hasProject && draftWorkspace ? (
               <div className="basis-full pb-1">
                 <WorkspaceCreationStatus
                   preview={

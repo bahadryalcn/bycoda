@@ -160,9 +160,11 @@ export function LinkedWorkItemUpdateNotice({
             </Text>
           </span>
         </Button>
-        <Text as="p" size="micro" tone="secondary">
-          {linkedWorkItemUpdateSummary(card)}
-        </Text>
+        {card.entries.length === 0 ? (
+          <Text as="p" size="micro" tone="secondary">
+            {linkedWorkItemUpdateSummary(card)}
+          </Text>
+        ) : null}
 
         {card.entries.length > 0 ? (
           <div
@@ -229,9 +231,6 @@ export function LinkedWorkItemUpdateNotice({
               >
                 {terminalLabel}
               </Badge>
-              <Text size="inherit" tone="secondary">
-                {t("Clean up this session")}
-              </Text>
             </Text>
             <div className="mt-2 flex items-center gap-1.5">
               <Button

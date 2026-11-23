@@ -1,11 +1,10 @@
 import { useState, useSyncExternalStore, type FormEvent } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ActionHost } from "../../../shared/ui/ActionHost";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Text } from "../../../shared/ui/Text";
-import { Briefcase, MoreHorizontal, UserRound } from "../../../shared/ui/icons";
+import { AlertCircle, Briefcase, MoreHorizontal, UserRound } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { HARNESS_TITLE } from "../../sessions";
 import {
@@ -146,9 +145,7 @@ export function SharedCliAccountCard({
           {/* An empty status column would wrap the menu onto its own line at narrow widths. */}
           {missing ? (
             <div className="provider-account-status">
-              <Badge size="sm" tone="warning" className="shrink-0">
-                {t("Not installed")}
-              </Badge>
+              <AlertCircle role="img" aria-label={t("Not installed")} tone="warning" className="icon-sm" />
             </div>
           ) : null}
           <div className="provider-account-actions">
@@ -157,7 +154,6 @@ export function SharedCliAccountCard({
               variant="ghost"
               iconOnly
               label={t("Actions for {p0}", { p0: label })}
-              tooltip={t("Account actions")}
               aria-haspopup="menu"
               aria-expanded={menu !== null}
               onClick={(event) => {

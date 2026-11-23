@@ -18,7 +18,6 @@ import sharedContainerAppearance from "./rules/shared-container-appearance.mjs";
 import suppressionHasReason from "./rules/suppression-has-reason.mjs";
 import transcriptInkRoles from "./rules/transcript-ink-roles.mjs";
 import transcriptRowTrigger from "./rules/transcript-row-trigger.mjs";
-import disabledNeedsReason from "./rules/disabled-needs-reason.mjs";
 import dialogSingleTranslator from "./rules/dialog-single-translator.mjs";
 import iconButtonNeedsLabel from "./rules/icon-button-needs-label.mjs";
 import menuUsesDropdown from "./rules/menu-uses-dropdown.mjs";
@@ -43,7 +42,6 @@ export const rules = {
   "suppression-has-reason": suppressionHasReason,
   "transcript-ink-roles": transcriptInkRoles,
   "transcript-row-trigger": transcriptRowTrigger,
-  "disabled-needs-reason": disabledNeedsReason,
   "dialog-single-translator": dialogSingleTranslator,
   "icon-button-needs-label": iconButtonNeedsLabel,
   "menu-uses-dropdown": menuUsesDropdown,

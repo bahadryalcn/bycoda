@@ -27,6 +27,7 @@ import { ExternalTunnelsPanel } from "./ExternalTunnelsPanel";
 import { RemoteDataStatus } from "./RemoteDataStatus";
 import { EMPTY_SSH_DRAFT, MachineForm, type MachineMethod, type SshDraft } from "./MachineForm";
 import { MachineRow } from "./MachineRow";
+import { MACHINE_SEARCH_FROM } from "./machineListSearch";
 import { AddComputerDialog } from "./AddComputerDialog";
 import type { SshAddPlan } from "../model/machineCandidates";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -37,7 +38,8 @@ import { RemoveMachineDialog } from "./RemoveMachineDialog";
 import { errorText } from "../../../shared/lib/errors";
 import { sanitizeConnectionError } from "../model/remoteConnection";
 import { useContext, useRef, useState } from "react";
-import { Plus, RefreshCw } from "../../../shared/ui/icons";
+import { Plus } from "../../../shared/ui/icons";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import {
   connectMachine,
   disconnectMachine,
@@ -57,8 +59,6 @@ import { notifyRemoteRecovered } from "../model/remoteHealth";
 import { machineLabel } from "../model/machineIdentity";
 import type { RemoteMachine } from "../model/protocol";
 
-/** The saved list shows a search field only past this many computers. */
-const SEARCH_FROM = 5;
 
 export function ConnectionsSettings() {
   useLocale();
@@ -132,9 +132,9 @@ export function ConnectionsSettings() {
       if (next.error)
         setError(
           afterEdit.current
-            ? `${next.error}
+            ? `${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}
 
-${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
+${next.error}`
             : next.error,
         );
       else if (next.machine) {
@@ -154,7 +154,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                     p0: next.machine.name,
                   })
                 : t(
-                    "{p0} is connected. To work on it, click + next to Projects in the project rail and choose Open folder on a machine.",
+                    "{p0} is connected.",
                     { p0: next.machine.name },
                   ),
             next,
@@ -377,6 +377,9 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       if (alive.current) setRevoking(false);
     }
   };
+  // A failure is "reason" + blank line + "cause": the reason is the body, the cause waits behind Details.
+  const [errorReason = "", ...errorRest] = error.split("\n\n");
+  const errorParts = { reason: errorReason, cause: errorRest.join("\n\n").trim() };
   const removingMachine = removing
     ? machines.find((machine) => machine.id === removing)
     : undefined;
@@ -428,32 +431,20 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           <Tab value="phone">{t("Devices")}</Tab>
           <Tab value="tunnels">{t("Sharing")}</Tab>
         </TabList>
-        {busy || revoking ? (
-          <InlineMessage tone="neutral" icon={null} live="off">
-            {t("Finish or cancel the current connection before adding another machine.")}
-          </InlineMessage>
-        ) : null}
         <TabPanel value="machines" keepMounted tabIndex={-1} className="connections-view">
           <SectionLabel
             as="h2"
             count={shownMachines.length || undefined}
             actions={
-              <>
-                <Button
-                  stableWidth
-                  iconOnly
-                  label={t("Refresh")}
-                  variant="ghost"
-                  disabled={busy || loading}
-                  onClick={() => void refresh()}
-                >
-                  <RefreshCw aria-hidden className="icon-md" />
-                </Button>
-                <Button variant="primary" disabled={busy} aria-haspopup="dialog" onClick={startAdd}>
-                  <Plus aria-hidden className="icon-sm" />
-                  {t("Add a computer")}
-                </Button>
-              </>
+              <Button
+                variant="primary"
+                disabled={busy || revoking}
+                aria-haspopup="dialog"
+                onClick={startAdd}
+              >
+                <Plus aria-hidden className="icon-sm" />
+                {t("Add a computer")}
+              </Button>
             }
           >
             {t("Your computers")}
@@ -466,7 +457,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             />
           ) : null}
           {/* Search earns its row only once the list is long enough to scan. */}
-          {machines.length > SEARCH_FROM || query ? (
+          {machines.length > MACHINE_SEARCH_FROM || query ? (
             <SearchInput
               standalone
               appearance="field"
@@ -508,27 +499,28 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               </Button>
             </Surface>
           )}
-          {error && !adding && !removing && <Alert tone="danger">{error}</Alert>}
-          {error && !adding && !busy && retryMachine ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Text tone="muted">{t("Remote target: {p0}", { p0: retryMachine.name })}</Text>
-              <Button
-                stableWidth
-                variant="secondary"
-                className="shrink-0"
-                onClick={() => startEdit(retryMachine)}
-              >
-                {t("Edit name and address…")}
-              </Button>
-              <Button
-                stableWidth
-                variant="secondary"
-                className="shrink-0"
-                onClick={() => void begin(retryMachine)}
-              >
-                {t("Retry connection")}
-              </Button>
-            </div>
+          {error && !adding && !removing ? (
+            <Alert
+              tone="danger"
+              title={!busy && retryMachine ? retryMachine.name : undefined}
+              action={
+                !busy && retryMachine
+                  ? { label: t("Retry connection"), onClick: () => void begin(retryMachine) }
+                  : undefined
+              }
+              secondaryAction={
+                !busy && retryMachine
+                  ? { label: t("Edit name and address…"), onClick: () => startEdit(retryMachine) }
+                  : undefined
+              }
+              extra={
+                errorParts.cause ? (
+                  <ErrorDetails title={errorParts.reason} detail={errorParts.cause} />
+                ) : undefined
+              }
+            >
+              {errorParts.reason}
+            </Alert>
           ) : null}
           {notice && <InlineMessage tone="success">{notice}</InlineMessage>}
           <section aria-label={t("Your computers")}>
@@ -543,11 +535,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                       probed={status[machine.id]}
                       version={versions[machine.id]}
                       needsUpdate={Boolean(needsUpdate[machine.id])}
-                      showDetails={
-                        detailMachine === machine.id ||
-                        status[machine.id] === "offline" ||
-                        Boolean(needsUpdate[machine.id])
-                      }
+                      showDetails={detailMachine === machine.id}
                       editing={editing?.id === machine.id}
                       busy={busy}
                       revoking={revoking}
@@ -577,11 +565,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                     onReset={() => setQuery("")}
                   />
                 ) : (
-                  <EmptyState
-                    kind="empty"
-                    title={t("No computers yet")}
-                    action={{ label: t("Add a computer"), onClick: startAdd, disabled: busy }}
-                  />
+                  <EmptyState kind="empty" title={t("No computers yet")} />
                 )
               ) : (
                 <div>{loading ? <LoadingText /> : null}</div>

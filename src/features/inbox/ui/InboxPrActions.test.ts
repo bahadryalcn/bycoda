@@ -64,7 +64,8 @@ it("keeps reviewed-head confirmation and local progress without duplicate mutati
   await act(async () => button(container, "Merge pull request").click());
   expect(githubPrAction).not.toHaveBeenCalled();
   const dialog = document.querySelector('[role="dialog"]')!;
-  expect(dialog.textContent).toContain(head);
+  expect(dialog.textContent).toContain(head.slice(0, 7));
+  expect(dialog.textContent).not.toContain(head);
   const confirm = button(dialog, "Merge pull request");
   confirm.focus();
   await act(async () => confirm.click());
@@ -158,7 +159,7 @@ it("ignores a late result after changing pull requests", async () => {
   expect(button(container, "Merge pull request").disabled).toBe(false);
 });
 
-it("shows what blocks a clean merge beside the merge button and keeps the action reachable", async () => {
+it("demotes the merge button while blocked without adding a second status line", async () => {
   await act(async () =>
     root.render(
       createElement(GithubPrActions, {
@@ -169,6 +170,34 @@ it("shows what blocks a clean merge beside the merge button and keeps the action
       }),
     ),
   );
-  expect(container.textContent).toContain("Review required · Failing checks: 1");
+  expect(container.textContent).not.toContain("Review required · Failing checks: 1");
   expect(button(container, "Merge pull request").className).not.toContain("primary");
+});
+
+it("converts to draft at once without a confirmation popover", async () => {
+  vi.mocked(githubPrAction).mockResolvedValue({ ...item, draft: true });
+  await act(async () =>
+    root.render(
+      createElement(GithubPrActions, {
+        item,
+        baseRef: "main",
+        headRef: "feature",
+        reviewedHeadOid: "c".repeat(40),
+      }),
+    ),
+  );
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="More pull request actions"]')!.click());
+  await act(async () =>
+    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((node) => node.textContent?.includes("Convert to draft"))!
+      .click(),
+  );
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(githubPrAction).toHaveBeenCalledExactlyOnceWith(
+    "/fixture",
+    "fixture/repo",
+    12,
+    "draft",
+    "c".repeat(40),
+  );
 });

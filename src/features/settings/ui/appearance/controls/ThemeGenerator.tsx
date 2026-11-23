@@ -14,6 +14,7 @@ import { Button } from "../../../../../shared/ui/Button";
 import { ImageLightbox } from "../../../../../shared/ui/ImageLightbox";
 import { Check, Dices, RefreshCw } from "../../../../../shared/ui/icons";
 import { MediaToolbarButton } from "../../../../../shared/ui/MediaToolbar";
+import { Disclosure } from "../../../../../shared/ui/Disclosure";
 import { Divider } from "../../../../../shared/ui/Divider";
 import { randomThemePrompt } from "../../../model/themePromptIdeas";
 import { Text } from "../../../../../shared/ui/Text";
@@ -40,7 +41,6 @@ import {
   type ThemeSuggestionArea,
 } from "../../../model/themeSuggestions";
 import { SettingsFeedback } from "../../../../../shared/ui/settings";
-import { SaveLookButton } from "./SaveLookButton";
 import { ImageProviderButton } from "./ImageProviderButton";
 import { ThemeGenerationActivity } from "./ThemeGenerationActivity";
 import {
@@ -357,7 +357,8 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
             {t("Generate themes")}
           </Button>
         </div>
-        <div className="theme-generator-config">
+        <Disclosure summary={t("Options")} size="sm" className="theme-generator-options">
+          <div className="theme-generator-config">
           <Suspense fallback={<LoadingText />}>
             <ModelPicker
               harness={choice.harness}
@@ -392,9 +393,9 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
               if (value !== "none") setImageProvider(value);
             }}
           />
-        </div>
+          </div>
+        </Disclosure>
         <div className="theme-generator-actions">
-          <SaveLookButton appearance={appearance} iconOnly />
           <Button size="sm" tooltip={t("Roll a random palette without a model")} onClick={random}>
             {t("Random look")}
           </Button>

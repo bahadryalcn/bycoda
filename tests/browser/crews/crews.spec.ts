@@ -251,7 +251,12 @@ async function openCrewsTab(page: Page, tab: CrewsTab) {
 /** Opens a saved crew's editor from its card on the Teams tab. */
 async function editCrew(page: Page, name = "Website Crew") {
   await openCrewsTab(page, "Teams");
-  await page.getByRole("button", { name: `Edit ${name}`, exact: true }).click();
+  await openCrewEditorFromTeam(page, name);
+}
+
+async function openCrewEditorFromTeam(page: Page, name: string) {
+  await page.getByRole("button", { name: `${name} options`, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Edit crew", exact: true }).click();
 }
 
 async function openStart(page: Page) {
@@ -676,7 +681,7 @@ for (const theme of ["light", "dark"] as const) {
     const content = await openCrewsTab(page, "Members");
     await expect(content.getByRole("button", { name: /^Edit / })).toHaveCount(17);
     await content.getByRole("tab", { name: "Teams", exact: true }).click();
-    await page.getByRole("button", { name: "Edit bycoda Product Team", exact: true }).click();
+    await openCrewEditorFromTeam(page, "bycoda Product Team");
     const team = page.getByRole("dialog", {
       name: "Edit crew",
       exact: true,
@@ -730,7 +735,7 @@ for (const theme of ["light", "dark"] as const) {
       path: `${shots}/defaults-${theme}-${testInfo.project.name}.png`,
     });
     await content.getByRole("tab", { name: "Teams", exact: true }).click();
-    await page.getByRole("button", { name: "Edit bycoda Product Team", exact: true }).click();
+    await openCrewEditorFromTeam(page, "bycoda Product Team");
     const saved = page.getByRole("dialog", {
       name: "Edit crew",
       exact: true,
@@ -1318,7 +1323,7 @@ test("access is set once for every member, model rules open on demand, and edits
   await expect(dialog.getByRole("button", { name: "Discard", exact: true })).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
-  await page.getByRole("button", { name: "Edit Website Crew", exact: true }).click();
+  await openCrewEditorFromTeam(page, "Website Crew");
   const reopened = page.getByRole("dialog", { name: "Edit crew" });
   await expect(
     reopened
@@ -1555,7 +1560,7 @@ for (const theme of ["light", "dark"] as const) {
       await shot("work-finished");
       await noOverflow();
       await content.getByRole("tab", { name: "Teams", exact: true }).click();
-      await page.getByRole("button", { name: "Edit Website Crew", exact: true }).click();
+      await openCrewEditorFromTeam(page, "Website Crew");
       const dialog = page.getByRole("dialog", {
         name: "Edit crew",
         exact: true,

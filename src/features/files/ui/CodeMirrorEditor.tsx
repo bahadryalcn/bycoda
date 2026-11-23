@@ -1,4 +1,5 @@
 import { errorText } from "../../../shared/lib/errors";
+import { Text as UiText } from "../../../shared/ui/Text";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { EditorBlameResize } from "./EditorBlameResize";
 import { Button } from "../../../shared/ui/Button";
@@ -1392,24 +1393,26 @@ function DiffChunkNav({
           size="sm"
           iconOnly
           label={t("Previous change")}
-          motion="none"
-          type="button"
           disabled={total === 0 || index <= 0}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onPrev}
         >
           <ChevronUp className="icon-sm" strokeWidth={1.75} />
         </Button>
-        <span className="min-w-10 text-center text-ui-micro font-medium tabular-nums text-(--ui-text-secondary) select-none">
+        <UiText
+          as="span"
+          size="micro"
+          tone="secondary"
+          weight="medium"
+          className="min-w-10 text-center tabular-nums select-none"
+        >
           {total === 0 ? "0/0" : `${index + 1}/${total}`}
-        </span>
+        </UiText>
         <Button
           variant="ghost"
           size="sm"
           iconOnly
           label={t("Next change")}
-          motion="none"
-          type="button"
           disabled={total === 0 || index >= total - 1}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onNext}

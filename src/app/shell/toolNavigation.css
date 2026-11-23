@@ -26,11 +26,20 @@
   flex: 1;
   block-size: 100%;
 }
-.tool-tabs button {
-  white-space: nowrap;
-}
 .tool-window-actions {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+.bycoda-rail-tools > [data-rail-tool-group]:not(:has(> :nth-child(7))) {
+  --rail-tool-columns: 3;
+}
+.bycoda-rail-tools > [data-rail-tool-group]:not(:has(> :nth-child(5))) {
+  --rail-tool-columns: 2;
+}
+.bycoda-rail-tools > [data-rail-tool-group]:not(:has(> :nth-child(3))) {
+  --rail-tool-columns: 1;
+}
+.bycoda-rail-tools > [data-rail-tool-group]:has(> :nth-child(9)) {
+  --rail-tool-columns: 5;
 }

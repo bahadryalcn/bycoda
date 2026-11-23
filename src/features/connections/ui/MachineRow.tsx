@@ -9,7 +9,6 @@ import { Switch } from "../../../shared/ui/Switch";
 import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Laptop, MoreHorizontal, Server } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { buildIdentity } from "../../../shared/model/build-info";
 import {
   loadRemoteAutoReconnect,
@@ -93,7 +92,6 @@ function useMachineConnection(machine: RemoteMachine, probed?: MachineProbe) {
 
 /** Why a status deserves a word more than its label gives; shown behind an info icon. */
 function statusReason(status: MachineStatus, probed?: MachineProbe, error?: string) {
-  if (status === "update") return t("The host needs an update for Explorer and Changes.");
   if (status === "connected" && probed === "provider")
     return t("Install a supported provider on the host.");
   if ((status === "offline" || status === "reconnecting") && error) return error;
@@ -123,7 +121,7 @@ export function MachineRow({
   /** The build the machine reported on its latest check. */
   version?: string;
   needsUpdate: boolean;
-  /** The routes panel is open: asked for by the routes button or the row menu, offline, or an update is needed. */
+  /** The routes panel is open: asked for by the routes button or the row menu. */
   showDetails: boolean;
   editing: boolean;
   busy: boolean;
@@ -220,29 +218,9 @@ export function MachineRow({
             className="connection-details"
           >
             <MachineRoutesLine machine={machine} />
-            <Text as="div" tone="muted" wrap="anywhere" className="mt-1">
-              {local
-                ? t("Syncs projects and groups with the {p0} on this computer", {
-                    p0: PRODUCT_IDENTITY.displayName,
-                  })
-                : machine.ssh
-                  ? t("SSH · {p0}{p1}", { p0: machine.ssh.target, p1: "" })
-                  : machine.endpoint}
-            </Text>
-            {machine.ssh ? (
-              <Text
-                as="div"
-                size="micro"
-                tone="muted"
-                className="mt-1 flex flex-wrap gap-x-3 gap-y-1"
-              >
-                <span>
-                  {t("SSH port")}{" "}
-                  <Code tone="primary">{machine.ssh.port ?? t("From SSH config")}</Code>
-                </span>
-                <span>
-                  {t("Host port")} <Code tone="primary">{machine.ssh.remotePort}</Code>
-                </span>
+            {machine.ssh?.port ? (
+              <Text as="div" size="micro" tone="muted" className="mt-1">
+                {t("SSH port")} <Code tone="primary">{machine.ssh.port}</Code>
               </Text>
             ) : null}
           </Text>
@@ -253,9 +231,6 @@ export function MachineRow({
           <Button
             stableWidth
             disabled={busy}
-            tooltip={t(
-              "Downloads the matching host package and restarts the host; active agent turns will be interrupted",
-            )}
             onClick={onUpdateHost}
             variant="secondary"
             className="shrink-0"

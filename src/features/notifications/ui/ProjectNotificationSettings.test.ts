@@ -274,7 +274,7 @@ it("mutes several selected projects without changing another project's notificat
 });
 
 it.each(["manual", "expiry"])(
-  "explains the project-wide pause and preserves editable category choices after %s resume",
+  "preserves editable category choices through a project-wide pause and after %s resume",
   async (resumeMode) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2030-01-15T12:00:00Z"));
@@ -287,10 +287,6 @@ it.each(["manual", "expiry"])(
     const project = categoriesButton("me/private").closest("fieldset")!;
     expect(categoriesButton("me/private").textContent).toContain("Muted");
     const pr = checkbox("Pull requests / Merge requests for me/private");
-    const description = document.getElementById(pr.getAttribute("aria-describedby") ?? "");
-    expect(description?.textContent).toContain(
-      "Your category choices apply when notifications resume.",
-    );
     expect(checked(pr)).toBe(true);
     expect(pr.disabled).toBe(false);
     act(() => checkbox("Reminders for me/private").click());
@@ -306,7 +302,6 @@ it.each(["manual", "expiry"])(
     }
     expect(categoriesButton("me/private").textContent).toContain("4 categories");
     expect(project.textContent).not.toContain("Muted");
-    expect(pr.hasAttribute("aria-describedby")).toBe(false);
     expect(checked(checkbox("Issues and Linear tasks for me/private"))).toBe(false);
     expect(loadNotificationPreferences()["repository:github.com/me/private"]).toMatchObject({
       disabled: ["issues", "reminders"],

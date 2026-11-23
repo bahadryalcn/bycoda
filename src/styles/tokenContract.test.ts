@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { mixInOklab } from "../features/settings/model/accentContrast";
+import { APPEARANCE_RANGES } from "../features/settings/model/themeRanges";
 import { hslToRgb } from "../shared/lib/colorUtils";
 
 /**
  * Token contract: reads the real declarations from index.css, arc.css and the shared module CSS,
  * then measures contrast with the values it finds, so a value change fails here instead of
- * drifting from a hand-typed mirror. Ink steps mix in sRGB (the declared `in srgb` mixes are exact;
- * the neutral ground/ink pairs here are near-grey, so the oklab ones differ by less than the margins).
+ * drifting from a hand-typed mirror. The floating and on-state recipes use Oklab; the
+ * near-neutral state and focus steps use an sRGB approximation.
  */
 const index = readFileSync("src/styles/index.css", "utf8");
 const arc = readFileSync("src/styles/arc.css", "utf8");
@@ -22,6 +24,12 @@ const fromHsl = (h: number, s: number, l: number): Rgb => {
 };
 const mix = (host: Rgb, ink: Rgb, percent: number): Rgb =>
   host.map((c, i) => c + (ink[i]! - c) * (percent / 100)) as Rgb;
+const toHex = (rgb: Rgb) =>
+  `#${rgb.map((value) => Math.round(value).toString(16).padStart(2, "0")).join("")}`;
+const mixOklab = (host: Rgb, ink: Rgb, percent: number): Rgb => {
+  const hex = mixInOklab(toHex(host), toHex(ink), percent / 100);
+  return [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16)) as Rgb;
+};
 const lum = (rgb: Rgb) => {
   const [r, g, b] = rgb.map((c) => {
     const v = c / 255;
@@ -46,9 +54,18 @@ const [hoverDark, hoverLight] = states("hover");
 const [selectedDark, selectedLight] = states("selected");
 const [pressedDark, pressedLight] = states("pressed");
 const [chipDark, chipLight] = all(/--ui-tone-subtle-strength: (\d+)%;/g);
-const floatingPure = num(
-  /html\[data-canvas-background="pure"\] \{[\s\S]*?--ui-surface-floating: color-mix\(\s*in srgb,\s*var\(--color-content\) calc\((\d+)%/,
+const floatingDark = num(
+  /--ui-floating-lift: calc\((\d+)% \* var\(--appearance-layer-strength, 1\)\);/,
 );
+const floatingLight = /--ui-floating-lift: clamp\(\s*0%,\s*calc\(\(var\(--ui-ground-lightness\) - ([\d.]+)%\) \* ([\d.]+) \* var\(--appearance-layer-strength, 1\)\),\s*([\d.]+)%\s*\);/;
+const lightness = num(/--theme-light-lightness: ([\d.]+)%;/);
+const hue = num(/--theme-hue: (\d+);/);
+const saturation = num(/--theme-saturation: (\d+)%;/);
+const darkLayerLightness = Math.max(
+  num(/--theme-dark-lightness: (\d+)%;/),
+  num(/max\(var\(--background-lightness\), (\d+)%\)/),
+);
+const [lightFloor, lightFactor, lightCap] = floatingLight.exec(index)!.slice(1).map(Number);
 const composerPure = num(
   /html\[data-canvas-background="pure"\] \{[\s\S]*?--ui-composer-surface: color-mix\(in srgb, var\(--color-content\) (\d+)%/,
 );
@@ -60,34 +77,39 @@ const focusInk = num(
   arc,
 );
 const controlOnInk = num(
-  /--control-on: var\(\s*--user-accent-solid,\s*var\(\s*--user-accent-color,\s*color-mix\(in oklab, var\(--color-content\) (\d+)%/,
-  arc,
+  /--ui-control-on: var\(\s*--user-accent-solid,\s*var\(\s*--user-accent-color,\s*color-mix\(in oklab, var\(--color-content\) (\d+)%/,
 );
 
 const themes = {
   dark: {
     ground: [0, 0, 0] as Rgb,
-    ink: fromHsl(216, 24, 92),
+    ink: fromHsl(hue, saturation, 92),
+    base: fromHsl(hue, saturation, darkLayerLightness),
     hover: hoverDark!,
     selected: selectedDark!,
     pressed: pressedDark!,
     chip: chipDark!,
-    floating: floatingPure,
   },
   light: {
     ground: [255, 255, 255] as Rgb,
-    ink: fromHsl(216, 24 * 0.35, 13),
+    ink: fromHsl(hue, saturation * 0.35, 13),
+    base: fromHsl(hue, saturation * 0.2, lightness),
     hover: hoverLight!,
     selected: selectedLight!,
     pressed: pressedLight!,
     chip: chipLight!,
-    // Light floating is the raised paper step (white on the pure white canvas).
-    floating: 0,
   },
 };
 
-describe.each(Object.entries(themes))("%s pure canvas token contract", (_name, t) => {
-  const floating = t.floating ? mix(t.ground, t.ink, t.floating) : t.ground;
+describe.each(Object.entries(themes))("%s pure canvas token contract", (name, t) => {
+  const floating =
+    name === "dark"
+      ? mixOklab(t.base, t.ink, floatingDark)
+      : mixOklab(
+          t.base,
+          t.ground,
+          Math.max(0, Math.min(lightCap!, (lightness - lightFloor!) * lightFactor!)),
+        );
   const hosts: [string, Rgb][] = [
     ["canvas", t.ground],
     ["floating", floating],
@@ -120,26 +142,34 @@ describe.each(Object.entries(themes))("%s pure canvas token contract", (_name, t
   });
 
   it("draws the neutral on-state and its glyph at 3:1 (SU-18)", () => {
-    const on = mix(t.ground, t.ink, controlOnInk);
+    const on = mixOklab(t.ground, t.ink, controlOnInk);
     expect(ratio(on, t.ground)).toBeGreaterThanOrEqual(3);
     expect(ratio(on, t.ground)).toBeLessThan(ratio(t.ink, t.ground));
   });
 });
 
 describe("pure dark floating role (SU-07)", () => {
-  const ink = themes.dark.ink;
-  const ground = themes.dark.ground;
-  const floating = mix(ground, ink, floatingPure);
+  const { ink, ground, base, selected } = themes.dark;
+  const { min, max } = APPEARANCE_RANGES.surfaceContrast;
 
-  it("sits at or above the composer and card steps it floats over", () => {
-    expect(floatingPure).toBeGreaterThanOrEqual(composerPure);
-    expect(floatingPure).toBeGreaterThan(cardPure);
-    expect(floatingPure).toBeGreaterThan(themes.dark.selected);
+  it.each([min, 100, max])("sits above the Pure dark layers at %i%% contrast", (contrast) => {
+    const strength = contrast / 100;
+    const floating = mixOklab(base, ink, floatingDark * strength);
+    expect(lum(floating)).toBeGreaterThanOrEqual(lum(mix(ground, ink, composerPure)));
+    expect(lum(floating)).toBeGreaterThan(lum(mix(ground, ink, cardPure * strength)));
+    expect(lum(floating)).toBeGreaterThan(lum(mix(ground, ink, selected * strength)));
     expect(ratio(floating, ground)).toBeGreaterThanOrEqual(1.1);
   });
 });
 
 describe("shared declarations", () => {
+  it("derives the floating ground from one theme-layer recipe", () => {
+    expect(index.match(/--ui-surface-floating:\s*color-mix\(/g)).toHaveLength(1);
+    expect(index).toMatch(/--ui-floating-base:\s*var\(--ui-layer-base\);/);
+    expect(index).toMatch(
+      /--ui-surface-floating:\s*color-mix\(\s*in oklab,\s*var\(--ui-floating-lift-color\) var\(--ui-floating-lift\),\s*var\(--ui-floating-base\)\s*\);/,
+    );
+  });
   it("never paints the on-state with the saturated active hue (SU-18)", () => {
     expect(arc).not.toMatch(/--control-(on|fill):\s*var\(--color-active\)/);
   });

@@ -56,7 +56,7 @@ export function explorerItems(
       kind: "item",
       id: "new-file",
       get label() {
-        return t("New File");
+        return t("New file");
       },
       description: createIn,
     },
@@ -147,7 +147,7 @@ export function explorerItems(
             kind: "item" as const,
             id: "git-history",
             get label() {
-              return t("File History");
+              return t("File history");
             },
           },
           {
@@ -218,7 +218,7 @@ export function explorerHeaderItems(
     {
       kind: "item",
       id: "new-file",
-      label: t("New File"),
+      label: t("New file"),
       disabled: Boolean(busyReason),
       description: busyReason,
       icon: icon("new-file"),
@@ -237,7 +237,7 @@ export function explorerHeaderItems(
           {
             kind: "item" as const,
             id: "collapse",
-            label: t("Collapse All"),
+            label: t("Collapse all"),
             icon: icon("collapse"),
           },
           ...(canSearch

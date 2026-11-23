@@ -113,12 +113,14 @@ export function AccountRequestList({
 
   return (
     <>
+      {/* One slot for read and write failures: a failed read offers Retry, otherwise the write error. */}
       {loadFailed ? (
         <InlineError retry={{ onRetry: () => void refresh(), label: t("Try again") }}>
           {t("Account requests could not be loaded.")}
         </InlineError>
+      ) : error ? (
+        <InlineError>{error}</InlineError>
       ) : null}
-      {error ? <InlineError>{error}</InlineError> : null}
       {signinFailed ? (
         <InlineError
           retry={{

@@ -146,8 +146,6 @@ function CheckAnnotation({
               label={t("View {p0} on GitHub", { p0: location })}
               variant="ghost"
               type="button"
-              tooltip={t("View source at the checked commit")}
-              aria-label={t("View {p0} on GitHub", { p0: location })}
               onClick={() => openUrlSafely(fileUrl)}
               className="-my-1 -mr-1 shrink-0"
             >

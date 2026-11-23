@@ -87,13 +87,9 @@ describe("project background dialog", () => {
       expect(choose.getAttribute("aria-disabled")).toBe("true");
       await act(async () => choose.click());
       expect(pickImage).toHaveBeenCalledTimes(1);
-      expect(
-        [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].every(
-          (node) => node.disabled,
-        ),
-      ).toBe(true);
-      const slider = document.querySelector<HTMLElement>('[role="slider"]')!;
-      expect(slider.getAttribute("aria-disabled")).toBe("true");
+      // Without an image there is nothing to tune, so scope and visibility are not offered.
+      expect(document.querySelector('[role="radio"]')).toBeNull();
+      expect(document.querySelector('[role="slider"]')).toBeNull();
     } finally {
       await act(async () => {
         resolve(null);

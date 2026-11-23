@@ -183,16 +183,14 @@ function WorkspaceSettingsSurfaceComponent({
           size="lg"
           onClose={() => setWorktreeManagementRequest(null)}
         >
-          <div>
-            <WorktreesPage
+          <WorktreesPage
               cwd={worktreeManagementRequest.cwd}
               recents={visibleRecents}
               liveSessions={sessions}
               onRemove={onRemoveWorktree}
               onCheckRemove={onCheckWorktreeRemoval}
               onDeleteSessions={onDeleteWorktreeSessions}
-            />
-          </div>
+          />
         </Modal>
       ) : null}
       {settingsOpen && presentation === "dialog" ? (

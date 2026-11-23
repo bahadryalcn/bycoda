@@ -14,6 +14,9 @@ import { Popover } from "../../../shared/ui/Popover";
 import { BellOff } from "../../../shared/ui/icons";
 import { updateNotificationPreferences } from "../model/notificationPreferences";
 
+/** Width of the duration menu; its left edge is placed from the trigger's right edge. */
+const MENU_WIDTH = 244;
+
 type Props = {
   projectIds: readonly string[];
   onChanged?: () => void;
@@ -77,26 +80,34 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
           {t("Resume notifications")}
         </Button>
       ) : null}
-      <Button
-        ref={trigger}
-        type="button"
-        variant={compact ? "ghost" : "secondary"}
-        {...(compact
-          ? {
-              iconOnly: true as const,
-              label: muted.length ? t("Change mute duration") : t("Mute notifications"),
-            }
-          : { iconOnly: false as const })}
-        tooltip={compact && status ? status : undefined}
-        aria-haspopup={open === "custom" ? "dialog" : "menu"}
-        expanded={compact ? undefined : menuOpen}
-        aria-expanded={menuOpen}
-        disabled={!projectIds.length || unavailable}
-        onClick={() => setOpen(open ? null : "menu")}
-      >
-        <BellOff className="icon-sm" aria-hidden="true" />
-        {compact ? null : <>{muted.length ? t("Muted") : t("Mute")}</>}
-      </Button>
+      {compact ? (
+        <Button
+          ref={trigger}
+          type="button"
+          variant="ghost"
+          iconOnly
+          label={muted.length ? t("Change mute duration") : t("Mute notifications")}
+          aria-haspopup={open === "custom" ? "dialog" : "menu"}
+          aria-expanded={menuOpen}
+          disabled={!projectIds.length || unavailable}
+          onClick={() => setOpen(open ? null : "menu")}
+        >
+          <BellOff className="icon-sm" aria-hidden="true" />
+        </Button>
+      ) : (
+        <Button
+          ref={trigger}
+          type="button"
+          variant="secondary"
+          aria-haspopup={open === "custom" ? "dialog" : "menu"}
+          expanded={menuOpen}
+          disabled={!projectIds.length || unavailable}
+          onClick={() => setOpen(open ? null : "menu")}
+        >
+          <BellOff className="icon-sm" aria-hidden="true" />
+          {t("Mute")}
+        </Button>
+      )}
       {error ? (
         <Alert tone="danger" className="w-full">
           {error}
@@ -104,10 +115,10 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
       ) : null}
       {open === "menu" && !unavailable && trigger.current ? (
         <ExplorerMenu
-          x={trigger.current.getBoundingClientRect().right - 244}
+          x={trigger.current.getBoundingClientRect().right - MENU_WIDTH}
           y={trigger.current.getBoundingClientRect().bottom + 4}
           ariaLabel={t("Mute notifications")}
-          width={244}
+          width={MENU_WIDTH}
           header={
             <Text as="p" size="micro" tone="secondary" className="px-2 py-1.5">
               {t("Mute all notifications for")}

@@ -4,7 +4,6 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { formatRelativeTime } from "../../../shared/i18n/format";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Badge } from "../../../shared/ui/Badge";
 import { Code } from "../../../shared/ui/Code";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Heading } from "../../../shared/ui/Heading";
@@ -53,16 +52,14 @@ export function ProviderDetailHeader({
   return (
     <header className="provider-detail-header">
       <HarnessIcon harness={harness} className="icon-lg shrink-0" />
-      <Heading size="page" level={3} className="provider-detail-title">
+      <Heading size="section" level={3} className="provider-detail-title">
         {HARNESS_TITLE[harness]}
       </Heading>
-      {harness === "cursor" || harness === "grok" ? (
+      {harness === "grok" || (harness === "cursor" && signInCompleted) ? (
         <Text as="span" size="caption" tone="secondary">
           {harness === "grok"
             ? t("Sign-in: {p0}", { p0: grokAuth.label })
-            : signInCompleted
-              ? t("CLI sign-in completed")
-              : t("Sign-in: Not checked")}
+            : t("CLI sign-in completed")}
         </Text>
       ) : null}
     </header>
@@ -98,19 +95,18 @@ export function ProviderStatusGroup({
   harness,
   available,
   checkedAt,
-  onCheck: _checkAll,
   onRowCheck,
-  onSetup: _onSetup,
 }: {
   id?: string;
   harness: HarnessId;
   available: boolean;
   /** When this window last finished a version check, if it did. */
   checkedAt: number | null;
-  onCheck: () => void;
+  /** Unused; kept optional so callers can drop it. */
+  onCheck?: () => void;
   onRowCheck?: (check: HarnessVersionCheck) => void;
-  /** Takes the person to the Runtime section's CLI setup. */
-  onSetup: () => void;
+  /** Unused; kept optional so callers can drop it. */
+  onSetup?: () => void;
 }) {
   useLocale();
   const { checks, checking, runs } = useSyncExternalStore(
@@ -199,26 +195,24 @@ export function ProviderStatusGroup({
         <Code size="caption" tone="secondary" className="tabular-nums">
           {version}
         </Code>
-        <Tooltip label={hint}>
+        <Tooltip label={hint ?? status}>
           {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- passive status details must remain reachable by keyboard to open their tooltip */}
-          <span tabIndex={hint ? 0 : undefined}>
-            <Badge
-              size="xs"
+          <span tabIndex={0} role="img" aria-label={status}>
+            <StatusIcon
+              className="icon-sm shrink-0"
               tone={
                 busy || notFound
-                  ? "neutral"
+                  ? "secondary"
                   : run.status === "failed"
                     ? "danger"
                     : check?.status === "behind"
                       ? "accent"
                       : check?.status === "current"
                         ? "success"
-                        : "neutral"
+                        : "secondary"
               }
-            >
-              <StatusIcon className="icon-xs shrink-0" aria-hidden />
-              {status}
-            </Badge>
+              aria-hidden
+            />
           </span>
         </Tooltip>
         <div className="provider-inventory-actions">
@@ -230,7 +224,6 @@ export function ProviderStatusGroup({
               onClick={() => void runHarnessUpdate(check)}
               loading={run.status === "updating"}
               disabled={run.status === "updating"}
-              aria-label={t("Update {p0} to {p1}", { p0: title, p1: check.latest })}
               tooltip={t("Update {p0} to {p1}", { p0: title, p1: check.latest })}
             >
               {t("Update")}
@@ -251,7 +244,6 @@ export function ProviderStatusGroup({
               variant="ghost"
               iconOnly
               label={checkLabel}
-              tooltip={checkLabel}
               loading={busy}
               disabled={busy || run.status === "updating"}
               onClick={onCheck}

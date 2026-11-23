@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, type Locator } from "@playwright/test";
+import { PANE_MATRIX, expectLayoutContracts, openPane } from "../support/uiLayoutAssertions";
 
 // Fixture evidence: synthetic state through a stubbed IPC. Native placement,
 // always-on-top and dragging across applications need the desktop app.
@@ -856,3 +857,24 @@ for (const theme of ["light", "dark"])
       await side.screenshot({ path: info.outputPath(`voice-side-${theme}-${width}.png`) });
     });
   }
+
+// Runtime layout contracts for the voice panel inside a real 320 px pane, in both themes at both
+// window sizes, in its idle and its listening state. The in-app panel is the pane here.
+for (const { theme, width } of PANE_MATRIX)
+  for (const state of ["idle", "listening"] as const)
+    test(`voice panel keeps its layout contracts in a 320px pane ${state} ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global`);
+      await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+      const panel = page.locator("section[data-voice-state]");
+      await expect(panel).toBeVisible();
+      if (state === "listening")
+        await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await openPane(page, { theme, width, pane: "section[data-voice-state]" });
+      await expectLayoutContracts(page, {
+        surface: `voice panel ${state} (320px pane)`,
+        root: "section[data-voice-state]",
+      });
+    });

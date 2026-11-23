@@ -152,7 +152,7 @@ describe("ApiProviderDialog", () => {
     );
     await settleDecisionUi();
     expect(bodyText()).toContain("This did not work. Try again.");
-    clickButton("Try again");
+    clickButton("Retry");
     expect(onRetry).toHaveBeenCalledOnce();
   });
 });

@@ -184,6 +184,7 @@ export function ContentCalendar({
                         >
                           {formatDate(entry.at, { hour: "2-digit", minute: "2-digit" })}
                         </Text>
+                        <ContentStateDot state={entry.status} />
                       </Text>
                       <ClampText
                         as="span"
@@ -196,7 +197,6 @@ export function ContentCalendar({
                       >
                         {entry.text.trim() || t("Media post")}
                       </ClampText>
-                      <ContentStateDot state={entry.status} />
                     </span>
                   </Button>
                 </ActionHost>

@@ -1,4 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Heading } from "../../../shared/ui/Heading";
@@ -8,7 +7,6 @@ import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Plus } from "../../../shared/ui/icons";
 import {
   defaultCrewPolicy,
@@ -355,15 +353,6 @@ function ConnectedCrewEditor({
         </Heading>
         {draft.agents.length ? (
           <div className="flex min-w-0 items-center gap-2">
-            {unfinished ? (
-              <OverflowTooltip
-                label={t("Unfinished additions are kept until you add or discard them.")}
-              >
-                <Text truncate tabIndex={0} className="min-w-0">
-                  {t("Unfinished additions are kept until you add or discard them.")}
-                </Text>
-              </OverflowTooltip>
-            ) : null}
             <Button
               variant="secondary"
               className="shrink-0"
@@ -516,15 +505,12 @@ function ConnectedCrewEditor({
         canStart={!!onStart}
         onCreate={create}
         onStart={start}
-        onDone={() => {
-          if (!pending) onClose();
-        }}
       />
     );
 
   return (
     <Modal
-      title={isNew ? t("New crew") : t("Edit crew")}
+      title={isNew ? draft.name.trim() || t("New crew") : latest?.name || draft.name || t("Crew")}
       context={editLevel}
       size="lg"
       onClose={() => {

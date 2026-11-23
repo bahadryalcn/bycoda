@@ -45,7 +45,6 @@ import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -1099,9 +1098,7 @@ function RunRow({
         <span>
           {/* Still running, but stuck until the owner answers. */}
           {run.status === "running" && run.needsInput ? (
-            <Tooltip label={t("The session is waiting on an approval or a question")} asChild>
-              <Badge tone="warning">{t("Needs input")}</Badge>
-            </Tooltip>
+            <Badge tone="warning">{t("Needs input")}</Badge>
           ) : (
             <RunStatusPill status={run.status} />
           )}
@@ -1385,15 +1382,12 @@ function AutomationEditor({
               inert={saving}
               className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5"
             >
-              <span className="flex shrink-0 items-center gap-2">
-                <ToggleSwitch
-                  label={draft.enabled ? t("Pause automation") : t("Enable automation")}
-                  on={draft.enabled}
-                  onChange={(enabled) => update("enabled", enabled)}
-                  compact
-                />
-                <span>{draft.enabled ? t("Active") : t("Inactive")}</span>
-              </span>
+              <ToggleSwitch
+                label={draft.enabled ? t("Pause automation") : t("Enable automation")}
+                on={draft.enabled}
+                onChange={(enabled) => update("enabled", enabled)}
+                compact
+              />
               <SearchableProjectPicker
                 cwd={draft.cwd}
                 recents={recents}
@@ -1454,20 +1448,27 @@ function AutomationEditor({
 
               <div className="automation-editor-side">
                 <section>
-                  <SectionLabel as="h2" className="px-1">
+                  <SectionLabel
+                    as="h2"
+                    className="px-1"
+                    actions={
+                      draft.triggers.some(
+                        (trigger) => trigger.kind === "tasks" || trigger.kind === "social",
+                      ) ? (
+                        <InfoPopover className="shrink-0">
+                          <p>
+                            {t(
+                              "Task and social events run while this app is open. Connect the source machine; social accounts must be linked to this project.",
+                            )}
+                          </p>
+                        </InfoPopover>
+                      ) : undefined
+                    }
+                  >
                     {t("Triggers")}
                   </SectionLabel>
                   {draft.runInBackground ? (
                     <HostAutomationFields draft={draft} machines={machines} onChange={onChange} />
-                  ) : null}
-                  {draft.triggers.some(
-                    (trigger) => trigger.kind === "tasks" || trigger.kind === "social",
-                  ) ? (
-                    <Text as="p" size="caption" tone="muted" className="mt-2 px-1">
-                      {t(
-                        "Task and social events run while this app is open. Connect the source machine; social accounts must be linked to this project.",
-                      )}
-                    </Text>
                   ) : null}
                   {(!draft.runInBackground || !draft.hostTrigger) && draft.triggers.length > 0 ? (
                     <ul className="mt-1 px-2">
@@ -1513,7 +1514,7 @@ function AutomationEditor({
                       label={t("Runs")}
                       hint={
                         backgroundMachine
-                          ? "In the background keeps running with this app closed"
+                          ? undefined
                           : "Background runs need the project’s machine connected"
                       }
                     >
@@ -1548,7 +1549,7 @@ function AutomationEditor({
                     </SettingsRow>
                     {draft.runInBackground ? null : (
                       <>
-                        <SettingsRow label={t("Worktree")} hint="This repo, or a fresh worktree">
+                        <SettingsRow label={t("Worktree")}>
                           <SettingsSelect
                             label={t("Worktree")}
                             value={
@@ -1570,7 +1571,7 @@ function AutomationEditor({
                             }
                           />
                         </SettingsRow>
-                        <SettingsRow label={t("Session")} hint="New chat, or continue the last run">
+                        <SettingsRow label={t("Session")}>
                           <SettingsSelect
                             label={t("Session")}
                             value={draft.reuseSession ? "reuse" : "fresh"}
@@ -1585,9 +1586,7 @@ function AutomationEditor({
                             folderUnavailable
                               ? t("Open a project to use folders")
                               : (folderChoices.error ??
-                                (folderChoices.loading
-                                  ? t("Loading folders…")
-                                  : "Where runs appear in the sidebar"))
+                                (folderChoices.loading ? t("Loading folders…") : undefined))
                           }
                         >
                           <SearchableSelect
@@ -1623,10 +1622,7 @@ function AutomationEditor({
                   }
                 >
                   <div>
-                    <SettingsRow
-                      label={t("Missed-run grace")}
-                      hint={"Catch up if a scheduled run was missed"}
-                    >
+                    <SettingsRow label={t("Missed-run grace")}>
                       <SettingsSelect
                         label={t("Missed-run grace")}
                         value={String(draft.missedRunGraceMinutes)}
@@ -1634,10 +1630,7 @@ function AutomationEditor({
                         onChange={(value) => update("missedRunGraceMinutes", Number(value))}
                       />
                     </SettingsRow>
-                    <SettingsRow
-                      label={t("Run time limit")}
-                      hint="Stop a run that is still going after this long"
-                    >
+                    <SettingsRow label={t("Run time limit")}>
                       <SettingsSelect
                         label={t("Run time limit")}
                         value={String(draft.maxRunMinutes)}
@@ -1645,10 +1638,7 @@ function AutomationEditor({
                         onChange={(value) => update("maxRunMinutes", Number(value))}
                       />
                     </SettingsRow>
-                    <SettingsRow
-                      label={t("Runs per day")}
-                      hint="Skip scheduled and event runs past this many a day"
-                    >
+                    <SettingsRow label={t("Runs per day")}>
                       <SettingsSelect
                         label={t("Runs per day")}
                         value={String(draft.maxRunsPerDay)}
@@ -1805,7 +1795,8 @@ function ToggleSwitch({
   busy?: boolean;
   disabled?: boolean;
 }) {
-  const control = (
+  // The switch is named by its aria-label; a tooltip would only repeat that name.
+  return (
     <Switch
       label={compact ? undefined : label}
       aria-label={label}
@@ -1819,7 +1810,6 @@ function ToggleSwitch({
       compact={compact}
     />
   );
-  return compact ? <Tooltip label={label}>{control}</Tooltip> : control;
 }
 
 const WORKSPACE_OPTIONS = [

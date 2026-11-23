@@ -9,6 +9,7 @@ import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -182,6 +183,7 @@ function QueueEditContent({
   const empty = isQueuedEditEmpty(message, draft);
   const dirty = hasQueuedEditChanges(message, draft);
   const tokens = attachmentDraftTokens(draft.attachments);
+  const saveReasonId = useId();
   const saveReason = parentClosed
     ? t("Preparing session checkpoint. Your draft is kept.")
     : loadingAttachments > 0
@@ -452,6 +454,7 @@ function QueueEditContent({
         footer={
           <ModalActions
             reason={saveReason}
+            reasonId={saveReasonId}
             start={
               empty ? (
                 <Button
@@ -473,7 +476,7 @@ function QueueEditContent({
               variant="primary"
               type="button"
               disabled={!!saveReason}
-              disabledReason={saveReason}
+              aria-describedby={saveReason ? saveReasonId : undefined}
               onClick={save}
               shortcut="Mod+Enter"
             >

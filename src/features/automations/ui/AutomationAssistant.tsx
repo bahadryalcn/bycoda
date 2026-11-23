@@ -91,11 +91,11 @@ export function AutomationAssistant({
       setBusy(false);
     }
   };
-  const blockedReason = !prompt.trim()
-    ? t("Describe the automation")
-    : scope === "project" && !project
-      ? t("Choose a project")
-      : undefined;
+  // An empty request needs no explanation; only a missing project does.
+  const blockedReason = scope === "project" && !project ? t("Choose a project") : undefined;
+  const blocked = !prompt.trim() || Boolean(blockedReason);
+  // With no open project and nothing recent there is only the general scope to choose.
+  const scopeChoice = Boolean(cwd) || recents.length > 0;
   return (
     <Modal
       title={t("AI assistant")}
@@ -104,6 +104,7 @@ export function AutomationAssistant({
       footer={
         <ModalActions
           reason={blockedReason}
+          reasonId="automation-assistant-reason"
           start={
             <InfoPopover label={t("About the AI assistant")}>
               {t("Continue in a full AI session with automation tools and approval controls.")}
@@ -113,8 +114,8 @@ export function AutomationAssistant({
           <Button
             variant="primary"
             loading={busy}
-            disabled={Boolean(blockedReason)}
-            disabledReason={blockedReason}
+            disabled={blocked}
+            aria-describedby={blockedReason ? "automation-assistant-reason" : undefined}
             onClick={() => void launch()}
           >
             {t("Open assistant")}
@@ -133,15 +134,17 @@ export function AutomationAssistant({
           onChange={(event) => setPrompt(event.target.value)}
         />
         <div className="grid min-w-0 gap-3">
-          <SegmentedControl
-            label={t("Scope")}
-            value={scope}
-            onValueChange={setScope}
-            options={[
-              { value: "project", label: t("Project") },
-              { value: "general", label: t("General") },
-            ]}
-          />
+          {scopeChoice ? (
+            <SegmentedControl
+              label={t("Scope")}
+              value={scope}
+              onValueChange={setScope}
+              options={[
+                { value: "project", label: t("Project") },
+                { value: "general", label: t("General") },
+              ]}
+            />
+          ) : null}
           <div className="flex min-w-0 flex-wrap items-center gap-3">
             {scope === "project" ? (
               <SearchableProjectPicker

@@ -1,6 +1,3 @@
-/* Hallmark v2.0.0 | shape: app screen | theme: locked Bycoda | scope: app
-   Signature: user-selected server identity at the head of a canvas inspector.
-   Critique: align the inspector with the catalog and keep connection actions legible at narrow widths. */
 .server-list-row {
   display: flex;
   align-items: center;
@@ -11,21 +8,21 @@
   align-items: center;
   justify-content: center;
   align-self: stretch;
-  flex: 0 0 36px;
+  flex: 0 0 calc(var(--ui-space-8) + var(--ui-space-1));
   cursor: pointer;
 }
 .server-row-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
+  gap: var(--ui-space-1);
+  padding: var(--ui-space-1);
 }
 /* A card is a frame (Surface outline) around one ActionHost: the identity button fills it and
    the actions sit over its top-right corner, level with the name. The name row reserves their
    width, so every card has the same identity-first layout at any grid width. */
 .server-card {
   display: flex;
-  --server-card-actions: 3.25rem;
+  --server-card-actions: var(--ui-space-12);
 }
 .server-card > [data-action-host] {
   align-self: stretch;
@@ -36,23 +33,23 @@
 }
 .server-card .server-row-actions {
   position: absolute;
-  inset-block-start: 0.75rem;
-  inset-inline-end: 0.5rem;
+  inset-block-start: var(--ui-space-3);
+  inset-inline-end: var(--ui-space-2);
   padding: 0;
-  gap: 2px;
+  gap: var(--ui-space-1);
 }
 .server-card .server-selection {
   align-items: flex-start;
-  flex-basis: 32px;
-  padding-block-start: 0.875rem;
+  flex-basis: var(--ui-space-8);
+  padding-block-start: var(--ui-space-3);
 }
 .servers-selection-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 4px 8px;
+  gap: var(--ui-space-2);
+  min-height: var(--ui-space-10);
+  padding: var(--ui-space-1) var(--ui-space-2);
 }
 .server-connection-tools {
   container-type: inline-size;
@@ -64,12 +61,13 @@
 .servers-detail-pane {
   flex: 0 0 60%;
 }
-@container servers (min-width: 704px) {
+/* 44rem is the pane breakpoint; ServersView.tsx uses the same value as `@min-[44rem]/servers`. */
+@container servers (min-width: 44rem) {
   .servers-detail-pane {
     flex-basis: clamp(23rem, 48%, 35rem);
   }
 }
-@container servers (max-width: 600px) {
+@container servers (max-width: 37.5rem) {
   .servers-search-actions {
     display: contents;
   }
@@ -78,10 +76,7 @@
     min-inline-size: 100%;
   }
 }
-@container server-catalog (max-width: 600px) {
-  .server-selection {
-    flex-basis: 32px;
-  }
+@container server-catalog (max-width: 37.5rem) {
   .server-row-actions {
     gap: 0;
     padding-inline: 0;
@@ -89,7 +84,7 @@
 }
 @media (pointer: coarse) {
   .server-selection {
-    flex-basis: 44px;
-    min-height: 44px;
+    flex-basis: calc(var(--ui-space-10) + var(--ui-space-1));
+    min-height: calc(var(--ui-space-10) + var(--ui-space-1));
   }
 }

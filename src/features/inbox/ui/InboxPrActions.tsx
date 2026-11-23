@@ -142,7 +142,7 @@ type GithubPrActionsProps = {
   baseRef: string;
   headRef: string;
   reviewedHeadOid?: string;
-  /** What still stands between this pull request and a clean merge ("Review required · Failing checks: 1"). Shown beside the merge button, which then stops being primary. */
+  /** Set while something still stands between this pull request and a clean merge; the merge button then stops being primary. The reasons live in the Summary and Checks tabs. */
   mergeBlocker?: string;
   onChange?: (item: InboxItem) => void;
 };
@@ -205,6 +205,12 @@ function GithubPrActionsForItem({
       setActionError(t("Refresh and review the pull request before merging."));
       return;
     }
+    // Draft, ready and reopen are reversible with one click, so they run at once. Merge cannot be
+    // undone and close notifies others, so those two confirm.
+    if (action === "draft" || action === "ready" || action === "reopen") {
+      void runAction(action, reviewedHeadOid);
+      return;
+    }
     setConfirmation({ action, anchor, expectedHeadOid: reviewedHeadOid });
   };
 
@@ -214,9 +220,8 @@ function GithubPrActionsForItem({
     setActionError(null);
   };
 
-  const runAction = async () => {
-    if (!confirmation || busy) return;
-    const action = confirmation.action;
+  const runAction = async (action: GithubPrAction, expectedHeadOid?: string) => {
+    if (busy) return;
     setBusy(true);
     setActionError(null);
     try {
@@ -225,7 +230,7 @@ function GithubPrActionsForItem({
         item.repo,
         item.number,
         action,
-        confirmation.expectedHeadOid,
+        expectedHeadOid,
       );
       if (!active.current) return;
       setConfirmation(null);
@@ -271,11 +276,6 @@ function GithubPrActionsForItem({
     <>
       {state === "open" && !item.draft ? (
         <>
-          {mergeBlocker ? (
-            <Text size="caption" tone="warning" className="min-w-0 wrap-anywhere">
-              {mergeBlocker}
-            </Text>
-          ) : null}
           <SplitButton
             groupRef={mergeGroup}
             variant={mergeBlocker ? "secondary" : "primary"}
@@ -321,7 +321,6 @@ function GithubPrActionsForItem({
             variant="ghost"
             iconOnly
             label={t("More pull request actions")}
-            tooltip={t("More pull request actions")}
             aria-haspopup="menu"
             aria-expanded={moreOpen}
             disabled={busy}
@@ -399,7 +398,7 @@ function GithubPrActionsForItem({
             <Text as="p" size="caption" tone="secondary">
               {confirmCopy.detail}
               {confirmation.expectedHeadOid
-                ? ` ${t("Reviewed head: {p0}", { p0: confirmation.expectedHeadOid })}`
+                ? ` ${t("Reviewed head: {p0}", { p0: confirmation.expectedHeadOid.slice(0, 7) })}`
                 : ""}
             </Text>
           </div>
@@ -418,7 +417,7 @@ function GithubPrActionsForItem({
               type="button"
               loading={busy}
               loadingLabel={t(confirmCopy.progress)}
-              onClick={() => void runAction()}
+              onClick={() => void runAction(confirmation.action, confirmation.expectedHeadOid)}
             >
               {t(confirmCopy.confirm)}
             </Button>

@@ -66,3 +66,29 @@ it("routes a note without rewriting its source project or canonical note", () =>
     window.removeEventListener(ADD_NOTE_TO_CHAT_EVENT, onAdd);
   }
 });
+
+it("shows a plain button without a destination picker when only one project exists", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onAdd = vi.fn();
+  try {
+    act(() =>
+      root.render(
+        createElement(NoteChatAction, {
+          projectCwd: "/work/notes",
+          recents: [{ path: "/work/notes", openedAt: 2 }],
+          onAdd,
+        }),
+      ),
+    );
+    expect(container.querySelector('[data-split-part="menu"]')).toBeNull();
+    act(() => container.querySelector("button")!.click());
+    expect(onAdd).toHaveBeenCalledExactlyOnceWith("/work/notes");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

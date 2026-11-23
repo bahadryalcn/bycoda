@@ -1,17 +1,19 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Text } from "../../../shared/ui/Text";
 import { formatNumber } from "../../../shared/i18n";
-import { t } from "../../../shared/i18n/technical";
+import { t, useLocale } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import type { DeviceAction } from "../types";
 import { useState } from "react";
 import {
   Accessibility,
   Crosshair,
+  Maximize2,
   MessageSquarePlus,
+  Minimize2,
   Minus,
   Plus,
   Settings,
+  Smartphone,
   Terminal,
 } from "../../../shared/ui/icons";
 
@@ -47,6 +49,7 @@ export function DeviceOptionsMenu({
     onFold: (posture: Extract<DeviceAction, { type: "fold" }>["posture"]) => void;
   };
 }) {
+  useLocale();
   const [foldPosture, setFoldPosture] =
     useState<Extract<DeviceAction, { type: "fold" }>["posture"]>();
   const foldDevice = (posture: Extract<DeviceAction, { type: "fold" }>["posture"]) => {
@@ -61,10 +64,11 @@ export function DeviceOptionsMenu({
             <Button
               variant="item"
               loading={fold.loading && foldPosture === "closed"}
-              disabled={fold.disabled}
+              disabled={fold.disabled || fold.loading}
               disabledReason={fold.disabledReason}
               onClick={() => foldDevice("closed")}
             >
+              <Minimize2 className="icon-sm" aria-hidden />
               {t("Fold device")}
             </Button>
             <Button
@@ -74,6 +78,7 @@ export function DeviceOptionsMenu({
               disabledReason={fold.disabledReason}
               onClick={() => foldDevice("half-open")}
             >
+              <Smartphone className="icon-sm" aria-hidden />
               {t("Half-open device")}
             </Button>
             <Button
@@ -83,6 +88,7 @@ export function DeviceOptionsMenu({
               disabledReason={fold.disabledReason}
               onClick={() => foldDevice("open")}
             >
+              <Maximize2 className="icon-sm" aria-hidden />
               {t("Unfold device")}
             </Button>
           </>
@@ -133,9 +139,6 @@ export function DeviceOptionsMenu({
         role="group"
         aria-label={t("Zoom")}
       >
-        <Text size="caption" tone="secondary" leading="inherit" className="device-panel-zoom-label">
-          {t("Zoom")}
-        </Text>
         <Button
           variant="ghost"
           iconOnly

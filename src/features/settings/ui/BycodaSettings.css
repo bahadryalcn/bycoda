@@ -3,8 +3,8 @@
 .bycoda-settings-workbench {
   /* One column for every page and sub-view (the only place that sets it); no page opts into another.
      Maximized raises it to --settings-column-maximized. Controls keep their natural sizes inside it. */
-  --settings-column: 60rem;
-  --settings-column-maximized: 80rem;
+  --settings-column: 80rem;
+  --settings-column-maximized: 96rem;
   --settings-group-gap: 28px;
   container-type: inline-size;
   container-name: settings-workbench;
@@ -43,9 +43,6 @@
   z-index: 2;
   flex-shrink: 0;
   /* Sticky text must occlude the form while it scrolls underneath. */
-}
-.bycoda-settings-breadcrumb {
-  flex: none;
 }
 .settings-page-bar-inner {
   --settings-page-bar-side-padding: 32px;
@@ -119,10 +116,7 @@
   overflow: hidden;
 }
 
-@container settings-workbench (max-width: 880px) {
-  .bycoda-settings-breadcrumb {
-    display: none;
-  }
+@container settings-workbench (max-width: 760px) {
   .bycoda-settings-category-picker {
     display: block;
     flex: 1 1 8rem;
@@ -189,7 +183,7 @@
   margin-inline: auto;
   padding: 8px 32px 48px;
 }
-@container settings-workbench (max-width: 880px) {
+@container settings-workbench (max-width: 760px) {
   .settings-page-bar,
   .bycoda-settings-form {
     --settings-page-bar-padding-start: 12px;

@@ -175,19 +175,21 @@ export function SessionFiltersMenu({
         ),
       ),
     },
-    {
-      kind: "group",
-      id: "provider",
-      label: t("Provider"),
-      items: harnesses.map((harness) =>
-        toggle(
-          check(`harness:${harness}`, HARNESS_TITLE[harness], !hiddenHarnesses.has(harness), {
-            icon: <HarnessIcon harness={harness} className="size-3.5 shrink-0" />,
-          }),
-          () => toggleHarness(harness),
-        ),
-      ),
-    },
+    ...(harnesses.length > 1 || harnesses.some((harness) => hiddenHarnesses.has(harness))
+      ? [{
+          kind: "group" as const,
+          id: "provider",
+          label: t("Provider"),
+          items: harnesses.map((harness) =>
+            toggle(
+              check(`harness:${harness}`, HARNESS_TITLE[harness], !hiddenHarnesses.has(harness), {
+                icon: <HarnessIcon harness={harness} className="size-3.5 shrink-0" />,
+              }),
+              () => toggleHarness(harness),
+            ),
+          ),
+        }]
+      : []),
     {
       kind: "group",
       id: "view",
@@ -222,8 +224,6 @@ export function SessionFiltersMenu({
       label={t("Filter sessions")}
       items={items}
       size="sm"
-      gap={0}
-      maxHeight={600}
       closeOnSelect={false}
       onPick={(id) => actions[id]?.()}
       onClose={onClose}

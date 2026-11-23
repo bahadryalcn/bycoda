@@ -1,7 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { EmptyState } from "../../../shared/ui/EmptyState";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface } from "../../../shared/ui/Surface";
 import { Badge } from "../../../shared/ui/Badge";
@@ -32,35 +32,37 @@ export function TaskReviewNotes({
   useLocale();
   const unread = unreadReviewNotes(notes);
   const open = notes.filter((note) => note.resolvedAt === undefined).length;
+  if (notes.length === 0) return null;
   return (
     <section aria-label={t("Review notes")} className="grid min-w-0 gap-2">
       <SectionLabel
         as="h3"
+        count={open}
+        countLabel={t("{p0} open", { p0: open })}
         actions={
-          unread > 0 ? (
-            <Button
-              variant="ghost"
-              type="button"
-
-              disabled={busy || stale}
-              onClick={() =>
-                onRead(notes.filter((note) => note.readAt === undefined).map((note) => note.id))
-              }
-            >
-              {t("Mark ")}
-              {unread}
-              {t(" as read")}
-            </Button>
-          ) : null
+          <>
+            <InfoPopover width={280}>
+              {t(
+                "Marking a note fixed does not complete this task. Its checks and review still apply.",
+              )}
+            </InfoPopover>
+            {unread > 0 ? (
+              <Button
+                variant="ghost"
+                type="button"
+                disabled={busy || stale}
+                onClick={() =>
+                  onRead(notes.filter((note) => note.readAt === undefined).map((note) => note.id))
+                }
+              >
+                {t("Mark {p0} as read", { p0: unread })}
+              </Button>
+            ) : null}
+          </>
         }
       >
-        {t("Review notes · ")}
-        {open}
-        {t(" open")}
+        {t("Review notes")}
       </SectionLabel>
-      {notes.length === 0 ? (
-        <EmptyState description={t("No review notes yet.")} />
-      ) : (
         <ul className="grid gap-2">
           {[...notes].reverse().map((note) => {
             const resolved = note.resolvedAt !== undefined;
@@ -99,9 +101,7 @@ export function TaskReviewNotes({
                   ) : null}
                   {note.occurrences > 1 ? (
                     <Text tone="secondary" size="inherit">
-                      {t("Reported ")}
-                      {note.occurrences}
-                      {t(" times")}
+                      {t("Reported {p0} times", { p0: note.occurrences })}
                     </Text>
                   ) : null}
                   <Timestamp
@@ -127,8 +127,7 @@ export function TaskReviewNotes({
                     tone="secondary"
                     className="whitespace-pre-wrap break-words"
                   >
-                    {t("Suggested correction: ")}
-                    {note.suggestion}
+                    {t("Suggested correction: {p0}", { p0: note.suggestion })}
                   </Text>
                 ) : null}
                 {note.details ? (
@@ -177,8 +176,7 @@ export function TaskReviewNotes({
                           onClick={() => onOpenReview(sessionId)}
                           loading={isOpeningSession?.(sessionId)}
                         >
-                          {t("Review ")}
-                          {index + 1}
+                          {t("Review {p0}", { p0: index + 1 })}
                         </Button>
                       ))}
                     </div>
@@ -188,10 +186,6 @@ export function TaskReviewNotes({
             );
           })}
         </ul>
-      )}
-      <Text as="p" size="micro" tone="muted">
-        {t("Marking a note fixed does not complete this task. Its checks and review still apply.")}
-      </Text>
     </section>
   );
 }

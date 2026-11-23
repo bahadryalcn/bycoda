@@ -45,6 +45,8 @@ export function PermissionRow({
     refresh,
   } = usePermissionStatus([id]);
   const [setup, setSetup] = useState(false);
+  // The guide opened after the OS prompt failed to grant access: it leads with settings, not Allow.
+  const [afterPrompt, setAfterPrompt] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const info = permissionInfo(id);
   const ready = permissionReady(entry.state);
@@ -55,7 +57,10 @@ export function PermissionRow({
     setRequesting(true);
     try {
       const next = await requestSystemPermission(id);
-      if (!permissionReady(next.state)) setSetup(true);
+      if (!permissionReady(next.state)) {
+        setAfterPrompt(true);
+        setSetup(true);
+      }
     } catch {
       setSetup(true);
     } finally {
@@ -79,7 +84,7 @@ export function PermissionRow({
           ) : (
             <PermissionStatusBadge state={entry.state} restart={restart} animate />
           )}
-          {helperState && (
+          {helperState && helperState !== entry.state && (
             <Badge size="xs" tone={permissionBadge(helperState).tone}>
               {t("Helper: {p0}", { p0: permissionBadge(helperState).label })}
             </Badge>
@@ -104,7 +109,16 @@ export function PermissionRow({
           </span>
         )}
       </Row>
-      {setup && <PermissionSetupSheet id={id} onClose={() => setSetup(false)} />}
+      {setup && (
+        <PermissionSetupSheet
+          id={id}
+          requested={afterPrompt}
+          onClose={() => {
+            setSetup(false);
+            setAfterPrompt(false);
+          }}
+        />
+      )}
     </>
   );
 }

@@ -25,10 +25,11 @@ export function CrashReportNotice() {
   } | null>(null);
   if (!pending) return null; // -- Sending clears the crash toast; no second success toast.
   const result = outcome?.crash === pending ? outcome.status : null;
-  const send = async (always: boolean) => {
+  // "Always send" lives in the diagnostics setting, so the toast asks only for this crash.
+  const send = async () => {
     setBusy(true);
     try {
-      setOutcome({ crash: pending, status: await sendPendingCrash(always) });
+      setOutcome({ crash: pending, status: await sendPendingCrash(false) });
     } catch {
       setOutcome({ crash: pending, status: "failed" }); // -- the marker stays, so Send can be tried again.
     } finally {
@@ -51,12 +52,7 @@ export function CrashReportNotice() {
       width="lg"
       actionsPlacement="footer"
       actions={[
-        { label: t("Send"), pending: busy, onClick: () => void send(false).catch(() => undefined) },
-        {
-          label: t("Always send"),
-          disabled: busy,
-          onClick: () => void send(true).catch(() => undefined),
-        },
+        { label: t("Send"), pending: busy, onClick: () => void send().catch(() => undefined) },
         {
           label: t("Don't send"),
           disabled: busy,

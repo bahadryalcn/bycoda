@@ -22,35 +22,30 @@ export function AddMenu({
       id: "folder",
       icon: <FolderOpen aria-hidden="true" />,
       label: t("Add from folder"),
-      description: t("Find a model and its runtime inside a folder."),
     },
     {
       kind: "item",
       id: "manual",
       icon: <File aria-hidden="true" />,
       label: t("Add from a file or address"),
-      description: t("Connect a model file, or the address of a running service."),
     },
     {
       kind: "item",
       id: "local",
       icon: <Download aria-hidden="true" />,
       label: target ? t("Install on Host {p1}", { p1: target }) : t("Install on this computer"),
-      description: t("Download a model that runs locally."),
     },
     {
       kind: "item",
       id: "api",
       icon: <KeyRound aria-hidden="true" />,
       label: t("API provider"),
-      description: t("Use a provider with your own key."),
     },
     {
       kind: "item",
       id: "custom",
       icon: <Globe aria-hidden="true" />,
       label: t("Custom endpoint"),
-      description: t("Any address that answers the decision contract."),
     },
   ];
   return (
@@ -72,7 +67,6 @@ export function AddMenu({
           label={t("Add a decision model")}
           items={items}
           align="end"
-          size="lg"
           onPick={(id) => {
             setAnchor(null);
             onPick(id as AddPath);

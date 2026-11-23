@@ -280,7 +280,9 @@ it("keeps the status line mounted through a reload so the agent list does not mo
       : Promise.resolve([config]),
   );
   // The reload request starts after the (empty) action settles, so let that microtask run.
-  await act(async () => button("Reload agents").click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Reload agents"]')!.click(),
+  );
   expect(container.querySelector("[data-acp-status]")).toBe(status);
   expect(status.textContent).toContain("Loading ACP agents…");
   await act(async () => finish([config]));

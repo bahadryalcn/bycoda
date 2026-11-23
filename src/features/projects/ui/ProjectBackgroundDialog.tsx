@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RemoteActionError } from "../../connections/public/RemoteActionError";
 import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
@@ -172,7 +172,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
   return (
     <Modal
       title={t("Background image")}
-      description={t("Choose a background image for {p0}", { p0: name })}
+      description={name}
       size="sm"
       fitViewport
       closeDisabled={busy}
@@ -180,11 +180,10 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
     >
       <div className="flex flex-col gap-5">
         <div>
-          <div
-            className={`overflow-hidden rounded-(--ui-radius-card) border border-(--ui-card-border) ${previewEffect === "gradient-blur" ? "bg-background-base" : "bg-[var(--ui-surface-hover)]"}`}
-          >
-            {previewSrc ? (
-              previewEffect === "gradient-blur" ? (
+          {/* Without an image there is nothing to preview: the button below is the whole state. */}
+          {previewSrc ? (
+            <Surface variant="card" padding="none" className="overflow-hidden">
+              {previewEffect === "gradient-blur" ? (
                 <div className="relative h-40">
                   <GradientBlurBackground
                     className="gradient-blur-preview absolute inset-0"
@@ -204,14 +203,10 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
                   className="h-40 w-full object-cover opacity-(--background-preview-opacity)"
                   style={{ "--background-preview-opacity": emptyOpacity } as React.CSSProperties}
                 />
-              )
-            ) : (
-              <Text as="div" size="caption" tone="muted" className="grid h-40 place-items-center">
-                {t("No background selected")}
-              </Text>
-            )}
-          </div>
-          <div className="mt-2 flex items-center gap-1">
+              )}
+            </Surface>
+          ) : null}
+          <div className={`flex items-center gap-1${previewSrc ? " mt-2" : ""}`}>
             <Button
               variant="secondary"
               motion="none"
@@ -264,6 +259,9 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
           </ProjectBackgroundRow>
         ) : null}
 
+        {/* These settings act on an image, so they appear only once one is chosen. */}
+        {path ? (
+          <>
         <ProjectBackgroundRow label={t("Show on")}>
           <SegmentedControl
             label={t("Show project background on")}
@@ -311,6 +309,8 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
             </Text>
           </div>
         </ProjectBackgroundRow>
+          </>
+        ) : null}
 
         {path ? (
           <Button

@@ -2,9 +2,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { testedSources } from "../model/routingEditor";
 import { automaticSources, sameSource } from "../model/presentation";
-import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n";
-import { SourceKindIcon } from "./SourceIcon";
 import type { DecisionModelsState } from "../hooks/useDecisionModels";
 import type { DecisionSource, SourceTestResult } from "../model/decisionTypes";
 import { ErrorNotice } from "./ErrorNotice";
@@ -21,7 +19,6 @@ export function SourcesList({
   onRetry,
   actions,
   isPending,
-  emptyAction,
   onEdit,
   onRemove,
 }: {
@@ -32,7 +29,6 @@ export function SourcesList({
   onRetry: () => void;
   actions: Actions;
   isPending: (key: string) => boolean;
-  emptyAction: ReactNode;
   onEdit: (source: DecisionSource) => void;
   onRemove: (source: DecisionSource, mode: "source" | "local") => void;
 }) {
@@ -51,20 +47,13 @@ export function SourcesList({
     );
   }
   if (sources.length === 0) {
+    // The section's Add model menu is the one way to add; the empty state only says there is none.
     return (
-      <div className="flex min-w-0 items-center justify-between gap-3 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <SourceKindIcon kind="local" modelPath="model" />
-          <div className="flex min-w-0 flex-col gap-1">
-            <EmptyState
-              size="inline"
-              kind="empty"
-              description={t("No decision model is connected yet.")}
-            />
-          </div>
-        </div>
-        <div className="shrink-0">{emptyAction}</div>
-      </div>
+      <EmptyState
+        size="inline"
+        kind="empty"
+        description={t("No decision model is connected yet.")}
+      />
     );
   }
   return (
@@ -75,7 +64,7 @@ export function SourcesList({
         </div>
       ) : null}
       <ul
-        className="decision-sources flex min-w-0 flex-col"
+        className="flex min-w-0 flex-col"
         aria-label={t("Connected decision models")}
       >
         {automaticSources(

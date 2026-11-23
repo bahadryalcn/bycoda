@@ -118,7 +118,9 @@ it("shows an accessible page-loading error, then retries only that page", async 
   await showDetails(frame(1));
   expect(frame(1).textContent).toContain("Page dictionary damaged");
   expect(frame(2).querySelector("canvas")!.width).toBe(600);
-  const retry = frame(1).querySelector<HTMLButtonElement>("button")!;
+  const retry = [...frame(1).querySelectorAll("button")].find(
+    (button) => button.textContent === "Retry page 1",
+  )!;
   expect(retry.textContent).toBe("Retry page 1");
   expect(retry.disabled).toBe(false);
   await act(async () => retry.click());
@@ -147,7 +149,11 @@ it("reports a decoder failure, frees its render buffer and preserves the other p
   expect(render.mock.calls[0][0].canvas.height).toBe(0);
   expect(frame(1).querySelector("canvas")!.width).toBe(0);
   const unaffected = frame(2).querySelector("canvas");
-  await act(async () => frame(1).querySelector<HTMLButtonElement>("button")!.click());
+  await act(async () =>
+    [...frame(1).querySelectorAll("button")]
+      .find((button) => button.textContent === "Retry page 1")!
+      .click(),
+  );
   expect(frame(1).querySelector('[role="alert"]')).toBeNull();
   expect(frame(1).querySelector("canvas")!.width).toBe(600);
   expect(frame(2).querySelector("canvas")).toBe(unaffected);

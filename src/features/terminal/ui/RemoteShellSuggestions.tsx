@@ -217,9 +217,7 @@ export function RemoteShellSuggestions({
         {selectionMode ? (
           <Text as="p" size="caption" tone="muted" className={styles.hint}>
             {t(
-              selectionMode
-                ? "↑/↓ select · Tab/Enter insert only · Esc returns to the shell. Press Enter in the terminal to run."
-                : "Tab/→ complete · Enter runs the typed command · ↑/↓ browse shell history.",
+              "↑/↓ select · Tab/Enter insert only · Esc returns to the shell. Press Enter in the terminal to run.",
             )}
           </Text>
         ) : null}

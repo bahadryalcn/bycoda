@@ -1,6 +1,5 @@
 import { useFormat, useT } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Text } from "../../../shared/ui/Text";
@@ -58,12 +57,6 @@ export function OwnerRequestRow({ row, onOpen }: { row: Row; onOpen: (row: Row) 
           {t("{p0} left", {
             p0: formatDuration(Math.ceil(remaining / 1000) * 1000, { style: "clock" }),
           })}
-        </span>
-        <span className="notification-request-actions flex shrink-0 items-center gap-1">
-          <Badge tone="warning">{t("Request")}</Badge>
-          <Button variant="ghost" size="sm" type="button" onClick={() => onOpen(row)}>
-            {t("Answer")}
-          </Button>
         </span>
       </Text>
     </ActionHost>

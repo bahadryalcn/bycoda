@@ -1,9 +1,9 @@
 import { Code } from "../../../shared/ui/Code";
-import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { useId } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ModalActions, ModalFooter } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -37,33 +37,10 @@ function SshHelp({ editing }: { editing: boolean }) {
   return (
     <InfoPopover label={t("Connection help")} width={360}>
       <p>
-        {editing
-          ? t(
-              "Changes apply to this computer. To connect a different computer, choose Add a computer.",
-            )
-          : t(
-              "Connect a different computer with its own SSH address. Existing computers stay saved.",
-            )}
-      </p>
-      <p>
         {t("A hostname works too, such as a Mac's Bonjour name (")}
         <Code>{"user@MacBook-Pro.local"}</Code>
         {t(") or an alias from")} <Code>{"~/.ssh/config"}</Code>
         {t(". Then the address does not need editing when the IP changes.")}
-      </p>
-      <p>
-        {t(
-          "Optional fallback for this same machine, such as its Tailscale address. If the first address cannot connect,",
-        )}{" "}
-        {PRODUCT_IDENTITY.displayName}
-        {t(
-          " automatically tries this one. Both addresses stay saved and use the same SSH port. The other address is checked against this machine's known host key.",
-        )}
-      </p>
-      <p>
-        {t(
-          "Enable SSH on the target computer and make sure this computer can reach it with your SSH key or password. Sign in to the agent provider on the target computer before running agents.",
-        )}
       </p>
       {editing ? (
         <p>
@@ -72,23 +49,19 @@ function SshHelp({ editing }: { editing: boolean }) {
           )}
         </p>
       ) : (
-        <>
-          <p>
-            {PRODUCT_IDENTITY.displayName}
-            {t(
-              " installs and starts its background host, then connects securely. Your SSH keys and config are used automatically. Enable SSH on the host and sign in to Codex or Claude Code there. On Windows and Mac, keep the host’s desktop account signed in and the machine awake. Locking the desktop is fine.",
-            )}
-          </p>
-          <p>
-            {t(
-              "On Linux, setup installs a systemd user service and turns on lingering for your account (",
-            )}
-            <Code>{"loginctl enable-linger"}</Code>
-            {t(
-              "), so the host and your other user services keep running after you log out. The host keeps running until you stop it on that machine; removing it here only disconnects this desktop.",
-            )}
-          </p>
-        </>
+        <p>
+          {PRODUCT_IDENTITY.displayName}
+          {t(
+            " installs and starts its background host, then connects securely. Your SSH keys and config are used automatically. Enable SSH on the host and sign in to Codex or Claude Code there. On Windows and Mac, keep the host’s desktop account signed in and the machine awake. Locking the desktop is fine.",
+          )}{" "}
+          {t(
+            "On Linux, setup installs a systemd user service and turns on lingering for your account (",
+          )}
+          <Code>{"loginctl enable-linger"}</Code>
+          {t(
+            "), so the host and your other user services keep running after you log out. The host keeps running until you stop it on that machine; removing it here only disconnects this desktop.",
+          )}
+        </p>
       )}
     </InfoPopover>
   );
@@ -127,7 +100,6 @@ function SshFields({
             stableWidth
             type="button"
             disabled={busy}
-            tooltip={t("Fills the address. Nothing is saved or tested until you save.")}
             onClick={() => onChange({ target: suggestion })}
             variant="secondary"
             align="start"
@@ -157,9 +129,6 @@ function SshFields({
           value={draft.remotePort}
           onChange={(event) => onChange({ remotePort: event.target.value })}
           label={t("Host port")}
-          description={t(
-            "The Host service port on this machine, separate from the SSH port. Saving reconnects to this port without changing the service. Reconnects keep this value.",
-          )}
           fieldClassName="min-w-0 flex-1"
         />
       ) : null}
@@ -233,8 +202,11 @@ export function MachineForm({
   onCancel: () => void;
 }) {
   const formId = useId();
+  // A failure is "reason" + blank line + "cause": the cause waits behind Details.
+  const [errorReason = "", ...errorRest] = error.split("\n\n");
+  const errorCause = errorRest.join("\n\n").trim();
   const ssh = Boolean(editing) || method === "ssh";
-  const title = editing ? t("Edit {p0}", { p0: editing.name }) : t("Add a new computer");
+  const title = editing ? t("Edit {p0}", { p0: editing.name }) : t("Add a computer");
   const editAction = saveLabel === "Save" ? t("Save") : t("Save and reconnect");
   const actions = (
     <ModalActions inline={!editing}>
@@ -266,8 +238,8 @@ export function MachineForm({
       }}
     >
       {!editing ? (
-        <div className="flex items-center gap-1">
-          {/* In a dialog the method choice already says SSH; its help sits beside it. */}
+        <div className="flex items-center justify-between gap-3">
+          {/* In a dialog the method choice already says SSH; its help ends the row, apart from the toggle. */}
           <RadioGroup
             variant="inline"
             label={t("Connection method")}
@@ -282,18 +254,11 @@ export function MachineForm({
           {ssh ? <SshHelp editing={false} /> : null}
         </div>
       ) : null}
-      <div className="flex items-start gap-2">
-        <Text as="p" tone="muted">
-          {editing
-            ? saveLabel === "Save"
-              ? t("Saving changes the computer name without reconnecting.")
-              : t("Saving reconnects this computer with the updated address.")
-            : ssh
-              ? t("Installs bycoda Host over SSH so you can run agents on this computer.")
-              : t("Enter the host URL and a device token issued by that host.")}
-        </Text>
-        {editing ? <SshHelp editing /> : null}
-      </div>
+      {editing ? (
+        <div className="flex justify-end">
+          <SshHelp editing />
+        </div>
+      ) : null}
       {ssh ? (
         <SshFields
           draft={draft}
@@ -325,7 +290,16 @@ export function MachineForm({
           />
         </>
       )}
-      {error && <Alert tone="danger">{error}</Alert>}
+      {error && (
+        <Alert
+          tone="danger"
+          extra={
+            errorCause ? <ErrorDetails title={errorReason} detail={errorCause} /> : undefined
+          }
+        >
+          {errorReason}
+        </Alert>
+      )}
       {editing ? <ModalFooter>{actions}</ModalFooter> : actions}
     </form>
   );

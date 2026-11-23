@@ -105,6 +105,7 @@ const initial: Session = {
   ...newSession(params.has("goal") ? "codex" : "claude", "/fixture", modelId),
   id: sessionId,
   title: "Composer reading mode",
+  branch: params.has("workspaceChips") ? "main" : undefined,
   ...(params.has("goal")
     ? {
         busy: true,
@@ -289,12 +290,13 @@ function Fixture() {
     onFocus: noop,
     onClose: noop,
     onCwdChange: noop,
+    onSessionMachineChange: params.has("workspaceChips") ? noop : undefined,
     onBranchChange: noop,
     onWorkspaceModeChange: noop,
     onWorktreeBaseChange: noop,
     onModelChange: (_id, harness, model) => setSession((value) => ({ ...value, harness, model })),
     onModelSettingsChange: noop,
-    onRuntimeModeChange: noop,
+    onRuntimeModeChange: (_id, runtimeMode) => setSession((value) => ({ ...value, runtimeMode })),
     onSubmit: () => {
       events.sends++;
       return false;

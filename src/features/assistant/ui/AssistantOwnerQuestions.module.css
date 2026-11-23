@@ -1,15 +1,15 @@
 .questions,
 .card {
   display: grid;
-  gap: 10px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
 .questions {
-  gap: 16px;
-  margin-block-end: 24px;
+  gap: var(--ui-space-4);
+  margin-block-end: var(--ui-space-6);
 }
 .card {
-  padding: 16px;
+  padding: var(--ui-space-4);
 }
 .card[data-question-form] {
   padding: 0;
@@ -17,10 +17,10 @@
 .footer {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   flex-wrap: wrap;
   min-inline-size: 0;
-  padding-block-start: 4px;
+  padding-block-start: var(--ui-space-1);
 }
 .status {
   margin: 0;
@@ -41,6 +41,6 @@
 
 @container assistant-room (max-width: 720px) {
   .card {
-    padding: 12px;
+    padding: var(--ui-space-3);
   }
 }

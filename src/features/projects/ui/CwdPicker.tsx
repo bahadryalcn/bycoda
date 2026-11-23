@@ -5,7 +5,7 @@ import { useT } from "../../../shared/i18n";
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { basename } from "../../../platform/tauri/fs";
-import { prettyCwd, prettyParent } from "../../../shared/lib/paths";
+import { prettyCwd } from "../../../shared/lib/paths";
 import {
   looksLikeProject,
   projectRailItemsFrom,
@@ -15,7 +15,7 @@ import {
 } from "../model/recents";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
-import { MOD } from "../../../platform/tauri/platform";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 
 type Props = {
   cwd: string;
@@ -98,42 +98,21 @@ export function CwdPicker({
     kind: "item",
     id: RECENT_PREFIX + item.path,
     label: basename(item.path),
+    // The parent folder is a hover detail, not a second column on every row.
     title: item.path,
     content: (
       <Text truncate size="secondary" tone="inherit" className="min-w-0 flex-1">
         {renderProjectLabel?.(item.path) ?? basename(item.path)}
       </Text>
     ),
-    trailing: (
-      <Text truncate size="micro" tone="secondary" className="max-w-28 shrink-0 font-mono">
-        {prettyParent(item.path)}
-      </Text>
-    ),
   });
   const heading = (text: string) => (
-    <Text as="p" weight="medium" tone="secondary" className="px-2.5 pb-1 pt-2">
+    <SectionLabel variant="menu" tone="secondary">
       {text}
-    </Text>
+    </SectionLabel>
   );
+  // The trigger already names the current project, so the menu lists only the others.
   const items: DropdownMenuItem[] = [];
-  if (inProject)
-    items.push({
-      kind: "content",
-      id: "current",
-      node: (
-        <>
-          {heading(t("Current project"))}
-          <Text as="div" size="inherit" tone="secondary" className="px-2.5 py-1.5">
-            <Text truncate as="p" size="secondary" tone="primary">
-              {renderProjectLabel?.(cwd) ?? basename(cwd)}
-            </Text>
-            <Text truncate as="p" size="micro" tone="inherit" className="font-mono">
-              {prettyParent(cwd)}
-            </Text>
-          </Text>
-        </>
-      ),
-    });
   if (previewRecents.length > 0 || mode === "move") {
     items.push({
       kind: "content",
@@ -167,11 +146,7 @@ export function CwdPicker({
         kind: "item",
         id: NEW_TERMINAL_ID,
         label: t("New terminal"),
-        trailing: (
-          <Text size="micro" tone="secondary" className="shrink-0 font-mono">
-            {MOD}`
-          </Text>
-        ),
+        shortcut: "Mod+`",
       },
     );
 
@@ -194,8 +169,8 @@ export function CwdPicker({
         variant="item"
         motion="none"
         type="button"
-        tooltip={cwd}
-        aria-label={t("Project {p0}", { p0: label })}
+        tooltip={inProject ? cwd : undefined}
+        aria-label={inProject ? t("Project {p0}", { p0: label }) : t("No project")}
         selected={open}
         expanded={chevron ? open : undefined}
         aria-expanded={open}
@@ -212,15 +187,14 @@ export function CwdPicker({
           setOpen(true);
         }}
         onKeyDown={onKeyDown}
-        className={
-          buttonClassName ? `  ${buttonClassName}     ` : ` flex min-w-0 items-center gap-1.5    `
-        }
+        className={buttonClassName ?? "flex min-w-0 items-center gap-1.5"}
       >
         {children ?? (
           <>
             <ProjectLogoIcon path={projectLogoPath} fallbackStrokeWidth={1.5} />
-            <Text truncate size="caption" tone="inherit" className="font-mono">
-              {label}
+            {/* The projectless state is one quiet label, same type as a project trigger. */}
+            <Text truncate size="caption" tone="inherit" className={inProject ? "font-mono" : undefined}>
+              {inProject ? label : t("No project")}
             </Text>
           </>
         )}
@@ -234,7 +208,11 @@ export function CwdPicker({
           size="md"
           maxHeight={MENU_MAX_HEIGHT}
           items={items}
-          search={{ value: query, onChange: setQuery, label: t("Search projects") }}
+          search={
+            mode === "move" || projects.length > PREVIEW
+              ? { value: query, onChange: setQuery, label: t("Search projects") }
+              : undefined
+          }
           onPick={pick}
           onEscape={() => {
             escaped.current = true;

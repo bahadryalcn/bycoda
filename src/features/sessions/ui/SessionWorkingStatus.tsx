@@ -56,9 +56,9 @@ export function SessionWorkingStatus({
         role="img"
         aria-label={[reason, elapsed].filter(Boolean).join(", ")}
 
-        className={`inline-flex shrink-0 items-center gap-1 ${
-          labelled ? "" : "text-(--color-active)"
-        }`}
+        className={labelled
+          ? "inline-flex shrink-0 items-center gap-1"
+          : "inline-flex shrink-0 items-center gap-1 text-(--color-active)"}
       >
         {held ? <Clock className="icon-xs" strokeWidth={1.75} aria-hidden /> : <TerminalSpinner />}
         {labelled ? (

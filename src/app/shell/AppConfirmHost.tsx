@@ -79,7 +79,7 @@ export function AppConfirmHost() {
         openedAt.current = performance.now();
         const answer = confirm({
           title: request.title,
-          message: <span className="whitespace-pre-line">{request.message}</span>,
+          message: request.message,
           confirmLabel: request.confirmLabel,
           cancelLabel: request.cancelLabel,
           danger: request.tone === "danger",

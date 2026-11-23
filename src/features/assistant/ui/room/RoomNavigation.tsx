@@ -29,6 +29,8 @@ export function RoomNavigation({
         value={view}
         onValueChange={onChange}
         controls="assistant-content"
+        scroll="auto"
+        scrollbar="hidden"
         items={[
           { value: "Today", label: t("Today"), icon: <CalendarDays /> },
           { value: "Jobs", label: t("Jobs"), icon: <Briefcase />, count: activeJobs || null },

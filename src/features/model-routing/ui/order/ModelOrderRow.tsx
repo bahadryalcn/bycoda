@@ -40,6 +40,7 @@ export function ModelOrderRow({
   status,
   statusLoading,
   statusError = false,
+  accountQuota,
   next = false,
   sortable,
   selected = false,
@@ -59,6 +60,8 @@ export function ModelOrderRow({
   status?: ModelRoutingEntryStatus;
   statusLoading: boolean;
   statusError?: boolean;
+  /** Quota already shown in this row's account header. */
+  accountQuota?: string;
   /** New work starts on this model now. */
   next?: boolean;
   /** Drag and keyboard reordering; without it the row has no grip (grouped views). */
@@ -165,9 +168,11 @@ export function ModelOrderRow({
             </Badge>
           </OverflowTooltip>
         ) : null}
-        <Text size="caption" tone="secondary" className="break-words">
-          {left}
-        </Text>
+        {left !== accountQuota ? (
+          <Text size="caption" tone="secondary" className="break-words">
+            {left}
+          </Text>
+        ) : null}
       </div>
       <ModelOrderRowMore
         entry={entry}
@@ -175,13 +180,12 @@ export function ModelOrderRow({
         percent={percent}
         providerPercent={providerPercent}
         account={account}
-        status={status}
         onChange={onChange}
         onPercent={onPercent}
         onRemove={onRemove}
       />
       {invalidMessage ? (
-        <InlineMessage tone="warning" className="ms-6">
+        <InlineMessage tone="warning" className="basis-full ps-6">
           {invalidMessage}
         </InlineMessage>
       ) : null}

@@ -41,6 +41,24 @@
 .header[data-chrome-inset] {
   padding-inline-start: 0;
 }
+/* The header is its own query container so secondary actions can give way to the overflow menu. */
+.header {
+  container: pane-header / inline-size;
+}
+.secondary {
+  display: contents;
+}
+.overflow {
+  display: none;
+}
+@container pane-header (max-width: 26rem) {
+  .secondary {
+    display: none;
+  }
+  .overflow {
+    display: contents;
+  }
+}
 .leading,
 .actions,
 .trailing {
@@ -73,8 +91,10 @@
   min-inline-size: 0;
   padding-inline: 0.25rem;
 }
+/* The title gives way first: it shrinks to its ellipsis before any action is squeezed. */
 .title {
   flex: 0 1 auto;
+  min-inline-size: 0;
 }
 .meta {
   flex: 0 1 auto;

@@ -394,7 +394,7 @@ export function FilePicker({
               clearable={false}
               type="text"
               value={query}
-              placeholder={t("Go to File (type > for commands)")}
+              placeholder={t("Search files or type > for commands")}
               aria-label={pickerLabel}
               role="combobox"
               aria-autocomplete="list"
@@ -443,7 +443,8 @@ export function FilePicker({
         {!paletteMode &&
         !loading &&
         looksLikeProject(cwd) &&
-        projectFilesTruncated(files) !== false ? (
+        projectFilesTruncated(files) !== false &&
+        results.length === 0 ? (
           <Text as="p" size="caption" tone="secondary" className="px-3 pb-2">
             {projectFilesTruncated(files)
               ? t("File index is incomplete; some files may not appear.")

@@ -52,8 +52,7 @@ it("retains draft and pending state across remount and ignores completion after 
       resolve = done;
     }),
   );
-  expect(host.textContent).toContain("model-a");
-  expect(host.textContent).toContain("account-a");
+  expect(host.textContent).not.toContain("model-a");
   click();
   expect(mocks.request).toHaveBeenCalledWith(
     expect.objectContaining({ harness: "codex", model: "model-a", providerAccountId: "account-a" }),

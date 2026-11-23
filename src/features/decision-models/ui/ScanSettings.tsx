@@ -156,11 +156,7 @@ export function ScanSettings({
           />
         </div>
       ) : null}
-      <Row
-        stacked
-        label={t("Extra ports")}
-        description={t("Local ports to check, separated by commas.")}
-      >
+      <Row stacked label={t("Extra ports")}>
         <TextField
           label={t("Extra ports")}
           hideLabel
@@ -171,7 +167,7 @@ export function ScanSettings({
           onChange={(event) => setPorts(event.target.value)}
         />
       </Row>
-      <Row stacked label={t("Extra folders")} description={t("Folders to search for model files.")}>
+      <Row stacked label={t("Extra folders")}>
         <TextareaField
           label={t("Extra folders")}
           hideLabel

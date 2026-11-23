@@ -58,7 +58,8 @@ it("does not expose commands belonging to another server", async () => {
   const insert = [...container.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Insert into terminal"),
   )!;
-  expect(insert.getAttribute("disabled")).not.toBeNull();
+  // A reason-bearing disabled button may be aria-disabled instead of natively disabled.
+  expect(insert.getAttribute("disabled") ?? insert.getAttribute("aria-disabled")).not.toBeNull();
 });
 
 it("confirms save inside its action and clears confirmation when the draft changes", async () => {
@@ -66,7 +67,7 @@ it("confirms save inside its action and clears confirmation when the draft chang
   await act(async () => root.render(createElement(ServerSnippets, { serverId: "a" })));
   const find = (text: string) =>
     [...container.querySelectorAll("button")].find((button) => button.textContent === text)!;
-  await act(async () => find("Statusv1").click());
+  await act(async () => find("Status").click());
   await act(async () =>
     container
       .querySelector("form")!

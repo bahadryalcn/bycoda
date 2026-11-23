@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { fitsOneLine } from "../../../shared/ui/ErrorDetails";
+import { errorHeadline, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 import type { NoticeAction } from "../../../shared/ui/Notice";
 import { t, useLocale } from "../../../shared/i18n/technical";
 
@@ -42,7 +42,8 @@ export function DocumentMessage({
           context="list"
           title={title}
           description={
-            children ?? (direct ? raw : t("The file could not be read; it may be corrupt."))
+            children ??
+            (direct ? raw : raw ? errorHeadline(raw) : t("The file could not be read; it may be corrupt."))
           }
           error={direct ? undefined : raw}
           onRetry={onRetry}

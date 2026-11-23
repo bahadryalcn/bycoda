@@ -52,24 +52,12 @@ export function ActivityFeed({ items, onUndo }: ActivityFeedProps) {
                   details={
                     <>
                       {item.reason ? (
-                        <Text
-                          as="p"
-                          size="caption"
-                          tone="secondary"
-                          leading="inherit"
-                          className="command-activity-reason"
-                        >
+                        <Text as="p" size="caption" tone="secondary" leading="inherit">
                           {item.reason}
                         </Text>
                       ) : null}
                       {undoReason ? (
-                        <Text
-                          as="p"
-                          size="caption"
-                          tone="secondary"
-                          leading="inherit"
-                          className="command-activity-reason"
-                        >
+                        <Text as="p" size="caption" tone="secondary" leading="inherit">
                           {undoReason}
                         </Text>
                       ) : null}

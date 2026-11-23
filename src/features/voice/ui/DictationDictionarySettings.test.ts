@@ -40,18 +40,13 @@ async function click(text: string) {
   expect(button, text).toBeTruthy();
   await act(async () => button.click());
 }
-/** A saved term's Edit and Remove live in one actions menu. */
+/** A saved term's Edit and Remove are inline icon buttons named after the term. */
 async function rowAction(name: string, row = 0) {
   const trigger = [...container.querySelectorAll<HTMLButtonElement>("button")].filter((button) =>
-    button.getAttribute("aria-label")?.startsWith("Actions for "),
+    button.getAttribute("aria-label")?.startsWith(`${name} `),
   )[row];
-  expect(trigger, "term actions").toBeTruthy();
+  expect(trigger, name).toBeTruthy();
   await act(async () => trigger.click());
-  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-    (node) => node.textContent?.trim() === name,
-  );
-  expect(item, name).toBeTruthy();
-  await act(async () => item!.click());
 }
 async function input(label: string, value: string) {
   const field =
@@ -278,7 +273,7 @@ it("keeps legacy duplicates in different scopes as separate rows", async () => {
   expect(container.querySelectorAll("[data-collection-key]")).toHaveLength(2);
   expect(
     [...container.querySelectorAll("button")].filter((button) =>
-      button.getAttribute("aria-label")?.startsWith("Actions for "),
+      button.getAttribute("aria-label")?.startsWith("Edit "),
     ),
   ).toHaveLength(2);
 });

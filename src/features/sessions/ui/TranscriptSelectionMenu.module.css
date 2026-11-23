@@ -11,17 +11,17 @@
 .comment {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--ui-space-3);
 }
 .header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 .quote {
   margin: 0;
-  padding-inline-start: 10px;
+  padding-inline-start: var(--ui-space-2);
   max-block-size: 112px;
   overflow: auto;
   overflow-wrap: anywhere;
@@ -30,5 +30,5 @@
 .footer {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--ui-space-2);
 }

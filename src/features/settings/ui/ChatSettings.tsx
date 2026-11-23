@@ -41,6 +41,7 @@ import {
 import { HelperModelsSettings } from "./HelperModelsSettings";
 import { TemplatesSettings } from "./TemplatesSettings";
 import { ConversationDisplaySettings } from "./ConversationDisplaySettings";
+import { ChatSection } from "./appearance/sections/ChatSection";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "./useAppearanceSettings";
 import "./ChatSettings.css";
 import { VoiceSettings } from "../../voice/ui/VoiceSettings";
@@ -142,10 +143,21 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
               "transcript-layout",
               "anchor-prompts",
               "streaming-text-mode",
+              "transcript-surface",
+              "transcript-surface-opacity",
+              "transcript-surface-blur",
+              "chat-message-color",
+              "user-message-opacity",
+              "transcript-body-ink",
+              "transcript-chrome-ink",
+              "transcript-cards",
+              "transcript-actions",
+              "transcript-preset",
             ]}
           />
         }
       >
+        <ChatSection appearance={appearance} />
         <ConversationDisplaySettings appearance={appearance} />
         <Row
           id="transcript-layout"

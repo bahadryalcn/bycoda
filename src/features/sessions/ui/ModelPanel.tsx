@@ -4,7 +4,6 @@ import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Settings } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
-import { Text } from "../../../shared/ui/Text";
 import {
   providerAccountLabel,
   providerAccounts,
@@ -116,15 +115,6 @@ export function ModelPanel({
     (accountControl === "label" && shownAccounts[0].id !== accountId);
   const showAccountMenu = accountControl === "menu" || accountControl === "search";
   const listOpen = accountListOpen && showAccountMenu;
-  // The rail already names the provider, so its tab header shows only its accounts.
-  const title = browser.query.trim()
-    ? t("Results")
-    : browser.tab === "favorites"
-      ? t("Favorites")
-      : shownAccounts.length > 1
-        ? null
-        : HARNESS_TITLE[browser.tab];
-
   const defaultMark = useDefaultMark(
     project,
     browser.tab,
@@ -166,7 +156,7 @@ export function ModelPanel({
       data-model-panel
       style={
         {
-          "--layout-height": PANEL_HEIGHT === undefined ? undefined : PANEL_HEIGHT + "px",
+          "--layout-height": `${PANEL_HEIGHT}px`,
         } as CSSProperties
       }
       className="flex min-h-0 flex-col overflow-hidden [height:var(--layout-height)]"
@@ -195,28 +185,15 @@ export function ModelPanel({
             }
             header={
               <>
-                {title || showAccountMenu ? (
-                  <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 pt-1.5 pb-1">
-                    {title ? (
-                      <Text
-                        as="span"
-                        size="caption"
-                        weight="medium"
-                        tone="secondary"
-                        className="shrink-0"
-                      >
-                        {title}
-                      </Text>
-                    ) : null}
-                    {showAccountMenu ? (
-                      <ModelAccountControl
-                        accounts={shownAccounts}
-                        accountId={accountId}
-                        defaultAccountId={defaultAccountId}
-                        listOpen={listOpen}
-                        onToggleList={() => onAccountListOpen(!listOpen)}
-                      />
-                    ) : null}
+                {showAccountMenu ? (
+                  <div className="flex shrink-0 justify-end px-3 py-1">
+                    <ModelAccountControl
+                      accounts={shownAccounts}
+                      accountId={accountId}
+                      defaultAccountId={defaultAccountId}
+                      listOpen={listOpen}
+                      onToggleList={() => onAccountListOpen(!listOpen)}
+                    />
                   </div>
                 ) : null}
                 {inlineAccounts ? accountList : null}
@@ -248,7 +225,6 @@ export function ModelPanel({
                 type="button"
                 label={t("Provider settings")}
                 data-model-provider-settings
-                className="-my-1 -mr-1.5 shrink-0"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   onDismiss("outside");

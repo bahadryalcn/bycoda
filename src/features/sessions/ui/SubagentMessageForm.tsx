@@ -111,7 +111,6 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
       <TextareaField
         className={styles.message}
         label={t("Message for {p0}", { p0: name })}
-        placeholder={t("Tell {p0} what you need…", { p0: name })}
         rows={2}
         value={relay.draft}
         aria-keyshortcuts="Control+Enter Meta+Enter"
@@ -153,7 +152,7 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
             : null}
       </Text>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <InfoPopover className="mr-auto" label={t("How messaging works")}>
+        <InfoPopover className="me-auto" label={t("How messaging works")}>
           <Text as="p" size="secondary" tone="inherit">
             {direct
               ? t(
@@ -173,7 +172,6 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
           type="submit"
           variant="primary"
           disabled={!canSend}
-          disabledReason={relay.blockedReason ? undefined : t("Write a message first")}
           shortcut="Mod+Enter"
         >
           {direct ? t("Send") : t("Relay via main agent")}

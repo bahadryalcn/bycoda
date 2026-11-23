@@ -3,7 +3,6 @@ import {
   MODEL_ROUTING_MAX_POOLS,
   type ModelRoutingPool,
 } from "../../../../shared/model/host-contracts/model-routing";
-import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import { Button } from "../../../../shared/ui/Button";
@@ -24,18 +23,10 @@ export function ModelOrderPools({
   onEdit: (operation: (draft: OrderDraft) => OrderDraft) => void;
 }) {
   const t = useT();
-  const { confirm, dialog } = useConfirm();
   const { entries, pools } = draft.routing;
-  const removePool = async (pool: ModelRoutingPool) => {
-    const ok = await confirm({
-      title: t("Delete group {p0}?", { p0: pool.name || t("Unnamed group") }),
-      message: t(
-        "Its models stay in the list. A job that uses this group blocks the delete until you change that job.",
-      ),
-      confirmLabel: t("Delete"),
-    });
-    if (ok) onEdit((current) => removeOrderPool(current, pool.id));
-  };
+  // A group is only a draft edit until Save and Discard reverts it, so removing needs no confirmation.
+  const removePool = (pool: ModelRoutingPool) =>
+    onEdit((current) => removeOrderPool(current, pool.id));
   return (
     <Group
       title={t("Groups")}
@@ -73,11 +64,7 @@ export function ModelOrderPools({
       }
     >
       <>
-        {!pools.length && (
-          <div className="px-4 py-3">
-            <EmptyState size="inline" title={t("No groups")} description="" />
-          </div>
-        )}
+        {!pools.length && <EmptyState size="inline" title={t("No groups")} description="" />}
         {pools.map((pool) => (
           <div
             key={pool.id}
@@ -143,7 +130,7 @@ export function ModelOrderPools({
                 iconOnly
                 variant="ghost"
                 label={t("Delete group {p0}", { p0: pool.name || t("Unnamed group") })}
-                onClick={() => void removePool(pool)}
+                onClick={() => removePool(pool)}
               >
                 <Trash2 className="icon-sm" />
               </Button>
@@ -151,7 +138,6 @@ export function ModelOrderPools({
             <PoolMembers draft={draft} pool={pool} onEdit={onEdit} />
           </div>
         ))}
-        {dialog}
       </>
     </Group>
   );

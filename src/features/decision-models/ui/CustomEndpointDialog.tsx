@@ -2,7 +2,6 @@ import { useDecisionTarget } from "./DecisionTarget";
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { PasswordField } from "../../../shared/ui/PasswordField";
@@ -88,7 +87,6 @@ export function CustomEndpointDialog({
   return (
     <Modal
       title={t("Custom endpoint")}
-      toolbar={<InfoPopover>{t("Connect a service at an address you choose.")}</InfoPopover>}
       size="md"
       onClose={close.requestClose}
       footer={
@@ -122,7 +120,6 @@ export function CustomEndpointDialog({
         />
         <Select
           label={t("Contract")}
-          description={t("The request format the service uses. The test checks it.")}
           value={adapter}
           disabled={locked}
           options={CONTRACT_ADAPTERS.map((value) => ({ value, label: contractLabel(value) }))}
@@ -149,7 +146,7 @@ export function CustomEndpointDialog({
         />
         <TextField
           label={t("Key header name (optional)")}
-          description={t("Leave empty to send the key as Authorization: Bearer.")}
+          placeholder="Authorization"
           value={authHeader}
           monospace
           disabled={locked}

@@ -226,9 +226,7 @@ export function ContentScreen({
           {t("Could not load posts.")}
         </InlineError>
       ) : data.loading ? (
-        <LoadingText delay={false} className="content-platform-note">
-          {t("Loading…")}
-        </LoadingText>
+        <LoadingText delay={false}>{t("Loading…")}</LoadingText>
       ) : isEmpty ? (
         <EmptyHint
           message={t("No posts yet.")}
@@ -255,9 +253,7 @@ export function ContentScreen({
               }}
             />
           ) : data.scheduledLoading ? (
-            <LoadingText delay={false} className="content-platform-note">
-              {t("Loading…")}
-            </LoadingText>
+            <LoadingText delay={false}>{t("Loading…")}</LoadingText>
           ) : (
             <ContentCalendar
               view={view}
@@ -277,11 +273,6 @@ export function ContentScreen({
         hasMore={view === "list" && data.hasMore}
         loading={data.loadingMore}
         error={view === "list" ? data.moreError : undefined}
-        partial={
-          view === "list" && data.hasMore
-            ? t("More posts are available. Load more to include older posts in this view.")
-            : undefined
-        }
         onLoadMore={data.loadMore}
         onRetry={data.loadMore}
       />

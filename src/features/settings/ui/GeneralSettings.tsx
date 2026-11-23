@@ -28,7 +28,6 @@ import { Progress } from "../../../shared/ui/Progress";
 import {
   ArrowDownCircle,
   BookOpen,
-  Download,
   MessageSquare,
   Play,
   RefreshCw,
@@ -38,7 +37,6 @@ import {
 import { OPEN_ONBOARDING_EVENT } from "../../onboarding/model/onboarding";
 import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import { getTourSnapshot, startTour, subscribeTour } from "../../onboarding/model/tourState";
-import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/public/importModel";
 import {
   MINIMIZE_TO_TRAY_DEFAULT,
   KEEP_AWAKE_DEFAULT,
@@ -61,11 +59,9 @@ import { saveAgentDefaultConfirmed } from "../model/agentDefaults";
 import { LanguageSettings } from "./LanguageSettings";
 import { BuildIdentityDetails } from "./BuildIdentityDetails";
 import { UpdateChannelRow } from "./UpdateChannelRow";
-import { RemoteMediaSettings } from "./RemoteMediaSettings";
-import { SessionFolderGroup, restoreSessionFolderDefault } from "./SessionFolderSettings";
-import { NewProjectFolderGroup, restoreNewProjectFolderDefault } from "./NewProjectFolderSettings";
-import { DiagnosticsGroup, restorePerformanceTraceDefault } from "./DiagnosticsSettings";
+import { DiagnosticsGroup } from "./DiagnosticsSettings";
 import {
+  AdvancedSettings,
   Group,
   Row,
   Toggle,
@@ -77,8 +73,6 @@ import "./GeneralSettings.css";
 
 export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string) => void }) {
   useLocale();
-  // A tour left part-way is resumed from where it stopped.
-  const tourState = useSyncExternalStore(subscribeTour, getTourSnapshot, () => "");
   const [minimizeToTray, setMinimizeToTray] = useStoredPreferenceState(
     loadMinimizeToTray,
     subscribeMinimizeToTray,
@@ -147,9 +141,6 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           saveKeepAwakeScreen(KEEP_AWAKE_SCREEN_DEFAULT);
           return loadKeepAwakeScreen() === KEEP_AWAKE_SCREEN_DEFAULT;
         },
-        restorePerformanceTraceDefault,
-        restoreNewProjectFolderDefault,
-        restoreSessionFolderDefault,
         async () => {
           await setLanguagePreference("system");
           const saved = localStorage.getItem(LANGUAGE_STORAGE_KEY);
@@ -186,16 +177,12 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           <Row
             id="minimize-to-tray"
             label={t("Minimize to tray")}
-            description={t("The Minimize button sends this window to the system tray.")}
           >
             <Toggle label={t("Minimize to tray")} on={minimizeToTray} onChange={onMinimizeToTray} />
           </Row>
         </Group>
       )}
-      <Group
-        title={t("Sleep")}
-        description={t("Applies to this computer, not remote computers running agents.")}
-      >
+      <Group title={t("Sleep")}>
         <Row
           id="keep-awake"
           feedback={powerFeedback("keep-awake")}
@@ -213,95 +200,71 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
             disabled={powerPending("keep-awake")}
           />
         </Row>
-        <Row
-          id="keep-awake-duration"
-          feedback={powerFeedback("keep-awake-duration")}
-          label={t("After agents finish")}
-          dependsOn={keepAwake}
-          disabledReason={t("Turn on Prevent sleep while agents work first")}
-        >
-          <Select
-            hideLabel
-            label={t("Stay awake after an agent ends")}
-            value={keepAwakeHoldAfter}
-            options={[...KEEP_AWAKE_HOLD_AFTER]}
-            onValueChange={onKeepAwakeHoldAfter}
-            disabled={!keepAwake || powerPending("keep-awake-duration")}
-          />
-        </Row>
-        <Row
-          id="keep-awake-screen"
-          label={t("Keep the screen on")}
-          dependsOn={keepAwake}
-          disabledReason={t("Turn on Prevent sleep while agents work first")}
-        >
-          <Toggle
-            label={t("Keep the screen on")}
-            on={keepAwakeScreen}
-            onChange={onKeepAwakeScreen}
-            disabled={!keepAwake}
-          />
-        </Row>
+        <AdvancedSettings settingIds={["keep-awake-duration", "keep-awake-screen"]}>
+          <Row
+            id="keep-awake-duration"
+            feedback={powerFeedback("keep-awake-duration")}
+            label={t("After agents finish")}
+            dependsOn={keepAwake}
+          >
+            <Select
+              hideLabel
+              label={t("Stay awake after an agent ends")}
+              value={keepAwakeHoldAfter}
+              options={[...KEEP_AWAKE_HOLD_AFTER]}
+              onValueChange={onKeepAwakeHoldAfter}
+              disabled={!keepAwake || powerPending("keep-awake-duration")}
+            />
+          </Row>
+          <Row id="keep-awake-screen" label={t("Keep the screen on")} dependsOn={keepAwake}>
+            <Toggle
+              label={t("Keep the screen on")}
+              on={keepAwakeScreen}
+              onChange={onKeepAwakeScreen}
+              disabled={!keepAwake}
+            />
+          </Row>
+        </AdvancedSettings>
       </Group>
-
-      <RemoteMediaSettings />
 
       {/* Updates: version, check/install/restart state and progress share one compact action area. */}
       <Group title={t("Updates")}>
         <UpdateRow onOpenWhatsNew={onOpenWhatsNew} />
       </Group>
+    </div>
+  );
+}
 
-      {/* Secondary: setup help, diagnostics and product details. */}
+export function HelpSettings() {
+  useLocale();
+  const tourState = useSyncExternalStore(subscribeTour, getTourSnapshot, () => "");
+  return (
+    <>
       <Group title={t("Setup and help")}>
-        <Row
-          id="import-history"
-          label={t("Import history")}
-          description={t(
-            "Choose Claude Code and Codex conversations to import. Originals stay unchanged.",
-          )}
-        >
-          <Button
-            className="general-action shrink-0"
-            startIcon={<Download strokeWidth={1.75} aria-hidden />}
-            onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}
-          >
-            {t("Import…")}
-          </Button>
-        </Row>
-        <Row
-          id="getting-started"
-          label={t("Getting started")}
-          description={t(
-            "Take a one-minute tour, or connect computers, set up agents and choose your projects.",
-          )}
-        >
-          <div className="flex shrink-0 items-center gap-2">
+        <Row id="getting-started" label={null}>
+          <div className="flex flex-wrap items-center gap-2">
             {/* The tour request closes Settings and points at the workspace controls. */}
             <Button
-              className="general-action shrink-0"
-              startIcon={<Play strokeWidth={1.75} aria-hidden />}
+              variant="ghost"
+              startIcon={<Play aria-hidden />}
               onClick={() => startTour("first-run")}
             >
               {tourState.startsWith("paused:") ? t("Resume tour") : t("Take the tour")}
             </Button>
             <Button
-              className="general-action shrink-0"
-              startIcon={<Settings strokeWidth={1.75} aria-hidden />}
+              variant="ghost"
+              startIcon={<Settings aria-hidden />}
               onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}
             >
               {t("Open setup…")}
             </Button>
           </div>
         </Row>
-        <Row
-          id="usage-guide"
-          label={t("Usage guide")}
-          description={t("Learn chat, queue, stop and essential shortcuts.")}
-        >
+        <Row id="usage-guide" label={null}>
           {/* The guide request closes Settings and walks through the workspace. */}
           <Button
-            className="general-action shrink-0"
-            startIcon={<BookOpen strokeWidth={1.75} aria-hidden />}
+            variant="ghost"
+            startIcon={<BookOpen aria-hidden />}
             onClick={openUsageGuide}
           >
             {t("Open guide…")}
@@ -309,14 +272,14 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         </Row>
         <Row
           id="send-feedback"
-          label={t("Share an idea or report a problem")}
+          label={null}
           info={t(
             "Nothing from your sessions, code, logs or file paths is attached automatically. Do not paste passwords, tokens or other secrets.",
           )}
         >
           <Button
-            className="general-action shrink-0"
-            startIcon={<MessageSquare strokeWidth={1.75} aria-hidden />}
+            variant="ghost"
+            startIcon={<MessageSquare aria-hidden />}
             onClick={openFeedbackDialog}
           >
             {t("Send feedback")}
@@ -324,16 +287,13 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         </Row>
       </Group>
 
-      <SessionFolderGroup />
-
-      <NewProjectFolderGroup />
-
       <DiagnosticsGroup />
 
       <Group title={t("About")}>
+        <BuildIdentityDetails />
         <ProductDetails />
       </Group>
-    </div>
+    </>
   );
 }
 
@@ -476,7 +436,6 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
                 max={100}
               />
             ) : null}
-            <BuildIdentityDetails />
           </div>
         }
       >

@@ -45,13 +45,8 @@ export function AccountSignIn({
   useLocale();
   if (state.phase === "signing-in") {
     return (
-      <Group
-        title={t("Finish signing in")}
-        description={t(
-          "Complete the sign-in in the browser window that opened, then return to bycoda.",
-        )}
-      >
-        <Row label={t("Waiting for your browser…")}>
+      <Group title={t("bycoda account")}>
+        <Row label={t("Complete sign-in in your browser")}>
           <Button variant="secondary" size="sm" onClick={onCancel}>
             {t("Stop")}
           </Button>

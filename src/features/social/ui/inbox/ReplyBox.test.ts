@@ -173,7 +173,6 @@ it("keeps Send disabled with its reason until the owner writes a reply", async (
   act(() => button("Send").focus());
   expect(document.activeElement).toBe(button("Send"));
   expect(element.textContent).not.toContain("Write a reply first.");
-  expect(element.querySelector(".inbox-note")).toBeNull();
   await type("   ");
   expect(off(button("Send"))).toBe(true);
   await type("Thanks, see you soon.");
@@ -337,23 +336,19 @@ it("keeps the unfinished text and shows an error when the suggestion fails", asy
   expect(fake.writes()).toEqual([]);
 });
 
-it("explains in place why AI is unavailable without a project or without verified facts", async () => {
+it("explains through the button why AI is unavailable without a project or without verified facts", async () => {
   const noProject = fakeClient();
   await mount(noProject.client, { projectId: undefined });
   expect(off(button("Fill with AI"))).toBe(true);
-  expect(element.querySelector(".inbox-note")?.textContent).toBe(
+  expect(button("Fill with AI").getAttribute("aria-description")).toBe(
     "Choose the conversation's project first.",
   );
-  // The visible note is the only text for this reason: no tooltip repeats it.
-  expect(button("Fill with AI").getAttribute("aria-description")).toBeNull();
-  expect(button("Fill with AI").getAttribute("aria-describedby")).toBe(
-    element.querySelector(".inbox-note")?.id,
-  );
+  expect(element.textContent).not.toContain("Choose the conversation's project first.");
 
   const noFacts = fakeClient({ facts: [] });
   await mount(noFacts.client);
   expect(off(button("Fill with AI"))).toBe(true);
-  expect(element.querySelector(".inbox-note")?.textContent).toBe(
+  expect(button("Fill with AI").getAttribute("aria-description")).toBe(
     "Add verified facts for this project first.",
   );
   expect(noFacts.calls.some((call) => call.action === "replies.suggest")).toBe(false);
@@ -424,7 +419,7 @@ it("reads only the conversation's project facts and reuses them across conversat
     { section: "accounts", projectId: "p2", limit: 1 },
   ]);
   expect(off(button("Fill with AI"))).toBe(true);
-  expect(element.querySelector(".inbox-note")?.textContent).toBe(
+  expect(button("Fill with AI").getAttribute("aria-description")).toBe(
     "Add verified facts for this project first.",
   );
 

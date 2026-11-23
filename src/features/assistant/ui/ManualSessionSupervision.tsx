@@ -261,7 +261,7 @@ export function ManualSessionSupervision({
           {...surfaceAttributes({ frame: "pane", edge: "responsive-start" }, panelStyles.notices)}
         >
           <LiveText
-            size="micro"
+            size="caption"
             tone="secondary"
             leading="inherit"
             className={styles.muted}
@@ -270,24 +270,24 @@ export function ManualSessionSupervision({
           {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
           {!data ? (
             pending ? (
-              <LoadingText size="micro" delay={false} className={styles.muted}>
+              <LoadingText size="caption" delay={false} className={styles.muted}>
                 {t("Loading…")}
               </LoadingText>
             ) : (
-              <InlineError text={{ size: "micro" }}>
+              <InlineError text={{ size: "caption" }}>
                 {t("Manual supervision state is unavailable. Refresh to retry.")}
               </InlineError>
             )
           ) : null}
           <LiveText
-            size="micro"
+            size="caption"
             tone="secondary"
             leading="inherit"
             className={styles.muted}
             text={scopeChanged ? t("Project scope changed. Your unsaved selection is kept.") : ""}
           />
           <LiveText
-            size="micro"
+            size="caption"
             tone="secondary"
             leading="inherit"
             className={styles.muted}
@@ -360,11 +360,7 @@ export function ManualSessionSupervision({
           <div
             {...surfaceAttributes({ frame: "pane", edge: "block-start" }, panelStyles.footerAction)}
           >
-            <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
-              {t(
-                "Saving project scope does not enroll conversations. Choose each conversation in Sessions.",
-              )}
-            </Text>
+            {/* The "Selected projects" row above already says that saving does not enroll. */}
             <Button
               loading={pending === "policy"}
               disabled={!!pending || stopping || !chief || !data}
@@ -409,7 +405,7 @@ export function ManualSessionSupervision({
         </div>
       </div>
       <LiveText
-        size="micro"
+        size="caption"
         tone="secondary"
         leading="inherit"
         className={styles.muted}
@@ -418,17 +414,17 @@ export function ManualSessionSupervision({
       {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
       {!data ? (
         pending ? (
-          <LoadingText size="micro" delay={false} className={styles.muted}>
+          <LoadingText size="caption" delay={false} className={styles.muted}>
             {t("Loading…")}
           </LoadingText>
         ) : (
-          <InlineError text={{ size: "micro" }}>
+          <InlineError text={{ size: "caption" }}>
             {t("Manual supervision state is unavailable. Refresh to retry.")}
           </InlineError>
         )
       ) : null}
       <LiveText
-        size="micro"
+        size="caption"
         tone="secondary"
         leading="inherit"
         className={styles.muted}
@@ -461,7 +457,7 @@ export function ManualSessionSupervision({
                 </Text>
                 <Text
                   as="span"
-                  size="micro"
+                  size="caption"
                   tone="secondary"
                   leading="inherit"
                   className={styles.muted}
@@ -469,7 +465,7 @@ export function ManualSessionSupervision({
                   {t(effective ? "Enrollment saved" : "Supervision paused")}
                 </Text>
                 <LiveText
-                  size="micro"
+                  size="caption"
                   tone="secondary"
                   leading="inherit"
                   className={styles.muted}
@@ -482,7 +478,7 @@ export function ManualSessionSupervision({
                 {candidate && !candidate.eligible && (
                   <Text
                     as="p"
-                    size="micro"
+                    size="caption"
                     tone="secondary"
                     leading="inherit"
                     className={styles.muted}
@@ -542,7 +538,7 @@ export function ManualSessionSupervision({
                 {!candidate.eligible && (
                   <Text
                     as="p"
-                    size="micro"
+                    size="caption"
                     tone="secondary"
                     leading="inherit"
                     className={styles.muted}
@@ -553,7 +549,7 @@ export function ManualSessionSupervision({
                 {candidate.eligible && !inScope && (
                   <Text
                     as="p"
-                    size="micro"
+                    size="caption"
                     tone="secondary"
                     leading="inherit"
                     className={styles.muted}

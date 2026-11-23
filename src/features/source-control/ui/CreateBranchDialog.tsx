@@ -78,10 +78,9 @@ export function CreateBranchDialog({
             form={formId}
             variant="primary"
             disabled={busy || Boolean(blockedReason)}
-            disabledReason={blockedReason}
             loading={busy}
           >
-            {t("Create branch")}
+            {t("Create")}
           </Button>
         </ModalActions>
       }

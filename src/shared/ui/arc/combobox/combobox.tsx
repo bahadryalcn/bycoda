@@ -149,7 +149,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
     onValueChange,
     description,
     placeholder = "Search or select…",
-    emptyMessage = "No matches found",
+    emptyMessage,
     id,
     className,
     disabled,
@@ -387,7 +387,9 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
             </div>
           ))
         ) : (
-          <ComboboxStatus empty>{emptyMessage}</ComboboxStatus>
+          <ComboboxStatus empty>
+            {emptyMessage ?? (options.length ? t("No matching options") : t("No options available"))}
+          </ComboboxStatus>
         )}
       </div>
     </AutoHeight>

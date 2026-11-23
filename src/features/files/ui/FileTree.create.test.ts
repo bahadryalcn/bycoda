@@ -236,7 +236,7 @@ describe("Explorer create target", () => {
   it("context menu on a folder creates inside it even when another row is selected", async () => {
     await mount("first.ts", ["src"]);
     await contextMenu(row("src")!);
-    await pick("New File");
+    await pick("New file");
     expect(container.querySelector("[data-name-caption]")?.textContent).toBe("New file in src");
     type("in-src.ts");
     await enter();
@@ -261,9 +261,9 @@ describe("Explorer create target", () => {
     const rootItems = [...document.querySelectorAll('[role="menuitem"]')].map((item) =>
       item.textContent?.trim(),
     );
-    expect(rootItems[0]).toContain("New File");
+    expect(rootItems[0]).toContain("New file");
     expect(rootItems[0]).toContain("In Workspace");
-    await pick("New File");
+    await pick("New file");
     type("r1.ts");
     await enter();
     await contextMenu(container.querySelector('[role="tree"]')!);
@@ -280,7 +280,7 @@ describe("Explorer create target", () => {
     await mount(null, ["src"]);
     await contextMenu(row("src/deep.ts")!);
     const items = [...document.querySelectorAll('[role="menuitem"]')];
-    expect(items[0].textContent).toContain("New File");
+    expect(items[0].textContent).toContain("New file");
     expect(items[0].textContent).toContain("In src");
     expect(items[1].textContent).toContain("New folder");
   });

@@ -120,15 +120,18 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
         {loading ? (
           <LoadingText />
         ) : readError ? (
-          <InlineError>{t("Addresses could not be loaded.")}</InlineError>
-        ) : null}
-        {readError ? (
-          <Button loading={loading} onClick={() => setRetry((value) => value + 1)}>
-            {t("Retry")}
-          </Button>
+          <InlineError
+            retry={{
+              onRetry: () => setRetry((value) => value + 1),
+              label: t("Retry"),
+              pending: loading,
+            }}
+          >
+            {t("Addresses could not be loaded.")}
+          </InlineError>
         ) : null}
         {ssh?.alternate ? (
-          <Text wrap="anywhere" as="div" tone="muted" className="mt-1">
+          <Text wrap="anywhere" as="div" tone="muted">
             {t("Other address: {p0}", { p0: ssh.alternate })}
           </Text>
         ) : null}
@@ -226,15 +229,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
                     {t("In use")}
                   </Badge>
                 ) : null}
-                {!route.enabled ? (
-                  <Badge size="xs">{t("Off")}</Badge>
-                ) : checks === undefined ? (
-                  <Badge size="xs">{t("Checking…")}</Badge>
-                ) : reachable === true ? (
-                  <Badge size="xs" tone="success">
-                    {t("Responds")}
-                  </Badge>
-                ) : reachable === false ? (
+                {route.enabled && reachable === false ? (
                   <Badge size="xs" tone="warning">
                     {t("No response")}
                   </Badge>
@@ -252,9 +247,14 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
           );
         })}
       </Surface>
-      {error ? <InlineError>{error}</InlineError> : null}
-      {readError ? <InlineError>{t("Addresses could not be loaded.")}</InlineError> : null}
-      {probeError ? <InlineError>{t("Address check unavailable.")}</InlineError> : null}
+      {/* One message at a time; the Check again / Retry button above is the recovery. */}
+      {error ? (
+        <InlineError>{error}</InlineError>
+      ) : readError ? (
+        <InlineError>{t("Addresses could not be loaded.")}</InlineError>
+      ) : probeError ? (
+        <InlineError>{t("Address check unavailable.")}</InlineError>
+      ) : null}
     </section>
   );
 }

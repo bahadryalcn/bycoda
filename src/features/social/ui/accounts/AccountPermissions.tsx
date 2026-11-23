@@ -5,7 +5,6 @@ import { getLocale, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
@@ -92,11 +91,6 @@ export function AccountPermissions({
       {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Who can use this account")}
     >
-      <InfoPopover className="self-end shrink-0">
-        {t(
-          "Access applies only to this account and can be revoked here. Sending still requires the autonomy level below.",
-        )}
-      </InfoPopover>
       {account.assistantGrantPending ? (
         <InlineError>
           {t(

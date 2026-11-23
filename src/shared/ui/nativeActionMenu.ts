@@ -37,6 +37,8 @@ function discard() {
 
 /**
  * Show a flat OS-native action menu for a bounded native webview.
+ * The operating system paints this menu. App-themed commands use the HTML menu
+ * whenever the host can position and render it.
  * The promise acknowledges showing, NOT selection/dismissal. Tauri's popup is
  * nonblocking on some platforms, so keep its resource and callbacks alive until
  * the next popup or page teardown. Only an actual item callback calls onPick.

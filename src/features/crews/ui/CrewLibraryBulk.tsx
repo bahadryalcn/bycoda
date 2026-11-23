@@ -100,8 +100,7 @@ export function CrewLibraryBulkBar({
   return (
     <div className="flex min-w-0 flex-col gap-2 px-3 py-2">
       {/* Select all leads the model bar's row so checkbox, picker and Apply share one line.
-          The bar's own inline confirmation sits below that row and cannot shift the controls.
-          Success is confirmed once, by that inline message; only failures get a banner. */}
+          The list visibly updates on success; only failures get a banner. */}
       <div className="flex min-w-0 flex-wrap items-start gap-2">
         <CrewBulkModelBar
           cwd={cwd}

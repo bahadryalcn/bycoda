@@ -200,12 +200,12 @@ it("shows the link holding the caret in full, so editing lines up with the texta
     document.dispatchEvent(new Event("selectionchange"));
   });
   expect(host.textContent).toBe(text);
-  expect(host.querySelector("[data-composer-link-open]")).toBeNull();
+  expect(host.querySelector("[data-composer-link-token] [data-reference-face]")).toBeNull();
   act(() => {
     field.setSelectionRange(text.length, text.length);
     document.dispatchEvent(new Event("selectionchange"));
   });
-  expect(host.querySelector("[data-composer-link-open]")).not.toBeNull();
+  expect(host.querySelector("[data-composer-link-token] [data-reference-face]")).not.toBeNull();
   field.remove();
 });
 
@@ -232,7 +232,7 @@ it("shows a link that wraps across lines in source order, so the caret after it 
     ),
   );
   expect(host.textContent).toBe(text);
-  expect(host.querySelector("[data-composer-link-open]")).toBeNull();
+  expect(host.querySelector("[data-composer-link-token] [data-reference-face]")).toBeNull();
   rects.mockRestore();
 });
 
@@ -264,7 +264,7 @@ it("re-renders on a caret move only when it enters or leaves a link", () => {
       field.setSelectionRange(position, position);
       document.dispatchEvent(new Event("selectionchange"));
     });
-  const openBadges = () => host.querySelectorAll("[data-composer-link-open]").length;
+  const openBadges = () => host.querySelectorAll("[data-composer-link-token] [data-reference-face]").length;
 
   moveCaret(1);
   const settled = skillParts.mock.calls.length;
@@ -284,7 +284,7 @@ it("re-renders on a caret move only when it enters or leaves a link", () => {
   moveCaret(40);
   expect(openBadges()).toBe(1);
   const first = host.querySelector("[data-composer-link-token]");
-  expect(first?.querySelector("[data-composer-link-open]")).not.toBeNull();
+  expect(first?.querySelector("[data-reference-face]")).not.toBeNull();
   // A collapsed link paints its scheme inside the badge, so only the characters (not their
   // order) match the draft; the overlay is aria-hidden and the textarea keeps the real text.
   const sorted = (value: string | null | undefined) => [...(value ?? "")].sort().join("");

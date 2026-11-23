@@ -5,22 +5,11 @@
   flex: none;
   align-items: center;
   gap: var(--space-1);
-  font-size: var(--ui-font-caption);
-  line-height: var(--ui-leading-caption);
   white-space: nowrap;
-  color: var(--ui-text-secondary);
 }
-.status[data-tone="running"] {
-  color: var(--ui-tone-accent-fg);
-}
-.status[data-tone="needs-you"] {
-  color: var(--ui-tone-warning-fg);
-}
-.status[data-tone="failed"] {
-  color: var(--ui-tone-danger-fg);
-}
-.status[data-tone="done"] {
-  color: var(--ui-tone-success-fg);
+.status[data-wrap] {
+  flex: 0 1 auto;
+  white-space: normal;
 }
 .icon {
   display: inline-grid;

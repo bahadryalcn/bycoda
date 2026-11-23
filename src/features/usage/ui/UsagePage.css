@@ -1,19 +1,19 @@
 .usage-page {
   display: grid;
-  gap: 16px;
+  gap: var(--ui-space-4);
   min-inline-size: 0;
 }
 
 .usage-active-time {
   display: grid;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 
 .usage-active-heading {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
 }
 
@@ -35,7 +35,7 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 
 /* The display switch and refresh sit at the end of the section title row. */
@@ -43,13 +43,6 @@
   margin-inline-end: auto;
 }
 
-.usage-display-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-
-  cursor: pointer;
-}
 .usage-accounts {
   display: grid;
   min-inline-size: 0;
@@ -59,9 +52,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px 24px;
+  gap: var(--ui-space-3) var(--ui-space-6);
   min-inline-size: 0;
-  padding: 12px;
+  padding: var(--ui-space-3);
 }
 
 .usage-account-heading {
@@ -69,21 +62,18 @@
   min-inline-size: 0;
   align-items: start;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: var(--ui-space-2);
 }
 
 .usage-account-identity {
   flex: 1;
   min-inline-size: 0;
   display: grid;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 
 .usage-account-name {
   overflow-wrap: anywhere;
-}
-
-.usage-account-provider {
 }
 
 .usage-account-subtitle {
@@ -94,18 +84,14 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--ui-space-2);
   min-inline-size: 0;
-}
-
-.usage-account-default {
-  flex-shrink: 0;
 }
 
 .usage-account-observed {
   flex-shrink: 0;
   margin-inline-start: auto;
-  padding-block-start: 2px;
+  padding-block-start: var(--ui-space-1);
 
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -123,13 +109,13 @@
   min-inline-size: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
-  gap: 12px 24px;
+  gap: var(--ui-space-3) var(--ui-space-6);
 }
 
 .usage-quota {
   display: grid;
   min-inline-size: 0;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 
 .usage-quota-heading {
@@ -139,7 +125,7 @@
 /* The quota title stacks its reset countdown under the period name and may wrap. */
 span.usage-quota-title {
   display: grid;
-  gap: 2px;
+  gap: var(--ui-space-1);
   overflow: visible;
   white-space: normal;
 }
@@ -154,7 +140,7 @@ span.usage-budget-title {
   display: flex;
   flex-shrink: 0;
   align-items: baseline;
-  gap: 4px;
+  gap: var(--ui-space-1);
 }
 
 .usage-quota-heading strong {
@@ -168,7 +154,7 @@ span.usage-budget-title {
 
 .usage-analysis {
   display: grid;
-  gap: 12px;
+  gap: var(--ui-space-3);
   min-inline-size: 0;
 }
 
