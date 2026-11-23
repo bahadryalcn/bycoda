@@ -403,7 +403,7 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
                   onClick: () => setMetadataAttempt((attempt) => attempt + 1),
                 }}
               >
-                {t("Could not read update information. Retry to check this build.")}
+                {t("Could not read update information.")}
               </SettingsFeedback>
             ) : null}
             {snapshot.phase !== "idle" || updatesEnabled === false ? (

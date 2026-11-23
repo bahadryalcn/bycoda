@@ -12905,5 +12905,6 @@
   "Reading the briefing.": "Brifing okunuyor.",
   "Enable memory": "Hafızayı etkinleştir",
   "Remove request": "İsteği kaldır",
-  "Add to To do": "Yapılacaklara ekle"
+  "Add to To do": "Yapılacaklara ekle",
+  "Could not read update information.": "Güncelleme bilgisi okunamadı."
 }

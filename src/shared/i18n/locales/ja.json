@@ -12905,5 +12905,6 @@
   "Reading the briefing.": "ブリーフィングを読んでいます。",
   "Enable memory": "メモリーを有効にする",
   "Remove request": "リクエストを削除",
-  "Add to To do": "未着手に追加"
+  "Add to To do": "未着手に追加",
+  "Could not read update information.": "アップデート情報を読み取れませんでした。"
 }

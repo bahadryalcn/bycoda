@@ -12905,5 +12905,6 @@
   "Reading the briefing.": "Reading the briefing.",
   "Enable memory": "Enable memory",
   "Remove request": "Remove request",
-  "Add to To do": "Add to To do"
+  "Add to To do": "Add to To do",
+  "Could not read update information.": "Could not read update information."
 }

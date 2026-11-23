@@ -12905,5 +12905,6 @@
   "Reading the briefing.": "正在阅读简报。",
   "Enable memory": "启用记忆",
   "Remove request": "移除请求",
-  "Add to To do": "添加到待办"
+  "Add to To do": "添加到待办",
+  "Could not read update information.": "无法读取更新信息。"
 }

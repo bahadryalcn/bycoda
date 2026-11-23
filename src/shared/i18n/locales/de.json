@@ -12905,5 +12905,6 @@
   "Reading the briefing.": "Briefing wird gelesen.",
   "Enable memory": "Gedächtnis aktivieren",
   "Remove request": "Anfrage entfernen",
-  "Add to To do": "Zu „Zu erledigen“ hinzufügen"
+  "Add to To do": "Zu „Zu erledigen“ hinzufügen",
+  "Could not read update information.": "Update-Informationen konnten nicht gelesen werden."
 }
