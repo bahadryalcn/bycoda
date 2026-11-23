@@ -395,6 +395,14 @@ export const ListNumbered = wrap(LucideListNumbered, "ListNumbered");
 export const AiIdea = wrap(LucideAiIdea, "AiIdea");
 export const CaseSensitive = wrap(LucideCaseSensitive, "CaseSensitive");
 export const Chatting = wrap(LucideChatting, "Chatting");
+export const StandaloneChat = custom(
+  "StandaloneChat",
+  <>
+    <path d="M6 4.5h12a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H9.5L4 21v-4.3a3 3 0 0 1-1-2.2v-7a3 3 0 0 1 3-3Z" />
+    <circle cx="9" cy="11" r="1" fill="currentColor" stroke="none" />
+    <circle cx="15" cy="11" r="1" fill="currentColor" stroke="none" />
+  </>,
+);
 export const Check = wrap(LucideCheck, "Check");
 export const CheckCheck = wrap(LucideCheckCheck, "CheckCheck");
 export const CheckCircle = wrap(LucideCheckCircle, "CheckCircle");

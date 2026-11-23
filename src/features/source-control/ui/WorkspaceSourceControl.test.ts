@@ -46,7 +46,6 @@ vi.mock("../../../shared/ui/SearchableSelect", () => ({
       ),
     ),
 }));
-vi.mock("../hooks/useProjectDiffStats", () => ({ useProjectDiffStats: () => null }));
 vi.mock("./GitPanelSections", () => ({
   GitPanelSections: (props: {
     cwd: string;

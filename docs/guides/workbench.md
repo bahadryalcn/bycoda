@@ -445,7 +445,7 @@ checkout. Choosing the current project keeps Last sessions open. Choosing anothe
 project opens its **Sessions** list. Choose **No project** to start a conversation
 without a project. Bycoda gives it its own working directory under
 `~/.bycoda-host/scratch` when it first runs. The files stay on disk when the
-conversation is deleted. Choose **No project** under **Projects** to browse these
+conversation is deleted. Choose **No project** next to **Last sessions** to browse these
 conversations or start another one. Older projectless conversations keep the folder
 configured under **Settings → General**. Choosing a project from the rail returns
 to its own conversation list. The

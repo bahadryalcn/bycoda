@@ -28,13 +28,27 @@ test("opens a synced Windows workspace from its parent group", async ({ page }, 
   }
 });
 
-test("No project is selectable under Projects in light and dark layouts", async ({
+test("No project stays beside Last sessions when Projects collapses", async ({
   page,
 }, testInfo) => {
   await page.goto("/tests/browser/workspace/project-workspace-navigation.html?layout=1");
   await page.emulateMedia({ reducedMotion: "reduce" });
-  const row = page.getByRole("button", { name: "No project", exact: true });
+  const rail = page.locator('[data-side-pane="rail"]');
+  const row = rail.getByRole("button", { name: "No project", exact: true });
+  const projects = rail.getByRole("button", { name: "Projects", exact: true });
+  const lastSessions = rail
+    .locator("[data-rail-section-header]")
+    .filter({ hasText: "Last sessions" });
   await expect(row).toBeVisible();
+  await expect(lastSessions.or(row).or(projects)).toHaveText([
+    /Last sessions/,
+    "No project",
+    "Projects",
+  ]);
+  await projects.click();
+  await expect(projects).toHaveAttribute("aria-expanded", "false");
+  await expect(row).toBeVisible();
+  await projects.click();
   await row.click();
   await expect(page.getByLabel("Selected live session")).toHaveText("~");
   await expect(row).toHaveAttribute("aria-current", "page");
@@ -46,7 +60,7 @@ test("No project is selectable under Projects in light and dark layouts", async 
     for (const width of [1280, 800]) {
       await page.setViewportSize({ width, height: 800 });
       await expect(row).toBeInViewport();
-      await page.screenshot({
+      await rail.screenshot({
         path: testInfo.outputPath(`rail-${theme}-${width}.png`),
       });
     }

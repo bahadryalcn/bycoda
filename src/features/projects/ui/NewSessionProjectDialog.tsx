@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { projectKey, projectName } from "../../../shared/lib/paths";
-import { Chatting } from "../../../shared/ui/icons";
+import { StandaloneChat } from "../../../shared/ui/icons";
 import { Modal } from "../../../shared/ui/Modal";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { PickerList, filterPickerOptions, usePickerList } from "../../../shared/ui/picker";
@@ -64,7 +64,7 @@ export function NewSessionProjectDialog({
       title: t("No project"),
       description: t("Runs in your default folder for sessions without a project"),
       group: t("Without a project"),
-      icon: <Chatting className="icon-sm" />,
+      icon: <StandaloneChat className="icon-sm" />,
       disabled: busy,
     },
     ...projects.map(({ path }) => {

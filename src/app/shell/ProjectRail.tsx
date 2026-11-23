@@ -40,7 +40,7 @@ import {
   Lock,
   LockOpen,
   MoreHorizontal,
-  MessageSquare,
+  StandaloneChat,
   Pin,
   PinOff,
   CircleAlert,
@@ -926,32 +926,50 @@ export function ProjectRail({
   // Destructured: the compiler treats a direct `.setRef` read as a ref access during render.
   const groupsDrag = rail.drag("groups");
   const { setRef: setGroupsSectionRef } = groupsDrag;
+  const noProjectSelected = cwd === "~" && !lastSessionsOpen && !searchOrPageActive;
   const sectionNodes: Record<RailSectionId, ReactNode> = {
-    "last-sessions": recentSessions ? (
-      <div className="shrink-0 @max-[140px]/rail:hidden">
-        <LastSessionsSection
-          source={recentSessions}
-          onOpenLastSessions={onOpenLastSessions}
-          lastSessionsOpen={lastSessionsOpen}
-          projectKeys={railProjectKeys}
-          enabled={visible}
-          activeSessionId={activeSessionId}
-          searchActive={searchOrPageActive}
-          onOpenSession={
-            onSelectListedSession ??
-            ((id, _cwd, options) => (onPreviewSession ?? onSelectAgent)?.(id, options))
-          }
-          onOpenProject={onSelectProject}
-          drag={rail.drag("last-sessions")}
-          onShownChange={setLastSessionsShown}
-          groupLabels={groupLabels}
-          groupColors={groupColors}
-          groupCustomColors={groupCustomColors}
-          groupLogos={groupLogos}
-          groupMascots={groupMascots}
-        />
-      </div>
-    ) : null,
+    "last-sessions": (
+      <>
+        {recentSessions ? (
+          <div className="shrink-0 @max-[140px]/rail:hidden">
+            <LastSessionsSection
+              source={recentSessions}
+              onOpenLastSessions={onOpenLastSessions}
+              lastSessionsOpen={lastSessionsOpen}
+              projectKeys={railProjectKeys}
+              enabled={visible}
+              activeSessionId={activeSessionId}
+              searchActive={searchOrPageActive}
+              onOpenSession={
+                onSelectListedSession ??
+                ((id, _cwd, options) => (onPreviewSession ?? onSelectAgent)?.(id, options))
+              }
+              onOpenProject={onSelectProject}
+              drag={rail.drag("last-sessions")}
+              onShownChange={setLastSessionsShown}
+              groupLabels={groupLabels}
+              groupColors={groupColors}
+              groupCustomColors={groupCustomColors}
+              groupLogos={groupLogos}
+              groupMascots={groupMascots}
+            />
+          </div>
+        ) : null}
+        {onOpenNoProject && t("No project").toLocaleLowerCase().includes(filterQuery) ? (
+          <div className="shrink-0 px-2 pb-2">
+            <ListRow
+              aria-label={t("No project")}
+              selected={noProjectSelected}
+              aria-current={noProjectSelected ? "page" : undefined}
+              icon={<StandaloneChat className="icon-sm" />}
+              onClick={onOpenNoProject}
+            >
+              <span className="@max-[140px]/rail:hidden">{t("No project")}</span>
+            </ListRow>
+          </div>
+        ) : null}
+      </>
+    ),
     pinned:
       pinnedProjects.length > 0 ? (
         <ProjectSection
@@ -1031,21 +1049,6 @@ export function ProjectRail({
           rail.toggleCollapsed("projects");
         }}
         items={groupedProjectSections.ungrouped}
-        leadingRow={
-          onOpenNoProject && t("No project").toLocaleLowerCase().includes(filterQuery) ? (
-            <ListRow
-              aria-label={t("No project")}
-              selected={cwd === "~" && !lastSessionsOpen && !searchOrPageActive}
-              aria-current={
-                cwd === "~" && !lastSessionsOpen && !searchOrPageActive ? "page" : undefined
-              }
-              icon={<MessageSquare className="icon-sm" />}
-              onClick={onOpenNoProject}
-            >
-              <span className="@max-[140px]/rail:hidden">{t("No project")}</span>
-            </ListRow>
-          ) : undefined
-        }
         muteStatuses={muteStatuses}
         nameCollisions={nameCollisions}
         focusHint={!navigator}
@@ -1403,7 +1406,6 @@ function ProjectSection({
   collapsed = false,
   onToggleCollapsed,
   items,
-  leadingRow,
   muteStatuses,
   nameCollisions,
   focusHint,
@@ -1432,7 +1434,6 @@ function ProjectSection({
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   items: RecentProject[];
-  leadingRow?: ReactNode;
   muteStatuses: ReadonlyMap<string, string | null>;
   nameCollisions: ReadonlySet<string>;
   /** Rows show their full detail in the shared keyboard-focus hint (not inside the Projects flyout). */
@@ -1474,7 +1475,7 @@ function ProjectSection({
         collapsed={collapsed}
         onToggleCollapsed={onToggleCollapsed}
       />
-      {items.length === 0 && emptyLabel && !leadingRow && !collapsed ? (
+      {items.length === 0 && emptyLabel && !collapsed ? (
         <Text
           as="p"
           size="caption"
@@ -1491,7 +1492,6 @@ function ProjectSection({
         data-reorder-fold-body
         className={`flex-col gap-0.5 px-2 ${collapsed ? "hidden" : "flex"}`}
       >
-        {leadingRow}
         {items.map((item) => (
           <ProjectCard
             key={item.path}

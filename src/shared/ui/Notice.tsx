@@ -9,6 +9,8 @@ export type NoticeTone = "info" | "success" | "warning" | "danger" | "neutral";
 export type NoticeAction = {
   label: string;
   onClick: () => void;
+  /** Hierarchy for a button action. Inline actions render as links. */
+  variant?: "primary" | "secondary";
   /** Shows progress and blocks a second activation; the caller owns the operation. */
   pending?: boolean;
   disabled?: boolean;
@@ -149,7 +151,7 @@ export function NoticeLink({ action }: { action: NoticeAction }) {
 export function NoticeButton({ action }: { action: NoticeAction }) {
   return (
     <Button
-      variant="secondary"
+      variant={action.variant ?? "secondary"}
       size="sm"
       loading={action.pending ?? false}
       disabled={action.disabled}
