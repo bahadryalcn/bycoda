@@ -252,9 +252,13 @@ html [data-composer-box][data-ui-focus-group],
     transparent
   );
 }
-html:not([data-chat-user-surface-off]) .chat-pane-background [data-chat-message-surface="user"],
+/* Per-message blur is skipped on Linux WebKit (data-transcript-glass, an engine fallback, not a GPU probe;
+   set from transcriptGlass.ts), where one blur layer per message made scroll frames take seconds. Fill and edge stay. */
+html:not([data-chat-user-surface-off])
+  .chat-pane-background:not([data-transcript-glass="flat"])
+  [data-chat-message-surface="user"],
 html:not([data-chat-assistant-surface-off])
-  .chat-pane-background
+  .chat-pane-background:not([data-transcript-glass="flat"])
   [data-chat-message-surface="assistant"] {
   -webkit-backdrop-filter: var(--ui-chat-glass-filter, none);
   backdrop-filter: var(--ui-chat-glass-filter, none);

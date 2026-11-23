@@ -510,7 +510,11 @@ for (const light of [true, false])
           [message, 42],
           [reply, 26],
         ] as const) {
-          await expect(node).toHaveCSS("backdrop-filter", working.filter);
+          // Linux WebKit keeps each message's fill and edge but not the repeated blur layer.
+          const flat = await page
+            .locator(".chat-pane-background")
+            .evaluate((pane) => pane.getAttribute("data-transcript-glass") === "flat");
+          await expect(node).toHaveCSS("backdrop-filter", flat ? "none" : working.filter);
           await expect(node).toHaveCSS(
             "background-color",
             await expectedMessageFill(node, opacity, mode === "forced-colors"),
@@ -518,6 +522,41 @@ for (const light of [true, false])
         }
       }
     });
+
+for (const light of [true, false])
+  test(`a flat transcript glass drops only the per-message blur ${light ? "light" : "dark"}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(url({ goal: "" }, light));
+    const pane = page.locator(".chat-pane-background");
+    const box = page.locator("[data-composer-box]");
+    const message = page.locator('[data-prompt-anchor="user-39"] .user-message-bubble');
+    const reply = page.locator('[data-selectable-agent-response="reply-39"]');
+    const glass = await box.evaluate((element) => getComputedStyle(element).backdropFilter);
+    expect(glass).not.toBe("none");
+    const fills = async () =>
+      Promise.all(
+        [message, reply, box].map((node) =>
+          node.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return [style.backgroundColor, style.borderColor, style.boxShadow, style.borderRadius];
+          }),
+        ),
+      );
+    const before = await fills();
+    // Without the marker every message carries the glass; with it, only the repeated blur is gone.
+    if ((await pane.getAttribute("data-transcript-glass")) !== "flat") {
+      await expect(message).toHaveCSS("backdrop-filter", glass);
+      await expect(reply).toHaveCSS("backdrop-filter", glass);
+      await pane.evaluate((element) => element.setAttribute("data-transcript-glass", "flat"));
+    }
+    await expect(message).toHaveCSS("backdrop-filter", "none");
+    await expect(reply).toHaveCSS("backdrop-filter", "none");
+    await expect(box).toHaveCSS("backdrop-filter", glass);
+    expect(await fills()).toEqual(before);
+    await pane.evaluate((element) => element.removeAttribute("data-transcript-glass"));
+  });
 
 test("saved chat message appearance reaches the real transcript", async ({ page }) => {
   await page.addInitScript(() => {
