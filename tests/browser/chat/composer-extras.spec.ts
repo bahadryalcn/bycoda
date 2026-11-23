@@ -1401,7 +1401,7 @@ for (const renderer of ["auto", "shader-failure", "context-loss"] as const) {
       }
     }, renderer);
     await page.goto("/tests/browser/chat/composer-extras.html?welcome&crew");
-    const canvas = page.locator(".bycoda-empty .crew-scene canvas");
+    const canvas = page.locator(".bycoda-empty .crew-scene canvas:not(.crew-scene__still)");
     await expect(canvas).toBeVisible();
     await expect
       .poll(() =>
