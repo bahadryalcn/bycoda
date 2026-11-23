@@ -754,25 +754,31 @@ async function wheel(page: Page, deltaY: number) {
   await page.waitForTimeout(120);
 }
 async function readHistory(page: Page, deltaY = -1800) {
+  const start = await state(page);
   await wheel(page, deltaY);
   await expect(reading(page)).toHaveCount(1);
+  // WebKit may only have applied the first wheel increment when reading mode
+  // appears. Prepending older turns can change absolute offsets on Chromium.
+  const travel = Math.min(start.top, -deltaY);
+  let lastTop: number | undefined;
+  await expect
+    .poll(async () => {
+      const current = await state(page);
+      const moved = current.distance - start.distance + current.viewport - start.viewport;
+      const settled = current.top === lastTop && moved >= travel - 80;
+      lastTop = current.top;
+      return settled;
+    })
+    .toBe(true);
   // Let the dock motion settle before measuring.
   await page.waitForTimeout(350);
 }
 async function open(page: Page, query: Record<string, string> = {}, light = false) {
   await page.goto(url(query, light));
   await expect(field(page)).toBeVisible();
-  // The transcript renders its history progressively (later in WebKit); wait until it has
-  // settled so the reader's first scroll happens over the full history, not an empty start.
-  let previous = -1;
-  await expect
-    .poll(async () => {
-      const height = await scroller(page).evaluate((el) => el.scrollHeight);
-      const settled = height === previous && height > 2 * (await state(page)).viewport;
-      previous = height;
-      return settled;
-    })
-    .toBe(true);
+  // The fixture has 40 turns. Wait for the full initial 20-turn window. The
+  // first, shorter paint can also hold the same scroll height for two samples.
+  await expect(scroller(page).locator('[data-transcript-turn="user-20"]')).toBeAttached();
   await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
 }
 
