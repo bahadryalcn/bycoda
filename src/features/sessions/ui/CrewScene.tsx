@@ -25,7 +25,7 @@ import {
 import { shouldRunLoop } from "../../../shared/lib/animationGate";
 import {
   useDecorativeMotionEnabled,
-  useWindowHasFocus,
+  useMotionWindowVisible,
 } from "../../settings/public/decorativeMotion";
 import {
   createCodeArtPainter,
@@ -234,7 +234,7 @@ function CrewStage({
   const painter = useRef<{ draw: CodeArtPainter; paintedFor: string | null } | null>(null);
   const startedAt = useRef<number | null>(null);
   const enabled = useDecorativeMotionEnabled();
-  const focused = useWindowHasFocus();
+  const windowVisible = useMotionWindowVisible();
   // Typing holds the last frame like a streaming reply does: the scene keeps its pose, only the
   // motion timer and repaints stop, and it resumes a moment after the last key.
   const typing = useTypingHold();
@@ -263,7 +263,7 @@ function CrewStage({
       setRunning(
         shouldRunLoop({
           enabled,
-          focused,
+          windowVisible,
           documentHidden: document.hidden,
           visible: intersects,
           sized: element.clientWidth > 0 && element.clientHeight > 0,
@@ -289,8 +289,8 @@ function CrewStage({
       document.removeEventListener("visibilitychange", update);
       window.removeEventListener("resize", update);
     };
-  }, [enabled, focused]);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns painter/worker resources; only the art, renderer, theme, growth and variant rebuild them, never focus, visibility, pause or seat percent
+  }, [enabled, windowVisible]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns painter/worker resources; only the art, renderer, theme, growth and variant rebuild them, never window and element visibility, pause or seat percent
   useEffect(() => {
     const surface = canvas.current;
     if (!surface) return;

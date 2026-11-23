@@ -2330,6 +2330,10 @@ test("model picker aligns account rows and keeps quota readable in both themes a
           const triggerBox = (await trigger.boundingBox())!;
           expect(quotaBox.x).toBeGreaterThanOrEqual(accountBox.x + accountBox.width);
           expect(triggerBox.x + triggerBox.width - (quotaBox.x + quotaBox.width)).toBeLessThan(60);
+          await panel.screenshot({
+            path: `temp/verification/model-account-rows/header-${theme}-${width}.png`,
+            animations: "disabled",
+          });
           await trigger.click();
           await expect(trigger).toHaveAccessibleName("Accounts");
         }

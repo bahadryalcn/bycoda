@@ -75,8 +75,8 @@ it("deduplicates the local machine and separates identically named remote machin
   const options = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')];
   expect(options.map((option) => option.textContent)).toEqual([
     "This computer",
-    "Build box (http://office) · Connected",
-    "Build box (http://home) · Connected",
+    "Build box (http://office)",
+    "Build box (http://home)",
   ]);
   await act(async () => options[2]?.click());
   expect(onSelect).toHaveBeenCalledWith(home.environmentId);
@@ -99,7 +99,11 @@ it("keeps a disconnected selection visible and exposes usable alternatives", asy
 });
 
 it("renders an established machine as a read-only label", async () => {
+  inventory.mockReturnValue({
+    machines: [local, office, { ...home, name: "Home server" }],
+    loaded: true,
+  });
   await render({ environmentId: home.environmentId, disabled: true, onSelect: vi.fn() });
-  expect(container.textContent).toContain("Build box (http://home) · Connected");
+  expect(container.textContent).toBe("Home server");
   expect(container.querySelector("button")).toBeNull();
 });

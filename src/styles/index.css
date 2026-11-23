@@ -5003,8 +5003,8 @@ html[data-performance-no-blur] .modal-backdrop {
   }
 }
 
-/* Row status dots: no animation clock while motion is off or the window is not in front. */
-html:is([data-decorative-motion="off"], [data-window-focus="off"]) .working-dot {
+/* Row status dots pause when motion is off or the window is hidden. */
+html:is([data-decorative-motion="off"], [data-window-visible="off"]) .working-dot {
   animation-play-state: paused !important;
 }
 /* Decorative pulses step instead of easing: one compositor frame per step, not per vsync. */
@@ -5012,7 +5012,7 @@ html:is([data-decorative-motion="off"], [data-window-focus="off"]) .working-dot 
   animation-timing-function: steps(6, jump-none);
 }
 /* The other decorative loops stop their clock on the same conditions. */
-html:is([data-decorative-motion="off"], [data-window-focus="off"])
+html:is([data-decorative-motion="off"], [data-window-visible="off"])
   :is(.activity-dock-waiting, .terminal-live-bar, .bycoda-sigil-active, .context-speed-bolt) {
   animation-play-state: paused !important;
 }

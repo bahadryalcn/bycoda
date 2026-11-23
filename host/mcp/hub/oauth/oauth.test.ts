@@ -397,6 +397,10 @@ describe("owner RPC and publication", () => {
       code: "code-1",
     };
     const finish = (args: Record<string, unknown>) => oauthRpc(hub, "mcp.oauth.complete", args);
+    const cancel = (args: Record<string, unknown>) => oauthRpc(hub, "mcp.oauth.cancel", args);
+    await expect(cancel({ ...input, cwd: join(s.dir, "other-project") })).resolves.toEqual({
+      cancelled: false,
+    });
     await expect(finish({ ...input, state: "wrong-state-123456" })).rejects.toThrow(
       /invalid or expired/,
     );
@@ -413,6 +417,14 @@ describe("owner RPC and publication", () => {
     });
     expect(await s.oauth.httpAuth(hub.oauthServerRef(def))).toBeUndefined();
 
+    const cancelled = new URL((await start()).authorizationUrl).searchParams.get("state");
+    await expect(cancel(input)).resolves.toEqual({ cancelled: false });
+    await expect(cancel({ ...input, state: cancelled })).resolves.toEqual({ cancelled: true });
+    await expect(finish({ ...input, state: cancelled })).rejects.toThrow(/invalid or expired/);
+    expect(await s.oauth.httpAuth(hub.oauthServerRef(def, cwd))).toEqual({
+      Authorization: `Bearer ${SECRET_ACCESS}`,
+    });
+
     const denial = new URL((await start()).authorizationUrl).searchParams.get("state");
     await expect(
       finish({ name: def.name, cwd, state: denial, error: "access_denied" }),
@@ -425,6 +437,19 @@ describe("owner RPC and publication", () => {
       finish({ ...input, state: new URL(expiring.authorizationUrl).searchParams.get("state") }),
     ).rejects.toThrow(/invalid or expired/);
     expect(fake.tokenCalls()).toBe(1);
+  });
+
+  it("closes the Host callback listener when a local sign-in is cancelled", async () => {
+    const fake = await fakeServer();
+    const s = setup(fake);
+    const url = new URL((await s.oauth.start(s.server)).authorizationUrl);
+    const state = url.searchParams.get("state")!;
+    const callback = new URL(url.searchParams.get("redirect_uri")!);
+    callback.searchParams.set("code", "code-1");
+    callback.searchParams.set("state", state);
+    expect(s.oauth.cancelSignIn(s.server, state)).toBe(true);
+    await expect(fetch(callback)).rejects.toThrow();
+    expect(fake.tokenCalls()).toBe(0);
   });
 
   it("isolates project OAuth and suppresses inherited owner auth after explicit sign-out", async () => {

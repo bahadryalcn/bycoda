@@ -83,6 +83,7 @@ The selected bycoda Host handles authorization and stores the login for its sess
 Manage provider CLI sign-in on the computer that runs that provider.
 
 In **Global**, bycoda sign-in sets the computer's default account for that server.
+Choose **Cancel** in the server list or details to stop a pending bycoda sign-in.
 In **Project**, bycoda uses that account until you sign in or disconnect for the
 project. **Uses global sign-in** identifies an inherited account. Choose **Use a
 different account** to sign in for this project, or **Disconnect for this project**

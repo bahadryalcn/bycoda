@@ -37,4 +37,27 @@ for (const theme of ["light", "dark"])
       await sheet.getByRole("button", { name: "Save" }).first().click();
       await expect(sheet.getByRole("button", { name: "Save" }).first()).toBeDisabled();
       await page.screenshot({ path: `${out}/detail-${theme}-${width}.png` });
+
+      await page.keyboard.press("Escape");
+      await expect(sheet).toBeHidden();
+      const notion = list.getByRole("button", { name: "Open notion" });
+      const row = notion.locator("..");
+      await notion.hover();
+      await row.getByRole("button", { name: "Sign in" }).click();
+      await page.mouse.move(1, 1);
+      const listCancel = row.getByRole("button", { name: "Cancel" });
+      await expect(listCancel).toBeVisible();
+      await page.screenshot({ path: `${out}/cancel-list-${theme}-${width}.png` });
+      await listCancel.click();
+      await expect(row.getByRole("button", { name: "Sign in" })).toBeEnabled();
+
+      await notion.click();
+      const notionSheet = page.getByRole("dialog", { name: "notion" });
+      const signIn = notionSheet.getByRole("button", { name: "Sign in", exact: true });
+      await signIn.click();
+      const detailCancel = notionSheet.getByRole("button", { name: "Cancel", exact: true });
+      await expect(detailCancel).toBeVisible();
+      await page.screenshot({ path: `${out}/cancel-detail-${theme}-${width}.png` });
+      await detailCancel.click();
+      await expect(signIn).toBeEnabled();
     });

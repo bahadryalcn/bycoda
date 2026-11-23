@@ -14,7 +14,7 @@ dismiss the notice.
 ## Session machine
 
 A compact **Run on** picker sits below the new-session composer, to the left of
-the workspace controls. It names the machine that will run the session. Choose
+the workspace controls. It shows the saved name of the machine that will run the session. Choose
 **This computer** or a connected Host. Offline machines stay listed but cannot be
 chosen. A draft keeps its choice across tab switches and restarts.
 The **New session** menu under **Sessions** also has a **Run on** action.

@@ -169,7 +169,6 @@ export function ModelAccountControl({
       <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1 text-start">
         {listOpen || implicitAccount ? t("Accounts") : label}
       </Text>
-      {!listOpen && current && current.id === defaultAccountId ? <DefaultMark /> : null}
       {!listOpen && elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
       {!listOpen ? <Percent value={current?.usedPercent ?? null} /> : null}
     </Button>

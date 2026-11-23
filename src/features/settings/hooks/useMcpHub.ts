@@ -29,6 +29,8 @@ export type McpHub = {
   saving: boolean;
   /** Hub name of the server whose browser sign-in is open. */
   waiting: string;
+  /** Hub name of the server with a cancellable sign-in. */
+  signingIn?: string;
   /** Hub name of the server with a sign-in or sign-out request in flight. */
   busy: string;
   dismissError: () => void;
@@ -70,10 +72,10 @@ export function useMcpHub(
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [waiting, setWaiting] = useState("");
+  const [signingIn, setSigningIn] = useState("");
   const [busy, setBusy] = useState("");
   const machine = useRef<RemoteMachine | undefined>(undefined);
-  const callbackId = useRef("");
-  const disposed = useRef(false);
+  const activeSignIn = useRef<AbortController | undefined>(undefined);
   const epoch = useRef(0);
   const inFlight = useRef(false);
   const params = scope ? (remote ? { projectId: remote.projectId } : { cwd: scope }) : {};
@@ -129,32 +131,33 @@ export function useMcpHub(
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps Host-owned MCP state in step while mounted; epoch drops stale replies
   useEffect(() => {
     const replies = epoch;
-    disposed.current = false;
     loadOnMount();
     return () => {
       replies.current++;
-      disposed.current = true;
-      const id = callbackId.current;
-      if (id) void invoke("mcp_oauth_callback_cancel", { id }).catch(() => undefined);
+      activeSignIn.current?.abort();
+      activeSignIn.current = undefined;
     };
   }, [cacheKey]);
 
   const stateOf = useEffectEvent((name: string) => oauth?.find((s) => s.name === name));
   const poll = useEffectEvent(() => load());
+  const finishWaiting = useEffectEvent((attempt: AbortController) => finishSignIn(attempt));
   const relayedSignIn = !!remote;
   // Reason: the browser redirect completes on the Host, so poll until the state changes or the Host gives up.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- polls the Host while one sign-in is open; cleared on completion, timeout or unmount
   useEffect(() => {
     if (!waiting || relayedSignIn) return;
+    const attempt = activeSignIn.current;
+    if (!attempt) return;
     const before = stateOf(waiting);
     const timer = setInterval(() => {
       void poll().then((next) => {
         const status = next?.find((server) => server.name === waiting);
         if (next && (status?.state !== before?.state || status?.inherited !== before?.inherited))
-          setWaiting("");
+          finishWaiting(attempt);
       });
     }, POLL_MS);
-    const stop = setTimeout(() => setWaiting(""), WAIT_MS);
+    const stop = setTimeout(() => finishWaiting(attempt), WAIT_MS);
     return () => {
       clearInterval(timer);
       clearTimeout(stop);
@@ -162,7 +165,7 @@ export function useMcpHub(
   }, [waiting, relayedSignIn]);
 
   async function savePolicy(policy: McpLoadingPolicy) {
-    if (inFlight.current || (!remote && !machine.current)) return;
+    if (activeSignIn.current || inFlight.current || (!remote && !machine.current)) return;
     inFlight.current = true;
     setSaving(true);
     setError("");
@@ -188,32 +191,83 @@ export function useMcpHub(
     }
   }
 
-  async function signInOnRemote(target: string, name: string) {
-    const { id, port } = await invoke<{ id: string; port: number }>("mcp_oauth_callback_bind");
-    callbackId.current = id;
+  function finishSignIn(attempt: AbortController) {
+    if (activeSignIn.current !== attempt) return;
+    activeSignIn.current = undefined;
+    setSigningIn("");
+    setBusy("");
+    setWaiting("");
+  }
+
+  async function signIn(name: string) {
+    if (activeSignIn.current || inFlight.current || (!remote && !machine.current)) return;
+    const attempt = new AbortController();
+    const { signal } = attempt;
+    activeSignIn.current = attempt;
+    setSigningIn(name);
+    setBusy(name);
+    setError("");
+    let closeCallback: (() => Promise<unknown>) | undefined;
+    let cancelHost: (() => Promise<unknown>) | undefined;
+    let keepWaiting = false;
+    const cancel = () => {
+      void closeCallback?.();
+      void cancelHost?.().catch(() => {
+        if (signal.reason === "user" && !activeSignIn.current) setError(t("Sign-in failed"));
+      });
+    };
+    signal.addEventListener("abort", cancel, { once: true });
     try {
-      if (disposed.current || callbackId.current !== id) return;
+      const target = await machineId();
+      if (signal.aborted) return;
+      const binding = remote
+        ? await invoke<{ id: string; port: number }>("mcp_oauth_callback_bind")
+        : undefined;
+      if (binding) {
+        let closing: Promise<unknown> | undefined;
+        closeCallback = () =>
+          (closing ??= invoke("mcp_oauth_callback_cancel", { id: binding.id }).catch(
+            () => undefined,
+          ));
+      }
+      if (signal.aborted) return;
       const { authorizationUrl } = await request<{ authorizationUrl: string }>(
         target,
         "mcp.oauth.start",
-        { name, ...params, callbackPort: port },
+        { name, ...params, ...(binding && { callbackPort: binding.port }) },
         true,
       );
-      if (disposed.current || callbackId.current !== id) return;
       const authorization = new URL(authorizationUrl);
-      if (authorization.searchParams.get("redirect_uri") !== `http://127.0.0.1:${port}/callback`) {
-        setError(t("Update needed"));
-        return;
-      }
       const state = authorization.searchParams.get("state");
       if (!state) throw new Error("MCP sign-in is missing its callback state.");
-      setWaiting(name);
+      cancelHost = () => request(target, "mcp.oauth.cancel", { name, ...params, state }, true);
+      if (signal.aborted) {
+        cancel();
+        return;
+      }
+      if (
+        binding &&
+        authorization.searchParams.get("redirect_uri") !==
+          `http://127.0.0.1:${binding.port}/callback`
+      ) {
+        await cancelHost().catch(() => undefined);
+        if (!signal.aborted) setError(t("Update needed"));
+        return;
+      }
       await openExternal(authorizationUrl);
+      if (signal.aborted) return;
+      setWaiting(name);
+      if (!binding) {
+        keepWaiting = true;
+        setBusy("");
+        return;
+      }
       const result = await invoke<{ state: string; code?: string; error?: string }>(
         "mcp_oauth_callback_wait",
-        { id, state },
+        { id: binding.id, state },
       );
-      if (disposed.current || callbackId.current !== id) return;
+      if (signal.aborted) return;
+      setSigningIn("");
       setWaiting("");
       const { status } = await request<{ status: "success" | "cancelled" | "failure" }>(
         target,
@@ -221,45 +275,38 @@ export function useMcpHub(
         { name, ...params, ...result },
         true,
       );
-      await load();
-      if (status === "failure") setError(t("Sign-in failed"));
-    } catch (cause) {
-      if (callbackId.current === id) throw cause;
+      if (!signal.aborted) {
+        await load();
+        if (status === "failure" && !signal.aborted) setError(t("Sign-in failed"));
+      }
+    } catch {
+      if (!signal.aborted) {
+        void cancelHost?.().catch(() => undefined);
+        setError(t("Sign-in could not be started. Check the server, then try again."));
+      }
     } finally {
-      callbackId.current = "";
-      setWaiting("");
-      await invoke("mcp_oauth_callback_cancel", { id }).catch(() => undefined);
+      await closeCallback?.();
+      if (!keepWaiting) finishSignIn(attempt);
     }
   }
 
-  async function oauthAction(name: string, method: "mcp.oauth.start" | "mcp.oauth.signOut") {
-    if (inFlight.current || (!remote && !machine.current)) return;
+  function cancelSignIn() {
+    const attempt = activeSignIn.current;
+    if (!attempt) return;
+    attempt.abort("user");
+    finishSignIn(attempt);
+  }
+
+  async function signOut(name: string) {
+    if (activeSignIn.current || inFlight.current || (!remote && !machine.current)) return;
     inFlight.current = true;
     setBusy(name);
     setError("");
     try {
-      if (method === "mcp.oauth.start" && remote) {
-        await signInOnRemote(remote.machineId, name);
-      } else if (method === "mcp.oauth.start") {
-        const { authorizationUrl } = await request<{ authorizationUrl: string }>(
-          await machineId(),
-          method,
-          { name, ...params },
-          true,
-        );
-        await openExternal(authorizationUrl);
-        setWaiting(name);
-      } else {
-        await request(await machineId(), method, { name, ...params }, true);
-        setWaiting("");
-        await load();
-      }
+      await request(await machineId(), "mcp.oauth.signOut", { name, ...params }, true);
+      await load();
     } catch {
-      setError(
-        method === "mcp.oauth.start"
-          ? t("Sign-in could not be started. Check the server, then try again.")
-          : t("Sign-out failed. Try again."),
-      );
+      setError(t("Sign-out failed. Try again."));
     } finally {
       inFlight.current = false;
       setBusy("");
@@ -289,6 +336,7 @@ export function useMcpHub(
     error,
     saving,
     waiting,
+    signingIn,
     busy,
     dismissError: () => setError(""),
     refresh: async () => void (await load(true)),
@@ -299,15 +347,9 @@ export function useMcpHub(
       if (loading && !loading.corrupt)
         await savePolicy(withDirectServer(loading.policy, name, direct));
     },
-    signIn: (name) => oauthAction(name, "mcp.oauth.start"),
-    cancelSignIn: remote
-      ? () => {
-          const id = callbackId.current;
-          callbackId.current = "";
-          if (id) void invoke("mcp_oauth_callback_cancel", { id }).catch(() => undefined);
-        }
-      : undefined,
-    signOut: (name) => oauthAction(name, "mcp.oauth.signOut"),
+    signIn,
+    cancelSignIn,
+    signOut,
     projectCredentials:
       scope || loading?.managedServers
         ? async (operation, name, values) => {

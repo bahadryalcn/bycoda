@@ -6,7 +6,7 @@ import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
 
 const state = vi.hoisted(() => ({
   enabled: true,
-  focused: true,
+  windowVisible: true,
   listeners: new Set<() => void>(),
   draw: vi.fn(),
   dispose: vi.fn(),
@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("../model/decorativeMotion", () => ({
   decorativeMotionEnabled: () => state.enabled,
-  windowHasFocus: () => state.focused,
+  motionWindowVisible: () => state.windowVisible,
   subscribeDecorativeMotion: (fn: () => void) => {
     state.listeners.add(fn);
     return () => state.listeners.delete(fn);
@@ -53,7 +53,7 @@ const render = (speech = -1, activity = speech, active = true) =>
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  state.enabled = state.focused = true;
+  state.enabled = state.windowVisible = true;
   state.listeners.clear();
   vi.clearAllMocks();
   queue = new Map();
@@ -118,17 +118,17 @@ it.each([60, 144, 240])("only wakes for ambient draws on a %s Hz display", (hz) 
   expect(executed - before).toBeLessThanOrEqual(25);
 });
 
-it("freezes ambient work on blur or reduced motion and resumes without reallocating", () => {
+it("freezes ambient work when hidden or in reduced motion and resumes without reallocating", () => {
   render();
   run(500);
   state.draw.mockClear();
-  state.focused = false;
+  state.windowVisible = false;
   act(() => state.listeners.forEach((fn) => fn()));
   run(1000);
   expect(state.draw).not.toHaveBeenCalled();
   expect(queue.size).toBe(0);
   expect(vi.getTimerCount()).toBe(0);
-  state.focused = true;
+  state.windowVisible = true;
   act(() => state.listeners.forEach((fn) => fn()));
   run(500);
   expect(state.draw).toHaveBeenCalled();
@@ -214,11 +214,11 @@ it.each(["timer", "frame"])(
     expect(state.draw).toHaveBeenCalledTimes(paints);
     render();
     if (phase === "timer") run(100);
-    state.focused = false;
+    state.windowVisible = false;
     act(() => state.listeners.forEach((fn) => fn()));
     expect(queue.size).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
-    state.focused = true;
+    state.windowVisible = true;
     act(() => state.listeners.forEach((fn) => fn()));
     if (phase === "timer") run(100);
     state.enabled = false;

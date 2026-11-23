@@ -71,7 +71,7 @@
   }
 }
 
-/* Behind another window the pulse holds its frame, like the row status dots. */
+/* The pulse holds its frame while the window is hidden. */
 .indicator[data-working-variant="dot"] {
   --working-indicator-size: 0.375rem;
   border-radius: var(--radius-pill);
@@ -87,7 +87,7 @@
     opacity: 0.5;
   }
 }
-:global(html[data-window-focus="off"]) .indicator {
+:global(html[data-window-visible="off"]) .indicator {
   animation-play-state: paused;
 }
 
@@ -239,9 +239,9 @@
   }
 }
 
-/* Off-viewport, behind another window or in a hidden session pane the band holds its frame. */
+/* Off-viewport, hidden or minimized or in a hidden session pane the band holds its frame. */
 .labeled[data-offscreen="true"] :is(.sweep, .sweepCounter),
-:global(html[data-window-focus="off"]) :is(.sweep, .sweepCounter),
+:global(html[data-window-visible="off"]) :is(.sweep, .sweepCounter),
 :global([data-session-visible="false"]) :is(.sweep, .sweepCounter) {
   animation-play-state: paused;
 }

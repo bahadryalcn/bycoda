@@ -179,6 +179,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "mcp.hub.loading.set"
             | "mcp.oauth.start"
             | "mcp.oauth.complete"
+            | "mcp.oauth.cancel"
             | "mcp.oauth.status"
             | "mcp.oauth.signOut"
             | "mcp.tokens.create"

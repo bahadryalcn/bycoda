@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import {
   prefersReducedMotion,
   useAudioFeedbackMotionEnabled,
-  useWindowHasFocus,
+  useMotionWindowVisible,
 } from "../../settings/public/decorativeMotion";
 import brandGeometry from "../../../shared/lib/brandGeometry.json";
 import type { VoiceVisual } from "../model/voiceSettings";
@@ -44,8 +44,7 @@ export function VoiceVisualizer({
   const root = useRef<HTMLSpanElement>(null);
   // The decorative-motion setting stills this like the OS reduce-motion request does.
   const motion = useAudioFeedbackMotionEnabled();
-  // Behind another application nobody sees the frames: hold the still frame like the canvas loops.
-  const focused = useWindowHasFocus();
+  const windowVisible = useMotionWindowVisible();
   useEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -185,7 +184,14 @@ export function VoiceVisualizer({
 
     function tick(time: number) {
       frame = undefined;
-      if (disposed || document.hidden || !visible || prefersReducedMotion() || !motion || !focused)
+      if (
+        disposed ||
+        document.hidden ||
+        !visible ||
+        prefersReducedMotion() ||
+        !motion ||
+        !windowVisible
+      )
         return;
       // Repaint on the same timestamp stays allowed: callers re-sample the live meter.
       if (time === lastPaint || time - lastPaint >= PAINT_INTERVAL_MS) {
@@ -204,7 +210,7 @@ export function VoiceVisualizer({
         !disposed &&
         !document.hidden &&
         visible &&
-        focused &&
+        windowVisible &&
         !calm &&
         (preview || !STATIC_STATES.has(state));
       element!.dataset.animating = String(running);
@@ -246,7 +252,7 @@ export function VoiceVisualizer({
       document.removeEventListener("visibilitychange", refresh);
       reduced.removeEventListener("change", refresh);
     };
-  }, [visual, state, level, preview, motion, focused]);
+  }, [visual, state, level, preview, motion, windowVisible]);
 
   return (
     <span

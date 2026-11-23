@@ -67,10 +67,10 @@ export function SessionMachinePicker({
           ? t("Offline")
           : status === "connecting"
             ? t("Connecting")
-            : t("Connected");
+            : undefined;
     return {
       value: id,
-      label: `${name} · ${statusLabel}`,
+      label: statusLabel ? `${name} · ${statusLabel}` : name,
       icon: <Server className="icon-xs" aria-hidden="true" />,
       disabled: unavailable,
     };

@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import {
   prefersReducedMotion,
   useAudioFeedbackMotionEnabled,
-  useWindowHasFocus,
+  useMotionWindowVisible,
 } from "../../../settings/public/decorativeMotion";
 import { AssistantAvatarMark } from "../../../assistant/public/avatar";
 import type { VoiceVisualState } from "../../model/voiceVisualState";
@@ -71,8 +71,7 @@ export function VoiceCore({
 }) {
   const root = useRef<HTMLSpanElement>(null);
   const motion = useAudioFeedbackMotionEnabled();
-  // Behind another application nobody sees the frames: hold the still frame like the canvas loops.
-  const focused = useWindowHasFocus();
+  const windowVisible = useMotionWindowVisible();
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- paints rings and spectrum from the live audio-level ref with an animation frame while visible
   useEffect(() => {
     const element = root.current;
@@ -122,11 +121,11 @@ export function VoiceCore({
       const hearing = state === "listening" || state === "user" || state === "assistant";
       const turning = hearing || state === "thinking" || state === "connecting";
       paint(1300);
-      if (document.hidden || !visible) return;
+      if (!windowVisible || document.hidden || !visible) return;
       // Reduced motion keeps the input meter, without time-based decoration.
       if (calm) {
         if (hearing) meter = setInterval(() => paint(1300), 120);
-      } else if (turning && focused) frame = requestAnimationFrame(tick);
+      } else if (turning) frame = requestAnimationFrame(tick);
     }
     const observer = new IntersectionObserver(([entry]) => {
       visible = entry.isIntersecting;
@@ -143,7 +142,7 @@ export function VoiceCore({
       document.removeEventListener("visibilitychange", refresh);
       reduced.removeEventListener("change", refresh);
     };
-  }, [state, level, motion, focused]);
+  }, [state, level, motion, windowVisible]);
 
   const broken = state === "error";
   return (

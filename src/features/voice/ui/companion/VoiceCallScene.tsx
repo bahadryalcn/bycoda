@@ -3,7 +3,7 @@ import { observeResize } from "../../../../shared/lib/observeResize";
 import {
   useAudioFeedbackMotionEnabled,
   usePrefersReducedMotion,
-  useWindowHasFocus,
+  useMotionWindowVisible,
 } from "../../../settings/public/decorativeMotion";
 import { paintCallBackdrop, paintCallOrb, type VoiceCallArtworkState } from "./voiceCallArtwork";
 import styles from "./VoiceCore.module.css";
@@ -33,7 +33,7 @@ export function VoiceCallScene({
   const previousState = useRef<VoiceCallArtworkState>(undefined);
   const motion = useAudioFeedbackMotionEnabled();
   const reduced = usePrefersReducedMotion();
-  const focused = useWindowHasFocus();
+  const windowVisible = useMotionWindowVisible();
   const active = state !== "off" && state !== "muted" && state !== "error";
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- paints the call canvas and suspends its frame loop while out of view
@@ -48,7 +48,7 @@ export function VoiceCallScene({
     let visible = true;
     let input = 0;
     let ink = getComputedStyle(canvas).color;
-    const canAnimate = motion && !reduced && focused && active;
+    const canAnimate = motion && !reduced && windowVisible && active;
     let previous: HTMLCanvasElement | undefined;
     if (
       canAnimate &&
@@ -139,7 +139,7 @@ export function VoiceCallScene({
       theme.disconnect();
       document.removeEventListener("visibilitychange", sync);
     };
-  }, [part, state, level, motion, reduced, focused, active, expanded]);
+  }, [part, state, level, motion, reduced, windowVisible, active, expanded]);
 
   return (
     <canvas

@@ -6,7 +6,6 @@ import {
   refreshWindowState,
   subscribeWindowState,
 } from "../../../platform/tauri/windowState";
-import { IS_MAC } from "../../../platform/tauri/platform";
 import { readFlag, writeFlag } from "./storageFlags";
 
 export const DECORATIVE_MOTION_KEY = "bycoda.decorativeMotion.v1";
@@ -36,9 +35,6 @@ const nativeFrame =
     : undefined;
 let media: MediaQueryList | null = null;
 const listeners = createStore();
-let nativeVisible = true;
-/** DOM focus: the only focus signal outside Tauri, and before the first native read. */
-let domFocused = typeof document === "undefined" || document.hasFocus();
 /** What subscribers were last told; unchanged states are not re-announced. */
 let published = "";
 let releaseLifecycle: (() => void) | undefined;
@@ -127,11 +123,7 @@ export function prefersReducedMotion(): boolean {
 }
 
 export function decorativeMotionEnabled(): boolean {
-  return (
-    loadDecorativeMotionEnabled() &&
-    !prefersReducedMotion() &&
-    (typeof document === "undefined" || (!document.hidden && nativeVisible))
-  );
+  return loadDecorativeMotionEnabled() && !prefersReducedMotion() && motionWindowVisible();
 }
 
 /** Audio feedback paints at a capped frame rate, so the display's automatic
@@ -140,30 +132,22 @@ export function audioFeedbackMotionEnabled(): boolean {
   return (
     (unsaved ?? readFlag(DECORATIVE_MOTION_KEY) ?? DECORATIVE_MOTION_DEFAULT) &&
     !prefersReducedMotion() &&
-    (typeof document === "undefined" || (!document.hidden && nativeVisible))
+    motionWindowVisible()
   );
 }
 
-/**
- * Whether this window has input focus. Each platform trusts the signal that is
- * right there: on macOS the native window state, because WKWebView keeps
- * document.hasFocus() true after the window drops behind another application;
- * elsewhere the page's own focus, because on Windows the native window reports
- * itself unfocused as soon as its WebView2 child takes keyboard focus (tao tracks
- * WM_KILLFOCUS on the top-level window), which is almost always.
- * The motion setting itself does not change on blur: canvas loops and the
- * `data-window-focus` CSS rules hold decorative motion on its last frame while
- * the window is behind another application.
- */
-export function windowHasFocus(): boolean {
-  return IS_MAC ? (getWindowState()?.focused ?? domFocused) : domFocused;
+/** A visible window can keep animating while input goes to another app. */
+export function motionWindowVisible(): boolean {
+  if (typeof document === "undefined") return true;
+  const state = getWindowState();
+  return !document.hidden && (!state || (state.visible && !state.minimized));
 }
 
 function syncDecorativeMotionAttribute(): void {
   if (typeof document === "undefined") return;
   const root = document.documentElement.dataset;
   root.decorativeMotion = decorativeMotionEnabled() ? "on" : "off";
-  root.windowFocus = windowHasFocus() ? "on" : "off";
+  root.windowVisible = motionWindowVisible() ? "on" : "off";
 }
 
 /** Everything the hooks and the root attributes expose, as one comparable value. */
@@ -174,7 +158,7 @@ function exposedState(): string {
     prefersReducedMotion(),
     decorativeMotionEnabled(),
     audioFeedbackMotionEnabled(),
-    windowHasFocus(),
+    motionWindowVisible(),
   ].join();
 }
 
@@ -203,50 +187,20 @@ function onStorage(event: StorageEvent): void {
  * and visibilitychange covers WebViews that do expose hide/show to the DOM. The
  * native reads come from the shared window state, which owns the native listeners. */
 function installWindowLifecycle(): () => void {
-  let disposed = false;
   const native = isTauri();
-  nativeVisible = true;
   const report = (error: unknown) =>
     console.warn("Decorative motion window lifecycle unavailable", error);
-  const fromNative = () => {
-    const state = getWindowState();
-    if (disposed || !state) return;
-    nativeVisible = state.visible && !state.minimized;
-    notify();
-  };
   const visibility = () => {
     notify();
     if (native) void refreshWindowState().catch(report);
   };
-  const onFocus = () => {
-    domFocused = true;
-    visibility();
-  };
-  const onBlur = () => {
-    domFocused = false;
-    notify();
-    // Focus moving into an iframe (an HTML preview) blurs the window but keeps
-    // the document focused; settle on the document's own answer.
-    window.setTimeout(() => {
-      if (disposed || !document.hasFocus()) return;
-      domFocused = true;
-      notify();
-    }, 0);
-  };
-  domFocused = typeof document === "undefined" || document.hasFocus();
-  window.addEventListener("focus", onFocus);
-  window.addEventListener("blur", onBlur);
   document.addEventListener("visibilitychange", visibility);
-  const release = native ? subscribeWindowState(fromNative) : undefined;
+  const release = native ? subscribeWindowState(notify) : undefined;
   const cancelRefreshSample = displayRefreshHz === null ? detectDisplayRefreshRate() : undefined;
   return () => {
-    disposed = true;
     cancelRefreshSample?.();
-    window.removeEventListener("focus", onFocus);
-    window.removeEventListener("blur", onBlur);
     document.removeEventListener("visibilitychange", visibility);
     release?.();
-    nativeVisible = true;
   };
 }
 
@@ -310,9 +264,9 @@ export function useAudioFeedbackMotionEnabled(): boolean {
   return useSyncExternalStore(subscribeDecorativeMotion, audioFeedbackMotionEnabled, () => false);
 }
 
-/** Whether the window is in front; decorative canvas loops hold their frame while it is not. */
-export function useWindowHasFocus(): boolean {
-  return useSyncExternalStore(subscribeDecorativeMotion, windowHasFocus, () => true);
+/** Canvas loops can hold their last frame while the window is hidden or minimized. */
+export function useMotionWindowVisible(): boolean {
+  return useSyncExternalStore(subscribeDecorativeMotion, motionWindowVisible, () => true);
 }
 
 // Bootstrap CSS consumers before React subscribes; the shared listener keeps it current.

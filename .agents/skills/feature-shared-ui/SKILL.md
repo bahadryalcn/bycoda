@@ -17,7 +17,7 @@ Any JSX under `src/app` or `src/features`, and any change in `src/shared/ui/`. F
 1. Find the need in [the component catalog](../../../docs/reference/ui-components.md). It is generated from the JSDoc in `src/shared/ui/*.tsx`: each row says what to use and what not to.
 2. Open the chosen component and read its JSDoc header and props before using it. Use it the way its `@use` line says; when its `@avoid` line matches your case, take the component it names.
 3. Missing capability: extend the owning shared component (or add one in `src/shared/ui/`) with the full JSDoc block (`@group`, `@use`, `@avoid`, optional `@replaces`, `@status`, `@instead`, `@arc`), then run `pnpm check:ui-catalog --write`. Never hand-roll it inside a feature.
-4. Run `pnpm check:ui-catalog` and `pnpm check:changed`.
+4. Check the catalog when its inputs change. Use the verification schedule in [Testing](../../../docs/reference/testing.md#order-of-verification).
 
 ## Preserve
 
@@ -50,7 +50,7 @@ Start from DESIGN.md "Review checklist" and `references/decisions.md`; route eac
 - `pnpm check:ui-catalog`: every shared component has metadata and the generated catalog is current.
 - `pnpm check:ui-drift`: raw tags, deprecated imports, double Modal padding, token drift and appearance ownership (ratchet).
 - Visual acceptance: `node scripts/checks/ui-acceptance-matrix.mjs --list` and `--out temp/verification/<id>/matrix` capture every archetype in light and dark at 1280 and 800 px (see `docs/reference/testing.md`).
-- Run focused tests for the changed component and representative consumers; take light and dark screenshots of affected surfaces when the UI visibly changes.
+- When a focused test is needed, cover the changed component and representative consumers. Take light and dark screenshots of affected surfaces when the UI visibly changes.
 
 ## References
 

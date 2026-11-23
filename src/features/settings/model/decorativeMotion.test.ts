@@ -14,7 +14,7 @@ import {
   saveDecorativeMotionEnabled,
   saveFollowSystemMotionEnabled,
   subscribeDecorativeMotion,
-  windowHasFocus,
+  motionWindowVisible,
 } from "./decorativeMotion";
 
 let reduced = false;
@@ -74,19 +74,15 @@ describe("decorative motion", () => {
     expect(decorativeMotionEnabled()).toBe(true);
   });
 
-  it("follows DOM focus and blur for the window focus gate outside Tauri", () => {
+  it("keeps the CSS visibility gate open across DOM focus and blur", () => {
     const { listener } = subscribe();
-    expect(windowHasFocus()).toBe(true);
-    expect(document.documentElement.dataset.windowFocus).toBe("on");
+    expect(motionWindowVisible()).toBe(true);
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
     window.dispatchEvent(new Event("blur"));
-    expect(windowHasFocus()).toBe(false);
-    expect(document.documentElement.dataset.windowFocus).toBe("off");
-    expect(listener).toHaveBeenCalledTimes(1);
-    // Decorative CSS motion itself keeps its existing rules while unfocused.
+    expect(document.documentElement.dataset.windowVisible).toBe("on");
     expect(decorativeMotionEnabled()).toBe(true);
     window.dispatchEvent(new Event("focus"));
-    expect(windowHasFocus()).toBe(true);
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).not.toHaveBeenCalled();
   });
 
   it("wakes subscribers only when the exposed state changes", () => {
@@ -97,8 +93,9 @@ describe("decorative motion", () => {
     }
     for (const notify of mediaListeners) notify();
     expect(listener).not.toHaveBeenCalled();
-    window.dispatchEvent(new Event("blur"));
-    window.dispatchEvent(new Event("blur"));
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    document.dispatchEvent(new Event("visibilitychange"));
+    document.dispatchEvent(new Event("visibilitychange"));
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
@@ -109,9 +106,11 @@ describe("decorative motion", () => {
     document.dispatchEvent(new Event("visibilitychange"));
     window.dispatchEvent(new Event("focus"));
     expect(decorativeMotionEnabled()).toBe(false);
+    expect(document.documentElement.dataset.windowVisible).toBe("off");
     hidden.mockReturnValue(false);
     document.dispatchEvent(new Event("visibilitychange"));
     expect(decorativeMotionEnabled()).toBe(true);
+    expect(document.documentElement.dataset.windowVisible).toBe("on");
     saveDecorativeMotionEnabled(false);
     window.dispatchEvent(new Event("blur"));
     window.dispatchEvent(new Event("focus"));

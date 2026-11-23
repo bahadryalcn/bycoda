@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
 /** Every infinite rotation of a pending glyph shares the decorative-loop policy that
- * WorkingIndicator follows: the clock stops while the window is behind another app or
+ * WorkingIndicator follows: the clock stops while the window is hidden or minimized or
  * decorative motion is off, and the glyph stays on screen so the state still reads as pending. */
 const SPINNER_SHEETS = [
   "src/shared/ui/Spinner.module.css",
@@ -15,11 +15,11 @@ function ruleBody(css: string, selector: RegExp): string | undefined {
 }
 
 it.each(SPINNER_SHEETS)(
-  "%s pauses its spinner for window blur and decorative motion off",
+  "%s pauses its spinner for a hidden window and decorative motion off",
   (path) => {
     const css = readFileSync(path, "utf8");
     const pauseRule = css.match(
-      /:global\(html\[data-decorative-motion="off"\]\) \.spinner,\s*:global\(html\[data-window-focus="off"\]\) \.spinner\s*\{([^}]*)\}/,
+      /:global\(html\[data-decorative-motion="off"\]\) \.spinner,\s*:global\(html\[data-window-visible="off"\]\) \.spinner\s*\{([^}]*)\}/,
     );
     expect(pauseRule?.[1]).toContain("animation-play-state: paused");
     // Paused, not removed: the glyph must stay visible as the pending signal.

@@ -121,9 +121,9 @@ choosing Automatic explicitly overrides an inherited ceiling.
 
 The Subagents count describes selected model choices, not running agents or a
 concurrency limit. Selected models appear as aligned rows with removal actions.
-Account percentages state how much quota is used. A Default model marker identifies
-the account containing the project's default model; it does not change the provider's
-default account.
+Account percentages state how much quota is used. A dot beside the account's usage
+indicates that the project's default model is on another account. In the expanded
+account list, the Default model label identifies that account.
 
 Tasks, goals, stewards, automations and crew members expose **Default**, **Any model**
 and **Fixed** choices. Default follows the role binding; Any model offers a select
