@@ -609,10 +609,11 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
             await page.getByRole("button", { name: new RegExp(`^${provider},`) }).click();
           }
           await add.click();
-          const form = accounts.locator("form");
+          const form = page.getByRole("dialog", { name: labels.account, exact: true });
           await expect(form).toBeVisible();
-          await expect(form.locator("input")).toBeFocused();
-          await form.locator("input").fill("A very long review account name for layout checks");
+          const accountName = form.getByRole("textbox");
+          await expect(accountName).toBeFocused();
+          await accountName.fill("A very long review account name for layout checks");
           expect(await form.evaluate((node) => node.scrollWidth <= node.clientWidth + 2)).toBe(
             true,
           );

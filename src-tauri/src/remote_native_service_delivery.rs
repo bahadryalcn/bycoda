@@ -1202,7 +1202,7 @@ fn reconcile_pending_noting(
             // (conversation_tools_bridge/relay.rs `deliver_finish`). Left recorded,
             // either holds the epoch prefix forever.
             if original.method() == "native.services.workspace.format"
-                || original.from_earlier_runtime()
+                || original.is_from_earlier_runtime()
             {
                 if let Err(error) = project_with_deadline(&reply, |_| Ok(()), Some(deadline)) {
                     failure.get_or_insert(format!("orphan consume: {error}"));

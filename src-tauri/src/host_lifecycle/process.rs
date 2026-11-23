@@ -189,33 +189,6 @@ impl OwnedHost {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn unresponsive_child_gets_the_grace_period_before_the_owned_tree_is_killed() {
-        let base = tempfile::tempdir().unwrap();
-        let mut command;
-        #[cfg(windows)]
-        {
-            command = Command::new("ping.exe");
-            command.args(["-n", "30", "127.0.0.1"]);
-        }
-        #[cfg(unix)]
-        {
-            command = Command::new("/bin/sh");
-            command.args(["-c", "sleep 30"]);
-        }
-        let mut child = OwnedHost::spawn_logged(command, base.path()).unwrap();
-        let grace = Duration::from_millis(250);
-        let start = Instant::now();
-        child.drain_for(base.path(), false, grace).unwrap();
-        assert!(start.elapsed() >= grace);
-        assert!(child.exit_status().unwrap().is_some());
-    }
-}
-
 fn request_stop(base: &Path, pid: u32, if_idle: bool) -> Result<bool, String> {
     let Some(state) = fs::read_to_string(base.join("running.json"))
         .ok()
@@ -309,5 +282,32 @@ pub(super) fn run_command(mut command: Command, timeout: Duration) -> Result<Str
         } else {
             error
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unresponsive_child_gets_the_grace_period_before_the_owned_tree_is_killed() {
+        let base = tempfile::tempdir().unwrap();
+        let mut command;
+        #[cfg(windows)]
+        {
+            command = Command::new("ping.exe");
+            command.args(["-n", "30", "127.0.0.1"]);
+        }
+        #[cfg(unix)]
+        {
+            command = Command::new("/bin/sh");
+            command.args(["-c", "sleep 30"]);
+        }
+        let mut child = OwnedHost::spawn_logged(command, base.path()).unwrap();
+        let grace = Duration::from_millis(250);
+        let start = Instant::now();
+        child.drain_for(base.path(), false, grace).unwrap();
+        assert!(start.elapsed() >= grace);
+        assert!(child.exit_status().unwrap().is_some());
     }
 }
