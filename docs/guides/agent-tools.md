@@ -16,9 +16,10 @@ screen does not display them.
 
 ## bykit
 
-When the `bykit` command-line tool is installed and on the Host's PATH, every agent
-session is told not to write throwaway scripts and to use `bykit` for large files,
-diffs, long command output, broad searches and bulk edits. Without it nothing changes.
+Agents use `bykit` when it is available and suits the operation. They can use
+other tools when needed, including Python, Node and shell commands to inspect
+files. For authorized edits, patches and scripts that preserve encoding and
+line endings are also supported.
 Installing it takes effect within about a minute for sessions started afterward.
 **Settings > Tools > bykit** turns the instructions off or on for this computer's
 Host; the change applies from the next agent turn.

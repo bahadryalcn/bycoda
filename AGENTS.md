@@ -146,15 +146,13 @@ behavior changes. After editing `.agents/skills/`, run
   logs. Give mechanical work the smallest offered model; keep design, scope, risky
   edits, review and final verification on the capable one. In crews and tasks give
   specialists a small model and reviewers a strong one. One writer per file.
-- Never write Python, Node or shell scripts to edit, search or inspect files (on Windows
-  they turn LF into CRLF and apply edits partially without an error). When `bykit` is
-  installed, use it where output is large or edits are bulk: `bykit read` for big files,
-  `bykit diff` for long diffs, `bykit run -- <cmd>` for long command output, `bykit find`
-  for searches that may return many results, `bykit edit`/`replace` for multi-place
-  edits, `bykit json` for JSON (`--has` checks keys across locale files), `bykit sql` for SQLite, `bykit shot` for screenshots.
-  For a single definition or a one-place edit, your own tools are enough. Output is paged: narrow by path first, then `--page N`; `--all` only
-  when the task needs every result. Never format or fix line endings by hand or mention
-  them in reports. Use the repository formatter on the files you changed.
+- Use bykit when available and suitable for the operation. Otherwise use a
+  suitable tool, including read-only Python, Node or shell commands. For
+  authorized edits, patches and scoped scripts (including heredocs) are fine.
+  Preserve encoding, line endings and unrelated changes. Review the diff after
+  writing and use the repository formatter on the files you changed.
+- Bykit commands include `read`, `diff`, `run`, `find`, `edit`, `replace`,
+  `json`, `sql` and `shot`. Narrow output by path or page when possible.
 - A task ending, a review or a draft commit does not trigger a test run. Use fast
   types for the changed project when useful and review the diff. Run a focused
   test when the owner asks for it or when reproducing or verifying a specific

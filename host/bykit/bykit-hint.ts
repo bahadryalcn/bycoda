@@ -3,13 +3,16 @@ import type { HostStore } from "../store";
 
 /** Agent instruction block from the bykit contract (SPEC.md); keep it short, it costs tokens per session. */
 export const BYKIT_HINT = [
-  "Never write Python, Node or shell scripts to edit, search or inspect files.",
-  "Use bykit where output is large or edits are bulk: `bykit read` for big files,",
+  "Use bykit when available and suitable for the operation.",
+  "Otherwise use a suitable tool, including read-only Python, Node or shell commands.",
+  "For authorized edits, patches and scoped scripts (including heredocs) are fine.",
+  "Preserve encoding, line endings and unrelated edits, and review the diff after writing.",
+  "`bykit read` for big files,",
   "`bykit diff` for long diffs, `bykit run -- <cmd>` for long command output,",
   "`bykit find` for searches that may return many results (usage counts,",
   "repo-wide scans, before a bulk change), `bykit edit`/`replace` for multi-place",
   "edits, `bykit json` for JSON (`--has` checks keys across locale files), `bykit sql` for SQLite, `bykit shot` for screenshots.",
-  "For a single definition or a one-place edit, your own tools are enough. Output is paged: narrow by path first, then",
+  "Output is paged: narrow by path first, then",
   "`--page N`; `--all` only when the task needs every result.",
 ].join("\n");
 
