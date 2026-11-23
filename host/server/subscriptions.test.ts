@@ -2,6 +2,8 @@ import { expect, it, vi } from "vitest";
 import type { HostStreamTarget } from "../transport/ws/subscriptions";
 import { createSubscriptionsRuntime } from "./subscriptions";
 
+const conversationDelegation = { communication: { subscribeMessageChanges: () => () => {} } };
+
 it("does not refresh sibling session streams when another session of the project changes", () => {
   const versions = { project: 1, scope: 1, a: 1, b: 1 };
   let notify!: () => void;
@@ -22,6 +24,7 @@ it("does not refresh sibling session streams when another session of the project
   };
   const noop = { onDelete: undefined, onChange: undefined };
   const runtime = createSubscriptionsRuntime({
+    conversationDelegation,
     engine: { store },
     tasks: noop,
     goals: noop,
@@ -75,6 +78,7 @@ it("prunes stream version entries of retired targets on the aging timer, not onl
     };
     const noop = { onDelete: undefined, onChange: undefined };
     const runtime = createSubscriptionsRuntime({
+      conversationDelegation,
       engine: { store },
       tasks: noop,
       goals: noop,
@@ -153,6 +157,7 @@ function environmentRuntime() {
   };
   const noop = { onDelete: undefined, onChange: undefined };
   const runtime = createSubscriptionsRuntime({
+    conversationDelegation,
     engine: { store },
     tasks: noop,
     goals: noop,
@@ -334,6 +339,7 @@ it("refreshes every stream for SQL outside the session tables but only the envir
   };
   const noop = { onDelete: undefined, onChange: undefined };
   const runtime = createSubscriptionsRuntime({
+    conversationDelegation,
     engine: { store },
     tasks: noop,
     goals: noop,

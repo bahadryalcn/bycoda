@@ -610,11 +610,11 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
             await page.getByRole("button", { name: new RegExp(`^${provider},`) }).click();
           }
           await add.click();
-          // Adding an account opens a dialog over the list (the dialog is the only one open).
-          const form = page.getByRole("dialog");
+          const form = page.getByRole("dialog", { name: labels.account, exact: true });
           await expect(form).toBeVisible();
-          await expect(form.getByRole("textbox")).toBeFocused();
-          await form.getByRole("textbox").fill("A very long review account name for layout checks");
+          const accountName = form.getByRole("textbox");
+          await expect(accountName).toBeFocused();
+          await accountName.fill("A very long review account name for layout checks");
           expect(await form.evaluate((node) => node.scrollWidth <= node.clientWidth + 2)).toBe(
             true,
           );

@@ -101,6 +101,16 @@ const railAgents: LiveAgent[] = railPolish
       ...(attentionCase === "multiple"
         ? [
             {
+              id: "retrying",
+              cwd: projects[0],
+              title: "Retry interrupted connection",
+              harness: "codex" as const,
+              activity: "Retrying",
+              needsApproval: false,
+              issue: "retrying" as const,
+              done: false,
+            },
+            {
               id: "approval",
               cwd: projects[0],
               title: "Approve next step",

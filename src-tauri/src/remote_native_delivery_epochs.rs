@@ -35,7 +35,7 @@ impl GapBackoff {
     fn allowed(&self, now: Instant) -> bool {
         self.0
             .lock()
-            .map_or(true, |next| next.map_or(true, |next| now >= next))
+            .map_or(true, |next| next.is_none_or(|next| now >= next))
     }
     fn settle(&self, now: Instant, failed: bool, retry: Duration) {
         if let Ok(mut next) = self.0.lock() {

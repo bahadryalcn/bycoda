@@ -1145,7 +1145,10 @@ export const Composer = memo(function Composer({
             .map((token) => attachments[token.index].id),
         )
       : undefined;
-  const cardAttachments = attachments.filter((file) => !inlineAttachments?.has(file.id));
+  // Browser captures keep their review details beside the inline image token.
+  const cardAttachments = attachments.filter(
+    (file) => file.browserAnnotation || !inlineAttachments?.has(file.id),
+  );
   const composerPlaceholder = worktreeRemoved
     ? t("Select a branch or worktree to continue…")
     : inboxCard

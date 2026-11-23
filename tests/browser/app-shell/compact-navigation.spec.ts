@@ -1004,7 +1004,7 @@ test("rail polish aligns sections and swaps row actions without losing identity"
   }
 });
 
-test("rail attention uses red for one failed item and yellow for warnings or several items", async ({
+test("rail attention counts approvals and retries while excluding failed results", async ({
   page,
 }, testInfo) => {
   await installNavigationFixture(page);
@@ -1019,22 +1019,25 @@ test("rail attention uses red for one failed item and yellow for warnings or sev
       .filter({ has: page.getByText("Activity", { exact: true }) })
       .first();
     await expect(heading).toBeVisible();
-    // The attention badge stands in for the rows only while the section is collapsed.
     const toggle = heading.getByRole("button", { name: "Activity", exact: false }).first();
     // The section starts collapsed; collapse it only when it is open.
     if ((await toggle.getAttribute("aria-expanded")) === "true") await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    // Only an approval or a retry needs attention (warning); a failed run is not a live item, so
-    // it adds no badge and the collapsed header keeps counting what is running.
-    const alerting = heading.locator('[data-tone="danger"], [data-tone="warning"]');
-    if (attention === "failed") await expect(alerting).toHaveCount(0);
-    else {
-      await expect(alerting).toHaveCount(1);
-      await expect(alerting).toContainText("1");
-    }
+    await expect(heading.locator('[data-tone="danger"]')).toHaveCount(0);
+    const warning = heading.locator('[data-tone="warning"]');
+    if (attention === "failed") await expect(warning).toHaveCount(0);
+    else await expect(warning).toHaveText(attention === "multiple" ? "2" : "1");
     await expect(heading).not.toContainText("needs attention");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const rows = page.locator("[data-live-agents-list]:visible");
+    if (attention !== "warning")
+      await expect(rows.getByText("Review interrupted work")).toHaveCount(0);
+    else await expect(rows.getByText("Review interrupted work")).toBeVisible();
+    if (attention === "multiple") {
+      await expect(rows.getByText("Approve next step")).toBeVisible();
+      await expect(rows.getByText("Retry interrupted connection")).toBeVisible();
+    }
     for (const theme of ["dark", "light"]) {
       await page.evaluate(
         (light) => document.documentElement.classList.toggle("theme-light", light),

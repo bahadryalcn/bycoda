@@ -11,7 +11,6 @@ import {
 import { loadRemoteSession, remoteRequest } from "./connections";
 import { boundedSet } from "../../../shared/lib/store";
 
-const noop = () => {};
 export const cachedSessionSnapshots = new Map<string, HostSession>();
 export const cachedDescriptors = new Map<string, HostDescriptor>();
 /** False while the machine's descriptor is not cached yet, so callers use the safe full read. */
@@ -73,7 +72,7 @@ export async function preloadRemoteSession(machineId: string, sessionId: string)
   const snapshot = await loadRemoteSession(machineId, sessionId, undefined, {
     pages,
     partialHistory: lazyHistory,
-    ...(pages ? { onPreviews: noop } : {}),
+    deferPreviews: true,
   });
   rememberSessionSnapshot(key, snapshot, host.environmentId);
 }

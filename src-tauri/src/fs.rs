@@ -6879,9 +6879,9 @@ mod git_stream_process_tests {
     #[ignore = "isolated child fixture"]
     fn inherited_pipe_holder() {
         let signal = PathBuf::from(std::env::var_os("BYCODA_STREAM_FIXTURE_RELEASE").unwrap());
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + Duration::from_secs(60);
         while !signal.exists() && Instant::now() < deadline {
-            std::thread::yield_now();
+            std::thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -6938,32 +6938,44 @@ mod git_stream_process_tests {
     fn inherited_pipe_retains_capacity_until_reader_retires() {
         let _test = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let before = TEST_STREAMS.load(Ordering::Acquire);
-        let release =
-            std::env::temp_dir().join(format!("bycoda-git-stream-release-{}", Uuid::new_v4()));
-        let mut process = child("fs::git_stream_process_tests::inherited_pipe_parent");
-        process.env("BYCODA_STREAM_FIXTURE_RELEASE", &release);
-        let mut observed = Vec::new();
-        let result = git_stream_command(
-            &TEST_STREAMS,
-            process,
-            Instant::now() + Duration::from_secs(3),
-            |chunk| {
-                observed.extend_from_slice(chunk);
-                Ok(())
-            },
-        );
-        assert!(result.is_err());
-        assert!(observed
-            .windows(b"PIPE_HOLDER_READY".len())
-            .any(|window| window == b"PIPE_HOLDER_READY"));
-        assert!(TEST_STREAMS.load(Ordering::Acquire) > before);
-        std::fs::write(&release, b"release").unwrap();
-        let deadline = Instant::now() + Duration::from_secs(4);
-        while TEST_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
-            std::thread::yield_now();
+        // The deadline is the stimulus, and it also has to cover starting two test
+        // processes (parent, then holder), which is slow while the whole suite runs. An
+        // attempt whose fixture was not up in time is released and retried with a longer
+        // deadline; every attempt whose fixture did start is asserted strictly.
+        for seconds in [3, 10, 30, 90] {
+            let release =
+                std::env::temp_dir().join(format!("bycoda-git-stream-release-{}", Uuid::new_v4()));
+            let mut process = child("fs::git_stream_process_tests::inherited_pipe_parent");
+            process.env("BYCODA_STREAM_FIXTURE_RELEASE", &release);
+            let mut observed = Vec::new();
+            let result = git_stream_command(
+                &TEST_STREAMS,
+                process,
+                Instant::now() + Duration::from_secs(seconds),
+                |chunk| {
+                    observed.extend_from_slice(chunk);
+                    Ok(())
+                },
+            );
+            let started = observed
+                .windows(b"PIPE_HOLDER_READY".len())
+                .any(|window| window == b"PIPE_HOLDER_READY");
+            if started {
+                assert!(result.is_err());
+                assert!(TEST_STREAMS.load(Ordering::Acquire) > before);
+            }
+            std::fs::write(&release, b"release").unwrap();
+            let retire = Instant::now() + Duration::from_secs(120);
+            while TEST_STREAMS.load(Ordering::Acquire) > before && Instant::now() < retire {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert_eq!(TEST_STREAMS.load(Ordering::Acquire), before);
+            std::fs::remove_file(release).unwrap();
+            if started {
+                return;
+            }
         }
-        assert_eq!(TEST_STREAMS.load(Ordering::Acquire), before);
-        std::fs::remove_file(release).unwrap();
+        panic!("the inherited-pipe fixture never started");
     }
 }
 

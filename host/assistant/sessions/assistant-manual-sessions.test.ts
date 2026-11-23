@@ -60,6 +60,7 @@ async function setup(fullAuthority = false) {
       revision: original.revision + 1,
       session: {
         ...original.session,
+        title: "Manual fixture session",
         context: { used: 1000, window: 1000000 },
         blocks: [
           {
@@ -300,7 +301,7 @@ it("integrates owner enrollment, dynamic privacy, captured policy epochs and exa
       )
     ).manual!,
     grant = enrolled.grants[0];
-  expect(grant.title).toBeTruthy();
+  expect(grant.title).toBe("Manual fixture session");
   const started = f.nextTurn();
   const sending = f.assistant.request(
     {

@@ -185,16 +185,13 @@ for (const theme of ["light", "dark"]) {
       await details.getByRole("spinbutton", { name: "Local port", exact: true }).fill("8088");
       await nav.getByRole("tab", { name: "Automation", exact: true }).click();
       const commands = details.getByRole("region", { name: "Saved SSH commands", exact: true });
-      await commands
-        .getByRole("textbox", { name: "Name (optional)", exact: true })
-        .fill("Unfinished command");
+      const commandName = commands.getByRole("textbox", { name: "Name (optional)", exact: true });
+      await commandName.fill("Unfinished command");
       await commands.getByRole("textbox", { name: "Command preview", exact: true }).fill("pwd");
       await nav.getByRole("tab", { name: "Organization", exact: true }).click();
       await details.getByRole("combobox", { name: "Group", exact: true }).fill("Unfinished group");
       await nav.getByRole("tab", { name: "Automation", exact: true }).click();
-      await expect(
-        commands.getByRole("textbox", { name: "Name (optional)", exact: true }),
-      ).toHaveValue("Unfinished command");
+      await expect(commandName).toHaveValue("Unfinished command");
       await page.screenshot({ path: `${folder}/commands-${theme}-${width}.png` });
       await nav.getByRole("tab", { name: "Port forwarding", exact: true }).click();
       await expect(

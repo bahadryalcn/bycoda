@@ -136,6 +136,37 @@ async fn run(request: Request) -> Result<Value, String> {
     result.map_err(|_| "The owning PC could not return MCP configuration.".into())
 }
 
+/// Private subprocess entry. Paths and provider input arrive over stdin, never argv.
+pub fn maybe_run() -> Option<i32> {
+    let mut args = std::env::args_os().skip(1);
+    if args.next().as_deref() != Some(std::ffi::OsStr::new("control"))
+        || args.next().as_deref() != Some(std::ffi::OsStr::new("mcp-config-helper"))
+    {
+        return None;
+    }
+    let mut input = Vec::new();
+    let result = if std::io::stdin()
+        .take(MAX_REQUEST + 1)
+        .read_to_end(&mut input)
+        .is_ok()
+        && input.len() as u64 <= MAX_REQUEST
+    {
+        match serde_json::from_slice(&input) {
+            Ok(request) => tauri::async_runtime::block_on(run(request)),
+            Err(_) => Err("Invalid MCP configuration operation.".into()),
+        }
+    } else {
+        Err("Invalid MCP configuration operation.".into())
+    };
+    let mut stdout = std::io::stdout().lock();
+    let result = serde_json::to_writer(&mut stdout, &result);
+    Some(if result.is_ok() && stdout.flush().is_ok() {
+        0
+    } else {
+        1
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,35 +198,4 @@ mod tests {
         }))
         .is_err());
     }
-}
-
-/// Private subprocess entry. Paths and provider input arrive over stdin, never argv.
-pub fn maybe_run() -> Option<i32> {
-    let mut args = std::env::args_os().skip(1);
-    if args.next().as_deref() != Some(std::ffi::OsStr::new("control"))
-        || args.next().as_deref() != Some(std::ffi::OsStr::new("mcp-config-helper"))
-    {
-        return None;
-    }
-    let mut input = Vec::new();
-    let result = if std::io::stdin()
-        .take(MAX_REQUEST + 1)
-        .read_to_end(&mut input)
-        .is_ok()
-        && input.len() as u64 <= MAX_REQUEST
-    {
-        match serde_json::from_slice(&input) {
-            Ok(request) => tauri::async_runtime::block_on(run(request)),
-            Err(_) => Err("Invalid MCP configuration operation.".into()),
-        }
-    } else {
-        Err("Invalid MCP configuration operation.".into())
-    };
-    let mut stdout = std::io::stdout().lock();
-    let result = serde_json::to_writer(&mut stdout, &result);
-    Some(if result.is_ok() && stdout.flush().is_ok() {
-        0
-    } else {
-        1
-    })
 }

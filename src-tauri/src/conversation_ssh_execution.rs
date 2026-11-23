@@ -1130,10 +1130,10 @@ pub(crate) fn server_ssh_session_activity(
     evict_expired(&mut registry, Instant::now());
     let candidates: Vec<_> = registry
         .iter()
-        .filter_map(|(key, job)| {
+        .filter(|(key, _)| {
             matches!(&key.source, SshSource::Session { session, .. } if session == &session_id)
-                .then(|| (key.request.clone(), job.clone()))
         })
+        .map(|(key, job)| (key.request.clone(), job.clone()))
         .collect();
     drop(registry);
     if candidates.is_empty() {

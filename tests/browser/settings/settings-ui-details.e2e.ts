@@ -259,7 +259,11 @@ for (const theme of ["light", "dark"]) {
       const modal = page.getByRole("dialog", { name: "Add MCP server", exact: true });
       await expect(modal).toBeVisible();
       await expect(modal.getByText(/Advanced/)).toHaveCount(0);
-      await expect(modal.getByText(/Selected project:/)).toHaveCount(0);
+      const selectedProject = modal.getByText(/Selected project:/);
+      await expect(selectedProject).toBeVisible();
+      await modal.getByRole("button", { name: /^Scope:/ }).click();
+      await page.getByRole("option", { name: "Global", exact: true }).click();
+      await expect(selectedProject).toHaveCount(0);
       await expect(modal.getByRole("button", { name: "Add server", exact: true })).toBeVisible();
       await page.screenshot({ path: `temp/verification/2026-11-10-mcp/add-${theme}-${width}.png` });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(

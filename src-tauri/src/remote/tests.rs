@@ -1,4 +1,118 @@
 #[test]
+fn window_list_outlives_stream_detach_and_closes_with_its_window() {
+    use crate::host_ws::tests::{accept, hello, next, result, Server};
+    let (seen, received) = std::sync::mpsc::sync_channel(1);
+    let (respond, response) = tokio::sync::oneshot::channel();
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(&mut socket, &["sessions.list"], "host.1").await;
+        let first = next(&mut socket).await;
+        seen.send(()).unwrap();
+        response.await.unwrap();
+        result(&mut socket, &first, serde_json::json!([])).await;
+        let _second = next(&mut socket).await;
+        seen.send(()).unwrap();
+        // Allow the real window-close path to cancel this pending read.
+        use futures_util::StreamExt;
+        while socket.next().await.is_some() {}
+    });
+    let state = super::RemoteConnections::default();
+    let route = server.route();
+    let label = "main";
+    let hold = |method| {
+        state
+            .window_lists
+            .begin(&state.ws, "machine.1", label, method)
+    };
+    let first_hold = hold("sessions.list").unwrap();
+    let second_hold = hold("projects.list").unwrap();
+    let owner = first_hold.owner.clone();
+    assert_eq!(owner, second_hold.owner);
+    assert!(hold("commands.dispatch").is_none());
+    state
+        .ws
+        .attach(&route, label, std::sync::Arc::new(|_| {}))
+        .unwrap();
+    let list = || {
+        state
+            .ws
+            .begin_request(
+                &route,
+                &owner,
+                "sessions.list",
+                serde_json::json!({"projectId":"p"}),
+                Default::default(),
+            )
+            .unwrap()
+    };
+    let one = list();
+    received
+        .recv_timeout(std::time::Duration::from_secs(3))
+        .unwrap();
+    state
+        .window_lists
+        .detach_stream(&state.ws, "machine.1", label);
+    respond.send(()).unwrap();
+    assert_eq!(one.wait().unwrap().result, serde_json::json!([]));
+    drop(first_hold);
+    let two = list();
+    received
+        .recv_timeout(std::time::Duration::from_secs(3))
+        .unwrap();
+    state.detach_window(label);
+    assert!(two.wait().is_err());
+}
+
+#[test]
+fn window_list_retires_its_socket_after_detach_and_last_read() {
+    use crate::host_ws::tests::{accept, hello, next, result, Server};
+    use futures_util::StreamExt;
+    let (closed, received) = std::sync::mpsc::channel();
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(&mut socket, &["sessions.list"], "host.1").await;
+        let request = next(&mut socket).await;
+        result(&mut socket, &request, serde_json::json!([])).await;
+        while matches!(socket.next().await, Some(Ok(frame)) if !frame.is_close()) {}
+        let _ = closed.send(());
+    });
+    let state = super::RemoteConnections::default();
+    let hold = |method| {
+        state
+            .window_lists
+            .begin(&state.ws, "machine.1", "main", method)
+            .unwrap()
+    };
+    let one = hold("sessions.list");
+    let two = hold("projects.list");
+    let route = server.route();
+    state
+        .ws
+        .attach(&route, "main", std::sync::Arc::new(|_| {}))
+        .unwrap();
+    let reply = state
+        .ws
+        .request(
+            &route,
+            &one.owner,
+            "sessions.list",
+            serde_json::json!({"projectId":"p"}),
+            Default::default(),
+        )
+        .unwrap();
+    state
+        .window_lists
+        .detach_stream(&state.ws, "machine.1", "main");
+    drop(one);
+    assert!(reply.disclose().is_ok());
+    assert!(received.try_recv().is_err());
+    drop(two);
+    received
+        .recv_timeout(std::time::Duration::from_secs(3))
+        .unwrap();
+}
+
+#[test]
 fn search_replace_rpc_deadline_outlasts_per_file_publication() {
     assert_eq!(
         super::rpc_timeout(

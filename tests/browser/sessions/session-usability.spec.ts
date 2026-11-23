@@ -57,6 +57,9 @@ for (const light of [true, false])
       const folder = "temp/verification/prompt-outline-prepend";
       const name = `${light ? "light" : "dark"}-${width}`;
       await expect(transcript.getByText("Response 16", { exact: true })).toBeVisible();
+      // The tail paints first. Until the first local turn is mounted, scrolling
+      // reveals more local turns before it can request the stored history page.
+      await expect(firstRecent).toBeAttached();
       await expect(firstOld).toHaveCount(0);
       expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(0);
       await transcript.hover();
@@ -644,11 +647,15 @@ test("a referenced draft with one very long wrapped line keeps its caret in view
   await expect(field).toBeVisible();
   await expect(field).toBeFocused();
   await expect(field).toHaveValue(draft);
+  // The caret line counts as in view when at least half of it is: its glyphs sit centred in the
+  // line box, so the scroll offset beside the padding depends on the font (about 1px on Windows,
+  // 3px with the Linux fallback font), never on the layout under test.
   const atBottom = () =>
     field.evaluate(
       (input) =>
         input.scrollHeight - input.scrollTop - input.clientHeight <=
-        parseFloat(getComputedStyle(input).paddingBottom) + 2,
+        parseFloat(getComputedStyle(input).paddingBottom) +
+          parseFloat(getComputedStyle(input).lineHeight) / 2,
     );
   await expect.poll(atBottom).toBe(true);
   await page.keyboard.press("Control+z");
@@ -662,7 +669,9 @@ test("a referenced draft with one very long wrapped line keeps its caret in view
       field.evaluate(
         (input: HTMLTextAreaElement) =>
           input.selectionEnd === 0 &&
-          input.scrollTop <= parseFloat(getComputedStyle(input).paddingTop) + 2,
+          input.scrollTop <=
+            parseFloat(getComputedStyle(input).paddingTop) +
+              parseFloat(getComputedStyle(input).lineHeight) / 2,
       ),
     )
     .toBe(true);

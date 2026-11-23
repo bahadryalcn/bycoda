@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { previewBlock } from "../../../../host/sessions/transcriptPage";
 import type { Attachment, Block } from "../../sessions/model/session";
 import { keepFullContent, keepFullTranscript, sameRemoteBlock } from "./remotePreview";
+import { readBinaryFile } from "../../../platform/tauri/fs";
+
+vi.mock("../../../platform/tauri/fs", () => ({ readBinaryFile: vi.fn() }));
 
 // Wire forms come from the host's own projection, so these cases follow it.
 const file = (id: string, path: string): Attachment => ({
@@ -67,6 +70,29 @@ describe("the host's shrunk form of a block", () => {
 });
 
 describe("keeping the full content the desktop already has", () => {
+  it("opens a restored desktop original after a Host edit and falls back to its owner if it disappears", async () => {
+    const original = file("f1", "C:/Users/me/a.mkv");
+    original.size = 3;
+    const local = message({ attachments: [original] });
+    const incoming = wire({ ...local, text: "edited" });
+    const remote = vi.fn(async () => "aG9zdA==");
+    incoming.attachments![0]!.loadPreview = remote;
+    const merged = keepFullContent(local, incoming).attachments![0]!;
+    vi.mocked(readBinaryFile).mockResolvedValueOnce(new Uint8Array([97, 98, 99]));
+    await expect(merged.loadPreview!()).resolves.toBe("YWJj");
+    expect(readBinaryFile).toHaveBeenCalledWith(original.path);
+    expect(remote).not.toHaveBeenCalled();
+    vi.mocked(readBinaryFile).mockRejectedValueOnce(new Error("gone"));
+    await expect(merged.loadPreview!()).resolves.toBe("aG9zdA==");
+    const foreign = wire({ ...local, text: "edited" });
+    Object.assign(foreign.attachments![0]!, {
+      hostEnvironmentId: "another-host",
+      loadPreview: remote,
+    });
+    const foreignFile = keepFullContent(local, foreign).attachments![0]!;
+    expect(foreignFile.path).toBeUndefined();
+    expect(foreignFile.loadPreview).toBe(remote);
+  });
   it("keeps the local block when the host only sent its shrunk form", () => {
     const full = message();
     expect(keepFullContent(full, wire(full))).toBe(full);

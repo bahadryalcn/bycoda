@@ -518,6 +518,20 @@ export function remoteRequest<T>(
       return send();
     });
   }
+  // Restored projects all need the same SSH tunnel. Discover the cold route once
+  // before their independent list reads instead of racing the first dial.
+  if (
+    (method === "sessions.list" || method === "projects.list") &&
+    machine?.ssh &&
+    expectedEnvironment === machine.environmentId &&
+    !fresh &&
+    !userInitiated &&
+    !cachedRemoteCapabilities(machine.environmentId)
+  )
+    return loadRemoteCapabilities(machine.environmentId).then(() => {
+      if (!current()) throw superseded();
+      return send();
+    });
   return send();
 }
 
@@ -791,6 +805,8 @@ export async function loadRemoteSession(
   options: {
     waitMs?: number;
     onPreviews?: (snapshot: HostSession) => void;
+    /** Background mirrors and preloads keep readers but do not fetch image bytes. */
+    deferPreviews?: boolean;
     pages?: boolean;
     partialHistory?: boolean;
     onHistory?: (snapshot: HostSession) => void;
@@ -841,7 +857,7 @@ export async function loadRemoteSession(
         totalBlocks: page.totalBlocks,
       },
     };
-    if (options.onPreviews)
+    if (options.onPreviews && !options.deferPreviews)
       setTimeout(() => {
         if (!(options.isCurrent?.() ?? true)) return;
         void withRemoteAttachmentPreviews(machineId, snapshot, undefined, (params) =>
@@ -906,6 +922,7 @@ export async function loadRemoteSession(
       options.executionClient?.environmentId,
     ),
   );
+  if (options.deferPreviews) return snapshot;
   if (options.onPreviews) {
     void withRemoteAttachmentPreviews(machineId, snapshot, known, (params) =>
       remoteRequest(
@@ -923,8 +940,7 @@ export async function loadRemoteSession(
       });
     return snapshot;
   }
-  // Adopted-session and preload consumers receive one complete snapshot and
-  // have no callback through which independently downloaded images can arrive.
+  // Callers that ask for a complete snapshot also wait for its bounded previews.
   return withRemoteAttachmentPreviews(machineId, snapshot, known, (params) =>
     remoteRequest(
       machineId,
