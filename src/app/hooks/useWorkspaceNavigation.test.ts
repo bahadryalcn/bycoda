@@ -24,6 +24,7 @@ const other = "/navigation-other";
 const treeA = { path: "/navigation-trees/a", branch: "a" };
 const treeB = { path: "/navigation-trees/b", branch: "b" };
 const treeC = { path: "/navigation-trees/c", branch: "c" };
+const remoteProject = "remote://fixture-host/project";
 let root: Root;
 let container: HTMLDivElement;
 let navigation: ReturnType<typeof useWorkspaceNavigation>;
@@ -56,6 +57,25 @@ function chat(id: string, cwd = project, workingCopy?: string, started = false) 
     blocks: started ? [{ id: `prompt-${id}`, role: "user" as const, text: "hello" }] : [],
   };
 }
+
+it("opens a separate remote worktree tab and returns to the project tab", async () => {
+  const remoteTree = { path: "remote://fixture-host/project-feature", branch: "feature" };
+  try {
+    await mount([chat("remote", remoteProject)]);
+    await act(async () => navigation.selectWorkspace(remoteProject, remoteTree));
+    expect(view.activeTabId).toBe("tab-created");
+    expect(worktreeFocus(remoteProject)).toEqual(remoteTree);
+    expect(view.sessions.find((session) => session.id === "created")?.worktreeCwd).toBe(
+      remoteTree.path,
+    );
+    expect(move).not.toHaveBeenCalled();
+    await act(async () => navigation.selectWorkspace(remoteProject));
+    expect(view.activeTabId).toBe("tab-remote");
+    expect(worktreeFocus(remoteProject)).toBeUndefined();
+  } finally {
+    await act(async () => setWorktreeFocus(remoteProject, undefined));
+  }
+});
 async function mount(
   sessions = [chat("blank")],
   activeId = sessions[0].id,

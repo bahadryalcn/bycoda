@@ -16,7 +16,8 @@ vi.mock("@tauri-apps/api/core", async (original) => ({
 const localPath = "C:/workspace/project";
 const remotePath = "remote://machine/home/project";
 const icon = (path: string) =>
-  rowCopy({ id: path, kind: "project", name: "project", path, score: 1, positions: [] }, "").icon;
+  rowCopy({ id: path, kind: "project", name: "project", path, score: 1, positions: [] }, "", {})
+    .icon;
 
 it("loads only a configured logo and uses a folder for project directory paths", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

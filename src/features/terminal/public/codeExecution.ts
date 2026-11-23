@@ -7,5 +7,6 @@ export { createCodeTerminal } from "../runtime/codeTerminalController";
 export type {
   CodeTerminalController,
   CodeTerminalOptions,
+  RemoteCodeRun,
 } from "../runtime/codeTerminalController";
 export { CodeTerminalDialog } from "../ui/CodeTerminalDialog";

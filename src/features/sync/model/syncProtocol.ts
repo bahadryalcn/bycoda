@@ -12,6 +12,7 @@ export const SYNC_TABLES = [
   "assignment",
   "railLayout",
   "groupOrder",
+  "workspaceLayout",
   "lock",
   "appearance",
 ] as const;
@@ -41,9 +42,15 @@ export type SyncGroupValue = {
   kind?: "personal" | "work";
   workspaceFile?: string;
   workspaceFolders?: string[];
+  memberOrder?: string[];
   lockable?: boolean;
 };
 export type SyncAssignmentValue = { projectId: string; groupId: string };
+export type SyncWorkspaceLayoutValue = {
+  rootProjectId: string;
+  includesRoot: boolean;
+  sourceMachineId?: string;
+};
 export type SyncRailLayoutValue = { order: string[]; pinned: string[] };
 export type SyncGroupOrderValue = { order: string[] };
 export type SyncLockValue = { record: unknown | null };
@@ -64,6 +71,7 @@ export type SyncRecordValue =
   | SyncAssignmentValue
   | SyncRailLayoutValue
   | SyncGroupOrderValue
+  | SyncWorkspaceLayoutValue
   | SyncLockValue
   | SyncAppearanceValue;
 
@@ -123,6 +131,7 @@ export function syncPushBatches(ops: readonly SyncOp[]): {
 }
 
 export type SyncPullResult = {
+  workspaceLayout?: boolean;
   rev: number;
   records: SyncRecord[];
   more?: boolean;

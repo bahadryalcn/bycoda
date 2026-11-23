@@ -381,6 +381,9 @@ The existing terminal close policy asks before closing foreground work or a term
 whose process status cannot be determined. Closing the active tab selects a surviving
 neighbor. Opening, running, failed and exited labels describe the terminal lifecycle;
 an opened terminal does not by itself verify remote SSH authentication.
+For a paired Host, **Connect via SSH** starts the machine's login shell. A
+custom shell integration can be selected from the terminal's tools. A Host's
+**Connected** badge reflects the Host service connection.
 
 While a terminal is open, **Saved SSH tabs** holds the restore preference and pending
 entries. Only saved connections can be remembered. Restoring an entry requires
@@ -656,7 +659,7 @@ This remains development-source behavior pending installed-platform acceptance.
 
 Supported: persistent remote text conversations with all ten local provider adapters, follow-up turns, approvals, questions where the provider offers them, cancellation, per-device revocation, reconnect, remote file browsing and text editing, Git status, file diffs, and history, staging and commits, branch selection and creation, worktree selection and creation, and a tracked Git diff against HEAD. OpenCode's server and event stream stay on the host's loopback interface. Cursor's optional enrichment from its native session database is not available on the headless host; basic transcript and subagent events still work. The desktop polls the host and downloads only transcript blocks that changed since its last update (every 0.75 s while a session runs, 3 s otherwise). The desktop rejects any single host response over 16 MiB. A sync above 4 MiB, such as reopening a very long transcript or one very large tool output, is sent as a series of bounded pieces of one consistent revision. Transcript size is therefore not limited by the response cap. The host writes streamed output in 120 ms batches and keeps a bounded event journal.
 
-Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. Worktree deletion, terminals, generated image output, `/operator`, automations, and orchestration are not implemented yet. Other remote prompts are sent directly to the provider.
+Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. For interactive terminals, see [remote project terminals](terminal.md#open-a-remote-project-terminal). Worktree deletion, generated image output, `/operator`, automations, and orchestration are not implemented yet. Other remote prompts are sent directly to the provider.
 
 The headless host runs the reused TypeScript adapters with a Node process backend. It proves the execution boundary without introducing the planned Rust daemon/worker IPC yet. Node is included in host release archives, separately from the desktop application.
 

@@ -33,6 +33,7 @@ import { createTerminalFitting } from "../runtime/terminalFitting";
 import {
   createTerminalPtyRuntime,
   terminalPtyLaunch,
+  type SshProjectTerminal,
   type TerminalPtyRuntime,
 } from "../runtime/terminalPtyRuntime";
 import {
@@ -47,6 +48,8 @@ import { createTerminalWebgl } from "../runtime/terminalWebgl";
 
 type Props = {
   toolbarTarget?: HTMLDivElement | null;
+  /** The dock passes null for background panes, which have no visible toolbar. */
+  dockToolbarTarget?: HTMLDivElement | null;
   sshConnectionName?: string;
   onSendToAgent?: (text: string) => Promise<void>;
   onSendToHost?: (text: string) => Promise<void>;
@@ -60,6 +63,7 @@ type Props = {
   profile?: string;
   /** Canonical SSH-only connection. No local profile, cwd or launch replay. */
   sshConnectionId?: string;
+  sshProject?: SshProjectTerminal;
   /** Quick connections remain ephemeral and use the same native SSH engine. */
   sshEndpoint?: SshEndpoint;
   shellIntegration?: "auto" | "bash" | "zsh" | "powershell";
@@ -117,6 +121,7 @@ async function reconnectTerminal(
 
 export function TerminalView({
   toolbarTarget,
+  dockToolbarTarget,
   sshConnectionName,
   onSendToAgent,
   onSendToHost,
@@ -127,6 +132,7 @@ export function TerminalView({
   cwd,
   profile,
   sshConnectionId,
+  sshProject,
   sshEndpoint,
   shellIntegration,
   agentForwardingReviewId,
@@ -293,6 +299,7 @@ export function TerminalView({
       launch: terminalPtyLaunch({
         keyGenerationPath,
         sshConnectionId,
+        sshProject,
         sshEndpoint,
         shellIntegration,
         agentForwardingReviewId,
@@ -488,6 +495,7 @@ export function TerminalView({
   }, [
     id,
     sshConnectionId,
+    sshProject,
     sshEndpoint,
     shellIntegration,
     agentForwardingReviewId,
@@ -654,6 +662,7 @@ export function TerminalView({
     >
       <TerminalControls
         toolbarTarget={toolbarTarget}
+        dockToolbarTarget={dockToolbarTarget}
         sshConnectionName={sshConnectionName}
         fontSize={displayFontSize}
         savedFontSize={savedFontSize}

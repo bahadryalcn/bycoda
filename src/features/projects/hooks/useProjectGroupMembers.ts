@@ -18,6 +18,7 @@ export function useProjectGroupMembers(
   workspaceIds: string[],
   onReorderProjects: (paths: string[]) => void,
   projectLabel: (path: string) => string,
+  projectIdForPath?: (path: string) => string | undefined,
 ) {
   // The slot save waits on the privacy Host round-trip while the project order commits at once,
   // so the dropped order shows until the save settles instead of snapping back for that wait.
@@ -27,6 +28,7 @@ export function useProjectGroupMembers(
     projectPaths,
     workspaceIds,
     pendingOrder ?? group.memberOrder,
+    projectIdForPath,
   );
   const byId = new Map(members.map((member) => [member.id, member]));
   const handleReorder = (ids: string[]) => {

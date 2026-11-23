@@ -187,6 +187,31 @@ describe("QueuedMessageEditDialog", () => {
     },
   );
 
+  it("replaces a long plain paste with a saved text attachment", async () => {
+    const file: Attachment = {
+      id: "pasted",
+      name: "Pasted text.txt",
+      mimeType: "text/plain",
+      size: 9000,
+      kind: "file",
+      path: "/test/pasted.txt",
+    };
+    vi.spyOn(attachmentApi, "attachmentsFromFiles").mockResolvedValue([file]);
+    const { field, button, onSave } = await open({
+      message: { id: "plain", text: "Before replace after", attachments: [] },
+    });
+    field.setSelectionRange(7, 14);
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: { getData: (type: string) => (type === "text/plain" ? "a".repeat(9000) : "") },
+    });
+    await act(async () => field.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+    expect(field.value).toMatch(/^Before \[.+\] after$/);
+    await act(async () => button("Save").click());
+    expect(onSave).toHaveBeenCalledWith(expect.stringMatching(/^Before \[.+\] after$/), [file]);
+  });
+
   it("removing a chip removes its token", async () => {
     const { field, button, onSave } = await open();
     await act(async () =>

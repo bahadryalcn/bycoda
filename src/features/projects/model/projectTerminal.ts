@@ -10,6 +10,7 @@ import { normalizeProjectPath, sameProjectPath } from "./recents";
 import type { Session } from "../../sessions";
 import { applyTerminalMeta, type TerminalMetaPatch } from "../../terminal/model/terminalTab";
 import { workspaceTabCwd } from "../../workspace/model/workspaceTabGroups";
+import type { RemoteCodeRun } from "../../terminal/public/codeExecution";
 
 export type DockSide = "top" | "bottom" | "left" | "right";
 
@@ -21,6 +22,13 @@ export type ProjectTerminalDock = {
   open: boolean;
   /** Terminals displayed together in the dock, in canvas order. */
   splitGroups?: string[][];
+  /** Live Host command handles belong to this window and are never persisted. */
+  remoteRuns?: Record<string, RemoteCodeRun>;
+  /** The saved SSH machine and original checkout for each window-owned shell. */
+  sshShells?: Record<
+    string,
+    { connectionId: string; project: { environmentId: string; cwd: string } }
+  >;
 };
 
 export function dockTerminalGroup(dock: ProjectTerminalDock, fileId: string): string[] {
@@ -128,6 +136,10 @@ export function closeTerminalInDock(
   if (index < 0) return dock;
   const files = dock.pane.files.filter((file) => file.id !== fileId);
   if (files.length === 0) return null;
+  const remoteRuns = dock.remoteRuns ? { ...dock.remoteRuns } : undefined;
+  if (remoteRuns) delete remoteRuns[fileId];
+  const sshShells = dock.sshShells ? { ...dock.sshShells } : undefined;
+  if (sshShells) delete sshShells[fileId];
   const activeFileId =
     dock.pane.activeFileId === fileId
       ? (dockTerminalGroup(dock, fileId).find((id) => id !== fileId) ??
@@ -135,6 +147,8 @@ export function closeTerminalInDock(
       : dock.pane.activeFileId;
   return {
     ...dock,
+    remoteRuns,
+    sshShells,
     pane: { ...dock.pane, files, activeFileId },
     splitGroups: dock.splitGroups
       ?.map((group) => group.filter((id) => id !== fileId))
@@ -235,7 +249,7 @@ export function projectTerminalFileIds(docks: ProjectTerminalDock[]): string[] {
   const ids: string[] = [];
   for (const dock of docks) {
     for (const file of dock.pane.files) {
-      if (file.terminal) ids.push(file.id);
+      if (file.terminal && !dock.remoteRuns?.[file.id]) ids.push(file.id);
     }
   }
   return ids;
@@ -304,7 +318,7 @@ export function splitProjectTerminalsForMove(
     const path = normalizeProjectPath(dock.projectPath);
     const stays = remainingProjects.has(path);
     const follows = movingProjects.has(path) && !stays;
-    if (follows) moving.push(dock);
+    if (follows && !dock.remoteRuns && !dock.sshShells) moving.push(dock);
     else remaining.push(dock);
   }
   return { moving, remaining };

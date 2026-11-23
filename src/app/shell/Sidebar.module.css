@@ -46,6 +46,7 @@
 
 @container workspace-pane (inline-size < 280px) {
   .workspaceHeader [data-workspace-copy-name],
+  .workspaceHeader [data-workspace-copy-decoration],
   .workspaceHeader:has([data-session-tools] [data-expanded]) [data-workspace-navigation] {
     display: none;
   }

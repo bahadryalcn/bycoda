@@ -1,6 +1,12 @@
 export { formatAttachmentSize } from "../../../shared/i18n/attachmentSize";
 import type { Attachment } from "./session";
 
+export const PASTED_TEXT_FILENAME = "Pasted text.txt";
+
+export function isPastedTextAttachment(attachment: Pick<Attachment, "name" | "mimeType">) {
+  return attachment.name === PASTED_TEXT_FILENAME && attachment.mimeType === "text/plain";
+}
+
 export type AttachmentPresentationKind =
   | "image"
   | "audio"

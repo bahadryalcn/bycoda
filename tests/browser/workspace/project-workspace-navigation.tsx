@@ -23,6 +23,12 @@ import { savePinnedProjects } from "../../../src/features/projects/model/recents
 import { languageReady } from "../../../src/shared/i18n";
 import { Button } from "../../../src/shared/ui/Button";
 import { installInputModality } from "../../../src/shared/ui/inputModality";
+import { applyRemoteGroupRecords } from "../../../src/features/sync/model/syncGroups";
+import {
+  captureLocalProjectChanges,
+  projectIdForPath,
+} from "../../../src/features/sync/model/syncProjects";
+import { rememberProject } from "../../../src/features/projects/model/recents";
 import "../support/w7-shell.css";
 
 // Exercise the production rail without changing a real repository or session.
@@ -42,6 +48,29 @@ saveProjectGroupAssignments({
   "g:/team/service": "team",
 });
 savePinnedProjects(["G:/wallet"]);
+const syncedWorkspace = new URLSearchParams(location.search).has("synced-workspace");
+const syncedRoot = "remote://windows/G:/wallet";
+const syncedChild = `${syncedRoot}/mobile`;
+if (syncedWorkspace) {
+  saveProjectGroups([]);
+  rememberProject(syncedRoot);
+  rememberProject(syncedChild);
+  captureLocalProjectChanges("fixture-host");
+  const rootId = projectIdForPath(syncedRoot)!;
+  const childId = projectIdForPath(syncedChild)!;
+  applyRemoteGroupRecords("fixture-host", [
+    { table: "group", id: "team", rev: 1, value: { id: "team", name: "Firisbe" } },
+    { table: "group", id: "wallet", rev: 2, value: { id: "wallet", name: "Wallet" } },
+    {
+      table: "workspaceLayout",
+      id: "wallet",
+      rev: 3,
+      value: { rootProjectId: rootId, includesRoot: false },
+    },
+    { table: "assignment", id: rootId, rev: 4, value: { projectId: rootId, groupId: "team" } },
+    { table: "assignment", id: childId, rev: 5, value: { projectId: childId, groupId: "wallet" } },
+  ]);
+}
 const layoutClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const layoutNow = Date.now();
 for (const provider of ["claude", "codex"] as const) {
@@ -66,11 +95,15 @@ function ShellLayoutFixture() {
         <div className="flex min-h-0 flex-1">
           <ProjectRail
             visible
-            cwd={selected === "~" ? "~" : "G:/wallet/api"}
-            recents={Array.from({ length: 18 }, (_, index) => ({
-              path: `G:/project-${index}`,
-              openedAt: 1,
-            }))}
+            cwd={syncedWorkspace ? selected : selected === "~" ? "~" : "G:/wallet/api"}
+            recents={
+              syncedWorkspace
+                ? [syncedRoot, syncedChild].map((path) => ({ path, openedAt: 1 }))
+                : Array.from({ length: 18 }, (_, index) => ({
+                    path: `G:/project-${index}`,
+                    openedAt: 1,
+                  }))
+            }
             onSelectProject={setSelected}
             onOpenNoProject={() => setSelected("~")}
             onOpenProject={() => {}}

@@ -19,6 +19,7 @@ import { FilePlus } from "../../../shared/ui/icons";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
+import { capturePastedTextAttachment, replacePastedText } from "./pastedTextAttachment";
 import { droppedFileCount } from "../../../shared/lib/externalDrop";
 import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFeedback";
 import { attachmentDropVerdict } from "../model/attachmentDrop";
@@ -356,6 +357,33 @@ function QueueEditContent({
     // A webview reports a pasted screenshot or copied file as text only (or
     // nothing); both live on the native clipboard.
     const text = data.getData("text/plain");
+    const paste =
+      canAttach && !message && !isFileReferenceText(text)
+        ? capturePastedTextAttachment(event.currentTarget, text)
+        : undefined;
+    if (paste) {
+      event.preventDefault();
+      const { value, selectionStart, selectionEnd } = event.currentTarget;
+      change(
+        value.slice(0, selectionStart) + paste.text + value.slice(selectionEnd),
+        selectionStart + paste.text.length,
+      );
+      void attachBlobs([paste.file], (incoming) => {
+        const value = draftRef.current.text;
+        const range = paste.range(value);
+        if (!range) return null;
+        return {
+          range,
+          textWithAttachments: (attachments) => {
+            const index = attachments.findIndex((file) => file.id === incoming[0]?.id);
+            if (index < 0) return value.slice(range.start, range.end);
+            const edit = replacePastedText(value, range, attachmentDraftTokens(attachments)[index]);
+            return edit.text.slice(range.start, edit.caret);
+          },
+        };
+      });
+      return;
+    }
     if (!canAttach || (text && !isFileReferenceText(text))) return;
     event.preventDefault();
     const captured = isFileReferenceText(text) ? captureDraft(event.currentTarget) : null;
@@ -376,7 +404,7 @@ function QueueEditContent({
   const collect = async (
     read: () => Promise<Attachment[]>,
     restore?: (incoming: Attachment[]) => void,
-    pasteLayout?: (incoming: Attachment[]) => QueuedPasteLayout | undefined,
+    pasteLayout?: (incoming: Attachment[]) => QueuedPasteLayout | null | undefined,
   ) => {
     const admitted = parentChanged.admit();
     if (!admitted) return;
@@ -400,7 +428,9 @@ function QueueEditContent({
         apply: (incoming) =>
           admitted.apply(() => {
             restore?.(incoming);
-            attach(incoming, pasteLayout?.(incoming));
+            const layout = pasteLayout?.(incoming);
+            if (layout === null) incoming.forEach(revokeAttachment);
+            else attach(incoming, layout);
           }),
         isAlive: () => alive.current,
         setError,
@@ -417,7 +447,7 @@ function QueueEditContent({
   /** Pasted and dropped files: valid ones attach, skipped blobs are named instead of vanishing. */
   const attachBlobs = (
     files: File[],
-    pasteLayout?: (incoming: Attachment[]) => QueuedPasteLayout | undefined,
+    pasteLayout?: (incoming: Attachment[]) => QueuedPasteLayout | null | undefined,
   ) =>
     collect(
       async () => {

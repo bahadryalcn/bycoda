@@ -11,11 +11,14 @@ import {
 } from "./native-devices";
 
 it("declares paired-device methods with bounded waits and no private alias", () => {
-  expect(NATIVE_DEVICE_METHODS).toHaveLength(15);
+  expect(NATIVE_DEVICE_METHODS).toHaveLength(16);
+  expect(NATIVE_DEVICE_METHODS).toContain("devices.touch");
   for (const method of NATIVE_DEVICE_METHODS) {
     const definition = getHostRpcMethod(method)!;
     expect(definition.scope).toBe("device");
-    expect(definition.requiredCapability).toBe("transport.ws.devices.v1");
+    expect(definition.requiredCapability).toBe(
+      method === "devices.touch" ? "devices.touch.v1" : "transport.ws.devices.v1",
+    );
     expect(definition.cancellation).toBe(nativeDeviceReadOnly(method) ? "query" : "wait-only");
     expect(hostRpcHasEffect(method, definition.kind)).toBe(!nativeDeviceReadOnly(method));
     expect(nativeDesktopMethod(method)).toBe(false);

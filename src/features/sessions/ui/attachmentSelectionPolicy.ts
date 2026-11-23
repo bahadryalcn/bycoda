@@ -1,6 +1,14 @@
 import type { Attachment } from "../model/session";
 import { findTokens } from "../model/attachmentTokens";
 
+// A caret inside any supported token has a closing bracket ahead on this line.
+const TOKEN_TAIL = /[^[\]\r\n]*\]/y;
+function mayBeInsideToken(text: string, offset: number) {
+  if (offset <= 0 || offset >= text.length) return false;
+  TOKEN_TAIL.lastIndex = offset;
+  return TOKEN_TAIL.test(text);
+}
+
 export function snapAttachmentSelection(
   text: string,
   files: Pick<Attachment, "kind" | "size">[],
@@ -8,6 +16,11 @@ export function snapAttachmentSelection(
   end: number,
   motion: "forward" | "backward" | "none" = "none",
 ) {
+  if (
+    !files.length ||
+    (!mayBeInsideToken(text, start) && (end === start || !mayBeInsideToken(text, end)))
+  )
+    return { start, end };
   const tokens = findTokens(text, files);
   if (start === end) {
     const hit = tokens.find((token) => start > token.start && start < token.end);
@@ -51,7 +64,12 @@ export function installAttachmentSelectionPolicy(
     motion = "none";
   };
   const keydown = (event: KeyboardEvent) => {
-    if (event.shiftKey && !event.isComposing && el.selectionStart !== el.selectionEnd) {
+    if (
+      event.shiftKey &&
+      !event.isComposing &&
+      el.selectionStart !== el.selectionEnd &&
+      (event.key === "ArrowLeft" || event.key === "ArrowRight")
+    ) {
       const tokens = findTokens(el.value, files());
       const backward = el.selectionDirection === "backward";
       const hit = tokens.find((token) =>

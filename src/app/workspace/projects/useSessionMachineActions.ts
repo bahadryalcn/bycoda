@@ -47,7 +47,8 @@ export function useSessionMachineActions({
 }: {
   sessionsRef: MutableRefObject<Session[]>;
   onCwdChange: ReturnType<typeof useWorkspaceDirectoryActions>["onCwdChange"];
-  chooseProject?: (environmentId: string | undefined) => Promise<string | undefined>;
+  /** The folder to work in on that machine, given the folder the session is in now. */
+  chooseProject?: (environmentId: string | undefined, cwd: string) => Promise<string | undefined>;
 }) {
   const pendingChoices = useRef(new Map<string, symbol>());
   return useStableCallback((sessionId: string, environmentId: string | undefined) => {
@@ -82,7 +83,7 @@ export function useSessionMachineActions({
           return;
         }
       }
-      const cwd = source.cwd === "~" ? "~" : await chooseProject?.(environmentId);
+      const cwd = source.cwd === "~" ? "~" : await chooseProject?.(environmentId, source.cwd);
       if (!cwd || !stillCurrent()) return;
       if (cwd !== "~" && parseRemotePath(cwd)?.environmentId !== environmentId)
         throw new Error("The folder belongs to a different machine");

@@ -1,4 +1,5 @@
 {
+  "Set up an SSH connection to this project's machine to open a terminal.": "Set up an SSH connection to this project's machine to open a terminal.",
   "Workflow status": "Workflow status",
   "Status category": "Status category",
   "No projects selected": "No projects selected",
@@ -3675,6 +3676,7 @@
   "Move Terminal": "Move Terminal",
   "Close Active Terminal": "Close Active Terminal",
   "Close All Terminals": "Close All Terminals",
+  "Close Terminals?": "Close Terminals?",
   "Hide Terminal ({p0}J)": "Hide Terminal ({p0}J)",
   "Terminals": "Terminals",
   "Close others": "Close others",
@@ -8297,6 +8299,7 @@
   "Writing clipboard": "Writing clipboard",
   "Clearing clipboard": "Clearing clipboard",
   "Global clipboard": "Global clipboard",
+  "Pasted text": "Pasted text",
   "Clipboard text must match the selected plain-text command.": "Clipboard text must match the selected plain-text command.",
   "Clipboard access requires exact native owner approval.": "Clipboard access requires exact native owner approval.",
   "Clipboard approval expired before dispatch.": "Clipboard approval expired before dispatch.",
@@ -12535,5 +12538,17 @@
   "1 other task on this computer is running.": "1 other task on this computer is running.",
   "{p0} other tasks on this computer are running.": "{p0} other tasks on this computer are running.",
   "Could not check what is running on this computer.": "Could not check what is running on this computer.",
-  "Quitting stops them gracefully and keeps their history. Quit anyway?": "Quitting stops them gracefully and keeps their history. Quit anyway?"
+  "Quitting stops them gracefully and keeps their history. Quit anyway?": "Quitting stops them gracefully and keeps their history. Quit anyway?",
+  "Add to {p0}": "Add to {p0}",
+  "Show machines separately": "Show machines separately",
+  "Combine with other machines": "Combine with other machines",
+  "another computer": "another computer",
+  "Another computer": "Another computer",
+  "Clone over": "Clone over",
+  "Folder on {p0}": "Folder on {p0}",
+  "Copy ignored files": "Copy ignored files",
+  "Looking for ignored files…": "Looking for ignored files…",
+  "Locate folder": "Locate folder",
+  "Clone": "Clone",
+  "{p0} files could not be copied.": "{p0} files could not be copied."
 }

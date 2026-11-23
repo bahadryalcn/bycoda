@@ -1,5 +1,33 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+test("opens a synced Windows workspace from its parent group", async ({ page }, testInfo) => {
+  await page.goto(
+    "/tests/browser/workspace/project-workspace-navigation.html?layout=1&synced-workspace",
+  );
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const rail = page.locator('[data-side-pane="rail"]');
+  const workspace = rail.locator('[data-project-group="team"] [data-project-group="wallet"]');
+  const open = workspace.getByRole("button", { name: "Open Wallet", exact: true });
+  await open.click();
+  await expect(page.getByLabel("Selected live session")).toHaveText("remote://windows/G:/wallet");
+  await expect(
+    workspace.locator('[data-project-path="remote://windows/G:/wallet/mobile"]'),
+  ).toBeVisible();
+  await expect(rail.locator('[data-project-path="remote://windows/G:/wallet"]')).toHaveCount(0);
+
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await expect(open).toBeInViewport();
+      await rail.screenshot({ path: testInfo.outputPath(`workspace-${theme}-${width}.png`) });
+    }
+  }
+});
+
 test("No project is selectable under Projects in light and dark layouts", async ({
   page,
 }, testInfo) => {

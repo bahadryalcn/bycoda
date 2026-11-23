@@ -42,6 +42,8 @@ export type InlineScan = {
   /** Candidates per scanner before code exclusion and overlap resolution, ascending by start. */
   found: readonly (readonly InlineReference[])[];
   references: InlineReference[];
+  /** All draft references, including ones covered by a link widget or outside the viewport. */
+  attachmentIds: ReadonlySet<string>;
   /** Destination → resolved link, so a draft full of links parses each URL once. */
   links: ReadonlyMap<string, UserLink | null>;
 };
@@ -345,12 +347,18 @@ function rescan(
   } else found[SKILL] = scanSkills(text, context);
   for (const span of spans) scanLines(text, span.from, span.to, context, found);
   for (const list of found) list.sort((a, b) => a.start - b.start);
+  const attachmentIds = new Set(
+    found[ATTACHMENT]!.filter(
+      (ref) => ref.start >= context.modeEnd && !overlapsCode(code, ref.start, ref.start + 1),
+    ).map((ref) => ref.value),
+  );
   return {
     text,
     context,
     tree,
     found,
     references: resolveReferences(found, code, context.modeEnd),
+    attachmentIds,
     links: resolved,
   };
 }

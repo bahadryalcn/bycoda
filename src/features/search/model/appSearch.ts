@@ -1,4 +1,5 @@
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayNameFrom } from "../../projects/model/projectNames";
+import { loadTabGroupLabels } from "../../workspace/public/tabGroups";
 import { fuzzyMatch, prepareFuzzyQuery } from "../../../shared/lib/fuzzy";
 
 import { sameProjectPath, type RecentProject } from "../../projects/model/recents";
@@ -321,14 +322,20 @@ export function searchSessionMessages(sessions: SearchableSession[], query: stri
   return hits.sort(byScoreThenRecency);
 }
 
-export function searchRecentProjects(recents: RecentProject[], query: string): ProjectHit[] {
+export function searchRecentProjects(
+  recents: RecentProject[],
+  query: string,
+  labels?: Record<string, string>,
+): ProjectHit[] {
   const needle = query.trim();
   if (!needle) return [];
+  const projectLabels = labels ?? loadTabGroupLabels();
+  const prepared = prepareFuzzyQuery(needle);
   const hits: ProjectHit[] = [];
   for (const recent of recents) {
-    const name = projectDisplayName(recent.path);
-    const nameHit = fuzzyMatch(needle, name);
-    const pathHit = nameHit ? null : fuzzyMatch(needle, recent.path);
+    const name = projectDisplayNameFrom(recent.path, projectLabels);
+    const nameHit = fuzzyMatch(prepared, name);
+    const pathHit = nameHit ? null : fuzzyMatch(prepared, recent.path);
     const match = nameHit ?? pathHit;
     if (!match) continue;
     hits.push({

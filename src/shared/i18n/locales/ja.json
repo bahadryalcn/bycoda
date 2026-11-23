@@ -1,4 +1,5 @@
 {
+  "Set up an SSH connection to this project's machine to open a terminal.": "ターミナルを開くには、このプロジェクトのマシンへの SSH 接続を設定してください。",
   "Workflow status": "ワークフローのステータス",
   "Status category": "ステータスカテゴリ",
   "No projects selected": "プロジェクトが選択されていません",
@@ -3279,6 +3280,7 @@
   "Move Terminal": "端末の移動",
   "Close Active Terminal": "アクティブなターミナルを閉じる",
   "Close All Terminals": "すべてのターミナルを閉じる",
+  "Close Terminals?": "ターミナルを閉じますか？",
   "Hide Terminal ({p0}J)": "ターミナルを非表示にする ({p0}J)",
   "Terminals": "端子",
   "Close others": "その他を閉じる",
@@ -8292,6 +8294,7 @@
   "Writing clipboard": "クリップボードに書き込み中",
   "Clearing clipboard": "クリップボードを消去中",
   "Global clipboard": "システムのクリップボード",
+  "Pasted text": "貼り付けたテキスト",
   "Clipboard text must match the selected plain-text command.": "クリップボードのテキストは、選択したプレーンテキストコマンドと一致する必要があります。",
   "Clipboard access requires exact native owner approval.": "クリップボードへのアクセスには、この操作に対するネイティブのユーザー承認が必要です。",
   "Clipboard approval expired before dispatch.": "クリップボード操作の実行前に承認の有効期限が切れました。",
@@ -12535,5 +12538,17 @@
   "1 other task on this computer is running.": "このコンピューターで他に 1 件のタスクが実行中です。",
   "{p0} other tasks on this computer are running.": "このコンピューターで他に {p0} 件のタスクが実行中です。",
   "Could not check what is running on this computer.": "このコンピューターで何が実行中か確認できませんでした。",
-  "Quitting stops them gracefully and keeps their history. Quit anyway?": "終了すると、これらは安全に停止され、履歴は保持されます。終了しますか？"
+  "Quitting stops them gracefully and keeps their history. Quit anyway?": "終了すると、これらは安全に停止され、履歴は保持されます。終了しますか？",
+  "Add to {p0}": "{p0} に追加",
+  "Show machines separately": "マシンを別々に表示",
+  "Combine with other machines": "他のマシンとまとめる",
+  "another computer": "別のコンピューター",
+  "Another computer": "別のコンピューター",
+  "Clone over": "クローン方式",
+  "Folder on {p0}": "{p0} 上のフォルダー",
+  "Copy ignored files": "無視されたファイルをコピー",
+  "Looking for ignored files…": "無視されたファイルを検索中…",
+  "Locate folder": "フォルダーを指定",
+  "Clone": "クローン",
+  "{p0} files could not be copied.": "{p0} 個のファイルをコピーできませんでした。"
 }

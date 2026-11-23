@@ -33,9 +33,9 @@ function Draft({ initial }: { initial: string }) {
       disabled: false,
       spellCheck: false,
       hasSubagents: false,
-      onReady(value: boolean) {
-        ready(value);
-        setActive(value);
+      onInlineAttachments(ids: ReadonlySet<string> | null) {
+        ready(ids);
+        setActive(ids !== null);
       },
       onRemoveAttachment: vi.fn(),
     }),
@@ -101,7 +101,21 @@ afterEach(() => {
 it("starts in the editor for a referenced draft", async () => {
   await mount(start);
   expect(editor()).not.toBeNull();
-  expect(ready).toHaveBeenLastCalledWith(true);
+  expect(ready).toHaveBeenLastCalledWith(new Set());
+});
+
+it("reports offscreen attachments once until an edit changes their Markdown context", async () => {
+  const note = "A paragraph with `inline code`.\n\n".repeat(500);
+  await mount(note + "[image1] [image1] `[file1]`");
+  expect(ready).toHaveBeenLastCalledWith(new Set(["photo"]));
+  ready.mockClear();
+  const doc = view();
+  await act(async () => doc.dispatch({ changes: { from: 0, insert: "新" } }));
+  expect(ready).not.toHaveBeenCalled();
+  await act(async () => doc.dispatch({ changes: { from: 0, insert: "~~~\n" } }));
+  expect(ready).toHaveBeenLastCalledWith(new Set());
+  await act(async () => doc.dispatch({ changes: { from: 0, to: 4 } }));
+  expect(ready).toHaveBeenLastCalledWith(new Set(["photo"]));
 });
 
 it("keeps a deletion undoable when an initially long draft becomes short enough for the editor", async () => {
@@ -148,7 +162,7 @@ it("keeps a pasted very long line, its selection and its undo and redo when the 
   });
   await settled();
   expect(editor()).toBeNull();
-  expect(ready).toHaveBeenLastCalledWith(false);
+  expect(ready).toHaveBeenLastCalledWith(null);
   expect(field.current!.value).toBe(start + wide);
   expect([field.current!.selectionStart, field.current!.selectionEnd]).toEqual([caret, caret]);
 
@@ -315,7 +329,7 @@ it("waits for an open editor composition before the editor leaves", async () => 
   });
   await settled();
   expect(editor()).not.toBeNull();
-  expect(ready).not.toHaveBeenCalledWith(false);
+  expect(ready).not.toHaveBeenCalledWith(null);
 
   doc.contentDOM.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
   await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 150))));

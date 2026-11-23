@@ -496,6 +496,27 @@ html.theme-light .project-sigil {
     display: none;
   }
 }
+/* Reserve space for the counts. A caption that cannot fit moves as a whole
+   below the clipped first line, including when translations grow. */
+@container workspace-tab (inline-size >= 184px) {
+  [data-workspace-tab-churn] .workspace-tab-stats {
+    flex-shrink: 0;
+  }
+  [data-workspace-tab-churn] .workspace-tab-content {
+    flex-wrap: wrap;
+    align-content: start;
+    max-block-size: 1lh;
+    overflow: clip;
+  }
+  [data-workspace-tab-churn] .workspace-tab-content::before {
+    content: "";
+    block-size: 1lh;
+  }
+  [data-workspace-tab-churn] .workspace-tab-label {
+    flex: none;
+    line-height: inherit;
+  }
+}
 /* Churn without a file count (binary, mode-only) is a presence dot until the churn fits. */
 .workspace-tab-stats-compact {
   display: inline-flex;

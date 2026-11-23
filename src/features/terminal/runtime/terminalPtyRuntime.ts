@@ -1,5 +1,6 @@
 import { errorText } from "../../../shared/lib/errors";
 import { invoke } from "@tauri-apps/api/core";
+import { terminalText } from "../../../shared/lib/terminalText";
 import {
   killPty,
   readyPtyBridge,
@@ -21,6 +22,7 @@ import { loadTerminalProfile } from "../model/terminalProfiles";
 
 export type TerminalLifecycleState = "opened-on-computer" | "exited" | "failed" | "closed";
 export type TerminalShellIntegration = "auto" | "bash" | "zsh" | "powershell";
+export type SshProjectTerminal = { environmentId: string; cwd: string };
 
 /** What kind of native process this runtime owns. Exactly one variant per view. */
 export type TerminalPtyLaunch =
@@ -28,6 +30,7 @@ export type TerminalPtyLaunch =
   | {
       kind: "ssh-saved";
       connectionId: string;
+      project?: SshProjectTerminal;
       shellIntegration?: TerminalShellIntegration;
       agentForwardingReviewId?: string;
       expectedConfigurationDigest?: string;
@@ -45,6 +48,7 @@ export type TerminalPtyLaunch =
 export type TerminalPtyLaunchInput = {
   keyGenerationPath?: string;
   sshConnectionId?: string;
+  sshProject?: SshProjectTerminal;
   sshEndpoint?: SshEndpoint;
   shellIntegration?: TerminalShellIntegration;
   agentForwardingReviewId?: string;
@@ -61,6 +65,7 @@ export function terminalPtyLaunch(input: TerminalPtyLaunchInput): TerminalPtyLau
     return {
       kind: "ssh-saved",
       connectionId: input.sshConnectionId,
+      ...(input.sshProject ? { project: input.sshProject } : {}),
       shellIntegration: input.shellIntegration,
       agentForwardingReviewId: input.agentForwardingReviewId,
       expectedConfigurationDigest: input.expectedConfigurationDigest,
@@ -185,6 +190,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
         return invoke<void>("ssh_terminal_spawn", {
           id,
           connectionId: launch.connectionId,
+          ...(launch.project ? { project: launch.project } : {}),
           cols,
           rows,
           ...(shellIntegration ? { shellIntegration } : {}),
@@ -213,10 +219,17 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
           ...(launch.httpProxyTicketId ? { httpProxyTicketId: launch.httpProxyTicketId } : {}),
         });
       }
-      case "local":
-        return run
-          ? spawnPty(id, launch.cwd, cols, rows, launch.profile() ?? loadTerminalProfile(), run)
-          : spawnPty(id, launch.cwd, cols, rows, launch.profile() ?? loadTerminalProfile());
+      case "local": {
+        const profile = launch.profile() ?? loadTerminalProfile();
+        if (!run) return spawnPty(id, launch.cwd, cols, rows, profile);
+        // Display the command without interpreting control bytes or adding it to captured output.
+        const command = run.command
+          .split(/\r\n?|\n/)
+          .map((line) => terminalText(line).text)
+          .join("\r\n");
+        output.append(`$ ${command}\r\n`);
+        return spawnPty(id, launch.cwd, cols, rows, profile, run);
+      }
     }
   };
 
@@ -260,7 +273,8 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
     if (stale()) throw new Error("Reviewed terminal source changed or became private");
     if (options.authorizeStart.current && !(await options.authorizeStart.current()))
       throw new Error("Reviewed terminal authority expired or was revoked");
-    if (closed || stale()) throw new Error("Reviewed terminal source changed or became private");
+    if (closed || stale() || run?.canStart?.() === false)
+      throw new Error("Reviewed terminal source changed or became private");
     didStart = true;
     return spawnNative();
   };

@@ -257,7 +257,7 @@ for (const history of [false, true]) {
         await expect(composer).toBeFocused();
         await page
           .locator('[data-composer] [data-attachment-chip][data-attachment-kind="image"]')
-          .getByRole("button")
+          .getByRole("button", { name: "Open image.png full screen", exact: true })
           .press("Shift+F10");
         await expect(page.getByRole("menuitem", { name: "Remove image.png" })).toBeVisible();
         await page.keyboard.press("Escape");

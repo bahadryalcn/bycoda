@@ -118,8 +118,8 @@ it("shows a side panel as art and one line, and the page with Manage connections
 
   await render("panel");
   expect(notice()?.querySelector("img")).not.toBeNull();
-  // Only the info button; the reason stays behind it and no action repeats the page's.
-  expect(labels()).toEqual([""]);
+  expect(notice()?.querySelector('[role="img"][aria-label="Help"]')).not.toBeNull();
+  expect(labels()).toEqual([]);
   expect(notice()?.textContent).not.toContain("Add it in Connections");
 
   await render("page");

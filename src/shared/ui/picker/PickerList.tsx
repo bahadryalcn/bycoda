@@ -1,4 +1,12 @@
-import { useLayoutEffect, useRef, type ReactNode, type ComponentPropsWithRef } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type ComponentPropsWithRef,
+} from "react";
+import { lockOverscroll } from "../../hooks/useLockOverscroll";
+import { observeResize } from "../../lib/observeResize";
 import { useT } from "../../i18n";
 import { popupListClassName } from "../Popover";
 import { PickerChoice } from "./PickerChoice";
@@ -104,6 +112,10 @@ export type PickerListProps = PickerListSource & {
   pointerHighlight?: "entry" | "movement";
   /** `standard` bounds the list to the shared picker height and scrolls inside it. */
   listHeight?: "standard";
+  /** Controls preceding the options in the same scroll viewport, outside the listbox semantics. */
+  scrollHeader?: ReactNode;
+  /** Keep windowing enabled below the automatic threshold, including while filtering. */
+  windowed?: boolean;
   className?: string;
 };
 
@@ -132,6 +144,8 @@ export function PickerList({
   renderOptionActions,
   pointerHighlight = "movement",
   listHeight,
+  scrollHeader,
+  windowed: keepWindowed = false,
   ...source
 }: PickerListProps) {
   const t = useT();
@@ -142,6 +156,10 @@ export function PickerList({
   const listOwnsFocus = !controller && !list.inputRef;
   const pointerMoved = usePointerMovement();
   const root = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
+  const header = useRef<HTMLDivElement>(null);
+  const hasHeader = scrollHeader != null;
+  const [headerHeight, setHeaderHeight] = useState(0);
   const failed = error != null && error !== false && error !== "";
 
   useLayoutEffect(() => {
@@ -149,47 +167,84 @@ export function PickerList({
     root.current?.focus({ preventScroll: true });
   }, [autoFocus, listOwnsFocus]);
 
-  // Consecutive options sharing a group form one labelled group.
-  const sections: { group?: string; start: number; options: PickerOption[] }[] = [];
+  // Keep a group's DOM when filtering moves it to another position in the list.
+  const sections: { group?: string; groupKey?: string; start: number; options: PickerOption[] }[] =
+    [];
+  const groupOccurrences = new Map<string, number>();
   list.options.forEach((option, index) => {
+    const group = option.group;
     const current = sections[sections.length - 1];
-    if (current && current.group === option.group) current.options.push(option);
-    else sections.push({ group: option.group, start: index, options: [option] });
+    if (current && current.group === group) {
+      current.options.push(option);
+      return;
+    }
+    let groupKey: string | undefined;
+    if (group) {
+      const occurrence = groupOccurrences.get(group) ?? 0;
+      groupOccurrences.set(group, occurrence + 1);
+      groupKey = `group:${group}\u0000${occurrence}`;
+    }
+    sections.push({ group, groupKey, start: index, options: [option] });
   });
 
   // A long list mounts only the rows near the viewport; headings and options are windowed together.
-  const windowed = list.options.length > PICKER_WINDOW_THRESHOLD;
+  const windowed = keepWindowed || list.options.length > PICKER_WINDOW_THRESHOLD;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep option offsets aligned when the controls above the list resize.
+  useLayoutEffect(() => {
+    const element = header.current;
+    if (!hasHeader || !windowed || !element) return;
+    const measure = () => setHeaderHeight(element.offsetHeight);
+    measure();
+    return observeResize(element, measure);
+  }, [hasHeader, windowed]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Contain wheel scrolling at the shared header and list viewport.
+  useLayoutEffect(() => {
+    if (hasHeader && viewport.current) return lockOverscroll(viewport.current);
+  }, [hasHeader]);
+  const paddingStart = hasHeader ? headerHeight : 0;
   const entries: PickerWindowEntry[] = [];
   const entryOfOption: number[] = [];
   if (windowed) {
     for (const section of sections) {
-      if (section.group)
-        entries.push({ kind: "heading", key: `heading:${section.start}`, group: section.group });
+      if (section.group && section.groupKey)
+        entries.push({
+          kind: "heading",
+          key: `heading:${section.groupKey}`,
+          group: section.group,
+          groupKey: section.groupKey,
+        });
       section.options.forEach((option, offset) => {
         entryOfOption[section.start + offset] = entries.length;
         entries.push({
           kind: "option",
           key: `option:${option.value}`,
+          groupKey: section.groupKey,
           index: section.start + offset,
         });
       });
     }
   }
-  const win = usePickerWindow(entries, () => root.current, windowed);
+  const win = usePickerWindow(
+    entries,
+    () => (hasHeader ? viewport.current : root.current),
+    windowed,
+    paddingStart,
+  );
   const activeEntry = list.activeIndex >= 0 ? entryOfOption[list.activeIndex] : undefined;
+  const activeOptionId = list.activeOptionId;
 
   useLayoutEffect(() => {
-    if (list.activeIndex < 0) return;
+    if (!activeOptionId) return;
     // An unmounted windowed row is brought into the window first; the virtualizer scrolls to its offset.
     if (windowed) {
       if (activeEntry !== undefined) win.scrollToEntry(activeEntry);
       return;
     }
     root.current
-      ?.querySelector<HTMLElement>(`[id="${list.optionId(list.activeIndex)}"]`)
+      ?.querySelector<HTMLElement>(`[id="${activeOptionId}"]`)
       ?.scrollIntoView?.({ block: "nearest" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the row id derives from these two; the window follows the active entry.
-  }, [list.activeIndex, list.listId, windowed, activeEntry]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the window follows the active option identity and entry position.
+  }, [activeOptionId, windowed, activeEntry]);
 
   const row = (option: PickerOption, index: number) => {
     // The outermost row element is measured, so inline actions and descriptions size the window.
@@ -283,7 +338,7 @@ export function PickerList({
     sections.map((section) =>
       section.group ? (
         <div
-          key={`${section.group}\u0000${section.start}`}
+          key={section.groupKey}
           role="group"
           aria-labelledby={`${list.listId}-group-${section.start}`}
           className={styles.group}
@@ -312,7 +367,7 @@ export function PickerList({
       if (entry.kind === "heading") {
         blocks.push({
           group: entry.group,
-          key: entry.key,
+          key: entry.groupKey,
           children: [
             <div
               key={entry.key}
@@ -329,13 +384,12 @@ export function PickerList({
       }
       const option = list.options[entry.index]!;
       const last = blocks[blocks.length - 1];
-      if (option.group && last?.group === option.group)
-        last.children.push(row(option, entry.index));
-      else
-        blocks.push({ group: option.group, key: entry.key, children: [row(option, entry.index)] });
+      const key = entry.groupKey ?? entry.key;
+      if (last?.key === key) last.children.push(row(option, entry.index));
+      else blocks.push({ group: option.group, key, children: [row(option, entry.index)] });
     }
-    const lead = win.items[0]?.start ?? 0;
-    const tail = win.items.length ? win.totalSize - win.items[win.items.length - 1]!.end : 0;
+    const lead = (win.items[0]?.start ?? paddingStart) - paddingStart;
+    const tail = win.totalSize - (win.items[win.items.length - 1]?.end ?? paddingStart);
     return (
       <>
         {lead > 0 ? <div aria-hidden style={{ blockSize: lead }} /> : null}
@@ -353,42 +407,52 @@ export function PickerList({
     );
   };
 
+  const status = failed ? (
+    <ComboboxStatus
+      tone="danger"
+      className={styles.status}
+      action={
+        onRetry ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            loading={loading}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onRetry}
+          >
+            {retryLabel ?? t("Retry")}
+          </Button>
+        ) : null
+      }
+    >
+      {error}
+    </ComboboxStatus>
+  ) : loading ? (
+    <ComboboxStatus className={styles.status}>{loadingLabel ?? t("Loading…")}</ComboboxStatus>
+  ) : null;
   return (
     <div
+      ref={viewport}
       data-list-height={listHeight}
       className={[
         "bycoda-arc",
         styles.listRoot,
+        hasHeader ? styles.scrollsWithHeader : undefined,
         listHeight === "standard" ? styles.standardHeight : undefined,
         className,
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      {failed ? (
-        <ComboboxStatus
-          tone="danger"
-          className={styles.status}
-          action={
-            onRetry ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                type="button"
-                loading={loading}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={onRetry}
-              >
-                {retryLabel ?? t("Retry")}
-              </Button>
-            ) : null
-          }
-        >
-          {error}
-        </ComboboxStatus>
-      ) : loading ? (
-        <ComboboxStatus className={styles.status}>{loadingLabel ?? t("Loading…")}</ComboboxStatus>
-      ) : null}
+      {hasHeader ? (
+        <div ref={header}>
+          {status}
+          {scrollHeader}
+        </div>
+      ) : (
+        status
+      )}
       <PickerListRoot
         ref={root}
         id={list.listId}

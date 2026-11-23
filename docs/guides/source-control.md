@@ -5,7 +5,8 @@ If a file is committed or restored while its diff is open, the comparison clears
 and the editor keeps any unsaved text.
 If the branch has diverged, the panel keeps the divergence message and uses a branch icon.
 
-The sidebar's **Changes** tab opens source control. **Generate commit message**
+The sidebar's **Changes** tab opens source control. Its caption hides when the
+icon and change counts need the available space. **Generate commit message**
 and pull request text generation run on the Host that owns the selected remote
 repository, using that Host's Git model routing and provider accounts. They never
 fall back to a local provider when the remote Host is unavailable. Stopping
@@ -42,6 +43,8 @@ section opens; the rest open on click. Each section's menu offers **Show only th
 repository** (remembered per project) and **Show all repositories**. Rows carry no text
 markers such as "This session" or "Separate repository"; hover for the path. The Changes
 tab badge is the sum of the section counts.
+
+Remote projects use the same picker, with a server icon before the project icon.
 
 The header picker is the repository list: **All worktrees** with the total count, worktrees
 with uncommitted changes first, then the project folder and other worktrees, and last
@@ -139,6 +142,9 @@ updated outgoing commit count while Git refreshes the full status.
 Pending outgoing or incoming commits keep their own **Push**, **Pull**, **Sync
 Changes** or **Publish Branch** button beside it. With nothing to commit, that sync,
 Create PR or View PR action leads instead.
+**Push** and **Publish Branch** send commits while sessions are running on a remote
+Host. **Pull** and **Sync Changes** can update working files, so the remote Host
+requires the project's sessions to be idle.
 
 On mobile, **Changes** shows a short status when the working folder is clean.
 Search and filters appear with changed files. An existing commit message is still

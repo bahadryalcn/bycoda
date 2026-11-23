@@ -10,6 +10,7 @@ export type RevertGuardSession = {
 };
 
 const GUARD_TIMEOUT_MS = 15_000;
+const GUARD_STARTUP_TIMEOUT_MS = 30_000;
 
 // Node's Windows file handles always share writes. A hidden helper supplies
 // mandatory deny-write and deny-directory-rename handles for revert only. One
@@ -169,9 +170,11 @@ export function createRevertGuardSession(cwd: string): RevertGuardSession {
     async acquire(abs) {
       const directories = guardedDirectories(cwd, abs);
       // A timed-out or crashed helper is replaced; the next file starts a fresh one.
-      const helper = current && !current.closed ? current : (current = new GuardHelper());
+      const running = current && !current.closed ? current : undefined;
+      const helper = running ?? (current = new GuardHelper());
       helper.send(JSON.stringify({ directories, path: abs }) + "\n");
-      const reply = await helper.nextWithin(GUARD_TIMEOUT_MS);
+      // A new helper also starts PowerShell and compiles the native handle bindings.
+      const reply = await helper.nextWithin(running ? GUARD_TIMEOUT_MS : GUARD_STARTUP_TIMEOUT_MS);
       if (reply !== "READY") {
         if (reply === null) {
           await helper.completion;

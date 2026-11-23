@@ -34,7 +34,7 @@ type Props = {
   disabled: boolean;
   spellCheck: boolean;
   hasSubagents: boolean;
-  onReady: (ready: boolean) => void;
+  onInlineAttachments: (ids: ReadonlySet<string> | null) => void;
   onRemoveAttachment: (id: string) => void;
 };
 
@@ -50,7 +50,7 @@ export function ComposerInlineEditor({
   disabled,
   spellCheck,
   hasSubagents,
-  onReady,
+  onInlineAttachments,
   onRemoveAttachment,
 }: Props) {
   const t = useT();
@@ -112,6 +112,7 @@ export function ComposerInlineEditor({
     const references = composerInlineReferences(input.value, configuration.references);
     if (references.every(isInlineMentionMark)) return;
     const widgets = inlineComposerWidgets(configuration.references, {
+      onInlineAttachments,
       open,
       remove,
       menu: openMenu,
@@ -129,7 +130,7 @@ export function ComposerInlineEditor({
         seed,
       ),
     };
-    onReady(true);
+    widgets.reportAttachments(editor.current.input.view.state);
   });
 
   const leave = useStableCallback(() => {
@@ -145,7 +146,7 @@ export function ComposerInlineEditor({
     mounted.input.destroy();
     held.current?.release();
     held.current = attachNativeHistory(input, state);
-    onReady(false);
+    onInlineAttachments(null);
     // The parent shows the field again in the re-render this state change flushes before the microtask.
     queueMicrotask(() => {
       if (!input.isConnected) return;

@@ -1,6 +1,51 @@
 //! SSH-only terminals. Opt-in Bash setup is ephemeral and never replays input.
 use tauri::{AppHandle, Manager, State};
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SshProjectTerminal {
+    environment_id: String,
+    cwd: String,
+}
+
+fn project_args(target: &crate::remote_ssh::SshTarget, cwd: &str) -> Result<Vec<String>, String> {
+    let endpoint = crate::server_inventory::host_ssh_endpoint(target);
+    let mut args = crate::ssh_security::connection_args(&endpoint)?;
+    if let Some(alias) = &target.host_key_alias {
+        args.extend(["-o".into(), format!("HostKeyAlias={alias}")]);
+    }
+    args.extend(["-tt".into(), "--".into(), endpoint.host]);
+    args.push(crate::ssh_environment::project_command(cwd)?);
+    Ok(args)
+}
+
+#[cfg(test)]
+mod project_tests {
+    use super::*;
+
+    #[test]
+    fn project_shell_checks_the_saved_key_and_disables_agent_forwarding() {
+        let target = crate::remote_ssh::SshTarget {
+            target: "owner@alternate.example".into(),
+            host_key_alias: Some("saved.example".into()),
+            port: Some(2222),
+            remote_port: 3776,
+            alternate: None,
+            identity_file: None,
+        };
+        let args = project_args(&target, "G:/project").unwrap();
+        assert!(args.iter().any(|arg| arg == "StrictHostKeyChecking=yes"));
+        assert!(args.iter().any(|arg| arg == "HostKeyAlias=saved.example"));
+        assert!(args.iter().any(|arg| arg == "ForwardAgent=no"));
+        assert!(args[args.len() - 4..].starts_with(&[
+            "-tt".into(),
+            "--".into(),
+            "alternate.example".into()
+        ]));
+        assert!(args.last().unwrap().starts_with("powershell.exe "));
+    }
+}
+
 #[tauri::command(async)]
 pub fn ssh_agent_forwarding_review(
     app: AppHandle,
@@ -76,8 +121,30 @@ pub fn ssh_terminal_spawn(
     agent_forwarding_review_id: Option<String>,
     expected_configuration_digest: Option<String>,
     http_proxy_ticket_id: Option<String>,
+    project: Option<SshProjectTerminal>,
 ) -> Result<(), String> {
     let owner_lease = crate::ssh_window_lifecycle::capture(window.label())?;
+    if let Some(project) = project {
+        if shell_integration.is_some()
+            || agent_forwarding_review_id.is_some()
+            || expected_configuration_digest.is_some()
+            || http_proxy_ticket_id.is_some()
+        {
+            return Err("A project terminal uses its paired machine's SSH connection".into());
+        }
+        let target = crate::remote::project_terminal_ssh_target(
+            &app,
+            &connection_id,
+            &project.environment_id,
+        )?;
+        let args = project_args(&target, &project.cwd)?;
+        let identity = terminal_identity(&id, &connection_id, &args)?;
+        return owner_lease.with_live(|| {
+            crate::pty::spawn_ssh(
+                app, window, host, id, identity, args, cols, rows, None, None, None,
+            )
+        });
+    }
     let endpoint = if let Some(expected) = expected_configuration_digest.as_deref() {
         crate::server_inventory::resolve_reviewed_ssh_endpoint(&app, &connection_id, expected)?
     } else {

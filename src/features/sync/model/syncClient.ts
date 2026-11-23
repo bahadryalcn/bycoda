@@ -315,6 +315,8 @@ async function pullAndApply(
 ): Promise<void> {
   let untilRev: number | undefined;
   let initial = !hasPulled(machineId);
+  const previouslySupportedLayout = loadPeerState(machineId).supportsWorkspaceLayout === true;
+  let learnedWorkspaceLayout = false;
   let restarted = false;
   for (;;) {
     const sinceRev = peerRev(machineId);
@@ -327,6 +329,7 @@ async function pullAndApply(
       "sync.pull",
     );
     requireCurrent(current);
+    learnedWorkspaceLayout ||= !previouslySupportedLayout && pullRaw.workspaceLayout === true;
     if (!Number.isSafeInteger(pullRaw.rev))
       throw new Error("sync.pull returned an invalid revision");
     if (Number(pullRaw.rev) < sinceRev) {
@@ -366,6 +369,7 @@ async function pullAndApply(
       !markPulled(machineId, records, {
         rev: Number(pullRaw.rev),
         complete: false,
+        supportsWorkspaceLayout: pullRaw.workspaceLayout === true,
       })
     )
       throw new Error("Library sync progress could not be saved. Free storage and retry.");
@@ -375,17 +379,17 @@ async function pullAndApply(
   // A layout/assignment can arrive before the groups or folders it references.
   // Reapply dependency records from the durable peer cache after all pages,
   // including when an earlier pass stopped between pages.
-  if (initial || untilRev !== undefined) {
+  if (initial || untilRev !== undefined || learnedWorkspaceLayout) {
     const state = loadPeerState(machineId);
     const pending = new Set(state.outbox.map((op) => `${op.table}:${op.id}`));
+    const replayTables =
+      initial || untilRev !== undefined
+        ? new Set(["groupOrder", "railLayout", "assignment", "appearance", "workspaceLayout"])
+        : new Set(["assignment"]);
     const dependencies = Object.entries(state.recordValues).flatMap(([key, json]) => {
       const split = key.indexOf(":");
       const table = key.slice(0, split);
-      if (
-        !["groupOrder", "railLayout", "assignment", "appearance"].includes(table) ||
-        pending.has(key)
-      )
-        return [];
+      if (!replayTables.has(table) || pending.has(key)) return [];
       try {
         const record = parseSyncRecord({
           table,
@@ -412,6 +416,7 @@ async function runSyncCycleInner(
   current: () => boolean,
 ): Promise<void> {
   if (!hasPulled(machineId)) await pullAndApply(machineId, request, current);
+  const supportsWorkspaceLayout = loadPeerState(machineId).supportsWorkspaceLayout === true;
 
   await withRoomPrivacyMutation(() =>
     duringSyncWrite(() =>
@@ -419,14 +424,16 @@ async function runSyncCycleInner(
         requireCurrent(current);
         captureLocalProjectChanges(machineId);
         const projectIds = localProjectIdsByPath();
-        captureLocalGroupChanges(machineId, projectIds);
+        captureLocalGroupChanges(machineId, projectIds, supportsWorkspaceLayout);
         captureLocalAppearanceChanges(machineId, projectIds);
         captureLocalLockChanges(machineId);
       }),
     ),
   );
 
-  const outbox = takeOutbox(machineId);
+  const outbox = takeOutbox(machineId).filter(
+    (op) => supportsWorkspaceLayout || op.table !== "workspaceLayout",
+  );
   const { batches, invalid } = syncPushBatches(outbox);
   let invalidOps = invalid.length;
   for (const batch of batches) {

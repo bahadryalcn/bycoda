@@ -11,10 +11,21 @@ import { useHoverCard } from "../../shared/ui/HoverCard";
 import { useCrewManagedIndex } from "../../features/crews/public/managed";
 import {
   folderCandidates,
+  freshRemoteProjects,
   projectSessionCollection,
   remoteSessionSummary,
+  sessionsForActionIds,
+  workingAgentIdsByProject,
 } from "./sidebarSessionCollections";
-import { SplitButton } from "../../shared/ui/SplitButton";
+import {
+  copySessions,
+  isCopyRow,
+  localProjectCopy,
+  mergeCopyRows,
+  otherProjectCopies,
+} from "./linkedCopySessions";
+import { useLocalCopySessions } from "./useLocalCopySessions";
+import { useProjectLinks } from "../../features/projects/hooks/useProjectLinks";
 import {
   projectlessMachineSession,
   remoteSessionProjectAtKey,
@@ -56,7 +67,7 @@ import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import type { ExpandingSearchHandle } from "../../shared/ui/ExpandingSearch";
 import { SidebarSessionSearch } from "./SidebarSessionSearch";
 import { MatchText } from "../../shared/ui/MatchText";
-import { fuzzyMatch, prepareFuzzyQuery } from "../../shared/lib/fuzzy";
+import { fuzzyIncludes, fuzzyMatch, prepareFuzzyQuery } from "../../shared/lib/fuzzy";
 import { themePalette } from "../../shared/theme/palette";
 import { motion as layoutMotion } from "motion/react";
 import { sessionStatusOrder } from "../../features/sessions/model/sessionStatusOrder";
@@ -76,10 +87,7 @@ import {
   useWorktreeFocus,
 } from "../../features/source-control/model/worktreeFocus";
 import { SidebarWorkspaceSwitcher } from "./SidebarWorkspaceSwitcher";
-import {
-  SidebarRemoteWorkspaceStatus,
-  SidebarRemoteWorkspaceTitle,
-} from "./SidebarRemoteWorkspaceTitle";
+import { SidebarRemoteWorkspaceStatus } from "./SidebarRemoteWorkspaceTitle";
 import { OrchestrationSidebarAgents } from "../../features/orchestration/ui/OrchestrationSidebarAgents";
 import { nextCrewManagedSessions } from "../../features/crews/model/crewPresentation";
 import { CrewSidebar } from "../../features/crews/ui/CrewSessions";
@@ -120,6 +128,7 @@ import {
   Sparkles,
   SplitSquare,
   StickyNote,
+  Laptop,
   Server,
   Trash2,
   Zap,
@@ -566,7 +575,6 @@ type Props = {
   onRemoveProject?: (path: string, options: { purgeData: boolean }) => void | Promise<void>;
   onRenameProjectFolder?: (path: string, name: string) => Promise<void>;
   onNew?: () => string | void;
-  onNewOnMachine?: () => void;
   onNewTerminal?: () => void;
   onSearch?: () => void;
   onSearchConversations?: (query?: string) => void;
@@ -705,7 +713,6 @@ function SidebarComponent({
   onRemoveProject,
   onRenameProjectFolder,
   onNew,
-  onNewOnMachine,
   onSearch,
   onSearchConversations,
   onOpenInbox,
@@ -746,7 +753,38 @@ function SidebarComponent({
   const t = useT();
   const format = useFormat();
   const remoteProject = isRemoteProjectPath(cwd);
-  const { machines: sessionMachines } = useRemoteMachines(cwd === "~" || lastSessionsOpen);
+  // One repository on several machines lists every copy's sessions in this project's list.
+  const projectLinks = useProjectLinks(recents);
+  const projectCopies = lastSessionsOpen
+    ? []
+    : otherProjectCopies(
+        projectLinks,
+        cwd,
+        (path) => isProjectPasswordLocked(path) || isProjectLocked(path),
+      );
+  // Read again when a local session starts or stops and after an action on one of its rows.
+  const [copyRevision, setCopyRevision] = useState(0);
+  const localCopySessions = useLocalCopySessions(
+    localProjectCopy(projectCopies),
+    `${copyRevision}:${[...busySessionIds].sort().join(",")}`,
+  );
+  const projectCopySessions = copySessions(
+    projectCopies,
+    lastSessionsRemoteRows ?? [],
+    localCopySessions,
+  );
+  const { machines: sessionMachines } = useRemoteMachines(
+    cwd === "~" || lastSessionsOpen || projectCopies.length > 0,
+  );
+  const copyMachine = (path: string) => {
+    const environment = parseRemotePath(path)?.environmentId;
+    if (!environment) return { label: t("This computer"), local: true };
+    const machine = sessionMachines.find((entry) => entry.environmentId === environment);
+    return {
+      label: machine ? machineLabel(sessionMachines, machine) : t("On another machine"),
+      local: false,
+    };
+  };
   const projectlessMachineName = (project: string) => {
     const environment = projectlessMachineSession(project)?.remoteExecutionEnvironmentId;
     const machine = sessionMachines.find((entry) => entry.environmentId === environment);
@@ -926,6 +964,9 @@ function SidebarComponent({
   const sessionsStale = remoteProject && !machineAvailability.available && !sessionsHidden;
   // Count the whole workspace before search, pagination or worktree filters.
   // Local busy IDs also include sessions continued on this desktop's host.
+  const workingAgentIds = lastSessionsOpen
+    ? workingAgentIdsByProject(liveAgents, remoteBindings.sessionFor)
+    : undefined;
   const workingSessionCount = new Set(
     (lastSessionsOpen
       ? (lastSessionsData?.rows ?? [])
@@ -939,13 +980,7 @@ function SidebarComponent({
           !sessionWaits?.has(session.id) &&
           (lastSessionsOpen
             ? (busySessionIds.has(session.id) && !approvalSessionIds.has(session.id)) ||
-              liveAgents.some(
-                (agent) =>
-                  sameProjectPath(agent.cwd, session.cwd) &&
-                  (agent.id === session.id || remoteBindings.sessionFor(agent.id) === session.id) &&
-                  !agent.done &&
-                  !agent.needsApproval,
-              )
+              workingAgentIds?.get(pathKey(session.cwd))?.has(session.id)
             : listedBusySessionIds.has(session.id) && !listedApprovalSessionIds.has(session.id)),
       )
       .map((session) => `${session.cwd}\0${session.id}`),
@@ -1138,13 +1173,19 @@ function SidebarComponent({
   );
   const remoteLifecycleMachines = new Set(
     lastSessionsOpen
-      ? (lastSessionsRemoteRows ?? []).flatMap(({ project, fresh }) => {
-          if (!fresh || isProjectPasswordLocked(project)) return [];
+      ? [...freshRemoteProjects(lastSessionsRemoteRows ?? [])].flatMap((project) => {
+          if (isProjectPasswordLocked(project)) return [];
           const environmentId = parseRemotePath(project)?.environmentId;
           const machine = environmentId && knownRemoteMachine(environmentId);
           return machine ? [machine.id] : [];
         })
-      : [],
+      : // A connected copy's settle state is read like the open project's.
+        projectCopies.flatMap((copy) => {
+          const environmentId = parseRemotePath(copy)?.environmentId;
+          if (!environmentId || projectCopySessions.stale.has(pathKey(copy))) return [];
+          const machine = knownRemoteMachine(environmentId);
+          return machine ? [machine.id] : [];
+        }),
   );
   const projectLifecycleMachine =
     remoteProject &&
@@ -1224,20 +1265,19 @@ function SidebarComponent({
     const environmentId = parseRemotePath(session.cwd)?.environmentId;
     const machine = environmentId && knownRemoteMachine(environmentId);
     const views = machine ? remoteLifecycle.lists.get(machine.id) : undefined;
-    return views?.get(session.id) ?? views?.get(remoteSessionFor(session.id) ?? "");
+    return views?.get(session.id) ?? views?.get(remoteBindings.sessionFor(session.id) ?? "");
   };
   const isGlobalSessionSettled = (session: SessionSummary) =>
     isRemoteProjectPath(session.cwd)
       ? isSettledSession(globalRemoteView(session), session.lastActivityAt)
       : isSettled(session);
-  const globalMenuSession =
-    lastSessionsOpen && globalSessionMenu
-      ? lastSessionsData?.rows.find(
-          (row) =>
-            row.id === globalSessionMenu.session.id &&
-            sameProjectPath(row.cwd, globalSessionMenu.session.cwd),
-        )
-      : undefined;
+  const globalMenuSession = globalSessionMenu
+    ? (lastSessionsOpen ? (lastSessionsData?.rows ?? []) : projectCopySessions.sessions).find(
+        (row) =>
+          row.id === globalSessionMenu.session.id &&
+          sameProjectPath(row.cwd, globalSessionMenu.session.cwd),
+      )
+    : undefined;
   const globalSettle = useSessionSettleCommand(globalMenuSession ?? { id: "" });
   const remoteMenuSession = !!globalMenuSession && isRemoteProjectPath(globalMenuSession.cwd);
   const remoteMenuView = remoteMenuSession ? globalRemoteView(globalMenuSession) : undefined;
@@ -1312,7 +1352,10 @@ function SidebarComponent({
       action === "archive"
         ? await onArchiveLocalSession?.(session.id, archived, session)
         : await onDeleteLocalSession?.(session.id, session);
-    if (success !== false) lastSessionsData?.refresh();
+    if (success !== false) {
+      lastSessionsData?.refresh();
+      setCopyRevision((revision) => revision + 1);
+    }
   };
   const [sessionDrop, setSessionDrop] = useState<SessionListDropTarget | null>(null);
   const [sessionFilters, setSessionFilters] = useState(loadSessionSidebarFilters);
@@ -1348,8 +1391,7 @@ function SidebarComponent({
   // A remote list comes over SSH and can take seconds: say so, unlike the
   // local one, which lands within a frame or two.
   const remoteLoading = remoteProject && pendingFirstLoad;
-  const worktreeFocus = useWorktreeFocus(cwd);
-  const focusedWorktree = remoteProject ? undefined : worktreeFocus;
+  const focusedWorktree = useWorktreeFocus(cwd);
   useEffect(() => {
     const warm = () => {
       void preloadSidebarSurfaces().catch(() => {});
@@ -1376,18 +1418,32 @@ function SidebarComponent({
   const onCrewManagedChange = useCallback((path: string, ids: string[]) => {
     setCrewManaged((previous) => nextCrewManagedSessions(previous, path, ids));
   }, []);
-  const { listedSessions, visibleSessions } = useMemo(() => {
-    const listedSessions = mergeFolderSessionSummaries(
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- the sidebar reads password locks during render; keep project membership stable across search updates
+  const listedSessions = useMemo(
+    () =>
+      mergeFolderSessionSummaries(
+        projectSessions,
+        folderCandidates(remoteProject, openSessions),
+        sessionFolders,
+      ).filter(
+        (session) =>
+          !session.orchestrationLeadId &&
+          !(crewManaged.cwd === cwd && crewManaged.ids.has(session.id)) &&
+          inWorktreeFocus(session, focusedWorktree),
+      ),
+    [
       projectSessions,
-      folderCandidates(remoteProject, openSessions),
+      remoteProject,
+      openSessions,
       sessionFolders,
-    ).filter(
-      (session) =>
-        !session.orchestrationLeadId &&
-        !(crewManaged.cwd === cwd && crewManaged.ids.has(session.id)) &&
-        inWorktreeFocus(session, focusedWorktree),
-    );
-    const filteredSessions = filterSessionsByStatus(
+      crewManaged,
+      cwd,
+      focusedWorktree,
+    ],
+  );
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- the sidebar cannot compile its lock reads; retain membership and recency while the search text changes
+  const filteredSessions = useMemo(() => {
+    const filtered = filterSessionsByStatus(
       filterSessionsByTime(
         filterSessionsByHarness(
           filterAssistantManagedSessions(
@@ -1408,38 +1464,29 @@ function SidebarComponent({
       listedApprovalSessionIds,
       unseenFinishedIds,
     );
-    // The inline filter matches title, model, branch and the names of the groups holding a session.
-    const textMatches = filterSessionsByQuery(filteredSessions, deferredSearchQuery);
-    const groupMatches = deferredSearchQuery.trim()
-      ? sessionIdsInMatchingFolders(sessionFolders, deferredSearchQuery)
-      : null;
-    const textMatched = new Set(textMatches);
-    const visibleSessions = (
-      groupMatches
-        ? filteredSessions.filter(
-            (session) => groupMatches.has(session.id) || textMatched.has(session),
-          )
-        : textMatches
-    )
-      .slice()
-      .sort(compareSessionSummaries);
-    return { listedSessions, visibleSessions };
+    return filtered.sort(compareSessionSummaries);
   }, [
-    projectSessions,
-    crewManaged,
-    cwd,
-    remoteProject,
-    openSessions,
-    sessionFolders,
-    focusedWorktree,
+    listedSessions,
     sessionFilters,
     isSettled,
     now,
     listedBusySessionIds,
     listedApprovalSessionIds,
     unseenFinishedIds,
-    deferredSearchQuery,
   ]);
+  const visibleSessions = useMemo(() => {
+    // The inline filter matches title, model, branch and the names of the groups holding a session.
+    const textMatches = filterSessionsByQuery(filteredSessions, deferredSearchQuery);
+    const groupMatches =
+      sessionFolders.length && deferredSearchQuery.trim()
+        ? sessionIdsInMatchingFolders(sessionFolders, deferredSearchQuery)
+        : null;
+    if (!groupMatches?.size) return textMatches;
+    const textMatched = new Set(textMatches);
+    return filteredSessions.filter(
+      (session) => groupMatches.has(session.id) || textMatched.has(session),
+    );
+  }, [filteredSessions, sessionFolders, deferredSearchQuery]);
   const filtersActive = hasActiveSessionFilters(
     lastSessionsOpen ? globalSessionFilters : sessionFilters,
     lastSessionsOpen ? "7d" : "all",
@@ -1481,7 +1528,8 @@ function SidebarComponent({
   });
   const rank = useSessionRankSignals(visibleSessions, unseenFinishedIds, activeListedSessionId);
   // Keep the complete loaded collection in the model; the shared window bounds the mounted rows.
-  const { reminderIds, sessionListEntries, sessionNavigationIds } = useMemo(() => {
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- reuse project folder membership and saved order while filtering this uncompiled sidebar
+  const { reminderIds, reminderGroup, ungrouped, compareStatus } = useMemo(() => {
     const reminderIds = new Set(reminders.map((reminder) => reminder.sessionId));
     const reminderGroup = {
       sessionIds: [...reminders]
@@ -1489,16 +1537,40 @@ function SidebarComponent({
         .map((reminder) => reminder.sessionId),
       collapsed: reminderSessionsCollapsed,
     };
-    const ungroupedFiltered = ungroupedSessions(visibleSessions, sessionFolders).filter(
-      (session) => !reminderIds.has(session.id),
-    );
+    const loose = sessionFolders.length
+      ? ungroupedSessions(filteredSessions, sessionFolders)
+      : filteredSessions;
     const compareStatus = sessionStatusOrder(listedApprovalSessionIds, listedBusySessionIds, {
       ...rank,
       now,
       waitingIds: new Set(sessionWaits?.keys()),
     });
-    // Status leads within each group; pins keep their saved order, loose rows stay by recency.
-    const ungroupedVisible = orderLooseRows(ungroupedFiltered, sessionOrder.pinned, compareStatus);
+    return {
+      reminderIds,
+      reminderGroup,
+      compareStatus,
+      ungrouped: sessionOrder.pinned?.length ? orderLooseRows(loose, sessionOrder.pinned) : loose,
+    };
+  }, [
+    reminders,
+    reminderSessionsCollapsed,
+    filteredSessions,
+    sessionFolders,
+    listedApprovalSessionIds,
+    listedBusySessionIds,
+    rank,
+    now,
+    sessionWaits,
+    sessionOrder.pinned,
+  ]);
+  const { sessionListEntries, sessionNavigationIds } = useMemo(() => {
+    let ungroupedVisible = ungrouped;
+    if (ungrouped === filteredSessions) ungroupedVisible = visibleSessions;
+    else if (visibleSessions !== filteredSessions) {
+      const matches = new Set(visibleSessions);
+      ungroupedVisible = ungrouped.filter((session) => matches.has(session));
+    }
+    // Group assembly applies status order once, preserving saved pin order for equal ranks.
     const builtList = buildSessionList(
       visibleSessions,
       sessionFolders,
@@ -1510,35 +1582,22 @@ function SidebarComponent({
     // The Settled filter lists settled sessions in place instead of on the shelf.
     const sessionListEntries = sessionFilters.showSettled ? builtList : shelveSettled(builtList);
     const sessionNavigationIds = sessionListNavigationIds(sessionListEntries, searchNarrowed);
-    return {
-      reminderIds,
-      reminderGroup,
-      ungroupedVisible,
-      sessionListEntries,
-      sessionNavigationIds,
-      compareStatus,
-    };
+    return { sessionListEntries, sessionNavigationIds };
   }, [
-    reminders,
-    reminderSessionsCollapsed,
+    ungrouped,
+    filteredSessions,
     visibleSessions,
     sessionFolders,
-    listedApprovalSessionIds,
-    listedBusySessionIds,
-    unseenFinishedIds,
-    rank,
-    now,
-    sessionWaits,
-    sessionOrder,
-    activeListedSessionId,
+    reminderGroup,
+    compareStatus,
     pinnedSessionsCollapsed,
     shelveSettled,
     sessionFilters.showSettled,
     searchNarrowed,
   ]);
   const flatSessionRows = useMemo(
-    () => flattenSessionList(sessionListEntries, searchNarrowed),
-    [sessionListEntries, searchNarrowed],
+    () => (lastSessionsOpen ? [] : flattenSessionList(sessionListEntries, searchNarrowed)),
+    [lastSessionsOpen, sessionListEntries, searchNarrowed],
   );
   const sessionNavigationKey = sessionNavigationIds.join("\0");
   const listDisplay = useSessionListDisplay();
@@ -1973,10 +2032,8 @@ function SidebarComponent({
   const menuSessionIds = sessionMenu
     ? orderedSessionActionIds(sessionMenu.sessionId, selectedSessionIds, sessionNavigationIds)
     : [];
-  const menuSessions = menuSessionIds.flatMap((sessionId) => {
-    const session = listedSessions.find((entry) => entry.id === sessionId);
-    return session ? [session] : [];
-  });
+  const menuSessions = sessionsForActionIds(listedSessions, menuSessionIds);
+  const menuIdSet = new Set(menuSessionIds);
   const multipleMenuSessions = menuSessionIds.length > 1;
   // Conversations a live crew runs are archived, deleted and stopped from Crews only.
   const crewManagedIndex = useCrewManagedIndex();
@@ -1999,7 +2056,7 @@ function SidebarComponent({
   const menuReminderTimes = [
     ...new Set(
       reminders
-        .filter((reminder) => menuSessionIds.includes(reminder.sessionId))
+        .filter((reminder) => menuIdSet.has(reminder.sessionId))
         .map((reminder) => reminder.dueAt),
     ),
   ];
@@ -2009,11 +2066,8 @@ function SidebarComponent({
     menuSessions.length > 0 && menuSessions.every((session) => session.archived);
   const menuSessionFolder =
     menuSessionIds.length === 1 ? folderContaining(sessionFolders, menuSessionIds[0]) : undefined;
-  const anyMenuSessionFoldered = menuSessionIds.some((sessionId) =>
-    sessionFolders.some((folder) => folder.sessionIds.includes(sessionId)),
-  );
   const canRemoveMenuSessionsFromFolders = multipleMenuSessions
-    ? anyMenuSessionFoldered
+    ? sessionFolders.some((folder) => folder.sessionIds.some((id) => menuIdSet.has(id)))
     : !!menuSessionFolder;
   const menuFolder = folderMenu
     ? sessionFolders.find((folder) => folder.id === folderMenu.folderId)
@@ -2240,14 +2294,18 @@ function SidebarComponent({
                 id: "folder-add",
                 label: t("Add to"),
                 submenuSearch: { placeholder: t("Search folders"), emptyLabel: t("No results") },
-                submenu: sessionFolders.map((folder) => ({
-                  kind: "item" as const,
-                  id: `folder-add:${folder.id}`,
-                  label: folder.name,
-                  checked:
-                    menuSessionIds.length > 0 &&
-                    menuSessionIds.every((sessionId) => folder.sessionIds.includes(sessionId)),
-                })),
+                submenu: sessionFolders.map((folder) => {
+                  const members = new Set(folder.sessionIds);
+                  return {
+                    kind: "item" as const,
+                    id: `folder-add:${folder.id}`,
+                    label: folder.name,
+                    checked:
+                      menuIdSet.size > 0 &&
+                      menuIdSet.size <= members.size &&
+                      menuSessionIds.every((id) => members.has(id)),
+                  };
+                }),
               },
             ]
           : []),
@@ -2500,7 +2558,9 @@ function SidebarComponent({
   };
 
   // The bar acts on the selection in list order, like the context menu.
-  const selectedSessions = listedSessions.filter((session) => selectedSessionIds.has(session.id));
+  const selectedSessions = selectedSessionIds.size
+    ? listedSessions.filter((session) => selectedSessionIds.has(session.id))
+    : EMPTY_SESSIONS;
   const selectedSettle =
     selectedSessions.length > 1 && !contextSelection
       ? batchSettleCommand(selectedSessions)
@@ -3257,6 +3317,55 @@ function SidebarComponent({
     virtual: SessionListVirtualProps,
   ): ReactNode => {
     if (row.kind === "folder") return renderFolderHeader(row.entry, row.depth, virtual);
+    if (row.kind === "session" && isCopyRow(row)) {
+      // Another machine's copy owns this session: it opens there and has no place in this
+      // copy's pins, folders or selection.
+      const session = row.session;
+      const stale = projectCopySessions.stale.has(pathKey(session.cwd));
+      return (
+        <li
+          key={row.key}
+          {...virtual}
+          data-session-copy
+          className={`${virtual.className ?? "list-none"} ${stale ? "opacity-60" : ""}`}
+        >
+          <SessionCard
+            session={session}
+            isActive={false}
+            isSelected={false}
+            busy={busySessionIds.has(session.id)}
+            wait={sessionWaits?.get(session.id)}
+            done={unseenFinishedIds.has(session.id)}
+            linkedUpdate={linkedSessionUpdateIds.has(session.id)}
+            needsApproval={approvalSessionIds.has(session.id)}
+            startedAt={liveAgentsById.get(session.id)?.startedAt}
+            inputKind={liveAgentsById.get(session.id)?.inputKind}
+            groupDelayMs={listDisplay.groupDelayMs}
+            density={listDisplay.density}
+            showModel={listDisplay.showModel}
+            showBranch={listDisplay.showBranch}
+            copyMachine={copyMachine(session.cwd)}
+            settleable={!isRemoteProjectPath(session.cwd)}
+            onContextMenu={(_, event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              closeSessionMenu();
+              setFilterMenu(null);
+              setGlobalSessionMenu({ x: event.clientX, y: event.clientY, session });
+            }}
+            onArchive={(_, archived) => {
+              void runGlobalSessionAction(session, "archive", archived).catch(() => {});
+            }}
+            onDelete={() => {
+              void runGlobalSessionAction(session, "delete").catch(() => {});
+            }}
+            onSelect={(id, event) =>
+              onSelectListedSession?.(id, session.cwd, { keepOpen: (event.detail ?? 0) > 1 })
+            }
+          />
+        </li>
+      );
+    }
     if (row.kind === "session") {
       return (
         <SessionListItem
@@ -3328,6 +3437,34 @@ function SidebarComponent({
           deferredSearchQuery,
         ).filter((session) => sessionFilters.showSettled === isGlobalSessionSettled(session))
       : [];
+  // The other copies' sessions pass the same filters as the open copy's list.
+  const copySessionRows =
+    projectCopySessions.sessions.length > 0
+      ? filterSessionsByQuery(
+          filterSessionsByStatus(
+            filterSessionsByTime(
+              filterSessionsByHarness(
+                filterAssistantManagedSessions(
+                  filterSessionsByArchive(
+                    projectCopySessions.sessions,
+                    sessionFilters.showArchived,
+                  ),
+                  sessionFilters.assistantManaged,
+                ),
+                sessionFilters.hiddenHarnesses,
+              ),
+              sessionFilters.time,
+              now,
+            ),
+            sessionFilters.status,
+            busySessionIds,
+            approvalSessionIds,
+            unseenFinishedIds,
+          ),
+          deferredSearchQuery,
+        ).filter((session) => sessionFilters.showSettled === isGlobalSessionSettled(session))
+      : [];
+  const sessionRows = mergeCopyRows(flatSessionRows, copySessionRows);
   const onSessionFiltersChange = (next: SessionSidebarFilters) => {
     setSessionFilters(next);
     saveSessionSidebarFilters(next);
@@ -3616,7 +3753,7 @@ function SidebarComponent({
   // With no title bar above, back/forward and the workspace controls share this one row instead
   // of leaving an empty row over the Workspace selector.
   const workspaceHeader = (withVisitNav = false) => {
-    const switcher = !lastSessionsOpen && !remoteProject && cwd && cwd !== "~";
+    const switcher = !lastSessionsOpen && cwd && cwd !== "~";
     const createSession = lastSessionsOpen ? undefined : onNew;
     return (
       <PaneHeader
@@ -3624,18 +3761,17 @@ function SidebarComponent({
         chromeInset={withVisitNav}
         data-workspace-header
         className={styles.workspaceHeader}
-        titleAs={switcher || (remoteProject && !lastSessionsOpen) ? "div" : "h2"}
+        titleAs={switcher ? "div" : "h2"}
         title={
           switcher ? (
             <SidebarWorkspaceSwitcher
               cwd={cwd}
+              leading={remoteWorkspaceStatus}
               tabStats={worktreeTabStats}
               onSelect={onSelectWorkspace}
               pending={workspaceSwitchPending}
               switchError={workspaceSwitchError}
             />
-          ) : remoteProject && !lastSessionsOpen ? (
-            <SidebarRemoteWorkspaceTitle cwd={cwd} status={remoteWorkspaceStatus} />
           ) : (
             <Text as="span" size="title" weight="medium" tone="inherit">
               {t(lastSessionsOpen ? "Last sessions" : cwd === "~" ? "No project" : "Workspace")}
@@ -3647,7 +3783,6 @@ function SidebarComponent({
             <WorkspaceNewSessionButton
               onNew={createSession}
               onChooseProject={chooseNewSessionProject}
-              onChooseMachine={createSession ? onNewOnMachine : undefined}
             />
           ) : null
         }
@@ -3795,6 +3930,10 @@ function SidebarComponent({
             <SidebarProjectPicker
               cwd={cwd}
               remoteStatus={remoteWorkspaceStatus}
+              onSelectWorkspace={onSelectWorkspace}
+              worktreeTabStats={worktreeTabStats}
+              workspaceSwitchPending={workspaceSwitchPending}
+              workspaceSwitchError={workspaceSwitchError}
               recents={visibleRecents}
               busy={projectPathBusy(busyProjectPaths, cwd)}
               onSelectProject={onSelectProject}
@@ -3802,7 +3941,6 @@ function SidebarComponent({
               onRemoveProject={onRemoveProject}
               onNew={onNew}
               onChooseNewSessionProject={chooseNewSessionProject}
-              onNewOnMachine={onNewOnMachine}
               onSearch={onSearch}
               onOpenInbox={onOpenInbox}
               onOpenNotificationSettings={onOpenNotificationSettings}
@@ -4205,7 +4343,9 @@ function SidebarComponent({
                   </Alert>
                 ) : status === "error" && projectSessions.length === 0 ? (
                   <Alert tone="danger">{t("Couldn’t load sessions")}</Alert>
-                ) : visibleSessions.length === 0 && projectlessRemoteRows.length === 0 ? (
+                ) : visibleSessions.length === 0 &&
+                  projectlessRemoteRows.length === 0 &&
+                  copySessionRows.length === 0 ? (
                   // A narrowed-down result is a transient answer to what the user
                   // just typed, so it stays compact. Only the genuine
                   // "this project has nothing in it" case earns the illustration.
@@ -4260,7 +4400,7 @@ function SidebarComponent({
                 ) : (
                   <>
                     <SessionListWindow
-                      rows={flatSessionRows}
+                      rows={sessionRows}
                       scrollRef={sessionsScrollRef}
                       activeKey={activeListedSessionId ?? null}
                       renderRow={renderSessionListRow}
@@ -4957,6 +5097,10 @@ function SearchableProjectPickerWithMenu({
 function SidebarProjectPicker({
   cwd,
   remoteStatus,
+  onSelectWorkspace,
+  worktreeTabStats,
+  workspaceSwitchPending,
+  workspaceSwitchError,
   recents,
   busy,
   onSelectProject,
@@ -4964,7 +5108,6 @@ function SidebarProjectPicker({
   onRemoveProject,
   onNew,
   onChooseNewSessionProject,
-  onNewOnMachine,
   onSearch,
   onOpenInbox,
   onOpenNotificationSettings,
@@ -4984,6 +5127,10 @@ function SidebarProjectPicker({
 }: {
   cwd: string;
   remoteStatus?: ReactNode;
+  onSelectWorkspace?: Props["onSelectWorkspace"];
+  worktreeTabStats?: Props["worktreeTabStats"];
+  workspaceSwitchPending?: boolean;
+  workspaceSwitchError?: string;
   recents: RecentProject[];
   busy: boolean;
   onSelectProject: (path: string) => void;
@@ -4991,7 +5138,6 @@ function SidebarProjectPicker({
   onRemoveProject?: Props["onRemoveProject"];
   onNew?: () => string | void;
   onChooseNewSessionProject?: () => void;
-  onNewOnMachine?: () => void;
   onSearch?: () => void;
   onOpenInbox?: () => void;
   onOpenNotificationSettings?: (projectPath?: string) => void;
@@ -5021,11 +5167,7 @@ function SidebarProjectPicker({
       actions={
         <>
           {onNew ? (
-            <WorkspaceNewSessionButton
-              onNew={onNew}
-              onChooseProject={onChooseNewSessionProject}
-              onChooseMachine={onNewOnMachine}
-            />
+            <WorkspaceNewSessionButton onNew={onNew} onChooseProject={onChooseNewSessionProject} />
           ) : null}
           {onSearch ? (
             <IconButton
@@ -5121,17 +5263,24 @@ function SidebarProjectPicker({
         </>
       }
     >
+      {remoteStatus}
       <SearchableProjectPickerWithMenu
         cwd={cwd}
         recents={recents}
         busy={busy}
-        className="flex-1"
         onSelectProject={onSelectProject}
         onOpenProject={onOpenProject}
         onRemoveProject={onRemoveProject}
         onOpenNotificationSettings={onOpenNotificationSettings}
       />
-      {remoteStatus}
+      <SidebarWorkspaceSwitcher
+        cwd={cwd}
+        showProjectIdentity={false}
+        tabStats={worktreeTabStats}
+        onSelect={onSelectWorkspace}
+        pending={workspaceSwitchPending}
+        switchError={workspaceSwitchError}
+      />
       {inboxMenu ? (
         <InboxNotificationMenu
           {...inboxMenu}
@@ -5465,36 +5614,13 @@ function CompactRailAction({
 function WorkspaceNewSessionButton({
   onNew,
   onChooseProject,
-  onChooseMachine,
 }: {
   onNew?: () => void;
   onChooseProject?: () => void;
-  onChooseMachine?: () => void;
 }) {
   const t = useT();
   const shortcut = useKeybindingShortcut("Tab: New");
   const label = t("New session");
-  if (onNew && onChooseMachine)
-    return (
-      <SplitButton
-        label={label}
-        menuLabel={t("Session actions")}
-        tone="accent"
-        motion="none"
-        padding={{ inline: "sm" }}
-        startIcon={<NewSession className="icon-sm" />}
-        onClick={onNew}
-        shortcut={shortcut || undefined}
-        data-session-selection-keep
-        data-usage-guide="new-session"
-        actions={[
-          ...(onChooseProject
-            ? [{ id: "project", label: t("Choose project"), onSelect: onChooseProject }]
-            : []),
-          { id: "machine", label: t("Run on"), onSelect: onChooseMachine },
-        ]}
-      />
-    );
   const primary = (
     <Button
       aria-label={label}
@@ -5745,7 +5871,9 @@ function sessionIdsInMatchingFolders(folders: SessionFolder[], query: string): S
   const childrenOf = new Map<string, SessionFolder[]>();
   for (const folder of folders) {
     if (folder.parentId) {
-      childrenOf.set(folder.parentId, [...(childrenOf.get(folder.parentId) ?? []), folder]);
+      const siblings = childrenOf.get(folder.parentId);
+      if (siblings) siblings.push(folder);
+      else childrenOf.set(folder.parentId, [folder]);
     }
   }
   const addAll = (folder: SessionFolder, seen: Set<string>) => {
@@ -5755,7 +5883,7 @@ function sessionIdsInMatchingFolders(folders: SessionFolder[], query: string): S
     for (const child of childrenOf.get(folder.id) ?? []) addAll(child, seen);
   };
   for (const folder of folders) {
-    if (fuzzyMatch(prepared, folder.name)) addAll(folder, new Set());
+    if (fuzzyIncludes(prepared, folder.name)) addAll(folder, new Set());
   }
   return ids;
 }
@@ -5781,6 +5909,7 @@ const YIELD_WIDTH = [
 
 const SessionCard = memo(function SessionCard({
   remoteMachineName,
+  copyMachine,
   showProjectAppearance = false,
   session,
   isActive,
@@ -5820,6 +5949,8 @@ const SessionCard = memo(function SessionCard({
   titleFeedback,
 }: {
   remoteMachineName?: string;
+  /** The machine of a session that belongs to another copy of this project: icon and tooltip only. */
+  copyMachine?: { label: string; local: boolean };
   showProjectAppearance?: boolean;
   session: SessionSummary;
   isActive: boolean;
@@ -5882,11 +6013,13 @@ const SessionCard = memo(function SessionCard({
   const cancelSessionDrag = useRef<(() => void) | null>(null);
   const cancelLongPress = useRef<(() => void) | null>(null);
   const detailTimer = useRef<number | null>(null);
+  const releaseDetailWatch = useRef<(() => void) | null>(null);
   useEffect(
     () => () => {
       cancelSessionDrag.current?.();
       cancelLongPress.current?.();
       if (detailTimer.current != null) window.clearTimeout(detailTimer.current);
+      releaseDetailWatch.current?.();
     },
     [],
   );
@@ -5915,24 +6048,19 @@ const SessionCard = memo(function SessionCard({
   const orchestrationDone =
     orchestration?.tasks.filter((task) => task.status === "completed").length ?? 0;
   const title = sessionDisplayTitle(session.title, session.harness);
-  const highlightQuery = useContext(SessionSearchQueryContext);
-  const titleHit = highlightQuery.trim() ? fuzzyMatch(highlightQuery, title) : null;
   const gitLabel = session.worktreeRemoved
     ? NO_BRANCH_LABEL
     : formatGitLabel(session.repo, session.branch);
   const compact = density === "compact";
   // Reactive lookups: the live model catalog changes outside React.
-  const activeModelName = useResolvedModelName(
-    providerHistory.activeHarness,
-    providerHistory.activeModel,
-  );
-  const sessionModelName = useResolvedModelName(session.harness, session.model);
-  const fallbackModelName = HARNESS_TITLE[providerHistory.activeHarness];
-  const model = providerHistory.activeModel
-    ? (activeModelName ?? fallbackModelName)
+  const modelHarness = providerHistory.activeModel
+    ? providerHistory.activeHarness
     : providerHistory.activeHarness === session.harness
-      ? (sessionModelName ?? fallbackModelName)
-      : fallbackModelName;
+      ? session.harness
+      : undefined;
+  const model =
+    useResolvedModelName(modelHarness, providerHistory.activeModel || session.model) ??
+    HARNESS_TITLE[providerHistory.activeHarness];
   const worktree = !!session.worktreeCwd && !session.worktreeRemoved;
   // Standard rows name the branch only; detailed rows add the repository only when it
   // differs from the project already named above the title (owner 2026-11-04: the
@@ -6397,24 +6525,20 @@ const SessionCard = memo(function SessionCard({
     prefetchTimer.current = null;
   };
 
-  const scheduleDetail = () => {
-    if (detailTimer.current != null || selectionMode || orchestration) return;
-    detailTimer.current = window.setTimeout(() => {
-      detailTimer.current = null;
-      setDetailOpen(true);
-    }, SESSION_DETAIL_DELAY_MS);
-  };
   // Keyboard focus opened the detail; the anchored card follows its row while focus stays.
   const detailFromFocus = useRef(false);
-  const hideDetail = useCallback(() => {
+  const hideDetail = () => {
+    releaseDetailWatch.current?.();
+    releaseDetailWatch.current = null;
     if (detailTimer.current != null) {
       window.clearTimeout(detailTimer.current);
       detailTimer.current = null;
     }
     detailFromFocus.current = false;
     setDetailOpen(false);
-  }, [setDetailOpen]);
-  useEffect(() => {
+  };
+  const watchDetail = () => {
+    if (releaseDetailWatch.current) return;
     const root = detailRootRef.current;
     if (!root) return;
     const doc = root.ownerDocument;
@@ -6432,12 +6556,20 @@ const SessionCard = memo(function SessionCard({
     doc.addEventListener("scroll", onScroll, true);
     view.addEventListener("resize", hideDetail);
     view.addEventListener("blur", hideDetail);
-    return () => {
+    releaseDetailWatch.current = () => {
       doc.removeEventListener("scroll", onScroll, true);
       view.removeEventListener("resize", hideDetail);
       view.removeEventListener("blur", hideDetail);
     };
-  }, [hideDetail]);
+  };
+  const scheduleDetail = () => {
+    if (detailTimer.current != null || selectionMode || orchestration) return;
+    watchDetail();
+    detailTimer.current = window.setTimeout(() => {
+      detailTimer.current = null;
+      setDetailOpen(true);
+    }, SESSION_DETAIL_DELAY_MS);
+  };
   const detailVisible = detailOpen && !dragging && !pressing && !selectionMode && !orchestration;
 
   const archiveLabel = session.archived ? t("Unarchive") : t("Archive");
@@ -6451,9 +6583,10 @@ const SessionCard = memo(function SessionCard({
   } as const;
 
   const remoteSession = isRemoteProjectPath(session.cwd);
-  const remoteLabel = remoteMachineName || t("On another machine");
+  const remoteLabel = copyMachine?.label || remoteMachineName || t("On another machine");
+  const MachineIcon = copyMachine?.local ? Laptop : Server;
   const modelLabel =
-    showModel || remoteSession ? (
+    showModel || remoteSession || copyMachine ? (
       <span
         data-session-row-model={showModel ? "" : undefined}
         className="flex shrink-0 items-center gap-1.5"
@@ -6464,10 +6597,10 @@ const SessionCard = memo(function SessionCard({
             <SessionSearchText text={model} />
           </span>
         ) : null}
-        {remoteSession ? (
+        {remoteSession || copyMachine ? (
           <Tooltip label={remoteLabel} asChild>
             <Text role="img" aria-label={remoteLabel} size="inherit" tone="secondary">
-              <Server className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              <MachineIcon className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
             </Text>
           </Tooltip>
         ) : null}
@@ -6753,6 +6886,7 @@ const SessionCard = memo(function SessionCard({
               onFocus={(event) => {
                 if (event.target === event.currentTarget && !orchestration && !selectionMode) {
                   detailFromFocus.current = true;
+                  watchDetail();
                   setDetailOpen(true);
                 }
               }}
@@ -6782,33 +6916,18 @@ const SessionCard = memo(function SessionCard({
               {compact && session.pinned && !inPinnedSection && !showProjectAppearance ? (
                 <Pin className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
               ) : null}
-              {titleHit ? (
-                <ClampText
-                  as="span"
-                  lines={1}
-                  expandable={false}
-                  size="secondary"
-                  tone="primary"
-                  weight="medium"
-                  leading="snug"
-                  className="min-w-0 flex-1"
-                >
-                  <MatchText text={title} positions={titleHit.positions} active />
-                </ClampText>
-              ) : (
-                <ClampText
-                  as="span"
-                  lines={1}
-                  expandable={false}
-                  size="secondary"
-                  tone="primary"
-                  weight="medium"
-                  leading="snug"
-                  className="min-w-0 flex-1"
-                >
-                  {title}
-                </ClampText>
-              )}
+              <ClampText
+                as="span"
+                lines={1}
+                expandable={false}
+                size="secondary"
+                tone="primary"
+                weight="medium"
+                leading="snug"
+                className="min-w-0 flex-1"
+              >
+                <SessionSearchText text={title} />
+              </ClampText>
               <AssistantManagedBadge
                 management={session.managedBy}
                 compact

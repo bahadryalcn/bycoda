@@ -1,4 +1,5 @@
 {
+  "Set up an SSH connection to this project's machine to open a terminal.": "Terminal açmak için projenin bulunduğu makineye SSH bağlantısı kurun.",
   "Workflow status": "İş akışı durumu",
   "Status category": "Durum kategorisi",
   "No projects selected": "Proje seçilmedi",
@@ -3462,6 +3463,7 @@
   "Move Terminal": "Terminali Taşı",
   "Close Active Terminal": "Aktif Terminali Kapat",
   "Close All Terminals": "Tüm Terminalleri Kapat",
+  "Close Terminals?": "Terminaller kapatılsın mı?",
   "Hide Terminal ({p0}J)": "Terminali Gizle ({p0}J)",
   "Terminals": "Terminaller",
   "Close others": "Diğerlerini Kapat",
@@ -8294,6 +8296,7 @@
   "Writing clipboard": "Panoya yazılıyor",
   "Clearing clipboard": "Pano temizleniyor",
   "Global clipboard": "Genel pano",
+  "Pasted text": "Yapıştırılan metin",
   "Clipboard text must match the selected plain-text command.": "Pano metni, seçilen düz metin komutuyla eşleşmelidir.",
   "Clipboard access requires exact native owner approval.": "Pano erişimi için bu işleme özel yerel kullanıcı onayı gerekir.",
   "Clipboard approval expired before dispatch.": "Pano onayı işlem başlamadan önce sona erdi.",
@@ -12535,5 +12538,17 @@
   "1 other task on this computer is running.": "Bu bilgisayarda 1 başka görev çalışıyor.",
   "{p0} other tasks on this computer are running.": "Bu bilgisayarda {p0} başka görev çalışıyor.",
   "Could not check what is running on this computer.": "Bu bilgisayarda nelerin çalıştığı denetlenemedi.",
-  "Quitting stops them gracefully and keeps their history. Quit anyway?": "Çıkmak bunları düzgünce durdurur ve geçmişlerini korur. Yine de çıkılsın mı?"
+  "Quitting stops them gracefully and keeps their history. Quit anyway?": "Çıkmak bunları düzgünce durdurur ve geçmişlerini korur. Yine de çıkılsın mı?",
+  "Add to {p0}": "{p0} üzerine ekle",
+  "Show machines separately": "Makineleri ayrı göster",
+  "Combine with other machines": "Diğer makinelerle birleştir",
+  "another computer": "başka bir bilgisayar",
+  "Another computer": "Başka bir bilgisayar",
+  "Clone over": "Klonlama yöntemi",
+  "Folder on {p0}": "{p0} üzerindeki klasör",
+  "Copy ignored files": "Yok sayılan dosyaları kopyala",
+  "Looking for ignored files…": "Yok sayılan dosyalar aranıyor…",
+  "Locate folder": "Klasörü bul",
+  "Clone": "Klonla",
+  "{p0} files could not be copied.": "{p0} dosya kopyalanamadı."
 }

@@ -453,7 +453,9 @@ for (const variant of [
     await input.press("Tab");
     await expect(clear).toBeFocused();
     // The shared field frame owns the boundary; the clear action is its end adornment.
-    const field = await input.locator("xpath=ancestor::*[@data-field-control][1]").boundingBox(),
+    const field = await input
+        .locator('xpath=ancestor::*[@data-search-appearance="field"][1]')
+        .boundingBox(),
       button = await clear.boundingBox();
     expect(field).toBeTruthy();
     expect(field!.width).toBeGreaterThanOrEqual(140);

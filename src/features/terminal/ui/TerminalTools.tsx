@@ -48,7 +48,7 @@ const SEARCH_OUTPUT_REFRESH_MS = 750;
 export function TerminalTools({
   terminalId,
   terminal,
-  mode,
+  mode: requestedMode,
   onModeChange,
   ready,
   suggestionsAllowed = true,
@@ -63,7 +63,8 @@ export function TerminalTools({
   onResetFontSize,
   onFontSizeChange,
   searchDecorations,
-  toolbarTarget,
+  toolbarTarget: headerToolbarTarget,
+  dockToolbarTarget,
 }: {
   terminalId?: string;
   terminal: Terminal | null;
@@ -88,9 +89,14 @@ export function TerminalTools({
   /** Resolved shared semantic colors; the terminal owner refreshes these with its theme. */
   searchDecorations?: ISearchOptions["decorations"];
   toolbarTarget?: HTMLDivElement | null;
+  dockToolbarTarget?: HTMLDivElement | null;
 }) {
   const t = useT();
   const toast = useToast();
+  const inDock = dockToolbarTarget !== undefined;
+  const toolbarTarget = inDock ? dockToolbarTarget : headerToolbarTarget;
+  const dockToolbarHidden = inDock && !toolbarTarget;
+  const mode = dockToolbarHidden ? null : requestedMode;
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchor = useRef<HTMLButtonElement>(null);
@@ -104,6 +110,10 @@ export function TerminalTools({
   const searchRef = useRef<SearchAddon | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [overlayRef, typing] = useHideWhileTyping<HTMLDivElement>();
+  if (dockToolbarHidden && (menuOpen || helpOpen)) {
+    setMenuOpen(false);
+    setHelpOpen(false);
+  }
 
   useEffect(() => {
     if (!terminal) return;
@@ -477,7 +487,7 @@ export function TerminalTools({
       >
         <Search className="icon-sm" />
       </Button>
-      {!toolbarTarget && suggestionsAllowed && (
+      {(!toolbarTarget || inDock) && suggestionsAllowed && (
         <Button
           variant="ghost"
           size="sm"
@@ -649,9 +659,8 @@ export function TerminalTools({
   );
   return (
     <>
-      {/* This target is the server's fixed header, not a floating overlay. */}
       {toolbarTarget ? <Portal target={toolbarTarget}>{toolbar}</Portal> : null}
-      {(!toolbarTarget || mode === "search") && (
+      {!dockToolbarHidden && (!toolbarTarget || mode === "search") && (
         <div
           {...overlayAppearance}
           ref={overlayRef}

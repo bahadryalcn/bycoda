@@ -1,4 +1,14 @@
 // Synthetic transport for the voice fixture. No device, Host, provider or audio access.
+import {
+  AssistantOwnerQuestionAnswerSchema,
+  AssistantOwnerQuestionPresentSchema,
+  AssistantOwnerQuestionSchema,
+  type AssistantOwnerQuestion,
+  type AssistantOwnerQuestionReceipt,
+} from "../../../src/shared/model/assistantOwnerQuestions";
+
+const ownerQuestions = new Map<string, AssistantOwnerQuestion>();
+
 export const fixtureVoice = {
   callbacks: null as any,
   connects: 0,
@@ -499,6 +509,73 @@ export async function assistantRequest(input: any, expectedEnvironmentId?: strin
   }
   const history = fixtureHistoryRequest(input);
   if (history !== undefined) return history;
+  if (input.op === "questions.present") {
+    const proposal = AssistantOwnerQuestionPresentSchema.parse(input);
+    const id = `fixture-question-${proposal.requestId}`;
+    const existing = ownerQuestions.get(id);
+    if (existing) return { ownerQuestion: structuredClone(existing) };
+    const now = Date.now();
+    const ownerQuestion = AssistantOwnerQuestionSchema.parse({
+      id,
+      version: 1,
+      jobId: null,
+      threadId: proposal.threadId,
+      ownerMessageId: proposal.ownerMessageId,
+      projectIds: proposal.contextProjectIds,
+      origin: "voice-proposal",
+      sourceToken: "d".repeat(64),
+      sourceCurrent: true,
+      status: "open",
+      createdAt: now,
+      updatedAt: now,
+      prompt: {
+        requestId: ownerQuestions.size + 1,
+        occurrenceId: id,
+        behavior: "nonBlocking",
+        questions: proposal.questions.map((question, index) => ({
+          ...question,
+          id: `question-${index}`,
+          options: question.options.map((option, index) => ({ ...option, id: `option-${index}` })),
+        })),
+      },
+    });
+    ownerQuestions.set(id, ownerQuestion);
+    if (new URLSearchParams(location.search).has("choice-ack-lost"))
+      throw new Error("Synthetic lost question acknowledgement");
+    return { ownerQuestion: structuredClone(ownerQuestion) };
+  }
+  if (input.op === "questions.get")
+    return { ownerQuestion: structuredClone(ownerQuestions.get(input.id) ?? null) };
+  if (input.op === "questions.answer") {
+    const answer = AssistantOwnerQuestionAnswerSchema.parse(input);
+    const question = ownerQuestions.get(answer.id);
+    if (!question || question.status !== "open" || question.version !== answer.expectedVersion)
+      throw new Error("Synthetic changed question");
+    const receipt: AssistantOwnerQuestionReceipt = {
+      requestId: answer.requestId,
+      kind: "answer",
+      version: question.version + 1,
+      at: Date.now(),
+      input: answer,
+    };
+    const ownerQuestion: AssistantOwnerQuestion = {
+      ...question,
+      status: "answered",
+      version: receipt.version,
+      updatedAt: receipt.at,
+      lastOwnerAction: receipt,
+      answer: {
+        requestId: answer.requestId,
+        answers: answer.answers,
+        custom: answer.custom,
+        notes: answer.notes,
+        answeredAt: receipt.at,
+        version: receipt.version,
+      },
+    };
+    ownerQuestions.set(ownerQuestion.id, ownerQuestion);
+    return { ownerQuestion: structuredClone(ownerQuestion), ownerQuestionReceipt: receipt };
+  }
   if (input.op === "snapshot")
     return { snapshot: { ...fixtureAssistant, jobs: fixtureVoice.jobs } };
   if (input.op === "projects.list")
@@ -514,6 +591,19 @@ export async function assistantRequest(input: any, expectedEnvironmentId?: strin
     const job = { ...input, id: input.idempotencyKey, status: "queued", version: 1 };
     fixtureVoice.jobs.push(job);
     return { job };
+  }
+  if (input.op === "messages.linkJob") {
+    const record = navigationMessages.get(input.id);
+    const job = fixtureVoice.jobs.find(
+      (job) => job.id === input.jobId && job.idempotencyKey === input.jobKey,
+    );
+    if (!record || !job) throw new Error("Synthetic job or conversation message is missing");
+    if (!record.message.jobIds.includes(job.id)) {
+      record.message.jobIds.push(job.id);
+      record.message.version++;
+      record.message.updatedAt = Date.now();
+    }
+    return { message: structuredClone(record.message) };
   }
   if (input.op === "jobs.control") {
     const job = fixtureVoice.jobs.find((job) => job.id === input.id);

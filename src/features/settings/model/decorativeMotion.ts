@@ -36,7 +36,7 @@ const nativeFrame =
 let media: MediaQueryList | null = null;
 const listeners = createStore();
 /** What subscribers were last told; unchanged states are not re-announced. */
-let published = "";
+let published: ReturnType<typeof exposedState> | undefined;
 let releaseLifecycle: (() => void) | undefined;
 
 /** The stored choice stays independent of the system's accessibility setting. */
@@ -123,17 +123,13 @@ export function prefersReducedMotion(): boolean {
 }
 
 export function decorativeMotionEnabled(): boolean {
-  return loadDecorativeMotionEnabled() && !prefersReducedMotion() && motionWindowVisible();
+  return exposedState().decorative;
 }
 
 /** Audio feedback paints at a capped frame rate, so the display's automatic
  * high-refresh fallback does not disable it. Explicit and accessibility choices still win. */
 export function audioFeedbackMotionEnabled(): boolean {
-  return (
-    (unsaved ?? readFlag(DECORATIVE_MOTION_KEY) ?? DECORATIVE_MOTION_DEFAULT) &&
-    !prefersReducedMotion() &&
-    motionWindowVisible()
-  );
+  return exposedState().audio;
 }
 
 /** A visible window can keep animating while input goes to another app. */
@@ -143,31 +139,42 @@ export function motionWindowVisible(): boolean {
   return !document.hidden && (!state || (state.visible && !state.minimized));
 }
 
-function syncDecorativeMotionAttribute(): void {
+function syncDecorativeMotionAttribute(snapshot?: ReturnType<typeof exposedState>): void {
   if (typeof document === "undefined") return;
+  const state = snapshot ?? exposedState();
   const root = document.documentElement.dataset;
-  root.decorativeMotion = decorativeMotionEnabled() ? "on" : "off";
-  root.windowVisible = motionWindowVisible() ? "on" : "off";
+  root.decorativeMotion = state.decorative ? "on" : "off";
+  root.windowVisible = state.visible ? "on" : "off";
 }
 
 /** Everything the hooks and the root attributes expose, as one comparable value. */
-function exposedState(): string {
-  return [
-    loadDecorativeMotionEnabled(),
-    loadFollowSystemMotionEnabled(),
-    prefersReducedMotion(),
-    decorativeMotionEnabled(),
-    audioFeedbackMotionEnabled(),
-    motionWindowVisible(),
-  ].join();
+function exposedState() {
+  const saved = unsaved ?? readFlag(DECORATIVE_MOTION_KEY);
+  const preference = saved ?? defaultDecorativeMotion();
+  const followSystem = loadFollowSystemMotionEnabled();
+  const reduced = followSystem && ((media ?? reducedMotionMedia())?.matches ?? false);
+  const visible = motionWindowVisible();
+  return {
+    preference,
+    followSystem,
+    reduced,
+    visible,
+    decorative: preference && !reduced && visible,
+    audio: (saved ?? DECORATIVE_MOTION_DEFAULT) && !reduced && visible,
+  };
 }
 
 /** Resize and focus bursts re-read the window often; only a real change wakes subscribers. */
 function notify(): void {
   const next = exposedState();
-  if (next === published) return;
-  published = next;
-  syncDecorativeMotionAttribute();
+  const previous = published;
+  if (
+    previous &&
+    (Object.keys(next) as (keyof typeof next)[]).every((key) => next[key] === previous[key])
+  )
+    return;
+  published = listeners.size ? next : undefined;
+  syncDecorativeMotionAttribute(next);
   listeners.notify();
 }
 
@@ -214,7 +221,7 @@ export function subscribeDecorativeMotion(listener: () => void): () => void {
     media = reducedMotionMedia();
     releaseLifecycle = installWindowLifecycle();
     published = exposedState();
-    syncDecorativeMotionAttribute();
+    syncDecorativeMotionAttribute(published);
     media?.addEventListener("change", notify);
     window.addEventListener(DECORATIVE_MOTION_CHANGE_EVENT, notify);
     window.addEventListener("storage", onStorage);
@@ -225,6 +232,7 @@ export function subscribeDecorativeMotion(listener: () => void): () => void {
     subscribed = false;
     unsubscribe();
     if (listeners.size !== 0) return;
+    published = undefined;
     media?.removeEventListener("change", notify);
     media = null;
     releaseLifecycle?.();
@@ -237,7 +245,7 @@ export function subscribeDecorativeMotion(listener: () => void): () => void {
 export function useDecorativeMotionPreference(): boolean {
   return useSyncExternalStore(
     subscribeDecorativeMotion,
-    loadDecorativeMotionEnabled,
+    () => published?.preference ?? loadDecorativeMotionEnabled(),
     () => DECORATIVE_MOTION_DEFAULT,
   );
 }
@@ -245,28 +253,44 @@ export function useDecorativeMotionPreference(): boolean {
 export function useFollowSystemMotionEnabled(): boolean {
   return useSyncExternalStore(
     subscribeDecorativeMotion,
-    loadFollowSystemMotionEnabled,
+    () => published?.followSystem ?? loadFollowSystemMotionEnabled(),
     () => FOLLOW_SYSTEM_MOTION_DEFAULT,
   );
 }
 
 export function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(subscribeDecorativeMotion, prefersReducedMotion, () => false);
+  return useSyncExternalStore(
+    subscribeDecorativeMotion,
+    () => published?.reduced ?? prefersReducedMotion(),
+    () => false,
+  );
 }
 
 /** Use for decorative effects only; game availability is a separate setting. */
 export function useDecorativeMotionEnabled(): boolean {
-  return useSyncExternalStore(subscribeDecorativeMotion, decorativeMotionEnabled, () => false);
+  return useSyncExternalStore(
+    subscribeDecorativeMotion,
+    () => published?.decorative ?? decorativeMotionEnabled(),
+    () => false,
+  );
 }
 
 /** Only for audio feedback whose renderer caps its paint rate independently of display Hz. */
 export function useAudioFeedbackMotionEnabled(): boolean {
-  return useSyncExternalStore(subscribeDecorativeMotion, audioFeedbackMotionEnabled, () => false);
+  return useSyncExternalStore(
+    subscribeDecorativeMotion,
+    () => published?.audio ?? audioFeedbackMotionEnabled(),
+    () => false,
+  );
 }
 
 /** Canvas loops can hold their last frame while the window is hidden or minimized. */
 export function useMotionWindowVisible(): boolean {
-  return useSyncExternalStore(subscribeDecorativeMotion, motionWindowVisible, () => true);
+  return useSyncExternalStore(
+    subscribeDecorativeMotion,
+    () => published?.visible ?? motionWindowVisible(),
+    () => true,
+  );
 }
 
 // Bootstrap CSS consumers before React subscribes; the shared listener keeps it current.

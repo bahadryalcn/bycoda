@@ -872,19 +872,17 @@ describe("settings pages", () => {
       '[aria-label="Prevent sleep while agents work"]',
     )!;
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    // The platform detail lives in the row's information popover.
+    // The platform detail lives in the row's tooltip.
     const info = toggle
       .closest(".settings-row")!
-      .querySelector<HTMLButtonElement>('button[aria-label="Sleep behavior"]')!;
-    await act(async () => info.click());
-    const help = document.querySelector(
-      '[role="dialog"][aria-label="Sleep behavior"]',
-    )?.textContent;
+      .querySelector<HTMLElement>('[role="img"][aria-label="Sleep behavior"]')!;
+    await act(async () => info.focus());
+    const help = document.querySelector('[role="tooltip"]')?.textContent;
     expect(help).toContain("Prevent idle sleep during agent work");
     expect(help).not.toContain("battery-powered Modern Standby");
     expect(help).toContain("Screen locking stays available");
     expect(help).not.toContain("choosing Sleep still works");
-    await act(async () => info.click());
+    await act(async () => info.blur());
 
     const hold = [
       ...container.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="listbox"]'),
@@ -929,11 +927,11 @@ describe("settings pages", () => {
     )!;
     const info = toggle
       .closest(".settings-row")!
-      .querySelector<HTMLButtonElement>('button[aria-label="Sleep behavior"]')!;
-    await act(async () => info.click());
-    expect(
-      document.querySelector('[role="dialog"][aria-label="Sleep behavior"]')?.textContent,
-    ).toContain("battery-powered Modern Standby");
+      .querySelector<HTMLElement>('[role="img"][aria-label="Sleep behavior"]')!;
+    await act(async () => info.focus());
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
+      "battery-powered Modern Standby",
+    );
   });
 
   it("keeps account emails blurred until clicked and hides them when settings reopen", async () => {

@@ -9,6 +9,66 @@ vi.mock("../../../platform/tauri/clipboard", () => ({ copyMessage: clipboard.cop
 
 let container: HTMLDivElement;
 let root: Root;
+function diffBlock(text: string): Block {
+  return {
+    id: "diff",
+    role: "tool",
+    text: "Edit",
+    tool: { preview: { kind: "write", inspection: { kind: "diff", text } } },
+  };
+}
+
+it("keeps selected diff text exact and groups equal tones without CSS Highlights", async () => {
+  vi.stubGlobal("Highlight", undefined);
+  const text = "+one\r\n+two\r\n context\n-del\n-again";
+  await act(async () =>
+    root.render(createElement(ToolInspectionPanel, { block: diffBlock(text) })),
+  );
+  const pre = container.querySelector("pre")!;
+  expect(pre.textContent).toBe(text);
+  expect(pre.querySelectorAll("span")).toHaveLength(3);
+  expect(pre.querySelector('[data-tone="added"]')?.textContent).toBe("+one\r\n+two\r\n");
+  expect(pre.querySelector('[data-tone="removed"]')?.textContent).toBe("-del\n-again");
+});
+
+it("paints alternating lines on one text node and removes only a closing panel's ranges", async () => {
+  const registry = new Map<string, Set<StaticRange>>();
+  vi.stubGlobal("CSS", { ...CSS, highlights: registry });
+  vi.stubGlobal(
+    "Highlight",
+    class extends Set<StaticRange> {
+      constructor(...ranges: StaticRange[]) {
+        super(ranges);
+      }
+    },
+  );
+  vi.stubGlobal(
+    "StaticRange",
+    class {
+      constructor(init: StaticRangeInit) {
+        Object.assign(this, init);
+      }
+    },
+  );
+  const text = Array.from({ length: 1600 }, (_, index) => (index % 2 ? "-old" : "+new")).join("\n");
+  const panel = (key: string) =>
+    createElement(ToolInspectionPanel, { key, block: diffBlock(text) });
+  await act(async () => root.render([panel("first"), panel("second")]));
+  const pre = container.querySelector("pre")!;
+  expect(pre.textContent).toBe(text);
+  expect(pre.querySelectorAll("*")).toHaveLength(1);
+  const added = registry.get("bycoda-tool-diff-added")!;
+  expect(added.size).toBe(1600);
+  const first = [...added][0]!;
+  expect(first.startContainer.textContent!.slice(first.startOffset, first.endOffset)).toBe(
+    "+new\n",
+  );
+  await act(async () => root.render([panel("second")]));
+  expect(added.size).toBe(800);
+  expect(added.has(first)).toBe(false);
+  await act(async () => root.render(null));
+  expect(registry.size).toBe(0);
+});
 beforeEach(() => {
   clipboard.copy.mockReset().mockResolvedValue(undefined);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

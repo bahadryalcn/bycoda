@@ -111,6 +111,8 @@ mockIPC(
           },
         };
     }
+    if (command === "write_attachment" && params.has("pasted-text"))
+      return "C:/fixture/Pasted text.txt";
     if (command === "quick_composer_launch_scope")
       return { ...quickNativeReply(command, args), nextSequence };
     if (command === "quick_composer_submit_status") return quickNativeReply(command, args);

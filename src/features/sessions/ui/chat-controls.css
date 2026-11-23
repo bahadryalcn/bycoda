@@ -355,6 +355,13 @@
   block-size: var(--ui-icon-sm);
 }
 
+::highlight(bycoda-tool-diff-added) {
+  color: var(--color-diff-add-fg);
+}
+::highlight(bycoda-tool-diff-removed) {
+  color: var(--color-diff-del-fg);
+}
+
 .delivery-accepted {
   animation: delivery-accepted-enter var(--motion-notice-duration) var(--motion-ease-out) both;
 }

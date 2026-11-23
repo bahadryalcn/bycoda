@@ -416,6 +416,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "devices.setup",
   "devices.start",
   "devices.status",
+  "devices.touch",
   "devices.stop",
   "environment.describe",
   "environment.persistence.recover",

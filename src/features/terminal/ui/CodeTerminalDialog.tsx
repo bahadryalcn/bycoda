@@ -18,26 +18,29 @@ import {
   terminalResultMessage,
 } from "../model/codeTerminal";
 import { loadCodeRunReport } from "../model/codeRunReport";
-import type {
-  CodeTerminalController,
-  CodeTerminalOptions,
-} from "../runtime/codeTerminalController";
+import type { RemoteCodeRun } from "../runtime/codeTerminalController";
 
 const TerminalView = lazySurface(async () => ({
   default: (await import("./TerminalView")).TerminalView,
 }));
 
-export function CodeTerminalDialog({
+export function RemoteCodeTerminalPane(
+  props: RemoteCodeRun & { dockToolbarTarget?: HTMLDivElement | null },
+) {
+  return <CodeTerminalPresentation {...props} />;
+}
+
+export function CodeTerminalDialog(props: RemoteCodeRun & { onClose(): void }) {
+  return <CodeTerminalPresentation {...props} />;
+}
+
+function CodeTerminalPresentation({
   controller,
   options,
   onClose,
   onReport,
-}: {
-  controller: CodeTerminalController;
-  options: CodeTerminalOptions;
-  onClose(): void;
-  onReport?: (text: string) => boolean | void;
-}) {
+  dockToolbarTarget,
+}: RemoteCodeRun & { onClose?: () => void; dockToolbarTarget?: HTMLDivElement | null }) {
   const t = useT();
   const state = useSyncExternalStore(controller.subscribe, controller.snapshot);
   const readFailure = useGracedFailure({ error: state.readError, scope: state.id });
@@ -52,17 +55,18 @@ export function CodeTerminalDialog({
     !readFailure.visibleError && (state.phase === "starting" || state.phase === "running");
   const exited = state.phase === "exited";
   const report = useStableCallback(() => {
-    if (!onReport || reportSent.current || state.phase !== "exited") return;
+    const finished = controller.snapshot();
+    if (!onReport || reportSent.current || finished.phase !== "exited") return;
     reportSent.current = true;
     setReporting(true);
     setReportError(undefined);
     const message = terminalResultMessage(
       options.command,
       options.cwd,
-      state.shell,
-      state.output,
-      state.exitCode,
-      state.truncated,
+      finished.shell,
+      finished.output,
+      finished.exitCode,
+      finished.truncated,
     );
     void Promise.resolve()
       .then(() => onReport(message))
@@ -77,7 +81,7 @@ export function CodeTerminalDialog({
       .finally(() => setReporting(false))
       .catch(() => {});
   });
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Poll the owned Host process while this terminal dialog is mounted; never replay launch.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Poll the owned Host process while its terminal view is mounted.
   useEffect(() => {
     if (options.native || exited) return;
     let stopped = false;
@@ -123,22 +127,119 @@ export function CodeTerminalDialog({
   }, [controller, options.native, exited]);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Observe process settlement and attach its final drained output once when the owner selected reporting.
   useEffect(() => {
-    if (autoReport && state.phase === "exited") report();
-  }, [autoReport, state.phase, report]);
+    if (!autoReport) return;
+    const unsubscribe = controller.subscribe(report);
+    report();
+    return unsubscribe;
+  }, [autoReport, controller, report]);
   const notStarted = state.phase === "not-started";
   const status = actionFailure.pending
     ? t("Loading…")
     : notStarted
       ? t("Could not run the command.")
-      : working
-        ? t("Running command")
-        : state.phase === "unknown" || readFailure.visibleError
-          ? t("Command status unknown")
-          : state.exitCode === 0
-            ? t("Command completed")
-            : state.exitCode === null
-              ? t("Command status unknown")
-              : t("Command exited with code {p0}", { p0: state.exitCode });
+      : state.phase === "starting"
+        ? t("Loading…")
+        : working
+          ? t("Running command")
+          : state.phase === "unknown" || readFailure.visibleError
+            ? t("Command status unknown")
+            : state.exitCode === 0
+              ? t("Command completed")
+              : state.exitCode === null
+                ? t("Command status unknown")
+                : t("Command exited with code {p0}", { p0: state.exitCode });
+  const stop =
+    (working || state.phase === "unknown" || readFailure.visibleError) &&
+    (onClose || !controller.canDismiss()) ? (
+      <Button
+        variant="ghost"
+        tone="danger"
+        disabled={stopping || state.phase === "starting"}
+        onClick={() => {
+          setStopping(true);
+          void controller
+            .stop()
+            .finally(() => setStopping(false))
+            .catch(() => {});
+        }}
+      >
+        {stopping ? t("Stopping…") : t("Stop")}
+      </Button>
+    ) : null;
+  const addResult =
+    onReport && !reported && exited ? (
+      <Button disabled={reporting} onClick={report}>
+        {t("Add result to chat")}
+      </Button>
+    ) : null;
+  const content = (
+    <div
+      className={
+        onClose
+          ? "flex min-w-0 flex-col gap-3"
+          : "flex h-full min-w-0 flex-col gap-2 overflow-auto p-3"
+      }
+    >
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <LiveText text={status} />
+        {onReport ? (
+          <Checkbox
+            label={t("Add result to chat when finished")}
+            checked={autoReport}
+            disabled={reported}
+            onChange={(event) => setAutoReport(event.target.checked)}
+          />
+        ) : null}
+        {onClose ? null : (
+          <div className="flex items-center gap-2">
+            {addResult}
+            {stop}
+          </div>
+        )}
+      </div>
+      <OutputBlock frame="filled" scroll className="max-h-32">
+        {options.command}
+      </OutputBlock>
+      <Surface
+        variant="card"
+        padding="none"
+        className={
+          onClose ? "h-80 min-w-0 overflow-hidden" : "min-h-12 min-w-0 flex-1 overflow-hidden"
+        }
+      >
+        {options.native && state.profile ? (
+          <TerminalView
+            id={state.id}
+            cwd={options.cwd}
+            profile={state.profile}
+            active
+            canStart={options.isCurrent}
+            dockToolbarTarget={dockToolbarTarget}
+          />
+        ) : (
+          <OutputBlock
+            scroll
+            className="h-full p-3"
+            aria-busy={readFailure.pending || actionFailure.pending || undefined}
+          >
+            {stripAnsi(state.output) ||
+              (onClose && !notStarted && !actionFailure.pending ? status : undefined)}
+          </OutputBlock>
+        )}
+      </Surface>
+      {state.error || actionFailure.visibleError || readFailure.visibleError ? (
+        <Alert tone="danger">
+          {state.error ?? actionFailure.visibleError ?? readFailure.visibleError}
+        </Alert>
+      ) : null}
+      {reportError ? <Alert tone="danger">{reportError}</Alert> : null}
+      {state.truncated ? (
+        <Alert tone="warning">{t("Only the latest terminal output is included.")}</Alert>
+      ) : null}
+      {reported ? <LiveText text={t("Result added to chat. Review and send when ready.")} /> : null}
+    </div>
+  );
+  if (!onClose) return content;
   return (
     <Modal
       title={t("Run in terminal")}
@@ -147,85 +248,15 @@ export function CodeTerminalDialog({
       closeDisabled={working}
       onClose={onClose}
       footer={
-        <ModalActions
-          start={
-            working || state.phase === "unknown" || readFailure.visibleError ? (
-              <Button
-                variant="ghost"
-                tone="danger"
-                disabled={stopping || state.phase === "starting"}
-                onClick={() => {
-                  setStopping(true);
-                  void controller
-                    .stop()
-                    .finally(() => setStopping(false))
-                    .catch(() => {});
-                }}
-              >
-                {stopping ? t("Stopping…") : t("Stop")}
-              </Button>
-            ) : undefined
-          }
-        >
-          {onReport && !reported && state.phase === "exited" ? (
-            <Button disabled={reporting} onClick={report}>
-              {t("Add result to chat")}
-            </Button>
-          ) : null}
+        <ModalActions start={stop}>
+          {addResult}
           <Button variant="ghost" disabled={working} onClick={onClose}>
             {t("Close")}
           </Button>
         </ModalActions>
       }
     >
-      <div className="flex min-w-0 flex-col gap-3">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <LiveText text={status} />
-          {onReport ? (
-            <Checkbox
-              label={t("Add result to chat when finished")}
-              checked={autoReport}
-              disabled={reported}
-              onChange={(event) => setAutoReport(event.target.checked)}
-            />
-          ) : null}
-        </div>
-        <OutputBlock frame="filled" scroll className="max-h-32">
-          {options.command}
-        </OutputBlock>
-        <Surface variant="card" padding="none" className="h-80 min-w-0 overflow-hidden">
-          {options.native && state.profile ? (
-            <TerminalView
-              id={state.id}
-              cwd={options.cwd}
-              profile={state.profile}
-              active
-              canStart={options.isCurrent}
-            />
-          ) : (
-            <OutputBlock
-              scroll
-              className="h-full p-3"
-              aria-busy={readFailure.pending || actionFailure.pending || undefined}
-            >
-              {stripAnsi(state.output) ||
-                (notStarted || actionFailure.pending ? undefined : status)}
-            </OutputBlock>
-          )}
-        </Surface>
-        {state.error || actionFailure.visibleError || readFailure.visibleError ? (
-          <Alert tone="danger">
-            {state.error ?? actionFailure.visibleError ?? readFailure.visibleError}
-          </Alert>
-        ) : null}
-        {reportError ? <Alert tone="danger">{reportError}</Alert> : null}
-        {state.truncated ? (
-          <Alert tone="warning">{t("Only the latest terminal output is included.")}</Alert>
-        ) : null}
-        {reported ? (
-          <LiveText text={t("Result added to chat. Review and send when ready.")} />
-        ) : null}
-      </div>
+      {content}
     </Modal>
   );
 }

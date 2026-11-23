@@ -4,6 +4,7 @@ export type TerminalRunShellKind = "powershell" | "posix" | "cmd";
 export type TerminalRun = {
   command: string;
   shellKind: TerminalRunShellKind;
+  canStart?(): boolean;
   onOutput(data: string): void;
   onExit(code: number | null): void;
   onError(message: string): void;

@@ -78,7 +78,10 @@ export function useSessionSelection({
   const [state, setState] = useState(() => emptySelection(scope, navigationKey));
   if (state.scope !== scope) {
     setState(emptySelection(scope, navigationKey));
-  } else if (state.navigationKey !== navigationKey) {
+  } else if (
+    state.navigationKey !== navigationKey &&
+    (state.ids.size > 0 || state.anchor !== null)
+  ) {
     const available = new Set(navigationIds);
     setState({
       ...state,
@@ -97,7 +100,7 @@ export function useSessionSelection({
       })),
   });
 
-  const selectedOrderedIds = navigationIds.filter((id) => state.ids.has(id));
+  const selectedOrderedIds = state.ids.size ? navigationIds.filter((id) => state.ids.has(id)) : [];
   const showBulkBar = state.mode || (state.ids.size > 0 && !state.contextual);
 
   const clear = () => setState(cleared);

@@ -397,6 +397,38 @@ async function expectHint(
   await expect(hint).toHaveCount(0);
 }
 
+test("model search windows large catalogs while narrowing and navigating", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.goto(
+    "/tests/browser/chat/composer-extras.html?chat-layout&large-model-catalog&accounts=4",
+  );
+  await page
+    .locator('[data-composer-model-controls] button[aria-haspopup="dialog"]')
+    .first()
+    .click();
+  const panel = page.getByRole("dialog", { name: "Model and settings" });
+  const search = panel.getByRole("combobox", { name: "Search models" });
+  const options = panel.getByRole("listbox", { name: "Models" }).getByRole("option");
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    await search.fill("");
+    await expect(options.first()).toBeVisible();
+    await expect.poll(() => options.count()).toBeLessThan(50);
+    await search.fill("Catalog 1");
+    await expect.poll(() => options.count()).toBeLessThan(50);
+    await options.first().press("End");
+    await expect(panel.locator('[role="option"][aria-posinset="111"]')).toBeInViewport();
+    await search.fill("Catalog 199");
+    await expect(options).toHaveCount(1);
+    await expect(options).toContainText("Catalog 199");
+    await search.fill("");
+    await options.first().press("End");
+    await panel.locator("[data-model-account-menu]").click();
+    await expect(panel.getByRole("radio", { name: /^work/ })).toBeInViewport();
+    await panel.getByRole("radio", { name: /^work/ }).click();
+  }
+});
+
 test("model panel accepts semantic click and Enter/Space activation", async ({ page }) => {
   await initializeChatLayout(page);
   await page.goto("/tests/browser/chat/composer-extras.html?chat-layout");
@@ -2956,3 +2988,141 @@ for (const theme of ["light", "dark"])
         });
       }
     });
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
+    test(`long plain paste becomes a downloadable sent text card at ${width}px in ${theme}`, async ({
+      page,
+    }) => {
+      await initializeChatLayout(page);
+      const source =
+        "First line: Izmir \u0130zmir\r\n" + "A detailed line of clipboard text.\r\n".repeat(8500);
+      const saved: Buffer[] = [];
+      const copies: { name: string; data: Buffer }[] = [];
+      await page.exposeFunction("writePastedFixture", (encoded: string) => {
+        saved.push(Buffer.from(encoded, "base64"));
+      });
+      await page.exposeFunction(
+        "savePastedFixture",
+        ({ name, data }: { name: string; data: string }) => {
+          copies.push({ name, data: Buffer.from(data, "base64") });
+        },
+      );
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/chat/composer-extras.html?chat-layout&pasted-text");
+      await page.evaluate((theme) => {
+        document.documentElement.classList.toggle("theme-light", theme === "light");
+        const fixture = window as unknown as {
+          __TAURI_INTERNALS__: {
+            invoke: (command: string, args?: unknown) => Promise<unknown>;
+          };
+          writePastedFixture: (data: string) => Promise<void>;
+          savePastedFixture: (input: { name: string; data: string }) => Promise<void>;
+        };
+        const original = fixture.__TAURI_INTERNALS__.invoke;
+        let pastedData = "";
+        fixture.__TAURI_INTERNALS__.invoke = async (command, args) => {
+          if (command === "session_set_draft") return null;
+          if (command === "write_attachment") {
+            pastedData = (args as { data: string }).data;
+            await fixture.writePastedFixture(pastedData);
+            return "/isolated-fixture/Pasted text.txt";
+          }
+          if (command === "read_binary_file") return pastedData;
+          if (command === "save_file_copy") {
+            await fixture.savePastedFixture(args as { name: string; data: string });
+            return true;
+          }
+          return original(command, args);
+        };
+      }, theme);
+      const field = page.getByRole("textbox", { name: "Message", exact: true });
+      await field.fill("");
+      await pastePlainText(field, source);
+      const draftCard = page.locator('[data-attachment-name="Pasted text.txt"]');
+      await expect(draftCard).toBeVisible({ timeout: 3500 });
+      await expect(draftCard).toContainText("299 KB");
+      await expect(draftCard.getByRole("button", { name: "Remove Pasted text" })).toBeVisible();
+      expect(saved).toEqual([Buffer.from(source)]);
+      expect(
+        await field.evaluate(
+          (element) => (element as HTMLTextAreaElement).value ?? element.textContent,
+        ),
+      ).toBe("");
+      await page.screenshot({ path: `temp/verification/pasted-text/draft-${theme}-${width}.png` });
+      await page.getByRole("button", { name: "Send", exact: true }).click();
+      const sent = page.locator("[data-prompt-anchor=pasted-fixture]");
+      await expect(sent.getByText("Pasted text", { exact: true })).toBeVisible();
+      await expect(sent).not.toContainText("First line");
+      const download = sent.getByRole("button", { name: "Save Pasted text" });
+      await expect(download).toBeVisible();
+      await page.screenshot({ path: `temp/verification/pasted-text/sent-${theme}-${width}.png` });
+      await sent.getByRole("button", { name: "Open Pasted text" }).click();
+      await expect(page.getByRole("dialog").getByText(/^First line:/)).toBeVisible();
+      await page.keyboard.press("Escape");
+      await download.click();
+      await expect
+        .poll(() => copies)
+        .toEqual([{ name: "Pasted text.txt", data: Buffer.from(source) }]);
+      await page.goto(
+        "/tests/browser/chat/composer-extras.html?chat-layout&pasted-text&queue-state=one",
+      );
+      await page.evaluate((theme) => {
+        document.documentElement.classList.toggle("theme-light", theme === "light");
+        const ipc = (
+          window as unknown as {
+            __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+          }
+        ).__TAURI_INTERNALS__;
+        const original = ipc.invoke;
+        ipc.invoke = (command, args) =>
+          command === "write_attachment"
+            ? Promise.resolve("/isolated-fixture/Pasted text.txt")
+            : original(command, args);
+      }, theme);
+      await page.getByRole("button", { name: "Edit queued message", exact: true }).click();
+      const queue = page.getByRole("dialog", { name: "Edit queued message" });
+      const queuedField = queue.getByRole("textbox", { name: "Queued message text" });
+      await queuedField.fill("");
+      await pastePlainText(queuedField, source);
+      await expect(queue.getByText("Pasted text", { exact: true })).toBeVisible();
+      await page.screenshot({ path: `temp/verification/pasted-text/queue-${theme}-${width}.png` });
+    });
+  }
+}
+
+async function pastePlainText(field: Locator, text: string) {
+  await field.evaluate((element, value) => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData("text/plain", value);
+    element.dispatchEvent(
+      new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }),
+    );
+  }, text);
+}
+
+test("a long plain paste stays in the draft when saving fails", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.goto("/tests/browser/chat/composer-extras.html?chat-layout");
+  await page.evaluate(() => {
+    const fixture = window as unknown as {
+      __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+    };
+    const original = fixture.__TAURI_INTERNALS__.invoke;
+    fixture.__TAURI_INTERNALS__.invoke = async (command, args) => {
+      if (command === "write_attachment") throw new Error("Fixture cannot save the paste");
+      return original(command, args);
+    };
+  });
+  const field = page.getByRole("textbox", { name: "Message", exact: true });
+  const text = "Keep this paste ".repeat(510);
+  await field.fill("");
+  await pastePlainText(field, text);
+  await expect(page.getByText(/Fixture cannot save the paste/)).toBeVisible();
+  expect(
+    await field.evaluate(
+      (element) => (element as HTMLTextAreaElement).value ?? element.textContent,
+    ),
+  ).toBe(text);
+  await expect(page.locator("[data-pasted-text-attachment]")).toHaveCount(0);
+});

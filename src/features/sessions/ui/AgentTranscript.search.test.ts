@@ -183,7 +183,7 @@ it("paints matching words and clears them when find closes", () => {
   expect(registry.size).toBe(0);
 });
 
-it("refreshes find ranges for an edited historical turn while the tail is streaming", () => {
+it("refreshes edited history and keeps the current result when the streaming DOM changes", async () => {
   const registry = new Map<string, { ranges: Range[] }>();
   vi.stubGlobal("CSS", { escape: CSS.escape.bind(CSS), highlights: registry });
   vi.stubGlobal(
@@ -218,4 +218,63 @@ it("refreshes find ranges for an edited historical turn while the tail is stream
     ),
   );
   expect(registry.get("bycoda-transcript-search-match")?.ranges).toHaveLength(3);
+  act(() => navigate?.("old", "needle"));
+  const tailText = registry.get("bycoda-transcript-search-match")!.ranges.at(-1)!
+    .startContainer as Text;
+  expect(tailText.data).toBe("needle live");
+  tailText.data = "updated streaming text";
+  await vi.waitFor(() => {
+    expect(registry.get("bycoda-transcript-search-match")?.ranges).toHaveLength(2);
+  });
+  expect(
+    registry.get("bycoda-transcript-search-current")?.ranges[0].startContainer.textContent,
+  ).toContain("history");
+});
+
+it("keeps background ranges and highlights the current result past the paint limit", async () => {
+  const registry = new Map<string, { ranges: Range[] }>();
+  vi.stubGlobal("CSS", { escape: CSS.escape.bind(CSS), highlights: registry });
+  vi.stubGlobal(
+    "Highlight",
+    class {
+      ranges: Range[];
+      constructor(...ranges: Range[]) {
+        this.ranges = ranges;
+      }
+    },
+  );
+  const blocks: Block[] = [
+    { id: "prompt", role: "user", text: "Find all occurrences" },
+    { id: "first", role: "assistant", text: "needle ".repeat(1000) },
+    { id: "second", role: "user", text: "another needle" },
+  ];
+  act(() =>
+    root.render(
+      createElement(AgentTranscript, {
+        blocks,
+        onNavigateReady: (callback) => {
+          navigate = callback;
+        },
+      }),
+    ),
+  );
+  act(() => navigate?.("first", "needle"));
+  await act(async () => {
+    await new Promise(requestAnimationFrame);
+  });
+  const background = registry.get("bycoda-transcript-search-match");
+  expect(background?.ranges).toHaveLength(1000);
+  const createRange = vi.spyOn(document, "createRange");
+  try {
+    act(() => navigate?.("second", "needle"));
+    await act(async () => {
+      await new Promise(requestAnimationFrame);
+    });
+    const current = registry.get("bycoda-transcript-search-current")?.ranges[0];
+    expect(current?.startContainer.textContent).toContain("another needle");
+    expect(registry.get("bycoda-transcript-search-match")).toBe(background);
+    expect(createRange.mock.calls.length).toBeLessThan(6);
+  } finally {
+    createRange.mockRestore();
+  }
 });

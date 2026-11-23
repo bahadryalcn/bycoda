@@ -77,7 +77,7 @@ Parts: FieldControl
 | [SelectTrigger](../../src/shared/ui/Select.tsx) | A custom select-like trigger whose owner provides the popup and selection state. | A complete short exclusive-choice field: Select. Searchable choices: SearchableSelect. |  |
 | [Switch](../../src/shared/ui/Switch.tsx) | A setting that takes effect the moment it flips (preferences, enable/disable a feature). | Choice committed with a form Save, or a selection among items: Checkbox. One of several modes: SegmentedControl or RadioGroup. |  |
 
-Parts: RadioTileGroup
+Parts: RadioTileGroup, SearchableSelectList
 
 ## Overlay
 

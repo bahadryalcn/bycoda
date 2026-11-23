@@ -8,15 +8,17 @@ import { Check, RotateCcw } from "../../../shared/ui/icons";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import type { BoardGoal } from "../model/goalClient";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import "./task-goals.css";
 
 /** The plan a goal proposes, one numbered step per task with its project and dependencies. */
 export function GoalPlanSteps({ goal }: { goal: BoardGoal }) {
+  const projectLabels = useProjectLabels();
   if (goal.status !== "awaiting-approval" || !goal.plan) return null;
   const tasks = goal.plan.tasks;
   const projectOf = (id: string | undefined, path: string) =>
-    goal.projects.find((project) => project.id === id)?.name ?? projectDisplayName(path);
+    goal.projects.find((project) => project.id === id)?.name ??
+    projectDisplayNameFrom(path, projectLabels);
   const titleOf = (key: string) => tasks.find((task) => task.key === key)?.title ?? key;
   return (
     <div className="grid min-w-0 gap-1">

@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -9,16 +10,18 @@ import {
   type RefObject,
   type FocusEvent,
 } from "react";
-import { defaultRangeExtractor } from "@tanstack/react-virtual";
-import {
-  COLLECTION_WINDOW_THRESHOLD,
-  useCollectionVirtualizer,
-} from "../../shared/hooks/useCollectionVirtualizer";
+import { defaultRangeExtractor, measureElement } from "@tanstack/react-virtual";
+import { useCollectionVirtualizer } from "../../shared/hooks/useCollectionVirtualizer";
+import { observeResize } from "../../shared/lib/observeResize";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import type { SessionListEntry } from "../../features/sessions/model/sessionFolders";
 import type { FolderMoveTarget } from "../../features/sessions/model/sessionFolders";
 
 export type FolderEntry = Extract<SessionListEntry, { kind: "folder" }>;
+
+// Session cards include live status and actions; window them after roughly two viewports.
+const SESSION_WINDOW_THRESHOLD = 20;
+const INITIAL_WINDOW_ROWS = 16;
 
 export function folderMoveTargetAt(
   x: number,
@@ -60,7 +63,8 @@ export type SessionListRow =
       kind: "session";
       key: string;
       session: SessionSummary;
-      section: "folder" | "pinned" | "reminders" | "settled" | "ungrouped";
+      /** `copy` is a session of the same project on another machine, merged in by the sidebar. */
+      section: "folder" | "pinned" | "reminders" | "settled" | "ungrouped" | "copy";
       depth: number;
       folderId?: string;
       groupSection?: "pinned" | "reminders" | "settled";
@@ -128,6 +132,68 @@ export function flattenSessionList(
   return rows;
 }
 
+function observeListOffset(
+  list: HTMLElement,
+  root: HTMLElement,
+  setOffset: (offset: number) => void,
+) {
+  const branches: HTMLElement[] = [];
+  for (let node: HTMLElement | null = list; node && node !== root; node = node.parentElement)
+    branches.push(node);
+  let active = true;
+  let queued = false;
+  const measure = () => {
+    if (queued || !active) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      if (active)
+        setOffset(
+          list.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop,
+        );
+    });
+  };
+  let preceding: Element[] = [];
+  let stopSiblings: (() => void)[] = [];
+  const trackSiblings = () => {
+    const next: Element[] = [];
+    for (const branch of branches)
+      for (
+        let sibling = branch.previousElementSibling;
+        sibling;
+        sibling = sibling.previousElementSibling
+      )
+        next.push(sibling);
+    if (next.length === preceding.length && next.every((node, index) => node === preceding[index]))
+      return;
+    preceding = next;
+    stopSiblings.forEach((stop) => stop());
+    stopSiblings = next.map((node) => observeResize(node, measure));
+    measure();
+  };
+  // Row churn lives inside the UL. Only changes among siblings of the UL or its ancestors
+  // can change which elements precede it in the scroller.
+  const mutations = new MutationObserver(trackSiblings);
+  const stopParents = branches.map((branch) => {
+    const parent = branch.parentElement!;
+    mutations.observe(parent, { childList: true });
+    let width: number | undefined;
+    return observeResize(parent, (entry) => {
+      if (width === entry.contentRect.width) return;
+      width = entry.contentRect.width;
+      measure();
+    });
+  });
+  trackSiblings();
+  if (!root.ownerDocument.defaultView?.ResizeObserver) measure();
+  return () => {
+    active = false;
+    mutations.disconnect();
+    stopSiblings.forEach((stop) => stop());
+    stopParents.forEach((stop) => stop());
+  };
+}
+
 export function SessionListWindow({
   rows,
   scrollRef,
@@ -142,36 +208,32 @@ export function SessionListWindow({
   renderRow: (row: SessionListRow, props: SessionListVirtualProps) => ReactNode;
 }) {
   const listRef = useRef<HTMLUListElement>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const enabled = rows.length > SESSION_WINDOW_THRESHOLD;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- The ancestor scroll ref is attached after its children's layout effects on the first commit.
+  useEffect(() => {
+    setScrollElement(scrollRef.current);
+  }, [scrollRef]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- track the window's offset in the existing sidebar scroller as its siblings resize
   useLayoutEffect(() => {
-    const root = scrollRef.current;
+    const root = scrollElement;
     const list = listRef.current;
-    if (!root || !list) return;
-    const measure = () =>
-      setScrollMargin(
-        list.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop,
-      );
-    measure();
-    const observer = new ResizeObserver(measure);
-    for (let node: HTMLElement | null = list; node && node !== root; node = node.parentElement) {
-      observer.observe(node);
-      for (
-        let sibling = node.previousElementSibling;
-        sibling;
-        sibling = sibling.previousElementSibling
-      ) {
-        if (sibling instanceof HTMLElement) observer.observe(sibling);
-      }
-    }
-    return () => observer.disconnect();
-  }, [scrollRef, rows.length]);
-  const activeIndex = rows.findIndex((row) =>
-    activeRowKey != null
-      ? row.key === activeRowKey
-      : row.kind === "session" && row.session.id === activeKey,
-  );
-  const focusedIndex = rows.findIndex((row) => row.key === focusedKey);
+    if (!enabled || !root || !list) return;
+    return observeListOffset(list, root, setScrollMargin);
+  }, [enabled, scrollElement]);
+  const activeIndex =
+    enabled && (activeRowKey != null || activeKey != null)
+      ? rows.findIndex((row) =>
+          activeRowKey != null
+            ? row.key === activeRowKey
+            : row.kind === "session" && row.session.id === activeKey,
+        )
+      : -1;
+  const focusedIndex =
+    enabled && focusedKey != null ? rows.findIndex((row) => row.key === focusedKey) : -1;
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- the restored scroll offset is a render-time DOM read; keep retained indexes stable between scroll events
   const rangeExtractor = useMemo(
     () => (range: Parameters<typeof defaultRangeExtractor>[0]) =>
       [
@@ -183,62 +245,52 @@ export function SessionListWindow({
       ].sort((a, b) => a - b),
     [activeIndex, focusedIndex],
   );
+  // oxlint-disable-next-line bycoda/compiler-owns-memo -- this uncompiled scroll window must retain TanStack's measurement keys until the rows change
+  const getItemKey = useMemo(() => (index: number) => rows[index].key, [rows]);
   const virtualizer = useCollectionVirtualizer({
+    enabled,
     count: rows.length,
-    getScrollElement: () => scrollRef.current,
-    getItemKey: (index) => rows[index].key,
+    getScrollElement: () => scrollElement,
+    getItemKey,
     estimateSize: (index) => (rows[index].kind === "session" ? 56 : 42),
+    measureElement: (element, entry, instance) => {
+      // Ref attachment runs during React's DOM writes. The observer delivers actual border boxes
+      // together before paint, including when a previously measured row changes height.
+      if (entry || !element.ownerDocument.defaultView?.ResizeObserver)
+        return measureElement(element, entry, instance);
+      const index = instance.indexFromElement(element);
+      return (
+        instance.itemSizeCache.get(instance.options.getItemKey(index)) ??
+        instance.options.estimateSize(index)
+      );
+    },
     gap: 2,
     paddingStart: 6,
     paddingEnd: 40,
     scrollMargin,
     rangeExtractor,
   });
-  const virtualRows = virtualizer.getVirtualItems();
-  const enabled = rows.length > COLLECTION_WINDOW_THRESHOLD;
-  const fallbackOffset = Math.max(0, (scrollRef.current?.scrollTop ?? 0) - scrollMargin - 6);
-  let fallbackStart = 0;
-  let fallbackStartIndex = 0;
-  while (fallbackStartIndex < rows.length && fallbackStart < fallbackOffset) {
-    fallbackStart += (rows[fallbackStartIndex].kind === "session" ? 56 : 42) + 2;
-    fallbackStartIndex += 1;
-  }
-  const fallbackIndices = [
-    ...new Set([
-      ...Array.from(
-        { length: Math.min(16, rows.length - fallbackStartIndex) },
-        (_, index) => fallbackStartIndex + index,
-      ),
-      ...(activeIndex >= 0 ? [activeIndex] : []),
-      ...(focusedIndex >= 0 ? [focusedIndex] : []),
-    ]),
-  ].sort((a, b) => a - b);
-  const renderedRows = enabled
-    ? virtualRows.length
-      ? virtualRows
-      : fallbackIndices.map((index) => ({
-          index,
-          start:
-            scrollMargin +
-            6 +
-            rows
-              .slice(0, index)
-              .reduce((total, row) => total + (row.kind === "session" ? 56 : 42) + 2, 0),
-        }))
+  let renderedRows: readonly { index: number; start: number }[] = enabled
+    ? virtualizer.getVirtualItems()
     : rows.map((_, index) => ({ index, start: 0 }));
-  const estimatedTotal =
-    rows.reduce((total, row) => total + (row.kind === "session" ? 56 : 42), 0) +
-    Math.max(0, rows.length - 1) * 2 +
-    46;
-  const measuredTotal = virtualizer.getTotalSize();
+  if (enabled && !renderedRows.length) {
+    // A restored or hidden sidebar can have a scroll offset before its viewport is measured.
+    // The virtualizer already holds each row's estimated or measured start.
+    const first = virtualizer.getVirtualItemForOffset(scrollRef.current?.scrollTop ?? 0);
+    const startIndex = Math.min(first?.index ?? 0, rows.length - INITIAL_WINDOW_ROWS);
+    renderedRows = rangeExtractor({
+      startIndex,
+      endIndex: startIndex + INITIAL_WINDOW_ROWS - 1,
+      overscan: 0,
+      count: rows.length,
+    }).map((index) => virtualizer.measurementsCache[index]);
+  }
   return (
     <ul
       ref={listRef}
       data-session-list
       className="flex flex-col gap-0.5 p-1.5 pb-10"
-      style={
-        enabled ? { height: measuredTotal || estimatedTotal, position: "relative" } : undefined
-      }
+      style={enabled ? { height: virtualizer.getTotalSize(), position: "relative" } : undefined}
     >
       {renderedRows.map((item) => {
         const row = rows[item.index];

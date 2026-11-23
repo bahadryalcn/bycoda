@@ -12,7 +12,7 @@ import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { useTaskBoardQueries } from "../model/useTaskBoardQueries";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { ToolNavigation, ToolNavigationContext } from "../../../app/shell/ToolNavigation";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { WorkspaceReview } from "../../workspaces/ui/WorkspaceReview";
@@ -70,7 +70,6 @@ import {
 import { projectKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useRetainedScroll } from "../../../shared/hooks/useRetainedScroll";
-import { loadTabGroupLabels } from "../../workspace/public/tabGroups";
 import { goalKey } from "../model/goalClient";
 import { declineProposal } from "../model/stewardClient";
 import { dailyLimitNotice } from "../model/settingsClient";
@@ -267,7 +266,7 @@ function TasksContent({
   const [retryingPlanning, setRetryingPlanning] = useState<string | null>(null);
   const openingSessionRequests = useRef(new Set<string>());
   const [openingSessions, setOpeningSessions] = useState(new Set<string>());
-  const [groupLabels] = useState(loadTabGroupLabels);
+  const groupLabels = useProjectLabels();
   const boardLock = useLockOverscroll<HTMLDivElement>();
   const [goalFilter, setGoalFilter] = useRetainedState(`${viewStateKey}:goal`, ALL_GOALS);
   const boardScroll = useRetainedScroll<HTMLDivElement>(
@@ -306,11 +305,11 @@ function TasksContent({
           machineId: machine.id,
           machineName: task.machineName,
           cwd: task.cwd,
-          name: projectDisplayName(task.cwd),
+          name: projectDisplayNameFrom(task.cwd, groupLabels),
         });
     }
     return [...entries.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [discoveredProjects, visibleTasks, machines, lock]);
+  }, [discoveredProjects, visibleTasks, machines, lock, groupLabels]);
   const sprintProjects = useMemo(
     () =>
       projectScopes.map(({ environmentId, projectId, cwd, name }) => ({
@@ -775,6 +774,7 @@ function TasksContent({
         }}
         projectOptions={projectScopeOptions({
           t,
+          projectLabels: groupLabels,
           projectFilter,
           selectedProject,
           projectScopes,

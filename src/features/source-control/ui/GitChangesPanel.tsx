@@ -73,6 +73,7 @@ import {
   gitHeadMessage,
   gitPrCreate,
   gitPrStatus,
+  gitPull,
   gitPush,
   gitStageAll,
   gitStageFile,
@@ -1228,7 +1229,9 @@ function ChangedFiles({
       setGitFeedback(cwd, null);
       setBusy("sync");
       try {
-        await gitSync(cwd);
+        if (canPublish || index.behind === 0) await gitPush(cwd);
+        else if (pushesCommits) await gitSync(cwd);
+        else await gitPull(cwd);
         if (pushesCommits) recordPrActivity();
         // The counts are settled now: the action must not offer the same push
         // again while the reload reads.

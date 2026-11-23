@@ -46,6 +46,10 @@ Complete references are highlighted in the draft and sent message. You can
 still edit or copy the reference text.
 Backspace after a reference or Delete before it removes the whole reference.
 
+## Pasted text
+
+When you paste 8,000 or more characters into a desktop chat that supports attachments, Bycoda saves the text as a UTF-8 file and shows a **Pasted text** card with its size. Open the card to read the text, remove it from the draft, or use **Download** on the sent card to save a copy. If the file cannot be saved, the pasted text stays in the draft.
+
 ## Image attachments
 
 Recognized skills, attached images and files, quotes, file references and MCP

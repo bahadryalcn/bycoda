@@ -81,17 +81,17 @@ it("maps every reason to its scene", () => {
   expect(machineScene("pairing-refused")).toBe("error");
 });
 
-it("shows the scene, a title and one status line in a panel, with the reason behind the info button", async () => {
+it("shows the scene, a title and one status line in a panel, with the reason in a tooltip", async () => {
   await mountOffline("panel");
 
   expect(art()?.dataset.scene).toBe("unreachable");
   expect(text()).toContain("Your computer evpc isn’t reachable right now");
   expect(text()).toContain("Waiting to reconnect");
   expect(text()).not.toContain("Tailscale");
-  const info = container.querySelector('button[aria-haspopup="dialog"]');
+  const info = container.querySelector<HTMLElement>('[role="img"][aria-label="Help"]');
   expect(info).not.toBeNull();
-  await act(async () => info?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-  expect(document.body.textContent).toContain("Tailscale");
+  await act(async () => info!.focus());
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain("Tailscale");
 });
 
 it("uses the still frame while decorative motion is off", async () => {

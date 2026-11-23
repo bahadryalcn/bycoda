@@ -1,4 +1,5 @@
 {
+  "Set up an SSH connection to this project's machine to open a terminal.": "Configure uma conexão SSH com a máquina deste projeto para abrir um terminal.",
   "Workflow status": "Status do fluxo de trabalho",
   "Status category": "Categoria de status",
   "No projects selected": "Nenhum projeto selecionado",
@@ -3279,6 +3280,7 @@
   "Move Terminal": "Mover Terminal",
   "Close Active Terminal": "Fechar Terminal Ativo",
   "Close All Terminals": "Fechar todos os terminais",
+  "Close Terminals?": "Fechar terminais?",
   "Hide Terminal ({p0}J)": "Ocultar Terminal ({p0}J)",
   "Terminals": "Terminais",
   "Close others": "Fechar outros",
@@ -8292,6 +8294,7 @@
   "Writing clipboard": "Gravando na área de transferência",
   "Clearing clipboard": "Limpando área de transferência",
   "Global clipboard": "Área de transferência global",
+  "Pasted text": "Texto colado",
   "Clipboard text must match the selected plain-text command.": "O texto da área de transferência deve corresponder ao comando de texto simples selecionado.",
   "Clipboard access requires exact native owner approval.": "O acesso à área de transferência exige confirmação nativa explícita para esta operação.",
   "Clipboard approval expired before dispatch.": "A confirmação da área de transferência expirou antes da execução.",
@@ -12535,5 +12538,17 @@
   "1 other task on this computer is running.": "1 outra tarefa está em execução neste computador.",
   "{p0} other tasks on this computer are running.": "{p0} outras tarefas estão em execução neste computador.",
   "Could not check what is running on this computer.": "Não foi possível verificar o que está em execução neste computador.",
-  "Quitting stops them gracefully and keeps their history. Quit anyway?": "Sair as interrompe com segurança e mantém o histórico. Sair mesmo assim?"
+  "Quitting stops them gracefully and keeps their history. Quit anyway?": "Sair as interrompe com segurança e mantém o histórico. Sair mesmo assim?",
+  "Add to {p0}": "Adicionar a {p0}",
+  "Show machines separately": "Mostrar máquinas separadamente",
+  "Combine with other machines": "Combinar com outras máquinas",
+  "another computer": "outro computador",
+  "Another computer": "Outro computador",
+  "Clone over": "Clonar por",
+  "Folder on {p0}": "Pasta em {p0}",
+  "Copy ignored files": "Copiar arquivos ignorados",
+  "Looking for ignored files…": "Procurando arquivos ignorados…",
+  "Locate folder": "Localizar pasta",
+  "Clone": "Clonar",
+  "{p0} files could not be copied.": "Não foi possível copiar {p0} arquivos."
 }

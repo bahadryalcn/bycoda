@@ -162,7 +162,6 @@ export function findTokenMatches(
   if (!tokens.length || !text.includes("[")) return [];
   const indexByToken = new Map(aliases.map((token, index) => [token, index]));
   tokens.forEach((token, index) => indexByToken.set(token, index));
-  const code = knownCode ?? codeRanges(text);
   const matches: TokenMatch[] = [];
   for (const match of text.matchAll(TOKEN)) {
     const index = named?.get(match[0]) ?? indexByToken.get(match[0]);
@@ -175,7 +174,6 @@ export function findTokenMatches(
       !match[0].includes(NBSP)
     )
       continue;
-    if (code.some(([from, to]) => start >= from && start < to)) continue;
     matches.push({
       start,
       end: start + match[0].length,
@@ -183,7 +181,23 @@ export function findTokenMatches(
       index,
     });
   }
-  return matches;
+  return outsideMarkdownCode(text, matches, knownCode);
+}
+
+function outsideMarkdownCode(
+  text: string,
+  matches: TokenMatch[],
+  knownCode?: readonly (readonly [number, number])[],
+) {
+  const last = matches[matches.length - 1];
+  if (!last) return matches;
+  // Markdown code must start with a backtick, a tilde fence or four columns of indentation.
+  // Anything after the final candidate cannot open a code region around an earlier token.
+  if (!knownCode && !/[`~\t\r]| {4}/.test(text.slice(0, last.start))) return matches;
+  const code = knownCode ?? codeRanges(text);
+  return code.length
+    ? matches.filter((match) => !code.some(([from, to]) => match.start >= from && match.start < to))
+    : matches;
 }
 
 /** Named references without an owning attachment can still show their filename in the draft. */
@@ -312,13 +326,14 @@ export function attachmentsDroppedByEdit(
   files: TokenFile[],
 ): number[] {
   if (before === after) return [];
-  const previous = findTokens(before, files);
-  if (previous.length === 0) return [];
+  // Even a formerly valid reference that becomes literal text keeps its attachment as long
+  // as its spelling survives. Most edits therefore need no Markdown parse on either draft.
+  const missing = findTokens(before, files, []).filter((match) => !after.includes(match.token));
+  const removed = outsideMarkdownCode(before, missing);
+  if (removed.length === 0) return [];
   const retained = new Set(findTokens(after, files).map((match) => match.index));
   const dropped = new Set<number>();
-  for (const match of previous) {
-    if (!after.includes(match.token) && !retained.has(match.index)) dropped.add(match.index);
-  }
+  for (const match of removed) if (!retained.has(match.index)) dropped.add(match.index);
   return [...dropped];
 }
 
@@ -337,8 +352,12 @@ export function deleteTokenAtCaret(
   /** Recognized non-bracket references, already parsed by their owning feature. */
   ranges: readonly { start: number; end: number }[] = [],
 ): { text: string; caret: number } | null {
-  const hit = [...findTokens(text, files), ...findTokenMatches(text, extra), ...ranges].find(
-    (match) => (direction === "back" ? match.end === caret : match.start === caret),
+  const touchesBracket = direction === "back" ? text[caret - 1] === "]" : text[caret] === "[";
+  const candidates = touchesBracket
+    ? [...findTokens(text, files), ...findTokenMatches(text, extra), ...ranges]
+    : ranges;
+  const hit = candidates.find((match) =>
+    direction === "back" ? match.end === caret : match.start === caret,
   );
   if (!hit) return null;
   const doubled = text[hit.start - 1] === " " && text[hit.end] === " ";

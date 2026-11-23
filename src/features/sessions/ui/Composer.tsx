@@ -176,6 +176,7 @@ import type { UserQuestionPrompt, UserQuestionReply } from "../model/userQuestio
 import { historyKey, type HistoryBrowse } from "../model/composerHistory";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
+import { capturePastedTextAttachment, replacePastedText } from "./pastedTextAttachment";
 import {
   createBlankSkill,
   dollarTokenAt,
@@ -691,7 +692,8 @@ export const Composer = memo(function Composer({
   const parentClosed = useParentInputsClosed(logicalParentSessionId);
   const parentInputRef = useRef<ParentInputHandle | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const [inlineActive, setInlineActive] = useState(false);
+  const [inlineAttachments, setInlineAttachments] = useState<ReadonlySet<string> | null>(null);
+  const inlineActive = inlineAttachments !== null;
   const [initial] = useState(() => {
     const value = extractChatCitations(initialDraft ?? "");
     return {
@@ -1142,14 +1144,6 @@ export const Composer = memo(function Composer({
     (!remote || !!remoteFeatures?.attachments) && harnessSupportsAttachments(harness);
   const leadingMode = leadingModeCommand(draft, skillNames, { shell: true });
   const modeIndent = leadingMode ? MODE_COMMAND_INDENT : undefined;
-  const inlineAttachments =
-    inlineActive && !shell
-      ? new Set(
-          findTokens(draft, attachments)
-            .filter((token) => token.start >= (leadingMode?.end ?? 0))
-            .map((token) => attachments[token.index].id),
-        )
-      : undefined;
   const composerPlaceholder = worktreeRemoved
     ? t("Select a branch or worktree to continue…")
     : inboxCard
@@ -3202,6 +3196,39 @@ export const Composer = memo(function Composer({
         return;
       }
       const text = e.clipboardData.getData("text/plain");
+      const paste =
+        !shell && !isFileReferenceText(text)
+          ? capturePastedTextAttachment(e.currentTarget, text)
+          : undefined;
+      if (paste) {
+        e.preventDefault();
+        paste.insert();
+        rememberAttachmentRead(async (accepted) => {
+          const skips = collectSkippedAttachments();
+          const incoming = await attachmentsFromFiles([paste.file], { onSkipped: skips.onSkipped });
+          accepted.apply(() => {
+            const el = ref.current;
+            const range = el && paste.range(el.value);
+            if (!accepted.isCurrent() || !el || !range) {
+              incoming.forEach(revokeAttachment);
+              return;
+            }
+            addAttachments(incoming, skips.notice(), (attachments) => {
+              const index = attachments.findIndex((file) => file.id === incoming[0]?.id);
+              if (index >= 0) {
+                const edit = replacePastedText(
+                  el.value,
+                  range,
+                  attachmentDraftTokens(attachments)[index],
+                );
+                applyTextareaEdit(el, edit.text, edit.caret);
+              }
+              return true;
+            });
+          });
+        });
+        return;
+      }
       // Prose and whitespace alike are the webview's to insert.
       if (text && !isFileReferenceText(text)) return;
       // A file URI becomes a chip, so it is kept out of the draft; with no text
@@ -3842,7 +3869,7 @@ export const Composer = memo(function Composer({
                   token={tokens[index]}
                   draft={{ projectRoot: executionCwd }}
                   onInsertToken={
-                    inlineAttachments?.has(file.id)
+                    !shell && inlineAttachments?.has(file.id)
                       ? undefined
                       : () => insertAttachmentToken(file.id)
                   }
@@ -3940,7 +3967,7 @@ export const Composer = memo(function Composer({
               disabled={disabled}
               spellCheck={spelling}
               hasSubagents={hasSubagents}
-              onReady={setInlineActive}
+              onInlineAttachments={setInlineAttachments}
               onRemoveAttachment={removeAttachment}
             />
             {/* ui-drift-ignore: raw-native-control -- bespoke composer editor: overlay highlight, auto-resize, mention/skill keyboard */}

@@ -41,10 +41,12 @@ import {
 import {
   setHarnessAttachmentsSupported,
   newSession,
+  type Block,
   type HarnessId,
   type RuntimeMode,
   type UsageLimit,
 } from "../../../src/features/sessions/model/session";
+import { AgentTranscript } from "../../../src/features/sessions/ui/AgentTranscript";
 import { usageLimitAfterTargetChange } from "../../../src/features/sessions/model/usageLimit";
 import { modelsForClaudeVersion } from "../../../src/integrations/harness/providers/claude/claudeCatalog";
 import { parseCodexModelList } from "../../../src/integrations/harness/providers/codex/codexCatalog";
@@ -120,6 +122,7 @@ const projectless = welcome && new URLSearchParams(location.search).has("no-proj
 const withCrew = new URLSearchParams(location.search).has("crew");
 const withFooter = new URLSearchParams(location.search).has("footer");
 const chatLayout = new URLSearchParams(location.search).has("chat-layout");
+const pastedTextFixture = new URLSearchParams(location.search).has("pasted-text");
 const workspaceFooter = new URLSearchParams(location.search).has("workspace-footer");
 const remoteLayout = new URLSearchParams(location.search).has("remote");
 const remoteAccountCatalog = new URLSearchParams(location.search).has("remote-accounts")
@@ -136,6 +139,16 @@ const showProjectPicker = new URLSearchParams(location.search).has("project-pick
 const longAccount = new URLSearchParams(location.search).has("long-account");
 // Test-only data boundary. The URL retains the stress case across reloads.
 const worstModelData = new URLSearchParams(location.search).get("data") === "worst";
+if (new URLSearchParams(location.search).has("large-model-catalog")) {
+  setHarnessModels("claude", [
+    ...modelsFor("claude"),
+    ...Array.from({ length: 200 }, (_, index) => ({
+      harness: "claude" as const,
+      id: `claude:catalog-${index}`,
+      name: `Catalog ${index}`,
+    })),
+  ]);
+}
 const quotaStress = new URLSearchParams(location.search).has("quota-stress");
 const stressDraft =
   "Bu uzun konuşma taslağını koru. Aleksandra Wiśniewska-Kowalczyk ile araştırma sonuçlarını karşılaştır, ardından فريق البحث والتطوير الدولي 🧑🏽‍💻 ekibinin model ve hesap tercihlerini açıkla. ".repeat(
@@ -342,6 +355,7 @@ function Fixture() {
   );
   const [quotaResumes, setQuotaResumes] = useState(0);
   const [terminalOpened, setTerminalOpened] = useState(false);
+  const [sentPastedText, setSentPastedText] = useState<Block[]>([]);
   const [compacted, setCompacted] = useState(0);
   const compactReading = new URLSearchParams(location.search).get("compact-context");
   const [contextSession, setContextSession] = useState<ReturnType<typeof newSession>>(() => ({
@@ -381,8 +395,10 @@ function Fixture() {
           />
         </div>
       ) : null}
+      {sentPastedText.length ? <AgentTranscript visible blocks={sentPastedText} /> : null}
       <Composer
         onReorderQueuedMessages={queueVisual ? (ids) => setFixtureRows(ids) : undefined}
+        onEditQueuedMessage={pastedTextFixture ? () => {} : undefined}
         queuedMessages={
           queueVisual
             ? [
@@ -558,7 +574,10 @@ function Fixture() {
         }
         onFocus={() => {}}
         onCwdChange={() => {}}
-        onSubmit={() => {}}
+        onSubmit={(text, attachments) => {
+          if (pastedTextFixture)
+            setSentPastedText([{ id: "pasted-fixture", role: "user", text, attachments }]);
+        }}
         onModelChange={(next, id, account) => {
           setQuotaLimit((usageLimit) =>
             usageLimitAfterTargetChange(

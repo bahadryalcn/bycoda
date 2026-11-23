@@ -25,21 +25,22 @@ export function applySessionOrder<T extends { id: string }>(
 
 /**
  * The sidebar's ungrouped rows: pins first in their saved order, then the rest in
- * the given (recency) order, with `compare` (status) leading inside each. The saved
- * `loose` list is not applied, so a past drag cannot freeze the list.
+ * the given (recency) order. Callers can apply status here or when assembling groups.
+ * The saved `loose` list is not applied, so a past drag cannot freeze the list.
  */
 export function orderLooseRows<T extends { id: string; pinned?: boolean }>(
   rows: readonly T[],
   pinnedOrder: readonly string[] | undefined,
-  compare: (a: T, b: T) => number,
+  compare?: (a: T, b: T) => number,
 ): T[] {
-  return [
+  const ordered = [
     ...applySessionOrder(
       rows.filter((row) => row.pinned),
       pinnedOrder,
     ),
     ...rows.filter((row) => !row.pinned),
-  ].sort(compare);
+  ];
+  return compare ? ordered.sort(compare) : ordered;
 }
 
 /**

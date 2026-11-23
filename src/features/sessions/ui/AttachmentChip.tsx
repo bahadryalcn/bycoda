@@ -12,7 +12,11 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
 import { Download, Link, X } from "../../../shared/ui/icons";
 import { tokenLabel } from "../model/attachmentTokens";
-import { attachmentPresentation, formatAttachmentSize } from "../model/attachmentPresentation";
+import {
+  attachmentPresentation,
+  formatAttachmentSize,
+  isPastedTextAttachment,
+} from "../model/attachmentPresentation";
 import { AttachmentIdentity } from "./AttachmentIdentity";
 import styles from "./AttachmentChip.module.css";
 import type { Attachment } from "../model/session";
@@ -42,6 +46,8 @@ type Props = {
 export function AttachmentChip({ attachment, onRemove, draft, token, onInsertToken }: Props) {
   const t = useT();
   const presentation = attachmentPresentation(attachment);
+  const pastedText = isPastedTextAttachment(attachment);
+  const displayName = pastedText ? t("Pasted text") : attachment.name;
   const [failedThumbnail, setFailedThumbnail] = useState<string>();
   const size = formatAttachmentSize(attachment.size);
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
@@ -124,12 +130,13 @@ export function AttachmentChip({ attachment, onRemove, draft, token, onInsertTok
   const fileBody = (
     <span className={styles.fileBody}>
       <span className={styles.fileIcon}>
-        <AttachmentIdentity attachment={attachment} />
+        <AttachmentIdentity attachment={attachment} size={pastedText ? 16 : undefined} />
       </span>
       <Text as="span" tone="inherit" weight="medium" className={styles.name}>
-        {loading ? t("Loading…") : attachment.name}
+        {loading ? t("Loading…") : displayName}
       </Text>
       <Text
+        as="span"
         size="caption"
         tone="secondary"
         weight={draft ? "regular" : undefined}
@@ -139,6 +146,8 @@ export function AttachmentChip({ attachment, onRemove, draft, token, onInsertTok
           <Text size="inherit" tone="warning">
             {t("missing")}
           </Text>
+        ) : pastedText ? (
+          size
         ) : (
           <>
             {typeText}
@@ -156,10 +165,11 @@ export function AttachmentChip({ attachment, onRemove, draft, token, onInsertTok
         data-attachment-chip={image ? "image" : "file"}
         data-attachment-kind={presentation.kind}
         data-attachment-name={attachment.name}
+        data-pasted-text-attachment={pastedText ? "" : undefined}
         {...contextMenu.trigger}
         {...actionContentScopeAttributes()}
         {...surfaceAttributes(
-          { radius: "card", variant: "attachment" },
+          { radius: pastedText ? "popup" : "card", variant: "attachment" },
           `group ${styles.card} ${image ? styles.image : styles.file}`,
         )}
       >
@@ -244,7 +254,11 @@ export function AttachmentChip({ attachment, onRemove, draft, token, onInsertTok
                 aria-busy={loading}
                 aria-haspopup={canPreview ? "dialog" : "menu"}
                 aria-label={
-                  canPreview ? t("Open {p0} full screen", { p0: attachment.name }) : undefined
+                  canPreview
+                    ? pastedText
+                      ? t("Open {p0}", { p0: displayName })
+                      : t("Open {p0} full screen", { p0: displayName })
+                    : undefined
                 }
                 tooltip={fileTooltip.label}
                 tooltipDetails={fileTooltip.details}
@@ -296,17 +310,17 @@ export function AttachmentChip({ attachment, onRemove, draft, token, onInsertTok
             motion="none"
             {...motionAttributes({ transition: "opacity" })}
             {...actionContentAttributes(
-              { phase: "interaction", hide: "opacity", focus: "within" },
-              "absolute bottom-1 right-1",
+              { phase: pastedText ? "always" : "interaction", hide: "opacity", focus: "within" },
+              pastedText ? styles.pastedAction : "absolute bottom-1 right-1",
             )}
             size="sm"
             iconOnly
-            label={t("Save {p0}", { p0: attachment.name })}
-            variant="secondary"
+            label={t("Save {p0}", { p0: displayName })}
+            variant={pastedText ? "ghost" : "secondary"}
             shape="pill"
             type="button"
             tooltip={t("Download")}
-            aria-label={t("Save {p0}", { p0: attachment.name })}
+            aria-label={t("Save {p0}", { p0: displayName })}
             disabled={saveCopy.saving}
             loading={saveCopy.saving}
             onClick={(event) => {
@@ -322,17 +336,17 @@ export function AttachmentChip({ attachment, onRemove, draft, token, onInsertTok
             motion="none"
             {...motionAttributes({ transition: "opacity" })}
             {...actionContentAttributes(
-              { phase: "interaction", hide: "opacity", focus: "within" },
-              "absolute right-1 top-1",
+              { phase: pastedText ? "always" : "interaction", hide: "opacity", focus: "within" },
+              pastedText ? styles.pastedAction : "absolute right-1 top-1",
             )}
             size={draft ? "xs" : "sm"}
             iconOnly
-            label={t("Remove {p0}", { p0: attachment.name })}
-            variant="secondary"
+            label={t("Remove {p0}", { p0: displayName })}
+            variant={pastedText ? "ghost" : "secondary"}
             shape="pill"
             type="button"
             tooltip={t("Remove")}
-            aria-label={t("Remove {p0}", { p0: attachment.name })}
+            aria-label={t("Remove {p0}", { p0: displayName })}
             onClick={(event) => {
               event.stopPropagation();
               onRemove();

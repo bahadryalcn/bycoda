@@ -17,14 +17,18 @@ A compact **Run on** picker sits below the new-session composer, to the left of
 the workspace controls. It shows the saved name of the machine that will run the session. Choose
 **This computer** or a connected Host. Offline machines stay listed but cannot be
 chosen. A draft keeps its choice across tab switches and restarts.
-The **New session** menu under **Sessions** also has a **Run on** action.
 
 - **No project** defaults to **This computer**. Its first run uses a private scratch
   folder on the chosen machine. Local and remote conversations without a project both
   appear under **No project**; remote rows show their owner.
 - A project draft defaults to the machine that hosts the project's checkout. Choosing
-  another machine opens that machine's folder picker. The folder you confirm becomes
-  the draft's project. The destination's checkout, branch, workspace policy, provider
+  another machine switches to that machine's copy of the same repository when the rail
+  has one. The picker lists machines that already have the project first and offers the
+  others as "Add to <machine>". That opens a dialog that clones the repository there over
+  SSH or HTTPS into the folder you name, optionally copying chosen files git ignores
+  (text files; folders git ignores whole are left out), or **Locate folder** picks a folder
+  that machine already has without cloning. A project without a hosted remote goes
+  straight to the folder picker. The destination's checkout, branch, workspace policy, provider
   and account apply.
 - The picker is read-only after the first accepted send or Host draft save; the
   session stays on its owning machine.
@@ -151,9 +155,9 @@ sessions keeps separate collapse and open actions. The workspace header emphasiz
 the current location. Back, Forward, Expand projects and conversation tools align
 to the right. **New session** sits at the far right, with a label when the workspace
 pane is wide and an icon when space is limited. Click the main button to start in
-the current project. Click its arrow or right-click the main button to choose a
-project. Choosing another project opens its **Sessions** list with the new
-conversation selected. In narrow panes, **More
+the current project. Click its arrow or right-click the main button to open the
+project picker directly. Choosing another project opens its **Sessions** list
+with the new conversation selected. In narrow panes, **More
 actions** contains conversation search, selection and filters. Crews, Servers, Notes,
 Automations, Social Media, Tasks and Room appear directly as stacked rail icons.
 Hover or focus an icon for its name and shortcut. The rail scrolls in short windows
@@ -162,6 +166,15 @@ beside Settings when there is work to review or a recovery error to retry. Its
 badge shows the number of items to review. Rail section headings share one icon and label grid;
 hover or keyboard focus replaces a collapsible section's icon with its disclosure arrow.
 Pinned also collapses and remembers that choice.
+Library Sync keeps linked workspace headers under their parent groups on paired desktops.
+Projects from another machine stay in their groups while waiting for that machine to connect.
+Checkouts of one repository on different machines share one project row. Repositories match
+by their `origin` remote, read on each machine once it is connected; two clones on the same
+machine stay separate rows. The row is this computer's checkout when there is one, and shows
+the other machine while that copy is open. Removing or archiving the row affects only the
+copy it shows; the other machine's copy then takes the row. The project menu's "Show machines
+separately" gives every copy its own row, and "Combine with other machines" folds them again.
+Once the remote workspace is available, its header opens the workspace on its owning machine.
 Activity sits below the project list and starts collapsed. Its header shows activity counts.
 Expanding it leaves the project list scrollable. Last sessions rows in the rail open
 conversations. The combined list has its own row actions.
@@ -200,7 +213,8 @@ Searchable filters inside the Inbox filter menu open beside it. They prefer the
 right edge and flip left when space is limited; constrained windows keep the
 choices within the viewport. Escape closes the inner picker first.
 
-When you scroll up in a conversation, **Jump to latest** appears above the composer.
+The conversation follows the latest reply until you scroll up or navigate to an
+earlier message. **Jump to latest** appears above the composer when you scroll up.
 Click it, or focus it and press Enter or Space, to return to the end and resume
 following new messages.
 With **Anchor prompts to top** enabled, the active prompt stays at the top while

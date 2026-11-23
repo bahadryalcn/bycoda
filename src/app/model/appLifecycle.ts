@@ -1114,7 +1114,7 @@ async function prepareWindowToClose(
     ...tabs.flatMap((tab) =>
       [...tab.editorPanes, ...(tab.terminalPanes ?? [])].flatMap((pane) => pane.files),
     ),
-    ...docks.flatMap((dock) => dock.pane.files),
+    ...docks.flatMap((dock) => dock.pane.files.filter((file) => !dock.remoteRuns?.[file.id])),
   ];
   const unique = [
     ...new Map(files.filter((file) => file.terminal).map((file) => [file.id, file])).values(),

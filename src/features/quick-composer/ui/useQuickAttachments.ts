@@ -13,11 +13,14 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   attachmentsFromFiles,
   attachmentsFromPaths,
+  attachmentDraftTokens,
+  capturePastedTextAttachment,
   filesFromClipboard,
   MAX_ATTACHMENTS,
   MAX_EMBED_BYTES,
   pickAttachments,
   retainAttachmentPickerSelection,
+  replacePastedText,
   revokeAttachment,
 } from "../../sessions/public/attachments";
 import {
@@ -139,6 +142,7 @@ export function useQuickAttachments(
       /** Wait behind a pending read instead of dropping this one; for pastes that already hold their files. */
       queued = false,
       restorePaste?: (additions: Attachment[], attachments: Attachment[]) => boolean,
+      pasteStillPresent?: () => boolean,
     ): Promise<void> => {
       const queue = queueRef.current;
       if (
@@ -218,6 +222,10 @@ export function useQuickAttachments(
           return;
         }
         accepted.apply(() => {
+          if (pasteStillPresent && !pasteStillPresent()) {
+            stored.forEach(revokeAttachment);
+            return;
+          }
           const before = currentFiles();
           const additions = stored.filter(
             (file) =>
@@ -414,6 +422,37 @@ export function useQuickAttachments(
     }
     if (!supported) return;
     const text = event.clipboardData.getData("text/plain");
+    const paste =
+      !message && !isFileReferenceText(text)
+        ? capturePastedTextAttachment(event.target, text)
+        : undefined;
+    if (paste) {
+      event.preventDefault();
+      paste.insert();
+      const field = paste.field;
+      void collect(
+        (accepted) => readFiles([paste.file], accepted),
+        false,
+        true,
+        (additions, attachments) => {
+          const range = paste.range(field.value);
+          if (!range) return true;
+          const index = attachments.indexOf(additions[0]);
+          const edit = replacePastedText(
+            field.value,
+            range,
+            attachmentDraftTokens(attachments)[index],
+          );
+          insertRestoredText(
+            { field, value: field.value, ...range },
+            edit.text.slice(range.start, edit.caret),
+          );
+          return true;
+        },
+        () => field.isConnected && !!paste.range(field.value),
+      );
+      return;
+    }
     if (text && !isFileReferenceText(text)) return;
     if (!canCollect()) {
       if (!text) {

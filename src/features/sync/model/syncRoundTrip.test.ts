@@ -22,6 +22,7 @@ type Row = { table: string; id: string; rev: number; value: unknown };
 /** A deliberately naive host: every accepted op bumps the revision, even a
  * redundant one, so a stable revision proves the clients stopped pushing. */
 function fakeHost(unknownTables: readonly string[] = []) {
+  let workspaceLayout = !unknownTables.includes("workspaceLayout");
   let rev = 0;
   const rows = new Map<string, Row>();
   const pushedOps: { table: string; id: string; value: unknown }[] = [];
@@ -31,14 +32,15 @@ function fakeHost(unknownTables: readonly string[] = []) {
       const records = [...rows.values()]
         .filter((row) => row.rev > params.sinceRev)
         .sort((a, b) => a.rev - b.rev);
-      return throughTransport({ rev, records });
+      return throughTransport({ rev, records, workspaceLayout });
     }
     const applied: unknown[] = [];
     const rejected: unknown[] = [];
     for (const op of params.ops) {
       pushedOps.push(op);
       // An older host skips an op for a table it does not know.
-      if (unknownTables.includes(op.table)) continue;
+      if (unknownTables.includes(op.table) && !(op.table === "workspaceLayout" && workspaceLayout))
+        continue;
       const key = `${op.table}:${op.id}`;
       const existing = rows.get(key);
       if ((existing?.rev ?? 0) !== op.baseRev) {
@@ -57,6 +59,7 @@ function fakeHost(unknownTables: readonly string[] = []) {
   };
   return {
     request,
+    enableWorkspaceLayout: () => (workspaceLayout = true),
     rev: () => rev,
     /** Puts a record on the host as an earlier client left it. */
     seed: (table: string, id: string, value: unknown) => {
@@ -146,6 +149,68 @@ describe("sync over a key-sorting transport", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("carries a Windows workspace tree through an upgrade, remote opening and unlink", async () => {
+    const owner = await makeDesktop("windows");
+    owner.projects.setLocalHostEnvironmentId("windows-host");
+    owner.recents.rememberProject("G:/wallet/mobile");
+    owner.groups.saveProjectGroups([
+      { id: "team", name: "Firisbe", collapsed: false },
+      {
+        id: "wallet",
+        name: "wallet",
+        collapsed: false,
+        workspaceFile: "G:/wallet/wallet.code-workspace",
+        workspaceFolders: ["G:/wallet", "G:/wallet/mobile"],
+      },
+    ]);
+    owner.groups.saveProjectGroupAssignments({ "g:/wallet": "team", "g:/wallet/mobile": "wallet" });
+    const host = fakeHost(["workspaceLayout"]);
+    await owner.cycle(host);
+    expect(host.pushedOps.some((op) => op.table === "workspaceLayout")).toBe(false);
+    const guest = await makeDesktop("mac");
+    await guest.cycle(host);
+    host.enableWorkspaceLayout();
+    await owner.cycle(host);
+    await owner.cycle(host);
+    await guest.cycle(host);
+    let groups = guest.groups.loadProjectGroups();
+    let wallet = groups.find((group) => group.id === "wallet")!;
+    expect(guest.groups.projectGroupParentId(wallet, groups, {})).toBe("team");
+    expect(guest.projects.remoteOnlyProjects()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "mobile", groupId: "wallet" })]),
+    );
+
+    guest.remoteProjects.setRemoteOpenTargets([
+      {
+        environmentId: "windows-host",
+        name: "Windows PC",
+        request: async (_method, params) => {
+          const { cwd } = params as { cwd: string };
+          return { id: cwd, cwd, name: cwd.split("/").pop() };
+        },
+      },
+    ]);
+    await guest.cycle(host);
+    await guest.cycle(host);
+    const root = "remote://windows-host/G:/wallet";
+    groups = guest.groups.loadProjectGroups();
+    wallet = groups.find((group) => group.id === "wallet")!;
+    expect(guest.groups.projectGroupWorkspaceRoot(wallet)).toBe(root);
+    expect(
+      guest.groups.projectGroupParentId(wallet, groups, guest.groups.loadProjectGroupAssignments()),
+    ).toBe("team");
+    expect(guest.assignmentFor(`${root}/mobile`)).toBe("wallet");
+
+    owner.use();
+    owner.groups.unlinkProjectGroup("wallet");
+    await owner.cycle(host);
+    await guest.cycle(host);
+    groups = guest.groups.loadProjectGroups();
+    wallet = groups.find((group) => group.id === "wallet")!;
+    expect(guest.groups.projectGroupWorkspaceRoot(wallet)).toBeNull();
+    expect(guest.assignmentFor(`${root}/mobile`)).toBe("wallet");
   });
 
   it("one desktop pushes once and then stays silent", async () => {

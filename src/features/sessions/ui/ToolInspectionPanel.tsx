@@ -12,6 +12,7 @@ import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import type { Block } from "../model/session";
 import { toolResultTexts } from "../model/commandInspection";
 import { boundedToolPreview } from "../model/toolInspection";
+import { ToolInspectionDiff } from "./ToolInspectionDiff";
 import { JsonViewer } from "../../../shared/ui/JsonViewer";
 import { AnsiText } from "../../../shared/ui/AnsiText";
 import { stripAnsi } from "../../../shared/lib/ansi";
@@ -218,22 +219,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                 )}
               >
                 {section.diff ? (
-                  section.text.split("\n").map((line, lineIndex) => (
-                    <Text
-                      key={lineIndex}
-                      size="inherit"
-                      tone={
-                        line.startsWith("+")
-                          ? "added"
-                          : line.startsWith("-")
-                            ? "removed"
-                            : "inherit"
-                      }
-                    >
-                      {line}
-                      {"\n"}
-                    </Text>
-                  ))
+                  <ToolInspectionDiff text={section.text} />
                 ) : section.text ? (
                   <AnsiText text={section.text} />
                 ) : (

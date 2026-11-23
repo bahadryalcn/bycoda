@@ -249,9 +249,22 @@ fn refuse_over_capacity(mut socket: TcpStream) {
     let _ = socket.set_write_timeout(Some(Duration::from_millis(100)));
     let _ = socket.write_all(b"HTTP/1.1 503 Service Unavailable\r\nRetry-After: 1\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nThe private development server connection is busy. Retry in a moment.\n");
     let _ = socket.shutdown(Shutdown::Write);
-    // Taking already-sent request bytes off the socket keeps the close from resetting the response.
-    let _ = socket.set_nonblocking(true);
-    let _ = socket.read(&mut [0_u8; 4096]);
+    // Drain request data for a bounded interval. A single nonblocking read can
+    // miss bytes still arriving and closing with unread bytes can send a reset.
+    let deadline = Instant::now() + Duration::from_millis(20);
+    let mut bytes = [0_u8; 4096];
+    let mut remaining = HEADER_LIMIT;
+    while remaining > 0 {
+        let wait = deadline.saturating_duration_since(Instant::now());
+        if wait.is_zero() || socket.set_read_timeout(Some(wait)).is_err() {
+            break;
+        }
+        let limit = remaining.min(bytes.len());
+        match socket.read(&mut bytes[..limit]) {
+            Ok(0) | Err(_) => break,
+            Ok(count) => remaining -= count,
+        }
+    }
 }
 
 fn connection(mut socket: TcpStream, access: Access, gateway: Arc<Gateway>) {
@@ -617,9 +630,11 @@ mod tests {
             .set_read_timeout(Some(Duration::from_secs(5)))
             .unwrap();
         let (socket, _) = listener.accept().unwrap();
-        browser
-            .write_all(b"GET /asset.js HTTP/1.1\r\nHost: 127.0.0.1:1\r\n\r\n")
-            .unwrap();
+        let request = format!(
+            "GET /asset.js HTTP/1.1\r\nHost: 127.0.0.1:1\r\nX-Test: {}\r\n\r\n",
+            "a".repeat(8192)
+        );
+        browser.write_all(request.as_bytes()).unwrap();
         refuse_over_capacity(socket);
         let mut received = String::new();
         browser.read_to_string(&mut received).unwrap();

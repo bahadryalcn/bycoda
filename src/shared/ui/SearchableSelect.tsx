@@ -1,6 +1,7 @@
 import { popupListClassName } from "./Popover";
 import { OverflowTooltip } from "./Tooltip";
 import { useT } from "../i18n";
+import { COLLECTION_WINDOW_THRESHOLD } from "../hooks/useCollectionVirtualizer";
 import {
   useEffect,
   useId,
@@ -21,7 +22,6 @@ import {
   type ReactElement,
   type ReactNode,
   type Ref,
-  type RefObject,
 } from "react";
 import { ChevronDown, X } from "./icons";
 import { Spinner } from "./Spinner";
@@ -37,7 +37,8 @@ import { Button } from "./Button";
 import { useTooltip, type TooltipContent } from "./Tooltip";
 import { isImeComposition } from "../lib/keyboard";
 import { SelectTrigger, SelectValue } from "./arc/select/select";
-import { ComboboxItem, ComboboxList, ComboboxStatus } from "./arc/combobox/combobox";
+import { ComboboxItem, ComboboxStatus } from "./arc/combobox/combobox";
+import { SearchableSelectList } from "./SearchableSelectList";
 import { PopoverSearchHeader } from "./PopoverSearchHeader";
 import { PickerChoice } from "./picker/PickerChoice";
 import { PickerFooter } from "./picker/PickerList";
@@ -262,6 +263,8 @@ const OptionRow = memo(function OptionRow({
   compact,
   query,
   rowRef,
+  entryIndex,
+  setSize,
   controlDisabled,
   onPick,
   onHover,
@@ -275,7 +278,9 @@ const OptionRow = memo(function OptionRow({
   compact: boolean;
   /** The raw query when one is active, to accent matched text. */
   query: string;
-  rowRef?: RefObject<HTMLButtonElement | null>;
+  rowRef?: Ref<HTMLButtonElement>;
+  entryIndex?: number;
+  setSize?: number;
   controlDisabled: boolean;
   onPick: (value: string) => void;
   onHover: (index: number) => void;
@@ -288,6 +293,9 @@ const OptionRow = memo(function OptionRow({
       data-value={option.value}
       data-pinned={option.pinned || undefined}
       ref={rowRef}
+      data-index={entryIndex}
+      aria-setsize={setSize}
+      aria-posinset={setSize === undefined ? undefined : index + 1}
       id={`${listId}-option-${index}`}
       type="button"
       role="option"
@@ -327,21 +335,6 @@ const OptionRow = memo(function OptionRow({
     </ComboboxItem>
   );
 });
-
-/** Consecutive options sharing a group; ungrouped lists stay one flat section. */
-function optionSections(options: readonly SearchableSelectOption[]) {
-  const sections: {
-    group?: string;
-    start: number;
-    options: SearchableSelectOption[];
-  }[] = [];
-  options.forEach((option, index) => {
-    const current = sections[sections.length - 1];
-    if (current && current.group === option.group) current.options.push(option);
-    else sections.push({ group: option.group, start: index, options: [option] });
-  });
-  return sections;
-}
 
 const COMPACT_TRIGGER_CLASS =
   "inline-flex h-[var(--ui-control-height-compact)] max-w-full items-center gap-1 rounded-md bg-(--ui-surface-raised) py-0 pr-1.5 pl-2 text-left text-ui-caption hover:bg-(--ui-surface-hover) disabled:opacity-[var(--ui-disabled-opacity,0.5)]";
@@ -857,8 +850,12 @@ function SearchableSelectMenu({
           ) : showLoading ? (
             <ComboboxStatus className="shrink-0">{loadingLabel ?? t("Loading…")}</ComboboxStatus>
           ) : null}
-          <ComboboxList
-            ref={list}
+          <SearchableSelectList
+            listRef={list}
+            options={filtered}
+            activeIndex={activeIndex}
+            windowed={options.length > COLLECTION_WINDOW_THRESHOLD}
+            query={normalizedQuery}
             id={listId}
             role="listbox"
             aria-label={label}
@@ -868,49 +865,28 @@ function SearchableSelectMenu({
             tabIndex={searchable ? undefined : 0}
             onKeyDown={searchable ? undefined : onSearchKeyDown}
             className={`${popupListClassName} min-h-0 flex-1 overflow-y-auto overscroll-none focus-visible:outline-2 focus-visible:outline-accent`}
+            renderOption={(option, index, entryIndex, measure) => (
+              <OptionRow
+                key={option.value}
+                option={option}
+                index={index}
+                listId={listId}
+                highlighted={index === activeIndex}
+                selected={values.includes(option.value)}
+                compact={compact}
+                query={normalizedQuery ? query : ""}
+                rowRef={measure ?? (index === activeIndex ? activeOption : undefined)}
+                entryIndex={entryIndex}
+                setSize={entryIndex === undefined ? undefined : filtered.length}
+                controlDisabled={disabled}
+                onPick={pickLatest}
+                onHover={setActive}
+                pointerMoved={pointerMoved}
+              />
+            )}
           >
-            {filtered.length > 0 ? (
-              optionSections(filtered).map((section) => {
-                const rows = section.options.map((option, offset) => {
-                  const index = section.start + offset;
-                  return (
-                    <OptionRow
-                      key={option.value}
-                      option={option}
-                      index={index}
-                      listId={listId}
-                      highlighted={index === activeIndex}
-                      selected={values.includes(option.value)}
-                      compact={compact}
-                      query={normalizedQuery ? query : ""}
-                      rowRef={index === activeIndex ? activeOption : undefined}
-                      controlDisabled={disabled}
-                      onPick={pickLatest}
-                      onHover={setActive}
-                      pointerMoved={pointerMoved}
-                    />
-                  );
-                });
-                if (!section.group) return rows;
-                const headingId = `${listId}-group-${section.start}`;
-                return (
-                  <div
-                    key={headingId}
-                    role="group"
-                    aria-labelledby={headingId}
-                    className={styles.group}
-                  >
-                    <div id={headingId} role="presentation" className={styles.groupHeading}>
-                      {section.group}
-                    </div>
-                    {rows}
-                  </div>
-                );
-              })
-            ) : noResults ? (
-              <ComboboxStatus empty>{resultsCopy}</ComboboxStatus>
-            ) : null}
-          </ComboboxList>
+            {noResults ? <ComboboxStatus empty>{resultsCopy}</ComboboxStatus> : null}
+          </SearchableSelectList>
           {onClear && (values.length > 0 || selectionLabels?.done) ? (
             <PickerFooter>
               <Button

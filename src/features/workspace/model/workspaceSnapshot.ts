@@ -759,6 +759,7 @@ function sanitizeProjectTerminal(raw: unknown): ProjectTerminalDock | null {
   if (typeof value.projectPath !== "string" || !value.projectPath.trim()) {
     return null;
   }
+  if (parseRemotePath(value.projectPath)) return null;
   if (!isDockSide(value.side)) return null;
   const pane = sanitizePane(value.pane);
   if (!pane) return null;

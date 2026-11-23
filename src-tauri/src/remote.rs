@@ -2834,6 +2834,21 @@ fn machine_for_request(
     Ok(machine)
 }
 
+pub(crate) fn project_terminal_ssh_target(
+    app: &AppHandle,
+    machine_id: &str,
+    environment_id: &str,
+) -> Result<SshTarget, String> {
+    account_routes::require_environment_enabled(environment_id)?;
+    let state = app.state::<RemoteConnections>();
+    let machine = machine_for_request(&state, &store_path(app)?, machine_id, Some(environment_id))?;
+    let saved = machine
+        .ssh
+        .ok_or("This project's machine has no saved SSH connection")?;
+    // Reuse the current Host tunnel's route, including the known-host alias for its alternate.
+    Ok(state.tunnels.dialed(machine_id).unwrap_or(saved))
+}
+
 pub(crate) struct NativeRecoveryReply {
     value: Value,
     guard: Option<crate::host_ws::native_profile::NativeProfileGuard>,

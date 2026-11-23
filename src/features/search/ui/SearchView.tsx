@@ -22,7 +22,7 @@ import { motionAttributes } from "../../../shared/ui/Motion";
 import { Modal } from "../../../shared/ui/Modal";
 import "./search.css";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/model/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
 import { Search, Maximize2, Minimize2 } from "../../../shared/ui/icons";
 import {
@@ -154,6 +154,7 @@ export function SearchView({
   onOpenProject,
 }: Props) {
   useLocale();
+  const projectLabels = useProjectLabels();
   const inputRef = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -313,8 +314,8 @@ export function SearchView({
     deferredTrimmed,
   ]);
   const projectHits = useMemo(
-    () => (projectsEnabled && trimmed ? searchRecentProjects(recents, trimmed) : []),
-    [projectsEnabled, recents, trimmed],
+    () => (projectsEnabled && trimmed ? searchRecentProjects(recents, trimmed, projectLabels) : []),
+    [projectsEnabled, recents, trimmed, projectLabels],
   );
   const grouping = useMemo(
     () => {
@@ -388,8 +389,8 @@ export function SearchView({
     [visibleChatSessions],
   );
   const chatGroups = useMemo(
-    () => groupChatSessions(visibleChatSessions, grouping),
-    [visibleChatSessions, grouping],
+    () => groupChatSessions(visibleChatSessions, grouping, projectLabels),
+    [visibleChatSessions, grouping, projectLabels],
   );
   const chatRows = useMemo(() => chatEntries(chatGroups), [chatGroups]);
 
@@ -631,7 +632,7 @@ export function SearchView({
           </div>
           {scope === "files" || (chatMode && filters.scope !== "everywhere") ? (
             <Text size="caption" tone="secondary" truncate>
-              {projectDisplayName(cwd)}
+              {projectDisplayNameFrom(cwd, projectLabels)}
             </Text>
           ) : null}
           {chatMode ? (
@@ -721,6 +722,7 @@ export function SearchView({
           <>
             {indexNotice}
             <ResultList
+              projectLabels={projectLabels}
               listId={listId}
               counts={grouped.counts}
               hits={hits}
@@ -781,6 +783,7 @@ export function SearchView({
 }
 
 function ResultList({
+  projectLabels,
   listId,
   counts,
   hits,
@@ -789,6 +792,7 @@ function ResultList({
   onActive,
   onOpen,
 }: {
+  projectLabels: Record<string, string>;
   listId: string;
   counts: GroupedHitCounts;
   hits: AppSearchHit[];
@@ -832,7 +836,7 @@ function ResultList({
     <PickerListRoot id={listId} label={t("Search results")} onMouseMove={onListMouseMove}>
       {hits.map((hit, index) => {
         const highlighted = index === active;
-        const row = rowCopy(hit, query);
+        const row = rowCopy(hit, query, projectLabels);
         const heading =
           hit.kind === "conversation"
             ? t("Sessions")

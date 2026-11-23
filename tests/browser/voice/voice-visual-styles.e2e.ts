@@ -282,7 +282,9 @@ for (const [theme, width] of workViewports) {
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width, height: 800 });
-    await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global`);
+    await page.goto(
+      `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&choice-ack-lost`,
+    );
     await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
     const panel = page.locator("section[data-voice-state]");
     await panel.getByRole("button", { name: "Full screen", exact: true }).click();
@@ -294,10 +296,9 @@ for (const [theme, width] of workViewports) {
     await page.evaluate(() => {
       (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech("show choices");
     });
-    const notice = panel.getByText(
-      "This choice could not be saved in the Room. Keep voice open to answer.",
-      { exact: true },
-    );
+    const notice = panel.getByRole("status").filter({
+      hasText: "Saving this question is unconfirmed. Retry to verify the original card.",
+    });
     const caption = panel.getByText("show choices", { exact: true });
     await expect(notice).toBeVisible();
     await expect(caption).toBeVisible();
@@ -319,6 +320,12 @@ for (const [theme, width] of workViewports) {
       expect(Math.abs(textCenter - center)).toBeLessThan(2);
     }
     const answer = panel.getByRole("button", { name: "Send answer", exact: true });
+    await expect(answer).toHaveCount(0);
+    const retry = panel.getByRole("button", { name: "Retry", exact: true });
+    await retry.scrollIntoViewIfNeeded();
+    await expect(retry).toBeInViewport({ ratio: 1 });
+    await retry.click();
+    await answer.scrollIntoViewIfNeeded();
     await expect(answer).toBeInViewport({ ratio: 1 });
   });
 }
@@ -729,8 +736,9 @@ for (const theme of ["light", "dark"])
         ]) {
           const panel = await open(page, visual, state, theme, width);
           const actualState = state === "working" ? "listening" : state;
+          const artworkState = state === "thinking" ? "transcribing" : actualState;
           await expect(
-            panel.locator(`canvas[data-call-art="orb"][data-state="${actualState}"]`),
+            panel.locator(`canvas[data-call-art="orb"][data-state="${artworkState}"]`),
           ).toBeVisible();
           expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
           await panel.screenshot({

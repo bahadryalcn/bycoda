@@ -168,7 +168,7 @@ for (const light of [false, true])
       }) => {
         await page.setViewportSize({ width, height: 900 });
         await page.goto(
-          `/tests/browser/sessions/session-row-layout.html?remote-header&${light ? "light" : "dark"}${rail === "wide" ? "&wide" : rail === "hidden" ? "&no-rail" : ""}`,
+          `/tests/browser/sessions/session-row-layout.html?remote-header&remote-settle&worktree-picker&wide-workspace&${light ? "light" : "dark"}${rail === "wide" ? "&wide" : rail === "hidden" ? "&no-rail" : ""}`,
         );
         const header = page.locator("[data-workspace-header]");
         await expect(header).toContainText("bycoda-cloud");
@@ -181,13 +181,27 @@ for (const light of [false, true])
         await expect(machine).toBeEnabled();
         await machine.hover();
         await expect(page.getByRole("tooltip")).toContainText("Office Mac");
-        const directory = path.resolve("temp/verification/2026-11-16-remote-workspace");
+        await machine.click();
+        await expect(machine).toBeEnabled();
+        const picker = header.getByRole("button", { name: "Switch worktree" });
+        await expect(picker).toContainText("All worktrees");
+        await expect(
+          machine.locator("xpath=following::button[@aria-label='Switch worktree'][1]"),
+        ).toBeVisible();
+        await picker.click();
+        const worktrees = page.getByRole("dialog", { name: "Worktrees" });
+        await expect(worktrees.getByRole("option", { name: "All worktrees" })).toBeVisible();
+        const directory = path.resolve("temp/verification/remote-worktree-picker");
         await mkdir(directory, { recursive: true });
+        await writeFile(
+          path.join(directory, "README.md"),
+          "# Remote worktree picker\n\nIsolated Chromium fixture with two server worktrees.\n",
+        );
         await page.screenshot({
           path: path.join(directory, `${light ? "light" : "dark"}-${width}-${rail}.png`),
         });
-        await machine.click();
-        await expect(machine).toBeEnabled();
+        await worktrees.getByRole("option", { name: "main" }).click();
+        await expect(picker).toContainText("main");
       });
 for (const light of [true, false])
   for (const width of [800, 1280])
@@ -779,7 +793,18 @@ for (const light of [false, true]) {
       const header = page.locator("[data-workspace-header]");
       const create = header.getByRole("button", { name: "New session", exact: true });
       const choose = header.getByRole("button", { name: "Choose project", exact: true });
-      await expect(choose).toBeVisible();
+      const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
+      await choose.click();
+      await expect(dialog).toBeVisible();
+      await expect(page.getByRole("menu", { name: "Session actions" })).toHaveCount(0);
+      const search = dialog.getByRole("combobox", { name: "Search projects" });
+      await expect(search).toBeFocused();
+      const evidence = path.resolve("temp/verification/new-session-theme");
+      await mkdir(evidence, { recursive: true });
+      const label = `${light ? "light" : "dark"}-${width}`;
+      await page.screenshot({ path: path.join(evidence, `${label}-workspace-project-picker.png`) });
+      await search.press("Escape");
+      await expect(choose).toBeFocused();
       const labelText = create.getByText("New session", { exact: true });
       if (width === 1280) await expect(labelText).toBeVisible();
       else await expect(labelText).toBeHidden();
@@ -790,14 +815,9 @@ for (const light of [false, true]) {
         "stroke",
         await create.evaluate((button) => getComputedStyle(button).color),
       );
-      const evidence = path.resolve("temp/verification/new-session-theme");
-      await mkdir(evidence, { recursive: true });
-      const label = `${light ? "light" : "dark"}-${width}`;
       await header.screenshot({ path: path.join(evidence, `${label}-workspace-header.png`) });
       await choose.focus();
       await choose.press("Enter");
-      const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
-      const search = dialog.getByRole("combobox", { name: "Search projects" });
       await expect(search).toBeFocused();
       await search.press("Escape");
       await expect(choose).toBeFocused();

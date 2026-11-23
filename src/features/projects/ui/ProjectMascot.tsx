@@ -1,4 +1,5 @@
 import { memo, useId, type CSSProperties } from "react";
+import codeGlyphs from "../../../assets/identity/project-code-glyphs.svg?no-inline";
 import { MASCOT_GRID, projectMascot } from "../model/projectMascots";
 import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import { textAttributes, type TextTone } from "../../../shared/ui/Text";
@@ -19,11 +20,6 @@ type Props = {
   /** Gently breathes while work is in flight, subject to motion preferences. */
   active?: boolean;
 };
-
-const CODE_ROWS = Array.from({ length: 19 }, (_, row) => ({
-  y: 1.3 + row * 1.25,
-  text: ["const<>();{}[]", "01=>let:{};/", "</>run(x);01"][row % 3].repeat(3),
-}));
 
 /** Actual code glyphs clipped to a recognizable project silhouette. */
 export const ProjectMascot = memo(function ProjectMascot({
@@ -78,26 +74,11 @@ export const ProjectMascot = memo(function ProjectMascot({
         </linearGradient>
       </defs>
       <path d={mascot.restPath} className="project-sigil-base" fillRule="evenodd" />
-      <g
+      <use
+        href={`${codeGlyphs}#glyphs`}
         clipPath={`url(#${clipId})`}
         fill={`url(#${gradientId})`}
-        fontFamily="monospace"
-        fontSize="1.75"
-        fontWeight="700"
-      >
-        {CODE_ROWS.map(({ y, text }, row) => (
-          <text
-            key={row}
-            x={row % 2 ? -0.3 : 0}
-            y={y}
-            textLength="32"
-            lengthAdjust="spacingAndGlyphs"
-            xmlSpace="preserve"
-          >
-            {text}
-          </text>
-        ))}
-      </g>
+      />
     </svg>
   );
 });

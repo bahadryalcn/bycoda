@@ -303,13 +303,8 @@ it("separates dev and host targets and routes host start to the selected compute
   await choose("Tunnel target", "bycoda host");
   const field = [...container.querySelectorAll("input")].find((input) => input.readOnly)!;
   expect(field.value).toBe("http://127.0.0.1:3777");
-  // The full public-access text sits behind the info affordance.
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Public access"]')!.click(),
-  );
-  expect(document.body.textContent).toContain(
-    "Host access keeps device authentication and pairing.",
-  );
+  // Public access guidance is visible alongside the target before starting the tunnel.
+  expect(container.textContent).toContain("Host access keeps device authentication and pairing.");
   await act(async () => button("Start sharing").click());
   expect(remoteRequest).toHaveBeenCalledWith(
     "remote",

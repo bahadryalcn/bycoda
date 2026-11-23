@@ -1,6 +1,6 @@
-import { useSyncExternalStore, type Ref } from "react";
+import { useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
-import { Laptop, Server } from "../../../shared/ui/icons";
+import { Laptop, Plus, Server } from "../../../shared/ui/icons";
 import { Select, type SelectChoice } from "../../../shared/ui/Select";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -27,17 +27,23 @@ function machineStatus(environmentId: string): MachineStatus {
   return readRemoteConnection(environmentId).status;
 }
 
+/**
+ * Where a draft session runs. `projectMachines` lists the environment ids that
+ * already hold a copy of the session's project, with `""` for this computer;
+ * when given, those machines come first and the others read "Add to <machine>"
+ * (selecting one still calls `onSelect`). Omit it for sessions without a project.
+ */
 export function SessionMachinePicker({
   environmentId,
+  projectMachines,
   onSelect,
   disabled,
-  triggerRef,
   label,
 }: {
   environmentId?: string;
+  projectMachines?: readonly string[];
   onSelect?: (environmentId: string | undefined) => void;
   disabled?: boolean;
-  triggerRef?: Ref<HTMLButtonElement>;
   label?: string;
 }) {
   const t = useT();
@@ -75,23 +81,32 @@ export function SessionMachinePicker({
       disabled: unavailable,
     };
   };
-  const options = [
-    local,
-    ...remoteMachines.map((machine, index) =>
-      remoteChoice(
-        machine.environmentId,
-        machineLabel(remoteMachines, machine),
-        statuses[index] ?? "connecting",
-      ),
+  const remoteChoices = remoteMachines.map((machine, index) =>
+    remoteChoice(
+      machine.environmentId,
+      machineLabel(remoteMachines, machine),
+      statuses[index] ?? "connecting",
     ),
-  ];
+  );
+  const all = [local, ...remoteChoices];
+  const options = (() => {
+    if (!projectMachines) return all;
+    const holds = (choice: SelectChoice) => projectMachines.includes(choice.value);
+    const add = (choice: SelectChoice): SelectChoice => ({
+      ...choice,
+      label: t("Add to {p0}", { p0: choice.value ? choice.label : t("this computer") }),
+      icon: <Plus className="icon-xs" aria-hidden="true" />,
+    });
+    return [...all.filter(holds), ...all.filter((choice) => !holds(choice)).map(add)];
+  })();
   const value = selectedEnvironmentId ?? local.value;
-  let selected = options.find((option) => option.value === value);
+  let selected = all.find((option) => option.value === value);
   if (!selected) {
     selected = {
       ...remoteChoice(value, t("Remote computer"), loaded ? "missing" : "connecting"),
       disabled: true,
     };
+    all.push(selected);
     options.push(selected);
   }
 
@@ -108,7 +123,6 @@ export function SessionMachinePicker({
 
   return (
     <Select
-      ref={triggerRef}
       label={label ?? t("Run on")}
       hideLabel
       fieldSize="sm"
