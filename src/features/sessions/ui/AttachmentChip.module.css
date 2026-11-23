@@ -29,11 +29,10 @@
   height: 100%;
   overflow: clip;
 }
-/* The card owns the tile height; the button's own 1px border must not add to its content height. */
 .file .thumbnail {
   display: flex;
+  align-self: stretch;
   height: auto;
-  border-width: 0;
   align-items: center;
   justify-content: center;
 }
@@ -45,7 +44,8 @@
   align-items: center;
   justify-content: center;
   gap: 0;
-  padding: 4px 8px;
+  /* Leave room for the media button's edge within the 64px tile. */
+  padding: 2px 8px;
   text-align: center;
 }
 .fileIcon {
