@@ -136,6 +136,51 @@ for (const light of [true, false])
   });
 
 for (const light of [true, false])
+  test(`earlier history loads when a wheel scroll paints no frame for seconds ${light ? "light" : "dark"} 1280`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(
+      `/tests/browser/sessions/session-usability.html?historyFixture${light ? "&light" : ""}`,
+    );
+    const transcript = page.locator(".agent-transcript");
+    await expect(transcript.getByText("Response 16", { exact: true })).toBeVisible();
+    await expect(transcript.locator('[data-transcript-turn="history-12"]')).toBeAttached();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(0);
+    // CI Linux WebKit under load: after the wheel no frame was painted for 1-3s, then one
+    // frame moved a little, then none for seconds again until a frame landed on the top. A
+    // busy main thread stalls frames the same way in every engine.
+    const offsets = await transcript.evaluate(
+      (element) =>
+        new Promise<number[]>((resolve) => {
+          const stall = (ms: number) => {
+            const until = performance.now() + ms;
+            while (performance.now() < until);
+          };
+          const from = element.scrollTop;
+          element.dispatchEvent(
+            new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }),
+          );
+          stall(1500);
+          element.scrollTop = from - 40;
+          requestAnimationFrame(() => {
+            const middle = element.scrollTop;
+            stall(1500);
+            element.scrollTop = 0;
+            requestAnimationFrame(() => resolve([from, middle, element.scrollTop]));
+          });
+        }),
+    );
+    expect(offsets[0]).toBeGreaterThan(600);
+    expect(offsets[1]).toBeGreaterThan(320);
+    expect(offsets[2]).toBe(0);
+    await expect(transcript.getByText("Loading earlier messages…")).toBeVisible();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(1);
+    await page.evaluate(() => window.sessionUsability.finishHistoryPage());
+    await expect(transcript.locator('[data-transcript-turn="history-0"]')).toHaveCount(1);
+  });
+
+for (const light of [true, false])
   for (const width of [800, 1280])
     test(`session review caller visual ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
