@@ -44,7 +44,6 @@ beforeEach(async () => {
     runs: [],
     errorStamp: {},
     confirm: vi.fn(async () => false),
-    setPickerOpen: vi.fn(),
     setDraft: vi.fn(),
     setSelectedId: vi.fn(),
     onLaunch: vi.fn(),

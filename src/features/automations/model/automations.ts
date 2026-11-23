@@ -229,6 +229,8 @@ export type AutomationDraft = {
   maxRunsPerDay: number;
   /** Stored and run by the project machine's host, with no desktop open. */
   runInBackground: boolean;
+  /** The owner's own background switch on a new draft; it outlasts a trigger that forces it. */
+  backgroundChosen?: boolean;
   enabled: boolean;
 };
 
@@ -489,7 +491,11 @@ export async function listAutomations(): Promise<Automation[]> {
 }
 
 export async function saveAutomation(draft: AutomationDraft): Promise<Automation> {
-  const { runInBackground: _local, ...synced } = applyTriggers(draft, draft.triggers);
+  const {
+    runInBackground: _local,
+    backgroundChosen: _chosen,
+    ...synced
+  } = applyTriggers(draft, draft.triggers);
   const automation: AutomationUpsert = {
     ...synced,
     id: synced.id ?? crypto.randomUUID(),

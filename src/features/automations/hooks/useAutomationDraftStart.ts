@@ -1,6 +1,5 @@
 import { useAutomationRoutingHost } from "./useAutomationRoutingHost";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { t } from "../../../shared/i18n";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
 import {
   defaultSessionChoice,
@@ -8,13 +7,7 @@ import {
   modelsFor,
   preferredModelId,
 } from "../../sessions/model/models";
-import {
-  draftFromTemplate,
-  newAutomationDraft,
-  type Automation,
-  type AutomationDraft,
-} from "../model/automations";
-import type { AutomationTemplate } from "../model/automationTemplates";
+import { newAutomationDraft, type Automation, type AutomationDraft } from "../model/automations";
 
 type Params = {
   cwd?: string;
@@ -22,21 +15,11 @@ type Params = {
   selected: Automation | null;
   /** Set while a save is in flight; starting a draft is ignored then. */
   savingRef: MutableRefObject<boolean>;
-  setPickerOpen: Dispatch<SetStateAction<boolean>>;
-  setCompactListOpen: Dispatch<SetStateAction<boolean>>;
   setDraft: Dispatch<SetStateAction<AutomationDraft | null>>;
 };
 
-/** Starts a new automation: back to the template picker, a blank draft or one from a template. */
-export function useAutomationDraftStart({
-  cwd,
-  recents,
-  selected,
-  savingRef,
-  setPickerOpen,
-  setCompactListOpen,
-  setDraft,
-}: Params) {
+/** Starts a new blank automation draft. */
+export function useAutomationDraftStart({ cwd, recents, selected, savingRef, setDraft }: Params) {
   const routingHost = useAutomationRoutingHost();
   const defaultDraftTarget = () => {
     const project = cwd && looksLikeProject(cwd) ? cwd : (recents[0]?.path ?? "~");
@@ -50,17 +33,9 @@ export function useAutomationDraftStart({
     return { project, harness, model };
   };
 
-  const beginCreate = () => {
-    if (savingRef.current) return;
-    setCompactListOpen(false);
-    setPickerOpen(true);
-    setDraft(null);
-  };
-
   const beginBlank = () => {
     if (savingRef.current) return;
     const { project, harness, model } = defaultDraftTarget();
-    setPickerOpen(false);
     setDraft({
       ...newAutomationDraft(project, harness, model),
       hostCreateId: crypto.randomUUID(),
@@ -68,26 +43,5 @@ export function useAutomationDraftStart({
     });
   };
 
-  const beginFromTemplate = (template: AutomationTemplate) => {
-    if (savingRef.current) return;
-    const { project, harness, model } = defaultDraftTarget();
-    setPickerOpen(false);
-    setDraft({
-      hostCreateId: crypto.randomUUID(),
-      ...draftFromTemplate(project, harness, model, {
-        ...template,
-        name: t(template.name),
-        prompt: t(template.prompt),
-      }),
-      ...(routingHost.supported ? { modelChoice: { kind: "default" as const } } : {}),
-      ...(template.id === "project-scan"
-        ? {
-            runInBackground: true,
-            hostTemplate: { kind: "project-scan" as const, sourceStewardId: "new" },
-          }
-        : {}),
-    });
-  };
-
-  return { beginCreate, beginBlank, beginFromTemplate };
+  return { beginBlank };
 }

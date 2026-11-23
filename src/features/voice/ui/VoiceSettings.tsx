@@ -1,18 +1,23 @@
+import { useContext } from "react";
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
-import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { TextField } from "../../../shared/ui/TextField";
-import { t, useLocale } from "../../../shared/i18n";
-import { useAssistantSnapshot, assistantIdentity } from "../../assistant/model/assistantClient";
-import { AdvancedSettings, Group, Segmented, Select, Toggle } from "../../../shared/ui/settings";
+import { t } from "../../../shared/i18n";
+import { useAssistantSnapshot } from "../../assistant/model/assistantClient";
+import {
+  AdvancedSettings,
+  Group,
+  RevealedSetting,
+  Segmented,
+  Select,
+  Toggle,
+} from "../../../shared/ui/settings";
 import { ProcessingRow } from "./VoiceProcessingRow";
 import { MicrophoneInputSettings } from "./MicrophoneInputSettings";
 import { DictationSettings } from "./DictationSettings";
-import { VoiceActivityRow } from "./VoiceActivityRow";
 import { VoiceCloudKey } from "./VoiceCloudKey";
-import { MicrophonePermissionSettings } from "./MicrophonePermissionSettings";
 import { VoiceSetupRow } from "./VoiceSetupRow";
 import { VoiceConversationStyle } from "./VoiceConversationStyle";
-import { VoiceCompanionSettings } from "./VoiceCompanionSettings";
+import { VoiceVisualStyleRow } from "./VoiceCompanionSettings";
 import { VoiceWakeRows } from "./VoiceWakeSettings";
 import { useVoiceSetup, type VoiceSetup } from "./useVoiceSetup";
 import { speakerEngine, speakerOptions } from "../model/voiceSpeakers";
@@ -27,116 +32,94 @@ import { saveVoiceSettingsPatch } from "../model/voiceSettingsSave";
 
 type Change = (patch: Partial<Preferences>) => void;
 
-/** The Voice assistant settings page: dictation, companion, engine, conversation style and look. */
+/** The Voice assistant settings page: the assistant, its conversation, then dictation. */
 export function VoiceSettings() {
-  const locale = useLocale();
   const { snapshot: assistant } = useAssistantSnapshot();
   const settings = useVoiceSettings();
   const change: Change = saveVoiceSettingsPatch;
   const setup = useVoiceSetup(settings, change);
-  const { speechEnabled, installing } = setup;
-  const companion = speechEnabled && settings.enabled;
+  const companion = setup.speechEnabled && settings.enabled;
   return (
     <>
-      <Group title={t("Voice conversations")} layout="full">
-        <VoiceActivityRow />
-        <Row
-          id="voice-companion"
-          label={t("Enable voice companion")}
-          info={
-            <InfoTooltip label={t("Enable voice companion")}>
-              {settings.mode === "local"
-                ? t(
-                    "Talk to your session while the agent works. Audio is processed on this computer.",
-                  )
-                : t("Talk to your session while the agent works.")}
-            </InfoTooltip>
-          }
-        >
-          <Toggle
-            label={t("Enable voice companion")}
-            on={settings.enabled}
-            disabled={installing}
-            onChange={(enabled) => change({ enabled })}
-          />
-        </Row>
-        <VoiceWakeRows settings={settings} change={change} profile={assistant?.profile} />
-        {companion ? <VoiceSetupRow setup={setup} settings={settings} change={change} /> : null}
-      </Group>
-      <Group title={t("Microphone")} layout="full">
-        <MicrophoneInputSettings />
-        <MicrophonePermissionSettings />
-      </Group>
-      {companion ? <VoiceEngine settings={settings} change={change} setup={setup} /> : null}
-      <DictationSettings settings={settings} change={change} setup={setup} />
+      <VoiceAssistantGroup
+        settings={settings}
+        change={change}
+        setup={setup}
+        companion={companion}
+        profile={assistant?.profile}
+      />
       {companion ? (
-        <>
-          <VoiceConversationStyle settings={settings} change={change} />
-          <VoiceCompanionSettings
-            settings={settings}
-            change={change}
-            assistantName={
-              assistant?.profile.name
-                ? assistantIdentity(assistant.profile, locale).title
-                : undefined
-            }
-            assistantMemoryCount={assistant?.memory.length}
-          />
-        </>
+        <VoiceConversationStyle
+          settings={settings}
+          change={change}
+          assistantMemoryCount={assistant?.memory.length}
+        />
       ) : null}
+      <DictationSettings settings={settings} change={change} setup={setup} />
     </>
   );
 }
 
-function VoiceEngine({
+function VoiceAssistantGroup({
   settings,
   change,
   setup,
+  companion,
+  profile,
 }: {
   settings: Preferences;
   change: Change;
   setup: VoiceSetup;
+  companion: boolean;
+  profile?: { name: string; language: string };
 }) {
   const { installing } = setup;
+  const revealed = useContext(RevealedSetting);
   const local = settings.mode === "local";
   const engine = speakerEngine(settings);
-  // Speaker voice for Supertonic and the cloud conversations.
-  const speakerRow = engine ? (
-    <Row id="voice-speaker" label={t("Speaker")}>
-      <Select
-        hideLabel
-        label={t("Speaker")}
-        value={settings.speakers[engine]}
-        options={speakerOptions(engine)}
-        onChange={(value) => change({ speakers: { ...settings.speakers, [engine]: value } })}
-      />
-    </Row>
+  const elevenLabs = local && settings.natural && settings.engine === "elevenlabs";
+  // Processing is shared by local voice replies and local dictation, so it has one owner here.
+  const processing =
+    (companion && local) || (settings.dictationEnabled && settings.dictationEngine === "local");
+  const processingRow = processing ? (
+    <ProcessingRow setup={setup} value={settings.device} change={change} />
   ) : null;
   return (
-    <Group title={t("Voice engine")} layout="full">
-      <Row
-        id="voice-mode"
-        label={t("Voice provider")}
-        stacked
-        info={
-          <InfoTooltip label={`${t("Voice provider")}: ${t("Help")}`}>
-            {local
-              ? t("Speech is recognized on this computer; the session's provider writes replies.")
-              : t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
-                  p1: voiceProviderLabel(settings.mode),
-                })}
-          </InfoTooltip>
-        }
-        disabled={installing}
-      >
-        <Segmented
-          label={t("Voice provider")}
-          value={settings.mode}
-          options={voiceProviderOptions()}
-          onChange={(mode) => change({ mode: mode as VoiceMode })}
+    <Group title={t("Assistant")} layout="full">
+      <Row id="voice-companion" label={t("Enable voice companion")}>
+        <Toggle
+          label={t("Enable voice companion")}
+          on={settings.enabled}
+          disabled={installing}
+          onChange={(enabled) => change({ enabled })}
         />
       </Row>
-      {local ? (
+      {companion ? <VoiceSetupRow setup={setup} settings={settings} change={change} /> : null}
+      {companion ? (
+        <Row
+          id="voice-mode"
+          label={t("Voice provider")}
+          stacked
+          // Only a cloud provider changes where audio goes, and the owner must see that.
+          description={
+            local
+              ? undefined
+              : t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
+                  p1: voiceProviderLabel(settings.mode),
+                })
+          }
+          descriptionVisible={!local}
+          disabled={installing}
+        >
+          <Segmented
+            label={t("Voice provider")}
+            value={settings.mode}
+            options={voiceProviderOptions()}
+            onChange={(mode) => change({ mode: mode as VoiceMode })}
+          />
+        </Row>
+      ) : null}
+      {companion && local ? (
         <Row
           id="voice-engine"
           label={t("Reply voice")}
@@ -172,35 +155,75 @@ function VoiceEngine({
           />
         </Row>
       ) : null}
-      {speakerRow}
-      {local && settings.natural && settings.engine === "elevenlabs" ? (
-        <>
-          <VoiceCloudKey provider="elevenlabs" onSaved={() => setup.check()} />
-          <Row
-            id="voice-elevenlabs-voice"
-            label={t("ElevenLabs voice ID")}
-            description={t("Optional. Leave empty for a multilingual default voice.")}
-          >
-            <TextField
+      {companion && elevenLabs ? (
+        <VoiceCloudKey provider="elevenlabs" onSaved={() => setup.check()} />
+      ) : null}
+      <MicrophoneInputSettings />
+      {companion ? (
+        <AdvancedSettings
+          title={t("More options")}
+          settingIds={[
+            "voice-speaker",
+            "voice-elevenlabs-voice",
+            "voice-device",
+            "voice-visual-style",
+            "voice-wake",
+            "voice-wake-phrase",
+            "voice-sleep-phrase",
+          ]}
+          keepMounted
+        >
+          {engine ? (
+            <Row id="voice-speaker" label={t("Speaker")}>
+              <Select
+                hideLabel
+                label={t("Speaker")}
+                value={settings.speakers[engine]}
+                options={speakerOptions(engine)}
+                onChange={(value) =>
+                  change({ speakers: { ...settings.speakers, [engine]: value } })
+                }
+              />
+            </Row>
+          ) : null}
+          {elevenLabs ? (
+            <Row
+              id="voice-elevenlabs-voice"
               label={t("ElevenLabs voice ID")}
-              hideLabel
-              value={settings.elevenVoice}
-              placeholder="JBFqnCBsd6RMkjVDRZzb"
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => {
-                const value = event.target.value.trim();
-                if (/^[A-Za-z0-9]{0,64}$/.test(value)) change({ elevenVoice: value });
-              }}
-            />
-          </Row>
-        </>
-      ) : null}
-      {local ? (
-        <AdvancedSettings title={t("Voice options")} settingIds={["voice-device"]} keepMounted>
-          <ProcessingRow id="voice-device" setup={setup} value={settings.device} change={change} />
+              description={t("Optional. Leave empty for a multilingual default voice.")}
+            >
+              <TextField
+                label={t("ElevenLabs voice ID")}
+                hideLabel
+                value={settings.elevenVoice}
+                placeholder="JBFqnCBsd6RMkjVDRZzb"
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => {
+                  const value = event.target.value.trim();
+                  if (/^[A-Za-z0-9]{0,64}$/.test(value)) change({ elevenVoice: value });
+                }}
+              />
+            </Row>
+          ) : null}
+          {processingRow}
+          <VoiceVisualStyleRow settings={settings} change={change} />
+          <VoiceWakeRows settings={settings} change={change} profile={profile} />
         </AdvancedSettings>
-      ) : null}
+      ) : (
+        <>
+          {processingRow}
+          {/* Settings search can land here while voice is off; say what the row needs. */}
+          {revealed === "voice-wake" ? (
+            <Row
+              id="voice-wake"
+              label={t("Wake and sleep phrases")}
+              disabled
+              disabledReason={t("Turn on voice to use wake and sleep phrases.")}
+            />
+          ) : null}
+        </>
+      )}
     </Group>
   );
 }

@@ -49,7 +49,6 @@ export const VOICE_OVERLAY_COMMANDS = [
   "dismissError",
   "disconnect",
   "dock",
-  "openWorkspace",
   "close",
 ] as const;
 export type VoiceOverlayCommand = (typeof VOICE_OVERLAY_COMMANDS)[number];

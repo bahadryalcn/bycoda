@@ -7,14 +7,17 @@ import { SearchInput } from "../../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import type { ProjectCrews, CrewRunView } from "../../model/crewClient";
 import { activeCrewRuns } from "../../model/crewRoster";
-import type { OpenCrewSession } from "../CrewDialogHost";
+import type { OpenCrewSession } from "../CrewWorkManager";
 import { crewMenuDialog, type CrewDialog } from "../crewMenuItems";
 import { CrewTeamItem } from "./CrewTeamItem";
 import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 type Layout = "cards" | "list";
 
-/** Saved crews as cards or rows with a name filter. */
+/** The filter and the layout switch appear only past this many crews, as in the member roster. */
+const TOOLBAR_MIN_CREWS = 6;
+
+/** Saved crews as cards; a long list adds a name filter and a cards/list switch. */
 export function CrewsTeams({
   cwd,
   data,
@@ -30,6 +33,9 @@ export function CrewsTeams({
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const needle = query.trim().toLocaleLowerCase();
+  const toolbar = data.definitions.length > TOOLBAR_MIN_CREWS || needle !== "";
+  // The list layout is chosen in the toolbar, which a short list does not show.
+  const shown: Layout = toolbar ? layout : "cards";
   const crews = needle
     ? data.definitions.filter((crew) => crew.name.toLocaleLowerCase().includes(needle))
     : data.definitions;
@@ -55,26 +61,28 @@ export function CrewsTeams({
     );
   return (
     <div className="flex min-h-0 flex-col gap-3 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <SearchInput
-          appearance="field"
-          containerClassName="min-w-0 max-w-96 flex-1"
-          aria-label={t("Filter crews")}
-          placeholder={t("Filter crews")}
-          clearable
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <SegmentedControl
-          label={t("Crew layout")}
-          value={layout}
-          onValueChange={(value) => setLayout(value as Layout)}
-          options={[
-            { value: "cards", label: t("Cards"), icon: <LayoutGrid className="icon-sm" /> },
-            { value: "list", label: t("List"), icon: <ListBullet className="icon-sm" /> },
-          ]}
-        />
-      </div>
+      {toolbar ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <SearchInput
+            appearance="field"
+            containerClassName="min-w-0 max-w-96 flex-1"
+            aria-label={t("Filter crews")}
+            placeholder={t("Filter crews")}
+            clearable
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <SegmentedControl
+            label={t("Crew layout")}
+            value={layout}
+            onValueChange={(value) => setLayout(value as Layout)}
+            options={[
+              { value: "cards", label: t("Cards"), icon: <LayoutGrid className="icon-sm" /> },
+              { value: "list", label: t("List"), icon: <ListBullet className="icon-sm" /> },
+            ]}
+          />
+        </div>
+      ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
       {crews.length === 0 ? (
         <EmptyState
@@ -87,7 +95,7 @@ export function CrewsTeams({
         <ul
           aria-label={t("Crews")}
           className={
-            layout === "cards"
+            shown === "cards"
               ? "grid grid-cols-[repeat(auto-fill,minmax(min(100%,20rem),1fr))] gap-3"
               : "flex flex-col gap-2"
           }
@@ -97,7 +105,7 @@ export function CrewsTeams({
               key={crew.id}
               crew={crew}
               runs={activeCrewRuns(data.runs, crew.id)}
-              layout={layout}
+              layout={shown}
               deleteSupported={data.deleteSupported}
               canOpenCoordinator={!!onOpenSession}
               onStart={() => setDialog({ kind: "start", definitionId: crew.id })}

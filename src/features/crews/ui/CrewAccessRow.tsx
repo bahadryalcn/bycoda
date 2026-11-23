@@ -1,13 +1,11 @@
-import { Text } from "../../../shared/ui/Text";
-import { t, useLocale } from "../../../shared/i18n";
-import { InfoPopover, InfoTooltip } from "../../../shared/ui/InfoPopover";
-import { Switch } from "../../../shared/ui/Switch";
+import { useLocale } from "../../../shared/i18n";
 import { AccessPicker } from "../../sessions/public/AccessPicker";
 import type { CrewPolicy } from "../model/crew";
 
 /**
- * Permissions for every member of the crew in one place: the access mode (when the Host
- * supports it) and the two grants that govern how members ask for more.
+ * The access mode every member runs with, as one chip beside the crew name. Hosts without
+ * `crews.access.v1` run supervised and show nothing. The two grants that govern how members ask
+ * for more live under the editor's More options.
  */
 export function CrewAccessRow({
   policy,
@@ -19,54 +17,11 @@ export function CrewAccessRow({
   onChange: (patch: Partial<CrewPolicy>) => void;
 }) {
   useLocale();
+  if (!accessSupported) return null;
   return (
-    <section aria-label={t("Access for every member")} className="flex min-w-0 flex-col gap-2">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <Text size="body" tone="inherit" weight="medium">
-          {t("Access for every member")}
-        </Text>
-        {accessSupported ? (
-          <AccessPicker
-            value={policy.runtimeMode ?? "supervised"}
-            onChange={(runtimeMode) => onChange({ runtimeMode })}
-          />
-        ) : null}
-      </div>
-      <Text as="div" className="flex min-w-0 items-center gap-2">
-        <span className="min-w-0 flex-1">{t("Coordinator answers permission requests")}</span>
-        <Switch
-          aria-label={t("Coordinator answers permission requests")}
-          checked={policy.delegateApprovals === true}
-          onCheckedChange={(value) => onChange({ delegateApprovals: value })}
-        />
-        <InfoPopover label={t("About coordinator approvals")}>
-          <p>
-            {t(
-              "This is your grant for this crew's work. It is off until you turn it on and never changes by itself.",
-            )}
-          </p>
-          <p>
-            {t(
-              "Only the current coordinator can answer, and only for the request that is open now.",
-            )}
-          </p>
-        </InfoPopover>
-      </Text>
-      <Text as="div" className="flex min-w-0 items-center gap-2">
-        <span className="min-w-0 flex-1">{t("Allow provider sub-agents")}</span>
-        <Switch
-          aria-label={t("Allow provider sub-agents")}
-          checked={policy.allowSubagents}
-          onCheckedChange={(value) => onChange({ allowSubagents: value })}
-        />
-        <InfoTooltip label={t("About provider sub-agents")}>
-          <p>
-            {t(
-              "Provider helper agents run inside the member's own session. This is a separate choice from coordinator approvals.",
-            )}
-          </p>
-        </InfoTooltip>
-      </Text>
-    </section>
+    <AccessPicker
+      value={policy.runtimeMode ?? "supervised"}
+      onChange={(runtimeMode) => onChange({ runtimeMode })}
+    />
   );
 }

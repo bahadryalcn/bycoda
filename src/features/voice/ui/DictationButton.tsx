@@ -15,6 +15,9 @@ import { dictationLanguage, useVoiceSettings, voiceRuntimeSettings } from "../mo
 import { DictationOptions } from "./DictationOptions";
 import styles from "./DictationButton.module.css";
 
+/** The local model stays loaded this long after dictation stops; no setting owns it. */
+const IDLE_UNLOAD_MINUTES = 5;
+
 /**
  * Composer microphone: speech is recognized on this computer (the voice
  * companion's local installation) or by the chosen cloud provider. The phrase in
@@ -113,7 +116,7 @@ export function DictationButton({
       dictationLanguage(settings, locale),
       {
         ...voiceRuntimeSettings(settings),
-        idleUnloadMinutes: settings.dictationIdleUnloadMinutes,
+        idleUnloadMinutes: IDLE_UNLOAD_MINUTES,
         ...(settings.dictationLocalModelPath
           ? { whisperPath: settings.dictationLocalModelPath, whisperExact: true }
           : {}),

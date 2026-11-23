@@ -1,5 +1,7 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { MicrophoneRecoveryAction } from "./MicrophoneRecoveryAction";
+import { useMicrophonePermission } from "./useMicrophonePermission";
+import { microphoneBlockedMessage } from "../model/microphoneAccess";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -80,12 +82,34 @@ export function MicrophoneInputSettings() {
     settings.microphoneId &&
     !unidentified &&
     !devices.some((device) => device.deviceId === settings.microphoneId);
+  // Permission shows up only when something is wrong: a failed test, or a passive denial.
+  const denied = useMicrophonePermission() === "denied";
+  const problem = error ? t(error) : denied ? microphoneBlockedMessage() : "";
   return (
-    <>
-      <Row id="voice-microphone-input" label={t("Input device")}>
+    <Row
+      id="voice-microphone-input"
+      label={t("Microphone")}
+      description={
+        microphoneInUse
+          ? t("Stop voice or dictation before recording a microphone test.")
+          : t(
+              "Record up to ten seconds and listen back. Audio stays on this device and is not transcribed.",
+            )
+      }
+      descriptionVisible={microphoneInUse}
+      feedback={
+        problem ? (
+          <>
+            <SettingsFeedback state="error">{problem}</SettingsFeedback>
+            <MicrophoneRecoveryAction message={error || problem} />
+          </>
+        ) : undefined
+      }
+    >
+      <div className="flex min-w-0 items-center gap-2">
         <Select
           hideLabel
-          label={t("Input device")}
+          label={t("Microphone")}
           value={settings.microphoneId ?? ""}
           options={[
             { value: "", label: t("System default") },
@@ -105,18 +129,6 @@ export function MicrophoneInputSettings() {
           ]}
           onChange={(microphoneId) => saveVoiceSettingsPatch({ microphoneId })}
         />
-      </Row>
-      <Row
-        id="voice-microphone-recording"
-        label={t("Test microphone")}
-        description={
-          microphoneInUse
-            ? t("Stop voice or dictation before recording a microphone test.")
-            : t(
-                "Record up to ten seconds and listen back. Audio stays on this device and is not transcribed.",
-              )
-        }
-      >
         <ButtonGroup aria-label={t("Microphone test")}>
           {/* One primary that follows the recording: Record, then Stop, then Play. */}
           {state === "recording" ? (
@@ -132,7 +144,9 @@ export function MicrophoneInputSettings() {
               {t("Record test")}
             </Button>
           )}
-          {state !== "idle" ? (
+          {state === "requesting" ? (
+            <Button onClick={() => recording.current?.cancel()}>{t("Cancel")}</Button>
+          ) : state !== "idle" ? (
             <Button
               iconOnly
               label={t("Discard recording")}
@@ -142,13 +156,7 @@ export function MicrophoneInputSettings() {
             </Button>
           ) : null}
         </ButtonGroup>
-        {error ? (
-          <>
-            <SettingsFeedback state="error">{t(error)}</SettingsFeedback>
-            <MicrophoneRecoveryAction message={error} />
-          </>
-        ) : null}
-      </Row>
-    </>
+      </div>
+    </Row>
   );
 }

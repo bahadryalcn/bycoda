@@ -64,3 +64,37 @@ it("makes Get Python the only primary action and offers no Install when Python i
   expect(setup.install).not.toHaveBeenCalled();
   expect(primaries()).toEqual(["Get Python"]);
 });
+
+it("offers Locate files directly, with no menu and one retry on failure", async () => {
+  const setup = await render({
+    visibleError: { message: "This computer is unavailable. Try again." },
+    setupError: true,
+    check: vi.fn(),
+    resetJob: vi.fn(),
+    setLocating: vi.fn(),
+  });
+  expect(container.querySelector('[aria-haspopup="menu"]')).toBeNull();
+  expect(button("Check again")).toBeUndefined();
+  expect(button("Try again")).toBeDefined();
+  act(() => button("Locate files")!.click());
+  expect(setup.setLocating).toHaveBeenCalledExactlyOnceWith(true);
+});
+
+it("hides Locate files once setup is ready", async () => {
+  await render({ ready: true, message: "Voice is ready" });
+  expect(button("Locate files")).toBeUndefined();
+  expect(button("Install")).toBeUndefined();
+});
+
+it("keeps the Locate dialog to its fields and close", async () => {
+  await render({
+    locating: true,
+    browsing: null,
+    closeLocate: vi.fn(),
+  });
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("Python");
+  const buttons = [...dialog.querySelectorAll("button")].map((el) => el.textContent?.trim());
+  expect(buttons).not.toContain("Done");
+  expect(buttons).not.toContain("Automatic detection");
+});

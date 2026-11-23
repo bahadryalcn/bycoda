@@ -31,9 +31,9 @@ export { crewWorkStatus, crewWorkStatusLabel } from "../model/crewPresentation";
 
 const RAIL_FACE_SIZE = 20;
 
-type Menu = { kind: "crew" | "work"; crewId: string; anchor: PopoverAnchor };
+type Menu = { crewId: string; anchor: PopoverAnchor };
 
-/** The project rail's crew list: open a crew's work, start new work or manage it from "…". */
+/** The project rail's crew list: a row opens the crew's work, the play icon starts new work. */
 export function CrewRailSection({
   cwd,
   drag,
@@ -92,7 +92,7 @@ export function CrewRailSection({
     );
   };
   const openCrew = (crew: CrewDefinition) => {
-    setDialog({ kind: "work", crewId: crew.id });
+    openCrewsPageAt({ tab: "work", definitionId: crew.id });
   };
   const menuCrew = menu ? data.definitions.find((d) => d.id === menu.crewId) : undefined;
   const menuRuns = menuCrew ? activeCrewRuns(data.runs, menuCrew.id) : [];
@@ -107,7 +107,6 @@ export function CrewRailSection({
   const pickCrew = (id: string) => {
     if (!menuCrew) return;
     if (id === "open" && single) openCoordinator(single);
-    else if (id === "work") openCrewsPageAt({ tab: "work", definitionId: menuCrew.id });
     else {
       const next = crewMenuDialog(id, menuCrew);
       if (next) setDialog(next);
@@ -166,11 +165,7 @@ export function CrewRailSection({
           const openMenuAt = (event: MouseEvent<HTMLElement>) => {
             event.preventDefault();
             event.stopPropagation();
-            setMenu({
-              kind: "crew",
-              crewId: crew.id,
-              anchor: { x: event.clientX, y: event.clientY },
-            });
+            setMenu({ crewId: crew.id, anchor: { x: event.clientX, y: event.clientY } });
           };
           return (
             <ActionHost
@@ -195,11 +190,7 @@ export function CrewRailSection({
                   if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))
                     return;
                   event.preventDefault();
-                  setMenu({
-                    kind: "crew",
-                    crewId: crew.id,
-                    anchor: event.currentTarget,
-                  });
+                  setMenu({ crewId: crew.id, anchor: event.currentTarget });
                 }}
                 className="flex min-w-0 flex-1 items-center gap-2 @max-[140px]/rail:justify-center"
               >
@@ -250,8 +241,8 @@ export function CrewRailSection({
                   motion="none"
                   type="button"
                   data-no-drag
-                  expanded={menu?.kind === "crew" && menu.crewId === crew.id}
-                  onOpen={(anchor) => setMenu({ kind: "crew", crewId: crew.id, anchor })}
+                  expanded={menu?.crewId === crew.id}
+                  onOpen={(anchor) => setMenu({ crewId: crew.id, anchor })}
                 />
                 <InlineAction
                   reveal="always"
@@ -271,7 +262,7 @@ export function CrewRailSection({
         })}
         {error ? <InlineError inset="row" details={error} /> : null}
       </div>
-      {menu?.kind === "crew" && menuCrew ? (
+      {menu && menuCrew ? (
         <DropdownMenu
           anchor={menu.anchor}
           label={t("{p0} options", { p0: menuCrew.name })}
@@ -280,16 +271,10 @@ export function CrewRailSection({
           size="sm"
           items={crewItems}
           onPick={pickCrew}
-          onClose={() => setMenu((current) => (current?.kind === "crew" ? null : current))}
+          onClose={() => setMenu(null)}
         />
       ) : null}
-      <CrewDialogHost
-        cwd={cwd}
-        state={state}
-        dialog={dialog}
-        setDialog={setDialog}
-        onOpenSession={onOpenSession}
-      />
+      <CrewDialogHost cwd={cwd} state={state} dialog={dialog} setDialog={setDialog} />
     </div>
   );
 }

@@ -36,7 +36,7 @@ import { TaskMoreOptions } from "./GoalFormParts";
 import { TaskAccountPicker } from "./TaskAccountPicker";
 import { TaskFormRow, TaskFormSwitch } from "./TaskFormFields";
 import { TaskModelChoiceField, useTaskModelRouting } from "./TaskModelChoiceField";
-import { TaskTargetChips } from "./TaskTargetChips";
+import { TargetChips } from "../../../shared/ui/TargetChips";
 
 const SCHEDULE_OPTIONS = [
   {
@@ -164,7 +164,7 @@ export function StewardForm({
                   }}
                 />
               ) : null}
-              <TaskTargetChips
+              <TargetChips
                 project={
                   draft.id
                     ? {

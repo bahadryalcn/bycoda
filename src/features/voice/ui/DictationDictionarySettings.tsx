@@ -11,7 +11,7 @@ import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { TagInput } from "../../../shared/ui/TagInput";
 import { TextField } from "../../../shared/ui/TextField";
 import { Text } from "../../../shared/ui/Text";
-import { AdvancedSettings, Row, Select } from "../../../shared/ui/settings";
+import { Row, Select } from "../../../shared/ui/settings";
 import { useRecents } from "../../projects/public/recents";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import type { VoiceSettings } from "../model/voiceSettings";
@@ -119,176 +119,156 @@ export function DictationDictionarySettings({
       : []),
   ];
   return (
-    <AdvancedSettings
-      title={t("Dictation dictionary")}
-      settingIds={["dictation-dictionary"]}
-      defaultOpen={editing !== null}
-      keepMounted
-    >
-      <Row
-        id="dictation-dictionary"
-        label={t("Saved terms")}
-        description={t(
-          "Keep names and technical terms consistent. Aliases are replaced with your saved spelling.",
-        )}
-        stacked
-      >
-        <div className="flex min-w-0 flex-col gap-2">
-          {removeError ? (
-            <InlineError>{t("The term could not be removed. Try Remove again.")}</InlineError>
-          ) : null}
-          {entries.length === 0 ? (
-            <EmptyState
-              size="inline"
-              title={t("No saved terms")}
-              description={t("Add names or technical terms you use often.")}
-            />
-          ) : (
-            <>
-              <Text as="div" size="caption" tone="secondary">
-                {t("{p0} of {p1} terms saved", {
-                  p0: String(entries.length),
-                  p1: String(DICTIONARY_LIMIT),
-                })}
-              </Text>
-              <ContinuousList
-                stateKey="voice-dictation-dictionary"
-                label={t("Saved terms")}
-                items={rows}
-                itemKey={(row) => row.key}
-                requiredKey={editingIndex === null ? null : (rows[editingIndex]?.key ?? null)}
-                renderItem={({ entry, index }) => (
-                  <div className="flex min-w-0 items-start gap-2 py-2">
-                    <div className="min-w-0 flex-1">
-                      <Text as="div" wrap="anywhere">
-                        {entry.term}
-                      </Text>
-                      <Text as="div" size="caption" tone="secondary" wrap="anywhere">
-                        {entry.projectId
-                          ? projectDisplayNameFrom(entry.projectId, labels)
-                          : t("Shared across projects")}
-                        {entry.aliases.length ? ` · ${entry.aliases.join(", ")}` : ""}
-                      </Text>
-                    </div>
-                    <Button
-                      iconOnly
-                      variant="ghost"
-                      size="sm"
-                      disabled={editing !== null}
-                      label={t("Edit {p0}", { p0: entry.term })}
-                      onClick={() => begin(index)}
-                    >
-                      <Pencil className="icon-sm" />
-                    </Button>
-                    <Button
-                      iconOnly
-                      variant="ghost"
-                      size="sm"
-                      tone="danger"
-                      disabled={editing !== null}
-                      label={t("Remove {p0}", { p0: entry.term })}
-                      onClick={() => {
-                        const dictationDictionary = entries.filter((_, item) => item !== index);
-                        try {
-                          change({ dictationDictionary });
-                          setRemoveError(
-                            JSON.stringify(loadVoiceSettings().dictationDictionary) !==
-                              JSON.stringify(dictationDictionary),
-                          );
-                        } catch {
-                          setRemoveError(true);
-                        }
-                      }}
-                    >
-                      <Trash2 className="icon-sm" />
-                    </Button>
+    <Row id="dictation-dictionary" label={t("Dictionary")} stacked>
+      <div className="flex min-w-0 flex-col gap-2">
+        {removeError ? (
+          <InlineError>{t("The term could not be removed. Try Remove again.")}</InlineError>
+        ) : null}
+        {entries.length === 0 ? (
+          <EmptyState
+            size="inline"
+            title={t("No saved terms")}
+            description={t("Add names or technical terms you use often.")}
+          />
+        ) : (
+          <>
+            <ContinuousList
+              stateKey="voice-dictation-dictionary"
+              label={t("Dictionary")}
+              items={rows}
+              itemKey={(row) => row.key}
+              requiredKey={editingIndex === null ? null : (rows[editingIndex]?.key ?? null)}
+              renderItem={({ entry, index }) => (
+                <div className="flex min-w-0 items-start gap-2 py-2">
+                  <div className="min-w-0 flex-1">
+                    <Text as="div" wrap="anywhere">
+                      {entry.term}
+                    </Text>
+                    <Text as="div" size="caption" tone="secondary" wrap="anywhere">
+                      {entry.projectId
+                        ? projectDisplayNameFrom(entry.projectId, labels)
+                        : t("Shared across projects")}
+                      {entry.aliases.length ? ` · ${entry.aliases.join(", ")}` : ""}
+                    </Text>
                   </div>
-                )}
-              />
-            </>
-          )}
-          {editing === null ? (
-            <div className="flex min-w-0 flex-col gap-2">
-              <div>
-                <Button variant="secondary" size="sm" disabled={full} onClick={() => begin("new")}>
-                  {t("Add term")}
-                </Button>
-              </div>
-              {full ? (
-                <InlineMessage tone="warning">
-                  {t("The dictionary is full at {p0} terms. Remove a term to add another.", {
-                    p0: String(DICTIONARY_LIMIT),
-                  })}
-                </InlineMessage>
-              ) : null}
-            </div>
-          ) : (
-            <div className="flex min-w-0 flex-col gap-3">
-              <TextField
-                label={t("Preferred spelling")}
-                value={term}
-                maxLength={200}
-                onChange={(event) => updateDraft({ term: event.target.value })}
-                autoFocus
-                autoComplete="off"
-              />
-              <TagInput
-                label={t("Spoken aliases")}
-                value={aliases}
-                maxTags={30}
-                placeholder={t("Type an alias and press Enter")}
-                inputProps={{ maxLength: 200 }}
-                onValueChange={(aliases) => updateDraft({ aliases })}
-              />
-              <Select
-                label={t("Dictionary scope")}
-                value={projectId}
-                options={scopeOptions}
-                onChange={(projectId) => updateDraft({ projectId })}
-              />
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  disabled={!hasTerm || (editing === "new" && full) || duplicateError}
-                  onClick={() => save()}
-                >
-                  {t("Save term")}
-                </Button>
-                {conflict ? (
                   <Button
-                    variant="secondary"
+                    iconOnly
+                    variant="ghost"
                     size="sm"
-                    disabled={!hasTerm || full || duplicateAnywhere}
-                    onClick={() => save(true)}
+                    disabled={editing !== null}
+                    label={t("Edit {p0}", { p0: entry.term })}
+                    onClick={() => begin(index)}
                   >
-                    {t("Add as new term")}
+                    <Pencil className="icon-sm" />
                   </Button>
-                ) : null}
-                <Button variant="ghost" size="sm" onClick={() => updateDraft({ editing: null })}>
-                  {t("Cancel")}
-                </Button>
-              </div>
-              {duplicateError ? (
-                <InlineError>
-                  {t("This term is already saved in this scope. Edit the saved term instead.")}
-                </InlineError>
-              ) : null}
-              {saveError ? (
-                <InlineError>
-                  {t("The term could not be saved. Your draft is kept. Try Save term again.")}
-                </InlineError>
-              ) : null}
-              {conflict ? (
-                <InlineError>
-                  {t(
-                    "The dictionary changed while you were editing. Your draft is kept. Add it as a new term or cancel.",
-                  )}
-                </InlineError>
-              ) : null}
+                  <Button
+                    iconOnly
+                    variant="ghost"
+                    size="sm"
+                    tone="danger"
+                    disabled={editing !== null}
+                    label={t("Remove {p0}", { p0: entry.term })}
+                    onClick={() => {
+                      const dictationDictionary = entries.filter((_, item) => item !== index);
+                      try {
+                        change({ dictationDictionary });
+                        setRemoveError(
+                          JSON.stringify(loadVoiceSettings().dictationDictionary) !==
+                            JSON.stringify(dictationDictionary),
+                        );
+                      } catch {
+                        setRemoveError(true);
+                      }
+                    }}
+                  >
+                    <Trash2 className="icon-sm" />
+                  </Button>
+                </div>
+              )}
+            />
+          </>
+        )}
+        {editing === null ? (
+          <div className="flex min-w-0 flex-col gap-2">
+            <div>
+              <Button variant="secondary" size="sm" disabled={full} onClick={() => begin("new")}>
+                {t("Add term")}
+              </Button>
             </div>
-          )}
-        </div>
-      </Row>
-    </AdvancedSettings>
+            {full ? (
+              <InlineMessage tone="warning">
+                {t("The dictionary is full at {p0} terms. Remove a term to add another.", {
+                  p0: String(DICTIONARY_LIMIT),
+                })}
+              </InlineMessage>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex min-w-0 flex-col gap-3">
+            <TextField
+              label={t("Preferred spelling")}
+              value={term}
+              maxLength={200}
+              onChange={(event) => updateDraft({ term: event.target.value })}
+              autoFocus
+              autoComplete="off"
+            />
+            <TagInput
+              label={t("Spoken aliases")}
+              value={aliases}
+              maxTags={30}
+              placeholder={t("Type an alias and press Enter")}
+              inputProps={{ maxLength: 200 }}
+              onValueChange={(aliases) => updateDraft({ aliases })}
+            />
+            <Select
+              label={t("Dictionary scope")}
+              value={projectId}
+              options={scopeOptions}
+              onChange={(projectId) => updateDraft({ projectId })}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                disabled={!hasTerm || (editing === "new" && full) || duplicateError}
+                onClick={() => save()}
+              >
+                {t("Save term")}
+              </Button>
+              {conflict ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!hasTerm || full || duplicateAnywhere}
+                  onClick={() => save(true)}
+                >
+                  {t("Add as new term")}
+                </Button>
+              ) : null}
+              <Button variant="ghost" size="sm" onClick={() => updateDraft({ editing: null })}>
+                {t("Cancel")}
+              </Button>
+            </div>
+            {duplicateError ? (
+              <InlineError>
+                {t("This term is already saved in this scope. Edit the saved term instead.")}
+              </InlineError>
+            ) : null}
+            {saveError ? (
+              <InlineError>
+                {t("The term could not be saved. Your draft is kept. Try Save term again.")}
+              </InlineError>
+            ) : null}
+            {conflict ? (
+              <InlineError>
+                {t(
+                  "The dictionary changed while you were editing. Your draft is kept. Add it as a new term or cancel.",
+                )}
+              </InlineError>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </Row>
   );
 }

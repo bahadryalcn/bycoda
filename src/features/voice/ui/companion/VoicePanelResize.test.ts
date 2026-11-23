@@ -80,7 +80,6 @@ const viewProps = (panel: RefObject<HTMLElement | null>, noop = () => {}) =>
     compact: false,
     status: "live",
     handle: null,
-    engine: "This computer",
     visualState: "listening",
     working: false,
     audioLevel: { current: 0 },

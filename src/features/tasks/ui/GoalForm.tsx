@@ -43,7 +43,7 @@ import {
 } from "./TaskFormFields";
 import { MachineConcurrency, type SaveLimits } from "./TaskLimits";
 import { TaskModelChoiceField, useTaskModelRouting } from "./TaskModelChoiceField";
-import { TaskTargetChips } from "./TaskTargetChips";
+import { TargetChips } from "../../../shared/ui/TargetChips";
 import {
   INITIAL_WORKSPACE_CHECKS,
   TaskWorkspacePicker,
@@ -185,7 +185,7 @@ export function GoalForm({
               onChange={(event) => update("prompt", event.target.value)}
               placeholder={t("Details, acceptance criteria, links…")}
             />
-            <TaskTargetChips
+            <TargetChips
               disabled={fieldsLocked || workspaceBusy}
               machine={{
                 value: targetId,

@@ -12,6 +12,7 @@ Model order, pools, role bindings and delegation defaults belong to [model routi
 ## Source starts
 
 - `src/features/automations/model/automations.ts`: schedule math and native commands.
+- `src/features/automations/ui/AutomationEditor.tsx`: the one editor page; `model/automationDraftRules.ts` owns run mode, the background one-trigger rule and the derived name.
 - `src/app/workspace/bridges/useAutomationLaunch.ts`: serialized session launch.
 - `src-tauri/src/automations.rs`: persisted definitions, recovery and run transitions.
 - `src-tauri/src/automations/admission_tests.rs`: native write-admission coverage.
@@ -39,4 +40,4 @@ Run schedule/launch Vitest suites and native `automations` tests with injected c
 
 ## References
 
-User behavior: [assistant guide](../../../docs/guides/assistant.md). Connection outages: [remote access](../../../docs/guides/remote-access.md).
+User behavior: [assistant guide](../../../docs/guides/assistant.md). [Owner decisions](references/decisions.md): durable owner choices, without new authority. Connection outages: [remote access](../../../docs/guides/remote-access.md).

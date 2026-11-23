@@ -76,6 +76,7 @@ Parts: FieldControl
 | [Select](../../src/shared/ui/Select.tsx) | Pick one option from a short fixed list in a form or toolbar. | Long or searchable lists: SearchableSelect. Free entry with suggestions: Combobox. `hideLabel` only in toolbars and compact filters that supply their own context. |  |
 | [SelectTrigger](../../src/shared/ui/Select.tsx) | A custom select-like trigger whose owner provides the popup and selection state. | A complete short exclusive-choice field: Select. Searchable choices: SearchableSelect. |  |
 | [Switch](../../src/shared/ui/Switch.tsx) | A setting that takes effect the moment it flips (preferences, enable/disable a feature). | Choice committed with a form Save, or a selection among items: Checkbox. One of several modes: SegmentedControl or RadioGroup. |  |
+| [TargetChips](../../src/shared/ui/TargetChips.tsx) | The target row of a task, goal, steward or automation form. | A labelled field in a settings list: SearchableSelect with a Row. A single value picker outside a form: SearchableSelect. |  |
 
 Parts: RadioTileGroup, SearchableSelectList
 

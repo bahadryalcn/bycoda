@@ -95,13 +95,6 @@
   min-inline-size: 0;
   font-variant-numeric: tabular-nums;
 }
-.clock {
-  flex: none;
-}
-.clock::before {
-  content: "·";
-  margin-inline-end: var(--ui-space-2);
-}
 .status {
   display: flex;
   align-items: center;

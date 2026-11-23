@@ -5,15 +5,14 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
+import { Text } from "../../../shared/ui/Text";
 import { Plus } from "../../../shared/ui/icons";
 import {
   defaultCrewPolicy,
   type CrewAgent,
   type CrewDefinition,
   type CrewPolicy,
-  type CrewRole,
 } from "../model/crew";
 import { useProjectCrews, type ProjectCrews } from "../model/crewClient";
 import { handleErrorsFromHost } from "../model/crewLink";
@@ -31,7 +30,6 @@ import {
 import {
   crewRosterIssues,
   crewRosterValid,
-  libraryGroups,
   memberFromLibrary,
   saveLibraryProfile,
 } from "../model/crewRoster";
@@ -40,9 +38,14 @@ import { CrewAppearancePicker } from "./CrewAppearancePicker";
 import { CrewEditorBulkBar } from "./CrewEditorBulkBar";
 import { CrewEditorAddFooter, CrewEditorAddPage, liveAdditions } from "./CrewEditorAdd";
 import { CrewEditorFooter } from "./CrewEditorFooter";
-import { CrewEditorBanners, CrewEditorHeader, CrewMaintenance } from "./CrewEditorParts";
-import { CrewMemberDetail, type CrewBusyAction, type CrewInspection } from "./CrewMemberDetail";
-import { CrewMemberTable, crewIssueSummary, crewSections } from "./CrewMemberTable";
+import { CrewEditorBanners, CrewEditorHeader } from "./CrewEditorParts";
+import { CrewMemberDetail, type CrewBusyAction } from "./CrewMemberDetail";
+import {
+  CrewMemberTable,
+  crewIssueSummary,
+  crewSections,
+  rosterSearchable,
+} from "./CrewMemberTable";
 import { CrewWorkingSettings } from "./CrewWorkingSettings";
 import { useCrewAdditions } from "./useCrewAdditions";
 import { useCrewAutosave } from "./useCrewAutosave";
@@ -53,9 +56,7 @@ import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export { emptyCrew };
 
-export type CrewEditorPage = "team" | "settings" | "add";
-
-type Page = { kind: "team" } | { kind: "add"; role?: CrewRole };
+type Page = { kind: "team" } | { kind: "add" };
 
 type EditorFocus = {
   crewId?: string;
@@ -63,14 +64,10 @@ type EditorFocus = {
   createScope?: "project" | "global";
   /** Opens an unsaved copy of a crew in the given scope. */
   copyOf?: { crewId: string; scope: "project" | "global" };
-  /** "settings" opens with Advanced expanded; "add" opens Add members. */
-  initialPage?: CrewEditorPage;
-  /** Offered when the owner chooses New work; the caller opens the start dialog. */
-  onStart?: (crewId: string) => void;
   onClose: () => void;
 };
 
-/** Creating and editing a crew share one dialog: access, bulk models and the roster on one page. */
+/** Creating and editing a crew share one autosaving dialog: look, name, access and the roster. */
 export function CrewEditDialog({ cwd, ...focus }: { cwd: string } & EditorFocus) {
   useLocale();
   const state = useProjectCrews(cwd);
@@ -110,8 +107,6 @@ function ConnectedCrewEditor({
   crewId,
   createScope,
   copyOf,
-  initialPage = "team",
-  onStart,
   onClose,
 }: {
   cwd: string;
@@ -123,15 +118,12 @@ function ConnectedCrewEditor({
   const [draft, setDraft] = useState<CrewDefinition | null>(() =>
     initialCrewDraft(data, draftKey, { crewId, createScope, copyOf }),
   );
-  const [page, setPage] = useState<Page>(
-    initialPage === "add" ? { kind: "add" } : { kind: "team" },
-  );
-  const [advancedOpen, setAdvancedOpen] = useState(initialPage === "settings");
+  const [page, setPage] = useState<Page>({ kind: "team" });
+  const [moreOpen, setMoreOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<CrewBusyAction>(null);
   const pending = pendingAction !== null;
   const gate = useRef(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [showIssues, setShowIssues] = useState(false);
   const body = useRef<HTMLFieldSetElement>(null);
   const [rosterQuery, setRosterQuery] = useState("");
@@ -139,7 +131,6 @@ function ConnectedCrewEditor({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const additions = useCrewAdditions(data);
   const [memberScope, setMemberScope] = useState<"project" | "global">("project");
-  const [inspection, setInspection] = useState<Record<string, CrewInspection>>({});
 
   useEffect(() => {
     if (!draft) return;
@@ -173,7 +164,7 @@ function ConnectedCrewEditor({
     draft,
     saved: latest,
     valid,
-    enabled: !conflict && pendingAction !== "delete" && pendingAction !== "save",
+    enabled: !conflict && pendingAction !== "save",
     save: (definition) =>
       state.call<CrewDefinition>("crews.save", {
         definition: looks.outgoing(definition),
@@ -185,7 +176,6 @@ function ConnectedCrewEditor({
       );
       looks.saved(sent, returned);
       forgetSentCrewDraft(draftKey, sent);
-      setNotice("");
     },
   });
 
@@ -220,7 +210,6 @@ function ConnectedCrewEditor({
     setDraft((current) =>
       current ? { ...current, ...(typeof patch === "function" ? patch(current) : patch) } : current,
     );
-    setNotice("");
   };
   const updatePolicy = (patch: Partial<CrewPolicy>) =>
     update((current) => ({ policy: { ...current.policy, ...patch } }));
@@ -237,7 +226,7 @@ function ConnectedCrewEditor({
   const create = () => {
     if (!valid) {
       setShowIssues(true);
-      if (!policyValid) setAdvancedOpen(true);
+      if (!policyValid) setMoreOpen(true);
       return;
     }
     void act("save", async () => {
@@ -248,29 +237,18 @@ function ConnectedCrewEditor({
       forgetCrewDraft(draftKey, draft.id);
       setDraft(definition);
       setShowIssues(false);
-      setNotice(t("Crew created"));
-    });
-  };
-  const start = () => {
-    if (!valid) {
-      setShowIssues(true);
-      if (!policyValid) setAdvancedOpen(true);
-      return;
-    }
-    void act("start", async () => {
-      if ((await autosave.flush()) && onStart) onStart(draft.id);
     });
   };
 
-  const openAdd = (role?: CrewRole) => {
-    additions.open(role);
-    setPage({ kind: "add", role });
+  const openAdd = () => {
+    additions.open();
+    setPage({ kind: "add" });
   };
   const addPicked = () => {
     if (additions.mode === "library") {
       const added = livePicked.flatMap((id) => {
         const saved = data.agents.find((agent) => agent.id === id);
-        return saved ? [memberFromLibrary(saved, additions.pickedFor)] : [];
+        return saved ? [memberFromLibrary(saved)] : [];
       });
       update((current) => ({ agents: [...current.agents, ...added] }));
       additions.setPicked([]);
@@ -282,26 +260,10 @@ function ConnectedCrewEditor({
       additions.setIssues(true);
       return;
     }
-    void act("add", async () => {
-      let added: CrewAgent = memberDraft;
-      if (additions.saveToLibrary) {
-        const saved = await saveLibraryProfile(
-          state.call,
-          data.agents,
-          additions.scope === "project" ? data.project.id : undefined,
-          memberDraft,
-        );
-        added = {
-          ...memberDraft,
-          source: { id: saved.id, updatedAt: saved.updatedAt },
-        };
-      }
-      update((current) => ({ agents: [...current.agents, added] }));
-      additions.setNewMember(blankMember(data));
-      additions.setSaveToLibrary(false);
-      additions.setIssues(false);
-      setPage({ kind: "team" });
-    });
+    update((current) => ({ agents: [...current.agents, memberDraft] }));
+    additions.setNewMember(blankMember(data));
+    additions.setIssues(false);
+    setPage({ kind: "team" });
   };
 
   const expand = (id: string | null) => {
@@ -312,14 +274,6 @@ function ConnectedCrewEditor({
     const source = agent.source && data.agents.find((saved) => saved.id === agent.source!.id);
     setMemberScope((source ? !!source.projectId : !!draft.projectId) ? "project" : "global");
   };
-  const inspect = (agent: CrewAgent) =>
-    act("inspect", async () => {
-      const result = await state.call<{ candidates?: CrewInspection }>("crews.inspect", {
-        definitionId: draft.id,
-        memberId: agent.id,
-      });
-      setInspection((current) => ({ ...current, [agent.id]: result.candidates ?? [] }));
-    });
   const saveToLibrary = (agent: CrewAgent) =>
     act("library", async () => {
       const saved = await saveLibraryProfile(
@@ -332,16 +286,30 @@ function ConnectedCrewEditor({
         source: { id: saved.id, updatedAt: saved.updatedAt },
         customized: undefined,
       });
-      setNotice(t("Saved to member library"));
     });
 
   const handleErrors = handleErrorsFromHost(autosave.error, draft.agents);
   const sections = crewSections(draft.agents, issues);
-  const issueSummary = valid ? "" : crewIssueSummary(sections, issues, policyValid);
-  const footerIssue = issueSummary && (showIssues || draft.agents.length) ? issueSummary : "";
-
-  const scopeLabel = draft.projectId ? t("This project") : t("All projects on this host");
-  const editLevel = page.kind === "add" ? t("Add members") : scopeLabel;
+  // Roster problems show under their section or on their row; the footer names the rest.
+  const issueSummary = valid ? "" : crewIssueSummary(issues, policyValid);
+  const footerIssue =
+    issueSummary && (showIssues || draft.agents.length) && !(showIssues && issues.name)
+      ? issueSummary
+      : "";
+  const defaults = defaultCrewPolicy;
+  const moreSummary = [
+    draft.policy.maxParallel !== defaults.maxParallel &&
+      t("{p0} at once", { p0: draft.policy.maxParallel }),
+    draft.policy.maxAssignments !== defaults.maxAssignments &&
+      t("{p0} assignments", { p0: draft.policy.maxAssignments }),
+    draft.policy.maxRunMinutes !== defaults.maxRunMinutes &&
+      t("{p0} min each", { p0: draft.policy.maxRunMinutes }),
+    draft.policy.delegateApprovals === true && t("Coordinator answers permission requests"),
+    draft.policy.allowSubagents !== defaults.allowSubagents && t("Allow provider sub-agents"),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const longRoster = rosterSearchable(draft.agents.length, rosterQuery.trim().length > 0);
 
   const liveSelected = selected.filter((id) => draft.agents.some((agent) => agent.id === id));
 
@@ -352,20 +320,18 @@ function ConnectedCrewEditor({
           {t("Members")}
         </Heading>
         {draft.agents.length ? (
-          <div className="flex min-w-0 items-center gap-2">
-            <Button
-              variant="secondary"
-              className="shrink-0"
-              data-crew-add
-              startIcon={<Plus />}
-              onClick={() => openAdd()}
-            >
-              {t("Add members")}
-            </Button>
-          </div>
+          <Button
+            variant="secondary"
+            className="shrink-0"
+            data-crew-add
+            startIcon={<Plus />}
+            onClick={openAdd}
+          >
+            {t("Add members")}
+          </Button>
         ) : null}
       </div>
-      {draft.agents.length ? (
+      {longRoster ? (
         <CrewEditorBulkBar
           cwd={cwd}
           data={data}
@@ -402,17 +368,12 @@ function ConnectedCrewEditor({
             data={data}
             traits={teamTraits(draft.agents).get(agent.id)}
             handleError={handleErrors[agent.id]}
-            crewSaved={!!draft.updatedAt}
-            policy={draft.policy}
             agent={agent}
-            groupNames={libraryGroups(data.agents)}
             scope={memberScope}
             onScopeChange={setMemberScope}
             pending={pending}
             pendingAction={pendingAction}
             showIssues={showIssues}
-            inspection={inspection[agent.id]}
-            onInspect={() => inspect(agent)}
             onSaveToLibrary={() => saveToLibrary(agent)}
             onChange={(patch) => member(agent.id, patch)}
           />
@@ -421,76 +382,32 @@ function ConnectedCrewEditor({
     </>
   );
 
-  const advanced = (
+  const more = (
     <Disclosure
-      variant="row"
-      summary={t("Advanced")}
-      open={advancedOpen || !policyValid}
-      onOpenChange={setAdvancedOpen}
+      variant="compact"
+      open={moreOpen || !policyValid}
+      onOpenChange={setMoreOpen}
+      summary={
+        <>
+          {t("More options")}
+          {!moreOpen && moreSummary ? (
+            <Text truncate size="caption" tone="muted">
+              {" "}
+              · {moreSummary}
+            </Text>
+          ) : null}
+        </>
+      }
     >
-      <CrewWorkingSettings
-        agents={draft.agents}
-        policy={draft.policy}
-        errors={policy}
-        onPolicyChange={updatePolicy}
-        appearance={
-          <CrewAppearancePicker
-            crewId={draft.id}
-            look={looks.look}
-            onChange={looks.setLook}
-            disabled={pending}
-          />
-        }
-        appearanceSavedNow={!isNew && !data.identitySupported}
-        appearanceOnHost={!isNew && data.identitySupported === true}
-        maintenance={
-          latest ? (
-            <CrewMaintenance
-              state={state}
-              crew={latest}
-              copyLabel={draft.projectId ? t("Copy to all projects") : t("Copy to this project")}
-              pending={pending}
-              onCopy={() => {
-                autosave
-                  .flush()
-                  .then(() => {
-                    looks.seedFrom(draft.id);
-                    setDraft({
-                      ...structuredClone(draft),
-                      id: crypto.randomUUID(),
-                      name: draft.projectId ? draft.name : t("{p0} copy", { p0: draft.name }),
-                      projectId: draft.projectId ? undefined : data.project.id,
-                      updatedAt: 0,
-                    });
-                    setPage({ kind: "team" });
-                  })
-                  .catch(() => {});
-              }}
-              onPendingChange={(busy) => {
-                gate.current = busy;
-                setPendingAction(busy ? "delete" : null);
-              }}
-              onDeleted={() => {
-                forgetCrewDraft(draftKey, latest.id);
-                onClose();
-              }}
-            />
-          ) : null
-        }
-      />
+      <div className="pt-1">
+        <CrewWorkingSettings policy={draft.policy} errors={policy} onPolicyChange={updatePolicy} />
+      </div>
     </Disclosure>
   );
 
   const footer =
     page.kind === "add" ? (
-      <CrewEditorAddFooter
-        data={data}
-        additions={additions}
-        role={page.role}
-        pending={pending}
-        adding={pendingAction === "add"}
-        onAdd={addPicked}
-      />
+      <CrewEditorAddFooter data={data} additions={additions} pending={pending} onAdd={addPicked} />
     ) : (
       <CrewEditorFooter
         isNew={isNew}
@@ -499,19 +416,15 @@ function ConnectedCrewEditor({
         error={autosave.error}
         onRetry={autosave.retry}
         creating={pendingAction === "save"}
-        starting={pendingAction === "start"}
         pending={pending}
         blocked={conflict}
-        canStart={!!onStart}
         onCreate={create}
-        onStart={start}
       />
     );
 
   return (
     <Modal
-      title={isNew ? draft.name.trim() || t("New crew") : latest?.name || draft.name || t("Crew")}
-      context={editLevel}
+      title={page.kind === "add" ? t("Add members") : isNew ? t("New crew") : t("Edit crew")}
       size="lg"
       onClose={() => {
         if (!pending) onClose();
@@ -547,13 +460,11 @@ function ConnectedCrewEditor({
                 : undefined
             }
           />
-          {notice ? <InlineMessage tone="success">{notice}</InlineMessage> : null}
           {page.kind === "add" ? (
             <CrewEditorAddPage
               cwd={cwd}
               data={data}
               additions={additions}
-              role={page.role}
               onBack={() => setPage({ kind: "team" })}
             />
           ) : (
@@ -564,14 +475,24 @@ function ConnectedCrewEditor({
                 isNew={isNew}
                 nameError={showIssues && issues.name ? t("Name the crew.") : undefined}
                 onChange={update}
-              />
-              <CrewAccessRow
-                policy={draft.policy}
-                accessSupported={data.accessSupported === true}
-                onChange={updatePolicy}
+                look={
+                  <CrewAppearancePicker
+                    crewId={draft.id}
+                    look={looks.look}
+                    onChange={looks.setLook}
+                    disabled={pending}
+                  />
+                }
+                access={
+                  <CrewAccessRow
+                    policy={draft.policy}
+                    accessSupported={data.accessSupported === true}
+                    onChange={updatePolicy}
+                  />
+                }
               />
               {roster}
-              {advanced}
+              {more}
             </>
           )}
         </div>

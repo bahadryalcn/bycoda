@@ -17,7 +17,6 @@ import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { OverflowTooltip, Tooltip } from "../../../../shared/ui/Tooltip";
 import {
   Maximize2,
-  MessageSquare,
   Mic,
   MicOff,
   Minimize2,
@@ -30,7 +29,6 @@ import {
 import { t } from "../../../../shared/i18n";
 import { truncateGraphemes } from "../../../../shared/lib/text/truncate";
 import type { VoiceToolActivityEntry } from "../../model/voiceToolActivity";
-import { VoiceOptionsMenu } from "../VoicePanelChoices";
 import { VoiceToolActivityPanel } from "../VoiceToolActivityPanel";
 import { VoiceVisualizer } from "../VoiceVisualizer";
 import styles from "../VoiceCompanion.module.css";
@@ -77,8 +75,7 @@ export type VoiceCompanionViewProps = {
   statusText: string;
   sessionStatusText: string;
   startDisabled: boolean;
-  /** Who runs the voice: the realtime provider's name or this computer. */
-  engine: string;
+  /** Where audio goes when it leaves this computer; empty for local voice. */
   privacy: string;
   pushHint: string;
   workspace: boolean;
@@ -245,11 +242,11 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               </Button>
             )}
             <VoiceCompanionMoreMenu
+              compact
               live={live}
               manual={p.manual}
               muted={p.muted}
               speakerMuted={p.speakerMuted}
-              onManualChange={p.onManualChange}
               onFinish={p.onFinish}
               onToggleSpeaker={p.onToggleSpeaker}
             />
@@ -261,21 +258,16 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               entries={p.toolActivities}
               onStopWaiting={p.onStopWaiting}
             />
-            {p.fullScreen && canShowDrawers && (
-              <Button
-                ref={chatToggle}
-                touchTarget="control"
-                label={t("Chat")}
-                startIcon={<MessageSquare className="icon-sm" />}
-                aria-expanded={chatShown}
-                aria-controls={chatPanelId}
-                selected={chatShown}
-                onClick={() => setChatShown(!chatShown)}
-              >
-                {t("Chat")}
-              </Button>
-            )}
-            <VoiceOptionsMenu onFloat={p.canDetach ? p.onFloat : undefined} />
+            <VoiceCompanionMoreMenu
+              compact={false}
+              live={live}
+              manual={p.manual}
+              muted={p.muted}
+              speakerMuted={p.speakerMuted}
+              onFinish={p.onFinish}
+              onToggleSpeaker={p.onToggleSpeaker}
+              onFloat={p.canDetach ? p.onFloat : undefined}
+            />
             {p.fullScreen && canShowDrawers && p.onToggleWorkPanel ? (
               <Button
                 ref={p.workPanelToggleRef}
@@ -353,8 +345,6 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               audioLevel={audioLevel}
               statusText={p.statusText}
               sessionStatusText={p.sessionStatusText}
-              live={live}
-              engine={p.engine}
               privacy={p.privacy}
               workspace={p.workspace}
               globalScope={p.globalScope}
@@ -459,7 +449,10 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               speakerMuted={p.speakerMuted}
               manual={p.manual}
               chatShown={chatShown}
-              onToggleChat={p.fullScreen ? undefined : () => setChatShown(!chatShown)}
+              chatToggleRef={chatToggle}
+              chatPanelId={p.fullScreen ? chatPanelId : undefined}
+              onToggleChat={() => setChatShown(!chatShown)}
+              chatHidden={!canShowDrawers}
               onStart={p.onStart}
               onClose={p.onClose}
               onToggleMute={p.onToggleMute}

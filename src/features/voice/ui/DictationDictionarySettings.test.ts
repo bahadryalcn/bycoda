@@ -31,7 +31,6 @@ async function render() {
     });
   }
   await act(async () => root!.render(createElement(Harness)));
-  await click("Dictation dictionary");
 }
 async function click(text: string) {
   const button = [...container.querySelectorAll("button")].find(
@@ -218,7 +217,6 @@ it("explains the 500-term ceiling beside the list and disables Add term only at 
     })),
   });
   await render();
-  expect(container.textContent).toContain("500 of 500 terms saved");
   expect(container.textContent).toContain("The dictionary is full at 500 terms.");
   expect(buttonNamed("Add term").disabled).toBe(true);
 });

@@ -336,7 +336,7 @@
     "src/features/voice/model/voicePreview.test.ts": 1,
     "src/features/voice/model/voiceThreads.test.ts": 2,
     "src/features/voice/ui/VoiceChoiceCard.test.ts": 1,
-    "src/features/voice/ui/VoiceCompanion.test.ts": 17,
+    "src/features/voice/ui/VoiceCompanion.test.ts": 12,
     "src/features/voice/ui/companion/VoicePanelResize.test.ts": 1,
     "src/features/workspace/model/sessionRecovery.test.ts": 3,
     "src/features/workspace/model/workspaceSnapshot.test.ts": 2,

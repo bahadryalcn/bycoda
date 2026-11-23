@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { useMemo, useState } from "react";
-import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -9,16 +9,16 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TabStrip } from "../../../shared/ui/Tabs";
 import { X } from "../../../shared/ui/icons";
-import type { CrewAgent, CrewRole, SavedCrewAgent } from "../model/crew";
+import type { CrewAgent, SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
 import { useCrewModelPools } from "../model/crewModelPools";
 import { libraryGroups } from "../model/crewRoster";
 import { CrewMemberIdentity, CrewMemberMeta, visibleLibraryMembers } from "./CrewLibraryMemberMeta";
 import { hiddenSelection } from "./CrewLibrarySearch";
-import { CrewMemberForm, roleLabel } from "./CrewMemberForm";
+import { CrewMemberForm } from "./CrewMemberForm";
+import { rosterSearchable } from "./CrewMemberTable";
 
 export type MemberPickerMode = "library" | "new";
 
@@ -35,13 +35,8 @@ export function CrewMemberPicker({
   onSelectedChange,
   draft,
   onDraftChange,
-  role,
   nameError,
   modelError,
-  libraryScope,
-  onLibraryScopeChange,
-  saveToLibrary,
-  onSaveToLibraryChange,
 }: {
   cwd: string;
   data: ProjectCrews;
@@ -51,14 +46,8 @@ export function CrewMemberPicker({
   onSelectedChange: (ids: string[]) => void;
   draft: CrewAgent;
   onDraftChange: (patch: Partial<CrewAgent>) => void;
-  /** The role every picked member takes when opened from a role slot. */
-  role?: CrewRole;
   nameError?: string;
   modelError?: string;
-  libraryScope: "project" | "global";
-  onLibraryScopeChange: (scope: "project" | "global") => void;
-  saveToLibrary: boolean;
-  onSaveToLibraryChange: (save: boolean) => void;
 }) {
   useLocale();
   const [query, setQuery] = useState("");
@@ -84,6 +73,8 @@ export function CrewMemberPicker({
     setQuery("");
     setGroup("");
   };
+  // Search and the group filter appear once the library is long, as in the roster.
+  const long = rosterSearchable(data.agents.length, !!query.trim() || !!group);
   const toggle = (agent: SavedCrewAgent, on: boolean) =>
     onSelectedChange(on ? [...selected, agent.id] : selected.filter((id) => id !== agent.id));
   return (
@@ -100,46 +91,43 @@ export function CrewMemberPicker({
         ]}
         onValueChange={(value) => onModeChange(value === "new" ? "new" : "library")}
       />
-      {role ? (
-        <Text as="p">{t("Added members join as {p0}.", { p0: roleLabel(role) })}</Text>
-      ) : null}
       {mode === "library" ? (
         data.agents.length === 0 ? (
           <EmptyState
             context="panel"
             kind="empty"
             title={t("Your member library is empty")}
-            description={t(
-              "Create a member once and reuse it in other crews and projects on this host.",
-            )}
             action={{ label: t("New member"), onClick: () => onModeChange("new") }}
           />
         ) : (
           <>
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <SearchInput
-                appearance="field"
-                containerClassName="min-w-48 flex-1"
-                aria-label={t("Search name, role, model or group")}
-                placeholder={t("Search name, role, model or group")}
-                value={query}
-                autoFocus
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              {groups.length ? (
-                <SearchableSelect
-                  hideLabel
-                  label={t("Member group")}
-                  value={group}
-                  options={[
-                    { value: "", label: t("All groups") },
-                    ...groups.map((name) => ({ value: name, label: name })),
-                  ]}
-                  onChange={setGroup}
+            {long ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <SearchInput
+                  appearance="field"
+                  containerClassName="min-w-48 flex-1"
+                  aria-label={t("Search name, role, model or group")}
+                  placeholder={t("Search name, role, model or group")}
+                  value={query}
+                  autoFocus
+                  onChange={(event) => setQuery(event.target.value)}
                 />
-              ) : null}
-            </div>
-            {picked.length > 0 ? (
+                {groups.length ? (
+                  <SearchableSelect
+                    hideLabel
+                    label={t("Member group")}
+                    value={group}
+                    options={[
+                      { value: "", label: t("All groups") },
+                      ...groups.map((name) => ({ value: name, label: name })),
+                    ]}
+                    onChange={setGroup}
+                  />
+                ) : null}
+              </div>
+            ) : null}
+            {/* Checked rows show the selection; only picks a filter hides need their own list. */}
+            {hiddenCount > 0 ? (
               <div
                 role="group"
                 aria-label={t("Selected members")}
@@ -150,19 +138,15 @@ export function CrewMemberPicker({
               >
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2">
                   <Text role="status">
-                    {hiddenCount > 0
-                      ? t("{p0} selected, {p1} hidden by filter", {
-                          p0: picked.length,
-                          p1: hiddenCount,
-                        })
-                      : t("{p0} selected", { p0: picked.length })}
+                    {t("{p0} selected, {p1} hidden by filter", {
+                      p0: picked.length,
+                      p1: hiddenCount,
+                    })}
                   </Text>
                   <span className="flex items-center gap-1">
-                    {hiddenCount > 0 ? (
-                      <Button variant="ghost" size="sm" onClick={clearFilters}>
-                        {t("Clear filters")}
-                      </Button>
-                    ) : null}
+                    <Button variant="ghost" size="sm" onClick={clearFilters}>
+                      {t("Clear filters")}
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => onSelectedChange([])}>
                       {t("Clear selection")}
                     </Button>
@@ -241,51 +225,20 @@ export function CrewMemberPicker({
           </>
         )
       ) : (
-        <>
-          <CrewMemberForm
-            cwd={cwd}
-            catalog={data.catalog}
-            agent={draft}
-            onChange={onDraftChange}
-            groups={data.groupsSupported}
-            identity={data.identitySupported}
-            tools={data.toolsSupported}
-            machineId={data.machine.id}
-            projectId={data.project.id}
-            modelPoolsSupported={data.modelPoolsSupported}
-            groupSuggestions={groups}
-            nameError={nameError}
-            modelError={modelError}
-            autoFocus
-          />
-          <Surface
-            variant="card"
-            padding="sm"
-            className="flex min-w-0 flex-wrap items-center gap-3"
-          >
-            <Checkbox
-              checked={saveToLibrary}
-              onChange={(event) => onSaveToLibraryChange(event.target.checked)}
-              label={t("Also save to member library")}
-              size="body"
-              className="flex items-center gap-2"
-            />
-            {saveToLibrary ? (
-              <RadioGroup
-                variant="inline"
-                label={t("Library availability")}
-                value={libraryScope}
-                options={[
-                  { value: "project", label: t("This project") },
-                  { value: "global", label: t("All projects") },
-                ]}
-                onValueChange={(value) =>
-                  onLibraryScopeChange(value === "global" ? "global" : "project")
-                }
-              />
-            ) : null}
-          </Surface>
-        </>
+        <CrewMemberForm
+          cwd={cwd}
+          agent={draft}
+          onChange={onDraftChange}
+          groups={data.groupsSupported}
+          identity={data.identitySupported}
+          tools={data.toolsSupported}
+          machineId={data.machine.id}
+          projectId={data.project.id}
+          modelPoolsSupported={data.modelPoolsSupported}
+          nameError={nameError}
+          modelError={modelError}
+          autoFocus
+        />
       )}
     </div>
   );

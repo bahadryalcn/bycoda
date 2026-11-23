@@ -1190,12 +1190,12 @@ it("retires the expanded turn menu on collapse and keeps the real mode selected 
   expect(document.querySelector('[role="menu"]')).toBeNull();
   expect(container.querySelectorAll('[aria-label="More voice options"]')).toHaveLength(1);
   await click("More voice options");
-  let options = [...document.querySelectorAll('[role="menuitemradio"]')];
-  expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
+  // The turn-ending choice lives on the expanded dock, not in the pill's menu.
+  expect(document.querySelector('[role="menuitemradio"]')).toBeNull();
   await click("Expand voice companion");
   expect(document.querySelector('[role="menu"]')).toBeNull();
   await click("Reply when I pause");
-  options = [...document.querySelectorAll('[role="menuitemradio"]')];
+  const options = [...document.querySelectorAll('[role="menuitemradio"]')];
   expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["false", "true"]);
   expect(mock.finishTurn).not.toHaveBeenCalled();
   expect(mock.connect).toHaveBeenCalledOnce();
@@ -1802,7 +1802,7 @@ it("reveals a requested result from Window and keeps it available when closing a
   expect(container.querySelector("[data-work-panel]")).toBeNull();
   await click("Live results");
   expect(container.querySelector("[data-work-panel]")).not.toBeNull();
-  await click("Chat");
+  await click("Conversation");
   await act(async () => {
     expect(await reveal("fresh-voice-work")).toMatchObject({ action, status: "completed" });
   });

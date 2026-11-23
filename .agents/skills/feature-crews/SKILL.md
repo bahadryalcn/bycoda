@@ -9,6 +9,7 @@ Keep saved teams, reusable member profiles and executing run snapshots distinct.
 
 ## Source starts
 
+- `src/features/crews/ui/page/CrewsPage.tsx`: the three tabs (Teams, Members, Work); the Work tab (`CrewWorkManager.tsx`) is the one work manager.
 - `src/features/crews/ui/CrewEditor.tsx`: definition editor UI.
 - `src/features/crews/model/crewClient.ts`: client calls to the Host.
 - `host/crews/crews.ts`: Host service for definitions and runs.
@@ -16,7 +17,7 @@ Keep saved teams, reusable member profiles and executing run snapshots distinct.
 ## Workflow
 
 1. Identify whether the change concerns definition editing, library/scope copies, work/run controls or ambient scene. Follow that surface to its current model and Host owner.
-2. The editor is one autosaving page (access row, bulk model bar, member rows, Advanced). Keep draft ownership when expanding members, filtering or adding; autosave sends only valid drafts with revision checks, one request at a time. Apply source-profile updates only through the explicit update operation.
+2. The editor is one autosaving page (look button, name, Access chip, member rows, one More options; the bulk model bar and roster search appear only for a long roster). Keep draft ownership when expanding members, filtering or adding; autosave sends only valid drafts with revision checks, one request at a time. Apply source-profile updates only through the explicit update operation.
 3. Route mutations through the existing Crew client/service with revision checks and stable request IDs. Reconcile unknown outcomes with the authoritative owner instead of repeating Start.
 4. Exercise model/catalog failure, conflicting edits, partial copies, run controls and current reviewer/request states; check adjacent task/settings/rail consumers when their contract changes.
 

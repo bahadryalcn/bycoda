@@ -41,7 +41,7 @@ import {
   TaskFormSwitch,
 } from "./TaskFormFields";
 import { useTaskModelRouting } from "./TaskModelChoiceField";
-import { TaskTargetChips } from "./TaskTargetChips";
+import { TargetChips } from "../../../shared/ui/TargetChips";
 import {
   TaskResourceFields,
   TaskTemplateMenu,
@@ -64,6 +64,7 @@ export function TaskForm({
   machines,
   machine,
   todoUnsupported,
+  crewPreselected = false,
   saving,
   onChange,
   onCancel,
@@ -75,6 +76,8 @@ export function TaskForm({
   /** The machine whose host would run this draft, when connected. */
   machine?: string;
   todoUnsupported?: string;
+  /** The caller chose the crew: its row and the crew's Access stay hidden while the crew resolves. */
+  crewPreselected?: boolean;
   saving: boolean;
   onChange: (draft: TaskDraft) => void;
   onCancel: () => void;
@@ -124,6 +127,8 @@ export function TaskForm({
   const crew = crews.find((entry) => entry.id === draft.crewDefinitionId);
   const crewValid = !hasCrew || Boolean(crew);
   const crewLoading = hasCrew && !crewQuery.data && !crewQuery.error && crewQuery.isFetching;
+  // A preselected crew that fails to resolve brings the picker back so the draft can recover.
+  const showCrewRows = !crewPreselected || (!crewValid && !crewLoading);
   const { preparation, requirementsError } = useTaskPreparation(machines, draft, target, saving);
   const workspaceValid = isWorkspaceValid(
     draft.workspace,
@@ -192,7 +197,7 @@ export function TaskForm({
     requirementCount
       ? t("Resources ({p0})", { p0: format.formatNumber(requirementCount) })
       : undefined,
-    crew?.name ?? (hasCrew ? t("Crew") : undefined),
+    showCrewRows ? (crew?.name ?? (hasCrew ? t("Crew") : undefined)) : undefined,
     !hasCrew && draft.review && draft.reviewerConfig ? t("Reviewer profile") : undefined,
   ]
     .filter(Boolean)
@@ -249,7 +254,7 @@ export function TaskForm({
               surface="raised"
               frameProps={{ "data-task-prompt": "" }}
             />
-            <TaskTargetChips
+            <TargetChips
               disabled={saving}
               machine={{
                 value: targetId,
@@ -457,27 +462,29 @@ export function TaskForm({
                   />
                   {hasCrew || crews.length ? (
                     <div>
-                      <TaskFormRow label={t("Run with a crew")}>
-                        <SearchableSelect
-                          label={t("Crew")}
-                          hideLabel
-                          variant="pill"
-                          value={draft.crewDefinitionId ?? ""}
-                          disabled={draft.workspaceLocked || workspaceBusy}
-                          options={[
-                            { value: "", label: t("Agent") },
-                            ...crews.map((entry) => ({
-                              value: entry.id,
-                              label: entry.name,
-                              description: entry.projectId
-                                ? t("This project")
-                                : t("All projects on this host"),
-                            })),
-                          ]}
-                          onChange={(id) => update("crewDefinitionId", id || undefined)}
-                        />
-                      </TaskFormRow>
-                      {hasCrew ? (
+                      {showCrewRows ? (
+                        <TaskFormRow label={t("Run with a crew")}>
+                          <SearchableSelect
+                            label={t("Crew")}
+                            hideLabel
+                            variant="pill"
+                            value={draft.crewDefinitionId ?? ""}
+                            disabled={draft.workspaceLocked || workspaceBusy}
+                            options={[
+                              { value: "", label: t("Agent") },
+                              ...crews.map((entry) => ({
+                                value: entry.id,
+                                label: entry.name,
+                                description: entry.projectId
+                                  ? t("This project")
+                                  : t("All projects on this host"),
+                              })),
+                            ]}
+                            onChange={(id) => update("crewDefinitionId", id || undefined)}
+                          />
+                        </TaskFormRow>
+                      ) : null}
+                      {hasCrew && showCrewRows ? (
                         <TaskFormRow label={t("Access")}>
                           <AccessPicker
                             value={draft.runtimeMode}

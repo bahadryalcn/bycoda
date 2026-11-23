@@ -26,7 +26,6 @@ it("bounds dictation preferences without splitting UTF-16 and preserves dynamic 
         translateToEnglish: true,
       },
       dictationShortcutMode: "invalid",
-      dictationIdleUnloadMinutes: -1,
     }),
   );
   const settings = loadVoiceSettings();
@@ -36,7 +35,6 @@ it("bounds dictation preferences without splitting UTF-16 and preserves dynamic 
   ]);
   expect(settings.dictationCleanup.instructions).toHaveLength(4000);
   expect(settings.dictationShortcutMode).toBe("auto");
-  expect(settings.dictationIdleUnloadMinutes).toBe(5);
 });
 
 it("keeps both voice and dictation off for a fresh preference", () => {
@@ -133,10 +131,8 @@ it("parses the return call settings backward compatibly", async () => {
   expect(loadVoiceSettings().returnCall).toBeUndefined();
   save({ enabled: true });
   expect(loadVoiceSettings()).not.toHaveProperty("returnCall");
-  save({ returnCall: true, returnCallSeconds: 45 });
-  expect(loadVoiceSettings()).toMatchObject({ returnCall: true, returnCallSeconds: 45 });
-  save({ returnCall: "yes", returnCallSeconds: 3 });
-  const bad = loadVoiceSettings();
-  expect(bad).not.toHaveProperty("returnCall");
-  expect(bad).not.toHaveProperty("returnCallSeconds");
+  save({ returnCall: true });
+  expect(loadVoiceSettings()).toMatchObject({ returnCall: true });
+  save({ returnCall: "yes" });
+  expect(loadVoiceSettings()).not.toHaveProperty("returnCall");
 });

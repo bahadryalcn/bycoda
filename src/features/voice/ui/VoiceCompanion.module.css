@@ -19,17 +19,6 @@
 .launcherSlot:not([data-compact]) {
   flex: 0 1 auto;
 }
-.launcherSlot[data-compact] .dockedLauncherGroup {
-  flex-direction: column;
-}
-.launcherSlot[data-compact] .dockedLauncherGroup > * {
-  margin-inline: auto;
-}
-.wakeMenu {
-  display: grid;
-  gap: var(--space-1);
-  padding: var(--space-2);
-}
 .launcherButton[data-docked] {
   min-inline-size: 0;
   max-inline-size: 100%;

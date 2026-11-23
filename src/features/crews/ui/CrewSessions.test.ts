@@ -4,10 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { isConnectionFailure, presentRemoteError } from "../../connections/model/remoteFailure";
 import { reportRemoteConnection } from "../../connections/model/remoteHealth";
-import { CrewManagementDialog, CrewSessions } from "./CrewSessions";
+import { CrewSidebar } from "./CrewSessions";
 import { CrewWorkManager } from "./CrewWorkManager";
 
-const feedback = vi.hoisted(() => ({ coordinated: true }));
+const feedback = vi.hoisted(() => ({ coordinated: true, query: {} as Record<string, unknown> }));
 vi.mock("../../connections/ui/RemoteConnectionFeedback", () => ({
   useRemoteConnectionFeedback: (
     _cwd: string,
@@ -17,6 +17,10 @@ vi.mock("../../connections/ui/RemoteConnectionFeedback", () => ({
 vi.mock("../../connections/model/remoteHealth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../connections/model/remoteHealth")>()),
   reportRemoteConnection: vi.fn(),
+}));
+vi.mock("../model/crewClient", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../model/crewClient")>()),
+  useProjectCrews: () => feedback.query,
 }));
 
 // The machine picker asks the host list; these tests stay on the project's own machine.
@@ -29,7 +33,7 @@ vi.mock("./CrewMachineScope", () => ({
   }),
 }));
 
-type CrewState = ComponentProps<typeof CrewSessions>["state"];
+type CrewState = ComponentProps<typeof CrewWorkManager>["state"];
 const cwd = "remote://environment/Users/owner/project";
 let root: Root;
 let container: HTMLDivElement;
@@ -38,6 +42,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   feedback.coordinated = true;
+  feedback.query = {};
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -49,10 +54,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function render(state: Partial<CrewState>) {
+async function renderFeed(state: Partial<CrewState>) {
+  feedback.query = state;
+  await act(async () => root.render(createElement(CrewSidebar, { cwd, onManagedChange: vi.fn() })));
+}
+
+async function renderManager(state: Partial<CrewState>) {
   const refetch = vi.fn();
   await act(async () =>
-    root.render(createElement(CrewSessions, { cwd, state: { refetch, ...state } as CrewState })),
+    root.render(createElement(CrewWorkManager, { cwd, state: { refetch, ...state } as CrewState })),
   );
   return refetch;
 }
@@ -65,148 +75,58 @@ function visibleFailure(error: Error) {
   };
 }
 
-it("hands an uninitialized remote query failure to the common notice without an empty success state", async () => {
+it("lists nothing in the sidebar: it only reports the connection and the managed sessions", async () => {
   const error = new Error("Machine is unreachable");
-  await render({ error, pendingFailure: true });
-  expect(container.textContent).not.toContain("Not connected");
-  expect(reportRemoteConnection).toHaveBeenCalledWith(cwd, "crews", error);
-  await render(visibleFailure(error));
-  expect(container.textContent).toContain("Not connected");
-  expect(container.textContent).not.toContain("Retry");
+  await renderFeed({ error, pendingFailure: true });
+  expect(container.textContent).toBe("");
   expect(reportRemoteConnection).toHaveBeenCalledWith(cwd, "crews", error);
 });
 
-it("retains the last Crew work rows during a shared connection interruption", async () => {
-  const data = {
-    definitions: [{ id: "definition", name: "Review team" }],
-    runs: [
-      {
-        id: "run",
-        title: "Review connection recovery",
-        status: "active",
-        updatedAt: 1,
-        definition: { id: "definition", name: "Review team" },
-        tasks: [],
-        messages: [],
-        assignments: [],
-      },
-    ],
-  } as unknown as NonNullable<CrewState["data"]>;
-  await render({
-    data,
-    error: new Error("RPC_CONNECTION_INTERRUPTED: Host connection interrupted"),
-  });
-  expect(container.textContent).toContain("Review connection recovery");
-  expect(container.textContent).not.toContain("Retry");
-  expect(container.textContent).not.toContain("Not connected");
-});
-
-it("keeps a service failure and its local retry even with an empty cached collection", async () => {
+it("does not report recovery before the query has a verified result", async () => {
+  await renderFeed({ isSuccess: false });
+  expect(reportRemoteConnection).not.toHaveBeenCalled();
   const data = { definitions: [], runs: [] } as unknown as NonNullable<CrewState["data"]>;
-  const refetch = await render({
+  await renderFeed({ data, isSuccess: true, error: null });
+  expect(reportRemoteConnection).toHaveBeenCalledWith(cwd, "crews");
+});
+
+it("does not report a service failure as a lost connection", async () => {
+  await renderFeed(visibleFailure(new Error("Host rejected request: Crew storage unavailable")));
+  expect(reportRemoteConnection).not.toHaveBeenCalled();
+});
+
+it("keeps a service failure and its local retry in the Work tab", async () => {
+  const data = { definitions: [], runs: [] } as unknown as NonNullable<CrewState["data"]>;
+  const refetch = await renderManager({
     data,
     ...visibleFailure(new Error("Host rejected request: Crew storage unavailable")),
   });
   const retry = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Try again",
+    (button) => button.textContent === "Retry",
   )!;
   expect(retry).toBeTruthy();
   await act(async () => retry.click());
   expect(refetch).toHaveBeenCalledOnce();
-  expect(reportRemoteConnection).not.toHaveBeenCalled();
-});
-
-it("retains standalone connection retry when no common owner is mounted", async () => {
-  feedback.coordinated = false;
-  const error = new Error("Machine is unreachable");
-  await render({ error, pendingFailure: true });
-  expect(container.textContent).not.toContain("Try again");
-  await render(visibleFailure(error));
-  expect(container.textContent).toContain(presentRemoteError(error, { graceExpired: true }));
-  expect(container.textContent).toContain("Try again");
-  expect(container.textContent).not.toContain("Not connected");
 });
 
 it("shows the presented Host failure as visible text and keeps the raw message behind Details", async () => {
   const raw = "Host rejected request: Crew storage unavailable";
-  const data = { definitions: [], runs: [] } as unknown as NonNullable<CrewState["data"]>;
   const failure = visibleFailure(new Error(raw));
-  const refetch = await render({ data, ...failure });
+  const refetch = await renderManager({ ...failure });
   // The visible sentence is the presented reason, not a button label or tooltip.
   expect(container.textContent).toContain(failure.visibleError);
   expect(container.textContent).not.toContain(raw);
-  expect(container.querySelector("[title]")).toBeNull();
   // The raw Host text is one disclosure away, and the retry stays a named button.
   const details = [...container.querySelectorAll("button")].find(
-    (button) => button.textContent === "Details",
+    (button) => button.textContent === "Details" || button.textContent === "Show details",
   )!;
   await act(async () => details.click());
-  // The details popover renders in a portal, outside the sidebar container.
   expect(document.body.textContent).toContain(raw);
   const retry = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "Try again",
   )!;
   await act(async () => retry.click());
   expect(refetch).toHaveBeenCalledOnce();
-});
-
-it("does not report recovery before the query has a verified result", async () => {
-  await render({ isSuccess: false });
-  expect(reportRemoteConnection).not.toHaveBeenCalled();
-  const data = { definitions: [], runs: [] } as unknown as NonNullable<CrewState["data"]>;
-  await render({ data, isSuccess: true, error: null });
-  expect(reportRemoteConnection).toHaveBeenCalledWith(cwd, "crews");
-});
-
-it("keeps recovery inside Crew management's modal even when a shared notice provider is mounted", async () => {
-  const { RemoteConnectionFeedbackProvider } = await vi.importActual<
-    typeof import("../../connections/ui/RemoteConnectionFeedback")
-  >("../../connections/ui/RemoteConnectionFeedback");
-  const refetch = vi.fn<CrewState["refetch"]>();
-  const renderDialog = async (error: Error | null) =>
-    act(async () =>
-      root.render(
-        createElement(RemoteConnectionFeedbackProvider, {
-          children: [
-            createElement("button", { key: "outside" }, "Shared reconnect"),
-            createElement(CrewManagementDialog, {
-              key: "dialog",
-              cwd,
-              state: {
-                ...(error ? visibleFailure(error) : { error }),
-                refetch,
-              } as unknown as CrewState,
-              onClose: vi.fn(),
-            }),
-          ],
-        }),
-      ),
-    );
-  await renderDialog(new Error("Machine is unreachable"));
-  const dialog = document.body.querySelector('[role="dialog"]')!;
-  await act(async () => {
-    [...dialog.querySelectorAll("button")]
-      .find((button) => button.textContent === "Show details")!
-      .click();
-  });
-  expect(dialog.textContent).toContain("Machine is unreachable");
-  const retry = [...dialog.querySelectorAll("button")].find(
-    (button) => button.textContent === "Try again",
-  )!;
-  expect(retry).toBeTruthy();
-  await act(async () => {
-    retry.focus();
-    retry.click();
-  });
-  expect(document.activeElement).toBe(retry);
-  expect(refetch).toHaveBeenCalledOnce();
-  await renderDialog(new Error("Crew storage unavailable"));
-  expect(document.body.textContent).toContain("Crew storage unavailable");
-  expect(document.body.textContent).not.toContain("Not connected");
-  await renderDialog(null);
-  expect(dialog.querySelector('[data-loading-layout="fill"]')).not.toBeNull();
-  expect(dialog.textContent).not.toContain("Try again");
-  expect(document.body.textContent).not.toContain("Not connected");
 });
 
 it("names the machine and action of a failed crew action and clears it once the machine answers", async () => {
@@ -239,38 +159,28 @@ it("names the machine and action of a failed crew action and clears it once the 
     .mockRejectedValue(
       new Error("Machine is unreachable. Check the host and SSH tunnel, then reconnect."),
     );
-  const renderDialog = (dataUpdatedAt: number) =>
+  const renderWork = (dataUpdatedAt: number) =>
     act(async () =>
       root.render(
-        createElement(CrewManagementDialog, {
+        createElement(CrewWorkManager, {
           cwd,
           state: { data, call, dataUpdatedAt, refetch: vi.fn() } as unknown as CrewState,
-          onClose: vi.fn(),
         }),
       ),
     );
-  await renderDialog(1);
-  const pause = [...document.body.querySelectorAll("button")].find((button) =>
+  await renderWork(1);
+  const pause = [...container.querySelectorAll("button")].find((button) =>
     button.textContent?.includes("Pause"),
   )!;
   await act(async () => pause.click());
-  const dialog = document.body.querySelector('[role="dialog"]')!;
-  expect(dialog.textContent).toContain("failed on This computer");
-  expect(dialog.textContent).not.toContain("SSH tunnel");
-  await renderDialog(Date.now() + 1000);
-  expect(document.body.textContent).not.toContain("failed on This computer");
+  expect(container.textContent).toContain("failed on This computer");
+  expect(container.textContent).not.toContain("SSH tunnel");
+  await renderWork(Date.now() + 1000);
+  expect(container.textContent).not.toContain("failed on This computer");
 });
 
-it("renders the work manager inline on the page layout without a modal", async () => {
-  await act(async () =>
-    root.render(
-      createElement(CrewWorkManager, {
-        layout: "page",
-        cwd,
-        state: { error: null, refetch: vi.fn() } as unknown as CrewState,
-      }),
-    ),
-  );
+it("renders the work manager inline without a modal", async () => {
+  await renderManager({ error: null });
   expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   expect(document.body.textContent).toContain("Loading crews…");
 });

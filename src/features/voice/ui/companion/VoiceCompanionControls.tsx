@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import { Button } from "../../../../shared/ui/Button";
 import {
   MessageSquare,
@@ -16,8 +17,8 @@ import styles from "./VoiceCompanionParts.module.css";
 
 /**
  * The expanded footer: a centred, phone-style dock of round buttons. While live, the turn-ending
- * choice sits above conversation, mic, silence, speaker and the red disconnect. Every icon has a
- * tooltip and the same accessible name.
+ * choice sits above conversation, mic, silence, speaker and the red disconnect. Every icon has the
+ * same accessible name as its tooltip.
  */
 export function VoiceCompanionControls({
   status,
@@ -26,7 +27,10 @@ export function VoiceCompanionControls({
   speakerMuted,
   manual,
   chatShown,
+  chatToggleRef,
+  chatPanelId,
   onToggleChat,
+  chatHidden,
   onStart,
   onClose,
   onToggleMute,
@@ -40,9 +44,13 @@ export function VoiceCompanionControls({
   muted: boolean;
   speakerMuted: boolean;
   manual: boolean;
-  /** Floating panel transcript replaces its stage. Fullscreen has a header toggle. */
+  /** The one transcript toggle, on every size: floating replaces the stage, fullscreen opens a drawer. */
   chatShown: boolean;
+  chatToggleRef?: Ref<HTMLButtonElement>;
+  chatPanelId?: string;
   onToggleChat?: () => void;
+  /** Keeps the toggle's slot while a question fills the stage, so the dock does not shift. */
+  chatHidden?: boolean;
   onStart: () => void;
   onClose: () => void;
   onToggleMute: () => void;
@@ -55,10 +63,13 @@ export function VoiceCompanionControls({
   const connecting = status === "connecting" || status === "reconnecting";
   const chat = onToggleChat && (
     <Button
+      ref={chatToggleRef}
       iconOnly
       shape="pill"
       size="lg"
       label={t("Conversation")}
+      aria-controls={chatPanelId}
+      className={chatHidden ? "invisible" : undefined}
       pressed={chatShown}
       onClick={onToggleChat}
     >

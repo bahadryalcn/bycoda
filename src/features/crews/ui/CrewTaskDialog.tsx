@@ -4,7 +4,6 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Modal } from "../../../shared/ui/Modal";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { HostModelSource } from "../../connections/public/HostModelSource";
-import type { BackgroundSessionTarget } from "../../tasks";
 import {
   newTaskDraft,
   saveTask,
@@ -14,7 +13,6 @@ import {
 } from "../../tasks/public/taskCreation";
 import { TaskForm } from "../../tasks/public/taskCreation";
 import type { useProjectCrews } from "../model/crewClient";
-import { useCrewMachineScope } from "./CrewMachineScope";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 // Each exact host/project/team owns its draft and original creation receipt.
@@ -22,33 +20,30 @@ const drafts = new Map<string, TaskDraft>();
 
 /** Every Crew entry point creates ordinary board work through the canonical form. */
 export function CrewTaskDialog({
-  cwd: homeCwd,
-  state: homeState,
+  cwd,
+  state,
   definitionId,
   onClose,
 }: {
   cwd: string;
   state: ReturnType<typeof useProjectCrews>;
   definitionId?: string;
-  onOpen?: (target: BackgroundSessionTarget) => void | Promise<void>;
-  onEdit?: (definitionId: string) => void;
   onClose: () => void;
 }) {
   useLocale();
-  const scope = useCrewMachineScope(homeCwd, homeState);
-  const data = scope.state.data;
+  const data = state.data;
   return data ? (
     <CrewTaskDraft
       key={JSON.stringify([data.machine.id, data.project.id, definitionId])}
-      cwd={scope.cwd}
-      state={scope.state}
+      cwd={cwd}
+      state={state}
       definitionId={definitionId}
       onClose={onClose}
     />
   ) : (
     <Modal title={t("New task")} onClose={onClose}>
-      {scope.state.visibleError ? (
-        <Alert tone="danger">{scope.state.visibleError}</Alert>
+      {state.visibleError ? (
+        <Alert tone="danger">{state.visibleError}</Alert>
       ) : (
         <LoadingText>{t("Loading crews…")}</LoadingText>
       )}
@@ -151,6 +146,8 @@ function CrewTaskDraft({
   return (
     <Modal
       title={t("New task")}
+      // The form no longer repeats the crew row, so the title names the crew.
+      context={crew?.name}
       size="lg"
       padding="none"
       scroll="none"
@@ -172,10 +169,6 @@ function CrewTaskDraft({
         >
           {t("Task created, but it could not be started: {p0}", { p0: startError })}
         </Alert>
-      ) : receipt ? (
-        <Alert tone="success" className="m-4" action={{ label: t("Close"), onClick: onClose }}>
-          {t("Task created")}
-        </Alert>
       ) : (
         <HostModelSource
           machine={data.machine}
@@ -188,6 +181,8 @@ function CrewTaskDraft({
             recents={[{ path: cwd, openedAt: 0 }]}
             machines={[data.machine]}
             machine={data.machine.name}
+            // The caller named the crew, or there is only one: the form need not ask again.
+            crewPreselected={!!definitionId || data.definitions.length <= 1}
             saving={saving}
             onChange={(next) => {
               if (!gate.current) {

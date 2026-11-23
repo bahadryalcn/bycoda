@@ -7,18 +7,18 @@ keyboard placement, pointer identity, latest clamped release/cancel position, ex
 actions and reduced-motion/state readability. Floating `voice-overlay-<owner>` mirrors
 owner audio/tools through snapshots and whitelisted commands, never workspace quit/tray/
 reap/state. Owner close/reload closes it; overlay/native close docks and shows owner
-without disconnecting. Floating stays in Voice options. Scoped subscriptions expose
+without disconnecting. Floating stays in the More voice options menu. Scoped subscriptions expose
 failures and clean up under StrictMode.
 
 Compact/full/floating controls retain Stop work, speaker mute, microphone and Finish,
-with mode selection in options. Disconnect, speaker mute, silence and Stop work differ.
+with turn-ending choice in the expanded dock (compact and floating menus only add Finish turn). Disconnect, speaker mute, silence and Stop work differ.
 Speaker mute cancels/prevents output-only briefings without replay. Opt-in Push to Talk
 needs live connection/paused mic: hold captures, release submits then pauses; Escape/blur
 cancel. Runtime end preserves pending transcripts.
 
 ## Persona, memory and rules
 
-Persona is quoted style after core rules in every route, never authority/target/format.
+Assistant settings own name, address and tone; with a Host profile the legacy persona contributes only its name and rules, quoted style after core rules in every route, never authority/target/format.
 Host setup replaces skip; identity/budget and provider/playback/microphone verification
 keep separate gates. Retain persona backups. Memory/rules come from current owner speech
 or Settings, never session/draft/tool content. Exact accepted corrections brand rules and
@@ -79,6 +79,6 @@ settings unload the warm recognizer before proceeding.
 Retain CPU/GPU/automatic and cloud/system/natural choices, omitted-default/runtime-key
 compatibility, CPU fallback versus explicit GPU failure and truthful recovery. Current
 settings own engine/model revisions and provider voices; performance grants no install/
-replace authority. Professional preset preserves unrelated settings and manual-turn revisions.
+replace authority. Turn-ending changes preserve unrelated settings and manual-turn revisions.
 Shared Assistant setup owns navigation/completion. Simulated platforms prove neither OS
 prompts, capture, physical-device behavior nor installed inclusion.

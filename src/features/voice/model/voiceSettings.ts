@@ -47,8 +47,6 @@ export type VoiceSettings = {
   removeFillers?: boolean;
   /** Opt-in: speak when the owner returns, then listen for a bounded window. Off by default. */
   returnCall?: boolean;
-  /** Seconds the microphone stays open after the return greeting; 5 to 120, default 20. */
-  returnCallSeconds?: number;
   /** Opt-in: a local listener opens Talk after the wake phrase; the sleep phrase closes it. */
   wakeEnabled?: boolean;
   /** Owner-typed phrases only (2 to 40 characters); missing means the language default. */
@@ -59,7 +57,6 @@ export type VoiceSettings = {
   enabled: boolean;
   dictationEnabled: boolean;
   dictationShortcutMode: "auto" | "hold" | "toggle";
-  dictationIdleUnloadMinutes: number;
   dictationLocalModelPath: string;
   dictationDictionary: DictationDictionaryEntry[];
   dictationRemoveFillers: boolean;
@@ -93,7 +90,6 @@ const defaults: VoiceSettings = {
   enabled: false,
   dictationEnabled: false,
   dictationShortcutMode: "auto",
-  dictationIdleUnloadMinutes: 5,
   dictationLocalModelPath: "",
   dictationDictionary: [],
   dictationRemoveFillers: false,
@@ -161,12 +157,6 @@ export function normalizeVoiceSettings(value: VoiceSettings): VoiceSettings {
       value?.dictationShortcutMode === "hold" || value?.dictationShortcutMode === "toggle"
         ? value.dictationShortcutMode
         : "auto",
-    dictationIdleUnloadMinutes:
-      Number.isInteger(value?.dictationIdleUnloadMinutes) &&
-      value.dictationIdleUnloadMinutes >= 0 &&
-      value.dictationIdleUnloadMinutes <= 120
-        ? value.dictationIdleUnloadMinutes
-        : 5,
     dictationLocalModelPath:
       typeof value?.dictationLocalModelPath === "string" ? value.dictationLocalModelPath : "",
     dictationDictionary: parseDictationDictionary(value?.dictationDictionary),
@@ -223,12 +213,6 @@ export function normalizeVoiceSettings(value: VoiceSettings): VoiceSettings {
     ...(value?.wakeEnabled === true ? { wakeEnabled: true } : {}),
     ...wakePhraseField("wakePhrase", value?.wakePhrase),
     ...wakePhraseField("sleepPhrase", value?.sleepPhrase),
-    ...(typeof value?.returnCallSeconds === "number" &&
-    Number.isInteger(value.returnCallSeconds) &&
-    value.returnCallSeconds >= 5 &&
-    value.returnCallSeconds <= 120
-      ? { returnCallSeconds: value.returnCallSeconds }
-      : {}),
     idleSleepMinutes:
       Number.isInteger(value?.idleSleepMinutes) &&
       value.idleSleepMinutes >= 0 &&

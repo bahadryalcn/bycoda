@@ -193,3 +193,34 @@ for (const theme of ["light", "dark"])
       await expect(actions.getByText("Done", { exact: true })).toBeVisible();
       await capture("activity-returned");
     });
+
+// The Assistant owns identity. An old device persona may still sit in storage; the companion and
+// Voice settings follow the Host profile and open the Assistant for changes.
+test("companion identity follows the Assistant profile, not the legacy device persona", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "bycoda.voice.persona",
+      JSON.stringify({ status: "configured", name: "Legacy name", rules: "Legacy owner rule" }),
+    );
+    (window as any).assistantNavigation = [];
+    window.addEventListener("bycoda:open-assistant", (event) =>
+      (window as any).assistantNavigation.push((event as CustomEvent).detail),
+    );
+  });
+  await page.goto("/tests/browser/voice/voice-visual-styles.html?theme=dark");
+  await expect(page.locator('[data-setting-id="voice-persona"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "Assistant settings", exact: true }).click();
+  expect(await page.evaluate(() => (window as any).assistantNavigation)).toEqual([
+    { tab: "settings" },
+  ]);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+  await expect(
+    page
+      .locator("section[data-voice-state]")
+      .getByRole("heading", { name: "Assistant Arif", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Legacy name")).toHaveCount(0);
+});

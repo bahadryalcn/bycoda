@@ -1,5 +1,4 @@
 import { Text } from "../../../shared/ui/Text";
-import { useState } from "react";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
@@ -7,25 +6,22 @@ import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { Pause, Play, Square, Trash2 } from "../../../shared/ui/icons";
 import type { HostModelCatalog } from "../../connections/model/protocol";
-import { CREW_LIST_MESSAGE_LIMIT, type CrewDefinition } from "../model/crew";
+import type { CrewDefinition } from "../model/crew";
 import type { CrewRunView } from "../model/crewClient";
 import {
   crewActivityKnown,
   crewCanStop,
   crewHasRunningWork,
-  crewMessageMayBeClipped,
   crewProgressLabel,
   crewRequestInfo,
 } from "../model/crewPresentation";
 import { crewRunTitle } from "../model/crewRoster";
-import { composerDefaultMember } from "../model/crewComposer";
 import { CrewWorkOwnerActions, type CrewOwnerTools } from "./CrewWorkOwnerActions";
 import { CrewWorkSessions } from "./CrewWorkSessions";
 import { CrewWorkSummary } from "./CrewWorkSummary";
+import { CrewWorkTimeline } from "./CrewWorkTimeline";
 import { CrewWorkTeam } from "./CrewWorkTeam";
-import { CrewWorkTimeline, crewUsageText } from "./CrewWorkTimeline";
-import { crewRunUsage } from "../model/crewUsage";
-import { CrewWorkBadges, CrewWorkUpdated } from "./CrewWorkState";
+import { CrewWorkBadges } from "./CrewWorkState";
 
 /** Selected work: state, request, decisions and blockers, controls, conversations and team. */
 export function CrewWorkDetail({
@@ -37,6 +33,7 @@ export function CrewWorkDetail({
   error,
   canOpen,
   canDelete,
+  coordinatorInline = false,
   stopRequested = false,
   ownerTools,
   onOpen,
@@ -54,6 +51,8 @@ export function CrewWorkDetail({
   error?: string;
   canOpen: boolean;
   canDelete: boolean;
+  /** The lead's conversation is already shown inline above, so its session row is left out. */
+  coordinatorInline?: boolean;
   /** The owner stopped this work in this dialog; the lead may still be cancelling. */
   stopRequested?: boolean;
   /** Host access for the owner actions; without it they stay hidden. */
@@ -66,8 +65,6 @@ export function CrewWorkDetail({
   useLocale();
   const { confirm, dialog } = useConfirm();
   const title = crewRunTitle(run);
-  const [target, setTarget] = useState(() => composerDefaultMember(run));
-  const spent = crewUsageText(crewRunUsage(run).total);
   const requests = run.messages.filter((message) => !message.resolvedAt);
   const blocked = run.tasks.filter((task) => task.status === "blocked");
   const awaiting =
@@ -161,8 +158,6 @@ export function CrewWorkDetail({
       <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
         <CrewWorkBadges run={run} size="md" />
         <Text className="tabular-nums">{crewProgressLabel(run)}</Text>
-        <CrewWorkUpdated value={run.updatedAt} />
-        {spent && run.status !== "finished" ? <Text className="tabular-nums">{spent}</Text> : null}
       </div>
       {request.kind === "full" && request.text !== title ? (
         <Text
@@ -182,13 +177,6 @@ export function CrewWorkDetail({
               <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                 {t("Needs decision: {p0}", { p0: message.text })}
               </p>
-              {crewMessageMayBeClipped(message.text) ? (
-                <Text as="p" tone="inherit" className="mt-1">
-                  {t("Showing the first {p0} characters of this message.", {
-                    p0: CREW_LIST_MESSAGE_LIMIT,
-                  })}
-                </Text>
-              ) : null}
             </Alert>
           ))}
           {awaiting.map((task) => (
@@ -223,23 +211,11 @@ export function CrewWorkDetail({
         canOpen={canOpen}
         pending={pending}
         pendingAction={pendingAction}
+        coordinatorInline={coordinatorInline}
         onOpen={onOpen}
       />
-      <CrewWorkTeam
-        run={run}
-        catalog={catalog}
-        savedCrew={savedCrew}
-        pickedId={target}
-        onPick={ownerTools && run.status !== "finished" ? setTarget : undefined}
-      />
-      {ownerTools ? (
-        <CrewWorkOwnerActions
-          run={run}
-          tools={ownerTools}
-          memberId={target}
-          onMemberChange={setTarget}
-        />
-      ) : null}
+      <CrewWorkTeam run={run} savedCrew={savedCrew} />
+      {ownerTools ? <CrewWorkOwnerActions run={run} tools={ownerTools} /> : null}
       <CrewWorkTimeline run={run} />
       {canDelete ? (
         <div className="mt-5">

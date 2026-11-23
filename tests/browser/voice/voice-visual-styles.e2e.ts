@@ -196,7 +196,7 @@ for (const [theme, width] of workViewports) {
 }
 
 for (const [theme, width] of workViewports) {
-  test(`fullscreen call keeps controls and shows Chat and live results on demand ${theme} ${width}`, async ({
+  test(`fullscreen call keeps controls and shows the conversation and live results on demand ${theme} ${width}`, async ({
     page,
   }) => {
     await mkdir(captures, { recursive: true });
@@ -206,7 +206,7 @@ for (const [theme, width] of workViewports) {
     await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
     const panel = page.locator("section[data-voice-state]");
     const orb = panel.locator('canvas[data-call-art="orb"]');
-    const chat = panel.getByRole("button", { name: "Chat", exact: true });
+    const chat = panel.getByRole("button", { name: "Conversation", exact: true });
     const transcript = panel.getByRole("region", { name: "Conversation" });
     const results = panel.getByRole("region", { name: "Live results", exact: true });
     const resultHeading = results.getByRole("heading", { name: "Test results", exact: true });
@@ -228,14 +228,14 @@ for (const [theme, width] of workViewports) {
 
     const startBounds = (await start.boundingBox())!;
     await chat.click();
-    await expect(chat).toHaveAttribute("aria-expanded", "true");
+    await expect(chat).toHaveAttribute("aria-pressed", "true");
     await expect(transcript.getByText("No messages yet")).toBeVisible();
     await expect(orb).toBeVisible();
     expect((await start.boundingBox())!.y).toBe(startBounds.y);
     await assertNoClipping();
     await transcript.getByRole("button", { name: "Close", exact: true }).click();
     await expect(chat).toBeFocused();
-    await expect(chat).toHaveAttribute("aria-expanded", "false");
+    await expect(chat).toHaveAttribute("aria-pressed", "false");
 
     await start.click();
     await expect(orb).toHaveAttribute("data-state", "listening");
@@ -307,6 +307,8 @@ for (const [theme, width] of workViewports) {
       path: join(captures, `${theme}-${width}-fullscreen-room-notice.png`),
     });
     await expect(scope).toBeVisible();
+    // Product defect (open): the dock hides the Conversation button while a question is pending,
+    // so the controls re-center and Disconnect moves 24px under the pointer.
     expect(await disconnect.boundingBox()).toEqual(controlsBefore);
     const bounds = (await panel.boundingBox())!;
     const center = bounds.x + bounds.width / 2;
@@ -330,7 +332,7 @@ for (const [theme, width] of workViewports) {
   });
 }
 
-test("fullscreen voice questions stay accessible with Chat open on a narrow window", async ({
+test("fullscreen voice questions stay accessible with the conversation open on a narrow window", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 560, height: 800 });
@@ -340,7 +342,7 @@ test("fullscreen voice questions stay accessible with Chat open on a narrow wind
   await panel.getByRole("button", { name: "Full screen", exact: true }).click();
   await panel.getByRole("button", { name: "Start voice", exact: true }).click();
   const chat = panel.getByRole("region", { name: "Conversation" });
-  await panel.getByRole("button", { name: "Chat", exact: true }).click();
+  await panel.getByRole("button", { name: "Conversation", exact: true }).click();
   await expect(chat).toBeVisible();
   await page.evaluate(() => {
     (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech("show choices");
@@ -566,25 +568,30 @@ for (const theme of ["light", "dark"])
       });
       await page.getByRole("menuitemradio", { name: "Reply when I pause", exact: true }).click();
       await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
-      // The compact pill keeps turn ending and Finish turn in its More menu.
+      // The compact pill's More menu holds Mute speaker and, in manual mode, Finish turn; the
+      // turn-ending choice itself lives on the expanded dock.
       const more = panel.getByRole("button", { name: "More voice options", exact: true });
       await expect(more).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-compact-automatic.png`) });
       await more.click();
+      await expect(page.getByRole("menuitemradio")).toHaveCount(0);
       await expect(
-        page.getByRole("menuitemradio", { name: "Reply when I pause", exact: true }),
-      ).toBeChecked();
+        page.getByRole("menuitemcheckbox", { name: "Mute speaker", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("menuitem", { name: "Finish turn", exact: true })).toHaveCount(0);
       await page.screenshot({
         path: join(menuOutput, `${theme}-${width}-in-app-compact-auto-menu.png`),
         animations: "disabled",
       });
+      await page.keyboard.press("Escape");
+      await panel.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await panel.getByRole("button", { name: "Reply when I pause", exact: true }).click();
       await page
         .getByRole("menuitemradio", { name: "I'll finish when ready", exact: true })
         .click();
+      await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
       await more.click();
-      await expect(
-        page.getByRole("menuitemradio", { name: "I'll finish when ready", exact: true }),
-      ).toBeChecked();
+      await expect(page.getByRole("menuitemradio")).toHaveCount(0);
       await page.screenshot({
         path: join(menuOutput, `${theme}-${width}-in-app-compact-manual-menu.png`),
         animations: "disabled",
@@ -655,25 +662,15 @@ for (const theme of ["light", "dark"])
         exact: true,
       });
       await moreFloating.click();
+      // The compact overflow has actions only: no turn-ending choice, and no Finish in automatic mode.
       await expect
         .poll(() =>
-          page.evaluate(
-            () =>
-              (window as any).fixtureOverlay
-                .nativeMenu()
-                ?.items.find((item: any) => item.id === "automatic")?.checked,
+          page.evaluate(() =>
+            (window as any).fixtureOverlay.nativeMenu()?.items.map((item: any) => item.id),
           ),
         )
-        .toBe(true);
-      await page.evaluate(() => (window as any).fixtureOverlay.pickNativeMenu("manual"));
-      expect(
-        await page.evaluate(
-          () =>
-            (window as any).fixtureOverlay.calls.filter(
-              (call: any) => call.args?.payload === "manualTurnEnd",
-            ).length,
-        ),
-      ).toBe(2);
+        .toEqual(["expand", "return"]);
+      await page.evaluate(() => (window as any).fixtureOverlay.pickNativeMenu("return"));
       await page.evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
       await moreFloating.click();
       await expect
@@ -689,9 +686,10 @@ for (const theme of ["light", "dark"])
       expect(await floating.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await floating.screenshot({ path: join(output, `${theme}-${width}-floating-compact.png`) });
       await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}`);
-      const toggle = page.getByRole("switch", { name: "I decide when my turn ends", exact: true });
-      await toggle.scrollIntoViewIfNeeded();
-      await expect(toggle).toBeChecked();
+      // Settings shows the same saved choice in the one "Wait before replying" select.
+      const turn = page.getByRole("button", { name: /^Wait before replying:/ });
+      await turn.scrollIntoViewIfNeeded();
+      await expect(turn).toContainText("I end my turn");
       await page.screenshot({ path: join(output, `${theme}-${width}-settings-manual.png`) });
       expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(0);
     });
@@ -769,7 +767,11 @@ for (const theme of ["light", "dark"])
         await panelCompact(page, visual, theme, width);
       }
       await page.getByRole("button", { name: "Expand voice companion", exact: true }).click();
-      await page.getByText("Appearance and voice style", { exact: true }).click();
+      // Visual style is a row of the Voice assistant's one More options.
+      await page
+        .getByRole("button", { name: /^More options/ })
+        .first()
+        .click();
       const picker = page.getByRole("radiogroup", { name: "Visual style", exact: true });
       await picker.scrollIntoViewIfNeeded();
       await picker.getByRole("radio", { name: "Wave", exact: true }).click();
@@ -805,7 +807,7 @@ async function panelCompact(page: Page, visual: string, theme: string, width: nu
   });
   expect(await page.evaluate(() => (window as any).fixtureVoice.closes)).toBe(0);
 }
-test("keyboard move, drag, compact double click, viewport clamp, Escape and reduced motion", async ({
+test("keyboard move, drag, no handle double click, viewport clamp, Escape and reduced motion", async ({
   page,
 }) => {
   const panel = await open(page);
@@ -828,7 +830,10 @@ test("keyboard move, drag, compact double click, viewport clamp, Escape and redu
   await page.mouse.move(500, 100, { steps: 40 });
   await page.mouse.up();
   expect((await panel.boundingBox())!.y).toBeLessThan(150);
+  // The Expand button is the one way to grow the pill; a handle double click does nothing.
   await grip.dblclick();
+  await expect(panel).toHaveAttribute("data-compact", "true");
+  await panel.getByRole("button", { name: "Expand voice companion" }).click();
   await expect(panel).not.toHaveAttribute("data-compact");
   await page.setViewportSize({ width: 800, height: 600 });
   await expect
@@ -1003,39 +1008,39 @@ test("voice surface computed probe", async ({ page }) => {
   }
 });
 
-test("wake phrase status and toggle stay with the assistant avatar", async ({ page }) => {
+test("wake phrase status stays with the assistant avatar and its setting", async ({ page }) => {
   await page.goto("/tests/browser/voice/voice-visual-styles.html?wake-quick-settings=pack");
-  await expect(page.getByRole("button", { name: "Talk to Arif", exact: true })).toBeVisible();
-  const trigger = page.getByRole("button", { name: "Voice settings", exact: true });
-  await trigger.click();
-  const popup = page.getByRole("dialog", { name: "Voice settings" });
-  const toggle = popup.getByRole("switch", { name: "Wake and sleep phrases" });
+  const launcher = page.getByRole("button", { name: "Talk to Arif", exact: true });
+  await expect(launcher).toBeVisible();
+  // The launcher is one button: no chevron and no quick-settings popover beside it.
+  await expect(page.getByRole("button", { name: "Voice settings", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Voice settings" })).toHaveCount(0);
   const settingsToggle = page
     .locator("main")
     .getByRole("switch", { name: "Wake and sleep phrases" });
-  await expect(toggle).toBeFocused();
-  await expect(toggle).not.toBeChecked();
-  await toggle.click();
-  await expect(toggle).toBeChecked();
-  await expect(popup.getByText("Wake phrase needs the local voice pack")).toBeVisible();
-  await expect(popup.getByRole("button", { name: "Set up voice" })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(trigger).toBeFocused();
-  await expect(settingsToggle).toBeChecked();
-  await expect(page.getByText("Wake phrase needs the local voice pack")).toHaveCount(0);
-  await expect(page.locator('[data-wake-status="pack"][data-tone="warning"]')).toBeVisible();
-  await page.reload();
-  await trigger.click();
-  await expect(toggle).toBeChecked();
-  await toggle.click();
-  await expect(toggle).not.toBeChecked();
   await expect(page.locator("[data-wake-status]")).toHaveCount(0);
-  await page.keyboard.press("Escape");
+  await page
+    .locator(".settings-group:has([data-setting-id='voice-companion'])")
+    .getByRole("button", { name: /^More options/ })
+    .click();
   await expect(settingsToggle).not.toBeChecked();
-  await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+  await settingsToggle.click();
+  await expect(settingsToggle).toBeChecked();
+  await expect(page.locator('[data-wake-status="pack"][data-tone="warning"]')).toBeVisible();
+  await expect(launcher).toHaveAccessibleDescription("Wake phrase needs the local voice pack");
+  await page.reload();
+  await page
+    .locator(".settings-group:has([data-setting-id='voice-companion'])")
+    .getByRole("button", { name: /^More options/ })
+    .click();
+  await expect(settingsToggle).toBeChecked();
+  await expect(page.locator('[data-wake-status="pack"]')).toBeVisible();
+  await settingsToggle.click();
+  await expect(settingsToggle).not.toBeChecked();
+  await expect(page.locator("[data-wake-status]")).toHaveCount(0);
+  await expect(launcher).not.toHaveAccessibleDescription(/Wake phrase/);
+  await launcher.click();
   await expect(page.getByRole("region", { name: "Voice companion" })).toBeVisible();
-  await trigger.click();
-  await expect(toggle).not.toBeChecked();
 });
 
 for (const theme of ["light", "dark"]) {
@@ -1045,67 +1050,43 @@ for (const theme of ["light", "dark"]) {
     { width: 800, compact: true },
   ]) {
     const rail = compact ? "compact" : "expanded";
-    test(`wake phrase quick settings ${rail} rail ${theme} ${width}`, async ({ page }) => {
+    test(`wake phrase status on the launcher ${rail} rail ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 620 });
       await page.emulateMedia({ reducedMotion: "reduce" });
+      // The wake phrase is already on; the listener fails, so the launcher dot says so.
+      await page.addInitScript(() =>
+        localStorage.setItem("bycoda.voice", JSON.stringify({ wakeEnabled: true })),
+      );
       await page.goto(
         `/tests/browser/voice/voice-visual-styles.html?wake-quick-settings=error&theme=${theme}${compact ? "&compact-rail" : ""}`,
       );
       const slot = page.locator("[data-voice-launcher-slot]");
       const launcher = slot.getByRole("button", { name: "Talk to Arif", exact: true });
-      const trigger = slot.getByRole("button", { name: "Voice settings", exact: true });
-      const popup = page.getByRole("dialog", { name: "Voice settings" });
       const message = "Wake phrase stopped listening. Check the microphone.";
-      const group = slot.getByRole("group", { name: "Voice companion" });
-      await expect(group).toBeVisible();
-      await expect(group.getByRole("button")).toHaveCount(2);
-      const primaryBox = (await launcher.boundingBox())!;
-      const settingsBox = (await trigger.boundingBox())!;
-      if (compact) {
-        expect(settingsBox.y).toBeCloseTo(primaryBox.y + primaryBox.height, 0);
-        expect(settingsBox.x + settingsBox.width / 2).toBeCloseTo(
-          primaryBox.x + primaryBox.width / 2,
-          0,
-        );
-        await expect(trigger.locator("svg.lucide-chevron-down")).toHaveCount(1);
-      } else {
-        expect(settingsBox.x).toBeCloseTo(primaryBox.x + primaryBox.width, 0);
-        expect(settingsBox.y + settingsBox.height / 2).toBeCloseTo(
-          primaryBox.y + primaryBox.height / 2,
-          0,
-        );
-      }
-      expect(settingsBox.width).toBe(24);
-      expect(settingsBox.height).toBe(24);
-      await expect(trigger.locator("svg")).toHaveCSS("inline-size", "14px");
-      await expect(group).toHaveAttribute("data-surface", "transparent");
-      if (compact) expect((await group.boundingBox())!.width).toBeLessThanOrEqual(56);
-      await trigger.click();
-      await popup.getByRole("switch", { name: "Wake and sleep phrases" }).click();
-      await expect(popup.getByText(message)).toBeInViewport({ ratio: 1 });
+      await expect(launcher).toBeVisible();
+      await expect(slot.getByRole("button")).toHaveCount(1);
+      await expect(slot.getByRole("button", { name: "Voice settings", exact: true })).toHaveCount(
+        0,
+      );
+      // Status is not color alone: the dot has a text equivalent on the button.
       await expect(slot.locator('[data-wake-status="error"][data-tone="warning"]')).toBeVisible();
+      await expect(launcher).toHaveAccessibleDescription(message);
+      if (compact) expect((await launcher.boundingBox())!.width).toBeLessThanOrEqual(56);
       const directory = join(process.cwd(), "temp/verification/arif-voice-routing/sidebar");
       await mkdir(directory, { recursive: true });
       const clip = { x: 0, y: 440, width: 320, height: 180 };
-      await page.screenshot({ path: join(directory, `${rail}-${theme}-${width}-open.png`), clip });
-      await page.keyboard.press("Escape");
-      await expect(page.getByText(message)).toHaveCount(0);
       await page.mouse.move(width / 2, 600);
       await page.screenshot({
         path: join(directory, `${rail}-${theme}-${width}-closed.png`),
         clip,
       });
-
       if (compact) {
         await page
           .locator("html")
           .evaluate((html) => (html.dataset.controlDensity = "comfortable"));
-        expect((await group.boundingBox())!.width).toBeLessThanOrEqual(56);
+        expect((await launcher.boundingBox())!.width).toBeLessThanOrEqual(56);
         await page.locator("html").evaluate((html) => (html.dataset.controlDensity = "touch"));
-        expect((await group.boundingBox())!.width).toBeLessThanOrEqual(56);
-        await expect(trigger).toHaveCSS("inline-size", "44px");
-        await trigger.click();
-        await expect(popup.getByText(message)).toBeInViewport({ ratio: 1 });
+        expect((await launcher.boundingBox())!.width).toBeLessThanOrEqual(56);
       }
     });
   }

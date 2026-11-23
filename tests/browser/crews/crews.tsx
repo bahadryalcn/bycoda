@@ -283,6 +283,16 @@ if (params.has("rich")) {
     },
   ];
 }
+// More than six crews: the Teams filter and the cards/list switch appear only for a long list.
+if (params.has("manyCrews"))
+  definitions = [
+    ...definitions,
+    ...Array.from({ length: 7 }, (_, index) => ({
+      ...definition,
+      id: `extra-${index}`,
+      name: `Extra crew ${index + 1}`,
+    })),
+  ];
 // Realistic recent times for the work list (fixture data; ordering is unchanged).
 const baseTime = Date.now() - 3 * 60 * 60_000;
 const at = (minutes: number) => baseTime + minutes * 60_000;
@@ -296,6 +306,21 @@ let groupUpdateCalls = 0;
 let copyFailure = false;
 const agentSaveCounts: Record<string, number> = {};
 if (params.has("groupRetry")) agents = agents.map((agent) => ({ ...agent, groups: ["UI"] }));
+// The library's search, group filter and group menu appear only for a long library (more than six).
+if (params.has("longLibrary"))
+  agents = [
+    ...agents,
+    ...["Ada", "Ben", "Cleo", "Dev", "Eli"].map((name) => ({
+      id: `lib-extra-${name.toLowerCase()}`,
+      name: `${name} (filler)`,
+      role: "specialist" as const,
+      selection: "fixed" as const,
+      instructions: "Fills the library so its list controls appear",
+      candidates: [candidate],
+      groups: params.has("groupRetry") ? ["UI"] : ["Filler"],
+      updatedAt: 1,
+    })),
+  ];
 let opens = 0;
 const startReceipts = new Map<string, { id: string; coordinatorSessionId: string }>();
 const startRequestIds: string[] = [];
@@ -548,8 +573,10 @@ mockIPC(async (command, args) => {
           extra: Record<string, unknown>,
         ) => ({
           runId: "run",
-          projectId: "project",
-          projectName: "Fixture",
+          // `activeElsewhere`: the working members belong to another project, which the Work tab
+          // lists above this project's own work.
+          projectId: params.has("activeElsewhere") ? "elsewhere" : "project",
+          projectName: params.has("activeElsewhere") ? "Elsewhere" : "Fixture",
           definitionId: "crew",
           definitionName: "Website Crew",
           runStatus: "active",
@@ -590,6 +617,9 @@ mockIPC(async (command, args) => {
       case "projects.list":
         return [
           { id: "project", cwd, name: "Fixture" },
+          ...(params.has("activeElsewhere")
+            ? [{ id: "elsewhere", cwd: "C:/elsewhere", name: "Elsewhere" }]
+            : []),
           ...(params.has("longProjects")
             ? [
                 {
@@ -920,7 +950,7 @@ function Fixture() {
           hidden={params.has("work-model")}
           className="w-80 max-w-full shrink-0 border-e border-(--ui-tone-neutral-border)"
         >
-          <CrewSidebar cwd={cwd} onOpen={openSession} onManagedChange={() => {}} />
+          <CrewSidebar cwd={cwd} onManagedChange={() => {}} />
         </aside>
         <div className="min-w-0 flex-1 p-4" style={{ flexBasis: "24rem" }}>
           <Button variant="ghost" onClick={() => setView("page")}>

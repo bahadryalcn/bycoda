@@ -1,21 +1,37 @@
 import type { ReactNode } from "react";
-import { useT } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
-import { ChevronDown, Folder, Laptop } from "../../../shared/ui/icons";
-import { SearchableSelect, type SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
-import { Text } from "../../../shared/ui/Text";
-import "./task-form.css";
+import { useT } from "../i18n";
+import { Button } from "./Button";
+import { ChevronDown, Folder, Laptop } from "./icons";
+import { SearchableSelect, type SearchableSelectOption } from "./SearchableSelect";
+import { Text } from "./Text";
+import styles from "./TargetChips.module.css";
 
-type TargetChoice = {
+export type TargetChoice = {
   value: string;
   options: readonly SearchableSelectOption[];
+  /** Omit to show the current value as plain text (a locked or saved target). */
   onChange?: (value: string) => void;
   /** Readable value for a locked or unavailable selection. */
   currentLabel?: string;
 };
 
-/** Use the caller's Host-scoped choices and mount its existing pickers in the remaining slots. */
-export function TaskTargetChips({
+/**
+ * One wrapping row of quiet chips that say where and how an item runs: Machine, Project and the
+ * caller's own Model, Access and Working copy pickers. The Machine chip is hidden when there is
+ * nothing else to choose; a choice without `onChange` reads as plain text. The caller passes
+ * choices already scoped to the chosen machine; the row owns no data.
+ * @group choice
+ * @use The target row of a task, goal, steward or automation form.
+ * @avoid A labelled field in a settings list: SearchableSelect with a Row. A single value picker outside a form: SearchableSelect.
+ * @example
+ * <TargetChips
+ *   machine={{ value: machineId, options: machines, onChange: setMachine }}
+ *   project={{ value: cwd, options: projects, onChange: setCwd }}
+ *   model={<ModelPicker presentation="chip" ... />}
+ *   access={<AccessPicker ... />}
+ * />
+ */
+export function TargetChips({
   machine,
   project,
   model,
@@ -32,7 +48,7 @@ export function TaskTargetChips({
 }) {
   const t = useT();
   return (
-    <div className="task-target-chips">
+    <div className={styles.chips}>
       {machine && machine.options.some((option) => option.value !== machine.value) ? (
         <TargetChip
           {...machine}

@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { t, getLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Alert } from "../../../shared/ui/Alert";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -102,15 +101,7 @@ export function AutomationAssistant({
       size="md"
       onClose={onClose}
       footer={
-        <ModalActions
-          reason={blockedReason}
-          reasonId="automation-assistant-reason"
-          start={
-            <InfoPopover label={t("About the AI assistant")}>
-              {t("Continue in a full AI session with automation tools and approval controls.")}
-            </InfoPopover>
-          }
-        >
+        <ModalActions reason={blockedReason} reasonId="automation-assistant-reason">
           <Button
             variant="primary"
             loading={busy}

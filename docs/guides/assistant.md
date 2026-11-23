@@ -1,10 +1,31 @@
 # Personal assistant
 
-In Automations, instructions and scheduling settings share a bounded editor.
-Hover over an info icon or focus it with Tab to read its explanation.
-Scheduled times use the shared time picker. The AI
-assistant keeps scope above its project and model controls; the automation review
-shows instructions before the schedule and execution details.
+## Automations
+
+Automations lists your automations; the filter appears once there are eight or more.
+**New automation** (or the first-use button) opens one editor page: an optional
+name, **Instructions**, chips for project (and machine when several are connected),
+model, **Access** and, for app runs in a project, the working copy, then
+**Trigger** and one **More options** group. A saved automation also shows **Recent
+runs**. The footer has **Template** (new automations), **Delete**, **Cancel** or
+**Reset**, **Run now** and **Create** or **Save**; a visible line says what is
+missing. Leave the name empty to use the first line of the instructions. Pause or
+enable an automation with the switch on its card.
+
+Add a trigger from the one searchable **Add trigger** list: schedules, task and
+social events, provider events when connected, and on a Host **Continuous** and
+Host events (**Task finished**, **Task blocked**, **Session waiting**,
+**Automation failed**). The app chooses where it runs. A project on this computer
+runs while the app is open; a project on another machine, no project (**General**),
+a Host event or the Project scan template run in the background on that machine. For
+a new automation with a Host available, **More options** can also run it in the
+background on this computer. A background automation holds exactly one time trigger
+or Host event. **More options** also holds session and session folder (app runs),
+**Missed-run grace**, **Run time limit** and **Runs per day**, and its closed
+summary lists the values that differ from the defaults. The **AI assistant** button
+prepares an automation from a request.
+
+## The Room
 
 The Room opens on **Today**, with owner questions and current work before activity
 charts. **Work** contains Jobs and Sessions. **Conversations** keeps the typed

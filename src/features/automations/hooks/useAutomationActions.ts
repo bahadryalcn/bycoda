@@ -44,7 +44,6 @@ type Params = {
    */
   errorStamp: unknown;
   confirm: (request: ConfirmRequest) => Promise<boolean>;
-  setPickerOpen: Dispatch<SetStateAction<boolean>>;
   setDraft: Dispatch<SetStateAction<AutomationDraft | null>>;
   setSelectedId: Dispatch<SetStateAction<string | null>>;
   onLaunch: (automation: Automation, run: AutomationRun) => void | Promise<void>;
@@ -75,7 +74,6 @@ export function useAutomationActions({
   runs,
   errorStamp,
   confirm,
-  setPickerOpen,
   setDraft,
   setSelectedId,
   onLaunch,
@@ -112,7 +110,6 @@ export function useAutomationActions({
         ? await saveHostAutomation(machines, nextDraft)
         : await saveAutomation(nextDraft);
       if (saved.host) confirmSaved(saved);
-      setPickerOpen(false);
       setDraft(null);
       setSelectedId(automationKey(saved));
       setActionError(null);

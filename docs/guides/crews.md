@@ -1,14 +1,5 @@
 # Crews
 
-Bulk model Apply shows progress while applying a choice and blocks duplicate
-submissions. Controls in the bulk model bar stay disabled until it finishes;
-the existing crew and library save rules still apply.
-
-The member editor keeps tool profiles in a compact choice row. The selected
-profile's description appears below it. Choose Custom to reveal Host tools,
-MCP servers and skills. Model selection stays in its own section. Library rows
-keep the member's role, model and project scope visible when names or groups wrap.
-
 Crews connect a coordinator conversation to independently addressable specialist and reviewer conversations. The host task scheduler runs assignments and retains their state when a desktop window closes.
 
 The Crew list and history retry brief Host interruptions while retaining loaded
@@ -16,10 +7,11 @@ work. A sustained interruption shows Retry. A denied read appears immediately.
 
 ## Giving work to a Crew
 
-Choose **Worker** in a task or Epic form to use an Agent or a saved Crew. Crew entry
-points open the same task form with the exact machine, project and Crew selected;
-dismissed drafts retain their text and creation identity. Every new run belongs to
-board work and uses the Host task scheduler's admission and limits.
+In a task form, open **More options** and choose a crew under **Run with a crew**
+(**Agent** is the default). **New work** on a crew opens the same task form titled
+with that crew; the crew and Access rows are not repeated there. Dismissed drafts
+retain their text and creation identity. Every new run belongs to board work and
+uses the Host task scheduler's admission and limits.
 
 Select a run in **Crews > Work** to chat with its lead inline. This is the existing
 coordinator conversation, with the normal transcript, composer and permission gates.
@@ -51,8 +43,8 @@ An empty or unavailable catalog postpones initialization until a later owner
 read with an available model. Merely opening Crews never starts an agent,
 generates an asset, probes a paid tool or changes provider permissions.
 
-Team rows show each member's name, role, model and groups. Select a member to
-read or edit their full instructions.
+Team rows show each member's name, model and groups. Select a member to
+read or edit their role and full instructions.
 
 | Profile                      | Crew responsibility  | Main handoff                                                     |
 | ---------------------------- | -------------------- | ---------------------------------------------------------------- |
@@ -179,16 +171,24 @@ guidance, adapted to this application's scheduler and owner-approval contracts:
 ## Find, edit and start a crew
 
 Open **Crews** from the compact rail, the command palette (**Open Crews**) or
-Ctrl/Cmd+Shift+E. The page has **Teams**, **Members** and **Work** tabs and a
-**New crew** button.
+Ctrl/Cmd+Shift+E. The page has **Teams**, **Members** and **Work** tabs and one
+header button that follows the tab: **New crew**, **New member** or **New work**.
+It opens on **Work** when something needs a decision, otherwise on **Teams**.
 
-**Teams** lists saved crews as cards or rows (switch with **Cards** / **List**,
-filter by name). A card shows the crew seated around a table; the props on the
-table show whether the crew is idle, working, needs a decision or is blocked. A
-list row shows the members' faces overlapping, as the project rail does. Each crew
-has **New work**, **Edit** and an options menu containing **Open coordinator** when
-one active run is available, **Crew work**, **New work**, **Edit crew**, **Add
-members**, **Duplicate**, scope copying and, on a compatible host, **Delete crew**.
+**Teams** lists saved crews as cards. A card shows the crew seated around a table;
+the props on the table show whether the crew is idle, working, needs a decision or
+is blocked. With more than six crews, **Filter crews** and the **Cards** / **List**
+switch appear; a list row shows the members' faces overlapping, as the project
+rail does. Each crew has **New work** and an options menu (**{crew} options**)
+containing **Open coordinator** when one active run is available, **Edit crew**,
+**Duplicate**, **Copy to all projects** or **Copy to this project** and, on a
+compatible host, **Delete crew**. Deleting asks for confirmation and is blocked
+while the crew has running work.
+
+The project rail lists the same crews with overlapping member faces. A row opens
+that crew's work on the **Work** tab, the play icon starts new work, **New crew**
+(+) creates a crew and the options menu matches the Teams menu. The **Crews**
+heading opens the page; its separate chevron collapses or expands the list.
 
 **Members** is the member library. Each member shows the teams it is in. Use **Add
 to team** or **Remove from team** on a member, or select members and use **Add to
@@ -196,57 +196,53 @@ team…** to add them all to one team. When a change would make a crew invalid, 
 option is disabled and shows the reason; in a bulk add, each skipped member is
 listed with its reason.
 
-**Work** shows the same work management as the **Crew work** dialog, inline on the
-page. The project rail lists the same crews with overlapping member faces and the
-same options menu. The **Crews** heading opens the page; its separate chevron
-collapses or expands the list.
-
-The editor is one page. Give the crew a name, and choose **This project** or
-**All projects** when creating it; All projects means projects on the same host.
-
-**Access for every member** sets the permission mode every member of this crew's
-work runs with (default **Supervised**), next to **Coordinator answers permission
-requests** and **Allow provider sub-agents**. It is the only place access is set;
-hosts without crew access support hide the picker and run work supervised.
+The crew editor is one autosaving page. Beside the crew name sit the look button
+(it opens the look picker) and the **Access** chip; when creating, choose **This
+project** or **All projects** (All projects means projects on the same host).
+**Access** sets the permission mode every member of this crew's work runs with
+(default **Supervised**). It is the only place access is set; hosts without crew
+access support hide it and run work supervised.
 
 **Members** groups the roster by coordinator, specialists, reviewer and advisors.
-Each row has a selection box, the name, a responsibility selector, the model
-picker (model and its options such as reasoning effort) and a remove button, so
-models can be changed directly in the list. The bulk bar above the list applies
-one model with its options to the selected members; those members become fixed-model
-members. Select at least one member to apply, and confirm when changing multiple
-members. The library bulk bar follows the same selection and confirmation rules.
-It starts on the model
-most members already use. Expand a row to edit its name, instructions, groups,
-automatic candidates (**More options**), capabilities and library link. Add
-members from the searchable library or create a member; an empty crew also offers
-a starter team. Unfinished additions are kept when you go back and return, until
-you add them or choose **Discard draft**. A valid crew has one coordinator, one
-reviewer, at least one specialist and at most 20 members.
+Each row has the name and groups, the model (a picker for a fixed model, otherwise
+the model summary, which expands the row) and a remove button. Select a row to
+edit it: name, **Role**, model, instructions, library link and **More options**.
+**Add members** opens the searchable library or a new-member form; an empty crew
+also offers **Use starter roster**. Unfinished additions are kept when you go back
+and return, until you add them or choose **Discard draft**. A valid crew has one
+coordinator, one reviewer, at least one specialist and at most 20 members. With more
+than six members, row selection boxes and a search appear, with a bulk bar above the
+list that applies one model with its options to the selected members; those members
+become fixed-model members. Select at least one member to apply, and confirm when
+changing multiple members. The library bulk bar follows the same selection and
+confirmation rules.
 
 Every member has a pixel avatar drawn from its library profile, so copies of the
 same profile look alike. Avatars follow the ambient scene theme: Classic draws the
 member as an uncle (amca) character, Star Wars as a protocol droid, Lord of the
 Rings as an Ent and Matrix as an agent. The saved look does not change; only its
-drawing does. On hosts that support crew identity, the expanded member
-also has a **Handle** field and an **Appearance** picker. The handle is optional
-and written as `@name`: lowercase letters, digits and hyphens, up to 24 characters,
-unique among library members you can see together and unique within the crew.
-**Appearance** sets headwear, face, glasses, outfit, colors and accessory, with a
-live preview; **Shuffle** picks a random complete look and **Reset** returns to the
-look drawn from the profile.
+drawing does. On hosts that support crew identity, a member's **More options** hold
+a **Handle** field and an **Appearance** picker. The handle is optional and written
+as `@name`: lowercase letters, digits and hyphens, up to 24 characters, unique among
+library members you can see together and unique within the crew. **Appearance** sets
+headwear, face, glasses, outfit, colors and accessory, with a live preview;
+**Shuffle** picks a random complete look and **Reset** returns to the look drawn
+from the profile.
 
 Members choose **Default**, **Any model** or **Fixed**. Default follows the Crew member
 role in **Settings > Models > Background work**; Any model follows the shared order or a named group;
-Fixed uses the selected model. **Manage in Models** opens the shared model order,
-limits and groups. The former Crew Models tab and cost/quality ranking are removed.
-Running work keeps its concrete model
+Fixed uses the selected model. Running work keeps its concrete model
 and team snapshot. See [Models](models.md) for eligibility and waiting behavior.
 
-Groups help find library members. Inspecting capabilities does not establish
-verified runtime access. **Advanced** holds execution limits, appearance and
-copy/delete. The crew's supported icon and color follow it across devices;
-**Show crews** for the rail remains a setting of this device.
+A member's **More options** also hold **Groups** (they help find library members),
+**Tools** (see below) and **Reviews**, which loads the member's review statistics
+when first opened. The crew's own **More options** hold the working limits
+(**Members working at once**, **Assignments per work**, **Minutes per assignment**),
+**Coordinator answers permission requests** and **Allow provider sub-agents**; a
+closed summary shows values that differ from the defaults. Inspecting capabilities
+does not establish verified runtime access. The crew's supported icon and color
+follow it across devices; **Show crews** for the rail remains a setting of this
+device.
 
 A saved crew saves itself shortly after each valid change; the footer shows
 **Saving…** or **All changes saved**, or the error with **Retry**. An invalid crew
@@ -256,41 +252,39 @@ editor within the same desktop window. If another session changes the
 definition, choose **Keep edits as new crew** or **Discard edits and load
 latest**. Work already started keeps its own team snapshot and access mode.
 
-To launch, choose **New work**, check the **Project** (the open project by
-default), select the crew, check **Access for every member**, fill **What should
-the crew deliver?** and choose **Start**. **Project** lists the projects registered
-on that machine; **New project…** opens a compact dialog with the machine, project
-name and destination folder. Creating it makes a folder next to the current project,
-registers it as a project and adds it to the project list, so the work runs
-there. Changing access saves it to the crew before the work starts. The first non-empty line becomes the work
-title. Editing the crew from
-this dialog preserves the delivery draft. A successful launch opens the
-coordinator in the normal conversation pane. If opening the conversation fails
-after creation, **Open conversation** reuses the created run rather than starting
-another one.
+To launch, choose **New work** on a team card, the rail or the **Work** tab. The
+task form opens titled with the crew. Fill the work, check the project and machine,
+and start it. The first non-empty line becomes the work title. A successful launch
+starts the coordinator; select the run in **Work** to read its conversation inline.
+If starting fails after the task was created, the dialog offers **Retry** for the
+created task rather than creating another.
 
 ## Member library and copies
 
-The **Members** tab of the Crews page offers **New member**, search, group
-filtering and member editing. Search matches the name, responsibility, model
-summary, candidate models, groups and instructions. When picking members to add,
-the picked members stay listed above the results, including those the current
-search or group hides, with **Clear selection** and **Clear filters**. Save a crew
-member to the library to reuse it.
+The **Members** tab of the Crews page lists library members with their groups,
+model and teams; **New member** in the page header and **Edit** on a row open the
+one library profile dialog (name, role, model, instructions and **More options**,
+plus **Available in** and, for a saved profile, **Copy to all projects** and
+**Delete**). With more than six members, a search over the name, role, model,
+groups and instructions, a group filter and row selection with a bulk bar
+appear. When picking members to add to a crew, the picked members stay listed above
+the results, including those the current search or group hides, with **Clear
+selection** and **Clear filters**. In a crew, a member's details offer **Save to
+library** (or **Update library profile**) to reuse it.
 
-A member added from the library stays linked to that profile and shows a
-**Library** badge. Editing the profile updates every crew that uses it, unless the
-member was customized in that crew. Changing a member inside a crew marks it
-**Customized** when the result differs from the profile, and a customized member
-then keeps its own copy. In the member's details, **Use library version** copies
-the profile back into the crew and **Edit library profile** opens the profile
-itself. When the profile has changed since the member was added, **Update from
-library** copies it into that crew. Deleting a library profile keeps the copies in crews, which are no
-longer linked. Work that is already running keeps its team snapshot. On hosts
-without linked members, crews hold independent copies and a library edit reaches a
-crew only through an explicit update there.
+A member added from the library stays linked to that profile and shows its library
+name in the member's details. Editing the profile updates every crew that uses it,
+unless the member was customized in that crew. Changing a member inside a crew
+marks it **Not following library profile** when the result differs from the
+profile, and it then keeps its own copy. In the member's details, **Use library
+version** copies the profile back into the crew and **Edit library profile** opens
+the profile itself. When the profile has changed since the member was added,
+**Update from library** copies it into that crew. Deleting a library profile keeps
+the copies in crews, which are no longer linked. Work that is already running keeps
+its team snapshot. On hosts without linked members, crews hold independent copies
+and a library edit reaches a crew only through an explicit update there.
 
-A member's **Tools** is one choice of profile. **Full access** is the default and needs no
+A member's **Tools** (under **More options**) is one choice of profile. **Full access** is the default and needs no
 setup: the member uses every tool the run allows. **Developer**, **Designer** and **Tester** are
 ready-made profiles; each can still write code and only chooses which Host tool groups the member
 sees (Developer: files, Git, terminals, dev servers, browser, tasks and pull requests; Designer:
@@ -313,67 +307,55 @@ Group rename/delete updates the
 profiles, not the members' existence; deleting a group keeps the members. The Host moves
 every profile in one step, so a failure or a profile edited elsewhere leaves the whole
 group unchanged, and a rename onto an existing group name is refused instead of merging the
-two. These controls are hidden on hosts without atomic group updates. Select library profiles (or
+two. These controls (**Group options**, shown with a group filter in a long library) are hidden on hosts without atomic group updates. Select library profiles (or
 none, for all shown) and use the bulk bar to give them one model and its options;
 each profile is saved and failures are listed by profile.
 
 **Duplicate** makes an editable crew copy. **Copy to all projects** and **Copy to
-this project** create a separately scoped definition. Deleting a saved crew
-requires confirmation and the host's delete capability; existing work snapshots,
+this project** create a separately scoped definition. **Delete crew** requires
+confirmation, needs the host's delete capability and is blocked while the crew has running work; existing work snapshots,
 tasks and conversations remain available.
 
 ## Crew work and conversations
 
-Open **Crew work** from the rail. The management dialog has a crew
-selector, **Ongoing** and **Finished** views, a search over the loaded work and a
-selectable work list with update times. The search and selection survive refreshes;
-switching crews clears the search. Each item shows a live or paused state only when it says something, and,
-separately, whether it needs you (**Needs decision**, **Needs review** or
-**Blocked**); a paused run can still need a decision and stays answerable. A
-selected work item has one row of controls next to its title: **Pause** and
-**Stop**, or **Resume** and **Stop** while paused (the Resume button is the
-paused signal). Below it are progress, decisions needed, blocked assignments,
-the conversations with member names and models from that run (view only), the
-team, one message box and the latest timeline events (**Show all** for the
-rest). The team is a strip of member faces fixed when the work started; hover a
-face for its role, model and spend, or select it to address that member. The
-message box sends a note to the lead by default; for a specialist or advisor it
-also offers **Assign**, which uses the first line of the message as the task
-title. Select a conversation to open it. The session sidebar keeps managed conversations grouped
-instead of duplicating them in the ordinary Sessions list.
-
-**Pause** holds new assignments while active work continues; **Resume**
-allows scheduling again. **Stop work** asks for confirmation, pauses the run and
-cancels active assignments; it is not offered again for that work while the
-coordinator's cancellation settles (**Stopping…**). Stopped assignments remain in Tasks; resuming does
-not automatically retry blocked work. **Delete work** is available only on hosts
-with run-delete support and after active work is stopped. It removes the work
-from the list while keeping the crew, tasks and conversations. Decisions are
-answered in the coordinator conversation through **Answer**.
-
-On mobile, **Pause**, **Resume**, and **Stop work** appear beside the run status and above its expanded details. **Delete work** is in the work menu.
+**Crews > Work** is the one place to read and manage work. It opens by default when
+something needs a decision. A rail row, and the bar on a conversation a crew runs, open it
+for that crew or run. At the top, crew members working in other projects or on other
+hosts are listed by project; select one to open its conversation. Below, a crew
+selector (when there is more than one crew) and the **Ongoing** and **Finished**
+views list this project's work. A search appears once a view holds seven or more
+works. The list appears only when a crew has more than one piece of work; a single
+piece opens its detail directly, and a crew without work shows **No crew work yet**.
+In a narrow window the page shows either the list or one piece of work, with **Back
+to work list**.
 
 When more than one connected machine runs crews, a **Machine** selector chooses
-whose crews and work the dialog shows and where **New work** runs. Next to it,
-**Project** chooses which project's work is listed, including **New project…**. It opens on
-the project's own machine, which is **This computer** for a local project; other
-machines follow. On another machine the dialog uses the project with the same
-folder name, else that machine's first project. A failed action names the action
-and the machine. A failure to reach the machine clears itself once the machine
-answers again.
+whose crews and work are shown and where **New work** runs, with a **Project**
+selector beside it. A failed action names the action and the machine, and clears
+itself once the machine answers again.
 
-The work list appears only when a crew has more than one piece of work; a single
-piece of work opens its detail directly, and a crew without work shows one
-**New work** entry. In a narrow window the dialog shows either the list or one
-piece of work, with **Back to work list**. A selected piece of work leads with its
-status, decisions, blockers and the next action; requests, the team and **Delete
-work** follow below. While an action runs its name stays beside the controls
-(for example **Pausing…**).
+A selected piece of work shows its title, **Pause new assignments** (**Pause**) or
+**Resume work** (**Resume**) and **Stop**, then its status and progress. A finished
+run shows a summary of what was accepted and what stayed open. What needs you comes
+next: **Needs decision**, **Awaiting acceptance** and **Blocked** notices, with
+**Answer** or **Open session** opening the coordinator. The lead's conversation is
+shown inline. **Sessions** lists the other conversations when there is more than one.
+**Team** is a strip of the member faces fixed when the work started, and tells you
+when the saved crew has changed since. One message box sends a note to the lead by
+default; **Send to** appears when there are several recipients, and for a specialist
+or advisor **Assign** turns the message into a task titled with its first line.
+**History** is a disclosure listing what happened, oldest first. **Delete work** comes last.
 
-**Advanced** groups model rules, execution limits, appearance and copy/delete.
-Opening it shows the model rules (cost, quality, unrated models, automatic
-ranking) beside the limits, with any blocked or narrowed warning above them. Settings belong to the crew and apply to work you start afterwards; appearance is
-saved the same way as in the editor.
+**Pause new assignments** holds new assignments while active work continues;
+**Resume** allows scheduling again. **Stop** asks for confirmation (**Stop work**),
+pauses the run and cancels active assignments; it is not offered again while the
+coordinator's cancellation settles (**Stopping…**). Stopped assignments remain in
+Tasks; resuming does not automatically retry blocked work. **Delete work** is
+available only on hosts with run-delete support and after active work is stopped. It
+removes the work from the list while keeping the crew, tasks and conversations. While
+an action runs its name stays beside the controls (for example **Pausing…**).
+
+On mobile, **Pause**, **Resume**, and **Stop work** appear beside the run status and above its expanded details. **Delete work** is in the work menu.
 
 ## Model evidence, coordination and review
 
@@ -412,7 +394,7 @@ pushing or publishing.
 
 ## Tasks, tools and recovery
 
-In Tasks, select a saved crew under **Run with**, then **Start with crew**. Each
+In Tasks, choose a saved crew under **Run with a crew** (in **More options**). Each
 task gets an independent coordinator/run from that definition and waits for
 accepted assignments and crew completion. A required task check must pass on the
 final integration assignment or sole assignment. Stopping the parent pauses and

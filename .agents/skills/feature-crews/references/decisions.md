@@ -73,3 +73,11 @@ Owner decision, 2026-11-12, model routing, source: owner work package H:
 > one priority order and one limit definition for every feature; crew cost/quality scoring and crew-owned pools are removed
 
 Recorded decision: automatic crew members use the Host-wide routing role `crew.member`, main order or a routing pool. Capabilities and independent reviewer identity remain eligibility filters. Running and historical snapshots retain their concrete models.
+
+## Crews are simplified like Tasks
+
+Owner decision, 2026-11-23, Crews, Automations and Voice simplification, source: owner chat (translated):
+
+> We did Tasks. Let's also do Crews and simplify them, Automation and the voice assistant too. You need to edit every setting, every dialog, settings etc. I do not want anything unnecessary.
+
+Recorded decision: the Crews page has three tabs, Teams, Members and Work. The Work tab is the one work manager; there is no modal work manager or separate Active tab. Each form keeps its common controls visible and puts the rare ones behind one More options disclosure, never nested.

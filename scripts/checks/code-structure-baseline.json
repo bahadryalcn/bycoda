@@ -190,7 +190,7 @@
       "cross-feature-deep-import": 5
     },
     "src/features/automations/ui/AutomationsView.tsx": {
-      "cross-feature-deep-import": 16,
+      "cross-feature-deep-import": 9,
       "feature-imports-app": 3
     },
     "src/features/automations/ui/TriggerEditor.tsx": {
@@ -305,15 +305,12 @@
     "src/features/crews/ui/CrewLibraryMemberMeta.tsx": {
       "cross-feature-deep-import": 1
     },
-    "src/features/crews/ui/CrewMemberForm.tsx": {
-      "cross-feature-deep-import": 1
-    },
     "src/features/crews/ui/CrewRailSection.tsx": {
       "cross-feature-deep-import": 1,
       "feature-imports-app": 1
     },
     "src/features/crews/ui/CrewSessions.tsx": {
-      "cross-feature-deep-import": 5
+      "cross-feature-deep-import": 4
     },
     "src/features/crews/ui/CrewWorkDetail.tsx": {
       "cross-feature-deep-import": 1
@@ -613,7 +610,6 @@
       "loose-feature-file": 1
     },
     "src/features/notes/noteLibrary.ts": {
-      "cross-feature-deep-import": 1,
       "loose-feature-file": 1
     },
     "src/features/notes/noteLibraryMenu.ts": {
@@ -1257,9 +1253,6 @@
     "src/features/sync/model/syncClient.ts": {
       "cross-feature-deep-import": 2
     },
-    "src/features/sync/model/syncGroups.ts": {
-      "cross-feature-deep-import": 1
-    },
     "src/features/sync/model/syncLock.ts": {
       "cross-feature-deep-import": 3
     },
@@ -1309,12 +1302,9 @@
       "cross-feature-deep-import": 4
     },
     "src/features/tasks/ui/TaskForm.tsx": {
-      "cross-feature-deep-import": 3
-    },
-    "src/features/tasks/ui/TaskFormFields.tsx": {
       "cross-feature-deep-import": 2
     },
-    "src/features/tasks/ui/TaskStewards.tsx": {
+    "src/features/tasks/ui/TaskFormFields.tsx": {
       "cross-feature-deep-import": 1
     },
     "src/features/tasks/ui/TasksView.tsx": {
@@ -1346,8 +1336,7 @@
       "cross-feature-deep-import": 1
     },
     "src/features/terminal/ui/ProjectTerminalDock.tsx": {
-      "cross-feature-deep-import": 2,
-      "feature-imports-app": 1
+      "cross-feature-deep-import": 2
     },
     "src/features/terminal/ui/TerminalSelectionMenu.tsx": {
       "cross-feature-deep-import": 4
@@ -1454,7 +1443,7 @@
       "cross-feature-deep-import": 3
     },
     "src/features/voice/ui/VoicePanelChoices.tsx": {
-      "cross-feature-deep-import": 3
+      "cross-feature-deep-import": 2
     },
     "src/features/voice/ui/VoiceSettings.tsx": {
       "cross-feature-deep-import": 1

@@ -1,12 +1,21 @@
+import { useContext } from "react";
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { t } from "../../../shared/i18n";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { AdvancedSettings, Select, Toggle } from "../../../shared/ui/settings";
+import { RevealedSetting, Select, Toggle } from "../../../shared/ui/settings";
 import { useModelCatalog } from "../../sessions/public/modelHooks";
 import type { VoiceSettings } from "../model/voiceSettings";
+
+/** Rows under the cleanup switch; Settings opens "More options" for any of them. */
+export const CLEANUP_ROW_IDS = [
+  "dictation-cleanup-model",
+  "dictation-cleanup-instructions",
+  "dictation-correction-cue",
+  "dictation-translate",
+];
 
 /** Optional text cleanup has its own explicit cloud opt-in, independent of audio recognition. */
 export function DictationCleanupSettings({
@@ -16,6 +25,9 @@ export function DictationCleanupSettings({
   settings: VoiceSettings;
   change: (patch: Partial<VoiceSettings>) => void;
 }) {
+  const revealed = useContext(RevealedSetting);
+  // A search result for a cleanup detail shows its row even while cleanup is off.
+  const cleanupRevealed = !!revealed && CLEANUP_ROW_IDS.includes(revealed);
   const catalog = useModelCatalog("codex");
   const cleanup = settings.dictationCleanup;
   const update = (patch: Partial<VoiceSettings["dictationCleanup"]>) =>
@@ -53,17 +65,8 @@ export function DictationCleanupSettings({
           onChange={(enabled) => update({ enabled })}
         />
       </Row>
-      {cleanup.enabled ? (
-        <AdvancedSettings
-          title={t("Text cleanup options")}
-          settingIds={[
-            "dictation-cleanup-model",
-            "dictation-cleanup-instructions",
-            "dictation-correction-cue",
-            "dictation-translate",
-          ]}
-          keepMounted
-        >
+      {cleanup.enabled || cleanupRevealed ? (
+        <>
           <Row id="dictation-cleanup-model" label={t("Cleanup model")}>
             <Select
               hideLabel
@@ -107,7 +110,7 @@ export function DictationCleanupSettings({
               onChange={(translateToEnglish) => update({ translateToEnglish })}
             />
           </Row>
-        </AdvancedSettings>
+        </>
       ) : null}
     </>
   );

@@ -1,5 +1,5 @@
 import { loadVoiceMemory, voiceMemoryInstructions } from "./voiceMemory";
-import { loadVoicePersona, voicePersonaInstructions } from "./voicePersona";
+import { DEFAULT_VOICE_PERSONA, loadVoicePersona, voicePersonaInstructions } from "./voicePersona";
 import type {
   AssistantSnapshot,
   AssistantProfile,
@@ -41,8 +41,16 @@ export function voiceOwnerInstructions(snapshot?: AssistantSnapshot | null): str
   const migrated = voiceMemoryMigrationComplete();
   return [
     voiceOwnerProfileInstructions(profile, snapshot?.memory ?? [], loadVoiceMemory().enabled),
+    // Assistant settings own name, address and tone; a Host profile keeps only the legacy rules.
     voicePersonaInstructions(
-      profile ? { ...persona, name: profile.name, rules: migrated ? "" : persona.rules } : persona,
+      profile
+        ? {
+            ...DEFAULT_VOICE_PERSONA,
+            status: persona.status,
+            name: profile.name,
+            rules: migrated ? "" : persona.rules,
+          }
+        : persona,
     ),
     profile && migrated ? "" : voiceMemoryInstructions(loadVoiceMemory()),
   ]

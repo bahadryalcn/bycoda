@@ -24,10 +24,11 @@ import { roleLabel } from "./CrewMemberForm";
 import { CrewModelTag } from "./CrewModelTag";
 import { CrewRoleIcon } from "./CrewRoleIcon";
 
-export function crewSessionCount(run: CrewRunView) {
+/** Distinct conversations of the work; the lead's is left out when it is already shown inline. */
+export function crewSessionCount(run: CrewRunView, coordinatorInline = false) {
   return new Set(
     [
-      run.coordinatorSessionId,
+      coordinatorInline ? undefined : run.coordinatorSessionId,
       ...run.tasks.flatMap((task) => Object.values(taskSessionIds(task))),
     ].filter(Boolean),
   ).size;
@@ -124,6 +125,7 @@ export function CrewWorkSessions({
   canOpen,
   pending,
   pendingAction,
+  coordinatorInline = false,
   onOpen,
 }: {
   run: CrewRunView;
@@ -131,6 +133,8 @@ export function CrewWorkSessions({
   canOpen: boolean;
   pending: boolean;
   pendingAction: string | null;
+  /** The lead's conversation is rendered inline above this list, so it is not listed again. */
+  coordinatorInline?: boolean;
   onOpen: (id: string, source?: string) => void;
 }) {
   useLocale();
@@ -141,9 +145,11 @@ export function CrewWorkSessions({
   const reviewerName = reviewer?.name.trim() || roleLabel("reviewer");
   const same = (name: string, role: CrewRole) =>
     name.trim().toLocaleLowerCase() === roleLabel(role).toLocaleLowerCase();
+  const showCoordinator = !(coordinatorInline && run.coordinatorSessionId);
+  if (!showCoordinator && !run.tasks.length) return null;
   return (
     <>
-      {crewSessionCount(run) > 1 ? (
+      {crewSessionCount(run, !showCoordinator) > 1 ? (
         <SectionLabel as="h4" className="pb-1 pt-4">
           {t("Sessions")}
         </SectionLabel>
@@ -151,39 +157,41 @@ export function CrewWorkSessions({
         <div className="pt-3" />
       )}
       <div role="list" aria-label={t("Sessions")} className="flex min-w-0 flex-col gap-0">
-        <div role="listitem">
-          <SessionRow
-            role="coordinator"
-            traits={coordinator && looks.get(coordinator.id)}
-            name={coordinatorName}
-            roleText={same(coordinatorName, "coordinator") ? undefined : roleLabel("coordinator")}
-            model={
-              run.coordinatorCandidate || coordinator ? (
-                <CrewModelTag
-                  catalog={catalog}
-                  candidate={run.coordinatorCandidate}
-                  agent={coordinator}
-                  className="shrink-0"
-                />
-              ) : undefined
-            }
-            working={run.coordinatorStatus === "running"}
-            status={
-              !run.coordinatorSessionId
-                ? t("Session unavailable")
-                : run.coordinatorStatus === "running"
-                  ? t("Working")
-                  : run.coordinatorStatus === "interrupted"
-                    ? t("Interrupted")
-                    : undefined
-            }
-            disabled={!run.coordinatorSessionId || !canOpen || pending}
-            loading={pendingAction === "open:coordinator"}
-            onClick={() =>
-              run.coordinatorSessionId && onOpen(run.coordinatorSessionId, "coordinator")
-            }
-          />
-        </div>
+        {showCoordinator ? (
+          <div role="listitem">
+            <SessionRow
+              role="coordinator"
+              traits={coordinator && looks.get(coordinator.id)}
+              name={coordinatorName}
+              roleText={same(coordinatorName, "coordinator") ? undefined : roleLabel("coordinator")}
+              model={
+                run.coordinatorCandidate || coordinator ? (
+                  <CrewModelTag
+                    catalog={catalog}
+                    candidate={run.coordinatorCandidate}
+                    agent={coordinator}
+                    className="shrink-0"
+                  />
+                ) : undefined
+              }
+              working={run.coordinatorStatus === "running"}
+              status={
+                !run.coordinatorSessionId
+                  ? t("Session unavailable")
+                  : run.coordinatorStatus === "running"
+                    ? t("Working")
+                    : run.coordinatorStatus === "interrupted"
+                      ? t("Interrupted")
+                      : undefined
+              }
+              disabled={!run.coordinatorSessionId || !canOpen || pending}
+              loading={pendingAction === "open:coordinator"}
+              onClick={() =>
+                run.coordinatorSessionId && onOpen(run.coordinatorSessionId, "coordinator")
+              }
+            />
+          </div>
+        ) : null}
         {run.tasks.map((task) => {
           const assignment = run.assignments.find((item) => item.taskId === task.id);
           const agent = crewRunMember(run, assignment?.memberId);

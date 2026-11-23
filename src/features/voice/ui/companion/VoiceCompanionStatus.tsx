@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import { Button } from "../../../../shared/ui/Button";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { Text } from "../../../../shared/ui/Text";
@@ -8,9 +7,6 @@ import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
 import { Globe, MessageMultiple, Square } from "../../../../shared/ui/icons";
 import { t } from "../../../../shared/i18n";
-import { formatDuration } from "../../../../shared/i18n/format";
-import { elapsedSince, monotonicNow } from "../../../../shared/lib/time/timestamps";
-import { subscribeVoiceSecond } from "../../model/voicePresentationTimers";
 import type { VoiceVisualState } from "../../model/voiceVisualState";
 import { VoiceCallScene } from "./VoiceCallScene";
 import { voiceStatusTone } from "./VoiceLauncher";
@@ -29,8 +25,6 @@ export function VoiceCompanionStatus({
   audioLevel,
   statusText,
   sessionStatusText,
-  live,
-  engine,
   privacy,
   workspace,
   globalScope,
@@ -46,11 +40,7 @@ export function VoiceCompanionStatus({
   audioLevel: { readonly current: number };
   statusText: string;
   sessionStatusText: string;
-  /** Connected and capturing; shows the session clock. */
-  live: boolean;
-  /** Who runs the voice: the realtime provider or this computer. */
-  engine: string;
-  /** Where audio goes; the engine's tooltip. */
+  /** Where audio goes, only when it leaves this computer; empty for local voice. */
   privacy: string;
   workspace: boolean;
   globalScope: boolean;
@@ -108,7 +98,13 @@ export function VoiceCompanionStatus({
               </Text>
             </OverflowTooltip>
           ) : null}
-          <VoiceMeta live={live} engine={engine} privacy={privacy} />
+          {privacy ? (
+            <div className={styles.meta}>
+              <InfoPopover label={t("Privacy")}>
+                <p>{privacy}</p>
+              </InfoPopover>
+            </div>
+          ) : null}
         </div>
       </div>
       {stage && (fullScreen || caption) ? (
@@ -144,40 +140,6 @@ export function VoiceCompanionStatus({
           />
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * One quiet line under the status: the engine (its info popover says where audio goes) and, while
- * connected, how long this voice session has run. The clock is painted from the shared second
- * timer, so it does not re-render the panel; the voice core already shows the input level.
- */
-function VoiceMeta({ live, engine, privacy }: { live: boolean; engine: string; privacy: string }) {
-  const clock = useRef<HTMLSpanElement>(null);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- session clock timer runs only while voice is live
-  useEffect(() => {
-    if (!live) return;
-    const start = monotonicNow();
-    const tick = () => {
-      if (clock.current)
-        clock.current.textContent = formatDuration(elapsedSince(start), { style: "clock" });
-    };
-    tick();
-    // Shared one-second timer: asleep while the window is hidden, caught up when it returns.
-    return subscribeVoiceSecond(tick);
-  }, [live]);
-  return (
-    <div className={styles.meta}>
-      <Text size="caption" tone="muted" leading="none" truncate>
-        {engine}
-      </Text>
-      <InfoPopover label={t("Privacy")}>
-        <p>{privacy}</p>
-      </InfoPopover>
-      {live ? (
-        <Text ref={clock} size="caption" tone="muted" leading="none" className={styles.clock} />
-      ) : null}
     </div>
   );
 }

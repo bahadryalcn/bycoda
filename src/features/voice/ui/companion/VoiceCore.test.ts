@@ -110,8 +110,7 @@ it("draws a broken ring without turning arcs on error and shows the avatar initi
   expect(host.querySelector("[data-initial]")?.getAttribute("data-initial")).toBe("A");
 });
 
-it("shows the engine always and the session clock only while live", () => {
-  vi.useFakeTimers();
+it("states where audio goes only when it leaves this computer", () => {
   const props = {
     visualState: "listening" as const,
     artwork: "listening" as const,
@@ -119,8 +118,6 @@ it("shows the engine always and the session clock only while live", () => {
     audioLevel: { current: 0.5 },
     statusText: "Listening",
     sessionStatusText: "",
-    live: true,
-    engine: "OpenAI",
     privacy: "Audio is sent to the provider while voice is on.",
     workspace: false,
     globalScope: true,
@@ -132,22 +129,18 @@ it("shows the engine always and the session clock only while live", () => {
     onStopWork: () => {},
   };
   act(() => root.render(createElement(VoiceCompanionStatus, props)));
-  expect(host.textContent).toContain("OpenAI");
+  expect(host.querySelector('[aria-label="Privacy"]')).not.toBeNull();
   expect(host.querySelector('[data-layout="stage"] [data-size="stage"]')).not.toBeNull();
   expect(host.textContent).toContain("Latest spoken line");
-  expect(host.textContent).toContain("0:00");
-  act(() => vi.advanceTimersByTime(3_000));
-  expect(host.textContent).toContain("0:03");
 
-  act(() =>
-    root.render(createElement(VoiceCompanionStatus, { ...props, live: false, stage: false })),
-  );
-  expect(host.textContent).toContain("OpenAI");
-  expect(host.textContent).not.toContain("0:03");
+  act(() => root.render(createElement(VoiceCompanionStatus, { ...props, stage: false })));
   // The strip beside the transcript leaves the spoken line to the transcript.
   expect(host.querySelector('[data-layout="strip"] [data-size="stage"]')).toBeNull();
   expect(
     host.querySelector('[data-layout="strip"] [data-call-art="orb"][data-size="strip"]'),
   ).not.toBeNull();
   expect(host.textContent).not.toContain("Latest spoken line");
+
+  act(() => root.render(createElement(VoiceCompanionStatus, { ...props, privacy: "" })));
+  expect(host.querySelector('[aria-label="Privacy"]')).toBeNull();
 });

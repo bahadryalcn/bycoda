@@ -86,30 +86,19 @@ export function crewSections(agents: CrewAgent[], issues: CrewRosterIssues): Cre
   ];
 }
 
-/** The one thing to fix before the draft can be saved. */
-export function crewIssueSummary(
-  sections: CrewSection[],
-  issues: CrewRosterIssues,
-  policyValid: boolean,
-) {
-  return (
-    sections.find((s) => s.issue)?.issue ??
-    (issues.name
-      ? t("Name the crew.")
-      : Object.keys(issues.members).length
-        ? t("Every member needs a name and a model.")
-        : issues.size === "large"
-          ? t("A crew can have at most 20 members.")
-          : !policyValid
-            ? t("Check the working settings.")
-            : "")
-  );
+/**
+ * What blocks saving and has no line of its own: roster problems already show under their
+ * section or on their row, so only the name and the limits are named here.
+ */
+export function crewIssueSummary(issues: CrewRosterIssues, policyValid: boolean) {
+  return issues.name ? t("Name the crew.") : !policyValid ? t("Check the working settings.") : "";
 }
 
 /**
- * The roster: one calm row per member under its role. Selection and the pinned model (with
- * its effort) are edited in the row, removal appears on hover or focus; the row opens the
- * rest of the member, including its role, in place through `renderDetail`.
+ * The roster: one calm row per member under its role. The pinned model (with its effort) is
+ * edited in the row, removal appears on hover or focus; the row opens the rest of the member,
+ * including its role, in place through `renderDetail`. Row checkboxes, for the bulk model bar,
+ * and the search appear only once the roster is long (`rosterSearchable`).
  */
 export function CrewMemberTable({
   cwd,
@@ -141,7 +130,8 @@ export function CrewMemberTable({
   onRemove: (id: string) => void;
   expandedId: string | null;
   onExpandedChange: (id: string | null) => void;
-  onAdd: (role?: CrewRole) => void;
+  /** The empty roster's Add members button; the editor's header owns the other entry. */
+  onAdd: () => void;
   onStarter: () => void;
   renderDetail: (agent: CrewAgent) => ReactNode;
   query: string;
@@ -151,6 +141,7 @@ export function CrewMemberTable({
 }) {
   useLocale();
   const queryActive = query.trim().length > 0;
+  const long = rosterSearchable(agents.length, queryActive);
   const matches = (agent: CrewAgent) =>
     !queryActive ||
     matchesMemberQuery(
@@ -184,7 +175,7 @@ export function CrewMemberTable({
           )}
         </Text>
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" startIcon={<Plus />} onClick={() => onAdd()}>
+          <Button variant="secondary" startIcon={<Plus />} onClick={onAdd}>
             {t("Add members")}
           </Button>
           <Button
@@ -201,26 +192,15 @@ export function CrewMemberTable({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {rosterSearchable(agents.length, queryActive) ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <SearchInput
-            appearance="field"
-            containerClassName="min-w-48 max-w-80 flex-1"
-            aria-label={t("Search members by name, role, model or group")}
-            placeholder={t("Search members by name, role, model or group")}
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-          />
-          {queryActive ? (
-            // The same text is announced once by the status line below.
-            <Text className="tabular-nums" aria-hidden="true">
-              {t("{p0} of {p1} members shown", {
-                p0: matchCount,
-                p1: agents.length,
-              })}
-            </Text>
-          ) : null}
-        </div>
+      {long ? (
+        <SearchInput
+          appearance="field"
+          containerClassName="min-w-48 max-w-80"
+          aria-label={t("Search members by name, role, model or group")}
+          placeholder={t("Search members by name, role, model or group")}
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+        />
       ) : null}
       {sections.map((section) => {
         const all = agents.filter((agent) => agent.role === section.role);
@@ -238,16 +218,6 @@ export function CrewMemberTable({
               <Text className="min-w-0 flex-1 tabular-nums">
                 {queryActive ? `${shown.length}/${all.length}` : all.length > 1 ? all.length : ""}
               </Text>
-              {all.length > 0 && (section.role === "specialist" || section.role === "advisor") ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  startIcon={<Plus />}
-                  onClick={() => onAdd(section.role)}
-                >
-                  {t("Add")}
-                </Button>
-              ) : null}
             </div>
             {section.issue ? <InlineError>{section.issue}</InlineError> : null}
             {shown.length ? (
@@ -260,19 +230,25 @@ export function CrewMemberTable({
                     ? memberLink(agent, data.agents)?.state
                     : undefined;
                   const groups = !problem && agent.groups?.length ? agent.groups.join(", ") : "";
-                  const hasMeta = linkState === "customized" || agent.handle || problem || groups;
+                  const hasMeta = linkState === "customized" || problem || groups;
                   return (
                     <li key={agent.id} className="@container/member-row min-w-0">
                       <ActionHost
                         hoverReveal
-                        className="grid! grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 @min-[28rem]/member-row:grid-cols-[auto_minmax(0,1fr)_minmax(8rem,14rem)_auto] @min-[28rem]/member-row:gap-y-0"
+                        className={`grid! items-center gap-x-2 gap-y-2 @min-[28rem]/member-row:gap-y-0 ${
+                          long
+                            ? "grid-cols-[auto_minmax(0,1fr)_auto] @min-[28rem]/member-row:grid-cols-[auto_minmax(0,1fr)_minmax(8rem,14rem)_auto]"
+                            : "grid-cols-[minmax(0,1fr)_auto] @min-[28rem]/member-row:grid-cols-[minmax(0,1fr)_minmax(8rem,14rem)_auto]"
+                        }`}
                         data-member-row={agent.id}
                       >
-                        <Checkbox
-                          aria-label={t("Select {p0}", { p0: name })}
-                          checked={selected.includes(agent.id)}
-                          onChange={(event) => toggle(agent.id, event.target.checked)}
-                        />
+                        {long ? (
+                          <Checkbox
+                            aria-label={t("Select {p0}", { p0: name })}
+                            checked={selected.includes(agent.id)}
+                            onChange={(event) => toggle(agent.id, event.target.checked)}
+                          />
+                        ) : null}
                         <Button
                           variant="item"
                           motion="none"
@@ -305,11 +281,6 @@ export function CrewMemberTable({
                             {hasMeta ? (
                               <span className="flex max-w-[50%] shrink-0 items-baseline gap-2">
                                 <MemberLinkMark link={linkState} />
-                                {agent.handle ? (
-                                  <Text truncate className="min-w-0">
-                                    @{agent.handle}
-                                  </Text>
-                                ) : null}
                                 {problem ? (
                                   <Text tone="danger" truncate className="min-w-0">
                                     {problem === "model" ? t("Choose a model") : t("Add a name")}
@@ -323,7 +294,9 @@ export function CrewMemberTable({
                             ) : null}
                           </span>
                         </Button>
-                        <div className="col-start-2 col-span-2 row-start-2 flex min-w-0 justify-start @min-[28rem]/member-row:col-auto @min-[28rem]/member-row:row-auto @min-[28rem]/member-row:justify-end">
+                        <div
+                          className={`${long ? "col-start-2" : "col-start-1"} col-span-2 row-start-2 flex min-w-0 justify-start @min-[28rem]/member-row:col-auto @min-[28rem]/member-row:row-auto @min-[28rem]/member-row:justify-end`}
+                        >
                           {agent.selection === "fixed" ? (
                             <MemberModelPicker
                               cwd={cwd}
@@ -370,20 +343,7 @@ export function CrewMemberTable({
               </ul>
             ) : all.length ? (
               <EmptyState size="inline" kind="filtered" description={t("No matching members")} />
-            ) : (
-              <Button
-                variant="secondary"
-                className="self-start"
-                startIcon={<Plus />}
-                onClick={() => onAdd(section.role)}
-              >
-                {section.role === "coordinator"
-                  ? t("Add coordinator")
-                  : section.role === "reviewer"
-                    ? t("Add reviewer")
-                    : t("Add specialist")}
-              </Button>
-            )}
+            ) : null}
           </section>
         );
       })}

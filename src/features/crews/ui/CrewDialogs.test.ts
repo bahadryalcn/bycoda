@@ -42,14 +42,6 @@ vi.mock("../../tasks/model/taskClient", () => ({
 }));
 
 vi.mock("./CrewEditor", () => ({ CrewEditDialog: () => null }));
-vi.mock("./CrewMachineScope", () => ({
-  useCrewMachineScope: (cwd: string, state: unknown) => ({
-    cwd,
-    state,
-    picker: () => null,
-    projectPicker: () => null,
-  }),
-}));
 vi.mock("../../sessions/public/AccessPicker", () => ({
   AccessPicker: ({ value, onChange }: { value: string; onChange: (mode: string) => void }) =>
     createElement("button", { "data-access": value, onClick: () => onChange("full-access") }),

@@ -7,20 +7,19 @@ import type { VoiceSettings } from "../model/voiceSettings";
 import type { VoiceSetup } from "./useVoiceSetup";
 type Change = (patch: Partial<VoiceSettings>) => void;
 
+/** The one Processing choice (Automatic, GPU, CPU) shared by voice replies and local dictation. */
 export function ProcessingRow({
-  id,
   setup,
   value,
   change,
 }: {
-  id: string;
   setup: VoiceSetup;
   value: VoiceDevice;
   change: Change;
 }) {
   return (
     <Row
-      id={id}
+      id="voice-device"
       label={t("Processing")}
       info={
         <InfoTooltip label={t("Processing")}>

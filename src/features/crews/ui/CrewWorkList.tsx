@@ -25,6 +25,7 @@ export function CrewWorkList({
   runs,
   listedCount,
   query,
+  searchable = false,
   selectedId,
   disabled,
   onViewChange,
@@ -42,6 +43,8 @@ export function CrewWorkList({
   /** Runs of the current view before filtering. */
   listedCount: number;
   query: string;
+  /** The filter appears only for a long list; the owner of the list decides. */
+  searchable?: boolean;
   selectedId?: string;
   disabled: boolean;
   onViewChange: (view: CrewWorkView) => void;
@@ -61,10 +64,6 @@ export function CrewWorkList({
       ?.querySelector<HTMLElement>(`[data-crew-work-choice="${CSS.escape(selectedId)}"]`)
       ?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
-  // Selection resolves from the unfiltered view, so the detail can show work the
-  // search hides; say so instead of leaving an unexplained gap.
-  const selectedHidden =
-    !!selectedId && !!query.trim() && !runs.some((run) => run.id === selectedId);
   return (
     <div {...surfaceAttributes({ variant: "page" }, "flex min-w-0 flex-col")}>
       <div className="flex flex-col gap-2 px-3 pb-2 pt-3">
@@ -77,23 +76,17 @@ export function CrewWorkList({
           ]}
           onValueChange={(value) => onViewChange(value === "finished" ? "finished" : "ongoing")}
         />
-        <SearchInputGroup appearance="field">
-          <Search className="icon-sm shrink-0" aria-hidden="true" />
-          <SearchInput
-            focusOwner="group"
-            aria-label={t("Search crew work")}
-            placeholder={t("Search crew work")}
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-          />
-        </SearchInputGroup>
-        {selectedHidden ? (
-          <Text as="p" className="flex min-w-0 flex-wrap items-center justify-between gap-x-2">
-            <span className="min-w-0">{t("The selected work is hidden by the search.")}</span>
-            <Button variant="ghost" size="sm" onClick={() => onQueryChange("")}>
-              {t("Clear search")}
-            </Button>
-          </Text>
+        {searchable ? (
+          <SearchInputGroup appearance="field">
+            <Search className="icon-sm shrink-0" aria-hidden="true" />
+            <SearchInput
+              focusOwner="group"
+              aria-label={t("Search crew work")}
+              placeholder={t("Search crew work")}
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+            />
+          </SearchInputGroup>
         ) : null}
       </div>
       <div

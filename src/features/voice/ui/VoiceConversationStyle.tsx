@@ -1,11 +1,8 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { Settings } from "../../../shared/ui/icons";
 import { t, useFormat } from "../../../shared/i18n";
-import {
-  saveProfessionalConversationPreset,
-  VOICE_PRESET_FAILED,
-} from "../model/voiceConversationPreset";
 import { saveVoiceTurnEndChoice, VOICE_TURN_CHOICE_FAILED } from "../model/voiceTurnPolicy";
 import {
   Group,
@@ -14,64 +11,76 @@ import {
   Toggle,
   AdvancedSettings,
 } from "../../../shared/ui/settings";
+import { openAssistantRoom, VoiceMemoryRow } from "./VoiceCompanionSettings";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 
-/** How a spoken conversation takes turns: pauses, interruptions, progress updates and sleep. */
+const MANUAL_TURN_END = "manual";
+
+/** How a spoken conversation takes turns, what it remembers, and when it sleeps or calls back. */
 export function VoiceConversationStyle({
   settings,
   change,
+  assistantMemoryCount,
 }: {
   settings: Preferences;
   change: (patch: Partial<Preferences>) => void;
+  assistantMemoryCount?: number;
 }) {
-  const [presetError, setPresetError] = useState(false);
   const [turnChoiceError, setTurnChoiceError] = useState(false);
   const { formatNumber } = useFormat();
   const pause = settings.turnEndSilence ?? 1.2;
+  const manual = settings.manualTurnEnd === true;
   const idleChoices = [0, 5, 10, 15, 30, 60];
+  // One choice covers both ways a turn ends; leaving manual mode goes through the acknowledged opt-in save.
+  const chooseTurnEnd = (value: string) => {
+    try {
+      if (value === MANUAL_TURN_END) {
+        if (!manual) saveVoiceTurnEndChoice(true);
+      } else {
+        if (manual) saveVoiceTurnEndChoice(false);
+        change({ turnEndSilence: Number(value) });
+      }
+      setTurnChoiceError(false);
+    } catch {
+      setTurnChoiceError(true);
+    }
+  };
   return (
     <Group
-      title={t("Conversation style")}
+      title={t("Conversation")}
       layout="full"
       action={
         <Button
           size="sm"
-          onClick={() => {
-            try {
-              saveProfessionalConversationPreset();
-              setPresetError(false);
-              setTurnChoiceError(false);
-            } catch {
-              setPresetError(true);
-            }
-          }}
+          variant="ghost"
+          startIcon={<Settings className="icon-sm" />}
+          onClick={() => openAssistantRoom("settings")}
         >
-          {t("Apply professional preset")}
+          {t("Assistant settings")}
         </Button>
-      }
-      description={t(
-        "Uses a longer pause, allows interruptions, and holds spoken progress updates. You can change each setting afterward.",
-      )}
-      feedback={
-        presetError ? (
-          <SettingsFeedback state="error">{t(VOICE_PRESET_FAILED)}</SettingsFeedback>
-        ) : undefined
       }
     >
       <Row
         id="voice-turn-silence"
         label={t("Wait before replying")}
         description={
-          settings.manualTurnEnd
-            ? t("Automatic pause detection is off. Choose Finish turn when you are ready.")
+          manual
+            ? t(
+                "Long pauses keep listening. Choose Finish turn to send your speech. You can switch back to automatic replies here.",
+              )
             : undefined
+        }
+        descriptionVisible={manual}
+        feedback={
+          turnChoiceError ? (
+            <SettingsFeedback state="error">{t(VOICE_TURN_CHOICE_FAILED)}</SettingsFeedback>
+          ) : undefined
         }
       >
         <Select
           hideLabel
           label={t("Wait before replying")}
-          disabled={settings.manualTurnEnd === true}
-          value={String(settings.turnEndSilence ?? 1.2)}
+          value={manual ? MANUAL_TURN_END : String(pause)}
           options={[
             { value: "1.2", label: t("Natural pause") },
             { value: "2.5", label: t("Longer pause") },
@@ -79,65 +88,46 @@ export function VoiceConversationStyle({
             ...(![1.2, 2.5, 4].includes(pause)
               ? [{ value: String(pause), label: t("{p0} seconds", { p0: formatNumber(pause) }) }]
               : []),
+            { value: MANUAL_TURN_END, label: t("I end my turn") },
           ]}
-          onChange={(value) => change({ turnEndSilence: Number(value) })}
+          onChange={chooseTurnEnd}
         />
       </Row>
-      <Row
-        id="voice-manual-turn-end"
-        label={t("I decide when my turn ends")}
-        description={t(
-          "Long pauses keep listening. Choose Finish turn to send your speech. You can switch back to automatic replies here.",
-        )}
-        feedback={
-          turnChoiceError ? (
-            <SettingsFeedback state="error">{t(VOICE_TURN_CHOICE_FAILED)}</SettingsFeedback>
-          ) : undefined
-        }
-      >
-        <Toggle
-          label={t("I decide when my turn ends")}
-          on={settings.manualTurnEnd === true}
-          onChange={(manual) => {
-            try {
-              saveVoiceTurnEndChoice(manual);
-              setTurnChoiceError(false);
-            } catch {
-              setTurnChoiceError(true);
-            }
-          }}
-        />
-      </Row>
-      <Row
-        id="voice-barge-in"
-        label={t("I may interrupt speech")}
-        description={t("Lets your speech interrupt the assistant's reply.")}
-      >
-        <Toggle
-          label={t("I may interrupt speech")}
-          on={settings.allowBargeIn !== false}
-          onChange={(allowBargeIn) => change({ allowBargeIn })}
-        />
-      </Row>
-      <Row id="voice-remove-fillers" label={t("Remove filler words in replies")}>
-        <Toggle
-          label={t("Remove filler words in replies")}
-          on={settings.removeFillers === true}
-          onChange={(removeFillers) => change({ removeFillers })}
-        />
-      </Row>
-      <Row id="voice-hold-announcements" label={t("Hold spoken progress updates")}>
-        <Toggle
-          label={t("Hold spoken progress updates")}
-          on={settings.holdAnnouncements === true}
-          onChange={(holdAnnouncements) => change({ holdAnnouncements })}
-        />
-      </Row>
+      <VoiceMemoryRow assistantMemoryCount={assistantMemoryCount} />
       <AdvancedSettings
-        title={t("When you step away")}
-        settingIds={["voice-idle-sleep", "voice-return-call", "voice-return-call-seconds"]}
+        title={t("More options")}
+        settingIds={[
+          "voice-barge-in",
+          "voice-remove-fillers",
+          "voice-hold-announcements",
+          "voice-idle-sleep",
+          "voice-return-call",
+          "voice-semantic-vad",
+        ]}
+        defaultOpen={settings.mode === "openai" && settings.experimentalSemanticVad === true}
         keepMounted
       >
+        <Row id="voice-barge-in" label={t("I may interrupt speech")}>
+          <Toggle
+            label={t("I may interrupt speech")}
+            on={settings.allowBargeIn !== false}
+            onChange={(allowBargeIn) => change({ allowBargeIn })}
+          />
+        </Row>
+        <Row id="voice-remove-fillers" label={t("Remove filler words in replies")}>
+          <Toggle
+            label={t("Remove filler words in replies")}
+            on={settings.removeFillers === true}
+            onChange={(removeFillers) => change({ removeFillers })}
+          />
+        </Row>
+        <Row id="voice-hold-announcements" label={t("Hold spoken progress updates")}>
+          <Toggle
+            label={t("Hold spoken progress updates")}
+            on={settings.holdAnnouncements === true}
+            onChange={(holdAnnouncements) => change({ holdAnnouncements })}
+          />
+        </Row>
         <Row
           id="voice-idle-sleep"
           label={t("Sleep voice when I'm idle")}
@@ -167,6 +157,7 @@ export function VoiceConversationStyle({
           description={t(
             "When you come back, the assistant speaks first and the microphone opens briefly. If you don't answer, it closes and you are notified.",
           )}
+          descriptionVisible
         >
           <Toggle
             label={t("Call me when I return")}
@@ -174,46 +165,24 @@ export function VoiceConversationStyle({
             onChange={(returnCall) => change({ returnCall })}
           />
         </Row>
-        {settings.returnCall === true && (
-          <Row id="voice-return-call-seconds" label={t("Listen for after calling")}>
-            <Select
-              hideLabel
-              label={t("Listen for after calling")}
-              value={String(settings.returnCallSeconds ?? 20)}
-              options={[...new Set([5, 10, 20, 30, 60, 120, settings.returnCallSeconds ?? 20])]
-                .sort((a, b) => a - b)
-                .map((seconds) => ({
-                  value: String(seconds),
-                  label: t("{p0} seconds", { p0: seconds }),
-                }))}
-              onChange={(value) => change({ returnCallSeconds: Number(value) })}
-            />
-          </Row>
-        )}
-      </AdvancedSettings>
-      {settings.mode === "openai" && (
-        <AdvancedSettings
-          title={t("Advanced turn detection")}
-          settingIds={["voice-semantic-vad"]}
-          defaultOpen={settings.experimentalSemanticVad === true}
-          keepMounted
-        >
+        {settings.mode === "openai" && (
           <Row
             id="voice-semantic-vad"
             label={t("Experimental OpenAI turn detection")}
             description={t(
               "Sends live microphone audio to OpenAI continuously while listening. Automatic mode only; disconnect and reconnect voice to apply. Push to talk is unavailable in this mode.",
             )}
+            descriptionVisible
           >
             <Toggle
               label={t("Experimental OpenAI turn detection")}
               on={settings.experimentalSemanticVad === true}
-              disabled={settings.manualTurnEnd === true}
+              disabled={manual}
               onChange={(experimentalSemanticVad) => change({ experimentalSemanticVad })}
             />
           </Row>
-        </AdvancedSettings>
-      )}
+        )}
+      </AdvancedSettings>
     </Group>
   );
 }

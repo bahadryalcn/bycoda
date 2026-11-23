@@ -34,7 +34,6 @@ it("offers retry only after a load failure and preserves its pending state", asy
       createElement(CrewWorkManager, {
         cwd: "/repo",
         state: state as unknown as ReturnType<typeof useProjectCrews>,
-        layout: "page",
       }),
     );
   try {

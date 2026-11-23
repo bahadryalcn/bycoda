@@ -861,28 +861,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "dictate dictation speech to text microphone diktate dikte yazdır mikrofon",
   },
   {
-    id: "speech-microphone",
-    section: "voice",
-    get label() {
-      return t("Microphone access");
-    },
-    keywords: "microphone permission privacy macos windows linux mikrofon izin",
-  },
-  {
     id: "voice-microphone-input",
     section: "voice",
     get label() {
       return t("Microphone");
     },
-    keywords: "input device usb default mikrofon cihaz giriş",
-  },
-  {
-    id: "voice-microphone-recording",
-    section: "voice",
-    get label() {
-      return t("Test microphone");
-    },
-    keywords: "record playback listen test microphone kayıt dinle mikrofon",
+    keywords:
+      "input device usb default permission privacy test record playback listen mikrofon cihaz giriş izin kayıt dinle",
   },
   {
     id: "dictation-shortcut-mode",

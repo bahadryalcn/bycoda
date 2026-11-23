@@ -6,7 +6,6 @@ import {
 } from "../../../src/features/connections/ui/RemoteConnectionFeedback";
 import { RemoteLoadError } from "../../../src/features/connections/ui/RemoteLoadError";
 import { RemoteDataStatus } from "../../../src/features/connections/ui/RemoteDataStatus";
-import { CrewSessions } from "../../../src/features/crews/ui/CrewSessions";
 import {
   notifyRemoteRecovered,
   reportRemoteLoad,
@@ -28,7 +27,7 @@ const params = new URLSearchParams(location.search);
 document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
 const cwd = remotePath("fixture-env", "/Users/demo/project");
 const offline = "RPC_CONNECTION_INTERRUPTED: Host connection interrupted";
-type Mode = "connected" | "offline" | "auth" | "service";
+type Mode = "connected" | "offline" | "auth";
 const initialMode = (params.get("state") ?? "offline") as Mode;
 window.fixtureConnectionDown = initialMode === "offline" || initialMode === "auth";
 
@@ -57,7 +56,6 @@ function Fixture() {
   const panelError = error ? (
     <RemoteLoadError cwd={cwd} failure={classifyRemoteError(error)} stale />
   ) : null;
-  const crewError = error ?? (mode === "service" ? "Crew storage is unavailable" : undefined);
   return (
     <RemoteConnectionFeedbackProvider>
       <main
@@ -77,9 +75,6 @@ function Fixture() {
           <Button size="sm" variant="secondary" onClick={() => setMode("auth")}>
             Yetki hatası
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => setMode("service")}>
-            Crew hatası
-          </Button>
         </header>
         <div
           style={{
@@ -98,16 +93,6 @@ function Fixture() {
               <p className="mt-3 text-ui-caption">Uzak proje çalışması</p>
               <p className="mt-2 text-ui-caption text-(--ui-text-muted)">Son yüklenen konuşma</p>
             </section>
-            <CrewSessions
-              cwd={cwd}
-              state={
-                {
-                  data: undefined,
-                  error: crewError ? new Error(crewError) : undefined,
-                  refetch: async () => {},
-                } as never
-              }
-            />
             <section>
               <h2 className="mb-2 font-medium">Dosyalar</h2>
               {panelError}

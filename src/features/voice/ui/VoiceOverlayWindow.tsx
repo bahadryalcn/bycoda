@@ -8,7 +8,6 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import {
-  Maximize2,
   Minimize2,
   Mic,
   MicOff,
@@ -81,7 +80,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
   const [menuError, setMenuError] = useState("");
   const compact = settings.compact && !state?.choice && !state?.jobReview && !menuError;
   function menuFailed() {
-    setMenuError(t("The turn mode menu could not be opened. Try again."));
+    setMenuError(t("The menu could not be opened. Try again."));
   }
   function changeTurnMode(manual: boolean) {
     setMenuError("");
@@ -315,7 +314,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           .startDragging()
           .catch(() => undefined);
       }}
-      onDoubleClick={() => setCompact(!compact)}
       onKeyDown={onHandleKey}
     >
       <VoiceVisualizer
@@ -364,19 +362,11 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
             if (!compact && event.target === event.currentTarget) onHandleKey(event);
           }}
           onPointerDown={(event) => {
-            if (
-              compact ||
-              event.button !== 0 ||
-              event.detail > 1 ||
-              (event.target as Element).closest("button")
-            )
+            if (compact || event.button !== 0 || (event.target as Element).closest("button"))
               return;
             void getCurrentWebviewWindow()
               .startDragging()
               .catch(() => undefined);
-          }}
-          onDoubleClick={(event) => {
-            if (!compact && !(event.target as Element).closest("button")) setCompact(true);
           }}
         >
           {compact && handle}
@@ -451,7 +441,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
               manual={state?.manualTurnEnd === true}
               muted={muted}
               disabled={!state}
-              onManualChange={changeTurnMode}
               onFinish={() => send("finishTurn")}
               onExpand={() => setCompact(false)}
               onReturn={returnToApp}
@@ -466,18 +455,6 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 onClick={() => setCompact(!compact)}
               >
                 <Minimize2 className="icon-sm" />
-              </Button>
-              <Button
-                iconOnly
-                label={t("Full screen")}
-                disabled={!state}
-                disabledReason={t("Connecting voice…")}
-                onClick={() => {
-                  send("openWorkspace");
-                  showApp();
-                }}
-              >
-                <Maximize2 className="icon-sm" />
               </Button>
               <Button iconOnly label={backLabel} onClick={returnToApp}>
                 <AppWindow className="icon-sm" />

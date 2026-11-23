@@ -3491,7 +3491,6 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
     else if (command === "dismissError") setError("");
     else if (command === "disconnect") close();
     else if (command === "dock") dock();
-    else if (command === "openWorkspace") enterFullScreen();
     else if (command === "close") {
       dock();
       dismiss();
@@ -3752,9 +3751,6 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       aria-description={moveHint}
       className={styles.drag}
       stretch={compact}
-      onDoubleClick={() => {
-        if (compact) setCompact(false);
-      }}
       data-drag-handle=""
       onKeyDown={panelDrag.onHandleKeyDown}
     >
@@ -3856,15 +3852,12 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         statusText={statusText}
         sessionStatusText={sessionStatusText}
         startDisabled={!target && !props.workspace}
-        engine={realtime ? realtime.name : t("This computer")}
         privacy={
           realtime
             ? t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
                 p1: realtime.name,
               })
-            : t(
-                "Audio is processed on this computer. Replies use the session’s signed-in provider. No API key required.",
-              )
+            : ""
         }
         pushHint={
           status === "live" && muted && pushToTalkBinding

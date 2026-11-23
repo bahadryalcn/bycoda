@@ -26,6 +26,7 @@ vi.mock("./CrewMemberForm", () => ({
 
 vi.mock("../model/crewComposer", () => ({
   composerCanAssign: () => false,
+  composerDefaultMember: () => "lead",
   composerTitle: (text: string) => text,
 }));
 vi.mock("../model/crewOwnerActions", () => ({
@@ -61,16 +62,13 @@ it.each(["idle", "saved"] as const)(
         error: "",
         onRetry: vi.fn(),
         creating: false,
-        starting: false,
         pending: false,
         blocked: true,
-        canStart: true,
         onCreate: vi.fn(),
-        onStart: vi.fn(),
       }),
     );
     expect(html).not.toContain("All changes saved");
-    expect(html).toContain("disabled");
+    expect(html).not.toContain("New work");
   },
 );
 it.each([false, true])("retires only the submitted owner note, newer edit: %s", async (newer) => {
@@ -129,13 +127,12 @@ it("keeps an edited library profile until explicit discard", async () => {
           project: { id: "project" },
           catalog: {},
         } as unknown as ProjectCrews,
-        profile: {
+        saved: {
           id: "member",
           name: "Original",
           candidates: [{}],
           updatedAt: 1,
         } as unknown as SavedCrewAgent,
-        groupNames: [],
         onClose,
       }),
     ),
@@ -149,8 +146,8 @@ it("keeps an edited library profile until explicit discard", async () => {
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent === "Cancel")!
+    document
+      .querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label="Close"]')!
       .click(),
   );
   expect(onClose).not.toHaveBeenCalled();
@@ -164,8 +161,8 @@ it("keeps an edited library profile until explicit discard", async () => {
   expect(field.value).toBe("Unsent profile");
   expect(onClose).not.toHaveBeenCalled();
   await act(async () =>
-    [...document.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent === "Cancel")!
+    document
+      .querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label="Close"]')!
       .click(),
   );
   await act(async () =>

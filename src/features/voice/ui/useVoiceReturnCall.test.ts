@@ -35,7 +35,7 @@ let inputs: { patch: Partial<Hook>; settings: Partial<VoiceSettings> } = {
 };
 function Fixture() {
   result = useVoiceReturnCall({
-    settings: { returnCall: true, returnCallSeconds: 10, ...inputs.settings } as VoiceSettings,
+    settings: { returnCall: true, ...inputs.settings } as VoiceSettings,
     snapshot: { profile, presence: { state: "present" } } as never,
     capturePresence: "active",
     status,
@@ -88,7 +88,7 @@ it("speaks, opens capture, then shows a notice and notifies when nobody answers"
   expect(start).toHaveBeenCalledOnce();
   await back({ status: "live" });
   await act(async () => vi.advanceTimersByTimeAsync(200));
-  await act(async () => vi.advanceTimersByTimeAsync(10_000));
+  await act(async () => vi.advanceTimersByTimeAsync(20_000));
   expect(stopToReady).toHaveBeenCalledOnce();
   expect(result.notice).toBe("I called you but you didn't answer.");
   expect(notify).toHaveBeenCalledWith(

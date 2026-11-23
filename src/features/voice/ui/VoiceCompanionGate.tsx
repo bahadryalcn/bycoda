@@ -55,7 +55,6 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
           profile: snapshot.profile,
           manualPresence: snapshot.presence?.state,
         }}
-        onSetup={() => setSetup(true)}
       />
       {setup ? <AssistantSetup voice onClose={() => setSetup(false)} /> : null}
     </>
@@ -65,17 +64,15 @@ export function VoiceCompanionGate(props: VoiceCompanionProps) {
 function ReadyCompanion({
   companion,
   wakeInput,
-  onSetup,
 }: {
   companion: VoiceCompanionProps;
   wakeInput: Parameters<typeof useVoiceWake>[0];
-  onSetup: () => void;
 }) {
   const wake = useVoiceWake(wakeInput);
   return (
     <Suspense fallback={null}>
       {/* Navigation updates future speech targets without remounting the audio owner. */}
-      <Companion {...companion} wakeControls={{ ...wake, onSetup }} />
+      <Companion {...companion} wakeControls={wake} />
     </Suspense>
   );
 }

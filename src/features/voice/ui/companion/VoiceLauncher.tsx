@@ -1,29 +1,16 @@
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-  type Ref,
-} from "react";
+import { useEffect, type ReactNode, type Ref } from "react";
 import { IS_MAC } from "../../../../platform/tauri/platform";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { t } from "../../../../shared/i18n";
 import { AssistantAvatarMark } from "../../../assistant/public/avatar";
 import { Button } from "../../../../shared/ui/Button";
-import { ButtonGroup } from "../../../../shared/ui/ButtonGroup";
-import { AppWindow, ChevronDown, ChevronUp } from "../../../../shared/ui/icons";
-import { InlineError } from "../../../../shared/ui/InlineError";
-import { Popover } from "../../../../shared/ui/Popover";
+import { AppWindow } from "../../../../shared/ui/icons";
 import { Portal } from "../../../../shared/ui/Portal";
 import { StatusDot } from "../../../../shared/ui/StatusDot";
-import { Switch } from "../../../../shared/ui/Switch";
 import { keybindingPressed } from "../../../settings/public/settings";
 import { useKeybindingShortcut } from "../../../settings/public/useKeybindingShortcut";
 import type { VoiceVisual } from "../../model/voiceSettings";
-import { voiceSaveFailures } from "../../model/voiceSettingsSave";
 import type { VoiceVisualState } from "../../model/voiceVisualState";
 import { VoiceVisualizer } from "../VoiceVisualizer";
 import type { useVoiceWake } from "../useVoiceWake";
@@ -32,7 +19,7 @@ import { useVoiceLauncherSlot } from "./voiceLauncherSlot";
 
 export const VOICE_OPEN_COMPANION = "Voice: Open Companion";
 
-export type VoiceWakeControls = ReturnType<typeof useVoiceWake> & { onSetup: () => void };
+export type VoiceWakeControls = ReturnType<typeof useVoiceWake>;
 
 /** Default chord: Mod+Shift+K. Rebinding and disabling go through `keybindingPressed`. */
 export function voiceOpenShortcutPressed(event: KeyboardEvent): boolean {
@@ -167,124 +154,29 @@ export function VoiceLauncher({
   ) : (
     <VoiceVisualizer visual={visual} state="off" small="icon" />
   );
-  const launchButton = (
-    <Button
-      ref={ref}
-      shape={wakeControls ? undefined : "pill"}
-      variant={slot || wakeControls ? "ghost" : "secondary"}
-      iconOnly={compact}
-      padding={wakeControls && !compact ? { end: slot ? "none" : "xxs" } : undefined}
-      {...(slot || wakeControls
-        ? { className: styles.launcherButton }
-        : surfaceAttributes({ variant: "floating", frame: "pane" }, styles.launcherButton))}
-      data-docked={slot ? "" : undefined}
-      label={label}
-      tooltip={compact || returnToWindow ? label : undefined}
-      shortcut={shortcut}
-      tooltipSide={compact ? "right" : "top"}
-      startIcon={compact ? undefined : icon}
-      truncate={Boolean(slot)}
-      onClick={onOpen}
-    >
-      {compact ? icon : name || t("Voice")}
-    </Button>
-  );
   return (
     <VoiceLauncherFrame>
-      {wakeControls ? (
-        <ButtonGroup
-          aria-label={t("Voice companion")}
-          surface={slot ? "transparent" : "default"}
-          selection={slot ? "plate" : "segment"}
-          className={slot ? styles.dockedLauncherGroup : undefined}
-        >
-          {launchButton}
-          <VoiceWakeMenu controls={wakeControls} docked={Boolean(slot)} compact={compact} />
-        </ButtonGroup>
-      ) : (
-        launchButton
-      )}
-    </VoiceLauncherFrame>
-  );
-}
-
-function VoiceWakeMenu({
-  controls,
-  docked,
-  compact,
-}: {
-  controls: VoiceWakeControls;
-  docked: boolean;
-  compact: boolean;
-}) {
-  const anchor = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  const label = t("Voice settings");
-  const { indicator } = controls;
-  const status = indicator ? wakeStatusText(indicator) : undefined;
-  const failure = useSyncExternalStore(voiceSaveFailures.subscribe, voiceSaveFailures.get)[
-    "voice-wake"
-  ];
-  return (
-    <>
       <Button
-        ref={anchor}
-        iconOnly
-        size="xs"
-        stretch={!docked}
-        className={docked ? "my-auto shrink-0" : undefined}
-        variant="ghost"
+        ref={ref}
+        shape="pill"
+        variant={slot ? "ghost" : "secondary"}
+        iconOnly={compact}
+        {...(slot
+          ? { className: styles.launcherButton }
+          : surfaceAttributes({ variant: "floating", frame: "pane" }, styles.launcherButton))}
+        data-docked={slot ? "" : undefined}
         label={label}
-        tooltipSide="top"
-        aria-description={status}
-        aria-haspopup="dialog"
-        aria-controls={open ? id : undefined}
-        expanded={open}
-        opens="up"
-        endIcon={compact ? open ? <ChevronUp /> : <ChevronDown /> : undefined}
-        onClick={() => setOpen((current) => !current)}
-      />
-      {open && (
-        <Popover
-          id={id}
-          anchor={anchor}
-          side="top"
-          align="end"
-          kind="dialog"
-          size="sm"
-          aria-label={label}
-          onDismiss={() => setOpen(false)}
-        >
-          <div className={styles.wakeMenu}>
-            <Switch
-              label={t("Wake and sleep phrases")}
-              labelPosition="start"
-              checked={controls.enabled}
-              onCheckedChange={controls.setEnabled}
-              description={status}
-            />
-            {failure && (
-              <InlineError action={{ label: t("Retry"), onClick: failure.retry }}>
-                {t("This change could not be saved. The saved value is still in use.")}
-              </InlineError>
-            )}
-            {indicator?.kind === "pack" && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setOpen(false);
-                  controls.onSetup();
-                }}
-              >
-                {t("Set up voice")}
-              </Button>
-            )}
-          </div>
-        </Popover>
-      )}
-    </>
+        aria-description={wake ? wakeStatusText(wake) : undefined}
+        tooltip={compact || returnToWindow ? label : undefined}
+        shortcut={shortcut}
+        tooltipSide={compact ? "right" : "top"}
+        startIcon={compact ? undefined : icon}
+        truncate={Boolean(slot)}
+        onClick={onOpen}
+      >
+        {compact ? icon : name || t("Voice")}
+      </Button>
+    </VoiceLauncherFrame>
   );
 }
 

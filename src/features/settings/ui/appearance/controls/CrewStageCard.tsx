@@ -35,24 +35,6 @@ import { AdvancedSettings, Group, Row, Toggle } from "../../../../../shared/ui/s
 import { resetCrew, resetMotion } from "../appearanceResets";
 import "./CrewStageCard.css";
 
-/** Who plays whom in the selected theme; shown as the caption under the stage. */
-function crewThemeHint(theme: CrewTheme): string {
-  switch (theme) {
-    case "star-wars":
-      return t(
-        "Obi-Wan leads, Yoda advises; Darth Vader, Luke, Leia and Chewbacca join as subagents. R2-D2 joins when the crew grows beyond six.",
-      );
-    case "lotr":
-      return t(
-        "Gandalf leads, Sauron advises; a Nazgûl, an Elf, a Dwarf and a Hobbit join as subagents. Orcs arrive when more than six subagents work.",
-      );
-    case "matrix":
-      return t("Neo leads, Morpheus advises, and every subagent is another Agent Smith.");
-    default:
-      return t("The original tea crew, drawn in binary code art.");
-  }
-}
-
 /** Real ambient scene with its preference controls and independent reset scopes. */
 export function CrewStageCard() {
   useLocale();
@@ -102,7 +84,6 @@ export function CrewStageCard() {
           controlWidth="fill"
           feedbackPosition="start"
           label={t("Crew theme")}
-          info={crewThemeHint(theme)}
           dependsOn={visible}
           feedback={
             visible ? (
@@ -135,16 +116,7 @@ export function CrewStageCard() {
             onValueChange={(value) => saveCrewTheme(value as CrewTheme)}
           />
         </Row>
-        <Row
-          id="crew-growth"
-          label={growthLabel}
-          dependsOn={visible}
-          description={
-            theme === "classic"
-              ? t("Each crew member ages with its own context: baby, child, adult, then uncle.")
-              : t("Each character fills with color as its context fills.")
-          }
-        >
+        <Row id="crew-growth" label={growthLabel} dependsOn={visible}>
           <Toggle
             label={growthLabel}
             on={growth}

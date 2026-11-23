@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import { MemberModelSection } from "./MemberModelSection";
 import type { CrewAgent } from "../model/crew";
-import type { HostModelCatalog } from "../../connections/public/protocol";
 import type { ModelChoiceField } from "../../model-routing/public/choice";
 type ModelChoiceFieldProps = ComponentProps<typeof ModelChoiceField>;
 const fields = vi.hoisted(() => ({
@@ -31,7 +30,6 @@ it("uses shared crew role choice and opens Order and limits", () => {
   renderToStaticMarkup(
     createElement(MemberModelSection, {
       cwd: "/p",
-      catalog: { models: {}, errors: {} } as HostModelCatalog,
       agent,
       onChange: change,
       machineId: "host",

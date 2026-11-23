@@ -95,9 +95,7 @@ function crewState(runs: CrewRunView[]) {
 
 async function render(runs: CrewRunView[]) {
   await act(async () =>
-    root.render(
-      createElement(CrewWorkManager, { cwd: "/repo", state: crewState(runs), layout: "page" }),
-    ),
+    root.render(createElement(CrewWorkManager, { cwd: "/repo", state: crewState(runs) })),
   );
 }
 
@@ -115,7 +113,6 @@ it("keeps the chosen tab and run when the Host finishes the selected run", async
   await render([run("a", "active", 3), run("b", "finished", 4)]);
   expect(tab()).toBe("ongoing");
   expect(detail()).toBe("b");
-  expect(container.textContent).toContain("This work finished.");
   // The finished run left the Ongoing list but is not swapped for another run.
   expect(container.querySelector('[data-pick="b"]')).toBeNull();
 });
@@ -129,7 +126,20 @@ it("keeps the Finished tab when a finished run is resumed", async () => {
   await render([run("a", "active", 3), run("b", "active", 4)]);
   expect(tab()).toBe("finished");
   expect(detail()).toBe("b");
-  expect(container.textContent).toContain("This work is ongoing again.");
+});
+
+it("tells the page which crew it shows, for the header's New work", async () => {
+  const onCrewChange = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(CrewWorkManager, {
+        cwd: "/repo",
+        state: crewState([run("a", "active", 1)]),
+        onCrewChange,
+      }),
+    ),
+  );
+  expect(onCrewChange).toHaveBeenLastCalledWith("crew-1");
 });
 
 it("reports a deleted selected run instead of selecting the first run", async () => {

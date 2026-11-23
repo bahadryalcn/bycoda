@@ -20,21 +20,25 @@ vi.mock("../../tasks/public/taskCreation", () => ({
   newTaskDraft: (cwd: string) => ({ cwd, model: "", modelSettings: {} }),
   saveTask: h.saveTask,
   startTask: h.startTask,
-  TaskForm: ({ onSubmit }: { onSubmit: (mode: string, draft: object) => void }) =>
+  TaskForm: ({
+    onSubmit,
+    crewPreselected,
+  }: {
+    onSubmit: (mode: string, draft: object) => void;
+    crewPreselected?: boolean;
+  }) =>
     createElement(
       "button",
-      { type: "button", onClick: () => onSubmit("queued", { cwd: "/repo", model: "" }) },
+      {
+        type: "button",
+        "data-preselected": String(!!crewPreselected),
+        onClick: () => onSubmit("queued", { cwd: "/repo", model: "" }),
+      },
       "submit",
     ),
 }));
 vi.mock("../../connections/public/HostModelSource", () => ({
   HostModelSource: ({ children }: { children: unknown }) => children,
-}));
-vi.mock("./CrewMachineScope", () => ({
-  useCrewMachineScope: (cwd: string) => ({
-    cwd,
-    state: { data: h.data, error: undefined, refetch: h.refetch },
-  }),
 }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -63,9 +67,16 @@ const click = async (label: string) => {
     target!.click();
   });
 };
-const render = (onClose = vi.fn()) => {
+const render = (onClose = vi.fn(), definitionId?: string) => {
   act(() => {
-    root.render(createElement(CrewTaskDialog, { cwd: "/repo", state: {} as never, onClose }));
+    root.render(
+      createElement(CrewTaskDialog, {
+        cwd: "/repo",
+        state: { data: h.data, error: undefined, refetch: h.refetch } as never,
+        definitionId,
+        onClose,
+      }),
+    );
   });
   return onClose;
 };
@@ -106,4 +117,22 @@ it("closes after a confirmed start even when the list refresh fails", async () =
   expect(h.saveTask).toHaveBeenCalledTimes(1);
   expect(text()).not.toContain("could not be started");
   expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("does not ask for the crew again when the caller named it", () => {
+  render(vi.fn(), "crew-1");
+  expect(button("submit")?.getAttribute("data-preselected")).toBe("true");
+});
+
+it("leaves the crew choice to the form when several crews exist and none was named", () => {
+  h.data.definitions = [
+    { id: "a", agents: [], policy: { runtimeMode: "supervised" } },
+    { id: "b", agents: [], policy: { runtimeMode: "supervised" } },
+  ] as never;
+  try {
+    render();
+    expect(button("submit")?.getAttribute("data-preselected")).toBe("false");
+  } finally {
+    h.data.definitions = [];
+  }
 });

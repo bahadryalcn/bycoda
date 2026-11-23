@@ -8,7 +8,7 @@ import { Select } from "../../../shared/ui/Select";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import type { CrewRunView } from "../model/crewClient";
-import { composerCanAssign, composerTitle } from "../model/crewComposer";
+import { composerCanAssign, composerDefaultMember, composerTitle } from "../model/crewComposer";
 import {
   noteMembers,
   ownerRequestId,
@@ -55,18 +55,9 @@ function useOwnerAction() {
  * the owner chooses Assign (a task with the message as instructions) or Note. The Host's
  * required assignment title is the message's first line.
  */
-function Composer({
-  run,
-  tools,
-  memberId,
-  onMemberChange,
-}: {
-  run: CrewRunView;
-  tools: CrewOwnerTools;
-  memberId: string;
-  onMemberChange: (id: string) => void;
-}) {
+function Composer({ run, tools }: { run: CrewRunView; tools: CrewOwnerTools }) {
   const members = noteMembers(run);
+  const [memberId, setMemberId] = useState(() => composerDefaultMember(run));
   const member = members.find((agent) => agent.id === memberId);
   const [text, setText] = useState("");
   const [choice, setChoice] = useState<"assign" | "note">("assign");
@@ -110,14 +101,16 @@ function Composer({
   return (
     <div className="mt-3 flex max-w-184 flex-col gap-2">
       <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-0 flex-1 basis-48">
-          <Select
-            label={t("Send to")}
-            value={memberId}
-            options={members.map((agent) => ({ value: agent.id, label: agent.name }))}
-            onValueChange={onMemberChange}
-          />
-        </div>
+        {members.length > 1 ? (
+          <div className="min-w-0 flex-1 basis-48">
+            <Select
+              label={t("Send to")}
+              value={memberId}
+              options={members.map((agent) => ({ value: agent.id, label: agent.name }))}
+              onValueChange={setMemberId}
+            />
+          </div>
+        ) : null}
         {composerCanAssign(run, member) ? (
           <RadioGroup
             variant="inline"
@@ -192,30 +185,13 @@ function RetryList({ run, tools }: { run: CrewRunView; tools: CrewOwnerTools }) 
 }
 
 /** Owner controls for one work, each through an existing Host operation: message, assign, retry. */
-export function CrewWorkOwnerActions({
-  run,
-  tools,
-  memberId,
-  onMemberChange,
-}: {
-  run: CrewRunView;
-  tools: CrewOwnerTools;
-  /** The member the message goes to; the team strip changes it. */
-  memberId: string;
-  onMemberChange: (id: string) => void;
-}) {
+export function CrewWorkOwnerActions({ run, tools }: { run: CrewRunView; tools: CrewOwnerTools }) {
   useLocale();
   if (run.status === "finished") return null;
   return (
     <>
       <RetryList run={run} tools={tools} />
-      <Composer
-        key={run.id}
-        run={run}
-        tools={tools}
-        memberId={memberId}
-        onMemberChange={onMemberChange}
-      />
+      <Composer key={run.id} run={run} tools={tools} />
     </>
   );
 }

@@ -51,7 +51,9 @@ it.each([
   const here = dirname(fileURLToPath(import.meta.url));
   const source = readFileSync(join(here, "../../features", file), "utf8");
   for (const label of labels) {
-    expect(source).toContain(`ariaLabel={t("${label}")}`);
+    expect(
+      source.includes(`ariaLabel={t("${label}")}`) || source.includes(`label={t("${label}")}`),
+    ).toBe(true);
     expect(source).not.toContain(`ariaLabel="${label}"`);
   }
 });

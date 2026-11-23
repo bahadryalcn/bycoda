@@ -11,33 +11,14 @@ import {
   type Automation,
 } from "../model/automations";
 import { SUPPORTED_INBOX_TRIGGER_EVENTS } from "../model/automationEvents";
-import { AUTOMATION_TEMPLATES } from "../model/automationTemplates";
 import * as hostAutomationClient from "../model/hostAutomationClient";
 import { AutomationsView as RawAutomationsView } from "./AutomationsView";
-import { AutomationTemplateCard } from "./AutomationTemplateCard";
 import { EventTriggerSentence } from "./TriggerEditor";
 import { TRIGGER_EVENTS } from "../model/automationTriggerCatalog";
 import { withQueryClient } from "../../../../tests/browser/support/queryTest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { focusManager } from "@tanstack/react-query";
 const AutomationsView = withQueryClient(RawAutomationsView);
-
-it("shows each template description without repeating it in a tooltip", async () => {
-  const template = AUTOMATION_TEMPLATES[0];
-  const onPick = vi.fn();
-  await act(async () => root.render(createElement(AutomationTemplateCard, { template, onPick })));
-  const card = container.querySelector("button")!;
-  expect(card.textContent).toContain(template.description);
-  expect(card.querySelector("[title]")).toBeNull();
-  expect(card.getAttribute("aria-describedby")).toBeNull();
-  await act(async () => {
-    card.focus();
-    card.dispatchEvent(new MouseEvent("mouseenter"));
-  });
-  expect(document.querySelector('[role="tooltip"]')).toBeNull();
-  await act(async () => card.click());
-  expect(onPick).toHaveBeenCalledExactlyOnceWith(template);
-});
 
 it("keeps an unfocused assistant reveal paused, then opens its exact Host row when normal focus loading resumes", async () => {
   const row: Automation = {
@@ -199,11 +180,12 @@ it("keeps creation available when one remote machine is offline and retries with
     await vi.waitFor(() => expect(container.textContent).toContain("tailm"));
     expect(container.textContent).not.toContain("Automations unavailable");
     expect(container.textContent).not.toContain("Create your first automation");
-    const blank = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
-      (button) => button.textContent?.includes("Start from scratch"),
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.trim() === "New automation",
     )!;
-    expect(blank).toBeDefined();
-    await act(async () => blank.click());
+    expect(create).toBeDefined();
+    // The editor opens directly: no template page in between.
+    await act(async () => create.click());
     const name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
     await changeInput(name, "Offline-safe draft");
     lists.mockResolvedValue([]);
@@ -284,7 +266,8 @@ it("parks assistant navigation behind an unsaved draft and owner filters, then r
     token: 1,
   };
   try {
-    await renderControlEditor();
+    // A long list is what offers the filter.
+    await renderControlEditor({}, 7);
     let name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
     await changeInput(name, "Owner unsaved draft");
     await act(async () =>
@@ -467,7 +450,7 @@ it("reports an unreadable automation list as unavailable with a retry instead of
   await act(async () => retry.click());
   await act(async () => {});
   expect(container.querySelector('[data-kind="unavailable"]')).toBeNull();
-  expect(container.textContent).toContain("Create your first automation");
+  expect(container.textContent).toContain("No automations yet");
 });
 
 it("invalidates the cached list when an automation changes", async () => {
@@ -572,10 +555,8 @@ it("shows run-history read failures with retry instead of claiming the automatio
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Open History review"]')!.click(),
   );
-  const historyTab = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
-    (button) => button.textContent === "Run history",
-  )!;
-  await act(async () => historyTab.click());
+  // The runs are a section of the same page, not another tab.
+  expect(container.querySelector('[role="tab"]')).toBeNull();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "History is unavailable",
   );
@@ -667,7 +648,8 @@ it("has no label field on triggers that are not about labels", async () => {
   expect(container.textContent).toContain("Issue reopened");
 });
 
-async function renderControlEditor(overrides: Partial<Automation> = {}) {
+/** `fillers` adds that many other local automations so the list is long enough to be filtered. */
+async function renderControlEditor(overrides: Partial<Automation> = {}, fillers = 0) {
   const automation: Automation = {
     ...newAutomationDraft("/work/controls", "codex", "model"),
     id: "controls-automation",
@@ -678,8 +660,13 @@ async function renderControlEditor(overrides: Partial<Automation> = {}) {
     updatedAt: 1,
     ...overrides,
   };
+  const others: Automation[] = Array.from({ length: fillers }, (_, index) => ({
+    ...automation,
+    id: `filler-${index}`,
+    name: `Filler ${index}`,
+  }));
   invoke.mockImplementation(async (command: string, args?: any) => {
-    if (command === "automations_list") return [automation];
+    if (command === "automations_list") return [automation, ...others];
     if (command === "automations_upsert") return { ...args.automation, createdAt: 1, updatedAt: 2 };
     if (command.endsWith("_status")) return { connected: false };
     return [];
@@ -709,8 +696,13 @@ async function changeInput(input: HTMLInputElement, value: string) {
   });
 }
 
-it("keeps edited drafts while the compact filter popover changes and resets the collection", async () => {
+it("offers the filter only once the list is long enough to need it", async () => {
   await renderControlEditor();
+  expect(container.querySelector('[aria-label="Filter automations"]')).toBeNull();
+});
+
+it("keeps edited drafts while the compact filter popover changes and resets the collection", async () => {
+  await renderControlEditor({}, 7);
   const name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
   await changeInput(name, "Retained draft");
   const filter = container.querySelector<HTMLButtonElement>(
@@ -726,11 +718,15 @@ it("keeps edited drafts while the compact filter popover changes and resets the 
   expect(filter.closest("[data-filter-trigger]")?.hasAttribute("data-filter-active")).toBe(true);
   expect(container.querySelector('[aria-label="Open Controls review"]')).toBeNull();
   expect(name.value).toBe("Retained draft");
-  const reset = Array.from(
-    document.querySelectorAll<HTMLButtonElement>(
-      '[role="dialog"][aria-label="Filter automations"] button',
-    ),
-  ).find((node) => node.textContent?.trim() === "Reset")!;
+  // The trigger's own reset is the only one.
+  expect(
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[role="dialog"][aria-label="Filter automations"] button',
+      ),
+    ).some((node) => node.textContent?.trim() === "Reset"),
+  ).toBe(false);
+  const reset = container.querySelector<HTMLButtonElement>('button[aria-label="Reset filters"]')!;
   await act(async () => reset.click());
   expect(container.querySelector('[aria-label="Open Controls review"]')).not.toBeNull();
   expect(filter.hasAttribute("data-button-selected")).toBe(false);
@@ -804,27 +800,23 @@ it("searches trigger events by provider while retaining readiness gates and save
   );
 });
 
-it("uses the shared action menu while preserving the native delete confirmation gate", async () => {
+it("deletes directly from the editor and keeps the confirmation gate", async () => {
   await renderControlEditor();
-  {
-    const actions = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Automation actions"]',
-    )!;
-    await act(async () => actions.click());
-    const item = document.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
-    expect(item.textContent).toContain("Delete automation");
-    await act(async () => item.click());
-    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
-    expect(dialog.textContent).toContain("and its run history?");
-    await act(async () =>
-      Array.from(dialog.querySelectorAll("button"))
-        .find((entry) => entry.textContent?.trim() === "Cancel")!
-        .click(),
-    );
-    expect(invoke.mock.calls.some(([command]) => command === "automations_delete")).toBe(false);
-    expect(document.querySelector('[role="menu"]')).toBeNull();
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-  }
+  expect(container.querySelector('[aria-label="Automation actions"]')).toBeNull();
+  const remove = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+    (entry) => entry.textContent?.trim() === "Delete",
+  )!;
+  await act(async () => remove.click());
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("and its run history?");
+  await act(async () =>
+    Array.from(dialog.querySelectorAll("button"))
+      .find((entry) => entry.textContent?.trim() === "Cancel")!
+      .click(),
+  );
+  expect(invoke.mock.calls.some(([command]) => command === "automations_delete")).toBe(false);
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
 
 it("blocks duplicate run actions and deletion while a manual run is pending", async () => {
@@ -845,10 +837,10 @@ it("blocks duplicate run actions and deletion while a manual run is pending", as
   expect(run.getAttribute("aria-disabled")).toBe("true");
   await act(async () => run.click());
   expect(invoke.mock.calls.filter(([command]) => command === "automation_run_now")).toHaveLength(1);
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Automation actions"]')!.click(),
-  );
-  expect(document.querySelector<HTMLButtonElement>('[role="menuitem"]')!.disabled).toBe(true);
+  const remove = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+    (entry) => entry.textContent?.trim() === "Delete",
+  )!;
+  expect(remove.disabled || remove.getAttribute("aria-disabled") === "true").toBe(true);
   await act(async () =>
     finish({ id: "run", automationId: "controls-automation", status: "running", createdAt: 1 }),
   );
@@ -884,24 +876,26 @@ it("keeps toggle progress on its automation and allows retry after a failed chan
   expect(invoke.mock.calls.filter(([command]) => command === "automations_upsert")).toHaveLength(2);
 });
 
-it("keeps the twenty-trigger limit visible and unavailable", async () => {
+it("stops offering triggers at the twenty-trigger limit", async () => {
   await renderControlEditor({
     triggers: Array.from({ length: 20 }, () => createAutomationTrigger("time", "daily")),
   });
-  expect(
-    container.querySelector<HTMLButtonElement>('button[aria-label^="Add trigger:"]')!.disabled,
-  ).toBe(true);
+  expect(container.querySelector('button[aria-label^="Add trigger:"]')).toBeNull();
   expect(container.querySelectorAll('[aria-label="Remove trigger"]')).toHaveLength(20);
 });
 
 it.each([false, true])(
   "locks editable fields and portal callbacks while keeping save feedback focusable (background=%s)",
   async (background) => {
-    await renderControlEditor({
-      host: background
-        ? { machineId: "machine", machineName: "Test machine", projectId: "project" }
-        : undefined,
-    });
+    await renderControlEditor(
+      background
+        ? {
+            host: { machineId: "machine", machineName: "Test machine", projectId: "project" },
+            // A background automation holds exactly one time trigger.
+            triggers: [createAutomationTrigger("time", "daily")],
+          }
+        : {},
+    );
     const previous = invoke.getMockImplementation()!;
     let rejectSave!: (reason: Error) => void;
     const pending = new Promise<Automation>((_resolve, reject) => {
@@ -916,26 +910,29 @@ it.each([false, true])(
       await changeInput(name, "Submitted review");
       const form = name.closest("form")!;
       const triggers = container.querySelectorAll('[aria-label="Remove trigger"]').length;
-      await act(async () =>
-        container.querySelector<HTMLButtonElement>('button[aria-label^="Add trigger:"]')!.click(),
+      // A background automation is full once it has its one trigger, so only the app case adds.
+      const addTrigger = container.querySelector<HTMLButtonElement>(
+        'button[aria-label^="Add trigger:"]',
       );
+      expect(addTrigger === null).toBe(background);
+      await act(async () => addTrigger?.click());
       const option = Array.from(
         document.querySelectorAll<HTMLButtonElement>('[role="option"]'),
-      ).find((node) => !node.disabled && node.textContent?.includes("Daily"))!;
+      ).find((node) => !node.disabled && node.textContent?.includes("Daily"));
       const save = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
       save.focus();
       await act(async () =>
         form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
       );
       expect(form.hasAttribute("inert")).toBe(false);
-      expect(form.querySelector('[role="tabpanel"]')?.hasAttribute("inert")).toBe(true);
+      expect(form.querySelector(".automation-scroll")?.hasAttribute("inert")).toBe(true);
       expect(save.closest("[inert]")).toBeNull();
       expect(save.getAttribute("aria-busy")).toBe("true");
       expect(document.activeElement).toBe(save);
       expect(form.getAttribute("aria-busy")).toBe("true");
       expect(name.disabled).toBe(true);
       // A portal already open before submission is outside the inert fields.
-      await act(async () => option.click());
+      await act(async () => option?.click());
       expect(container.querySelectorAll('[aria-label="Remove trigger"]')).toHaveLength(triggers);
       const reset = Array.from(form.querySelectorAll<HTMLButtonElement>("button")).find(
         (node) => node.textContent?.trim() === "Reset",
@@ -970,8 +967,12 @@ it("locks new automation creation until its submitted snapshot finishes saving",
       (node) => node.textContent?.trim() === text,
     )!;
   await act(async () => findButton("New automation").click());
-  const template = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes("Find critical bugs"),
+  // The editor opens at once, and its footer offers the templates.
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Template"]')!.click(),
+  );
+  const template = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (option) => option.textContent?.includes("Find critical bugs"),
   )!;
   await act(async () => template.click());
   const name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
@@ -990,8 +991,8 @@ it("locks new automation creation until its submitted snapshot finishes saving",
   expect(findButton("Create").getAttribute("aria-busy")).toBe("true");
   expect(findButton("Create").closest("[inert]")).toBeNull();
   expect(name.disabled).toBe(true);
-  await act(async () => findButton("New automation").click());
-  expect(container.querySelector('[aria-label="Automation name"]')).toBe(name);
+  // A new draft is already the editor, so there is no second New automation to start over with.
+  expect(findButton("New automation")).toBeUndefined();
   await act(async () => findButton("Cancel").click());
   expect(container.querySelector('[aria-label="Automation name"]')).toBe(name);
   const submitted = invoke.mock.calls.find(([command]) => command === "automations_upsert")![1]
@@ -1012,6 +1013,8 @@ it("keeps same-ID local and host automations independent and preserves the host 
     nextRunAt: 0,
     createdAt: 1,
     updatedAt: 1,
+    // A background automation holds exactly one time trigger.
+    triggers: [createAutomationTrigger("time", "daily")],
     host: { machineId: "host-a", machineName: "Host A", projectId: "project-a" },
   };
   const other: Automation = {
@@ -1053,12 +1056,8 @@ it("keeps same-ID local and host automations independent and preserves the host 
     await open("Host A review");
     let name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
     expect(name.value).toBe("Host A review");
-    const picker = container.querySelector<HTMLButtonElement>(
-      '[aria-label^="Switch project, current project"]',
-    )!;
-    expect(picker.disabled).toBe(true);
-    await act(async () => picker.click());
-    expect(container.querySelector('[role="dialog"][aria-label="Switch project"]')).toBeNull();
+    // A stored background automation keeps its project: the chip is text, not a picker.
+    expect(container.querySelector('button[aria-label^="Project"]')).toBeNull();
     await changeInput(name, "Edited host A");
     await act(async () =>
       name.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
@@ -1080,9 +1079,10 @@ it("keeps same-ID local and host automations independent and preserves the host 
     await act(async () => runButton.click());
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ host: other.host }));
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Automation actions"]')!.click(),
+      Array.from(name.closest("form")!.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent?.trim() === "Delete")!
+        .click(),
     );
-    await act(async () => document.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click());
     await act(async () =>
       Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
         .find((entry) => entry.textContent?.trim() === "Delete")!
@@ -1144,11 +1144,6 @@ it("keeps a failed run's full error outside its disabled session button", async 
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Open Failed history"]')!.click(),
   );
-  await act(async () =>
-    [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-      .find((button) => button.textContent === "Run history")!
-      .click(),
-  );
   const detail = [...container.querySelectorAll("div")].find(
     (element) => element.textContent === error && element.children.length === 0,
   )!;
@@ -1203,12 +1198,16 @@ it.each([
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Open Limited history"]')!.click(),
     );
-    await act(async () =>
-      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-        .find((button) => button.textContent === "Run history")!
-        .click(),
-    );
     const note = "Showing the latest 100 runs. Older runs may not be shown.";
     expect(container.textContent.includes(note)).toBe(limited);
   },
 );
+
+it("leaves running again to Run now: a failed row has no second Retry", async () => {
+  await renderControlEditor({ lastRunStatus: "failed" });
+  const row = container.querySelector('[aria-label="Open Controls review"]')!.closest("li")!;
+  expect(
+    Array.from(row.querySelectorAll("button")).some((node) => node.textContent?.trim() === "Retry"),
+  ).toBe(false);
+  expect(row.textContent).toContain("Failed");
+});

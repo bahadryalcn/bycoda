@@ -20,7 +20,7 @@ import { TaskBudgetControls } from "./TaskBudgetControls";
 import { TaskFormRow } from "./TaskFormFields";
 import type { TaskGoalsController } from "./TaskGoalsController";
 import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
-import { TaskTargetChips } from "./TaskTargetChips";
+import { TargetChips } from "../../../shared/ui/TargetChips";
 
 /** Operational edits retain the plan and its execution identity. */
 function GoalSettingsForm({
@@ -91,7 +91,7 @@ function GoalSettingsForm({
             >
               {goal.prompt}
             </ClampText>
-            <TaskTargetChips
+            <TargetChips
               project={
                 goal.projects.length
                   ? {

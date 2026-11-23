@@ -404,8 +404,8 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/shell/Sidebar.tsx": {
-      "bycoda/compiler-owns-memo": 15,
-      "bycoda/effect-names-its-sync": 18,
+      "bycoda/compiler-owns-memo": 14,
+      "bycoda/effect-names-its-sync": 17,
       "jsx-a11y/no-noninteractive-element-interactions": 1,
       "oxlint/no-restricted-imports": 2
     },
@@ -425,11 +425,6 @@
     },
     "src/app/shell/UsageProviderChip.tsx": {
       "bycoda/effect-names-its-sync": 1
-    },
-    "src/app/shell/sessionListWindow.tsx": {
-      "bycoda/compiler-owns-memo": 1,
-      "bycoda/effect-names-its-sync": 1,
-      "bycoda/shared-resize-observer": 1
     },
     "src/app/shell/useCheckoutChangeStats.ts": {
       "bycoda/compiler-owns-memo": 2
@@ -795,8 +790,7 @@
       "oxlint/no-restricted-properties": 1
     },
     "src/features/automations/ui/AutomationsView.tsx": {
-      "bycoda/effect-names-its-sync": 2,
-      "bycoda/safe-timestamp-render": 1
+      "bycoda/effect-names-its-sync": 2
     },
     "src/features/automations/ui/TriggerEditor.tsx": {
       "bycoda/effect-names-its-sync": 2
@@ -1383,9 +1377,6 @@
     "src/features/projects/ui/RemoveProjectDialog.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/features/projects/ui/SearchableProjectPicker.tsx": {
-      "bycoda/effect-names-its-sync": 2
-    },
     "src/features/projects/ui/useProjectBackgroundEffect.ts": {
       "bycoda/effect-names-its-sync": 1
     },
@@ -1877,9 +1868,6 @@
       "bycoda/compiler-owns-memo": 7,
       "bycoda/effect-names-its-sync": 5
     },
-    "src/features/sessions/ui/useTranscriptSearch.ts": {
-      "bycoda/effect-names-its-sync": 3
-    },
     "src/features/sessions/ui/useTurnScrollAnchor.ts": {
       "bycoda/effect-names-its-sync": 1,
       "bycoda/shared-resize-observer": 1
@@ -2217,9 +2205,6 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/tasks/ui/GoalSection.tsx": {
-      "bycoda/effect-names-its-sync": 2
-    },
-    "src/features/tasks/ui/SprintManagement.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/tasks/ui/SprintReports.tsx": {
@@ -2249,17 +2234,10 @@
       "bycoda/effect-names-its-sync": 1
     },
     "src/features/tasks/ui/TaskSummaryPanel.tsx": {
-      "bycoda/app-locale-formatting": 1,
       "bycoda/effect-names-its-sync": 1
-    },
-    "src/features/tasks/ui/TaskWorkflowControls.tsx": {
-      "bycoda/effect-names-its-sync": 1
-    },
-    "src/features/tasks/ui/TaskWorkspacePicker.tsx": {
-      "bycoda/effect-names-its-sync": 2
     },
     "src/features/tasks/ui/TasksView.tsx": {
-      "bycoda/effect-names-its-sync": 5
+      "bycoda/effect-names-its-sync": 4
     },
     "src/features/terminal/model/sshShellIntegration.ts": {
       "bycoda/compiler-owns-memo": 11,
@@ -2335,9 +2313,6 @@
     },
     "src/features/voice/ui/DictationButton.tsx": {
       "bycoda/effect-names-its-sync": 5
-    },
-    "src/features/voice/ui/MicrophonePermissionSettings.tsx": {
-      "bycoda/effect-names-its-sync": 1
     },
     "src/features/voice/ui/VoiceChoiceCard.tsx": {
       "bycoda/effect-names-its-sync": 2,

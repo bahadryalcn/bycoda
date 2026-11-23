@@ -48,10 +48,15 @@ function run(status: "active" | "paused"): CrewRunView {
   } as unknown as CrewRunView;
 }
 
-async function render(view: CrewRunView, call = vi.fn().mockResolvedValue({})) {
+async function render(
+  view: CrewRunView,
+  call = vi.fn().mockResolvedValue({}),
+  extra: { coordinatorInline?: boolean } = {},
+) {
   await act(async () =>
     root.render(
       createElement(CrewWorkDetail, {
+        ...extra,
         run: view,
         catalog: { providers: [] } as never,
         pending: false,
@@ -72,12 +77,14 @@ async function render(view: CrewRunView, call = vi.fn().mockResolvedValue({})) {
 const button = (name: string) =>
   [...container.querySelectorAll("button")].find((item) => item.textContent?.trim() === name);
 
-it("shows Resume as the paused signal without a paused sentence or accordions", async () => {
+it("shows Resume as the paused signal, with history as the only disclosure", async () => {
   await render(run("paused"));
   expect(button("Resume")).toBeTruthy();
   expect(button("Pause")).toBeUndefined();
   expect(container.textContent).not.toContain("Work is paused");
-  expect(container.querySelector("details, [aria-expanded]:not([aria-haspopup])")).toBeNull();
+  const disclosures = [...container.querySelectorAll("details")];
+  expect(disclosures).toHaveLength(1);
+  expect(disclosures[0]!.querySelector("summary")?.textContent).toContain("History");
 });
 
 it("offers Pause and Stop while active and one composer to the lead", async () => {
@@ -101,4 +108,18 @@ it("sends a note to the lead through the existing request operation", async () =
     "crews.request",
     expect.objectContaining({ runId: "run", text: expect.stringContaining("Check the logs") }),
   );
+});
+
+it("lists the lead's session unless its conversation is already shown inline", async () => {
+  await render(run("active"));
+  expect(container.querySelector('[role="list"][aria-label="Sessions"]')).not.toBeNull();
+  act(() => root.render(null));
+  await render(run("active"), vi.fn().mockResolvedValue({}), { coordinatorInline: true });
+  expect(container.querySelector('[role="list"][aria-label="Sessions"]')).toBeNull();
+});
+
+it("states the run once: no timeline, no second status line and no team picker", async () => {
+  await render(run("active"));
+  expect(container.textContent).not.toContain("Timeline");
+  expect(container.querySelector('[role="group"][aria-label="Team"] button')).toBeNull();
 });

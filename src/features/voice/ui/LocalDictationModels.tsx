@@ -2,7 +2,6 @@ import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -149,7 +148,6 @@ export function LocalDictationModels({
       <Row
         id="dictation-local-models"
         label={t("Local transcription models")}
-        description={t("Models stay on this computer.")}
         feedback={
           error || job.state === "error" ? (
             <SettingsFeedback state="error">
@@ -170,9 +168,7 @@ export function LocalDictationModels({
           >
             {t("Use automatic selection")}
           </Button>
-        ) : (
-          <Badge size="xs">{t("Automatic")}</Badge>
-        )}
+        ) : null}
         {error ? (
           <Button
             variant="ghost"

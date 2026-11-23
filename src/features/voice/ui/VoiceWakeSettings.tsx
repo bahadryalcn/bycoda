@@ -1,9 +1,8 @@
-import { useContext } from "react";
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { usePhraseDraft } from "../model/voiceSettingsDrafts";
 import { getLocale, t } from "../../../shared/i18n";
 import { TextField } from "../../../shared/ui/TextField";
-import { RevealedSetting, Toggle } from "../../../shared/ui/settings";
+import { Toggle } from "../../../shared/ui/settings";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 import { defaultWakePhrases, WAKE_PHRASE_LIMITS } from "../model/voiceWakePhrase";
 import { isImeComposition } from "../../../shared/lib/keyboard";
@@ -66,21 +65,13 @@ export function VoiceWakeRows({
   /** The saved assistant name and spoken language, for the placeholder defaults. */
   profile?: { name: string; language: string };
 }) {
-  const revealed = useContext(RevealedSetting);
   const defaults = defaultWakePhrases(profile?.language, getLocale(), profile?.name ?? "");
-  const phraseTarget = revealed === "voice-wake-phrase" || revealed === "voice-sleep-phrase";
   const enabled = settings.enabled && settings.wakeEnabled === true;
-  // One reason, stated once: the row and a revealed phrase row dim with it as a tooltip.
-  const unavailable = settings.enabled
-    ? t("Turn on wake and sleep phrases to edit this phrase.")
-    : t("Turn on voice to use wake and sleep phrases.");
   return (
     <>
       <Row
         id="voice-wake"
         label={t("Wake and sleep phrases")}
-        disabled={!settings.enabled}
-        disabledReason={t("Turn on voice to use wake and sleep phrases.")}
         description={t(
           "Start and end a conversation with your voice. Waiting for the wake phrase uses the local voice pack and keeps audio on this device.",
         )}
@@ -88,18 +79,9 @@ export function VoiceWakeRows({
         <Toggle
           label={t("Wake and sleep phrases")}
           on={enabled}
-          disabled={!settings.enabled}
           onChange={(wakeEnabled) => change({ wakeEnabled })}
         />
       </Row>
-      {phraseTarget && !enabled && (
-        <Row
-          id={revealed}
-          label={revealed === "voice-wake-phrase" ? t("Wake phrase") : t("Sleep phrase")}
-          disabled
-          disabledReason={unavailable}
-        />
-      )}
       {enabled && (
         <>
           <PhraseField

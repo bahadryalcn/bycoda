@@ -4,7 +4,6 @@ export default defineConfig({
   testMatch: [
     "voice-visual-styles.e2e.ts",
     "voice-overlay.e2e.ts",
-    "voice-persona.e2e.ts",
     "voice-companion-controls.e2e.ts",
     "voice-tool-activity.e2e.ts",
   ],

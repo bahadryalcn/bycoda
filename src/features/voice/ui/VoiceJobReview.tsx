@@ -83,7 +83,6 @@ export function VoiceJobReview({
   return (
     <Modal
       title={t("Review jobs before starting")}
-      description={t("Say “start” to approve or “cancel” to close.")}
       size="md"
       fitViewport
       onClose={() => {
@@ -184,24 +183,27 @@ export function VoiceJobReview({
                     update(row.id, selectAssistantJobProjects(row.projectId, projectIds))
                   }
                 />
-                <SearchableSelect
-                  label={t("Lead project")}
-                  value={row.projectId}
-                  disabled={locked || !assistantJobProjectIds(row).length}
-                  options={review.projects
-                    .filter((project) => assistantJobProjectIds(row).includes(project.id))
-                    .map((project) => ({
-                      value: project.id,
-                      label: project.name,
-                      description: project.path,
-                    }))}
-                  onChange={(projectId) =>
-                    update(
-                      row.id,
-                      selectAssistantJobProjects(projectId, assistantJobProjectIds(row)),
-                    )
-                  }
-                />
+                {/* With one project it is the lead; the choice only exists among several. */}
+                {assistantJobProjectIds(row).length > 1 ? (
+                  <SearchableSelect
+                    label={t("Lead project")}
+                    value={row.projectId}
+                    disabled={locked}
+                    options={review.projects
+                      .filter((project) => assistantJobProjectIds(row).includes(project.id))
+                      .map((project) => ({
+                        value: project.id,
+                        label: project.name,
+                        description: project.path,
+                      }))}
+                    onChange={(projectId) =>
+                      update(
+                        row.id,
+                        selectAssistantJobProjects(projectId, assistantJobProjectIds(row)),
+                      )
+                    }
+                  />
+                ) : null}
               </>
             )}
           </FieldGroup>

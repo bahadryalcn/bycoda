@@ -29,34 +29,25 @@ function namedState(state: CrewExecutionState, forList: boolean) {
 }
 
 /**
- * What needs the owner (CR-W04), plus the working signal while work runs. A paused or idle
- * run shows no state badge: its Resume or Start control already says so, and the state stays
- * available to assistive technology.
+ * The open work's execution state (CR-W04), plus the working signal while work runs. A paused
+ * or idle run shows no badge: its Resume or Start control already says so, and the state stays
+ * available to assistive technology. What needs the owner is stated once, by its alert below.
  */
 export function CrewWorkBadges({ run, size = "sm" }: { run: CrewRunView; size?: BadgeSize }) {
   useLocale();
   const state = crewExecutionState(run);
   const attention = crewOpenAttention(run);
   const running = run.status !== "finished" && crewHasRunningWork(run);
-  return (
-    <>
-      {(namedState(state, false) && !attention) || state === "finished" ? (
-        <Badge
-          tone={executionTone(state)}
-          size={size}
-          icon={running ? <WorkingIndicator size="xs" /> : undefined}
-        >
-          {crewExecutionLabel(state)}
-        </Badge>
-      ) : (
-        <span className="sr-only">{crewExecutionLabel(state)}</span>
-      )}
-      {attention ? (
-        <Badge tone={attentionTone(attention)} size={size}>
-          {crewAttentionLabel(attention)}
-        </Badge>
-      ) : null}
-    </>
+  return (namedState(state, false) && !attention) || state === "finished" ? (
+    <Badge
+      tone={executionTone(state)}
+      size={size}
+      icon={running ? <WorkingIndicator size="xs" /> : undefined}
+    >
+      {crewExecutionLabel(state)}
+    </Badge>
+  ) : (
+    <span className="sr-only">{crewExecutionLabel(state)}</span>
   );
 }
 

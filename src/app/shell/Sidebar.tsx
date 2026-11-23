@@ -4341,15 +4341,9 @@ function SidebarComponent({
           ) : (
             <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
               <div className={sessionsStale ? "opacity-60" : undefined}>
-                {/* Crews read through the same machine; its error would only repeat the notice. */}
+                {/* Renders nothing: tells this list which conversations a live crew manages. */}
                 {onOpenCrewSession && inProject && !sessionsHidden && (
-                  <CrewSidebar
-                    key={cwd}
-                    cwd={cwd}
-                    query={searchQuery}
-                    onOpen={onOpenCrewSession}
-                    onManagedChange={onCrewManagedChange}
-                  />
+                  <CrewSidebar key={cwd} cwd={cwd} onManagedChange={onCrewManagedChange} />
                 )}
                 {/* Loading and errors precede empty results, so an unfinished
                   request never claims this project has no conversations. */}

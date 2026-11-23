@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The page has Tasks and Sprints tabs, one Filter button and count chips that filter the list.
   - Tasks are grouped into Needs you, Blocked, Running, To do and Done.
   - Each sprint page has its report.
+- The Crews screens are simpler:
+  - The page has Teams, Members and Work tabs with one main action each.
+  - Work opens first when a crew needs a decision, and keeps run history and work in other projects on the same tab.
+  - Crew and member forms have one More options section, and the sidebar no longer lists crew work.
+- The Automations screens are simpler:
+  - One editor uses the same project, model, access and working copy choices as the message box. The name comes from the instructions when left empty.
+  - Triggers, run history and templates each have one place in the editor.
+- The voice assistant is simpler:
+  - Voice settings has Assistant, Conversation and Dictation groups, and a cloud provider's privacy note is always visible.
+  - The live companion has one More menu. The overlay's Full screen mode and the launcher's wake popover are gone.
+  - The message box's dictation menu holds Language only.
 - The interface follows one design system:
   - Toasts, alerts and the notification center share one feedback language.
   - Unavailable actions say why.

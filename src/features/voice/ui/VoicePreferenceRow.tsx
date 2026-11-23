@@ -6,8 +6,7 @@ import { voiceSaveFailures } from "../model/voiceSettingsSave";
 /** Voice persistence feedback belongs to the initiating settings row, including after navigation. */
 export function VoicePreferenceRow({ id, feedback, ...props }: ComponentProps<typeof Row>) {
   const failures = useSyncExternalStore(voiceSaveFailures.subscribe, voiceSaveFailures.get);
-  const failure =
-    id && (failures[id] ?? (id === "dictation-device" ? failures["voice-device"] : undefined));
+  const failure = id && failures[id];
   return (
     <Row
       {...props}

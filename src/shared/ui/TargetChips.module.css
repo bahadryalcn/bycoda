@@ -1,0 +1,12 @@
+/* One wrapping row of quiet target chips (machine, project, model, access, working copy). */
+.chips {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-space-1);
+}
+.chips > * {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}

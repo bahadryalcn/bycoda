@@ -1,12 +1,16 @@
-import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
-import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
-import type { ActiveCrewMemberView } from "../../model/crewActive";
+import { Text } from "../../../../shared/ui/Text";
+import { describeRemoteError, presentRemoteError } from "../../../connections/public/remoteFailure";
+import {
+  useActiveCrewMembers,
+  useActiveCrewSupported,
+  type ActiveCrewMemberView,
+} from "../../model/crewActive";
 import {
   activeSessionTarget,
   type ActiveSessionTarget,
@@ -19,41 +23,44 @@ import {
   activeProjectKey,
   groupActiveByProject,
 } from "../../model/crewActiveView";
-import { memberTraits } from "../../model/memberAvatars";
 import { CREW_ATTENTION_TONE } from "../../model/crewSignal";
 import { crewAttentionLabel } from "../../model/crewPresentation";
+import { memberTraits } from "../../model/memberAvatars";
 import { roleLabel } from "../CrewMemberForm";
 import { MemberAvatar } from "../MemberAvatar";
-import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { ActiveElapsed } from "./ActiveElapsed";
 
 const FACE_SIZE = 28;
 
-/** The Active tab: every crew member working on any connected host, grouped by project. */
+/** Crew members working in other projects or on other hosts; the Work list owns this project. */
 export function CrewsActive({
-  items,
   known,
   onOpenSession,
-  onOpenWork,
-  onNewWork,
 }: {
-  items: readonly ActiveCrewMemberView[];
-  /** The project the page shows; its members' work can open in the Work tab. */
+  /** The project the page shows; its members are left to the Work list. */
   known?: KnownCrewProject;
   onOpenSession?: (target: ActiveSessionTarget) => void | Promise<void>;
-  onOpenWork: (item: ActiveCrewMemberView) => void;
-  onNewWork: () => void;
 }) {
+  const supported = useActiveCrewSupported();
+  const active = useActiveCrewMembers(supported);
   const [error, setError] = useState("");
-  if (items.length === 0)
+  if (!supported) return null;
+  if (active.error) {
+    const failure = describeRemoteError(active.error);
     return (
-      <EmptyState
-        context="page"
-        title={t("No crew member is working right now")}
-        action={{ label: t("New work"), onClick: onNewWork }}
-      />
+      <div className="p-4 pb-0">
+        <InlineError
+          details={failure.details}
+          retry={{ onRetry: () => void active.refetch(), pending: active.isFetching }}
+        >
+          {failure.message}
+        </InlineError>
+      </div>
     );
+  }
   const currentKey = known ? activeProjectKey(known) : undefined;
+  const items = (active.data?.items ?? []).filter((item) => activeProjectKey(item) !== currentKey);
+  if (!items.length) return null;
   const open = (item: ActiveCrewMemberView) => {
     if (!onOpenSession || !item.sessionId) return;
     setError("");
@@ -62,7 +69,7 @@ export function CrewsActive({
       .catch((reason: unknown) => setError(presentRemoteError(reason, { explicit: true })));
   };
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-3 p-4 pb-0">
       {error ? <InlineError>{error}</InlineError> : null}
       {groupActiveByProject(items, currentKey).map((group) => (
         <section key={group.key} aria-label={group.name || t("Project")} className="flex flex-col">
@@ -73,9 +80,7 @@ export function CrewsActive({
                 key={activeMemberKey(item)}
                 item={item}
                 canOpen={!!onOpenSession && !!item.sessionId}
-                canOpenWork={!!known && activeProjectKey(item) === currentKey}
                 onOpen={open}
-                onOpenWork={onOpenWork}
               />
             ))}
           </ul>
@@ -88,15 +93,11 @@ export function CrewsActive({
 function ActiveRow({
   item,
   canOpen,
-  canOpenWork,
   onOpen,
-  onOpenWork,
 }: {
   item: ActiveCrewMemberView;
   canOpen: boolean;
-  canOpenWork: boolean;
   onOpen: (item: ActiveCrewMemberView) => void;
-  onOpenWork: (item: ActiveCrewMemberView) => void;
 }) {
   const attention = item.attention ? crewAttentionLabel(item.attention) : "";
   const focus = activeMemberFocus(item);
@@ -124,11 +125,6 @@ function ActiveRow({
             <Text size="secondary" tone="inherit" weight="medium" truncate>
               {item.memberName}
             </Text>
-            {item.handle ? (
-              <Text tone="inherit" truncate>
-                @{item.handle}
-              </Text>
-            ) : null}
             <Text tone="inherit" className="shrink-0">
               {roleLabel(item.memberRole)}
             </Text>
@@ -146,11 +142,6 @@ function ActiveRow({
         ) : null}
         <ActiveElapsed startedAt={item.startedAt} />
       </Button>
-      {item.attention && canOpenWork ? (
-        <Button variant="ghost" size="sm" onClick={() => onOpenWork(item)}>
-          {t("Open crew work")}
-        </Button>
-      ) : null}
     </li>
   );
 }
