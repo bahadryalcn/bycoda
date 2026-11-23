@@ -747,6 +747,12 @@ const state = (page: Page) =>
       reading: !!document.querySelector("[data-composer][data-composer-reading]"),
     };
   });
+// Upper bound for waits on work that the browser paces. The transcript paints a few turns and
+// grows to its 20-turn window in a low-priority transition (about 1 s on a free machine), and
+// WebKit animates a long wheel delta frame by frame: on a starved CI runner (a Linux WebKit under
+// load sat idle for 4-7 s before reaching the end) either takes longer than the 5 s default. It only
+// bounds the wait; every expected value stays as it was.
+const SETTLE_WAIT = 20_000;
 async function wheel(page: Page, deltaY: number) {
   const box = (await scroller(page).boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 3);
@@ -756,37 +762,36 @@ async function wheel(page: Page, deltaY: number) {
 async function readHistory(page: Page, deltaY = -1800) {
   const start = await state(page);
   await wheel(page, deltaY);
-  await expect(reading(page)).toHaveCount(1);
+  await expect(reading(page)).toHaveCount(1, { timeout: SETTLE_WAIT });
   // WebKit may only have applied the first wheel increment when reading mode
   // appears. Prepending older turns can change absolute offsets on Chromium.
   const travel = Math.min(start.top, -deltaY);
   let lastTop: number | undefined;
   await expect
-    .poll(async () => {
-      const current = await state(page);
-      const moved = current.distance - start.distance + current.viewport - start.viewport;
-      const settled = current.top === lastTop && moved >= travel - 80;
-      lastTop = current.top;
-      return settled;
-    })
+    .poll(
+      async () => {
+        const current = await state(page);
+        const moved = current.distance - start.distance + current.viewport - start.viewport;
+        const settled = current.top === lastTop && moved >= travel - 80;
+        lastTop = current.top;
+        return settled;
+      },
+      { timeout: SETTLE_WAIT },
+    )
     .toBe(true);
   // Let the dock motion settle before measuring.
   await page.waitForTimeout(350);
 }
-// Upper bound for the load waits in open(). The transcript paints a few turns and grows to its
-// 20-turn window in a low-priority transition, which takes about 1 s on a free machine and
-// longer than the 5 s default on a starved CI runner. It only bounds the wait.
-const LOAD_WAIT = 20_000;
 async function open(page: Page, query: Record<string, string> = {}, light = false) {
   await page.goto(url(query, light));
-  await expect(field(page)).toBeVisible({ timeout: LOAD_WAIT });
+  await expect(field(page)).toBeVisible({ timeout: SETTLE_WAIT });
   // The fixture has 40 turns. Wait for the full initial 20-turn window. The
   // first, shorter paint can also hold the same scroll height for two samples.
   await expect(scroller(page).locator('[data-transcript-turn="user-20"]')).toBeAttached({
-    timeout: LOAD_WAIT,
+    timeout: SETTLE_WAIT,
   });
   await expect
-    .poll(async () => (await state(page)).distance, { timeout: LOAD_WAIT })
+    .poll(async () => (await state(page)).distance, { timeout: SETTLE_WAIT })
     .toBeLessThan(2);
 }
 
@@ -796,6 +801,8 @@ for (const light of [false, true]) {
     test("normal at the end, compact while reading history, normal on focus and at the end", async ({
       page,
     }) => {
+      // The settle waits above can each take seconds on a starved runner (see SETTLE_WAIT).
+      test.slow();
       await page.setViewportSize({ width: 1280, height: 800 });
       await open(page, {}, light);
       const normal = await state(page);
@@ -812,7 +819,7 @@ for (const light of [false, true]) {
       // Focus restores the normal layout without moving the reading position.
       const before = (await state(page)).top;
       await field(page).click();
-      await expect(reading(page)).toHaveCount(0);
+      await expect(reading(page)).toHaveCount(0, { timeout: SETTLE_WAIT });
       await page.waitForTimeout(350);
       const focused = await state(page);
       expect(Math.abs(focused.top - before)).toBeLessThanOrEqual(1);
@@ -821,13 +828,17 @@ for (const light of [false, true]) {
 
       // Leaving focus while still reading history compacts again.
       await page.locator(".agent-transcript").click({ position: { x: 40, y: 40 } });
-      await expect(reading(page)).toHaveCount(1);
+      await expect(reading(page)).toHaveCount(1, { timeout: SETTLE_WAIT });
       await page.waitForTimeout(350);
       expect(Math.abs((await state(page)).top - before)).toBeLessThanOrEqual(1);
 
-      // Returning to the end restores the normal layout and following.
+      // Returning to the end restores the normal layout and following. The wheel's animated
+      // scroll reaches the end first; the layout and the pinned end follow it.
       await wheel(page, 20000);
-      await expect(reading(page)).toHaveCount(0);
+      await expect(reading(page)).toHaveCount(0, { timeout: SETTLE_WAIT });
+      await expect
+        .poll(async () => (await state(page)).distance, { timeout: SETTLE_WAIT })
+        .toBeLessThan(2);
       await page.waitForTimeout(350);
       const end = await state(page);
       expect(end.distance).toBeLessThan(2);
@@ -837,7 +848,7 @@ for (const light of [false, true]) {
     test("one mounted textarea keeps its draft, caret and size to its content", async ({
       page,
     }) => {
-      // Four full page loads, each about 2.3 s on a free machine (see LOAD_WAIT, plus the
+      // Four full page loads, each about 2.3 s on a free machine (see SETTLE_WAIT, plus the
       // reading-mode dock motion). The 30 s default left no margin on a CI runner that is 2-3x
       // slower, which timed out inside open(). The expectations are unchanged.
       test.slow();
