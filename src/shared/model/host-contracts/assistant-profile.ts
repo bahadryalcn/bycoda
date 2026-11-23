@@ -19,7 +19,7 @@ export const AssistantExecutionSchema = z.strictObject({
 export type AssistantExecution = z.infer<typeof AssistantExecutionSchema>;
 
 export const AssistantProfilePatchSchema = z.strictObject({
-  permissionLevel: z.enum(["watch", "projects", "everything"]).optional(),
+  permissionLevel: z.enum(["ask", "watch", "projects", "everything"]).optional(),
   permissionProjectIds: z.array(z.string().min(1).max(200)).max(100).optional(),
   criticalExclusions: z
     .array(

@@ -39,6 +39,6 @@ export type VoicePresentedResult = z.infer<typeof VoicePresentedResultSchema>;
 export const presentVoiceResultTool = {
   name: "workspace.live_work.present",
   description:
-    "Show a concise result beside the active full-screen call. Use when the spoken answer benefits from notes, a comparison, or a chart. Use facts from this turn only. Do not include commands, logs, credentials, private identifiers, or invented values. Omit when an ordinary spoken reply is enough.",
+    "Show a concise result beside the active voice call when the owner asks to see a result, comparison, or chart. This opens the fullscreen call and its right drawer. Use facts from this turn only. Do not include commands, logs, credentials, private identifiers, or invented values.",
   parameters: z.toJSONSchema(VoicePresentedResultSchema),
 };

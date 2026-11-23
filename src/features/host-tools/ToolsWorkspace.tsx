@@ -14,8 +14,8 @@ import { restoreBrowserDraftTransfer } from "./browserDraftTransfer";
 import { Alert } from "../../shared/ui/Alert";
 import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
-import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Portal } from "../../shared/ui/Portal";
+import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { Portal, useMovablePortalHost } from "../../shared/ui/Portal";
 import { OverlayParent } from "../../shared/ui/overlay";
 import { t, useLocale } from "../../shared/i18n/technical";
 import type { ConversationTools } from "./SessionHostTools";
@@ -422,6 +422,7 @@ export function ToolsWorkspace({
   followEligible = true,
   outlet,
   outletOverlayParent,
+  outletPanelId,
 }: {
   children: ReactNode;
   activeConversation?: ToolsSession | null;
@@ -429,22 +430,12 @@ export function ToolsWorkspace({
   followEligible?: boolean;
   outlet?: HTMLElement;
   outletOverlayParent?: symbol | null;
+  outletPanelId?: string;
 }) {
   useLocale();
   const homeOverlayParent = useContext(OverlayParent);
-  const dockHome = useRef<HTMLDivElement>(null);
-  const [dockHost] = useState(() => {
-    if (typeof document === "undefined") return null;
-    const host = document.createElement("div");
-    host.className = "contents";
-    return host;
-  });
+  const { attachHome: dockHome, host: dockHost } = useMovablePortalHost(outlet);
   const embedded = Boolean(outlet);
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Moves the same DOM host so docking keeps tool instances and drafts mounted.
-  useLayoutEffect(() => {
-    if (dockHost) (outlet ?? dockHome.current)?.append(dockHost);
-    return () => dockHost?.remove();
-  }, [dockHost, outlet]);
   const activeRef = useRef(activeConversation);
   activeRef.current = activeConversation;
   const eligibleRef = useRef(followEligible);
@@ -599,6 +590,7 @@ export function ToolsWorkspace({
             const sourceView = views.current.get(pane.id);
             return {
               id: pane.id,
+              presentation: pane.detached ? ("detached" as const) : ("docked" as const),
               tab:
                 detached?.tab ??
                 sourceView?.tab ??
@@ -704,7 +696,7 @@ export function ToolsWorkspace({
                 ? pane?.mounted && pane.tab === expectedTab && pane.machine === expectedMachine
                 : state.open;
           if (ready && (input.placement === undefined || state.placement === input.placement))
-            return state;
+            return expectedId === undefined ? state : { ...state, openedPanelId: expectedId };
         } while (elapsedSince(startedAt) < 10000);
         throw new Error(
           "Tools panel did not finish rendering. Read ui.tools.status before retrying.",
@@ -960,6 +952,7 @@ export function ToolsWorkspace({
   const visiblePanes = panes.filter(
     (pane) =>
       !pane.detached &&
+      (!outletPanelId || pane.id === outletPanelId) &&
       (activeConversation === undefined || sameToolsSession(pane, activeConversation)),
   );
   const close = (id: string) => setPanes((previous) => previous.filter((pane) => pane.id !== id));
@@ -1042,6 +1035,7 @@ export function ToolsWorkspace({
                         "tools-workspace-pane",
                       )}
                       key={pane.id}
+                      data-tools-pane-id={pane.id}
                       data-visible={visiblePanes.includes(pane)}
                       aria-hidden={!visiblePanes.includes(pane)}
                     >

@@ -12,8 +12,48 @@ export function assistantCriticalApprovalRequired(
   if (!raw || typeof raw !== "object") return true;
   const operation = raw as { action?: unknown; input?: Record<string, unknown> };
   const action = operation.action;
+  const exclusions = profile.criticalExclusions ?? [
+    "pushMain",
+    "deleteProject",
+    "deleteSession",
+    "sendMessages",
+    "computerUse",
+    "spend",
+  ];
+  if (
+    typeof action === "string" &&
+    ((exclusions.includes("spend") &&
+      [
+        "workspace.sessions.submit",
+        "sessions.message",
+        "tasks.start",
+        "tasks.retry",
+        "tasks.review.recheck",
+        "goals.create",
+        "goals.replan",
+        "automations.runNow",
+        "crews.start",
+        "crews.resume",
+        "crews.member.ask",
+        "sprints.plan",
+      ].includes(action)) ||
+      (exclusions.length > 0 &&
+        [
+          "commands.run",
+          "commands.dispatch",
+          "terminals.create",
+          "terminals.write",
+          "devServers.start",
+          "devServers.restart",
+        ].includes(action)))
+  )
+    return true;
   let exclusion: NonNullable<AssistantProfilePatch["criticalExclusions"]>[number] | undefined;
-  if (action === "social.send" || action === "workspace.sessions.submit")
+  if (
+    action === "social.send" ||
+    action === "workspace.sessions.submit" ||
+    action === "sessions.message"
+  )
     exclusion = "sendMessages";
   else if (action === "projects.delete") exclusion = "deleteProject";
   else if (action === "sessions.delete") exclusion = "deleteSession";
@@ -27,19 +67,7 @@ export function assistantCriticalApprovalRequired(
     if (["main", "master", "refs/heads/main", "refs/heads/master"].includes(target))
       exclusion = "pushMain";
   }
-  return (
-    exclusion !== undefined &&
-    (
-      profile.criticalExclusions ?? [
-        "pushMain",
-        "deleteProject",
-        "deleteSession",
-        "sendMessages",
-        "computerUse",
-        "spend",
-      ]
-    ).includes(exclusion)
-  );
+  return exclusion !== undefined && exclusions.includes(exclusion);
 }
 
 /** Restriction only. Existing visibility, owner approval and execution gates still apply. */
@@ -47,7 +75,8 @@ export function assistantProjectMutationAllowed(
   profile: Policy,
   projectIds: readonly string[],
 ): boolean {
-  if (profile.permissionLevel === undefined) return true;
+  // "ask" grants nothing standing: native authority prompts for every operation.
+  if (profile.permissionLevel === undefined || profile.permissionLevel === "ask") return true;
   if (profile.permissionLevel === "watch") return false;
   if (profile.permissionLevel === "everything") return true;
   return (

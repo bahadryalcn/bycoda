@@ -187,6 +187,7 @@ const consentFixture = new Map<
   string,
   {
     revision: number;
+    active: boolean;
     environmentId: string;
     permissionLevel: string;
     projectIds: string[];
@@ -364,13 +365,14 @@ mockIPC(
       if (args.expectedRevision !== (previous?.revision ?? 0))
         throw new Error("Native consent revision changed");
       if (
-        !["watch", "projects", "everything"].includes(String(args.permissionLevel)) ||
+        !["ask", "watch", "projects", "everything"].includes(String(args.permissionLevel)) ||
         !Array.isArray(args.projectIds) ||
         !Array.isArray(args.criticalExclusions)
       )
         throw new Error("Invalid assistant consent");
       const consent = {
         revision: (previous?.revision ?? 0) + 1,
+        active: true,
         environmentId,
         permissionLevel: String(args.permissionLevel),
         projectIds: args.projectIds as string[],

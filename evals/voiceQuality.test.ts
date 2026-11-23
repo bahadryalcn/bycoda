@@ -4,6 +4,7 @@ import {
   shouldWaitForVoice,
 } from "../src/features/voice/model/voiceSpeechPolicy";
 import { voiceSearchClauses } from "../src/features/voice/model/voiceFeatureLexicon";
+import { voiceWorkRefusal } from "../src/features/voice/model/voiceWorkAdmission";
 import {
   mayDeliverVoiceBriefing,
   type VoiceBriefingDelivery,
@@ -20,6 +21,66 @@ import zh from "../src/shared/i18n/locales/zh-CN.json";
 
 // Sanitized, hand-authored decision cases; no provider or tool is invoked.
 describe("voice decision regression corpus", () => {
+  it.each([
+    [
+      "ByCode'da provider bazlı aylık token ve, model kullanımımı bir grafiğe döker misin?",
+      "display",
+    ],
+    [
+      "Baykoda'da provider bazlı aylık token ve model kullanımını bir grafiğe döker misin?",
+      "display",
+    ],
+    ["Sağlayıcıya göre aylık model ve token kullanımını grafiğe dök", "display"],
+    ["Hayır kod yazma, sadece göster", "display"],
+    ["Show my monthly token usage by provider as a chart", "display"],
+    ["Build me a chart of monthly token usage", "display"],
+    ["Bycoda uygulamasında aylık token kullanımımı göster", "display"],
+    ["Sağdaki panele grafiği ekle", "display"],
+    ["Çalışan sunucuları listele", "display"],
+    ["Ayarlar ekranını aç", "display"],
+    ["How do I fix the login issue?", "display"],
+    ["Bu konuyla ilgilenir misin?", "ambiguous"],
+    ["¿Podrías encargarte de este cambio?", "ambiguous"],
+    ["", "ambiguous"],
+    ["Sen YouTube Müzik'ten bana bir müzik aç.", "computer_action"],
+    ["Chrome'da localhost 4173 aç", "computer_action"],
+    ["Aylık token kullanım grafiği için kalıcı dashboard özelliği geliştir", undefined],
+    ["Add a reusable monthly token usage chart to the dashboard", undefined],
+    ["Fix the monthly token usage chart", undefined],
+    ["Update the page to show the error", undefined],
+  ])("admission for %s", (speech, intent) => {
+    expect(voiceWorkRefusal(speech, "give_jobs")?.intent).toBe(intent);
+    expect(voiceWorkRefusal(speech, "submit_work")?.intent).toBe(intent);
+    expect(voiceWorkRefusal(speech, "app_tool_call", "goals.create")?.intent).toBe(intent);
+    expect(voiceWorkRefusal(speech, "app_tool_call", "sessions.message")?.intent).toBe(intent);
+    expect(voiceWorkRefusal(speech, "app_tools_list")).toBeUndefined();
+    expect(voiceWorkRefusal(speech, "app_tool_call", "desktop.snapshot")).toBeUndefined();
+  });
+
+  it.each([
+    ["Commit the changes", "git.commit"],
+    ["Run the tests", "commands.run"],
+    ["Rename the file", "files.rename"],
+    ["Delete that file", "files.delete"],
+    ["Make the button blue", "files.write"],
+    ["Renomme ce fichier", "files.rename"],
+    ["このファイルの名前を変更して", "files.rename"],
+  ])("preserves an explicit ordinary instruction: %s", (speech, action) => {
+    expect(voiceWorkRefusal(speech, "app_tool_call", action)).toBeUndefined();
+    expect(voiceWorkRefusal(speech, "submit_work", undefined, undefined, speech)).toBeUndefined();
+  });
+
+  it.each([
+    ["workspace.sessions.submit", { text: "Build a chart" }],
+    ["workspace.sessions.create", { prompt: "Build a chart", submit: true }],
+    ["sessions.message", { text: "Build a chart" }],
+  ])("refuses invented scope through %s", (action, args) => {
+    const speech = "¿Podrías encargarte de este cambio?";
+    expect(voiceWorkRefusal(speech, "app_tool_call", action, undefined, args)?.intent).toBe(
+      "ambiguous",
+    );
+  });
+
   const delivered = "İşlem tamamlandı.";
   it.each([
     ["tamam", true],

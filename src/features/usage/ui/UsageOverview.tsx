@@ -11,7 +11,6 @@ import {
   type ReactNode,
   type CSSProperties,
 } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -32,11 +31,12 @@ import {
 } from "../../providers/model/providerAccounts";
 import {
   createUsagePricing,
-  fetchModelPrices,
-  fetchProviderUsage,
   type AccountUsage,
   type ModelPrices,
 } from "../../providers/model/providerUsage";
+import { loadUsageSources } from "../data/usageSources";
+import { usagePresetWindow } from "../model/usageWindows";
+import { subscribeUsageViewIntent, takeUsageViewIntent } from "../model/usageViewIntent";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { RevealedSetting } from "../../../shared/ui/settings";
@@ -111,18 +111,9 @@ const initialLoad: Load = {
   refreshedAt: 0,
   error: null,
 };
-function presetWindow(preset: Preset, now: number): UsageWindow {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  if (preset === "yesterday") {
-    const end = start.getTime();
-    start.setDate(start.getDate() - 1);
-    return { start: start.getTime(), end };
-  }
-  if (["7d", "30d", "90d"].includes(preset))
-    start.setDate(start.getDate() - Number(preset.slice(0, -1)) + 1);
-  return { start: preset === "all" ? 0 : start.getTime(), end: Math.ceil(now / 900_000) * 900_000 };
-}
+// A custom range keeps its own window; relative presets share their calendar math with the voice report.
+const presetWindow = (preset: Preset, now: number): UsageWindow =>
+  usagePresetWindow(preset === "custom" ? "today" : preset, now);
 
 export function UsageOverview({
   refresh = 0,
@@ -186,6 +177,24 @@ export function UsageOverview({
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
   const filterAnchor = useRef<HTMLButtonElement>(null);
   useEffect(() => subscribeProviderAccounts(() => setVersion((v) => v + 1)), []);
+  // A requested view (for example from a voice report) applies the report's exact window, filters and metric.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- listens to the usage view request store while the dashboard is mounted
+  useEffect(() => {
+    if (limitsOnly) return;
+    const apply = () => {
+      const intent = takeUsageViewIntent();
+      if (!intent) return;
+      setPreset(intent.preset);
+      setInterval(intent.window);
+      setFilters(intent.filters);
+      setMetric(intent.metric);
+      setResolution(intent.resolution);
+      setSelectedSession(null);
+      setSelection({ view: "overview", revealed });
+    };
+    apply();
+    return subscribeUsageViewIntent(apply);
+  }, [limitsOnly, revealed]);
   const accounts = useMemo(() => PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts), [version]);
   const quotaHistory = useRateLimitHistory();
   const pricing = useMemo(() => createUsagePricing(prices?.models), [prices]);
@@ -195,62 +204,44 @@ export function UsageOverview({
   useEffect(() => {
     if (limitsOnly) return;
     let cancelled = false;
-    void Promise.all([
-      Promise.all(
-        accounts.map(async (account) => {
-          try {
-            const report = await fetchProviderUsage(
-              account.provider,
-              account.id,
-              Math.floor(since / 900_000) * 900_000,
-            );
-            return { account, rows: report.rows, failed: false };
-          } catch {
-            return { account, rows: [], failed: true };
-          }
-        }),
-      ),
-      invoke<UsageTurnReport>("session_usage_report", {
-        sinceMs: since,
-        untilMs: interval.end,
-      }).catch(() => null),
-      fetchModelPrices().catch(() => null),
-    ]).then(([reports, turns, nextPrices]) => {
-      if (cancelled) return;
-      const failed = reports.filter((r) => r.failed).length;
-      setLoad((previousLoad) => ({
-        queryKey,
-        usage: reports.map(({ account, rows, failed: unavailable }) => ({
-          account,
-          rows: unavailable
-            ? (previousLoad.usage.find(
-                (r) => r.account.id === account.id && r.account.provider === account.provider,
-              )?.rows ?? [])
-            : rows,
-        })),
-        turns: turns ?? previousLoad.turns,
-        failed,
-        turnsFailed: turns === null,
-        stale:
-          (turns === null && previousLoad.turns !== null) ||
-          reports.some(
-            ({ account, failed }) =>
-              failed &&
-              previousLoad.usage.some(
-                (report) =>
-                  report.account.id === account.id &&
-                  report.account.provider === account.provider &&
-                  report.rows.length > 0,
-              ),
-          ),
-        refreshedAt: Date.now(),
-        error:
-          accounts.length > 0 && failed === accounts.length
-            ? "Usage could not be read for the selected accounts. Reload usage to try again."
-            : null,
-      }));
-      setPrices(nextPrices);
-    });
+    void loadUsageSources(accounts, since, interval.end).then(
+      ({ reports, turns, prices: nextPrices }) => {
+        if (cancelled) return;
+        const failed = reports.filter((r) => r.failed).length;
+        setLoad((previousLoad) => ({
+          queryKey,
+          usage: reports.map(({ account, rows, failed: unavailable }) => ({
+            account,
+            rows: unavailable
+              ? (previousLoad.usage.find(
+                  (r) => r.account.id === account.id && r.account.provider === account.provider,
+                )?.rows ?? [])
+              : rows,
+          })),
+          turns: turns ?? previousLoad.turns,
+          failed,
+          turnsFailed: turns === null,
+          stale:
+            (turns === null && previousLoad.turns !== null) ||
+            reports.some(
+              ({ account, failed }) =>
+                failed &&
+                previousLoad.usage.some(
+                  (report) =>
+                    report.account.id === account.id &&
+                    report.account.provider === account.provider &&
+                    report.rows.length > 0,
+                ),
+            ),
+          refreshedAt: Date.now(),
+          error:
+            accounts.length > 0 && failed === accounts.length
+              ? "Usage could not be read for the selected accounts. Reload usage to try again."
+              : null,
+        }));
+        setPrices(nextPrices);
+      },
+    );
     return () => {
       cancelled = true;
     };

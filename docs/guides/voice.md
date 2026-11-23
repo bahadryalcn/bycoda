@@ -106,6 +106,8 @@ minutes. It shows **Reconnecting…** with a **Stop** button, and retries at onc
 when the network comes back. A stable minute restores the quick attempts.
 If the connection dropped before your last request was answered, the assistant
 says so after reconnecting and asks whether to continue instead of repeating it.
+If what you were saying never reached the provider, it asks you to repeat only
+that sentence. A resumed call keeps recent turns and does not greet you again.
 When an action fails or its result is unknown, the assistant tells you what
 blocked it and asks how to continue; for example, a new project whose name is
 taken prompts a choice between continuing that project and picking another name.
@@ -229,6 +231,8 @@ fragment automatically. A brief background sound can produce a recognition candi
 even before you have spoken; rejected candidates must never start a reply.
 
 ## Conversation history and choices
+
+In spoken replies, the assistant uses project, folder and file names. Ask for the full path when you need it.
 
 Project scope is the default; **Global** switches to the cross-project thread.
 A selected session remains the captured focus for each accepted spoken turn.
@@ -395,11 +399,24 @@ Choose **Full screen** to expand the call. Use **Chat** to read the conversation
 keeping the voice controls visible. The call visual changes as the assistant connects,
 listens, works, speaks or reconnects.
 
+In the regular voice window, open **Conversation** to read the transcript. A
+small call visual and the connection status stay above the messages.
+
+During a call, say “Go full screen”, “Exit full screen” or “Switch to Mini” to
+change the view while the microphone stays connected. Asking to see a visual
+result can open full screen.
+
 **Live results** opens when the current voice turn has something to show. The assistant
 can present a short answer, a comparison or a chart. Recognized work outcomes can also
 appear as cards, such as test counts or a build result. Select **Live results** to hide
 or reopen the panel. Escape closes the open panel first, then exits full screen.
 **Full screen** in the expanded floating window returns to the app.
+
+Ask to open a session or one of its Conversation Tools by name. In full screen,
+it opens beside the call. In Window or Mini, it opens in the workspace. The
+session keeps its draft and running work when you close the right panel.
+Ask for the project workspace or Arif's right panel explicitly to choose where
+it opens.
 
 Assign **Voice: Push to Talk** in Keyboard shortcuts. It has no default binding.
 While voice is connected and the microphone is paused, hold the shortcut to
@@ -807,7 +824,9 @@ the project's saved top-bar actions and the scripts in its `package.json` or
 that starts a dev server even when **Manage as development server** is off: for
 example, a saved `dev · pnpm run dev`. It checks whether that server already runs,
 then starts it as a managed dev server whose status and logs it can read. It asks
-only when several servers fit.
+only when several servers fit. A slow start returns a pending operation ID. The
+assistant can follow it with `devServers.operation.status` using the same project
+and original arguments, including after a voice reconnect.
 
 The companion can also move around the window and read a few summaries. "Open
 settings" or "ayarları aç" switches to a view or settings section; it only
@@ -921,6 +940,9 @@ work; the assistant cannot enable, resume or stop control itself.
 Input attempts and outcomes go to History and the daily note using a stable operation
 identity. These records contain app/action and delivery metadata, never snapshot trees
 or typed text. Notebook delivery retries cannot repeat the computer action.
+The Windows Cua Driver can reuse an existing Chrome window. A delivered click or
+keypress confirms input dispatch. The assistant checks the resulting page,
+game state or player before reporting that the requested action succeeded.
 
 ## Reading unsent messages and attachments
 

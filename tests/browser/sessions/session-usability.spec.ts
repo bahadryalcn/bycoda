@@ -1,5 +1,18 @@
 import { expect, test } from "@playwright/test";
 
+test("normal coding session has no voice results launcher", async ({ page }) => {
+  await page.goto("/tests/browser/sessions/session-usability.html?historyFixture");
+  const session = page.locator("[data-session-drop]");
+  await expect(session.getByText("Response 16", { exact: true })).toBeVisible();
+  await expect(session.locator("[data-composer-box] textarea")).toBeEditable();
+  await expect(
+    session.getByRole("button", { name: /live (results|work)/i, includeHidden: true }),
+  ).toHaveCount(0);
+  await expect(
+    session.locator("[data-work-panel], button:has(svg.lucide-chart-no-axes-combined)"),
+  ).toHaveCount(0);
+});
+
 for (const kind of ["projectless", "project"])
   for (const light of [true, false])
     for (const width of [800, 1280])

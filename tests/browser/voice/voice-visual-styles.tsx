@@ -3,9 +3,13 @@ import { VoiceLauncher } from "../../../src/features/voice/ui/companion/VoiceLau
 import { VoiceToolActivityPanel } from "../../../src/features/voice/ui/VoiceToolActivityPanel";
 import { VoiceChatTranscript } from "../../../src/features/voice/ui/companion/VoiceChatTranscript";
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button } from "../../../src/shared/ui/Button";
-import { VoiceCompanion } from "../../../src/features/voice/ui/VoiceCompanion";
+import {
+  VoiceCompanion,
+  type VoiceWorkspaceOutlet,
+} from "../../../src/features/voice/ui/VoiceCompanion";
 import { VoiceCompanionGate } from "../../../src/features/voice/ui/VoiceCompanionGate";
 import { VoiceLauncherSlot } from "../../../src/features/voice/ui/companion/voiceLauncherSlot";
 import { VoiceSettings } from "../../../src/features/voice/ui/VoiceSettings";
@@ -17,13 +21,25 @@ import {
 import { fixtureVoice } from "./voice-visual-styles-mocks";
 import { setLanguagePreference } from "../../../src/shared/i18n";
 import { noteDisplayRefreshRate } from "../../../src/features/settings/model/decorativeMotion";
-import type { Session } from "../../../src/features/sessions/model/session";
+import { newSession, type Session } from "../../../src/features/sessions/model/session";
 import { registerVoiceDraftReader } from "../../../src/features/voice/model/voiceDraftContext";
 import { AssistantSetup } from "../../../src/features/assistant/ui/AssistantSetup";
 import { saveKeybindingOverride } from "../../../src/features/settings/model/settings";
+import {
+  createVoiceWorkspaceActions,
+  useVoiceWorkspaceActions,
+} from "../../../src/app/workspace/bridges/useVoiceWorkspaceActions";
+import type { UsageReportRow } from "../../../src/features/usage/public/usageReport";
+import { leaf, splitPane } from "../../../src/features/workspace/model/layout";
+import { flushHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
 import "../../../src/styles/index.css";
 const params = new URLSearchParams(location.search);
 const wakeQuickSettings = params.has("wake-quick-settings");
+const PaneTree = params.has("session-outlet")
+  ? (await import("../../../src/features/workspace/ui/PaneTree")).PaneTree
+  : undefined;
+if (PaneTree) await flushHostSessionBindings();
+const paneQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 if (params.has("high-refresh")) noteDisplayRefreshRate(240);
 if (params.has("push-to-talk"))
   saveKeybindingOverride("Voice: Push to Talk", { shortcut: "Control+Shift+KeyQ" });
@@ -40,6 +56,7 @@ if (params.has("first-run")) localStorage.removeItem("bycoda.voice.persona");
 else if (!localStorage.getItem("bycoda.voice.persona"))
   localStorage.setItem("bycoda.voice.persona", JSON.stringify({ status: "skipped" }));
 const session = {
+  ...newSession("codex", "/fixture"),
   id: "fixture",
   title: params.has("live-work")
     ? "Voice regression tests"
@@ -130,39 +147,107 @@ if (global)
       },
     ],
   }));
-const workspace = global
-  ? {
-      tools: [
-        {
-          name: "workspace.projects.list",
-          description: "List fixture projects.",
-          parameters: { type: "object", properties: {} },
-        },
-        ...(params.has("live-work")
-          ? [
-              {
-                name: "workspace.views.open",
-                description: "Open fixture views.",
-                parameters: {
-                  type: "object",
-                  properties: { view: { enum: ["notes", "tasks"] } },
-                },
+const usageRow = (key: string, label: string, cost: number, tokens: number): UsageReportRow => ({
+  key,
+  label,
+  cost,
+  tokens,
+  input: tokens,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  durationMs: 0,
+  unpricedTokens: 0,
+  share: cost > 0 ? cost / 10 : null,
+});
+const usageWorkspace = params.has("usage")
+  ? createVoiceWorkspaceActions(() => ({
+      getProjects: () => [{ path: session.cwd, name: "Fixture project" }],
+      getSessions: () => [session],
+      getActiveSessionId: () => session.id,
+      getProjectPath: () => session.cwd,
+      inspect: {
+        usage: {
+          read: async (request) => {
+            fixtureVoice.actions.push(`usage:${request.period}:${request.metric}`);
+            const empty = request.period === "last-30-days";
+            return {
+              period: request.period,
+              metric: request.metric,
+              costBasis: "api-equivalent-estimate",
+              timeZone: "Europe/Istanbul",
+              window: {
+                startMs: 1793480400000,
+                endMs: 1795477200000,
+                start: "2026-11-01",
+                end: "2026-11-24",
               },
-            ]
-          : []),
-      ],
-      execute: async (action: string) => {
-        fixtureVoice.actions.push(action);
-        if (params.has("pending-tool"))
-          return new Promise((resolve) => {
-            fixtureVoice.finishTool = resolve;
-          });
-        return { status: "completed", projects: [{ path: session.cwd, name: "Fixture project" }] };
+              filters: {},
+              totals: usageRow("total", "Total", empty ? 0 : 10, empty ? 0 : 800),
+              providers: empty
+                ? []
+                : [usageRow("codex", "Codex", 7.5, 600), usageRow("claude", "Claude", 2.5, 200)],
+              models: empty
+                ? []
+                : [
+                    usageRow("gpt-fixture", "GPT Fixture", 7.5, 600),
+                    usageRow("sonnet-fixture", "Sonnet Fixture", 2.5, 200),
+                  ],
+              projects: [],
+              coverage: {
+                partial: false,
+                accounts: { read: 2, failed: 0 },
+                sessionTurns: "available",
+                notes: empty ? ["no-data"] : [],
+              },
+            };
+          },
+        },
       },
-    }
+    }))
   : undefined;
+const workspace =
+  usageWorkspace ??
+  (global
+    ? {
+        tools: [
+          {
+            name: "workspace.projects.list",
+            description: "List fixture projects.",
+            parameters: { type: "object", properties: {} },
+          },
+          ...(params.has("live-work")
+            ? [
+                {
+                  name: "workspace.views.open",
+                  description: "Open fixture views.",
+                  parameters: {
+                    type: "object",
+                    properties: { view: { enum: ["notes", "tasks"] } },
+                  },
+                },
+              ]
+            : []),
+        ],
+        execute: async (action: string) => {
+          fixtureVoice.actions.push(action);
+          if (params.has("pending-tool"))
+            return new Promise((resolve) => {
+              fixtureVoice.finishTool = resolve;
+            });
+          return {
+            status: "completed",
+            projects: [{ path: session.cwd, name: "Fixture project" }],
+          };
+        },
+      }
+    : undefined);
 function FixtureCompanion() {
   const [next, setNext] = useState(false);
+  const [outlet, setOutlet] = useState<VoiceWorkspaceOutlet>();
+  const [outletLayout] = useState(() =>
+    splitPane(leaf(session.id), session.id, "right", "fixture-next"),
+  );
   const [work, setWork] = useState(session);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- The browser fixture accepts one synthetic incoming work update.
   useEffect(() => {
@@ -190,6 +275,19 @@ function FixtureCompanion() {
     cwd: "/fixture-next",
   };
   const current = next ? second : work;
+  const sessionWorkspace = useVoiceWorkspaceActions({
+    getProjects: () => [
+      { path: work.cwd, name: work.title },
+      { path: second.cwd, name: second.title },
+    ],
+    getSessions: () => [work, second],
+    getActiveSessionId: () => current.id,
+    getProjectPath: () => current.cwd,
+    onOpen: (id) => {
+      setNext(id === second.id);
+    },
+  });
+  const noop = () => {};
   const Companion = wakeQuickSettings ? VoiceCompanionGate : VoiceCompanion;
   return (
     <main style={{ padding: 24, maxInlineSize: 720 }}>
@@ -212,6 +310,64 @@ function FixtureCompanion() {
           <VoiceLauncherSlot compact={params.has("compact-rail")} />
         </footer>
       )}
+      {PaneTree && (
+        <div style={{ height: 420 }}>
+          <QueryClientProvider client={paneQueryClient}>
+            <PaneTree
+              layout={outletLayout}
+              sessionOutlet={outlet?.kind === "session" ? outlet : undefined}
+              visible
+              sessions={[work, second]}
+              editorPanes={[]}
+              dirtyFileIds={new Set()}
+              fileErrorCounts={new Map()}
+              focusedId={current.id}
+              composerFocused={false}
+              recents={[]}
+              onFocus={noop}
+              onClose={noop}
+              onSelectFile={noop}
+              onCloseFile={noop}
+              onCloseOtherFiles={noop}
+              onReorderFiles={noop}
+              onFileDirtyChange={noop}
+              onFileErrorCountChange={noop}
+              onRatio={noop}
+              onCwdChange={noop}
+              onBranchChange={noop}
+              onWorkspaceModeChange={noop}
+              onWorktreeBaseChange={noop}
+              onModelChange={noop}
+              onModelSettingsChange={noop}
+              onRuntimeModeChange={noop}
+              onSubmit={() => false}
+              onSaveDraft={noop}
+              onRemoveDraft={noop}
+              onStop={noop}
+              onCompactContext={() => false}
+              onPlaceSessionInFolder={noop}
+              onDeleteQueuedMessage={noop}
+              onEditQueuedMessage={noop}
+              onQueuedMessageEditingChange={noop}
+              onSteerQueuedMessage={noop}
+              onResumeQueue={noop}
+              onUsageLimitResume={noop}
+              onUsageLimitResumeAtReset={noop}
+              onUsageLimitDismiss={noop}
+              onApproval={noop}
+              onQuestionReply={noop}
+              onOpenFile={noop}
+              onOpenDiff={noop}
+              onOpenPlan={noop}
+              onUpdatePlan={noop}
+              onBuildPlan={noop}
+              onMovePane={noop}
+              onDetachPane={noop}
+              onNewTerminal={noop}
+            />
+          </QueryClientProvider>
+        </div>
+      )}
       <Companion
         activeId={params.has("no-active") ? undefined : current.id}
         sessions={navigation ? [work, second] : [work]}
@@ -222,7 +378,8 @@ function FixtureCompanion() {
         onStop={() => {
           fixtureVoice.stops++;
         }}
-        workspace={workspace}
+        workspace={PaneTree ? sessionWorkspace : workspace}
+        onWorkspaceOutlet={PaneTree ? setOutlet : undefined}
         projects={
           global
             ? [

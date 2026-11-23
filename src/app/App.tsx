@@ -14,6 +14,7 @@ import { useSidebarActions } from "./workspace/layout/useSidebarActions";
 import { useLocalSessionReferences } from "./workspace/sessions/useLocalSessionReferences";
 import { LocalSessionReferenceProvider } from "../features/sessions/ui/LocalSessionReferenceContext";
 import { VoiceCompanionGate } from "../features/voice/ui/VoiceCompanionGate";
+import type { VoiceWorkspaceOutlet } from "../features/voice/ui/VoiceCompanion";
 import { RemoteConnectionFeedbackProvider } from "../features/connections/ui/RemoteConnectionFeedback";
 import { AssistantNotifications } from "../features/assistant/ui/AssistantNotifications";
 import { AssistantBackgroundRoom } from "../features/assistant/model/AssistantBackgroundRoom";
@@ -442,6 +443,7 @@ function Workspace({
   const projectRailOpen = fittedPanes.rail;
   const sessionSidebarOpen = fittedPanes.sidebar;
   const [lastSessionsOpen, setLastSessionsOpen] = useState(false);
+  const [voiceWorkspaceOutlet, setVoiceWorkspaceOutlet] = useState<VoiceWorkspaceOutlet>();
   const [newListedSessionRequest, setNewListedSessionRequest] = useState(0);
   const tabCloseScope = "project" as const;
   const {
@@ -3296,6 +3298,7 @@ function Workspace({
               )}
               <VoiceCompanionGate
                 {...voiceApp}
+                onWorkspaceOutlet={setVoiceWorkspaceOutlet}
                 activeId={activeSessionId}
                 onSubmit={submitSession}
                 onStop={onStop}
@@ -3494,6 +3497,7 @@ function Workspace({
 
                       <SessionPanelTargetsContext.Provider value={socialSessionTargets}>
                         <WorkspaceMainArea
+                          voiceWorkspaceOutlet={voiceWorkspaceOutlet}
                           dockGridRef={dockGridRef}
                           projectCwd={projectCwd}
                           projectTerminals={projectTerminals}

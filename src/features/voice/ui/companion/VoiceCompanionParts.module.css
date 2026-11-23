@@ -15,6 +15,18 @@
   padding-block: 4px;
   text-align: center;
 }
+.stage[data-layout="strip"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-block-end: var(--space-2);
+  padding: var(--space-2) 0;
+}
+.stage[data-layout="strip"] .status {
+  flex: 1 1 12rem;
+}
 .stage[data-layout="stage"] .status {
   flex-direction: column;
   gap: 8px;
@@ -50,8 +62,9 @@
 .stage[data-full-call] .captionSlot {
   min-block-size: 2.75rem;
   display: grid;
-  justify-items: center;
+  place-items: center;
   inline-size: 100%;
+  text-align: center;
 }
 /* The words in flight on the call stage; long replies stay readable in the transcript. */
 .spoken {
@@ -103,6 +116,9 @@
 .caption {
   overflow-wrap: break-word;
 }
+:global([data-full-screen]) .caption {
+  text-align: center;
+}
 .scope {
   display: flex;
   align-items: center;
@@ -114,7 +130,7 @@
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-3);
   min-inline-size: 0;
   min-block-size: 4.5rem;
   max-block-size: min(42dvh, 300px);
@@ -131,9 +147,13 @@
 }
 .bubble {
   max-inline-size: 85%;
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.row[data-role="assistant"] .bubble {
+  max-inline-size: min(100%, 62ch);
+  padding-inline: var(--space-1);
 }
 
 /* Footer: a single row that wraps only when the panel is narrower than its controls. */

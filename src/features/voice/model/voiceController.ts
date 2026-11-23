@@ -311,6 +311,7 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
     }
     const result = (async () => {
       if (args.family === "workspace") {
+        let scoped: ReturnType<typeof target> | undefined;
         await read().invalidateCausalContext?.();
         assertActive();
         if (read().getScope?.() === "session" || read().getScope?.() === "project") {
@@ -320,13 +321,15 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
             return resolveVoiceProjects(read().getProjects(), text(input.query, "query")!);
           if (action === "workspace.sessions.create" && read().getScope?.() === "session")
             throw new Error("Choose Global voice scope to create a session.");
-          target({ projectPath: input.projectPath, sessionId: input.sessionId });
+          scoped = target({ projectPath: input.projectPath, sessionId: input.sessionId });
         }
         // Reads take no request ID; the workspace bridge rejects arguments outside each schema.
         const tool = read().workspace.tools.find((entry) => entry.name === action);
         const properties = Object(tool?.parameters.properties) as Record<string, unknown>;
         const ids = "requestId" in properties ? { requestId } : {};
-        return read().workspace.execute(action, { ...input, ...ids });
+        // An optional projectPath means "everything" only in Global scope; otherwise the bound project.
+        const inherited = scoped && "projectPath" in properties ? { projectPath: scoped.cwd } : {};
+        return read().workspace.execute(action, { ...inherited, ...input, ...ids });
       }
       if (!isVoiceToolFamily(args.family)) throw new Error("Unknown tool family.");
       const accountId = text(args.accountId, "accountId", true);

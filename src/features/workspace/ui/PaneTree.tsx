@@ -2,15 +2,19 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { RecoveryBoundary } from "../../../shared/ui/RecoveryBoundary";
+import { Portal, useMovablePortalHost } from "../../../shared/ui/Portal";
+import { OverlayParent } from "../../../shared/ui/overlay";
 import { useT } from "../../../shared/i18n";
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import {
   clearDropIndicator,
@@ -76,7 +80,11 @@ import {
 import { FilePane } from "../../files/ui/FilePane";
 import { MediaVisibilityContext } from "../../files/model/mediaVisibility";
 import { SessionPane, type SessionPaneProps } from "../../sessions/ui/SessionPane";
-import { paneBackgroundPlacement, syncPaneBackgrounds } from "../../../shared/lib/paneBackground";
+import {
+  paneBackgroundPlacement,
+  syncPaneBackground,
+  syncPaneBackgrounds,
+} from "../../../shared/lib/paneBackground";
 import {
   paneRectStyle,
   paneSashLabel,
@@ -92,6 +100,12 @@ import type { SessionOrganizationResult } from "../../sessions/model/sessionOrga
 import type { Worktree } from "../../source-control/model/worktrees";
 
 type Shared = {
+  sessionOutlet?: {
+    sessionId: string;
+    projectPath: string;
+    element: HTMLElement;
+    overlay: symbol | null;
+  };
   workspaceSwitchingSessionId?: string;
   visible: boolean;
   /** Sessions to show. Omitted in the workspace: each pane then follows its own
@@ -241,6 +255,7 @@ type PaneDrag = PaneDrop;
 const DRAG_THRESHOLD = 5;
 
 function PaneTreeComponent({
+  sessionOutlet,
   visible,
   layout,
   sessions,
@@ -849,82 +864,89 @@ function PaneTreeComponent({
                       resetKeys={[leaf.id, session.id]}
                       onBack={() => onClose(session.id)}
                     >
-                      <SessionPane
+                      <SessionPanePlacement
                         session={session}
-                        workspaceSwitchingSessionId={workspaceSwitchingSessionId}
-                        reviewUndoLocked={paneSessions.undoLocked.has(session.id)}
-                        visible={visible && !hidden}
-                        focused={focusedId === session.id}
-                        addToChatTarget={addToChatSessionId === session.id}
-                        inSplit={inSplit}
-                        composerFocused={composerFocused}
-                        composerFocusToken={composerFocusToken}
-                        recents={recents}
-                        hideProjectPicker={hideProjectPicker}
-                        onFocus={onFocus}
-                        onClose={onClose}
-                        onRemoteSnapshot={onRemoteSnapshot}
-                        onRefreshAdoptedSession={onRefreshAdoptedSession}
-                        onRetrySessionHistory={onRetrySessionHistory}
-                        onLoadSessionHistory={onLoadSessionHistory}
-                        onPrepareSessionHistory={onPrepareSessionHistory}
-                        onCwdChange={onCwdChange}
-                        onSessionMachineChange={onSessionMachineChange}
-                        onSessionMachinePickerTrigger={onSessionMachinePickerTrigger}
-                        onBranchChange={onBranchChange}
-                        onWorktreeChange={onWorktreeChange}
-                        onWorkspaceModeChange={onWorkspaceModeChange}
-                        onWorktreeBaseChange={onWorktreeBaseChange}
-                        onManageWorktrees={onManageWorktrees}
-                        onModelChange={onModelChange}
-                        onModelSettingsChange={onModelSettingsChange}
-                        onRuntimeModeChange={onRuntimeModeChange}
-                        onSaveDraft={onSaveDraft}
-                        onRemoveDraft={onRemoveDraft}
-                        onSubmit={onSubmit}
-                        onStop={onStop}
-                        onCompactContext={onCompactContext}
-                        onRewindMessage={onRewindMessage}
-                        onNewSession={onNewSession}
-                        onPlaceSessionInFolder={onPlaceSessionInFolder}
-                        onResumeProviderSession={onResumeProviderSession}
-                        onDeleteQueuedMessage={onDeleteQueuedMessage}
-                        onEditQueuedMessage={onEditQueuedMessage}
-                        onQueuedMessageEditingChange={onQueuedMessageEditingChange}
-                        onReorderQueuedMessages={onReorderQueuedMessages}
-                        onSteerQueuedMessage={onSteerQueuedMessage}
-                        onResumeQueue={onResumeQueue}
-                        onUsageLimitResume={onUsageLimitResume}
-                        onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
-                        onUsageLimitDismiss={onUsageLimitDismiss}
-                        onSelectProviderAccount={onSelectProviderAccount}
-                        onInboxCardDismiss={onInboxCardDismiss}
-                        onLinkedWorkItemUpdateCardDismiss={onLinkedWorkItemUpdateCardDismiss}
-                        onNoteCardDismiss={onNoteCardDismiss}
-                        onHandoffCardDismiss={onHandoffCardDismiss}
-                        onOpenLinkedWorkItem={onOpenLinkedWorkItem}
-                        onArchiveSession={onArchiveSession}
-                        onDeleteSession={onDeleteSession}
-                        onApproval={onApproval}
-                        onQuestionReply={onQuestionReply}
-                        onQuestionInteraction={onQuestionInteraction}
-                        onOpenFile={onOpenFile}
-                        onOpenDiff={onOpenDiff}
-                        onOpenPlan={onOpenPlan}
-                        onBuildPlan={onBuildPlan}
-                        onSecondOpinion={onSecondOpinion}
-                        onHandoff={onHandoff}
-                        onBtwSubmit={onBtwSubmit}
-                        onBtwRetry={onBtwRetry}
-                        onBtwDelete={onBtwDelete}
-                        onBtwStop={onBtwStop}
-                        onBtwModelChange={onBtwModelChange}
-                        onNewTerminal={onNewTerminal}
-                        onRunProjectAction={onRunProjectAction}
-                        onRunCode={onRunCode}
-                        onPaneDragStart={onPaneDragStart}
-                        transcriptPool={transcriptPool}
-                      />
+                        outlet={
+                          visible && !hidden && focusedId === session.id ? sessionOutlet : undefined
+                        }
+                      >
+                        <SessionPane
+                          session={session}
+                          workspaceSwitchingSessionId={workspaceSwitchingSessionId}
+                          reviewUndoLocked={paneSessions.undoLocked.has(session.id)}
+                          visible={visible && !hidden}
+                          focused={focusedId === session.id}
+                          addToChatTarget={addToChatSessionId === session.id}
+                          inSplit={inSplit}
+                          composerFocused={composerFocused}
+                          composerFocusToken={composerFocusToken}
+                          recents={recents}
+                          hideProjectPicker={hideProjectPicker}
+                          onFocus={onFocus}
+                          onClose={onClose}
+                          onRemoteSnapshot={onRemoteSnapshot}
+                          onRefreshAdoptedSession={onRefreshAdoptedSession}
+                          onRetrySessionHistory={onRetrySessionHistory}
+                          onLoadSessionHistory={onLoadSessionHistory}
+                          onPrepareSessionHistory={onPrepareSessionHistory}
+                          onCwdChange={onCwdChange}
+                          onSessionMachineChange={onSessionMachineChange}
+                          onSessionMachinePickerTrigger={onSessionMachinePickerTrigger}
+                          onBranchChange={onBranchChange}
+                          onWorktreeChange={onWorktreeChange}
+                          onWorkspaceModeChange={onWorkspaceModeChange}
+                          onWorktreeBaseChange={onWorktreeBaseChange}
+                          onManageWorktrees={onManageWorktrees}
+                          onModelChange={onModelChange}
+                          onModelSettingsChange={onModelSettingsChange}
+                          onRuntimeModeChange={onRuntimeModeChange}
+                          onSaveDraft={onSaveDraft}
+                          onRemoveDraft={onRemoveDraft}
+                          onSubmit={onSubmit}
+                          onStop={onStop}
+                          onCompactContext={onCompactContext}
+                          onRewindMessage={onRewindMessage}
+                          onNewSession={onNewSession}
+                          onPlaceSessionInFolder={onPlaceSessionInFolder}
+                          onResumeProviderSession={onResumeProviderSession}
+                          onDeleteQueuedMessage={onDeleteQueuedMessage}
+                          onEditQueuedMessage={onEditQueuedMessage}
+                          onQueuedMessageEditingChange={onQueuedMessageEditingChange}
+                          onReorderQueuedMessages={onReorderQueuedMessages}
+                          onSteerQueuedMessage={onSteerQueuedMessage}
+                          onResumeQueue={onResumeQueue}
+                          onUsageLimitResume={onUsageLimitResume}
+                          onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
+                          onUsageLimitDismiss={onUsageLimitDismiss}
+                          onSelectProviderAccount={onSelectProviderAccount}
+                          onInboxCardDismiss={onInboxCardDismiss}
+                          onLinkedWorkItemUpdateCardDismiss={onLinkedWorkItemUpdateCardDismiss}
+                          onNoteCardDismiss={onNoteCardDismiss}
+                          onHandoffCardDismiss={onHandoffCardDismiss}
+                          onOpenLinkedWorkItem={onOpenLinkedWorkItem}
+                          onArchiveSession={onArchiveSession}
+                          onDeleteSession={onDeleteSession}
+                          onApproval={onApproval}
+                          onQuestionReply={onQuestionReply}
+                          onQuestionInteraction={onQuestionInteraction}
+                          onOpenFile={onOpenFile}
+                          onOpenDiff={onOpenDiff}
+                          onOpenPlan={onOpenPlan}
+                          onBuildPlan={onBuildPlan}
+                          onSecondOpinion={onSecondOpinion}
+                          onHandoff={onHandoff}
+                          onBtwSubmit={onBtwSubmit}
+                          onBtwRetry={onBtwRetry}
+                          onBtwDelete={onBtwDelete}
+                          onBtwStop={onBtwStop}
+                          onBtwModelChange={onBtwModelChange}
+                          onNewTerminal={onNewTerminal}
+                          onRunProjectAction={onRunProjectAction}
+                          onRunCode={onRunCode}
+                          onPaneDragStart={onPaneDragStart}
+                          transcriptPool={transcriptPool}
+                        />
+                      </SessionPanePlacement>
                     </RecoveryBoundary>
                   ) : null}
                 </MediaVisibilityContext.Provider>
@@ -966,6 +988,48 @@ export function PaneTree(props: Props) {
 function sameProps(a: Props, b: Props): boolean {
   const keys = Object.keys(a) as (keyof Props)[];
   return keys.length === Object.keys(b).length && keys.every((key) => Object.is(a[key], b[key]));
+}
+
+function SessionPanePlacement({
+  session,
+  outlet,
+  children,
+}: {
+  session: Session;
+  outlet: Shared["sessionOutlet"];
+  children: ReactNode;
+}) {
+  const homeOverlay = useContext(OverlayParent);
+  const destination =
+    outlet?.sessionId === session.id && sameProjectPath(outlet.projectPath, session.cwd)
+      ? outlet
+      : undefined;
+  const { attachHome, host } = useMovablePortalHost(destination?.element);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Refreshes the artwork layer after the portal mounts or changes its owning pane.
+  useLayoutEffect(() => {
+    if (host)
+      syncPaneBackground(
+        host.closest<HTMLElement>("[data-pane-leaf]"),
+        host.querySelector<HTMLElement>(".chat-pane-background") ?? undefined,
+      );
+  }, [host, destination?.element]);
+  return (
+    <div className="contents" ref={attachHome}>
+      {host ? (
+        <OverlayParent.Provider value={destination ? destination.overlay : homeOverlay}>
+          <Portal target={host}>
+            <div
+              className="contents"
+              data-workspace-session-id={session.id}
+              data-session-project={session.cwd}
+            >
+              {children}
+            </div>
+          </Portal>
+        </OverlayParent.Provider>
+      ) : null}
+    </div>
+  );
 }
 
 type PaneSessions = {

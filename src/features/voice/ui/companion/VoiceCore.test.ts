@@ -133,5 +133,8 @@ it("shows the engine always and the session clock only while live", () => {
   expect(host.textContent).not.toContain("0:03");
   // The strip beside the transcript leaves the spoken line to the transcript.
   expect(host.querySelector('[data-layout="strip"] [data-size="stage"]')).toBeNull();
+  expect(
+    host.querySelector('[data-layout="strip"] [data-call-art="orb"][data-size="strip"]'),
+  ).not.toBeNull();
   expect(host.textContent).not.toContain("Latest spoken line");
 });

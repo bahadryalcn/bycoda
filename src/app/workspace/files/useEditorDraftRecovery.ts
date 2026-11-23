@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import {
+  hideEditorDraftRecovery,
   listEditorDraftRecovery,
   prepareEditorDraftRestore,
   type EditorDraftRecoveryMetadata,
@@ -31,6 +32,7 @@ export function useEditorDraftRecovery(dependencies: Dependencies) {
   });
   const mounted = useRef(false);
   const refreshing = useRef(false);
+  const hiding = useRef<string | null>(null);
   const intentions = useRef(
     new Map<string, { documentId: string; opened?: boolean; pending?: Promise<void> }>(),
   );
@@ -41,7 +43,7 @@ export function useEditorDraftRecovery(dependencies: Dependencies) {
   const [errors, setErrors] = useState<ReadonlySet<string>>(new Set());
   const available = isTauri() && dependencies.enabled !== false;
   const refresh = useCallback(async () => {
-    if (!available || refreshing.current || !mounted.current) return;
+    if (!available || refreshing.current || hiding.current || !mounted.current) return;
     refreshing.current = true;
     setLoading(true);
     try {
@@ -87,6 +89,8 @@ export function useEditorDraftRecovery(dependencies: Dependencies) {
         return Promise.reject(new Error("Recovery path unavailable"));
       const source = sourceOf(record);
       const key = editorDraftRecoveryKey(source);
+      if (hiding.current === key)
+        return Promise.reject(new Error("Recovery visibility change pending"));
       let intention = intentions.current.get(key);
       if (intention?.pending) return intention.pending;
       if (intention?.opened && !latest.current.isTargetOpen(intention.documentId)) {
@@ -146,5 +150,44 @@ export function useEditorDraftRecovery(dependencies: Dependencies) {
     },
     [available],
   );
-  return { available, records, loading, error, refresh, restore, pendingKeys, errors };
+  const hide = useCallback(
+    async (record: EditorDraftRecoveryMetadata) => {
+      const source = sourceOf(record);
+      const key = editorDraftRecoveryKey(source);
+      if (
+        !available ||
+        !mounted.current ||
+        latest.current.enabled === false ||
+        !latest.current.allowPath(record.path) ||
+        refreshing.current ||
+        hiding.current ||
+        intentions.current.get(key)?.pending
+      )
+        throw new Error("Recovery copy unavailable");
+      hiding.current = key;
+      setPendingKeys((previous) => new Set(previous).add(key));
+      try {
+        await hideEditorDraftRecovery(source);
+        intentions.current.delete(key);
+        if (mounted.current) {
+          setRecords((previous) => previous.filter((row) => editorDraftRecoveryKey(row) !== key));
+          setErrors((previous) => {
+            const next = new Set(previous);
+            next.delete(key);
+            return next;
+          });
+        }
+      } finally {
+        hiding.current = null;
+        if (mounted.current)
+          setPendingKeys((previous) => {
+            const next = new Set(previous);
+            next.delete(key);
+            return next;
+          });
+      }
+    },
+    [available],
+  );
+  return { available, records, loading, error, refresh, restore, hide, pendingKeys, errors };
 }

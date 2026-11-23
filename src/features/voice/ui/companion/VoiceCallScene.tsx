@@ -20,12 +20,14 @@ export function VoiceCallScene({
   level,
   className,
   expanded = false,
+  size = "stage",
 }: {
   part: "orb" | "backdrop";
   state: VoiceCallArtworkState;
   level: { readonly current: number };
   className?: string;
   expanded?: boolean;
+  size?: "stage" | "strip";
 }) {
   const element = useRef<HTMLCanvasElement>(null);
   const previousState = useRef<VoiceCallArtworkState>(undefined);
@@ -146,7 +148,7 @@ export function VoiceCallScene({
       data-call-art={part}
       data-state={state}
       data-expanded={expanded || undefined}
-      data-size={part === "orb" ? "stage" : undefined}
+      data-size={part === "orb" ? size : undefined}
       className={part === "orb" ? styles.callOrb : className}
     />
   );

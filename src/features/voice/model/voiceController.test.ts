@@ -730,3 +730,32 @@ it("passes a request ID only to workspace actions whose schema accepts it", asyn
     ["workspace.sessions.create", { projectPath: "/a", requestId: "create-session" }],
   ]);
 });
+it("binds an optional workspace projectPath to the project only outside Global scope", async () => {
+  const { controller, ports, workspace } = setup();
+  workspace.tools.push({
+    name: "workspace.usage.report",
+    description: "Usage",
+    parameters: { type: "object", properties: { period: {}, projectPath: {} } },
+  } as never);
+  const call = (requestId: string, input: Record<string, unknown> = { period: "month-to-date" }) =>
+    controller.execute("app_tool_call", {
+      family: "workspace",
+      action: "workspace.usage.report",
+      input,
+      requestId,
+    });
+  await call("global");
+  expect(workspace.execute).toHaveBeenLastCalledWith("workspace.usage.report", {
+    period: "month-to-date",
+  });
+  ports.getScope = () => "project";
+  controller.captureTurn();
+  await call("project");
+  expect(workspace.execute).toHaveBeenLastCalledWith("workspace.usage.report", {
+    projectPath: "/a",
+    period: "month-to-date",
+  });
+  await expect(call("other", { period: "month-to-date", projectPath: "/b" })).rejects.toThrow(
+    "another project",
+  );
+});

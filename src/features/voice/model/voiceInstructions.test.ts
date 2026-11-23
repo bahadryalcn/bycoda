@@ -10,6 +10,7 @@ vi.mock("../../../integrations/harness", () => ({
 vi.mock("../../../platform/tauri/fs", () => ({ homeDir: vi.fn(async () => "/home") }));
 import { converseWithAssistant } from "./voiceAssistant";
 import { VOICE_SHARED_POLICY, voiceInstructions } from "./voiceInstructions";
+import { buildVoicePrompt } from "./voicePrompt";
 
 beforeEach(() => run.mockReset());
 
@@ -32,6 +33,19 @@ it("uses the same policy text in the realtime and local prompts", async () => {
   expect(run.mock.calls[0]![0].prompt).toContain(VOICE_SHARED_POLICY);
   expect(voiceInstructions("en")).toContain(VOICE_SHARED_POLICY);
   expect(VOICE_SHARED_POLICY).toContain("give_jobs");
+});
+
+it("keeps absolute paths out of spoken replies by default on every route", () => {
+  for (const prompt of [
+    voiceInstructions("tr"),
+    VOICE_SHARED_POLICY,
+    buildVoicePrompt({}, "", []),
+  ]) {
+    expect(prompt).toContain(
+      "Only say an absolute filesystem path if the owner explicitly asks for the full path.",
+    );
+    expect(prompt).toContain("Use the project, folder, or file name in spoken replies");
+  }
 });
 
 it("tells the assistant to ask instead of going silent after a failure or a dropped turn", async () => {

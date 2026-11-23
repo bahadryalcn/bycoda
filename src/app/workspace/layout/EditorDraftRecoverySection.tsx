@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -7,7 +7,9 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LiveText } from "../../../shared/ui/LiveText";
-import { RefreshCw, Search } from "../../../shared/ui/icons";
+import { EyeOff, File, RefreshCw, Search } from "../../../shared/ui/icons";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { useT } from "../../../shared/i18n";
 import { formatRelative } from "../../../features/sessions/model/recentSessions";
 import { basename } from "../../../platform/tauri/fs";
@@ -25,6 +27,9 @@ export type EditorDraftRecoverySectionProps = {
 };
 export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRecoverySectionProps) {
   const t = useT();
+  const { confirm, dialog } = useConfirm();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [announcement, setAnnouncement] = useState("");
   const now = useMinuteNow();
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<"unsaved" | "all">("unsaved");
@@ -37,6 +42,28 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
   const rows = scoped
     .filter((row) => `${row.path} ${row.windowLabel}`.toLocaleLowerCase().includes(needle))
     .sort((a, b) => b.updatedAt - a.updatedAt || a.path.localeCompare(b.path));
+  const confirmHide = async (row: EditorDraftRecoveryMetadata) => {
+    const hidden = await confirm({
+      title: t("Hide recovery copy?"),
+      message: t("The copy stays saved and will disappear from this list."),
+      details: row.path,
+      confirmLabel: t("Hide from list"),
+      danger: false,
+      onConfirm: async () => {
+        try {
+          await recovery.hide(row);
+        } catch (error) {
+          if (error === "NATIVE_EDITOR_DRAFT_REVISION_CONFLICT")
+            throw new Error(t("This copy changed. Refresh the list before hiding it."));
+          throw new Error(t("Could not hide the recovery copy. Try again."));
+        }
+      },
+    });
+    if (hidden) {
+      setAnnouncement(t("Recovery copy hidden."));
+      requestAnimationFrame(() => searchRef.current?.focus());
+    }
+  };
   return (
     <section className="recovery-pane" aria-label={t("File recovery copies")}>
       <div className="recovery-toolbar">
@@ -52,6 +79,7 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
         <SearchInputGroup appearance="field" className="recovery-toolbar-search">
           <Search className="icon-sm shrink-0" aria-hidden="true" />
           <SearchInput
+            ref={searchRef}
             focusOwner="group"
             aria-label={t("Search file recovery copies")}
             placeholder={t("Filter by file name or window")}
@@ -63,6 +91,7 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
           variant="ghost"
           iconOnly
           label={t("Refresh copies")}
+          disabled={recovery.pendingKeys.size > 0}
           loading={recovery.loading}
           onClick={() => void recovery.refresh()}
         >
@@ -91,65 +120,72 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
           </Button>
         </Alert>
       ) : null}
-      <div className="recovery-body">
+      {announcement ? <LiveText text={announcement} className="sr-only" /> : null}
+      <div className="recovery-body file-recovery-body">
         {rows.length ? (
           <ul {...surfaceAttributes({ dividers: "pane" })}>
             {rows.map((row) => {
               const key = editorDraftRecoveryKey(row);
               const pending = recovery.pendingKeys.has(key);
               const failed = recovery.errors.has(key);
+              const fileName = basename(row.path);
               const isUnsaved =
                 row.state !== "save-reported" && row.serializedTextDigest !== row.baselineDigest;
               return (
-                <li key={key} className="flex flex-wrap items-start gap-2 py-2">
-                  <div className="min-w-0 basis-48 flex-1">
-                    <Text
-                      as="p"
-                      size="secondary"
-                      tone="inherit"
-                      weight="medium"
-                      className="break-words"
-                    >
-                      {basename(row.path)}
-                    </Text>
-                    <Text
-                      as="p"
-                      size="caption"
-                      tone="secondary"
-                      className="select-text [overflow-wrap:anywhere]"
-                    >
-                      {row.path}
-                    </Text>
-                    <Text as="p" size="caption" tone="secondary">
-                      <Text
-                        size="inherit"
-                        tone={isUnsaved ? "warning" : "inherit"}
-                        weight={isUnsaved ? "medium" : undefined}
-                      >
-                        {row.state === "save-reported"
-                          ? t("Save reported")
-                          : row.serializedTextDigest === row.baselineDigest
-                            ? t("Matches captured disk baseline")
-                            : t("Unsaved draft")}
-                      </Text>{" "}
-                      · {row.windowLabel} · {formatRelative(row.updatedAt, now)}
-                    </Text>
-                    {failed ? (
-                      <InlineError>
-                        {t(
-                          "The copy could not be opened. Retry uses the same prepared copy; refresh if the source changed.",
-                        )}
-                      </InlineError>
-                    ) : null}
+                <li key={key} className="file-recovery-row">
+                  <div className="file-recovery-detail">
+                    <File className="file-recovery-icon icon-sm" aria-hidden="true" />
+                    <div className="min-w-0">
+                      <Text as="p" size="secondary" tone="inherit" weight="medium">
+                        <MiddleTruncate>{fileName}</MiddleTruncate>
+                      </Text>
+                      <p className="select-text">
+                        <MiddleTruncate size="caption" tone="secondary" mode="path">
+                          {row.path.slice(0, row.path.length - fileName.length)}
+                        </MiddleTruncate>
+                      </p>
+                      <Text as="p" size="caption" tone="secondary">
+                        <Text
+                          size="inherit"
+                          tone={isUnsaved ? "warning" : "inherit"}
+                          weight={isUnsaved ? "medium" : undefined}
+                        >
+                          {row.state === "save-reported"
+                            ? t("Save reported")
+                            : row.serializedTextDigest === row.baselineDigest
+                              ? t("Matches disk snapshot")
+                              : t("Unsaved draft")}
+                        </Text>{" "}
+                        · {row.windowLabel} · {formatRelative(row.updatedAt, now)}
+                      </Text>
+                      {failed ? (
+                        <InlineError>
+                          {t(
+                            "The copy could not be opened. Retry uses the same prepared copy; refresh if the source changed.",
+                          )}
+                        </InlineError>
+                      ) : null}
+                    </div>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    loading={pending}
-                    onClick={() => void recovery.restore(row).catch(() => {})}
-                  >
-                    {failed ? t("Retry opening copy") : t("Open copy in new tab")}
-                  </Button>
+                  <div className="file-recovery-actions">
+                    <Button
+                      variant="secondary"
+                      aria-label={failed ? t("Retry opening copy") : t("Open copy in new tab")}
+                      loading={pending}
+                      onClick={() => void recovery.restore(row).catch(() => {})}
+                    >
+                      {failed ? t("Retry") : t("Open")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      iconOnly
+                      label={t("Hide from list")}
+                      disabled={pending || recovery.loading}
+                      onClick={() => void confirmHide(row).catch(() => {})}
+                    >
+                      <EyeOff className="icon-sm" />
+                    </Button>
+                  </div>
                 </li>
               );
             })}
@@ -190,13 +226,7 @@ export function EditorDraftRecoverySection({ recovery, records }: EditorDraftRec
           />
         )}
       </div>
-      <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "recovery-footer")}>
-        <Text as="p" size="caption" tone="secondary">
-          {t(
-            "Open a separate unsaved file tab. The original recovery copy stays available; files are not written until you save.",
-          )}
-        </Text>
-      </div>
+      {dialog}
     </section>
   );
 }

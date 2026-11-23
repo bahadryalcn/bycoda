@@ -49,6 +49,10 @@ export type VoiceCompanionViewProps = {
   compact: boolean;
   fullScreen?: boolean;
   workPanel?: ReactNode;
+  showWorkPanel?: boolean;
+  workPanelRequest?: number;
+  workPanelRef?: RefObject<HTMLDivElement | null>;
+  workPanelLabel?: string;
   onToggleWorkPanel?: () => void;
   workPanelToggleRef?: RefObject<HTMLButtonElement | null>;
   onToggleFullScreen?: () => void;
@@ -64,7 +68,6 @@ export type VoiceCompanionViewProps = {
   title: string;
   /** Assistant name and avatar for the stage; the name is empty before setup. */
   name: string;
-  avatar: string | undefined;
   scopeTitle: string;
   targetTitle?: string;
   summary: string;
@@ -134,9 +137,12 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   );
   // Like the phone call screen: a large stage by default, the transcript on request. Kept here,
   // above the compact switch, so the choice survives collapsing the panel.
-  const [chatRequested, setChatShown] = useState(false);
+  const [chatRequest, setChatRequest] = useState<{ workPanelRequest?: number }>();
+  const setChatShown = (show: boolean) =>
+    setChatRequest(show ? { workPanelRequest: p.workPanelRequest } : undefined);
   const canShowDrawers = !p.fullScreen || (!p.choice && !p.jobReview);
-  const chatShown = chatRequested && canShowDrawers;
+  const chatShown =
+    Boolean(chatRequest) && chatRequest?.workPanelRequest === p.workPanelRequest && canShowDrawers;
   const chatToggle = useRef<HTMLButtonElement>(null);
   const chatPanel = useRef<HTMLElement>(null);
   const closeChat = () => {
@@ -147,10 +153,11 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   const chatPanelId = useId();
   const chatLabelId = useId();
   const workPanelId = useId();
-  const artwork = p.fullScreen ? callArtworkState(p.status, p.visualState, p.phase) : p.visualState;
+  const workPanelShown = p.showWorkPanel ?? Boolean(p.workPanel);
+  const artwork = callArtworkState(p.status, p.visualState, p.phase);
   const drawerMotion = motionAttributes(
     {
-      enter: canShowDrawers && p.workPanel && !chatShown ? "right" : undefined,
+      enter: canShowDrawers && workPanelShown && !chatShown ? "right" : undefined,
       duration: "standard",
     },
     styles.workDrawer,
@@ -158,15 +165,13 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   const caption = p.chatTurns[p.chatTurns.length - 1]?.text ?? "";
   return (
     <>
-      {!p.compact && (p.fullScreen || !chatShown) && (
-        <VoiceCallScene
-          part="backdrop"
-          state={artwork}
-          level={audioLevel}
-          className={styles.stageLight}
-          expanded={p.fullScreen}
-        />
-      )}
+      <VoiceCallScene
+        part="backdrop"
+        state={artwork}
+        level={audioLevel}
+        className={styles.stageLight}
+        expanded={p.fullScreen}
+      />
       <header
         {...surfaceAttributes(
           { frame: p.compact ? "none" : p.error ? "danger" : "pane", edge: "block-end" },
@@ -186,7 +191,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               when={p.targetTitle && p.targetTitle !== p.scopeTitle ? "always" : "overflow"}
             >
               <SectionLabel as="h2" className={styles.title}>
-                {p.title} · {p.scopeTitle}
+                {p.name || p.title} · {p.scopeTitle}
               </SectionLabel>
             </Tooltip>
             <OverflowTooltip label={p.summary}>
@@ -275,15 +280,15 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
                 ref={p.workPanelToggleRef}
                 touchTarget="control"
                 iconOnly
-                label={t("Live results")}
-                aria-expanded={Boolean(p.workPanel) && !chatShown}
+                label={p.workPanelLabel ?? t("Live results")}
+                aria-expanded={workPanelShown && !chatShown}
                 aria-controls={workPanelId}
                 onClick={() => {
                   setChatShown(false);
-                  if (!chatShown || !p.workPanel) p.onToggleWorkPanel?.();
+                  if (!chatShown || !workPanelShown) p.onToggleWorkPanel?.();
                 }}
               >
-                {p.workPanel && !chatShown ? (
+                {workPanelShown && !chatShown ? (
                   <PanelRightClose className="icon-sm" />
                 ) : (
                   <PanelRight className="icon-sm" />
@@ -291,7 +296,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               </Button>
             ) : null}
             {p.resize}
-            {p.onToggleFullScreen && !p.fullScreen ? (
+            {p.onToggleFullScreen ? (
               <Button
                 touchTarget="control"
                 iconOnly
@@ -336,6 +341,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           <div
             className={styles.body}
             data-call-stage={p.fullScreen || !chatShown || undefined}
+            data-call-chat={(!p.fullScreen && chatShown) || undefined}
             data-call-live={live || undefined}
           >
             <VoiceCompanionStatus
@@ -351,8 +357,6 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               privacy={p.privacy}
               workspace={p.workspace}
               globalScope={p.globalScope}
-              name={p.name}
-              avatar={p.avatar}
               stage={Boolean(p.fullScreen) || !chatShown}
               caption={caption}
               onScopeChange={p.onScopeChange}
@@ -367,11 +371,11 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               text={[...new Set(p.error ? [voiceErrorTitle(p.error), p.error] : [])].join(": ")}
             />
             {p.recovery}
-            {p.fullScreen ? (
-              <>
+            {p.fullScreen && (p.choice || p.jobReview) ? (
+              <div className={styles.decision}>
                 {p.choice}
                 {p.jobReview}
-              </>
+              </div>
             ) : null}
             {p.pushHint ? (
               <Text as="p" size="caption" tone="secondary" leading="snug" className={parts.caption}>
@@ -424,7 +428,8 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           {p.fullScreen && (
             <div
               id={workPanelId}
-              hidden={!canShowDrawers || !p.workPanel || chatShown}
+              ref={p.workPanelRef}
+              hidden={!canShowDrawers || !workPanelShown || chatShown}
               {...drawerMotion}
               {...surfaceAttributes(
                 { variant: "opaque-canvas", frame: "pane", edge: "responsive-start" },

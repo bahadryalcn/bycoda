@@ -206,6 +206,7 @@ export function AdoptedSessionNotice({
     <div className="shrink-0 px-4 py-2">
       <Alert
         tone={attention ? "warning" : "info"}
+        actionsAlign={choosing ? "center" : undefined}
         {...noticeActions}
         extra={noticeActions.extra ?? failureDetails}
       >

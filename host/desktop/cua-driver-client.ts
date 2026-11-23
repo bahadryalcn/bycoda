@@ -41,6 +41,8 @@ function driverEnv(): NodeJS.ProcessEnv {
  * bumps `generation` and every earlier token becomes foreign. A cancelled call kills the process:
  * its delivery is unknown and nothing may reuse its state.
  */
+export class CuaDriverRestarted extends Error {}
+
 export class CuaDriverClient {
   generation = 0;
   private proc?: ChildProcess;
@@ -54,11 +56,13 @@ export class CuaDriverClient {
     binary: string,
     name: string,
     args: Record<string, unknown>,
-    options: { signal: AbortSignal },
+    options: { signal: AbortSignal; expectedGeneration?: number },
   ): Promise<CuaToolResult> {
     options.signal.throwIfAborted();
     if (this.binary !== binary) this.close();
     await this.start(binary, options.signal);
+    if (options.expectedGeneration !== undefined && options.expectedGeneration !== this.generation)
+      throw new CuaDriverRestarted("The desktop helper restarted; take a fresh snapshot.");
     return (await this.request(
       "tools/call",
       { name, arguments: args },

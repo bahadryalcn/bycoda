@@ -193,6 +193,72 @@ it.each(["get", "set", "clear"])(
     ).toMatchObject({ count: 0 });
   },
 );
+it("reuses an existing Cua Driver browser window and requires an exact ambiguous target", async () => {
+  const windows = [
+    { id: "chrome-work", title: "Work", app_name: "chrome.exe", pid: 7 },
+    { id: "chrome-personal", title: "Personal", app_name: "chrome.exe", pid: 8 },
+  ];
+  let inventoryAvailable = true;
+  const driver = vi.fn<DesktopRunner>(async (_binary, args) => {
+    const command = args[2];
+    if (command === "list-windows") {
+      if (!inventoryAvailable) throw new Error("Helper did not return inventory");
+      return envelope(command, windows);
+    }
+    if (command === "list-apps")
+      return envelope(command, {
+        apps: windows.map((window) => ({ name: window.app_name, pid: window.pid })),
+      });
+    if (command === "snapshot")
+      return envelope(command, {
+        app: "chrome.exe",
+        window: { id: "chrome-work" },
+        snapshot_id: "c1-s1",
+        complete: true,
+        tree: { role: "window", ref_id: "@c1-s1:e1" },
+      });
+    throw new Error(`Unexpected helper command: ${command}`);
+  });
+  const f = await setup({ platform: "win32", cuaRun: driver });
+  await f.request({
+    op: "configure",
+    expectedVersion: 0,
+    configuration: {
+      enabled: true,
+      binaryPath: f.binary,
+      binarySha256: f.digest,
+      allowedApps: ["chrome"],
+      allowPhysicalInput: true,
+      driver: "cua-driver",
+    },
+  });
+  expect((await f.request({ op: "status" })).status?.capabilities).toMatchObject({
+    driver: "cua-driver",
+    ready: true,
+    physicalInputEnabled: true,
+    unsupportedActions: expect.arrayContaining(["focus", "collapse"]),
+  });
+  expect(
+    await f.request({ op: "launch", requestId: "existing", app: "Chrome" }, agent),
+  ).toMatchObject({
+    operation: { ok: true, outcome: "window_reused", delivery: "not_delivered" },
+  });
+  expect((await f.request({ op: "windows.list", app: "Chrome" }, agent)).windows).toHaveLength(2);
+  await expect(f.request({ op: "snapshot", app: "Chrome" }, agent)).rejects.toThrow("ambiguous");
+  expect(
+    await f.request({ op: "snapshot", app: "Chrome", windowId: "chrome-work" }, agent),
+  ).toMatchObject({
+    snapshot: { windowId: "chrome-work" },
+  });
+  inventoryAvailable = false;
+  expect(
+    await f.request({ op: "launch", requestId: "unavailable", app: "Chrome" }, agent),
+  ).toMatchObject({
+    operation: { ok: false, delivery: "not_delivered", errorCode: "window_inventory_unavailable" },
+  });
+  expect(driver.mock.calls.some(([, args]) => ["launch", "click"].includes(args[2]))).toBe(false);
+});
+
 it("retires observed refs after an attempted launch or attach without granting fresh refs", async () => {
   const f = await setup();
   await f.configure();
@@ -203,7 +269,9 @@ it("retires observed refs after an attempted launch or attach without granting f
       { op: "act", requestId: "old-ref", snapshotId: "s1", ref: "@s1:e1", action: "click" },
       agent,
     ),
-  ).rejects.toThrow("stale");
+  ).resolves.toMatchObject({
+    operation: { errorCode: "stale_snapshot", delivery: "not_delivered" },
+  });
 });
 it("returns approved bounded text once, retaining only receipts/audit metadata through restart", async () => {
   const secret = 'Ayşe: "clipboard"\n--image=private';
@@ -778,10 +846,12 @@ it("binds exact qualified refs to the caller, app, process and configuration", a
     ref: "@s1:e1",
     action: "click",
   };
-  await expect(f.request(input)).rejects.toThrow("caller");
-  await expect(f.control.request({ ...input, ref: "@foreign:e1" }, agent)).rejects.toThrow(
-    "caller",
-  );
+  await expect(f.request(input)).resolves.toMatchObject({
+    operation: { errorCode: "stale_snapshot" },
+  });
+  await expect(f.control.request({ ...input, ref: "@foreign:e1" }, agent)).resolves.toMatchObject({
+    operation: { errorCode: "stale_snapshot" },
+  });
   const result = await f.control.request(input, agent);
   expect(result.operation).toMatchObject({
     state: "settled",
@@ -825,6 +895,14 @@ it("never repeats an uncertain mutation, including after a Host restart", async 
   expect((await f.control.request(input, agent)).operation!.state).toBe("unknown");
   await f.restart();
   expect((await f.control.request(input, agent)).operation!.state).toBe("unknown");
+  const canonical = { ...input, op: "act", action: "click" } as const;
+  await expect(f.control.actReceipt(canonical, agent, () => true)).resolves.toMatchObject({
+    state: "unknown",
+  });
+  await expect(f.control.actReceipt(canonical, agent, () => false)).rejects.toThrow("revoked");
+  await expect(
+    f.control.actReceipt({ ...canonical, action: "clear" }, agent, () => true),
+  ).rejects.toThrow("preserve");
   expect(mutations).toBe(1);
   await expect(f.control.request({ ...input, action: "clear" }, agent)).rejects.toThrow("preserve");
 });
@@ -854,7 +932,7 @@ it("never converts headless failure into headed input or treats permission confi
       },
       agent,
     ),
-  ).rejects.toThrow("grant");
+  ).resolves.toMatchObject({ operation: { errorCode: "physical_input_not_granted" } });
   await expect(
     f.control.request(
       {
@@ -867,7 +945,7 @@ it("never converts headless failure into headed input or treats permission confi
       },
       agent,
     ),
-  ).rejects.toThrow("grant");
+  ).resolves.toMatchObject({ operation: { errorCode: "foreground_required" } });
 });
 it("puts literal potentially flag-shaped text after the CLI option terminator", async () => {
   const f = await setup();
@@ -1024,10 +1102,14 @@ it.each([
   const f = await setup();
   await f.configure();
   await f.snapshot();
-  await expect(f.control.request(act({ action, ...extra }), agent)).rejects.toThrow("physical");
-  await expect(f.control.request(act({ action, ...extra, headed: true }), agent)).rejects.toThrow(
-    "Physical input is not granted",
-  );
+  await expect(f.control.request(act({ action, ...extra }), agent)).resolves.toMatchObject({
+    operation: { errorCode: "foreground_required", delivery: "not_delivered" },
+  });
+  await expect(
+    f.control.request(act({ action, ...extra, headed: true }), agent),
+  ).resolves.toMatchObject({
+    operation: { errorCode: "physical_input_not_granted", delivery: "not_delivered" },
+  });
   expect(f.calls.some((args) => args.includes(action))).toBe(false);
 });
 it("delivers hover, drag and focus-window headed through the same grant", async () => {
@@ -1262,7 +1344,9 @@ it("act returns a fresh snapshot and marks the consumed refs expired", async () 
   const result = await f.control.request(act, agent);
   expect(result.refsExpired).toBe(true);
   expect(result.next).toMatchObject({ snapshotId: "s2", app: "Notepad" });
-  await expect(f.control.request({ ...act, requestId: "a2" }, agent)).rejects.toThrow("stale");
+  await expect(f.control.request({ ...act, requestId: "a2" }, agent)).resolves.toMatchObject({
+    operation: { errorCode: "stale_snapshot", delivery: "not_delivered" },
+  });
   const fresh = await f.control.request(
     { ...act, requestId: "a3", snapshotId: "s2", ref: "@s2:e2" },
     agent,

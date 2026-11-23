@@ -10,6 +10,191 @@ const workViewports = [
 ] as const;
 type FixtureVoice = typeof import("./voice-visual-styles-mocks").fixtureVoice;
 
+test("voice opens the explicitly requested project in the real session drawer", async ({
+  page,
+}) => {
+  test.setTimeout(30000);
+  await page.goto("/tests/browser/voice/voice-visual-styles.html?navigation&session-outlet");
+  const second = page.locator('[data-session-drop="fixture-next"]');
+  const initial = await second.elementHandle();
+  const draft = second.locator("[data-composer-box] textarea");
+  await draft.fill("Keep my draft in the second project.");
+  await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+  const panel = page.locator("section[data-voice-state]");
+  await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+  await page.evaluate(() => {
+    (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech(
+      "Open the second project's session beside Arif.",
+    );
+  });
+  await expect(panel.locator('[data-session-drop="fixture-next"]')).toBeVisible();
+  await expect(panel.locator('[data-session-drop="fixture"]')).toHaveCount(0);
+  expect(await initial?.evaluate((element) => Boolean(element.closest("[data-work-panel]")))).toBe(
+    true,
+  );
+  await expect(draft).toHaveValue("Keep my draft in the second project.");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.observations[0],
+      ),
+    )
+    .toMatchObject({
+      status: "completed",
+      projectPath: "/fixture-next",
+      sessionId: "fixture-next",
+    });
+  await panel.getByRole("button", { name: "Sessions", exact: true }).click();
+  await expect(panel.locator('[data-session-drop="fixture-next"]')).toHaveCount(0);
+  await expect(draft).toHaveValue("Keep my draft in the second project.");
+  expect(await initial?.evaluate((element) => element.isConnected)).toBe(true);
+  await panel.getByRole("button", { name: "Sessions", exact: true }).click();
+  await expect(panel.locator('[data-session-drop="fixture-next"]')).toBeVisible();
+  await expect(draft).toHaveValue("Keep my draft in the second project.");
+  await page.evaluate(() => {
+    (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech(
+      "Open the second project's session in the project workspace.",
+    );
+  });
+  await expect(panel).not.toHaveAttribute("data-full-screen");
+  await expect(panel.locator('[data-session-drop="fixture-next"]')).toHaveCount(0);
+  await expect(second).toBeVisible();
+  await expect(draft).toHaveValue("Keep my draft in the second project.");
+  expect(await initial?.evaluate((element) => element.isConnected)).toBe(true);
+});
+
+for (const [theme, width] of workViewports) {
+  test(`voice Usage tool draws provider and model totals ${theme} ${width}`, async ({ page }) => {
+    const directory = join(process.cwd(), "temp/verification/arif-voice-routing/usage");
+    await mkdir(directory, { recursive: true });
+    await page.setViewportSize({ width, height: 800 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?global&usage&theme=${theme}`);
+    await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+    const panel = page.locator("section[data-voice-state]");
+    await panel.getByRole("button", { name: "Full screen", exact: true }).click();
+    await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+    const drawer = panel.getByRole("region", { name: "Live results", exact: true });
+    const speech = (line: string) =>
+      page.evaluate((text) => {
+        (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech(text);
+      }, line);
+    await speech("Show this month's usage.");
+    await expect(drawer.getByRole("heading", { name: "Usage · This month" })).toBeVisible();
+    await expect(drawer.getByText("$10.00", { exact: true })).toBeVisible();
+    await expect(drawer.getByText("800", { exact: true })).toBeVisible();
+    for (const [name, rows] of [
+      [
+        "Providers",
+        [
+          ["Codex", "$7.50"],
+          ["Claude", "$2.50"],
+        ],
+      ],
+      [
+        "Models",
+        [
+          ["GPT Fixture", "$7.50"],
+          ["Sonnet Fixture", "$2.50"],
+        ],
+      ],
+    ] as const) {
+      const figure = drawer.locator("figure").filter({ hasText: name });
+      await expect(figure).toBeVisible();
+      for (const [label, value] of rows) {
+        const row = figure.getByRole("row", { name: new RegExp(label), includeHidden: true });
+        await expect(row.getByText(value, { exact: true })).toHaveCount(1);
+      }
+    }
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const fixture = (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!;
+          return { reads: fixture.actions, submits: fixture.submits, jobs: fixture.jobs.length };
+        }),
+      )
+      .toEqual({ reads: ["usage:month-to-date:cost"], submits: 0, jobs: 0 });
+    await panel.screenshot({ path: join(directory, `${theme}-${width}-report.png`) });
+    const models = drawer.locator("figure").filter({ hasText: "Models" });
+    await models.scrollIntoViewIfNeeded();
+    await expect(models.getByText("GPT Fixture", { exact: true }).first()).toBeInViewport();
+    if (width === 800)
+      await panel.screenshot({ path: join(directory, `${theme}-${width}-models.png`) });
+    await speech("Show the last 30 days of usage.");
+    await expect(drawer.getByRole("heading", { name: "Usage · Last 30 days" })).toBeVisible();
+    await expect(drawer.getByText("No records", { exact: true })).toBeVisible();
+    await expect(drawer.locator("figure")).toHaveCount(0);
+    await panel.screenshot({ path: join(directory, `${theme}-${width}-empty.png`) });
+  });
+}
+
+for (const [theme, width] of workViewports) {
+  test(`windowed voice chat shares the call design ${theme} ${width}`, async ({ page }) => {
+    const directory = join(captures, "windowed-chat");
+    await mkdir(directory, { recursive: true });
+    await page.setViewportSize({ width, height: 800 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?global&theme=${theme}`);
+    await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+    const panel = page.locator("section[data-voice-state]");
+    await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+    await page.evaluate(() => {
+      (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech(
+        "What can I do in this project?",
+      );
+    });
+    await panel.getByRole("button", { name: "Conversation", exact: true }).click();
+    const transcript = panel.getByRole("list", { name: "Conversation" });
+    await expect(transcript.getByText("What can I do in this project?")).toBeVisible();
+    await expect(transcript.getByText("The fixture project is available.")).toBeVisible();
+    const strip = panel.locator('[data-layout="strip"]');
+    await expect(strip.locator('canvas[data-call-art="orb"][data-size="strip"]')).toBeVisible();
+    await expect(panel.locator('canvas[data-call-art="backdrop"]')).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Mute microphone", exact: true })).toBeVisible();
+    await panel.screenshot({ path: join(directory, `${theme}-${width}.png`) });
+  });
+}
+
+for (const [theme, width] of workViewports) {
+  test(`voice changes the view without reconnecting ${theme} ${width}`, async ({ page }) => {
+    const directory = join(captures, "view-modes");
+    await mkdir(directory, { recursive: true });
+    await page.setViewportSize({ width, height: 800 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?global&theme=${theme}`);
+    await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+    const panel = page.locator("section[data-voice-state]");
+    await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+    const speak = (mode: string) =>
+      page.evaluate((value) => {
+        (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech(
+          `switch voice view to ${value}`,
+        );
+      }, mode);
+    await page.evaluate(() => {
+      (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech(
+        "show live results full screen",
+      );
+    });
+    await expect(panel).toHaveAttribute("data-full-screen", "true");
+    await expect(panel.getByRole("heading", { name: "Test results", exact: true })).toBeVisible();
+    await speak("mini");
+    await expect(panel).toHaveAttribute("data-compact", "true");
+    await expect(panel).not.toHaveAttribute("data-full-screen");
+    await expect(panel.locator('canvas[data-call-art="backdrop"]')).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Mute microphone", exact: true })).toBeVisible();
+    await panel.screenshot({ path: join(directory, `${theme}-${width}-mini.png`) });
+    await speak("window");
+    await expect(panel).not.toHaveAttribute("data-compact");
+    await expect(panel).not.toHaveAttribute("data-full-screen");
+    const connection = await page.evaluate(() => {
+      const voice = (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!;
+      return { connects: voice.connects, closes: voice.closes };
+    });
+    expect(connection).toEqual({ connects: 1, closes: 0 });
+  });
+}
+
 for (const [theme, width] of workViewports) {
   test(`fullscreen call keeps controls and shows Chat and live results on demand ${theme} ${width}`, async ({
     page,
@@ -70,6 +255,11 @@ for (const [theme, width] of workViewports) {
     });
     await expect(resultHeading).toBeVisible();
     await expect(results.getByText("Two packages finished.")).toBeVisible();
+    await expect(
+      panel.getByText(
+        /The accepted owner turn has not been saved yet|This fixture does not mutate assistant state/,
+      ),
+    ).toHaveCount(0);
     const chartLabels = results.locator('div[aria-hidden="true"] > span');
     await expect(chartLabels.and(results.getByText("Web", { exact: true }))).toBeVisible();
     await expect(chartLabels.and(results.getByText("Host", { exact: true }))).toBeVisible();
@@ -86,6 +276,53 @@ for (const [theme, width] of workViewports) {
     await expect(resultHeading).toBeVisible();
   });
 }
+for (const [theme, width] of workViewports) {
+  test(`fullscreen voice centers the caption and Room notice ${theme} ${width}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global`);
+    await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+    const panel = page.locator("section[data-voice-state]");
+    await panel.getByRole("button", { name: "Full screen", exact: true }).click();
+    await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+    const scope = panel.getByRole("radio", { name: "Global", exact: true });
+    const disconnect = panel.getByRole("button", { name: "Disconnect voice", exact: true });
+    await expect(disconnect).toBeVisible();
+    const controlsBefore = await disconnect.boundingBox();
+    await page.evaluate(() => {
+      (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech("show choices");
+    });
+    const notice = panel.getByText(
+      "This choice could not be saved in the Room. Keep voice open to answer.",
+      { exact: true },
+    );
+    const caption = panel.getByText("show choices", { exact: true });
+    await expect(notice).toBeVisible();
+    await expect(caption).toBeVisible();
+    await mkdir(captures, { recursive: true });
+    await panel.screenshot({
+      path: join(captures, `${theme}-${width}-fullscreen-room-notice.png`),
+    });
+    await expect(scope).toBeVisible();
+    expect(await disconnect.boundingBox()).toEqual(controlsBefore);
+    const bounds = (await panel.boundingBox())!;
+    const center = bounds.x + bounds.width / 2;
+    for (const line of [caption, notice]) {
+      const textCenter = await line.evaluate((node) => {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const rect = range.getBoundingClientRect();
+        return rect.x + rect.width / 2;
+      });
+      expect(Math.abs(textCenter - center)).toBeLessThan(2);
+    }
+    const answer = panel.getByRole("button", { name: "Send answer", exact: true });
+    await expect(answer).toBeInViewport({ ratio: 1 });
+  });
+}
+
 test("fullscreen voice questions stay accessible with Chat open on a narrow window", async ({
   page,
 }) => {
@@ -760,12 +997,17 @@ test("wake phrase status and toggle stay with the assistant avatar", async ({ pa
 });
 
 for (const theme of ["light", "dark"]) {
-  for (const width of [1280, 800]) {
-    test(`wake phrase quick settings ${theme} ${width}`, async ({ page }) => {
+  for (const { width, compact } of [
+    { width: 1280, compact: false },
+    { width: 1280, compact: true },
+    { width: 800, compact: true },
+  ]) {
+    const rail = compact ? "compact" : "expanded";
+    test(`wake phrase quick settings ${rail} rail ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 620 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(
-        `/tests/browser/voice/voice-visual-styles.html?wake-quick-settings=error&theme=${theme}${width === 800 ? "&compact-rail" : ""}`,
+        `/tests/browser/voice/voice-visual-styles.html?wake-quick-settings=error&theme=${theme}${compact ? "&compact-rail" : ""}`,
       );
       const slot = page.locator("[data-voice-launcher-slot]");
       const launcher = slot.getByRole("button", { name: "Talk to Arif", exact: true });
@@ -777,7 +1019,7 @@ for (const theme of ["light", "dark"]) {
       await expect(group.getByRole("button")).toHaveCount(2);
       const primaryBox = (await launcher.boundingBox())!;
       const settingsBox = (await trigger.boundingBox())!;
-      if (width === 800) {
+      if (compact) {
         expect(settingsBox.y).toBeCloseTo(primaryBox.y + primaryBox.height, 0);
         expect(settingsBox.x + settingsBox.width / 2).toBeCloseTo(
           primaryBox.x + primaryBox.width / 2,
@@ -795,21 +1037,24 @@ for (const theme of ["light", "dark"]) {
       expect(settingsBox.height).toBe(24);
       await expect(trigger.locator("svg")).toHaveCSS("inline-size", "12px");
       await expect(group).toHaveAttribute("data-surface", "transparent");
-      if (width === 800) expect((await group.boundingBox())!.width).toBeLessThanOrEqual(56);
+      if (compact) expect((await group.boundingBox())!.width).toBeLessThanOrEqual(56);
       await trigger.click();
       await popup.getByRole("switch", { name: "Wake and sleep phrases" }).click();
       await expect(popup.getByText(message)).toBeInViewport({ ratio: 1 });
       await expect(slot.locator('[data-wake-status="error"][data-tone="warning"]')).toBeVisible();
-      const directory = join(process.cwd(), "temp/verification/voice-launcher-compact");
+      const directory = join(process.cwd(), "temp/verification/arif-voice-routing/sidebar");
       await mkdir(directory, { recursive: true });
       const clip = { x: 0, y: 440, width: 320, height: 180 };
-      await page.screenshot({ path: join(directory, `${theme}-${width}-open.png`), clip });
+      await page.screenshot({ path: join(directory, `${rail}-${theme}-${width}-open.png`), clip });
       await page.keyboard.press("Escape");
       await expect(page.getByText(message)).toHaveCount(0);
       await page.mouse.move(width / 2, 600);
-      await page.screenshot({ path: join(directory, `${theme}-${width}-closed.png`), clip });
+      await page.screenshot({
+        path: join(directory, `${rail}-${theme}-${width}-closed.png`),
+        clip,
+      });
 
-      if (width === 800) {
+      if (compact) {
         await page
           .locator("html")
           .evaluate((html) => (html.dataset.controlDensity = "comfortable"));

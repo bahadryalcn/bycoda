@@ -2,6 +2,12 @@ import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 import { sameProjectPath } from "../../projects/public/recents";
 import type { TodayData } from "../../today";
 import type { VoiceWorkspaceProject, VoiceWorkspaceResult } from "./voiceWorkspaceActions";
+import {
+  isVoiceUsageAction,
+  runVoiceUsage,
+  voiceUsageTools,
+  type VoiceUsageDeps,
+} from "./voiceWorkspaceUsage";
 
 /** Renderer-side navigation and bounded reads. Nothing here selects, opens or sends work. */
 export type VoiceInspectSearchHit = {
@@ -36,6 +42,8 @@ export type VoiceWorkspaceInspectDeps = {
     error?: string;
     partial?: boolean;
   }>;
+  /** Read-only Usage report and dashboard navigation; see `voiceWorkspaceUsage.ts`. */
+  usage?: VoiceUsageDeps;
 };
 
 export const VOICE_SEARCH_MAX = 20;
@@ -117,6 +125,8 @@ export function createVoiceInspect(registry: {
     ctx: { projects: readonly VoiceWorkspaceProject[]; deps: VoiceWorkspaceInspectDeps },
   ): Promise<VoiceWorkspaceResult> {
     const { deps } = ctx;
+    if (isVoiceUsageAction(action))
+      return runVoiceUsage(action, args, { projects: ctx.projects, deps: deps.usage ?? {} });
     if (action === "workspace.views.open") {
       const view = args.view;
       if (typeof view !== "string" || !registry.views.includes(view))
@@ -239,5 +249,10 @@ export function createVoiceInspect(registry: {
     throw new Error("Unknown workspace action.");
   }
 
-  return { tools, run, handles: (action: string) => tools.some((tool) => tool.name === action) };
+  const allTools = [...tools, ...voiceUsageTools];
+  return {
+    tools: allTools,
+    run,
+    handles: (action: string) => allTools.some((tool) => tool.name === action),
+  };
 }

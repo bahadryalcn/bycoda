@@ -36,7 +36,7 @@ it("keeps raw context-limit drafts mounted while technical sections are collapse
   try {
     await act(async () => root.render(createElement(Form)));
     const workerHeader = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent?.trim() === "Worker context limits",
+      (button) => button.textContent?.trim() === "Advanced worker context limits",
     )!;
     expect(workerHeader.getAttribute("aria-expanded")).toBe("false");
     await act(async () => workerHeader.click());

@@ -70,6 +70,11 @@ pub struct ReadRecoveryDraft {
     pub owner_epoch: String,
     pub source: DraftRecoverySource,
 }
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftHideReceipt {
+    version: u8,
+}
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveCoveredDraft {
@@ -240,7 +245,13 @@ pub(crate) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
       retained_bytes INTEGER NOT NULL CHECK(retained_bytes BETWEEN 1 AND 4194304),
       state TEXT NOT NULL CHECK(state IN ('retained','save-reported')),
       save_ack_id TEXT, updated_at INTEGER NOT NULL,
-      PRIMARY KEY(owner_id,document_id));",
+      PRIMARY KEY(owner_id,document_id));
+      CREATE TABLE IF NOT EXISTS native_editor_draft_visibility (
+        owner_id TEXT NOT NULL, document_id TEXT NOT NULL,
+        hidden_revision INTEGER NOT NULL, hidden_digest TEXT NOT NULL,
+        PRIMARY KEY(owner_id,document_id),
+        FOREIGN KEY(owner_id,document_id) REFERENCES native_editor_drafts(owner_id,document_id)
+          ON DELETE CASCADE);",
     )
 }
 
@@ -559,6 +570,36 @@ fn read_recovery(
     })
 }
 
+fn hide_recovery(
+    store: &SessionStore,
+    owner: &NativeBufferOwner,
+    source: DraftRecoverySource,
+) -> Result<(), String> {
+    check_owner(store, owner)?;
+    if !digest(&source.owner_id)
+        || !id(&source.document_id)
+        || !revision(source.revision)
+        || !digest(&source.payload_digest)
+    {
+        return Err(failure("INVALID_RECOVERY_SOURCE"));
+    }
+    let conn = store.lock_conn()?;
+    let changed = conn
+        .execute(
+            "INSERT INTO native_editor_draft_visibility(owner_id,document_id,hidden_revision,hidden_digest)
+             SELECT owner_id,document_id,revision,payload_digest FROM native_editor_drafts
+             WHERE owner_id=?1 AND document_id=?2 AND revision=?3 AND payload_digest=?4
+             ON CONFLICT(owner_id,document_id) DO UPDATE SET
+             hidden_revision=excluded.hidden_revision,hidden_digest=excluded.hidden_digest",
+            params![source.owner_id, source.document_id, source.revision as i64, source.payload_digest],
+        )
+        .map_err(|_| failure("UNAVAILABLE"))?;
+    if changed == 0 {
+        return Err(failure("REVISION_CONFLICT"));
+    }
+    Ok(())
+}
+
 fn clear_saved(
     store: &SessionStore,
     owner: &NativeBufferOwner,
@@ -616,7 +657,16 @@ fn inventory(
         document_id: String::new(),
     });
     let keys = {
-        let mut statement = tx.prepare(&format!("SELECT CASE WHEN typeof(owner_id)='text' AND length(CAST(owner_id AS BLOB))=64 THEN owner_id END,CASE WHEN typeof(document_id)='text' AND length(CAST(document_id AS BLOB)) BETWEEN 1 AND 512 THEN document_id END FROM native_editor_drafts WHERE COALESCE({BOUNDED},0) AND (owner_id,document_id)>(?1,?2) ORDER BY owner_id,document_id LIMIT ?3")).map_err(|_| failure("UNAVAILABLE"))?;
+        let mut statement = tx.prepare(&format!(
+            "SELECT CASE WHEN typeof(owner_id)='text' AND length(CAST(owner_id AS BLOB))=64 THEN owner_id END,
+             CASE WHEN typeof(document_id)='text' AND length(CAST(document_id AS BLOB)) BETWEEN 1 AND 512 THEN document_id END
+             FROM native_editor_drafts AS draft WHERE COALESCE({BOUNDED},0) AND (owner_id,document_id)>(?1,?2)
+             AND NOT EXISTS (
+               SELECT 1 FROM native_editor_draft_visibility AS visibility
+               WHERE visibility.owner_id=draft.owner_id AND visibility.document_id=draft.document_id
+               AND visibility.hidden_revision=draft.revision AND visibility.hidden_digest=draft.payload_digest
+             ) ORDER BY owner_id,document_id LIMIT ?3"
+        )).map_err(|_| failure("UNAVAILABLE"))?;
         let rows = statement
             .query_map(
                 params![after.owner_id, after.document_id, request.limit + 1],
@@ -722,6 +772,21 @@ pub async fn native_editor_draft_read_recovery(
         window,
         "native_editor_draft_read_recovery",
         move |store, owner| read_recovery(store, owner, request),
+    )
+    .await
+}
+#[tauri::command]
+pub async fn native_editor_draft_hide_recovery(
+    window: tauri::Window,
+    source: DraftRecoverySource,
+) -> Result<DraftHideReceipt, String> {
+    owned_draft_work(
+        window,
+        "native_editor_draft_hide_recovery",
+        move |store, owner| {
+            hide_recovery(store, owner, source)?;
+            Ok(DraftHideReceipt { version: 1 })
+        },
     )
     .await
 }

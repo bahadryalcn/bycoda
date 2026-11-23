@@ -129,6 +129,7 @@ export type VoiceWorkspaceActionsDeps = {
 const text = { type: "string", minLength: 1, maxLength: 4096 };
 const target = { sessionId: text, projectPath: text };
 const mutation = { ...target, requestId: text };
+export const voiceWorkspaceSurface = { type: "string", enum: ["auto", "project", "voice"] };
 
 export const voiceWorkspaceTools = [
   [
@@ -192,8 +193,8 @@ export const voiceWorkspaceTools = [
   ],
   [
     "workspace.sessions.open",
-    "Open or focus the exact session. Does not submit its draft.",
-    mutation,
+    "Open or focus the exact session. Use surface project to show the normal project workspace, voice for the right drawer beside the fullscreen call, or auto for the current mode. Neither the project nor session ID chooses the surface. Does not submit its draft.",
+    { ...mutation, surface: voiceWorkspaceSurface },
     ["sessionId", "projectPath", "requestId"],
   ],
   [

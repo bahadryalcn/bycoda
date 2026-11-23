@@ -12,6 +12,30 @@ const mock = vi.hoisted(() => ({
   failProject: false,
   full: false,
   request: vi.fn(),
+  /** What the native `assistant_consent_get` returns for the selected Host. */
+  grant: null as Record<string, unknown> | null,
+  readFails: false,
+  consentSets: [] as Record<string, unknown>[],
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: async (command: string, args: Record<string, unknown>) => {
+    if (command === "assistant_consent_get") {
+      if (mock.readFails) throw new Error("native unavailable");
+      return mock.grant;
+    }
+    if (command === "assistant_consent_set") {
+      mock.consentSets.push(args);
+      return {
+        revision: Number(args.expectedRevision) + 1,
+        active: true,
+        permissionLevel: args.permissionLevel,
+        projectIds: args.projectIds,
+        criticalExclusions: args.criticalExclusions,
+      };
+    }
+    throw new Error(`Unexpected native command ${command}`);
+  },
 }));
 
 vi.mock("../../../shared/ui/settings", async () => {
@@ -220,6 +244,9 @@ beforeEach(() => {
   mock.calls = [];
   mock.failProject = false;
   mock.full = false;
+  mock.grant = null;
+  mock.readFails = false;
+  mock.consentSets = [];
   mock.request = vi.fn(async (input: any) => {
     if (input.op === "profile.update") {
       mock.calls.push("profile");
@@ -239,7 +266,7 @@ afterEach(async () => {
   vi.clearAllMocks();
 });
 
-async function render() {
+async function render(makeSnapshot: () => any = snapshot) {
   const onClose = vi.fn();
   const onSetup = vi.fn();
   container = document.createElement("div");
@@ -250,7 +277,7 @@ async function render() {
       createElement(AssistantSettings, {
         environmentId: "settings-fixture",
         request: mock.request as any,
-        snapshot: snapshot(),
+        snapshot: makeSnapshot(),
         manual: {} as any,
         projects: [],
         onClose,
@@ -460,6 +487,7 @@ it("keeps a profile draft when the owner cancels navigation to Models", async ()
 
 it("keeps preset grants selected while customizing and preserves the mounted owners", async () => {
   mock.full = true;
+  mock.grant = { revision: 4, active: true, permissionLevel: "everything", criticalExclusions: [] };
   await render();
   await press("Access");
   const full = control("Full access")!;
@@ -512,4 +540,127 @@ it("reveals the hidden tab and nested settings disclosures before focusing an in
   });
   expect(focus).toHaveBeenCalledOnce();
   expect(report).toHaveBeenCalledOnce();
+});
+
+const executionDraft = {
+  harness: "codex",
+  model: "gpt-6",
+  runtimeMode: "supervised",
+  modelSettings: {},
+  maxRunMinutes: 60,
+} as const;
+/** A profile that already has a worker model, so the presets are selectable. */
+function withExecution() {
+  const base = snapshot;
+  return () => {
+    const value = base();
+    value.profile.execution = executionDraft;
+    return value;
+  };
+}
+
+it("Full access grants everything with no exclusions only when the owner picks it and saves", async () => {
+  mock.grant = { revision: 7, active: true, permissionLevel: "ask", criticalExclusions: [] };
+  await render(withExecution());
+  await press("Access");
+  // Rendering alone never grants or writes anything.
+  expect(mock.consentSets).toEqual([]);
+  expect(control("Full access")!.getAttribute("aria-checked")).toBe("false");
+  await press("Full access");
+  expect(control("Full access")!.getAttribute("aria-checked")).toBe("true");
+  expect(page("access").textContent).toContain(
+    "Save to apply the permission you chose on this device.",
+  );
+  expect(mock.consentSets).toEqual([]);
+  await press("Save");
+  expect(mock.consentSets).toEqual([
+    {
+      environmentId: "settings-fixture",
+      expectedRevision: 7,
+      permissionLevel: "everything",
+      projectIds: [],
+      criticalExclusions: [],
+    },
+  ]);
+  expect(page("access").textContent).toContain("Standing permission on this device: Everything.");
+});
+
+it("Work and ask replaces a broad native grant with ask", async () => {
+  mock.full = true;
+  mock.grant = { revision: 4, active: true, permissionLevel: "everything", criticalExclusions: [] };
+  await render();
+  await press("Access");
+  expect(control("Full access")!.getAttribute("aria-checked")).toBe("true");
+  await press("Work and ask");
+  await press("Save");
+  expect(mock.consentSets).toMatchObject([
+    {
+      expectedRevision: 4,
+      permissionLevel: "ask",
+      projectIds: [],
+      criticalExclusions: [
+        "pushMain",
+        "deleteProject",
+        "deleteSession",
+        "sendMessages",
+        "computerUse",
+        "spend",
+      ],
+    },
+  ]);
+  expect(page("access").textContent).toContain(
+    "Standing permission on this device: Ask for each operation.",
+  );
+});
+
+it("a Host mirror of everything never shows Full access without an active native grant", async () => {
+  mock.full = true;
+  for (const grant of [
+    null,
+    { revision: 2, active: false, permissionLevel: "everything", criticalExclusions: [] },
+  ]) {
+    mock.grant = grant;
+    await render();
+    await press("Access");
+    expect(control("Full access")!.getAttribute("aria-checked")).toBe("false");
+    expect(page("access").textContent).toContain(
+      grant
+        ? "belongs to other Host credentials"
+        : "No standing permission is saved on this device",
+    );
+    // An unrelated Save never renews or elevates the native grant.
+    await press("Rename assistant");
+    await press("Save");
+    expect(mock.consentSets).toEqual([]);
+    await act(async () => root!.unmount());
+    root = undefined;
+    container.remove();
+  }
+});
+
+it("blocks presets and says so when the native grant cannot be read", async () => {
+  mock.readFails = true;
+  await render(withExecution());
+  await press("Access");
+  expect(page("access").textContent).toContain(
+    "The permission saved on this device could not be read. Reopen settings.",
+  );
+  expect(control("Full access")!.disabled).toBe(true);
+  expect(control("Work and ask")!.disabled).toBe(true);
+});
+
+it("keeps owner-selected critical exclusions when Full access is chosen first", async () => {
+  mock.grant = null;
+  await render(withExecution());
+  await press("Access");
+  await press("Full access");
+  const spend = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
+    (input) => input.closest("label")?.textContent === "Spend money",
+  )!;
+  await act(async () => spend.click());
+  expect(control("Full access")!.getAttribute("aria-checked")).toBe("false");
+  await press("Save");
+  expect(mock.consentSets).toMatchObject([
+    { permissionLevel: "everything", criticalExclusions: ["spend"] },
+  ]);
 });

@@ -1623,7 +1623,7 @@
                       "observationTaskNeedsInput": { "type": "boolean" },
                       "perWakeTokenCap": { "maximum": 1000000, "minimum": 1000, "type": "integer" },
                       "permissionLevel": {
-                        "enum": ["watch", "projects", "everything"],
+                        "enum": ["ask", "watch", "projects", "everything"],
                         "type": "string"
                       },
                       "permissionProjectIds": {
@@ -3846,7 +3846,10 @@
               "observationTaskDone": { "type": "boolean" },
               "observationTaskNeedsInput": { "type": "boolean" },
               "perWakeTokenCap": { "maximum": 1000000, "minimum": 1000, "type": "integer" },
-              "permissionLevel": { "enum": ["watch", "projects", "everything"], "type": "string" },
+              "permissionLevel": {
+                "enum": ["ask", "watch", "projects", "everything"],
+                "type": "string"
+              },
               "permissionProjectIds": {
                 "items": { "type": "string" },
                 "maxItems": 100,
@@ -5246,7 +5249,7 @@
                   "observationTaskNeedsInput": { "type": "boolean" },
                   "perWakeTokenCap": { "maximum": 1000000, "minimum": 1000, "type": "integer" },
                   "permissionLevel": {
-                    "enum": ["watch", "projects", "everything"],
+                    "enum": ["ask", "watch", "projects", "everything"],
                     "type": "string"
                   },
                   "permissionProjectIds": {
@@ -25136,6 +25139,7 @@
               "errorCode": { "type": "string" },
               "errorMessage": { "type": "string" },
               "ok": { "type": "boolean" },
+              "outcome": { "const": "window_reused", "type": "string" },
               "requestId": { "type": "string" },
               "retry": { "enum": ["unknown", "safe", "unsafe"], "type": "string" },
               "state": { "enum": ["unknown", "settled"], "type": "string" }
@@ -25175,6 +25179,24 @@
             "additionalProperties": false,
             "properties": {
               "active": { "type": "boolean" },
+              "capabilities": {
+                "additionalProperties": false,
+                "properties": {
+                  "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
+                  "physicalInputEnabled": { "type": "boolean" },
+                  "physicalOnlyActions": { "items": { "type": "string" }, "type": "array" },
+                  "ready": { "type": "boolean" },
+                  "unsupportedActions": { "items": { "type": "string" }, "type": "array" }
+                },
+                "required": [
+                  "driver",
+                  "ready",
+                  "physicalInputEnabled",
+                  "physicalOnlyActions",
+                  "unsupportedActions"
+                ],
+                "type": "object"
+              },
               "currentAction": {
                 "additionalProperties": false,
                 "properties": { "action": { "type": "string" }, "app": { "type": "string" } },
@@ -61736,7 +61758,7 @@
                               "type": "integer"
                             },
                             "permissionLevel": {
-                              "enum": ["watch", "projects", "everything"],
+                              "enum": ["ask", "watch", "projects", "everything"],
                               "type": "string"
                             },
                             "permissionProjectIds": {
@@ -81158,5 +81180,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "ef7b1f6f4fd781dfa70cf0358b383eaa47ffd7c14ca44cfd4f2608dbf14ac05c"
+  "schemaHash": "35dbe956a1b4b9026d6e8c911d9ba2658e3c49f2fd1b379c83eddba9085a28a7"
 }

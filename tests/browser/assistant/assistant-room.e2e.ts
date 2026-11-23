@@ -1080,10 +1080,16 @@ for (const theme of ["light", "dark"])
       const output = join(process.cwd(), "temp/verification/arif-assistant-room");
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
-      await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}`);
+      await page.goto(`/tests/browser/assistant/assistant-room.html?real-controls&theme=${theme}`);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       const dialog = page.getByRole("dialog");
-      const cost = await openSettingsGroup(page, "Cost and context");
+      await dialog.getByRole("tab", { name: "Advanced", exact: true }).click();
+      const cost = dialog
+        .locator("section")
+        .filter({
+          has: page.getByRole("heading", { name: "Cost and context", exact: true }),
+        })
+        .first();
       await cost.scrollIntoViewIfNeeded();
       await cost.getByRole("button", { name: "About cost and context", exact: true }).click();
       await expect(page.getByText(/Worker limits use the first threshold reached/)).toBeVisible();
@@ -1092,11 +1098,28 @@ for (const theme of ["light", "dark"])
         path: join(output, `output-context-help-${theme}-${width}.png`),
       });
       await page.keyboard.press("Escape");
+      const usage = dialog.getByRole("button", { name: "Usage details", exact: true });
+      await expect(dialog.getByText("75,000 of 2,000,000 tokens", { exact: true })).toBeVisible();
+      await usage.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        animations: "disabled",
+        path: join(output, `output-usage-summary-${theme}-${width}.png`),
+      });
+      await usage.click();
+      await expect(page.getByText(/Supervisor tokens:/)).toBeVisible();
+      await page.screenshot({
+        animations: "disabled",
+        path: join(output, `output-usage-details-${theme}-${width}.png`),
+      });
+      await page.keyboard.press("Escape");
       await cost.screenshot({
         animations: "disabled",
         path: join(output, `output-context-compact-${theme}-${width}.png`),
       });
-      await cost.getByRole("button", { name: "Worker context limits", exact: true }).click();
+      await expect(cost.getByText("Automatic", { exact: true })).toBeVisible();
+      await cost
+        .getByRole("button", { name: "Advanced worker context limits", exact: true })
+        .click();
       const soft = cost.getByRole("spinbutton", { name: "Compact by token count", exact: true });
       await expect(soft).toHaveValue("150000");
       await expect(
@@ -1112,13 +1135,38 @@ for (const theme of ["light", "dark"])
       await expect(dialog).toHaveCount(0);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Cost and context");
-      await dialog.getByRole("button", { name: "Worker context limits", exact: true }).click();
+      await dialog
+        .getByRole("button", { name: "Advanced worker context limits", exact: true })
+        .click();
       await expect(
         dialog.getByRole("spinbutton", { name: "Compact by token count", exact: true }),
       ).toHaveValue("160000");
       await expect(
         dialog.getByRole("spinbutton", { name: "Compact supervisor context", exact: true }),
       ).toHaveValue("150000");
+      const compactPercent = dialog.getByRole("spinbutton", {
+        name: "Compact by context usage",
+        exact: true,
+      });
+      const profileWriteCount = () =>
+        page.evaluate(
+          () =>
+            ((window as any).__setupRequests ?? []).filter(
+              ({ input }: { input: { op: string } }) => input.op === "profile.update",
+            ).length as number,
+        );
+      const beforeRejectedSave = await profileWriteCount();
+      await compactPercent.fill("98");
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(
+        dialog.getByText("Worker context limits must increase from compact to handoff."),
+      ).toBeVisible();
+      expect(await profileWriteCount()).toBe(beforeRejectedSave);
+      await dialog.getByRole("button", { name: "Restore defaults", exact: true }).click();
+      await expect(cost.getByText("Automatic", { exact: true })).toBeVisible();
+      await expect(compactPercent).toHaveValue("50");
+      await saveProfileSettings(page);
+      expect(await profileWriteCount()).toBe(beforeRejectedSave + 1);
     });
 
 for (const theme of ["light", "dark"])

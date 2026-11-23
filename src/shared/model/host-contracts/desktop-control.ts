@@ -157,6 +157,7 @@ export const DesktopControlOperationSchema = z.strictObject({
     "delivered_verified",
   ]),
   retry: z.enum(["unknown", "safe", "unsafe"]),
+  outcome: z.literal("window_reused").optional(),
   errorCode: z.string().optional(),
   errorMessage: z.string().optional(),
 });
@@ -202,6 +203,15 @@ export const DesktopControlResponseSchema = z.strictObject({
       enabled: z.boolean(),
       stopped: z.boolean(),
       active: z.boolean(),
+      capabilities: z
+        .strictObject({
+          driver: z.enum(DESKTOP_DRIVERS),
+          ready: z.boolean(),
+          physicalInputEnabled: z.boolean(),
+          physicalOnlyActions: z.array(z.string()),
+          unsupportedActions: z.array(z.string()),
+        })
+        .optional(),
       permissions: DesktopSystemPermissionsSchema.optional(),
       currentAction: z.strictObject({ app: z.string(), action: z.string() }).optional(),
       upstreamRef: z.string(),
