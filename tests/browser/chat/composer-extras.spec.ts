@@ -1684,6 +1684,78 @@ test("narrow composer keeps Add and Send on the model row when text is wider tha
   }
 });
 
+test("a long model name truncates without hiding or overlapping any narrow composer control", async ({
+  page,
+}) => {
+  await initializeChatLayout(page);
+  const longName = "Claude Sonnet research model with a deliberately long descriptive name";
+  for (const width of [390, 360, 320, 260]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(
+      "/tests/browser/chat/composer-extras.html?chat-layout&accounts&workspace-footer&theme=dark",
+    );
+    const box = page.locator("[data-composer-box]");
+    const trigger = box.locator("[data-composer-model-controls] button[aria-haspopup]").first();
+    await expect(trigger.locator("[data-model-trigger-name]")).toHaveText("Sonnet 5");
+    await trigger
+      .locator("[data-model-trigger-name]")
+      .evaluate((node, text) => void (node.textContent = text), longName);
+    const controls = [
+      trigger,
+      box.locator("[data-access-picker-trigger]"),
+      box.locator("[data-composer-mode-trigger]"),
+      box.getByRole("button", { name: "Add files or skills" }),
+      box.getByRole("button", { name: "Send", exact: true }),
+    ];
+    for (const control of controls) await expect(control).toBeInViewport({ ratio: 1 });
+    const geometry = await Promise.all(controls.map((control) => control.boundingBox()));
+    for (const [index, bounds] of geometry.entries()) {
+      expect(
+        bounds!.width,
+        `control ${index} keeps a hit target at ${width}px`,
+      ).toBeGreaterThanOrEqual(24);
+      for (const other of geometry.slice(index + 1)) {
+        const apart =
+          bounds!.x + bounds!.width <= other!.x + 0.5 ||
+          other!.x + other!.width <= bounds!.x + 0.5 ||
+          bounds!.y + bounds!.height <= other!.y + 0.5 ||
+          other!.y + other!.height <= bounds!.y + 0.5;
+        expect(apart, `controls do not overlap at ${width}px`).toBe(true);
+      }
+    }
+    // Every control receives the pointer at its own centre, not a neighbour's glyph.
+    for (const control of controls) {
+      expect(
+        await control.evaluate((node) => {
+          const bounds = node.getBoundingClientRect();
+          const hit = document.elementFromPoint(
+            bounds.x + bounds.width / 2,
+            bounds.y + bounds.height / 2,
+          );
+          return hit === node || node.contains(hit);
+        }),
+      ).toBe(true);
+    }
+    // The name gives way, and Mode opens through a real click.
+    expect(
+      await trigger
+        .locator("[data-model-trigger-name]")
+        .evaluate((node) => node.scrollWidth > node.clientWidth),
+    ).toBe(true);
+    const mode = box.locator("[data-composer-mode-trigger]");
+    await mode.click();
+    await expect(page.getByRole("menu", { name: "Mode", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    expect(await box.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(
+      1,
+    );
+    if (width >= 320) {
+      const centers = geometry.map((bounds) => bounds!.y + bounds!.height / 2);
+      expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
 test("model picker names and selects accounts and session shows its active agent", async ({
   page,
 }, testInfo) => {
