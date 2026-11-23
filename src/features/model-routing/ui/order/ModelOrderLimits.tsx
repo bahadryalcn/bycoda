@@ -8,7 +8,7 @@ import { TokenAmountField } from "./TokenAmountField";
 import { TextField } from "../../../../shared/ui/TextField";
 import { Text } from "../../../../shared/ui/Text";
 import { Badge } from "../../../../shared/ui/Badge";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { UsageMeter } from "../../../../shared/ui/UsageMeter";
 import { DataTable, DataTableRow } from "../../../../shared/ui/SortableDataTable";
@@ -203,9 +203,9 @@ export function ModelOrderLimits({
           <Text size="secondary" weight="medium">
             {t("Token and cost limits")}
           </Text>
-          <InfoPopover>
+          <InfoTooltip>
             <p>{t("Limits apply before new turns and may be exceeded by a running turn.")}</p>
-          </InfoPopover>
+          </InfoTooltip>
           <Button
             variant="ghost"
             size="sm"

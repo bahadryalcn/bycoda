@@ -85,7 +85,7 @@ type BrowserCdpSession = {
 };
 
 type Page = {
-  goto(url: string, options: { timeout: number }): Promise<unknown>;
+  goto(url: string, options: { timeout: number; waitUntil?: "commit" }): Promise<unknown>;
   setViewportSize?(viewport: { width: number; height: number }): Promise<void>;
   url(): string;
   screenshot(options: {
@@ -107,13 +107,15 @@ type Page = {
     click(x: number, y: number): Promise<void>;
     wheel(x: number, y: number): Promise<void>;
     move?(x: number, y: number): Promise<void>;
-    down?(options: { button: "left" | "middle" | "right" }): Promise<void>;
-    up?(options: { button: "left" | "middle" | "right" }): Promise<void>;
+    down?(options: { button: "left" | "middle" | "right"; clickCount?: number }): Promise<void>;
+    up?(options: { button: "left" | "middle" | "right"; clickCount?: number }): Promise<void>;
   };
   keyboard: {
     type(text: string): Promise<void>;
     insertText?(text: string): Promise<void>;
     press(key: string): Promise<void>;
+    down?(key: string): Promise<void>;
+    up?(key: string): Promise<void>;
   };
 };
 type Browser = {
@@ -380,6 +382,7 @@ export class SharedBrowser {
         }
         this.documentId = randomUUID();
         this.invalidateSelection();
+        void this.screencast.stop().catch(() => {});
         const source: RuntimeLogSource = {
           id: `browser:${randomUUID()}`,
           kind: "browser",
@@ -401,7 +404,10 @@ export class SharedBrowser {
           throw error;
         }
         this.captureLogs(this.page!, source);
-        await this.page!.goto(url, { timeout: 15_000 });
+        await this.page!.goto(url, {
+          timeout: 15_000,
+          ...(params.preview === true ? { waitUntil: "commit" as const } : {}),
+        });
         return this.status(owner);
       }
       if (method === "browser.frame") {
@@ -444,6 +450,7 @@ export class SharedBrowser {
         this.viewport = viewport;
         this.documentId = randomUUID();
         this.invalidateSelection();
+        void this.screencast.stop().catch(() => {});
         return this.status(owner);
       }
       if (method === "browser.close") {
@@ -491,6 +498,24 @@ export class SharedBrowser {
       width: frame.width,
       height: frame.height,
       frameSequence: frame.sequence,
+    };
+  }
+
+  openFrameStream() {
+    if (!this.screencast.available(this.page))
+      throw new Error("Browser frame streaming is unavailable");
+    const release = this.screencast.retainFastReader();
+    return {
+      release,
+      next: async (after: number) => {
+        const page = this.page;
+        if (!page) throw new Error("Browser page closed");
+        this.lastUse = this.now();
+        const frame = await this.screencast.next(page, after, 1000);
+        if (page !== this.page) throw new Error("Browser page changed");
+        if (!frame || frame.stamp !== this.documentId) return undefined;
+        return { ...frame, documentId: this.documentId, navigationId: this.navigationId };
+      },
     };
   }
   private pageKey = () => `${this.documentId}|${this.page?.url()}`;
@@ -1005,6 +1030,7 @@ export class SharedBrowser {
         if (this.page === page && generation === this.pageGeneration && !frame.parentFrame()) {
           this.documentId = randomUUID();
           this.invalidateSelection();
+          void this.screencast.stop().catch(() => {});
         }
       };
       page.on?.("framenavigated", navigated);
@@ -1438,6 +1464,9 @@ export class SessionBrowserRegistry {
       this.browsers.delete(key);
     }
     return result;
+  }
+  openFrameStream(params: Record<string, unknown>, credential: string) {
+    return this.browser(params, credential).openFrameStream();
   }
   async dispatchForSession(method: string, params: Record<string, unknown>, credential: string) {
     if (params.ownerPresentationScope !== undefined || params.threadId !== undefined)

@@ -23,6 +23,7 @@ export function InboxDetailBody({
   | "onRepairChecks"
   | "onOpenSession"
   | "onItemChange"
+  | "onJiraStatusChange"
 > & { item: InboxItem | null; revision?: number }) {
   useLocale();
   if (!item) {

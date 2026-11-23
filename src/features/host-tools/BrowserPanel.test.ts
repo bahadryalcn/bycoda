@@ -49,22 +49,32 @@ it("updates the address after page navigation while preserving an edited address
   await act(async () => button("Refresh frame").click());
   expect(address.value).toBe("https://draft.test");
 });
-it("explains disabled input and exposes control recovery in view-only mode", async () => {
-  vi.mocked(hostFeatureRequest).mockResolvedValue({
-    open: true,
-    controlling: false,
-    url: "https://example.test",
+it("takes available control automatically and exposes direct keyboard input", async () => {
+  let controlling = false;
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => {
+    if (method === "browser.claim") controlling = true;
+    return {
+      open: true,
+      controlling,
+      leaseId: controlling ? "lease" : undefined,
+      url: "https://example.test",
+      ...(method === "browser.frame" ? { data: "YWJj", mimeType: "image/jpeg" } : {}),
+    };
   });
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
-  await act(async () => button("Browser controls and setup").click());
-  expect(button("Claim control")).toBeDefined();
-  const enter = button("Enter");
-  expect(enter.getAttribute("aria-disabled")).toBe("true");
-  const calls = vi.mocked(hostFeatureRequest).mock.calls.length;
-  await act(async () => enter.click());
-  expect(hostFeatureRequest).toHaveBeenCalledTimes(calls);
-  expect(vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "browser.claim")).toBe(
-    false,
+  await act(async () => vi.advanceTimersByTimeAsync(10));
+  const frame = container.querySelector("img")!;
+  expect(frame.tabIndex).toBe(0);
+  expect(button("Browser controls and setup")).toBeUndefined();
+  expect(button("View only")).toBeUndefined();
+  await act(async () => {
+    frame.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+  });
+  expect(vi.mocked(hostFeatureRequest).mock.calls).toContainEqual(
+    expect.arrayContaining([
+      "browser.input",
+      expect.objectContaining({ key: "Enter", leaseId: "lease" }),
+    ]),
   );
 });
 it.each(["resize", "input", "navigation"])(
@@ -241,26 +251,23 @@ it("keeps the displayed image until the replacement finishes decoding", async ()
   vi.restoreAllMocks();
 });
 
-it.each(["Browser viewport", "Browser controls and setup"])(
-  "hides the %s dialog with its browser panel",
-  async (label) => {
-    vi.mocked(hostFeatureRequest).mockResolvedValue({
-      open: true,
-      controlling: false,
-      url: "https://example.test",
-      viewport: { width: 1280, height: 720 },
-    });
-    await act(async () =>
-      root.render(createElement(BrowserPanel, { cwd: "/project", active: true })),
-    );
-    await act(async () => button(label).click());
-    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
-    await act(async () =>
-      root.render(createElement(BrowserPanel, { cwd: "/project", active: false })),
-    );
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
-  },
-);
+it.each(["Browser viewport"])("hides the %s dialog with its browser panel", async (label) => {
+  vi.mocked(hostFeatureRequest).mockResolvedValue({
+    open: true,
+    controlling: false,
+    url: "https://example.test",
+    viewport: { width: 1280, height: 720 },
+  });
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", active: true })),
+  );
+  await act(async () => button(label).click());
+  expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+  await act(async () =>
+    root.render(createElement(BrowserPanel, { cwd: "/project", active: false })),
+  );
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+});
 
 it("suspends hidden panel polling and restores it without navigating", async () => {
   vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
@@ -609,6 +616,75 @@ it("keeps live view and input through brief live read failures, then blocks inpu
   await act(async () => button("Refresh frame").click());
   await act(async () => image.click());
   expect(inputs()).toBe(2);
+});
+
+it("retries a frame once when navigation changes the document during capture", async () => {
+  let reads = 0;
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => {
+    if (method === "browser.frame" && ++reads === 1)
+      throw new Error(
+        "Host rejected request: Browser document changed during capture. Refresh the frame.",
+      );
+    return {
+      open: true,
+      documentId: "new-document",
+      navigationId: "new-navigation",
+      ...(method === "browser.frame" ? { data: "YWJj", mimeType: "image/jpeg" } : {}),
+    };
+  });
+  await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
+  expect(reads).toBe(2);
+  expect(container.querySelector("img")).toBeTruthy();
+  expect(container.textContent).not.toContain("Browser document changed during capture");
+});
+
+it("reconciles the page and clears its old frame when the Host has lost the browser", async () => {
+  let open = true;
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => {
+    if (method === "browser.frame" && !open)
+      throw new Error("Host rejected request: Open a shared browser first");
+    if (method === "browser.open") open = true;
+    return {
+      open,
+      controlling: method === "browser.claim" || method === "browser.open",
+      url: open ? "http://localhost:3000/login" : null,
+      ...(method === "browser.frame" ? { data: "YWJj", mimeType: "image/jpeg" } : {}),
+    };
+  });
+  await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
+  expect(container.querySelector("img")).toBeTruthy();
+  open = false;
+  await act(async () => vi.advanceTimersByTimeAsync(4000));
+  expect(container.querySelector("img")).toBeNull();
+  expect(container.querySelector<HTMLInputElement>("input")?.value).toBe(
+    "http://localhost:3000/login",
+  );
+  expect(container.textContent).not.toContain("Open a shared browser first");
+  await act(async () => button("Open website").click());
+  expect(container.querySelector("img")).toBeTruthy();
+  expect(button("Live view").getAttribute("aria-pressed")).toBe("true");
+});
+
+it("keeps a visible paused browser active through status reads alone", async () => {
+  vi.mocked(hostFeatureRequest).mockResolvedValue({
+    open: true,
+    controlling: true,
+    leaseId: "lease",
+    url: "http://localhost:3000/login",
+  });
+  await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
+  await act(async () => button("Live view").click());
+  vi.mocked(hostFeatureRequest).mockClear();
+  await act(async () => vi.advanceTimersByTimeAsync(61_000));
+  const methods = () => vi.mocked(hostFeatureRequest).mock.calls.map((call) => call[2]);
+  expect(methods()).toEqual(["browser.status"]);
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  try {
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(methods()).toEqual(["browser.status"]);
+  } finally {
+    hidden.mockRestore();
+  }
 });
 
 it("blocks further input after a failed frame until a successful explicit refresh", async () => {
@@ -1044,28 +1120,28 @@ it("keeps another device's control and does not navigate after a failed claim", 
   ]);
 });
 
-it("recovers from another client's lease through an explicit control claim", async () => {
+it("waits for another controller and acquires control when it becomes available", async () => {
+  let occupied = true;
   vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method, params) => {
-    if (method === "browser.claim" && params?.takeover !== true)
-      throw new Error("Another device controls this browser");
+    expect(params?.takeover).toBeUndefined();
     return {
       open: true,
       url: "http://localhost:3000",
+      heldBy: occupied ? { kind: "controller" } : undefined,
       controlling: method === "browser.claim",
       leaseId: method === "browser.claim" ? "owner-lease" : undefined,
+      ...(method === "browser.frame" ? { data: "image", mimeType: "image/jpeg" } : {}),
     };
   });
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
-  await act(async () => button("Open website").click());
-  expect(container.querySelector('[role="alert"]')).not.toBeNull();
-  await act(async () => button("View only").click());
-  expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(hostFeatureRequest).toHaveBeenLastCalledWith(
-    "/project",
-    "browser.shared",
-    "browser.claim",
-    { takeover: true, leaseId: undefined },
+  await act(async () => vi.advanceTimersByTimeAsync(3000));
+  expect(vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "browser.claim")).toBe(
+    false,
   );
+  expect(container.querySelector("img")?.tabIndex).toBe(-1);
+  occupied = false;
+  await act(async () => vi.advanceTimersByTimeAsync(6000));
+  expect(container.querySelector("img")?.tabIndex).toBe(0);
 });
 
 it("shows missing runtime setup before opening and never downloads or claims on entry", async () => {
@@ -1083,31 +1159,33 @@ it("shows missing runtime setup before opening and never downloads or claims on 
   ]);
 });
 
-it("expires control at the host lease deadline while leaving viewing available", async () => {
-  vi.mocked(hostFeatureRequest).mockResolvedValue({
-    open: true,
-    url: "http://localhost:3000",
-    controlling: true,
-    leaseId: "lease",
-    leaseExpiresAt: Date.now() + 30_000,
+it("keeps the preview usable when a lease expires and is reacquired", async () => {
+  const deadline = Date.now() + 30_000;
+  vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method, params) => {
+    if (method === "browser.claim" && Date.now() < deadline) throw new Error("Host busy");
+    const renewed = Date.now() >= deadline;
+    return {
+      open: true,
+      url: "http://localhost:3000",
+      controlling: renewed ? method === "browser.claim" || params?.leaseId === "new-lease" : true,
+      leaseId: renewed ? "new-lease" : "lease",
+      leaseExpiresAt: renewed ? Date.now() + 30_000 : deadline,
+      ...(method === "browser.frame" ? { data: "image", mimeType: "image/jpeg" } : {}),
+    };
   });
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
-  await act(async () => button("Browser controls and setup").click());
-  await act(async () => button("Renew control").click());
-  expect(button("Open website").matches(":disabled, [aria-disabled=true]")).toBe(false);
-  act(() => vi.advanceTimersByTime(30_000));
-  expect(button("Open website").matches(":disabled, [aria-disabled=true]")).toBe(false);
-  if (!button("Type text")) await act(async () => button("Browser controls and setup").click());
-  expect(button("Type text").matches(":disabled, [aria-disabled=true]")).toBe(true);
+  await act(async () => vi.advanceTimersByTimeAsync(30_010));
+  await act(async () => vi.advanceTimersByTimeAsync(10));
+  expect(container.querySelector("img")?.tabIndex).toBe(0);
   expect(button("Refresh frame").matches(":disabled, [aria-disabled=true]")).toBe(false);
-  expect(button("View only").matches(":disabled, [aria-disabled=true]")).toBe(false);
 });
 
-it("loads an existing shared view on entry without taking control", async () => {
+it("loads an existing preview while another controller is using the page", async () => {
   vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => ({
     open: true,
     url: "https://example.test",
     controlling: false,
+    heldBy: { kind: "controller" },
     ...(method === "browser.frame"
       ? { data: "image", mimeType: "image/jpeg", width: 640, height: 360 }
       : {}),
@@ -1118,8 +1196,7 @@ it("loads an existing shared view on entry without taking control", async () => 
     "browser.frame",
   ]);
   expect(container.querySelector("img")).not.toBeNull();
-  if (!button("Type text")) await act(async () => button("Browser controls and setup").click());
-  expect(button("Type text").matches(":disabled, [aria-disabled=true]")).toBe(true);
+  expect(container.querySelector("img")?.tabIndex).toBe(-1);
   expect(button("Refresh frame").matches(":disabled, [aria-disabled=true]")).toBe(false);
   expect(container.querySelector("input")!.value).toBe("https://example.test");
 });
@@ -1139,7 +1216,7 @@ it("uses the current lease and host frame dimensions for input", async () => {
     };
   });
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
-  await act(async () => button("View only").click());
+  await act(async () => vi.advanceTimersByTimeAsync(10));
   const img = container.querySelector("img")!;
   vi.spyOn(img, "getBoundingClientRect").mockReturnValue({
     left: 10,
@@ -1170,9 +1247,7 @@ it("does not enable input on a closed browser just because control was claimed",
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
   expect(button("Open website").matches(":disabled, [aria-disabled=true]")).toBe(false);
   expect(button("Refresh frame").matches(":disabled, [aria-disabled=true]")).toBe(true);
-  if (!button("Type text")) await act(async () => button("Browser controls and setup").click());
-  expect(button("Type text").matches(":disabled, [aria-disabled=true]")).toBe(true);
-  expect(button("Enter").matches(":disabled, [aria-disabled=true]")).toBe(true);
+  expect(container.querySelector("img")).toBeNull();
 });
 
 it("does not fetch a frame when an old host's status arrives after switching projects", async () => {
@@ -1193,7 +1268,7 @@ it("does not fetch a frame when an old host's status arrives after switching pro
 });
 
 it("blocks duplicate requests before React paints the busy state", async () => {
-  vi.mocked(hostFeatureRequest).mockResolvedValue({ open: false, url: null, controlling: false });
+  vi.mocked(hostFeatureRequest).mockResolvedValue({ open: true, url: null, controlling: true });
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "/project" })));
   let finish!: (value: unknown) => void;
   vi.mocked(hostFeatureRequest).mockReturnValueOnce(
@@ -1201,12 +1276,11 @@ it("blocks duplicate requests before React paints the busy state", async () => {
       finish = resolve;
     }),
   );
-  await act(async () => button("Browser controls and setup").click());
   await act(async () => {
-    button("Status").click();
-    button("Status").click();
+    button("Refresh frame").click();
+    button("Refresh frame").click();
   });
-  expect(hostFeatureRequest).toHaveBeenCalledTimes(2);
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(3);
   await act(async () => finish({ open: false, url: null, controlling: false }));
 });
 it("shows an unavailable state and recovers through retry when the initial host read fails", async () => {
@@ -1218,8 +1292,6 @@ it("shows an unavailable state and recovers through retry when the initial host 
   expect(container.textContent).not.toContain("Checking browser…");
   const status = container.querySelector("[data-browser-status-dot]")!;
   expect(status.getAttribute("data-tone")).toBe("danger");
-  // The status dot opens the controls, where the failed read can be retried.
-  await act(async () => button("Browser unavailable").click());
   await act(async () => button("Retry").click());
   expect(container.querySelector("[data-browser-status-dot]")!.getAttribute("data-tone")).toBe(
     "warning",
@@ -1249,7 +1321,6 @@ it("sets up the browser only on an explicit request on the owning host", async (
     "browser.setup",
     { leaseId: undefined },
   );
-  await act(async () => button("Browser controls and setup").click());
   expect(button("Set up host browser")).toBeUndefined();
 });
 
@@ -1257,7 +1328,7 @@ it("refreshes live view by default and pauses while disabled, hidden or unmounte
   vi.mocked(hostFeatureRequest).mockResolvedValue({
     open: true,
     url: "https://example.test",
-    controlling: false,
+    controlling: true,
   });
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "remote://mac/repo" })));
   await act(async () => vi.advanceTimersByTimeAsync(1000));
@@ -1414,8 +1485,6 @@ it("clears live frames and control on a target switch and ignores a late old-hos
   ).toBe("true");
   expect(container.textContent).not.toContain("https://old.test");
   expect(button("Open website").matches(":disabled, [aria-disabled=true]")).toBe(false);
-  if (!button("Type text")) await act(async () => button("Browser controls and setup").click());
-  expect(button("Type text").matches(":disabled, [aria-disabled=true]")).toBe(true);
   expect(button("Refresh frame").matches(":disabled, [aria-disabled=true]")).toBe(true);
   await act(async () => vi.advanceTimersByTime(3000));
   expect(frames).toBe(2);
@@ -1519,7 +1588,7 @@ it("uses the mounted home and search defaults without opening or claiming on mou
   }
 });
 
-it("retries a failed lease renewal only while the original lease lasts, then stops", async () => {
+it("retries a failed lease renewal and stays eligible to reconnect while visible", async () => {
   vi.mocked(hostFeatureRequest).mockImplementation(async (_cwd, _capability, method) => {
     if (method === "browser.claim") throw new Error("Host unreachable");
     return {
@@ -1545,8 +1614,15 @@ it("retries a failed lease renewal only while the original lease lasts, then sto
   expect(attempts).toBeGreaterThan(2);
   expect(attempts).toBeLessThanOrEqual(6);
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
-  expect(claims()).toBe(attempts);
-  // Renewals never ask to take control over, so a revoked lease cannot be won back.
+  expect(claims()).toBeGreaterThan(attempts);
+  await act(async () =>
+    root.render(
+      createElement(BrowserPanel, { cwd: "/project", sessionId: "session", active: false }),
+    ),
+  );
+  const hiddenAttempts = claims();
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(claims()).toBe(hiddenAttempts);
   expect(
     vi
       .mocked(hostFeatureRequest)

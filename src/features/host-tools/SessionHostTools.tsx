@@ -10,6 +10,8 @@ import {
   hostFeatureRequest,
   hostToolRequest,
   listHostToolMachines,
+  subscribeDeviceVideo,
+  deviceTouchAvailable,
 } from "../connections/model/hostFeatureClient";
 import {
   hostToolTargetKey,
@@ -20,7 +22,7 @@ import { isLocalSyncMachine } from "../connections/model/localSync";
 import { parseRemotePath } from "../connections/model/remoteProjects";
 import type { RemoteMachine } from "../connections/model/protocol";
 import { lazySurface } from "../../shared/ui/lazySurface";
-import type { DevicePanelApi } from "../devices/types";
+import type { DeviceHostStatus, DevicePanelApi } from "../devices/types";
 import { attachDeviceToComposer } from "../devices/deviceComposer";
 import { attachDeviceImageAcrossWindows } from "../devices/deviceImageComposer";
 import {
@@ -267,18 +269,34 @@ function ConversationHostTools({
       target.kind === "project"
         ? hostFeatureRequest<T>(cwd, "device.host", `devices.${method}`, params)
         : hostToolRequest<T>(cwd, "device.host", `devices.${method}`, params, target);
+    const statusWithTouch = async (method: string, params?: Record<string, unknown>) => {
+      const status = await request<DeviceHostStatus>(method, params);
+      if (
+        status.running &&
+        ["win32", "darwin"].includes(status.platform) &&
+        status.platforms.some((entry) => entry.platform === "android" && entry.available) &&
+        (await deviceTouchAvailable(cwd, target).catch(() => false))
+      )
+        return { ...status, touchProtocol: 1 as const };
+      return status;
+    };
     return {
       environmentId:
         target.kind === "machine" ? target.machineId : parseRemotePath(cwd)?.environmentId,
-      status: () => request("status"),
-      setup: (agentAccess) => request("setup", { agentAccess }),
-      start: () => request("start"),
-      stop: () => request("stop"),
+      status: () => statusWithTouch("status"),
+      setup: (agentAccess) => statusWithTouch("setup", { agentAccess }),
+      start: () => statusWithTouch("start"),
+      stop: () => statusWithTouch("stop"),
       list: () => request("list"),
       boot: (deviceId) => request("boot", { deviceId }),
       capture: (deviceId) => request("capture", { deviceId }),
       stream: (deviceId, cursor) =>
         request("stream", cursor === undefined ? { deviceId } : { deviceId, cursor }),
+      subscribeStream: (deviceId, onChunk, onError) =>
+        subscribeDeviceVideo(cwd, target, deviceId, onChunk, onError),
+      touch: async (deviceId, touch, leaseId) => {
+        await request("touch", { deviceId, touch, leaseId });
+      },
       controlStatus: (deviceId) => request("control.status", { deviceId }),
       claimControl: (deviceId, requestId) => request("control.claim", { deviceId, requestId }),
       releaseControl: (deviceId, leaseId) => request("control.release", { deviceId, leaseId }),

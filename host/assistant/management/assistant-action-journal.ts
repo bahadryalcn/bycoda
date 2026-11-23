@@ -264,23 +264,33 @@ export class AssistantActionJournal {
   ): Promise<AssistantActivity[]> {
     await this.ready;
     if (!admission || !ports.withRoomResponseDisclosure) return [];
-    const rows = await this.store.db
-      .prepare(
-        "SELECT value FROM assistant_action_journal j WHERE rowid>COALESCE((SELECT MAX(through_rowid) FROM assistant_action_journal_clears WHERE scope='*'),0) AND rowid>COALESCE((SELECT MAX(through_rowid) FROM assistant_action_journal_clears WHERE scope='job:'||json_extract(j.value,'$.jobId')),0) ORDER BY created_at DESC,identity DESC LIMIT ?",
-      )
-      .all(Math.min(limit * 4, 400));
-    const actions = rows.map((row) => JSON.parse(String(row.value)) as Action);
+    const rows = await this.store.db.readScope(() =>
+      this.store.db
+        .prepare(
+          `SELECT j.value, EXISTS (
+             SELECT 1 FROM assistant_threads t
+             WHERE t.id=COALESCE(json_extract(j.value,'$.threadId'),?) AND t.deleted_at IS NULL
+           ) AS live_thread
+           FROM assistant_action_journal j
+           WHERE j.rowid>COALESCE((SELECT MAX(through_rowid) FROM assistant_action_journal_clears WHERE scope='*'),0)
+             AND j.rowid>COALESCE((SELECT MAX(through_rowid) FROM assistant_action_journal_clears WHERE scope='job:'||json_extract(j.value,'$.jobId')),0)
+           ORDER BY j.created_at DESC,j.identity DESC LIMIT ?`,
+        )
+        .all(targetThreadId ?? null, Math.min(limit * 4, 400)),
+    );
+    const actions = rows.map((row) => ({
+      action: JSON.parse(String(row.value)) as Action,
+      liveThread: row.live_thread === 1,
+    }));
     const settled = new Set(
-      actions.filter((action) => action.phase === "result").map((action) => action.identity),
+      actions
+        .filter(({ action }) => action.phase === "result")
+        .map(({ action }) => action.identity),
     );
     const visible: Action[] = [];
-    for (const action of actions) {
+    for (const { action, liveThread } of actions) {
       if (action.phase === "started" && settled.has(action.identity)) continue;
-      if (!action.threadId && !targetThreadId) continue;
-      const thread = await this.store.db
-        .prepare("SELECT id FROM assistant_threads WHERE id=? AND deleted_at IS NULL")
-        .get(action.threadId ?? targetThreadId!);
-      if (!thread) continue;
+      if (!liveThread) continue;
       if (action.nativeRequired && !action.nativeProofs?.length) continue;
       if (
         action.accountId &&

@@ -18,7 +18,6 @@ import { useLocale, useT } from "../../shared/i18n";
 import { Modal } from "../../shared/ui/Modal";
 import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../shared/ui/EmptyState";
-import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { InlineError } from "../../shared/ui/InlineError";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
@@ -582,6 +581,9 @@ export function SessionRecoveryPanel({
             motion="none"
             disabled={pending || !rows.length}
             loading={pendingAction === "restore"}
+            tooltip={t(
+              "Opening tabs does not restart work. Restore chat layout also brings back your earlier chat splits.",
+            )}
             onClick={() =>
               void open(
                 rows.map((row) => row.stub.id),
@@ -592,21 +594,6 @@ export function SessionRecoveryPanel({
           >
             {t("Restore chat layout")}
           </Button>
-          <InfoPopover className="shrink-0">
-            <p>
-              {hiddenCount > 0
-                ? t("Open all opens all {p0} recovered sessions, including {p1} not shown here.", {
-                    p0: rows.length,
-                    p1: hiddenCount,
-                  })
-                : t("Open all opens all {p0} recovered sessions.", { p0: rows.length })}
-            </p>
-            <p>
-              {t(
-                "Opening tabs does not restart work. Restore chat layout also brings back your earlier chat splits.",
-              )}
-            </p>
-          </InfoPopover>
           {showToolbar ? null : maintenanceControl}
           <span className="recovery-actions-end flex flex-wrap items-center gap-2">
             {primaryOpensSelected ? (
@@ -627,6 +614,17 @@ export function SessionRecoveryPanel({
               motion="none"
               disabled={pending || !rows.length}
               loading={pendingAction === "open-all"}
+              tooltip={
+                hiddenCount > 0
+                  ? t(
+                      "Open all opens all {p0} recovered sessions, including {p1} not shown here.",
+                      {
+                        p0: rows.length,
+                        p1: hiddenCount,
+                      },
+                    )
+                  : undefined
+              }
               onClick={() =>
                 void open(
                   rows.map((row) => row.stub.id),

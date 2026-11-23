@@ -4,7 +4,7 @@ import { useId } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { Select } from "../../../shared/ui/Select";
@@ -73,15 +73,10 @@ export function WorkspacePolicyEditor({
       }
       layout="full"
       id="workspace-policy"
-      info={
-        <InfoPopover>
-          <p>
-            {t(
-              "Saving stores every value as a project override. Reset removes the whole override immediately.",
-            )}
-          </p>
-        </InfoPopover>
-      }
+      descriptionVisible
+      description={t(
+        "Saving stores every value as a project override. Reset removes the whole override immediately.",
+      )}
       action={
         hasProjectOverride ? (
           <Button variant="link" disabled={saving || loading} onClick={async () => await save({})}>
@@ -139,7 +134,9 @@ export function WorkspacePolicyEditor({
       >
         <Heading size="item" id={retentionHeadingId} className={styles.subheading}>
           {t("Automatic cleanup")}
-          <InfoPopover>{t("Active and pinned workspaces are excluded")}</InfoPopover>
+          <InfoTooltip label={t("Automatic cleanup")}>
+            {t("Active and pinned workspaces are excluded")}
+          </InfoTooltip>
         </Heading>
         <div className={styles.grid4}>
           {retentionStates.map((state) => {

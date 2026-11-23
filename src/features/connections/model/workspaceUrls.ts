@@ -102,8 +102,8 @@ export async function accessibleDevelopmentUrl(
 }
 
 /**
- * Opens a private remote chat link on the project's Host. The transcript's
- * composer ID resolves to a Host session, which owns the browser page.
+ * Open supported remote HTTP endpoints through the private browser bridge.
+ * Other private links use the originating project's Host Browser.
  */
 export async function openWorkspaceUrl(
   cwd: string | undefined,
@@ -119,6 +119,13 @@ export async function openWorkspaceUrl(
     const sessionId = composerSessionId ? remoteSessionFor(composerSessionId) : undefined;
     const missingSession = "Open a session on this Host before using project tools.";
     if (composerSessionId && !sessionId) throw new Error(missingSession);
+    if (url.protocol === "http:") {
+      // An unmatched listener or unavailable bridge can still open on the owning Host.
+      const localUrl = await accessibleDevelopmentUrl(cwd, input).catch(() => undefined);
+      if (composerSessionId && remoteSessionFor(composerSessionId) !== sessionId)
+        throw new Error(missingSession);
+      if (localUrl) return openExternal(localUrl);
+    }
     await featureHost(cwd, "browser.shared");
     const { openHostToolsWindow } = await import("../../host-tools/ToolsWorkspace");
     if (composerSessionId && remoteSessionFor(composerSessionId) !== sessionId)

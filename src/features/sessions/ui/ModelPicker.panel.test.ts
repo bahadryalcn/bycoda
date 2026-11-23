@@ -989,13 +989,13 @@ describe("model panel settings column", () => {
     await openOrdered({});
     const footer = container.querySelector("[data-model-setting-help]")!;
     expect(footer.textContent).not.toContain("Help");
-    expect(footer.querySelectorAll('button[aria-label="Help"]')).toHaveLength(1);
+    expect(footer.querySelectorAll('button[aria-label="Model settings"]')).toHaveLength(1);
   });
 
   it("opens complete settings help without hovering and retains it when focus moves into help", async () => {
     await openOrdered({});
     const footer = container.querySelector("[data-model-setting-help]")!;
-    const help = footer.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!;
+    const help = footer.querySelector<HTMLButtonElement>('button[aria-label="Model settings"]')!;
     expect(help).not.toBeNull();
     await act(async () => help.focus());
     await click(help);

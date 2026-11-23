@@ -154,12 +154,20 @@ type Callbacks = {
       | "playback_interrupted";
     durationMs: number;
   }) => void;
-  diagnostic?: (event: {
-    kind: "close";
-    code: number;
-    ageMs: number;
-    intentional: boolean;
-  }) => void;
+  diagnostic?: (
+    event:
+      | { kind: "close"; code: number; ageMs: number; intentional: boolean }
+      | {
+          kind: "input-deadline";
+          stage: "commit" | "transcript";
+          elapsedMs: number;
+          bufferedBytes: number;
+          previousBufferedBytes?: number;
+          uploadExtensions: number;
+          socketState?: number;
+          lastProviderFrameAgoMs?: number;
+        },
+  ) => void;
 };
 
 /** Cloud speech-to-speech (xAI Grok Voice or OpenAI Realtime) over one WebSocket,
@@ -198,6 +206,7 @@ export class RealtimeVoice {
   >();
   private cancelEvents = new Map<string, string | undefined>();
   private eventSequence = 0;
+  private lastProviderFrameAt?: number;
   private pendingAdmissionAt?: number;
   private responseTiming = new Map<string, { admittedAt: number; scheduled: boolean }>();
   private replyPlayback = new Map<string, { pending: number; done: boolean; hasAudio: boolean }>();
@@ -660,6 +669,7 @@ export class RealtimeVoice {
             this.fail("Voice connection failed. Start voice again.");
             return;
           }
+          this.lastProviderFrameAt = monotonicNow();
           if (event.type === "session.updated" && !this.ready) {
             if (this.conversation.experimentalSemanticVad) {
               const session = event.session as
@@ -1009,6 +1019,7 @@ export class RealtimeVoice {
   /** Starts the wait for a committed candidate's transcript. Re-armed on restore. */
   private transcriptDeadline(): ReturnType<typeof setTimeout> {
     let uploading = Number.POSITIVE_INFINITY;
+    let uploadExtensions = 0;
     const expire = () => {
       const pending = this.pendingInput;
       if (!pending) return;
@@ -1016,17 +1027,36 @@ export class RealtimeVoice {
       // can still be accepted until a delete was actually sent; otherwise only
       // confirmed deletion or a fresh provider session can release the fence.
       if (pending.itemId) return this.rejectPending(true);
+      const buffered = this.socket?.bufferedAmount ?? 0;
+      const stage = pending.acknowledged ? "transcript" : "commit";
+      // Give a draining upload another window, including when it just reached
+      // zero. A buffer that was always empty still uses the original deadline.
+      if (
+        stage === "commit" &&
+        buffered < uploading &&
+        (buffered > 0 || Number.isFinite(uploading))
+      ) {
+        uploading = buffered;
+        uploadExtensions++;
+        pending.timer = setTimeout(expire, TRANSCRIPT_TIMEOUT);
+        return;
+      }
+      this.callbacks.diagnostic?.({
+        kind: "input-deadline",
+        stage,
+        elapsedMs: Math.round(elapsedSince(pending.committedAt)),
+        bufferedBytes: buffered,
+        previousBufferedBytes: Number.isFinite(uploading) ? uploading : undefined,
+        uploadExtensions,
+        socketState: this.socket?.readyState,
+        lastProviderFrameAgoMs:
+          this.lastProviderFrameAt === undefined
+            ? undefined
+            : Math.round(elapsedSince(this.lastProviderFrameAt)),
+      });
       // Confirmed audio with no item identity cannot be deleted; only a fresh session is clean.
       if (pending.acknowledged) {
         this.fail("Voice connection is too slow. Start voice again.", "audio-transcript-missing");
-        return;
-      }
-      // The wait includes the upload: a long utterance on a slow link is still
-      // being sent, so wait again while the backlog keeps shrinking.
-      const buffered = this.socket?.bufferedAmount ?? 0;
-      if (buffered > 0 && buffered < uploading) {
-        uploading = buffered;
-        pending.timer = setTimeout(expire, TRANSCRIPT_TIMEOUT);
         return;
       }
       // Without even a commit acknowledgement the connection is unresponsive.

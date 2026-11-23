@@ -2,7 +2,6 @@ import { errorText } from "../../../shared/lib/errors";
 import { PermissionRow } from "../../permissions";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "../../../shared/ui/Badge";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { t } from "../../../shared/i18n";
 import { AdvancedSettings, Row } from "../../../shared/ui/settings";
@@ -115,12 +114,7 @@ export function MicrophonePermissionSettings() {
         id="speech-microphone"
         label={t("Microphone access")}
         descriptionVisible
-        description={blocked || error || (requestPending && !busy) ? message : undefined}
-        info={
-          !blocked && !error && !(requestPending && !busy) ? (
-            <InfoPopover label={`${t("Microphone access")}: ${t("Help")}`}>{message}</InfoPopover>
-          ) : undefined
-        }
+        description={message}
       >
         {!blocked && !error && !requestPending && (
           <Badge size="xs" tone={permission === "granted" ? "success" : "neutral"}>

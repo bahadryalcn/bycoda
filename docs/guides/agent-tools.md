@@ -67,26 +67,26 @@ Mac even when the conversation belongs to a Windows project. The runtime status,
 platform checks, and setup and start or stop actions follow that selection. Without a
 selected device, the panel lists devices to open.
 
-Live view follows an Android device as video when the Host is on Windows or macOS,
-so the screen moves as it does on the phone and input shows its result at once.
-iOS simulators, older Hosts and any stream failure use still captures instead,
-about one per second. Pausing keeps the picture that was on screen.
+Live view follows an Android device as video on Windows or macOS Hosts. The panel
+receives frames on its Host connection and can display the first decoded picture
+while the still capture is pending. On a Host that supports live touch, Android
+tracks your pointer while you drag. Other Hosts send a swipe when you release.
+Older Hosts can use the previous video transport. iOS simulators and devices without
+working video use still captures about once per second. Pausing keeps the current picture.
 
 On a Mac with Xcode 27.1 or later, an available iPhone Duo simulator also exposes
 **Fold device**, **Half-open device** and **Unfold device** in **Device options**.
-Enable device control first. Agents use `devices.action` with
+The panel obtains control automatically. Agents use `devices.action` with
 `action: { type: "fold", posture: "closed" | "half-open" | "open" }` under the same
 device lease. Folding clears inspection targets and refreshes the still frame;
 capture each pose to check layouts. Physical phones and ordinary simulators do not
 offer these controls. The selected Xcode must include the Duo simulator runtime.
 
-Devices opens in view-only mode. The header has an **Allow device control** switch
-and a visible state: **View only**, **Control active**, or **Control in use**.
-A competing controller disables the switch and exposes its ownership reason.
-Claim control explicitly before sending input;
-release it when finished. Another controller's claim, an expired lease or an older
-Host without control ownership support prevents input. Switching conversations or
-computers does not transfer control. App and text drafts remain with their device.
+Devices obtains control automatically for the selected running device while the panel
+is open. If another controller holds the device, the panel waits until it becomes
+available. Input requires a valid Host lease.
+Closing the panel or switching targets releases its lease after pending input finishes.
+App and text drafts remain with their device.
 
 Text, app and accessibility search panels focus their input when opened. Close or
 Escape returns focus to the action that opened the panel. Hidden tool panels keep
@@ -143,16 +143,14 @@ uses the integrated preview first when available. The preview opens in the
 originating conversation's Browser panel by default. A responsive check can resize
 the browser viewport; this does not simulate a physical phone. The dimensions control
 in the Browser toolbar opens presets for desktop, tablet and phone, custom dimensions,
-and rotation. Browser controls and setup remain in their separate menu. Width must be
+and rotation. Width must be
 240–2560 pixels and height 240–2160 pixels. Resizing requires browser control and
 invalidates the previous element selection and frame geometry.
 
-Private HTTP and HTTPS links in a remote conversation open in the project's
-Host Browser. For example, a link to `http://localhost:3000/patients` reaches
-port 3000 on the remote Host. You can open a running app this way even if it
-is missing from Development servers. To open a discovered, supported endpoint
-in your system browser, use **Open in this computer's browser** in Development
-servers.
+On desktop, click a remote conversation's HTTP development link to open it in
+your system browser. For a matching project server, bycoda creates a private
+address on this computer and forwards requests to the remote Host. HTTPS links,
+unmatched servers and unavailable forwarding use the project's Host Browser.
 
 Before a page is open, the Browser panel lists recently opened addresses on this
 computer; choose one to open it, or remove it from the list. Addresses with a user
@@ -167,6 +165,19 @@ not acquire or renew control. A frame remains readable after the 30-second contr
 lease expires or another controller takes control of the same conversation's page.
 Input, navigation, viewport changes and closing still require an active lease;
 the assistant checks status and explicitly claims control again when needed.
+
+The visible desktop Browser panel acquires available control automatically. Click
+the preview to type, paste, use shortcuts or drag. Scroll directly over the fitted
+preview. The panel resumes input when another controller releases the page. If
+Chromium needs installation, the Browser panel shows the setup action.
+
+Pausing live view in the visible Browser panel keeps the page active through
+periodic status reads. If the Host loses the page, the panel clears the old
+image and keeps the address available so you can reopen it.
+
+The desktop panel uses a binary frame stream when supported by the selected
+Host. It displays the most recent frame available and falls back to the
+regular frame request when the stream is unavailable.
 
 The assistant can record the conversation's browser as a short WebM video. Starting a
 recording needs the active control lease. After that, recording continues while the

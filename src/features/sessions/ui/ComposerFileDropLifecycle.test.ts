@@ -114,7 +114,7 @@ function dropBadge() {
 }
 
 function attachmentCount() {
-  return container.querySelectorAll('[aria-label^="Remove "]').length;
+  return container.querySelectorAll("[data-attachment-chip]").length;
 }
 
 function explorerDrag(detail: ExplorerFilePointerDragDetail) {

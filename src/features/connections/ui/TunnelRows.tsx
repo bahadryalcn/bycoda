@@ -6,7 +6,6 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Code } from "../../../shared/ui/Code";
 import { Divider } from "../../../shared/ui/Divider";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
@@ -187,16 +186,18 @@ function TunnelRow({
           </StatusText>
         </div>
         {publicUrl ? (
-          <div className="external-tunnel-actions">
-            <OverflowTooltip label={publicUrl}>
-              <Text as="div" size="caption" truncate className="min-w-0 flex-1">
-                <Code>{publicUrl}</Code>
-              </Text>
-            </OverflowTooltip>
-            <InfoPopover label={t("Public URL")}>
-              <p>{t("Public access has not been verified.")}</p>
-            </InfoPopover>
-          </div>
+          <>
+            <div className="external-tunnel-actions">
+              <OverflowTooltip label={publicUrl}>
+                <Text as="div" size="caption" truncate className="min-w-0 flex-1">
+                  <Code>{publicUrl}</Code>
+                </Text>
+              </OverflowTooltip>
+            </div>
+            <Text as="p" size="caption" tone="muted">
+              {t("Public access has not been verified.")}
+            </Text>
+          </>
         ) : null}
         {tunnel.issue ? (
           tunnel.state === "error" ? (

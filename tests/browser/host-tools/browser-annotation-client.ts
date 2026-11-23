@@ -6,6 +6,24 @@ export async function listHostToolMachines() {
   return [];
 }
 
+export async function openBrowserFrameStream() {
+  if (!(window as Window & { fixtureBrowserFrames?: boolean }).fixtureBrowserFrames)
+    throw new Error("Native media is unavailable in this fixture");
+  return {
+    read: async (after: number) =>
+      (await fetch(`/browser-fixture/media?after=${after}`)).arrayBuffer(),
+    close: async () => {},
+  };
+}
+
+export async function subscribeDeviceVideo(): Promise<never> {
+  throw new Error("The browser fixture has no device video");
+}
+
+export async function deviceTouchAvailable() {
+  return false;
+}
+
 export async function hostToolRequest<T>(
   cwd: string,
   capability: string,

@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   columnTransitions,
   jiraBoardIssues,
+  jiraBoardIssueFilters,
   jiraBoardsInVisibleProjects,
   jiraMoveIssue,
   jiraTransitionIssue,
@@ -12,6 +13,7 @@ import {
   type JiraBoardIssue,
 } from "./jiraBoard";
 import { saveAllowedJiraBoardIds, saveHiddenJiraProjectIds } from "./jira";
+import { DEFAULT_INBOX_FILTERS } from "./inboxFilters";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 beforeEach(() => {
   localStorage.clear();
@@ -95,6 +97,31 @@ it("matches column status IDs rather than duplicate status names", () => {
       statusIds: ["7"],
     }),
   ).toEqual([transition]);
+});
+
+it("passes the same Jira filters with a continuation cursor", async () => {
+  vi.mocked(invoke).mockResolvedValue({ issues: [], nextPageToken: null });
+  const filters = jiraBoardIssueFilters({
+    ...DEFAULT_INBOX_FILTERS,
+    jiraUnassigned: true,
+    jiraStatuses: ["Ready"],
+  });
+  await jiraBoardIssues(7, { scope: "backlog" }, "second", filters);
+  expect(invoke).toHaveBeenCalledWith("jira_board_issues", {
+    boardId: 7,
+    scope: "backlog",
+    sprintId: null,
+    nextPageToken: "second",
+    projectIds: null,
+    filters: {
+      assignedToMe: false,
+      assigneeIds: [],
+      unassigned: true,
+      statuses: ["Ready"],
+      open: false,
+      closed: false,
+    },
+  });
 });
 it("uses the destination's last issue or an explicit before anchor without self ranking", () => {
   const issues = ["ENG-1", "ENG-2"].map((identifier) => ({ identifier }) as JiraBoardIssue);

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Surface } from "../../../shared/ui/Surface";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import type { CrewAgent, CrewPolicy, CrewRole } from "../model/crew";
@@ -95,13 +95,13 @@ export function CrewMemberDetail({
                   : t("Member library")}
             </Text>
             {link?.state === "linked" ? (
-              <InfoPopover label={t("About the library profile")}>
+              <InfoTooltip label={t("About the library profile")}>
                 <p>
                   {t(
                     "Changes to the name, instructions, model, groups, avatar or handle here customize this member for this crew only.",
                   )}
                 </p>
-              </InfoPopover>
+              </InfoTooltip>
             ) : null}
           </span>
           {link?.state === "customized" ? <span>{t("customized")}</span> : null}

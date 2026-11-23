@@ -265,7 +265,7 @@ test("device preview uses the dock height with compact controls", async ({ page 
     await page.getByRole("button", { name: "Kurulum ve erişim", exact: true }).click();
     await expect(page.locator(".device-panel-setup-summary")).toBeInViewport();
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("switch", { name: "Cihaz kontrolüne izin ver" })).not.toBeChecked();
+    await expect(page.getByRole("switch", { name: "Cihaz kontrolüne izin ver" })).toHaveCount(0);
     expect(
       await page.getByRole("tabpanel").evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
     ).toBe(true);
@@ -633,7 +633,7 @@ test("switching from the project host clears the previous browser controls", asy
   await page.getByRole("button", { name: "Open website", exact: true }).click();
   await expect(
     page.getByRole("img", {
-      name: "Shared host browser screenshot; click to interact when controlling",
+      name: "Shared host browser",
     }),
   ).toBeVisible();
   const liveView = page.getByRole("button", { name: "Live view", exact: true });
@@ -642,7 +642,7 @@ test("switching from the project host clears the previous browser controls", asy
   await expect(page.getByRole("button", { name: "Open website", exact: true })).toBeEnabled();
   await expect(
     page.getByRole("img", {
-      name: "Shared host browser screenshot; click to interact when controlling",
+      name: "Shared host browser",
     }),
   ).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Live view", exact: true })).toHaveAttribute(
@@ -768,43 +768,47 @@ test("development server tools fit wide and narrow terminal docks", async ({ pag
     });
   }
 });
-test("opens the browser and sends input using its control lease", async ({ page }) => {
+test("opens the browser and sends input directly from the preview", async ({ page }) => {
   await page.goto(fixture);
   await selectTool(page, "Host browser");
   await page.getByRole("button", { name: "Open website", exact: true }).click();
   await expect(
     page.getByRole("img", {
-      name: "Shared host browser screenshot; click to interact when controlling",
+      name: "Shared host browser",
     }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
-  await page.getByLabel("Text to type into host browser").fill("Example text");
-  await page.getByRole("button", { name: "Type text" }).click();
-  await expect(page.getByLabel("Text to type into host browser")).toHaveValue("");
-  const inputs = await page.evaluate(() =>
-    (
-      window as unknown as { hostToolCalls: { method: string; params: Record<string, unknown> }[] }
-    ).hostToolCalls.filter((call) => call.method === "browser.input"),
-  );
-  expect(inputs).toEqual([
-    {
-      cwd: "G:/demo/example",
-      method: "browser.input",
-      params: expect.objectContaining({
-        kind: "text",
-        text: "Example text",
-        leaseId: "fixture-lease",
-        sessionId: "fixture-session",
+  await page.getByRole("img", { name: "Shared host browser", exact: true }).click();
+  await expect(page.getByLabel("Direct browser input")).toBeFocused();
+  await page.keyboard.insertText("Example text");
+  await page.keyboard.press("Enter");
+  const inputs = () =>
+    page.evaluate(() =>
+      (
+        window as unknown as {
+          hostToolCalls: { method: string; params: Record<string, unknown> }[];
+        }
+      ).hostToolCalls.filter((call) => call.method === "browser.input"),
+    );
+  await expect.poll(inputs).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        params: expect.objectContaining({
+          kind: "text",
+          text: "Example text",
+          leaseId: "fixture-lease",
+          sessionId: "fixture-session",
+        }),
       }),
-    },
-  ]);
-  await page.keyboard.press("Escape");
-  // The labelled control toggle releases the lease in one click.
-  await page.getByRole("button", { name: "Control active", exact: true }).click();
-  await expect(page.getByRole("button", { name: "View only", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Type text" })).toBeDisabled();
+      expect.objectContaining({ params: expect.objectContaining({ kind: "key", key: "Enter" }) }),
+    ]),
+  );
+  await expect(
+    page.getByRole("button", { name: "Browser controls and setup", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Control active", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Refresh frame" })).toBeEnabled();
+  await page.keyboard.press("F6");
+  await expect(page.getByRole("textbox", { name: "Website address", exact: true })).toBeFocused();
 });
 test("starts, boots and captures a device and stops live viewing on tab change", async ({
   page,
@@ -836,9 +840,9 @@ test("starts, boots and captures a device and stops live viewing on tab change",
         ).length,
     ),
   ).toBe(1);
-  await expect(
-    page.getByRole("switch", { name: "Allow device control", exact: true }),
-  ).not.toBeChecked();
+  await expect(page.getByRole("switch", { name: "Allow device control", exact: true })).toHaveCount(
+    0,
+  );
   await page.getByRole("button", { name: "Device options", exact: true }).click();
   await page.getByRole("button", { name: "Add device to conversation", exact: true }).click();
   await expect(page.getByText("Device added to draft.", { exact: true })).toBeVisible();
@@ -853,11 +857,7 @@ test("starts, boots and captures a device and stops live viewing on tab change",
     "aria-pressed",
     "true",
   );
-  // Control turns on only after the Host grants a lease, so wait for the claim.
-  await page.getByRole("switch", { name: "Allow device control", exact: true }).click();
-  await expect(
-    page.getByRole("switch", { name: "Allow device control", exact: true }),
-  ).toBeChecked();
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toBeEnabled();
   await expect(page.getByText("App name or bundle ID", { exact: true })).not.toBeVisible();
   await page.getByRole("button", { name: "Choose app to open", exact: true }).click();
   await expect(page.getByText("App name or bundle ID", { exact: true })).toBeVisible();
@@ -1037,7 +1037,7 @@ test("keeps preview separate from explicit website log monitoring", async ({ pag
   await page.getByRole("button", { name: "Open website", exact: true }).click();
   await expect(
     page.getByRole("img", {
-      name: "Shared host browser screenshot; click to interact when controlling",
+      name: "Shared host browser",
     }),
   ).toBeVisible();
   const monitorStarts = () =>
@@ -1152,7 +1152,7 @@ test("compact browser keeps preview and keyboard controls usable at all panel wi
       await expect(panel.getByRole("button", { name: "Open website", exact: true })).toBeEnabled();
       await expect(
         panel.getByRole("button", { name: "Browser controls and setup", exact: true }),
-      ).toBeVisible();
+      ).toHaveCount(0);
       await expect(page.getByRole("dialog", { name: "Browser controls and setup" })).toHaveCount(0);
       const address = panel.getByRole("textbox", { name: "Website address" });
       await address.focus();
@@ -1192,34 +1192,7 @@ test("compact browser keeps preview and keyboard controls usable at all panel wi
       await panel.getByRole("button", { name: "Browser viewport", exact: true }).click();
       await page.getByRole("radio", { name: "Fit preview", exact: true }).click();
       await page.keyboard.press("Escape");
-      await panel.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
-      const controls = page.getByRole("dialog", {
-        name: "Browser controls and setup",
-        exact: true,
-      });
-      await expect(controls).toBeVisible();
-      const controlsBox = await controls.boundingBox();
-      expect(controlsBox!.x).toBeGreaterThanOrEqual(0);
-      expect(controlsBox!.x + controlsBox!.width).toBeLessThanOrEqual(width);
-      await controls
-        .getByRole("textbox", { name: "Text to type into host browser" })
-        .fill("Kept draft");
-      await expect(
-        controls.getByRole("textbox", { name: "Text to type into host browser" }),
-      ).toHaveValue("Kept draft");
-      expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-      await page.keyboard.press("Escape");
-      await expect(controls).toHaveCount(0);
-      await expect(
-        panel.getByRole("button", { name: "Browser controls and setup", exact: true }),
-      ).toBeFocused();
-      await panel.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
-      await expect(
-        controls.getByRole("textbox", { name: "Text to type into host browser" }),
-      ).toHaveValue("Kept draft");
-      await expect(
-        controls.getByRole("button", { name: "Close browser", exact: true }),
-      ).toBeEnabled();
+      await expect(panel.locator(".host-browser-frame")).toHaveAttribute("tabindex", "0");
     }
   }
   await page.setViewportSize({ width: 1920, height: 640 });
@@ -1326,21 +1299,25 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Open website", exact: true }).click();
       await expect(
         page.getByRole("img", {
-          name: "Shared host browser screenshot; click to interact when controlling",
+          name: "Shared host browser",
         }),
       ).toBeVisible();
       await page.screenshot({
-        path: `temp/verification/goal-final-callers/browser-${theme}-${width}.png`,
+        path: `temp/verification/browser-direct-controls/browser-${theme}-${width}.png`,
         animations: "disabled",
       });
-      await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
-      await expect(page.getByLabel("Text to type into host browser")).toBeVisible();
+      await page.getByRole("button", { name: "Browser viewport", exact: true }).click();
+      await expect(
+        page.getByRole("dialog", { name: "Browser viewport", exact: true }),
+      ).toBeVisible();
       await page.screenshot({
-        path: `temp/verification/goal-final-callers/browser-controls-${theme}-${width}.png`,
+        path: `temp/verification/browser-direct-controls/viewport-${theme}-${width}.png`,
         animations: "disabled",
       });
       await page.keyboard.press("Escape");
-      await expect(page.getByLabel("Text to type into host browser")).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Browser viewport", exact: true })).toHaveCount(
+        0,
+      );
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

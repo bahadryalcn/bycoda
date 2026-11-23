@@ -14,6 +14,7 @@ import type { Attachment } from "../model/session";
 import { AttachmentFilePreview, canOpenFileAttachment } from "./AttachmentFilePreview";
 import { ComposerSkillGroupHover } from "./ComposerSkillGroupHover";
 import { useAttachmentPreview } from "./useAttachmentPreview";
+import { useAttachmentMenu } from "./useAttachmentMenu";
 import styles from "./ComposerHighlight.module.css";
 
 export type ComposerSkillDetails = { description: string; path?: string };
@@ -296,14 +297,17 @@ export function ComposerSkillReference({
 
 export function ComposerAttachmentPreview({
   attachment,
+  projectRoot,
   anchor,
   close,
 }: {
   attachment: Attachment;
+  projectRoot?: string;
   anchor: HTMLElement;
   close: () => void;
 }) {
   const t = useT();
+  const { actions, saveCopy } = useAttachmentMenu(attachment, projectRoot);
   const image = useAttachmentPreview(attachment);
   const show = useStableCallback(image.show);
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- The mounted preview owns the existing attachment reader and releases it when closed.
@@ -331,11 +335,20 @@ export function ComposerAttachmentPreview({
         error={image.error ? t("Preview unavailable. Try again.") : undefined}
         onRetry={image.retry}
         onImageError={image.recover}
+        contextActions={actions}
+        notice={saveCopy.error}
       />
     );
   }
   if (canOpenFileAttachment(attachment))
-    return <AttachmentFilePreview attachment={attachment} onClose={close} />;
+    return (
+      <AttachmentFilePreview
+        attachment={attachment}
+        onClose={close}
+        contextActions={actions}
+        notice={saveCopy.error}
+      />
+    );
   return <UnavailableReference anchor={anchor} name={attachment.name} close={close} />;
 }
 

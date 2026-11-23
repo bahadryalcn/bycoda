@@ -56,6 +56,7 @@ vi.mock("../../sessions/model/models", () => ({
       : { effort: "default" },
 }));
 import { AssistantProfileFields } from "./AssistantProfileFields";
+import { TOOLTIP_DELAY_MS } from "../../../shared/ui/Tooltip";
 import { ProfileRowsProvider } from "./settings/SettingsProfileRow";
 import { AssistantCostInfo } from "./settings/AssistantCostFields";
 let root: Root | undefined, container: HTMLDivElement;
@@ -358,9 +359,14 @@ it("requires an explicit worker choice when the default catalog is unavailable",
 it("keeps the dynamic title preview available beside its switch without an extra prose row", async () => {
   await setup({ name: "Ada", showTitle: true }, "identity");
   expect(container.textContent).not.toContain("Room · Ada");
-  await click("Preview");
-  expect(document.body.textContent).toContain("Assistant Ada");
-  expect(document.body.textContent).toContain("Room · Ada");
+  const preview = container.querySelector<HTMLElement>('[role="img"][aria-label="Preview"]')!;
+  await act(async () => {
+    preview.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    await new Promise((resolve) => setTimeout(resolve, TOOLTIP_DELAY_MS));
+  });
+  const tooltip = document.querySelector('[role="tooltip"]');
+  expect(tooltip?.textContent).toContain("Assistant Ada");
+  expect(tooltip?.textContent).toContain("Room · Ada");
   expect(observed.patches).toEqual([]);
 });
 

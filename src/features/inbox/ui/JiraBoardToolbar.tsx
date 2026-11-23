@@ -1,10 +1,11 @@
 import { Button } from "../../../shared/ui/Button";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { TabStrip } from "../../../shared/ui/Tabs";
-import { RefreshCw } from "../../../shared/ui/icons";
+import { RefreshCw, Search } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import type { JiraBoard, JiraSprint } from "../model/jiraBoard";
+import type { ReactNode } from "react";
 
 type Props = {
   boards: readonly JiraBoard[];
@@ -13,6 +14,7 @@ type Props = {
   mode: "kanban" | "planning";
   scope: string;
   search: string;
+  filterTrigger?: ReactNode;
   locked: boolean;
   loading: boolean;
   refreshDisabled: boolean;
@@ -42,7 +44,9 @@ export function JiraBoardToolbar(props: Props) {
               : [{ value: "0", label: t("Select allowed boards in Settings → Inbox → Jira") }]
           }
           disabled={props.locked}
-          value={String(props.boardId)}
+          value={
+            props.boards.some((board) => board.id === props.boardId) ? String(props.boardId) : "0"
+          }
           onChange={(value) => props.onBoardChange(Number(value))}
         />
       </div>
@@ -75,16 +79,21 @@ export function JiraBoardToolbar(props: Props) {
           />
         </div>
       ) : null}
-      <div className="min-w-44 flex-1">
-        <SearchInput
-          appearance="field"
-          fieldSize="sm"
-          type="search"
-          aria-label={t("Filter issues")}
-          placeholder={t("Filter issues")}
-          value={props.search}
-          onChange={(event) => props.onSearchChange(event.target.value)}
-        />
+      <div className="flex min-w-44 flex-1 items-center gap-1">
+        <SearchInputGroup appearance="field" className="min-w-0 flex-1">
+          <Search tone="secondary" className="pointer-events-none icon-xs shrink-0" />
+          <SearchInput
+            focusOwner="group"
+            type="search"
+            aria-label={t("Filter issues")}
+            placeholder={t("Filter loaded items")}
+            value={props.search}
+            onChange={(event) => props.onSearchChange(event.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </SearchInputGroup>
+        {props.filterTrigger}
       </div>
       <Button
         iconOnly

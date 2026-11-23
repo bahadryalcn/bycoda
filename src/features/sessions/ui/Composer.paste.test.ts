@@ -76,7 +76,7 @@ it("copies attachments from the selection menu and restores them after cutting w
     );
     expect(write).toHaveBeenCalledOnce();
     expect(textarea.value).toBe("Keep");
-    expect(container.querySelector('[aria-label="Remove shot.png"]')).toBeNull();
+    expect(container.querySelector('[data-attachment-name="shot.png"]')).toBeNull();
     const html = await (await write.mock.calls[0][0][0].getType("text/html")).text();
     expect(messageFilesFromClipboard({ getData: () => html })?.map((file) => file.name)).toEqual([
       "shot.png",
@@ -93,8 +93,8 @@ it("copies attachments from the selection menu and restores them after cutting w
       ),
     );
     expect(textarea.value).toBe(original);
-    expect(container.querySelector('[aria-label="Remove shot.png"]')).not.toBeNull();
-    expect(container.querySelector('[aria-label="Remove report.txt"]')).not.toBeNull();
+    expect(container.querySelector('[data-attachment-name="shot.png"]')).not.toBeNull();
+    expect(container.querySelector('[data-attachment-name="report.txt"]')).not.toBeNull();
   } finally {
     act(() => root.unmount());
     clearComposerDraft(sessionId);

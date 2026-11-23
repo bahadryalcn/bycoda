@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoPopover, InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import {
   useContext,
@@ -573,11 +573,11 @@ export function UsageOverview({
             )}
           </InfoPopover>
           {view === "limits" ? (
-            <InfoPopover label={t("About limit filters")}>
+            <InfoTooltip label={t("About limit filters")}>
               {t(
                 "Provider and account filters apply to account limits and history. Local budget rules keep their own scope.",
               )}
-            </InfoPopover>
+            </InfoTooltip>
           ) : null}
         </div>
         <div className="usage-analytics-actions">

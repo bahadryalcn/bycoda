@@ -1,4 +1,4 @@
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { NotificationRequestCount } from "./NotificationRequestCount";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -446,11 +446,11 @@ export function ApprovalToasts({
                   {t("All notification settings…")}
                 </Button>
               ) : null}
-              <InfoPopover>
+              <InfoTooltip>
                 {t("Only the latest {p0} notifications are kept on this device.", {
                   p0: MAX_NOTIFICATION_HISTORY,
                 })}
-              </InfoPopover>
+              </InfoTooltip>
             </Popover>
           ) : null}
           <ScrollArea

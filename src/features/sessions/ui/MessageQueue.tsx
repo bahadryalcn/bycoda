@@ -1,4 +1,4 @@
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { actionDragAttributes } from "../../../shared/ui/ActionHost";
 import { Text } from "../../../shared/ui/Text";
@@ -856,11 +856,11 @@ export function MessageQueue({
           <InlineError className="py-1">{activeFeedback.text}</InlineError>
         ) : null}
         {remote ? (
-          <InfoPopover>
+          <InfoTooltip>
             {t("Sent one at a time when the host finishes this turn, while {p0} is open.", {
               p0: PRODUCT_IDENTITY.displayName,
             })}
-          </InfoPopover>
+          </InfoTooltip>
         ) : null}
       </div>
       {editingMessage ? (

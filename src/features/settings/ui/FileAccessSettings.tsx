@@ -13,7 +13,6 @@ import { Group, Row } from "../../../shared/ui/settings";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { errorText } from "../../../shared/lib/errors";
 
@@ -121,16 +120,11 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
       <Row
         id="file-access"
         label={t("Current access")}
-        description={t("Agent approval rules still control commands and tools.")}
-        info={
-          <InfoPopover className="shrink-0" label={t("About file access")}>
-            <p>
-              {t(
-                "All files access allows reading and editing files on this computer. Selected-folder grants may be read-only. Change file access opens the native consent flow.",
-              )}
-            </p>
-          </InfoPopover>
-        }
+        descriptionVisible
+        description={t(
+          "All files access allows reading and editing files on this computer. Selected-folder grants may be read-only. Change file access opens the native consent flow.",
+        )}
+        dependency={t("Agent approval rules still control commands and tools.")}
         scope={
           <>
             <LiveText

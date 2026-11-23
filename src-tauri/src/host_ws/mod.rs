@@ -67,6 +67,7 @@ fn native_device_method(method: &str) -> bool {
             | "devices.boot"
             | "devices.capture"
             | "devices.stream"
+            | "devices.touch"
             | "devices.control.status"
             | "devices.control.claim"
             | "devices.control.release"
@@ -257,6 +258,12 @@ pub struct NativeRoute {
 }
 
 impl NativeRoute {
+    pub(crate) fn browser_frames_endpoint(&self) -> Result<Url, String> {
+        let mut endpoint = Url::parse(&self.endpoint).map_err(|_| "Invalid Host route")?;
+        endpoint.set_path("/ws-browser-frames");
+        Ok(endpoint)
+    }
+
     /// `authorization_context` is a native credential/principal revision, never a
     /// renderer-provided scope. A credential or route change creates a new pipe.
     pub fn new(

@@ -8,13 +8,15 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/settings/title-settings.html?theme=${theme}`);
-      await page.getByRole("button", { name: "Help", exact: true }).click();
-      await expect(
-        page
-          .getByRole("dialog", { name: "Help" })
-          .getByText("Model set in Work > Assignments.", { exact: true }),
-      ).toBeVisible();
-      await page.keyboard.press("Escape");
+      const hint = page.getByRole("img", { name: "Help", exact: true });
+      await hint.hover();
+      await expect(page.getByRole("tooltip")).toHaveText("Model set in Work > Assignments.");
+      await page.screenshot({
+        path: `temp/verification/tooltip-consistency/settings-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await hint.click();
+      await expect(page.getByRole("dialog", { name: "Help" })).toBeHidden();
       await page.getByRole("button", { name: "Manage models", exact: true }).click();
       await expect
         .poll(() =>

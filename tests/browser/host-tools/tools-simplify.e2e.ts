@@ -226,27 +226,18 @@ test("opening and editing a server start form preserves its draft without starti
   await expectNoHorizontalOverflow(page);
 });
 
-test("browser URL and preview stay local while view-only mode prevents input", async ({ page }) => {
+test("browser URL and direct input stay on the selected host", async ({ page }) => {
   await page.goto(fixture);
   await selectTool(page, "Host browser");
   await openBrowser(page);
-  // The labelled control toggle releases and reclaims in one click, without a popover.
-  await page.getByRole("button", { name: "Control active", exact: true }).click();
-  await expect(page.getByRole("button", { name: "View only", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Claim control", exact: true })).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "Select element and add to composer", exact: true }),
-  ).toBeDisabled();
+    page.getByRole("button", { name: "Browser controls and setup", exact: true }),
+  ).toHaveCount(0);
   const beforeInput = await methodCount(page, "browser.input");
   await page.locator(".host-browser-frame").click({ position: { x: 40, y: 30 } });
-  expect(await methodCount(page, "browser.input")).toBe(beforeInput);
-  await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
-  const controls = page.getByRole("dialog", { name: "Browser controls and setup", exact: true });
-  await expect(
-    controls.getByRole("textbox", { name: "Text to type into host browser", exact: true }),
-  ).toBeDisabled();
-  await page.keyboard.press("Escape");
-  await expect(controls).toHaveCount(0);
+  await expect.poll(() => methodCount(page, "browser.input")).toBeGreaterThan(beforeInput);
+  await expect(page.getByLabel("Direct browser input")).toBeFocused();
   await expect(page.getByRole("textbox", { name: "Website address", exact: true })).toHaveValue(
     "http://localhost:5173",
   );

@@ -1,8 +1,8 @@
 # Personal assistant
 
 In Automations, instructions and scheduling settings share a bounded editor.
-Session options and Advanced limits use stacked fields so descriptions remain
-readable in narrow windows. Scheduled times use the shared time picker. The AI
+Hover over an info icon or focus it with Tab to read its explanation.
+Scheduled times use the shared time picker. The AI
 assistant keeps scope above its project and model controls; the automation review
 shows instructions before the schedule and execution details.
 

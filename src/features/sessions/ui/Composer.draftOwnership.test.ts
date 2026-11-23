@@ -124,7 +124,7 @@ it("waits for a pending picker and includes its file in the original Send", asyn
   expect(submit).toHaveBeenCalledOnce();
   expect(submit.mock.calls[0][1]).toEqual([file]);
   expect(container.querySelector("textarea")!.value).toBe("");
-  expect(container.querySelector('[aria-label="Remove selected.txt"]')).toBeNull();
+  expect(container.querySelector('[data-attachment-name="selected.txt"]')).toBeNull();
 });
 
 it("retires picker results and a waiting Send when the draft is reset", async () => {
@@ -141,7 +141,7 @@ it("retires picker results and a waiting Send when the draft is reset", async ()
   await act(async () => finish([file]));
   expect(submit).not.toHaveBeenCalled();
   expect(container.querySelector("textarea")!.value).toBe("");
-  expect(container.querySelector('[aria-label="Remove selected.txt"]')).toBeNull();
+  expect(container.querySelector('[data-attachment-name="selected.txt"]')).toBeNull();
 });
 
 it("retains text and cancels a waiting Send when file inspection fails", async () => {
@@ -198,7 +198,7 @@ it("recalls an edited message with its attachments as an unsent persisted draft 
   expect(textarea.selectionStart).toBe(recall.value.text.length);
   expect(textarea.selectionEnd).toBe(recall.value.text.length);
   expect(document.activeElement).toBe(textarea);
-  expect(container.querySelector('[aria-label="Remove selected.txt"]')).not.toBeNull();
+  expect(container.querySelector('[data-attachment-name="selected.txt"]')).not.toBeNull();
   expect(getComposerDraft(id)).toBe(recall.value.text);
   expect(getComposerAttachments(id)).toEqual([file]);
   expect(applied).toHaveBeenCalledExactlyOnceWith(recall.id);
@@ -218,6 +218,6 @@ it("recalls an edited message with its attachments as an unsent persisted draft 
   root = createRoot(container);
   await draw({ initialDraft: getComposerDraft(id) });
   expect(container.querySelector("textarea")!.value).toBe("My revision");
-  expect(container.querySelector('[aria-label="Remove selected.txt"]')).not.toBeNull();
+  expect(container.querySelector('[data-attachment-name="selected.txt"]')).not.toBeNull();
   expect(submit).not.toHaveBeenCalled();
 });

@@ -56,6 +56,7 @@ import {
   waitFor,
 } from "./server-helpers";
 import { isTunnelUpgradeUrl } from "../../dev-servers/dev-server-tunnel";
+import { isBrowserMediaUpgrade } from "../../browser/browser-media";
 import {
   authorizeWith,
   invalidRequestMessage,
@@ -994,7 +995,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
 
   const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
     // `/ws-tunnel` has its own upgrade listener (dev-server-tunnel.ts).
-    if (isTunnelUpgradeUrl(request.url)) return;
+    if (isTunnelUpgradeUrl(request.url) || isBrowserMediaUpgrade(request.url)) return;
     const remoteSource =
       socket instanceof Object && "remoteAddress" in socket
         ? String(socket.remoteAddress ?? "unknown")

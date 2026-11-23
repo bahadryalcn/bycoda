@@ -4,7 +4,7 @@ import {
   type ModelRoutingPool,
 } from "../../../../shared/model/host-contracts/model-routing";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
@@ -133,11 +133,11 @@ export function ModelOrderPools({
                     { value: "high", label: t("High") },
                   ]}
                 />
-                <InfoPopover label={t("Group effort")}>
+                <InfoTooltip label={t("Group effort")}>
                   {t(
                     "Work that runs on this group uses this effort on every model that supports it, including models of included groups. Default keeps each model's own setting.",
                   )}
-                </InfoPopover>
+                </InfoTooltip>
               </div>
               <Button
                 iconOnly

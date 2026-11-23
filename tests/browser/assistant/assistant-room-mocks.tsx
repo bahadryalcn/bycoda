@@ -1648,3 +1648,6 @@ export async function listHostToolMachines(): Promise<never[]> {
 }
 
 applyRecordsDataset(snapshot);
+export async function openBrowserFrameStream(): Promise<never> {
+  throw new Error("Native media is unavailable in this fixture");
+}

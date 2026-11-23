@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { OnboardingHeading } from "./OnboardingHeading";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { Text } from "../../../shared/ui/Text";
 import {
   getStatsChoice,
   setStatsChoice,
@@ -15,8 +16,11 @@ export function OnboardingStatistics() {
   const choice = useSyncExternalStore(subscribeAnonymousStats, getStatsChoice);
   return (
     <>
-      <OnboardingHeading title={t("Statistics")} info={statsDisclosure()} />
+      <OnboardingHeading title={t("Statistics")} />
       <div className="onboarding-scroll">
+        <Text as="p" size="caption" tone="muted" leading="normal" className="onboarding-hint">
+          {statsDisclosure()}
+        </Text>
         <div className="onboarding-actions">
           <SegmentedControl
             label={t("Statistics")}

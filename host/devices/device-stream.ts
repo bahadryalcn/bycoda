@@ -214,6 +214,7 @@ interface Recorder {
   starting?: Promise<void>;
   display: { width: number; height: number };
   verifiedAt: number;
+  verifying?: boolean;
   lastDataAt: number;
   /** Consecutive runs that ended before their first key frame. */
   failures: number;
@@ -244,29 +245,17 @@ export class DeviceStreams {
     id: string,
     cursor: number | undefined,
     effect?: DeviceEffectContext,
+    push?: { signal: AbortSignal },
   ): Promise<DeviceStreamChunk> {
+    push?.signal.throwIfAborted();
     if (this.ports.closed()) throw new Error("Device host is disposed");
     if (cursor !== undefined && !(Number.isSafeInteger(cursor) && cursor >= 0))
       throw new Error("Invalid device stream cursor");
     await assertDeviceAuthority(effect);
     let recorder = this.recorders.get(id);
-    if (!recorder || elapsedSince(recorder.verifiedAt) >= this.timing.verifyMs) {
-      let device: DeviceSummary;
-      try {
-        device = await this.ports.device(id);
-      } catch (cause) {
-        await this.stop(id);
-        throw cause;
-      }
+    if (!recorder) {
+      await this.verifyDevice(id);
       await assertDeviceAuthority(effect);
-      if (!device.booted) {
-        await this.stop(id);
-        throw new Error("Boot the device before viewing");
-      }
-      if (!["win32", "darwin"].includes(this.ports.platform()) || device.platform !== "android")
-        throw new Error(
-          "DEVICE_STREAM_UNSUPPORTED: Live view needs an Android device on a Windows or macOS Host.",
-        );
       if (this.ports.closed()) throw new Error("Device host is disposed");
       recorder = this.recorders.get(id);
       if (!recorder) {
@@ -285,11 +274,42 @@ export class DeviceStreams {
         this.recorders.set(id, recorder);
       }
       recorder.verifiedAt = monotonicNow();
+    } else if (!recorder.verifying && elapsedSince(recorder.verifiedAt) >= this.timing.verifyMs) {
+      const current = recorder;
+      // Discovery must not block delivery from the existing, device-bound recorder.
+      current.verifying = true;
+      void this.verifyDevice(id)
+        .then(
+          () => {
+            current.verifiedAt = monotonicNow();
+          },
+          (cause: unknown) => {
+            if (this.recorders.get(id) !== current) return;
+            current.error = cause instanceof Error ? cause : new Error(String(cause));
+            return this.stop(id);
+          },
+        )
+        .finally(() => {
+          current.verifying = false;
+        })
+        .catch(() => {});
     }
+    push?.signal.throwIfAborted();
     this.armIdle(recorder);
-    const chunk = await this.next(recorder, cursor);
+    const chunk = await this.next(recorder, cursor, push?.signal);
+    push?.signal.throwIfAborted();
     await assertDeviceAuthority(effect);
+    if (recorder.error) throw recorder.error;
     return chunk;
+  }
+
+  private async verifyDevice(id: string): Promise<void> {
+    const device = await this.ports.device(id);
+    if (!device.booted) throw new Error("Boot the device before viewing");
+    if (!["win32", "darwin"].includes(this.ports.platform()) || device.platform !== "android")
+      throw new Error(
+        "DEVICE_STREAM_UNSUPPORTED: Live view needs an Android device on a Windows or macOS Host.",
+      );
   }
 
   /** Stops one recorder; adbd ends the device-side screenrecord when its client goes. */
@@ -308,22 +328,36 @@ export class DeviceStreams {
     await Promise.all(this.active().map((id) => this.stop(id)));
   }
 
-  private async next(recorder: Recorder, cursor: number | undefined): Promise<DeviceStreamChunk> {
+  private async next(
+    recorder: Recorder,
+    cursor: number | undefined,
+    signal?: AbortSignal,
+  ): Promise<DeviceStreamChunk> {
+    // Base64 plus the event envelope must fit a 64 KiB subscription message.
+    const limit = signal ? 45 * 1024 : DEVICE_STREAM_MAX_CHUNK_BYTES;
     const { waitMs, quietMs, settleMs } = this.timing;
     const startedAt = monotonicNow();
     let firstSeenAt: number | undefined;
-    const reply = (next: number, reset: boolean, bytes?: Buffer): DeviceStreamChunk => ({
+    const reply = (
+      next: number,
+      reset: boolean,
+      bytes?: Buffer,
+      boundary = false,
+    ): DeviceStreamChunk => ({
       cursor: next,
       reset,
       base64: bytes ? bytes.toString("base64") : "",
       ...recorder.display,
+      ...(signal ? { boundary } : {}),
     });
     for (;;) {
+      signal?.throwIfAborted();
       await this.ensureRunning(recorder);
+      signal?.throwIfAborted();
       if (this.ports.closed()) throw new Error("Device host is disposed");
       const found =
         this.recorders.get(recorder.id) === recorder
-          ? recorder.buffer.read(cursor, DEVICE_STREAM_MAX_CHUNK_BYTES)
+          ? recorder.buffer.read(cursor, limit)
           : undefined;
       const now = monotonicNow();
       if (found) {
@@ -332,8 +366,18 @@ export class DeviceStreams {
           quietMs - elapsedSince(recorder.lastDataAt, now),
           settleMs - elapsedSince(firstSeenAt, now),
         );
-        if (settle <= 0 || found.bytes.length >= DEVICE_STREAM_MAX_CHUNK_BYTES)
-          return reply(found.cursor, found.reset, found.bytes);
+        const atEnd = found.cursor === recorder.buffer.end;
+        const boundary = atEnd && elapsedSince(recorder.lastDataAt, now) >= quietMs;
+        // A settle deadline can cut through a NAL. Keep its last byte for the next
+        // read so even a recorder that goes silent can still deliver the quiet tail.
+        if (signal && settle <= 0 && atEnd && !boundary) {
+          if (found.bytes.length > 1)
+            return reply(found.cursor - 1, found.reset, found.bytes.subarray(0, -1));
+          await this.wait(recorder, quietMs - elapsedSince(recorder.lastDataAt, now), signal);
+          continue;
+        }
+        if (settle <= 0 || (found.bytes.length >= limit && (!signal || !atEnd)))
+          return reply(found.cursor, found.reset, found.bytes, boundary);
         await new Promise((resolve) => setTimeout(resolve, settle));
         continue;
       }
@@ -344,7 +388,7 @@ export class DeviceStreams {
       if (left <= 0 || this.recorders.get(recorder.id) !== recorder)
         return reply(continues ? cursor : 0, !continues);
       const retry = recorder.child ? left : Math.max(1, recorder.retryAt - now);
-      await this.wait(recorder, Math.min(left, retry));
+      await this.wait(recorder, Math.min(left, retry), signal);
     }
   }
 
@@ -434,15 +478,17 @@ export class DeviceStreams {
     child.once("close", () => ended());
   }
 
-  private wait(recorder: Recorder, ms: number): Promise<void> {
+  private wait(recorder: Recorder, ms: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
       const done = () => {
         clearTimeout(timer);
+        signal?.removeEventListener("abort", done);
         recorder.waiters.delete(done);
         resolve();
       };
       const timer = setTimeout(done, ms);
       recorder.waiters.add(done);
+      signal?.addEventListener("abort", done, { once: true });
     });
   }
 

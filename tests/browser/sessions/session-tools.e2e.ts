@@ -172,7 +172,6 @@ test("actual renderer transfers device marks/comments and server/log drafts thro
     await dock.getByRole("button", { name: "Connect devices", exact: true }).click();
   await dock.getByRole("button", { name: "Start emulator", exact: true }).click();
   await expect(dock.getByRole("img", { name: "Current device screen", exact: true })).toBeVisible();
-  await dock.getByRole("switch", { name: "Allow device control", exact: true }).click();
   await dock.getByRole("button", { name: "Device text input", exact: true }).click();
   await source
     .getByRole("textbox", { name: "Text to type on device", exact: true })
@@ -222,9 +221,9 @@ test("actual renderer transfers device marks/comments and server/log drafts thro
     .getByRole("textbox", { name: "Server command", exact: true })
     .fill("pnpm dev -- --port 7007");
   await chooseTool(hub, pane, "Devices");
-  await expect(
-    pane.getByRole("switch", { name: "Allow device control", exact: true }),
-  ).not.toBeChecked();
+  await expect(pane.getByRole("switch", { name: "Allow device control", exact: true })).toHaveCount(
+    0,
+  );
   await pane.getByRole("button", { name: "Mark device screen", exact: true }).click();
   await expect(pane.getByRole("button", { name: "Undo annotation", exact: true })).toBeEnabled();
   await pane.getByRole("button", { name: "Annotation note", exact: true }).click();

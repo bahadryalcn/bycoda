@@ -92,6 +92,16 @@ pub struct JiraIssueDetails {
     pub body: String,
     pub author: String,
     pub author_avatar_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<JiraIssueStatus>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct JiraIssueStatus {
+    pub status_id: String,
+    pub state: String,
+    pub state_type: String,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -235,7 +245,7 @@ pub async fn jira_issue_details(app: AppHandle, key: String) -> Result<JiraIssue
         let data = jira_get(
             &config,
             &format!(
-                "/rest/api/3/issue/{key}?fields=description,reporter,creator,assignee,attachment"
+                "/rest/api/3/issue/{key}?fields=description,reporter,creator,assignee,attachment,status"
             ),
         )?;
         parse_jira_issue_details(&data)
@@ -641,10 +651,22 @@ fn parse_jira_issue_details(data: &Value) -> Result<JiraIssueDetails, String> {
         .unwrap_or_else(|| person_fields(fields.get("assignee")));
     let mut body = rich_text(fields.get("description"));
     attachments::append_attachments(&mut body, fields);
+    let status = fields.get("status").and_then(|status| {
+        Some(JiraIssueStatus {
+            status_id: status.get("id")?.as_str()?.to_owned(),
+            state: status.get("name")?.as_str()?.to_owned(),
+            state_type: status
+                .pointer("/statusCategory/key")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        })
+    });
     Ok(JiraIssueDetails {
         body,
         author: author.unwrap_or_default(),
         author_avatar_url,
+        status,
     })
 }
 
@@ -1338,13 +1360,22 @@ mod tests {
                 },
                 "reporter": { "displayName": "Ada", "avatarUrls": { "48x48": "https://avatar.example/ada.png" } },
                 "creator": { "displayName": "Lin" },
-                "assignee": null
+                "assignee": null,
+                "status": { "id": "3", "name": "In Progress", "statusCategory": { "key": "indeterminate" } }
             }
         });
         let details = parse_jira_issue_details(&data).unwrap();
         assert_eq!(details.body, "Steps");
         assert_eq!(details.author, "Ada");
         assert_eq!(details.author_avatar_url, "https://avatar.example/ada.png");
+        assert_eq!(
+            details.status,
+            Some(JiraIssueStatus {
+                status_id: "3".into(),
+                state: "In Progress".into(),
+                state_type: "indeterminate".into(),
+            })
+        );
     }
 
     #[test]

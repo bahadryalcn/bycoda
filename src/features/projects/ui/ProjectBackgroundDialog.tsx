@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { RemoteActionError } from "../../connections/public/RemoteActionError";
 import { describeRemoteError, type RemoteErrorView } from "../../connections/public/remoteFailure";
 import { Slider } from "../../../shared/ui/Slider";
@@ -223,13 +223,13 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
             >
               {path ? t("Change image") : t("Choose image")}
             </Button>
-            <InfoPopover>
+            <InfoTooltip>
               <Text as="p" size="caption" tone="secondary" leading="relaxed">
                 {path
                   ? t("This image overrides the global background for this project.")
                   : t("This project currently follows the global Appearance setting.")}
               </Text>
-            </InfoPopover>
+            </InfoTooltip>
           </div>
           {error ? <RemoteActionError error={error} /> : null}
         </div>
@@ -238,11 +238,11 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
           <ProjectBackgroundRow
             label={t("Background effect")}
             info={
-              <InfoPopover label={NEW_THREAD_BACKGROUND_EFFECT_LABELS[effect]}>
+              <InfoTooltip label={NEW_THREAD_BACKGROUND_EFFECT_LABELS[effect]}>
                 <Text as="p" size="caption" tone="secondary" leading="relaxed">
                   {NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[effect]}
                 </Text>
-              </InfoPopover>
+              </InfoTooltip>
             }
           >
             <div className="w-36 max-w-full">

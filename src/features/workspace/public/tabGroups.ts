@@ -12,4 +12,5 @@ export {
   resolveTabGroupLogoWith,
   resolveTabGroupMascot,
   tabGroupLogoDisplayRevision,
+  useResolvedTabGroupLogo,
 } from "../model/tabGroups";

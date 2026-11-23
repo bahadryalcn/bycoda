@@ -5,8 +5,7 @@ import type {
   ModelRoutingRole,
   ModelRoutingTarget,
 } from "../../../../shared/model/host-contracts/model-routing";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { TriangleAlert } from "../../../../shared/ui/icons";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Select } from "../../../../shared/ui/Select";
 import { Row } from "../../../../shared/ui/settings";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
@@ -117,7 +116,17 @@ export function ModelRoleRow({
       label={t(label)}
       disabled={disabled}
       stacked={choice?.kind === "fixed"}
-      feedback={choice?.kind === "fixed" ? undefined : preview}
+      feedback={
+        choice?.kind === "fixed" ? (
+          <InlineMessage tone="warning">
+            {t(
+              "No fallback: if this model is unavailable or out of quota, the job stops instead of moving to another model.",
+            )}
+          </InlineMessage>
+        ) : (
+          preview
+        )
+      }
     >
       <div className="flex w-full flex-wrap items-center gap-2">
         <div className="w-56 max-w-full shrink-0">
@@ -173,20 +182,6 @@ export function ModelRoleRow({
               }
             />
           </div>
-        ) : null}
-        {choice?.kind === "fixed" ? (
-          <InfoPopover
-            label={t("No fallback")}
-            width={280}
-            className="shrink-0"
-            icon={
-              <TriangleAlert aria-hidden className="icon-sm" tone="warning" strokeWidth={1.75} />
-            }
-          >
-            {t(
-              "No fallback: if this model is unavailable or out of quota, the job stops instead of moving to another model.",
-            )}
-          </InfoPopover>
         ) : null}
       </div>
     </Row>

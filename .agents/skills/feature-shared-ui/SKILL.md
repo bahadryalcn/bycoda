@@ -29,7 +29,7 @@ Any JSX under `src/app` or `src/features`, and any change in `src/shared/ui/`. F
 - Actions use `Button` (or ActionHost inline actions); no screen-specific button styling.
 - Semantic tokens only; no literal colors, font sizes, radii or z-index; preserve density settings.
 - One overlay stack: Popover, Modal, Sheet, Tooltip and the menus; no own focus trap or Escape handler.
-- Tooltips never repeat a visible label (`tooltip-repeats-label` catches the literal case); omit redundant content at its source. They add a shortcut, detail or reason. Shared Tooltip renders explicit content unchanged; use OverflowTooltip only to recover clipped or responsively hidden text.
+- Omit tooltips that repeat visible labels (`tooltip-repeats-label`). Use InfoTooltip for short optional help, InfoPopover for persistent details and OverflowTooltip for clipped or hidden text.
 - A settings `Group` is already a framed card: no `Group` or card `Surface` inside it and no `Group` inside a card (`nested-surface`). Compose screens from the archetypes in DESIGN.md, not new containers.
 - Feature code places things and never chooses how they look: no type, surface, state, control size, truncation, motion or scrollbar styling in `src/features` or `src/app`, and an inline style carries custom properties only. Layout stays free. Read [appearance ownership](references/appearance-ownership.md) before writing feature CSS or classes.
 - Bespoke product surfaces (chat composer editor, transcript, terminal, code editor, appearance scene previews) may keep a custom element when no shared component can carry the behavior. Mark that one line with `// ui-drift-ignore: <rule> -- <why>` on the line above (in JSX `{/* ... */}`); everything around it still uses shared components.

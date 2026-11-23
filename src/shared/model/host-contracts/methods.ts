@@ -439,6 +439,11 @@ export const HOST_RPC_METHODS = Object.freeze({
   "devices.boot": nativeDeviceOperation("devices.boot"),
   "devices.capture": nativeDeviceOperation("devices.capture"),
   "devices.stream": nativeDeviceOperation("devices.stream"),
+  "devices.touch": {
+    ...nativeDeviceOperation("devices.touch"),
+    requiredCapability: "devices.touch.v1",
+    responseTimeoutMs: 30_000,
+  },
   "devices.control.status": nativeDeviceOperation("devices.control.status"),
   "devices.control.claim": nativeDeviceOperation("devices.control.claim"),
   "devices.control.release": nativeDeviceOperation("devices.control.release"),

@@ -73,25 +73,25 @@
 .device-panel-stage[data-rail] .device-panel-canvas {
   padding-inline-end: var(--device-rail-clearance);
 }
-.device-panel-preview-control {
-  position: relative;
-  inline-size: 100%;
-  block-size: 100%;
-}
-/* The screen reads as a device: rounded display corners, a hairline edge and a soft lift.
-   Box shadows keep the image box (and coordinate mapping) unchanged. The live video canvas
-   takes the same box over the still frame and leaves pointer input to the image. */
-.device-panel-preview-control img,
-.device-panel-live {
+.device-panel-preview-control[data-button-layout="media"] {
+  --button-hover: transparent;
+  --button-pressed: transparent;
+  --button-disabled-surface: transparent;
   --device-screen-inline: min(100cqw, calc(100cqh * var(--device-aspect, 0.46)));
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  display: block;
-  max-inline-size: 100%;
-  max-block-size: 100%;
+  position: relative;
+  flex: none;
   inline-size: var(--device-screen-inline);
   block-size: min(100cqh, calc(100cqw / var(--device-aspect, 0.46)));
+  /* ui-drift-ignore: surface-style -- The native input area must match the painted screen. */
+  border-width: 0;
+}
+.device-panel-preview-control img,
+.device-panel-live {
+  position: absolute;
+  inset: 0;
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
   object-fit: contain;
   border-radius: calc(var(--device-screen-inline) * 0.07);
   box-shadow:
@@ -101,7 +101,7 @@
 .device-panel-live {
   pointer-events: none;
 }
-.device-panel-preview-control img.host-frame-interactive {
+.device-panel-preview-control[data-device-interactive] {
   touch-action: none;
   cursor: pointer;
   user-select: none;

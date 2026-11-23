@@ -3,7 +3,7 @@ import { Button } from "../../../shared/ui/Button";
 import { RevealedSetting, settingDomId } from "../../../shared/ui/settings";
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { t, useFormat } from "../../../shared/i18n";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { AdvancedSettings, Group, Select, Toggle } from "../../../shared/ui/settings";
 import { DICTATION_LANGUAGES, DICTATION_PROVIDER_NAMES } from "../model/dictationModels";
 import type { DictationEngine, VoiceSettings as Preferences } from "../model/voiceSettings";
@@ -58,11 +58,11 @@ export function DictationSettings({
         id="dictation-enabled"
         label={t("Enable dictation")}
         info={
-          <InfoPopover label={`${t("Enable dictation")}: ${t("Help")}`}>
+          <InfoTooltip label={t("Enable dictation")}>
             {t(
               "Speak to insert text in the message box. Works independently of voice companion; nothing is sent automatically.",
             )}
-          </InfoPopover>
+          </InfoTooltip>
         }
       >
         <Toggle
@@ -97,11 +97,11 @@ export function DictationSettings({
           id="dictation-language"
           label={t("Dictation language")}
           info={
-            <InfoPopover label={`${t("Dictation language")}: ${t("Help")}`}>
+            <InfoTooltip label={t("Dictation language")}>
               {t(
                 "Automatic detects the language you speak. Choose one if dictation translates your speech.",
               )}
-            </InfoPopover>
+            </InfoTooltip>
           }
         >
           <Select

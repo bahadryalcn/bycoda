@@ -4,7 +4,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { recordedSessionRows } from "../model/recordedSessionRows";
 import type { sessionUsage } from "../model/usageAnalytics";
 import { ContinuousUsageTable } from "./UsageCharts";
@@ -40,11 +40,11 @@ export function UsageRecordedSessions({
           <Heading size="item" level={3}>
             {t("Recorded sessions")}
           </Heading>
-          <InfoPopover label={t("Recorded sessions")}>
+          <InfoTooltip label={t("Recorded sessions")}>
             {t(
               "Session tokens come from recorded turn metrics. Only whole turns inside the interval are included; these values are not added to provider-log totals.",
             )}
-          </InfoPopover>
+          </InfoTooltip>
         </div>
         {selectedSession && (
           <Button variant="ghost" size="sm" onClick={() => onSelectSession(null)}>

@@ -835,12 +835,22 @@ it("explains that a started session opens another working copy in a new session"
     ),
   );
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
-  await act(async () =>
-    document
-      .querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"][aria-label="Help"]')!
-      .click(),
-  );
-  expect(document.body.textContent).toContain("Another worktree opens a new session.");
+  const hint = document.querySelector<HTMLElement>('[role="img"][aria-label="Worktrees"]')!;
+  expect(hint.tabIndex).toBe(0);
+  await act(async () => hint.click());
+  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  vi.useFakeTimers();
+  try {
+    await act(async () => {
+      hint.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
+      "Another worktree opens a new session.",
+    );
+  } finally {
+    vi.useRealTimers();
+  }
   await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());
   expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ path: "/repo", isMain: true }));
   expect(gitCheckout).not.toHaveBeenCalled();
@@ -1252,6 +1262,9 @@ it("shows no selected branch after removal even when the old path has a branch a
   expect(trigger.disabled).toBe(false);
   await act(async () => trigger.click());
   expect(document.querySelector('[aria-selected="true"]')).toBeNull();
+  expect(document.body.textContent).toContain(
+    "This session’s worktree was deleted. Select a worktree to continue.",
+  );
   expect(document.body.textContent).not.toContain("Another worktree opens a new session.");
   expect(button("Switch branch in this worktree…").disabled).toBe(true);
   await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());

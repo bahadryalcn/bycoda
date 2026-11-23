@@ -2086,7 +2086,7 @@ test("model panel stays inside the viewport", async ({ page }, testInfo) => {
     await expect(panel).toBeInViewport();
     const help = panel.locator("[data-model-setting-help]");
     const helpHeight = (await help.boundingBox())!.height;
-    await expect(help.getByRole("button", { name: "Help", exact: true })).toBeVisible();
+    await expect(help.getByRole("button", { name: "Model settings", exact: true })).toBeVisible();
     await expect(help.locator("[data-model-provider-settings]")).toBeVisible();
     const lineHeight = await help
       .locator("p")

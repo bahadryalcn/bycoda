@@ -221,17 +221,24 @@ export function createAssistantRoomRuntime(
       throw new Error("Room response source scope is too large.");
     const authorized = async () => {
       if (admission.signal?.aborted || !(await admission.authorized())) return false;
-      for (const scope of scopes) {
-        const thread = await dependencies.assistant.threadBinding(scope.threadId);
-        if (
-          !thread ||
-          thread.id !== scope.threadId ||
-          (thread.projectId && scope.projects.some((id) => id !== thread.projectId)) ||
-          (thread.projectId && scope.accounts.length)
-        )
-          return false;
-      }
-      return true;
+      return dependencies.engine.store.db.readScope(async () => {
+        const threads = new Map<string, { id: string; projectId?: string }>();
+        for (const scope of scopes) {
+          let thread = threads.get(scope.threadId);
+          if (!thread) {
+            const binding = await dependencies.assistant.threadBinding(scope.threadId);
+            if (!binding || binding.id !== scope.threadId) return false;
+            thread = binding;
+            threads.set(scope.threadId, binding);
+          }
+          if (
+            thread.projectId &&
+            (scope.projects.some((id) => id !== thread.projectId) || scope.accounts.length)
+          )
+            return false;
+        }
+        return true;
+      });
     };
     if (!(await authorized())) throw new Error("Room response authority is unavailable.");
     const nativeProofs = mergeNativeLibraryProofs(

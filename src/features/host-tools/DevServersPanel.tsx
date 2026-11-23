@@ -6,7 +6,7 @@ import { Heading } from "../../shared/ui/Heading";
 import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { Badge } from "../../shared/ui/Badge";
 import { BadgeList } from "../../shared/ui/BadgeList";
-import { InfoPopover } from "../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../shared/ui/InfoPopover";
 import { Alert } from "../../shared/ui/Alert";
 import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { useConnectionErrorShownCentrally } from "../../shared/ui/connectionErrorGate";
@@ -1106,11 +1106,11 @@ function ProjectDevServersPanel({
               />
             </div>
             <div className="dev-server-form-footer">
-              <InfoPopover>
+              <InfoTooltip>
                 <Text as="p" size="caption" tone="secondary">
                   {t("Set the port in the command too; no flags are added.")}
                 </Text>
-              </InfoPopover>
+              </InfoTooltip>
               <Button
                 type="submit"
                 variant="primary"

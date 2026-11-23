@@ -10,7 +10,6 @@
   --chip-ink: var(--ui-attachment-ink, var(--ui-tone-accent-fg));
   color: var(--chip-ink);
 }
-/* Thumbnail only: the message text carries the reference and size. */
 .image {
   width: 88px;
   height: 64px;

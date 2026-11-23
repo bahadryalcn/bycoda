@@ -11,6 +11,7 @@ import { Button } from "./Button";
 import { InlineError, InlineMessage } from "./InlineError";
 import { Spinner } from "./Spinner";
 import { MediaToolbar, MediaToolbarButton } from "./MediaToolbar";
+import { usePointContextMenu, type ContextMenuActions } from "./ContextMenu";
 
 type Props = {
   src: string;
@@ -18,6 +19,8 @@ type Props = {
   onClose: () => void;
   /** Icon actions for the header (`MediaToolbarButton`s), shown beside Close. */
   actions?: ReactNode;
+  /** Context actions for the image stage. The menu is a child of the preview overlay. */
+  contextActions?: ContextMenuActions;
   /** The image is still being read; `src` may be empty. The dialog opens at once and keeps its focus return. */
   loading?: boolean;
   /** The image cannot be shown: this message replaces the stage. `actions` stay available. */
@@ -65,6 +68,7 @@ function ImageLightboxContent({
   alt,
   onClose,
   actions,
+  contextActions,
   loading = false,
   error,
   notice,
@@ -72,6 +76,7 @@ function ImageLightboxContent({
   onImageError,
 }: Props) {
   const t = useT();
+  const contextMenu = usePointContextMenu(contextActions);
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLInputElement>(null);
@@ -251,10 +256,12 @@ function ImageLightboxContent({
                 aria-label={t("Image preview: {p0}", { p0: alt })}
                 className="grid h-full w-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] place-items-center overflow-clip [container-type:size] focus-visible:outline-offset-[-2px]"
                 {...imageZoom.bindings}
+                {...contextMenu.trigger}
                 onClick={(event) => {
                   if (event.target === event.currentTarget && !imageZoom.consumeClick()) onClose();
                 }}
               >
+                {contextMenu.menu}
                 {decoding ? (
                   <div
                     role="status"

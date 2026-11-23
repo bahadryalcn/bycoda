@@ -2,15 +2,18 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { TOOLTIP_DELAY_MS } from "../../../shared/ui/Tooltip";
 import { AssistantPresenceStatus } from "./AssistantPresenceStatus";
 let container: HTMLDivElement, root: ReturnType<typeof createRoot>;
 
 async function openDetails() {
-  await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('button[aria-label="About computer presence"]')!
-      .click(),
-  );
+  const hint = container.querySelector<HTMLElement>(
+    '[role="img"][aria-label="About computer presence"]',
+  )!;
+  await act(async () => {
+    hint.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    vi.advanceTimersByTime(TOOLTIP_DELAY_MS);
+  });
 }
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -58,7 +61,9 @@ it("does not briefly report new current Host observations as future timestamps b
     ),
   );
   await openDetails();
-  expect(document.body.textContent).toContain("Computer presence: Here");
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
+    "Computer presence: Here",
+  );
   await act(() => vi.advanceTimersByTime(105000));
   expect(container.textContent).toContain("Here");
 });
@@ -80,7 +85,9 @@ it("keeps the manual DND choice visible while reporting unavailable automatic ev
     "Current availability: Do not disturb",
   );
   await openDetails();
-  expect(document.body.textContent).toContain("Computer presence: Away");
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
+    "Computer presence: Away",
+  );
 });
 it("shows the Host effective state when computer evidence is unsupported", async () => {
   await act(() =>

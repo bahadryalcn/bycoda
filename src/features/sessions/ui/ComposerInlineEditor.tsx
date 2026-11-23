@@ -27,6 +27,7 @@ type Props = {
   field: RefObject<HTMLTextAreaElement | null>;
   text: string;
   references: InlineReferenceContext;
+  attachmentProjectRoot?: string;
   label: string;
   placeholder: string;
   readOnly: boolean;
@@ -42,6 +43,7 @@ export function ComposerInlineEditor({
   field,
   text,
   references,
+  attachmentProjectRoot,
   label,
   placeholder,
   readOnly,
@@ -238,6 +240,7 @@ export function ComposerInlineEditor({
         <ComposerAttachmentPreview
           key={attachment.id}
           attachment={attachment}
+          projectRoot={attachmentProjectRoot}
           anchor={active.anchor}
           close={close}
         />

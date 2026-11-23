@@ -7,7 +7,6 @@ import { pickFolders } from "../../../../../platform/tauri/fs";
 import { ASSISTANT_FOLDERS_MAX } from "../../../../../shared/model/assistantFolders";
 import { Alert } from "../../../../../shared/ui/Alert";
 import { Button } from "../../../../../shared/ui/Button";
-import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../../shared/ui/LoadingText";
 import { FolderPlus, X } from "../../../../../shared/ui/icons";
@@ -135,13 +134,10 @@ export function AssistantFoldersSettings({
           </Row>
           <Row
             label={t("Run commands without asking")}
-            info={
-              <InfoPopover>
-                {t(
-                  "Skip the confirmation for each command the assistant runs in these folders and in your projects.",
-                )}
-              </InfoPopover>
-            }
+            descriptionVisible
+            description={t(
+              "Skip the confirmation for each command the assistant runs in these folders and in your projects.",
+            )}
             feedback={
               draft.runWithoutAsking && !accessRef ? (
                 <Alert tone="warning">

@@ -15,7 +15,7 @@ import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
@@ -468,11 +468,11 @@ function LibraryMemberDialog({
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <Text size="body" tone="inherit" weight="medium" className="flex items-center gap-1">
               {t("Available in")}
-              <InfoPopover>
+              <InfoTooltip>
                 {t(
                   "Crews that use this profile unchanged follow it; customized members keep their own edits.",
                 )}
-              </InfoPopover>
+              </InfoTooltip>
             </Text>
             {saved ? (
               <Badge size="md">

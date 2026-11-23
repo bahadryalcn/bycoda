@@ -6,7 +6,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Text } from "../../../shared/ui/Text";
 import { Select } from "../../../shared/ui/Select";
 import { Switch } from "../../../shared/ui/Switch";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { AdvancedSettings, Row } from "../../../shared/ui/settings";
 import { ProfileSegmented, ProfileSelect } from "./settings/ProfileControls";
 import { ProfileRow, ProfileSwitch, useProfileRows } from "./settings/SettingsProfileRow";
@@ -224,13 +224,10 @@ function ShowTitle({
 }) {
   const name = value.name?.trim();
   const preview = name ? (
-    <InfoPopover label={t("Preview")}>
-      {" "}
-      <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
-        {value.showTitle ? t("Assistant {p0}", { p0: name }) : name} ·{" "}
-        {t("Room · {p0}", { p0: name })} · {t("{p0} wrote", { p0: name })}
-      </Text>
-    </InfoPopover>
+    <InfoTooltip label={t("Preview")}>
+      {value.showTitle ? t("Assistant {p0}", { p0: name }) : name} ·{" "}
+      {t("Room · {p0}", { p0: name })} · {t("{p0} wrote", { p0: name })}
+    </InfoTooltip>
   ) : undefined;
   const rows = useProfileRows();
   if (rows)
@@ -273,13 +270,7 @@ function ProfileLanguage({
     return (
       <ProfileRow
         label={t("Language")}
-        info={
-          <InfoPopover label={t("About language")}>
-            <Text as="p" size="secondary">
-              {help}
-            </Text>
-          </InfoPopover>
-        }
+        info={<InfoTooltip label={t("About language")}>{help}</InfoTooltip>}
       >
         {() => (
           <Select
@@ -303,11 +294,7 @@ function ProfileLanguage({
         options={LANGUAGE_OPTIONS}
         onValueChange={onValueChange}
       />
-      <InfoPopover label={t("About language")}>
-        <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
-          {help}
-        </Text>
-      </InfoPopover>
+      <InfoTooltip label={t("About language")}>{help}</InfoTooltip>
     </div>
   );
 }

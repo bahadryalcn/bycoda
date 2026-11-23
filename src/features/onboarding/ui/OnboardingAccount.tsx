@@ -18,12 +18,7 @@ export function OnboardingAccount() {
   const failed = signedOut?.notice === "sign-in-failed" || signedOut?.notice === "session-ended";
   return (
     <>
-      <OnboardingHeading
-        title={t("Sign in")}
-        info={t(
-          "An account is optional and only syncs your stats across devices. Your sessions, projects and settings stay on this computer either way. You can sign in later in Settings → Account.",
-        )}
-      />
+      <OnboardingHeading title={t("Sign in")} />
       <OnboardingIllustratedStep scene="account">
         {state.phase === "starting" ? <LoadingText>{t("Loading account…")}</LoadingText> : null}
         {state.phase === "signed-in" ? (
@@ -48,6 +43,11 @@ export function OnboardingAccount() {
         ) : null}
         {signedOut ? (
           <>
+            <Text as="p" size="caption" tone="muted" leading="normal" className="onboarding-hint">
+              {t(
+                "An account is optional and only syncs your stats across devices. Your sessions, projects and settings stay on this computer either way. You can sign in later in Settings → Account.",
+              )}
+            </Text>
             {failed ? (
               <Alert tone="danger">
                 {signedOut.message ?? t("Sign-in did not finish. Try again.")}

@@ -170,7 +170,8 @@ it("acknowledges a long start and resolves its original operation without dispat
       });
     await vi.advanceTimersByTimeAsync(1000);
     expect(await start).toMatchObject({ operationId: "slow", state: "pending" });
-    await vi.advanceTimersByTimeAsync(60000);
+    // Even beyond the native voice RPC deadline, status follows the original receipt.
+    await vi.advanceTimersByTimeAsync(262000);
     expect(await status()).toMatchObject({ state: "pending" });
     expect(await f.call("devServers.start", input)).toMatchObject({ state: "pending" });
     finishStart({ state: "started" });

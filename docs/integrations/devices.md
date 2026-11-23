@@ -12,7 +12,7 @@ The host supplies detected Android SDK binary paths to its child processes. On a
 
 Native Mac discovery includes available iOS simulators that have never been used, which the hub's recent-device list omits. Native Windows discovery uses `emulator.exe -list-avds` and `adb.exe devices`, avoiding the hub's incompatible `avdmanager.bat` invocation. Windows emulator boot runs without an emulator window and waits for Android's completed-boot property. Stopping the device host leaves booted simulators, emulators, and physical devices running.
 
-The hub runs only on loopback, in an owned hidden subprocess. Clients receive bounded image frames over existing authenticated RPC, never the unauthenticated hub URL or its exec routes. Live view is one frame per second, request-completion-driven, pauses in hidden documents, stops on error and releases its timer on unmount. Host capture concurrency is one and frame size is capped at 4 MiB. This is screenshot live view, not H.264/WebRTC video streaming.
+The hub runs only on loopback in an owned hidden subprocess. Clients receive Android H.264 or bounded screenshot frames over the authenticated Host connection. Screenshot capture concurrency is one and frame size is capped at 4 MiB. Live viewing pauses when the panel is hidden.
 
 On macOS/Linux, actions invoke the pinned agent CLI with explicit device selectors, isolated `AGENT_DEVICE_STATE_DIR` and a 10-second idle timeout. Each action verifies its control session and reopens it if the idle daemon discarded it; potentially sent input is never automatically retried. JSON stdout is kept separate from runner diagnostics, and an agent result must confirm success. Windows Android control uses the SDK's `adb.exe` directly after the same explicit control setup. It supports tap, swipe, Home, opening Settings or a package ID, bounded UI hierarchy snapshots, and printable ASCII text. Unsupported text is rejected before input; user text is quoted for the Android shell. This avoids the pinned agent daemon's incompatible Windows process-identity/truncation paths. Windows hub discovery is restricted to Android.
 
@@ -36,12 +36,26 @@ successfully opened target for reconnecting its private idle daemon. **Home**
 uses the explicit `com.apple.springboard` target and can initialize control
 without opening an arbitrary app. Opening an app is always a user action.
 
-Select the conversation's Mac project/environment, connect to its host, then open **Conversation tools → Devices**. Start the device host (its tools install automatically the first time), select an iOS simulator, and choose **Boot**. **Live view** requests screenshot frames from the Mac through the authenticated host connection. Enable control explicitly to use Home, typing, accessibility snapshots, or manual logical-point input. The app under test must be built and installed in the simulator through its existing project workflow.
+Select the conversation's Mac project/environment, connect to its host, then open **Conversation tools → Devices**. Start the device host (its tools install automatically the first time), select an iOS simulator, and choose **Boot**. **Live view** requests screenshot frames from the Mac through the authenticated Host connection. The panel requests control automatically for Home, typing, accessibility snapshots, and manual logical-point input. The app under test must be built and installed in the simulator through its existing project workflow.
 
 The Windows client does not run iOS locally and does not connect to the device hub's private loopback server. The Mac needs full Xcode, an installed iOS simulator runtime, and an available simulator; interactive actions also need the pinned agent tool's XCTest runner to start successfully. Remote host transport support and current installed host/app versions must be verified separately from source tests. This panel provides screenshots and basic input, not the Mac desktop, build logs, or a full video stream. Physical iOS devices are not enumerated by the current simulator discovery contract.
 
 Licenses checked at upstream primary sources: [expo-device-hub LICENSE](https://github.com/expo/expo-device-hub/blob/main/LICENSE), [agent-device LICENSE](https://github.com/callstack/agent-device/blob/v0.21.23/LICENSE). Both use MIT. External installation preserves its package license notices; no external source is vendored here.
 
 ## Live stream
+
+Hosts advertising `transport.ws.devices.video.v1` publish H.264 chunks as soon
+as they are ready on the authenticated `deviceVideo` subscription. A subscription
+starts at a key picture and its acknowledged window bounds queued frames. Closing
+or resynchronizing the viewer discards its old stream state. The `boundary` field
+indicates whether a chunk ends on a complete recorder write. Existing clients
+and Hosts can still use `devices.stream`.
+
+Android Hosts advertising `devices.touch.v1` take normalized `devices.touch`
+events under the active device lease. Clients dispatch `down`, coalesce pending
+`move` events, and finish with `up` or `cancel`. The Host uses a control-only
+scrcpy session from the pinned tool package. It prepares that session in the
+background when the desktop claims control and cancels a held pointer on lost
+authority. Keyboard and coordinate actions continue through `devices.action`.
 
 `devices.stream` is a long-poll read of a raw H.264 Annex-B stream for an Android device on a Windows or macOS Host (`adb exec-out screenrecord`, long side at most 1280 px, 4 Mbit/s). It returns `{ cursor, reset, base64, width, height }`: pass `cursor` back to continue; `reset: true` means the bytes start at SPS, PPS and the latest IDR, so the decoder must be reset. `width`/`height` are the device display size for input mapping, not the video size. A read replies once the recorder has been quiet for about 8 ms (at most 40 ms after the first new byte), or with an empty chunk after one second; a response of exactly `DEVICE_STREAM_MAX_CHUNK_BYTES` raw bytes was cut by the cap. Other targets fail with `DEVICE_STREAM_UNSUPPORTED:`; callers then fall back to `devices.capture`. The recorder stops five seconds after the last read and with `devices.stop`. It is viewing only and is not an agent tool.

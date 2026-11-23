@@ -312,12 +312,18 @@ for (const theme of ["light", "dark"]) {
         path: `temp/verification/2026-11-06-worktrees/workspace-policy-${theme}-${width}.png`,
       });
       const retention = surface.locator('[data-setting-id="workspace-retention"]');
-      // The exclusion rule lives behind the section's info icon, not inline.
-      await retention.getByRole("button", { name: "Help", exact: true }).click();
-      await expect(page.getByRole("dialog", { name: "Help", exact: true })).toContainText(
-        "Active and pinned workspaces are excluded",
-      );
-      await page.keyboard.press("Escape");
+      const hint = retention.getByRole("img", { name: "Automatic cleanup", exact: true });
+      const explanation = page
+        .getByRole("tooltip")
+        .filter({ hasText: "Active and pinned workspaces are excluded" });
+      await hint.hover();
+      await expect(explanation).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-06-worktrees/workspace-policy-tooltip-${theme}-${width}.png`,
+      });
+      await hint.click();
+      await expect(explanation).toHaveCount(0);
+      await expect(page.getByRole("dialog", { name: "Help", exact: true })).toHaveCount(0);
       await retention.getByRole("button", { name: /^Idle retention:/ }).click();
       await page.getByRole("option", { name: "Never", exact: true }).click();
       await surface.getByRole("switch", { name: "Pin workspaces", exact: true }).click();

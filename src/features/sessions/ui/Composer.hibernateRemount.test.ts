@@ -82,5 +82,5 @@ it("keeps unsent text and attachments when a hibernated pane mounts again", asyn
   root = createRoot(container);
   await mountPane(root);
   expect(container.querySelector("textarea")!.value).toBe("Half-written thought");
-  expect(container.querySelector('[aria-label="Remove selected.txt"]')).not.toBeNull();
+  expect(container.querySelector('[data-attachment-name="selected.txt"]')).not.toBeNull();
 });

@@ -5,7 +5,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Heading } from "../../../shared/ui/Heading";
 import { Popover } from "../../../shared/ui/Popover";
 import { Skeleton } from "../../../shared/ui/Skeleton";
@@ -193,9 +193,9 @@ export function OnboardingAgents({
           <Heading size="page" level={3}>
             {t("Agents")}
           </Heading>
-          <InfoPopover>
+          <InfoTooltip label={t("Agents")}>
             {t("Use the providers found on this computer, or add one from another location.")}
-          </InfoPopover>
+          </InfoTooltip>
         </div>
         <Button
           iconOnly
@@ -413,13 +413,9 @@ export function OnboardingAgents({
               <Plus className="icon-md" />
               {t("Add provider")}
             </Button>
-            <InfoPopover label={t("About existing accounts")}>
-              <p>
-                {t(
-                  "Existing CLI accounts are reused. Choose another account from its profile menu.",
-                )}
-              </p>
-            </InfoPopover>
+            <InfoTooltip label={t("About existing accounts")}>
+              {t("Existing CLI accounts are reused. Choose another account from its profile menu.")}
+            </InfoTooltip>
           </div>
         ) : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}

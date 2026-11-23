@@ -74,9 +74,8 @@ function paste(target: HTMLTextAreaElement, text = "") {
 }
 
 /** Wait for the async clipboard read and the attachments it adds. */
-/** Every chip renders a `Remove <name>` control. */
 function chipCount() {
-  return container.querySelectorAll('[aria-label^="Remove "]').length;
+  return container.querySelectorAll("[data-attachment-chip]").length;
 }
 
 function alert() {

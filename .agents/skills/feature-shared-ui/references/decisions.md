@@ -65,6 +65,14 @@ Owner decision, 2026-11-11, source: owner chat:
 
 Recorded decision: remove redundant tooltip content at its source. Shared Tooltip renders explicitly supplied content unchanged; it does not compare the title with visible control text and remove matching words. Visible text buttons do not generate name tooltips automatically. Keep icon explanations, shortcuts, disabled reasons, additional context and explicit recovery of clipped or responsively hidden text.
 
+## Short help uses one tooltip
+
+Owner decision, 2026-11-23, owner chat.
+
+> help yazısına gerek yok üzerine gelince gözüksün. Gereksizse tamamen bile kaldırabilrisin
+
+Short optional explanations use a passive tooltip on hover and keyboard focus. Remove redundant hints. Structured details can use a dedicated opener with an accessible name. Keep required context visible next to the control.
+
 ## Cards, control groups, titles and file pickers come from shared components
 
 Owner decision, 2026-11-11, source: owner chat:

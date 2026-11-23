@@ -133,6 +133,20 @@ describe("split diff layout in the file editor", () => {
     expect(container.querySelectorAll(".cm-merge-b .cm-changedLine")).toHaveLength(1);
   });
 
+  it("reads the diff navigator geometry after the CodeMirror update", async () => {
+    base = "one\ntwo\nthree\n";
+    disk = "one\nTWO\nthree\n";
+    await render();
+    const view = after();
+    const read = vi.spyOn(view, "lineBlockAtHeight");
+    await act(async () => {
+      view.dispatch({ changes: { from: 0, insert: "new line\n" } });
+      expect(read).not.toHaveBeenCalled();
+    });
+    await act(async () => vi.waitFor(() => expect(read).toHaveBeenCalled()));
+    expect(counter()).toMatch(/^\d+\/\d+$/);
+  });
+
   it("shows an added file against an empty left pane", async () => {
     base = "";
     disk = "first\nsecond\n";

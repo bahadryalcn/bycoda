@@ -3,7 +3,6 @@ import { t } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -88,21 +87,17 @@ export function SummaryPanel({
     );
   return (
     <div className="grid gap-2">
-      <div className="flex items-center gap-1">
-        <SectionLabel>{t("Summary")}</SectionLabel>
-        <InfoPopover>
-          <Text>
-            {t(
-              "Only the text below is sent to your own provider when you press Send. Nothing else leaves this computer.",
-            )}
-          </Text>
-        </InfoPopover>
-      </div>
+      <SectionLabel>{t("Summary")}</SectionLabel>
       <Checkbox
         label={t("Include session titles")}
         checked={includeTitles}
         onChange={(event) => setIncludeTitles(event.target.checked)}
       />
+      <Text as="p" size="caption" tone="muted">
+        {t(
+          "Only the text below is sent to your own provider when you press Send. Nothing else leaves this computer.",
+        )}
+      </Text>
       <TextareaField
         label={t("Request preview")}
         hideLabel

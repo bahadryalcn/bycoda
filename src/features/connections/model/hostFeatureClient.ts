@@ -3,6 +3,12 @@ import { withTimeout } from "../../../shared/lib/withTimeout";
 import { backgroundMachineFor, hostProjectFor } from "../../automations/model/hostAutomationClient";
 import { machineCapabilities } from "../../automations/model/machineSnapshot";
 import { remoteRequest } from "./connections";
+import { acquireRemoteHostRuntime } from "./remoteMachineChannel";
+import { bindMachineEnvironment } from "./remoteLifecycle";
+import {
+  DeviceStreamChunkSchema,
+  type DeviceStreamChunk,
+} from "../../../shared/model/host-contracts/native-devices";
 import { subscribeRemoteRecovered } from "./remoteHealth";
 import { parseRemotePath } from "./remoteProjects";
 import type { RemoteMachine } from "./protocol";
@@ -115,6 +121,30 @@ async function explicitToolHost(target: Exclude<HostToolTarget, { kind: "project
   return pending;
 }
 
+/** Open the read-only native media socket on the same machine and scope as browser.frame. */
+export async function openBrowserFrameStream(
+  cwd: string,
+  target: HostToolTarget,
+  scope: { sessionId?: string; ownerPresentationScope?: string },
+) {
+  const capability = "browser.frames.binary.v1";
+  const host = target.kind === "project" ? await featureHost(cwd, capability) : undefined;
+  const machine = target.kind === "project" ? host!.machine : await explicitToolHost(target);
+  if (!host && !(await machineCapabilities(machine)).includes(capability))
+    throw new Error("Binary browser frames are unavailable");
+  const viewerId = await invoke<string>("remote_browser_frames_open", {
+    machineId: machine.id,
+    environmentId: machine.environmentId,
+    scope: host
+      ? { projectId: host.projectId, sessionId: scope.sessionId }
+      : { ownerPresentationScope: scope.ownerPresentationScope },
+  });
+  return {
+    read: (after: number) => invoke<ArrayBuffer>("remote_browser_frames_read", { viewerId, after }),
+    close: () => invoke<void>("remote_browser_frames_close", { viewerId }),
+  };
+}
+
 const HOST_SCOPED_TOOL_METHODS = new Set([
   "voice.local.setup",
   "voice.local.setupStatus",
@@ -156,6 +186,7 @@ const HOST_SCOPED_TOOL_METHODS = new Set([
   "devices.boot",
   "devices.capture",
   "devices.stream",
+  "devices.touch",
   "devices.control.status",
   "devices.control.claim",
   "devices.control.release",
@@ -181,6 +212,78 @@ const OWNER_HOST_METHOD_CAPABILITIES: Readonly<Record<string, string>> = {
   "desktop.request": "desktop.control.v1",
   "desktop.helper.request": "desktop.control.v1",
 };
+
+async function deviceToolMachine(cwd: string, target: HostToolTarget) {
+  return target.kind === "project"
+    ? (await featureHost(cwd, "device.host")).machine
+    : await explicitToolHost(target);
+}
+
+export async function deviceTouchAvailable(cwd: string, target: HostToolTarget) {
+  const capabilities = await machineCapabilities(await deviceToolMachine(cwd, target));
+  return capabilities.includes("devices.touch.v1");
+}
+
+/** Use the same resolved computer and authenticated connection as device reads. */
+export async function subscribeDeviceVideo(
+  cwd: string,
+  target: HostToolTarget,
+  deviceId: string,
+  onChunk: (chunk: DeviceStreamChunk) => void,
+  onError: (failure: unknown) => void,
+): Promise<() => void> {
+  const machine = await deviceToolMachine(cwd, target);
+  const capabilities = await machineCapabilities(machine);
+  if (
+    !capabilities.includes("device.host") ||
+    !capabilities.includes("transport.ws.devices.video.v1")
+  )
+    throw new Error("DEVICE_STREAM_UNSUPPORTED: Host video subscriptions are unavailable.");
+  bindMachineEnvironment(machine.id, machine.environmentId);
+  const route = acquireRemoteHostRuntime(machine.id);
+  if (!route) throw new Error("DEVICE_STREAM_UNSUPPORTED: Host video connection is unavailable.");
+  let release = () => {};
+  let current = true;
+  let started = false;
+  const close = () => {
+    if (!current) return;
+    current = false;
+    release();
+    route.release();
+  };
+  try {
+    const first = new Promise<void>((resolve, reject) => {
+      const fail = (error: unknown) => {
+        if (!current) return;
+        if (started) onError(error);
+        else reject(error);
+      };
+      release = route.runtime.retain(
+        { kind: "deviceVideo", deviceId, viewerId: crypto.randomUUID() },
+        {
+          parse: (value) => DeviceStreamChunkSchema.safeParse(value),
+          commit: (value, input) => {
+            if (!current || !input.isCurrent()) return;
+            if (!value.success) {
+              fail(new Error("DEVICE_STREAM_UNSUPPORTED: The Host could not start device video."));
+              return;
+            }
+            started = true;
+            onChunk(value.data);
+            resolve();
+          },
+          closed: () => fail(new Error("Device video connection closed.")),
+          onError: fail,
+        },
+      );
+    });
+    await withTimeout(first, 6_000, "Device video subscription");
+    return close;
+  } catch (error) {
+    close();
+    throw error;
+  }
+}
 async function ownerToolMachine(
   target: Exclude<HostToolTarget, { kind: "project" }>,
   expectedEnvironmentId?: string,

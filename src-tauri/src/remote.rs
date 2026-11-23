@@ -17,6 +17,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 pub(crate) mod account_pairing;
 pub(crate) mod account_routes;
+pub(crate) mod browser_frames;
 pub(crate) mod host_proof;
 pub(crate) mod protocol;
 pub(crate) mod response_limit;
@@ -66,6 +67,7 @@ struct WsCapability {
 
 #[derive(Default)]
 pub struct RemoteConnections {
+    browser_frames: browser_frames::Streams,
     changes: changes::Changes,
     reads: changes::Reads,
     pub(crate) store: Arc<Mutex<()>>,
@@ -177,6 +179,7 @@ impl RemoteConnections {
         self.tunnels.clear();
     }
     pub fn detach_window(&self, label: &str) {
+        self.browser_frames.detach(label);
         self.ws.detach(label);
         self.ws.detach(&window_lists::owner(label));
     }
@@ -646,6 +649,7 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         "voice.tools.call" => std::time::Duration::from_secs(250),
         "devices.boot" => std::time::Duration::from_secs(240),
         "devices.action" => std::time::Duration::from_secs(180),
+        "devices.touch" => std::time::Duration::from_secs(35),
         // Contract deadline 180 s for a device screenshot.
         "devices.capture" => std::time::Duration::from_secs(190),
         // Contract deadline 600 s: sync may queue, pull and push on top of the 120 s limits.
@@ -927,6 +931,7 @@ fn device_http_effect(method: &str) -> bool {
             | "devices.control.release"
             | "devices.control.renew"
             | "devices.action"
+            | "devices.touch"
             | "devices.preview"
             | "devices.preview.mobile.start"
     ) && HostWsBroker::method_has_effect(method)
@@ -2976,6 +2981,7 @@ pub(crate) fn conversation_machine_call_pinned(
             | "devices.control.renew"
             | "devices.inspect"
             | "devices.action"
+            | "devices.touch"
     ) {
         return Err("Unsupported paired device operation".into());
     }

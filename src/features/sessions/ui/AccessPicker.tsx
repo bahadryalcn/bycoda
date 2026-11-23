@@ -1,7 +1,6 @@
-import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import type { RuntimeMode } from "../model/session";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { runtimeModeCopy } from "./runtimeModeCopy";
 import { runtimeModeOptions } from "./runtimeModeOptions";
@@ -62,11 +61,9 @@ export function AccessPicker({
         }}
         footer={
           busy ? (
-            <InfoPopover>
-              <Text as="p" size="secondary" leading="relaxed">
-                {t("Access changes apply to the next turn. Stop and resend to apply them now.")}
-              </Text>
-            </InfoPopover>
+            <InfoTooltip>
+              {t("Access changes apply to the next turn. Stop and resend to apply them now.")}
+            </InfoTooltip>
           ) : undefined
         }
       />

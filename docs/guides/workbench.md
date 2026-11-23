@@ -273,7 +273,8 @@ while hints explain icons, missing shortcuts and additional context. Overflow
 hints reveal full text when a label is clipped or hidden; narrow panes keep their
 icon explanations. Explicit tooltip content is shown as supplied. Error reasons
 and connection details remain available; accessible control names do not depend
-on whether a tooltip is visible.
+on whether a tooltip is visible. Hover or Tab to an info icon to read a short
+explanation. Open the details button when the information needs its own panel.
 
 Project and conversation rows use the same detail card layout. Project cards show
 the folder path, the machine for remote projects, and relevant status badges.
@@ -385,6 +386,8 @@ make the Minimize button do the same, enable **Minimize to tray** under
 taskbar by default.
 
 Left-click the Bycoda tray icon to reopen the most recently hidden workspace.
+The tray tooltip shows **Working**, **Failed**, and **Needs input** counts.
+Automatic retries count as working.
 Right-click and choose **Hidden windows** to open or close a specific one.
 Use **File > Quit** or **Quit Bycoda** in the tray to close the whole app,
 including hidden windows.

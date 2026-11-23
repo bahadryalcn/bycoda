@@ -9,7 +9,6 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { terminalText } from "../../../shared/lib/terminalText";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Alert } from "../../../shared/ui/Alert";
@@ -526,15 +525,13 @@ export function SearchView({
   const indexing = pendingIndex > 0 && (scope === "all" || chatMode);
   const noResults = !empty && rowCount === 0 && !loading && !error && !conversationError;
   const limitNotice =
-    !empty && (truncated || (!chatMode && grouped.omitted > 0)) ? (
-      <InfoPopover label={t("Search result limits")}>
-        <p>
-          {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
-          {!chatMode && grouped.omitted > 0
-            ? ` · ${grouped.omitted} ${t("more loaded matches")}`
-            : ""}
-        </p>
-      </InfoPopover>
+    !empty && resultsCurrent && (truncated || (!chatMode && grouped.omitted > 0)) ? (
+      <Text as="p" size="micro" tone="muted" className="px-2.5 py-1">
+        {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
+        {!chatMode && grouped.omitted > 0
+          ? ` · ${grouped.omitted} ${t("more loaded matches")}`
+          : ""}
+      </Text>
     ) : null;
   const indexNotice =
     pendingIndex > 0 && !conversationError && conversationMode ? (
@@ -637,7 +634,6 @@ export function SearchView({
               {projectDisplayName(cwd)}
             </Text>
           ) : null}
-          {limitNotice}
           {chatMode ? (
             <ChatFilterBar
               filters={chatFilters}
@@ -646,6 +642,7 @@ export function SearchView({
             />
           ) : null}
         </div>
+        {limitNotice}
       </div>
 
       {!empty && (showFileError || showConversationError) ? (

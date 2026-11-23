@@ -27,7 +27,7 @@ the bycoda app skill owns tool usage, never granting operation authority here.
 ## Preserve
 
 - Project identity, execution cwd and selected machine remain distinct. Availability and metadata grant no control; discovery respects caller exposure and legacy grant scopes.
-- Browser/device input needs exact lease ownership and capability checks. Inspection/viewing and restored drafts never claim control; annotations retain exact captured frame/target.
+- Browser/device input needs exact lease ownership and capability checks. The visible desktop Browser and Devices panels acquire available control for the selected page or running device. Passive capture and draft restoration carry no lease. Annotations retain their exact captured frame and target.
 - Browser frames require the matching conversation scope, not a control lease. Captures never acquire or renew control; mutations and annotations retain active lease checks.
 - Devices retain protocol/device-bound admission, expiry/revocation, competing controllers, stale-node rejection, coordinate proof and entered text across platform limitations.
 - Unknown project listeners remain visible. Logs/samples stay bounded; process effects retain review/confirmation and truthful partial results. Unknown shutdown is not success.

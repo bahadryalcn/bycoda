@@ -362,7 +362,7 @@ test("attachment card themes and widths", async ({ page }) => {
     }
 });
 
-test("real Composer accepts pasted files, decorates native tokens and renumbers removal", async ({
+test("real Composer shows pasted files in cards and inline and renumbers removal", async ({
   page,
 }) => {
   await mkdir(captures, { recursive: true });
@@ -370,15 +370,43 @@ test("real Composer accepts pasted files, decorates native tokens and renumbers 
   await page.addInitScript(() => {
     localStorage.clear();
     localStorage.setItem("bycoda.language", "en");
+    const storedFiles = new Map<string, string>();
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        writeText: async (text: string) =>
+          document.documentElement.setAttribute("data-copied-path", text),
+        write: async ([item]: ClipboardItem[]) => {
+          const bitmap = await createImageBitmap(await item.getType("image/png"));
+          document.documentElement.setAttribute(
+            "data-copied-image",
+            `${bitmap.width}x${bitmap.height}`,
+          );
+          bitmap.close();
+        },
+      },
+    });
     Object.assign(window, {
       __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
       __TAURI_INTERNALS__: {
         metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
         transformCallback: () => 1,
         unregisterCallback: () => {},
-        invoke: async (command: string, args: { name?: string } = {}) => {
+        invoke: async (
+          command: string,
+          args: { name?: string; data?: string; path?: string } = {},
+        ) => {
           if (command === "plugin:event|listen") return 1;
-          if (command === "write_attachment") return `C:\\isolated-fixture\\${args.name}`;
+          if (command === "write_attachment") {
+            const path = `/fixture/.attachments/${args.name}`;
+            storedFiles.set(path, args.data ?? "");
+            return path;
+          }
+          if (command === "read_binary_file" || command === "read_file_base64")
+            return storedFiles.get(args.path ?? "");
+          if (command === "save_file_copy") {
+            document.documentElement.setAttribute("data-saved-image", args.name ?? "");
+            return true;
+          }
           if (command === "clipboard_file_paths") return [];
           return undefined;
         },
@@ -397,15 +425,21 @@ test("real Composer accepts pasted files, decorates native tokens and renumbers 
       await message.fill("Review references and retain this existing draft.");
       await message.press("End");
       await message.evaluate((element) => {
-        const png = Uint8Array.from(
-          atob(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6oS0AAAAASUVORK5CYII=",
-          ),
-          (char) => char.charCodeAt(0),
-        );
+        const makeImage = (name: string, type: string, size: number, color: string) => {
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const context = canvas.getContext("2d")!;
+          context.fillStyle = color;
+          context.fillRect(0, 0, size, size);
+          const bytes = Uint8Array.from(atob(canvas.toDataURL(type).split(",")[1]), (char) =>
+            char.charCodeAt(0),
+          );
+          return new File([bytes], name, { type });
+        };
         const clipboardData = new DataTransfer();
-        clipboardData.items.add(new File([png], "first-reference.png", { type: "image/png" }));
-        clipboardData.items.add(new File([png], "second-reference.png", { type: "image/png" }));
+        clipboardData.items.add(makeImage("first-reference.png", "image/png", 1, "steelblue"));
+        clipboardData.items.add(makeImage("second-reference.jpg", "image/jpeg", 2, "seagreen"));
         clipboardData.items.add(
           new File(["# Notes\nRetain all draft text."], "implementation-notes.md", {
             type: "text/markdown",
@@ -415,11 +449,56 @@ test("real Composer accepts pasted files, decorates native tokens and renumbers 
           new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }),
         );
       });
-      // Tokens in the draft render as inline references; the card strip only holds the rest.
       const editor = page.locator("[data-composer-inline-input]");
       const references = editor.locator('[data-inline-reference="attachment"]');
       await expect(references).toHaveCount(3);
-      await expect(page.locator("[data-attachment-chip]")).toHaveCount(0);
+      const cards = page.locator("[data-composer] [data-attachment-chip]");
+      await expect(cards).toHaveCount(3);
+      const firstImageCard = cards.filter({
+        has: page.getByRole("button", { name: "Open first-reference.png full screen" }),
+      });
+      await expect(firstImageCard.getByRole("button")).toHaveCount(2);
+      await page.mouse.move(0, 0);
+      for (const card of await cards.all()) {
+        const remove = card.getByRole("button", { name: /^Remove / });
+        await expect(remove).toHaveCSS("opacity", "0");
+      }
+      for (const card of await cards.all()) {
+        await card.hover();
+        await expect(card.getByRole("button", { name: /^Remove / })).toHaveCSS("opacity", "1");
+      }
+      await firstImageCard.click({ button: "right" });
+      const menu = page.getByRole("menu");
+      await expect(menu.getByRole("menuitem", { name: "Copy image" })).toBeVisible();
+      await expect(menu.getByRole("menuitem", { name: "Save image" })).toBeVisible();
+      await menu.screenshot({ path: `${captures}/card-menu-${theme}-${width}.png` });
+      await menu.getByRole("menuitem", { name: "Copy full path" }).click();
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-copied-path",
+        "/fixture/.attachments/first-reference.png",
+      );
+      await firstImageCard.click({ button: "right" });
+      await menu.getByRole("menuitem", { name: "Copy relative path" }).click();
+      await expect(page.locator("html")).toHaveAttribute(
+        "data-copied-path",
+        ".attachments/first-reference.png",
+      );
+      await firstImageCard
+        .getByRole("button", { name: "Open first-reference.png full screen" })
+        .click();
+      await expect(page.getByRole("dialog").locator("img")).toBeVisible();
+      await page.getByRole("dialog").locator("img").click({ button: "right" });
+      await expect(menu.getByRole("menuitem", { name: "Copy image" })).toBeVisible();
+      await menu.screenshot({ path: `${captures}/preview-menu-${theme}-${width}.png` });
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.getByRole("dialog").locator("img").click({ button: "right" });
+      await menu.getByRole("menuitem", { name: "Copy image" }).click();
+      await expect(page.locator("html")).toHaveAttribute("data-copied-image", "1x1");
+      await page.getByRole("dialog").locator("img").click({ button: "right" });
+      await menu.getByRole("menuitem", { name: "Save image" }).click();
+      await expect(page.locator("html")).toHaveAttribute("data-saved-image", "first-reference.png");
+      await page.keyboard.press("Escape");
       // The underlying field keeps the plain-text draft the Host receives.
       const draft = page.locator("[data-composer] textarea");
       await expect(draft).toHaveValue(
@@ -431,11 +510,17 @@ test("real Composer accepts pasted files, decorates native tokens and renumbers 
       await expect(
         editor.locator('[data-inline-reference][data-attachment-kind="markdown"]'),
       ).toHaveCount(1);
+      await firstImageCard.hover();
       await page
         .locator("[data-composer-box]")
         .screenshot({ path: `${captures}/real-composer-${theme}-${width}.png` });
-      await references.filter({ hasText: "first-reference.png" }).click({ button: "right" });
-      await page.getByRole("menuitem", { name: "Remove first-reference.png", exact: true }).click();
+      if (theme === "dark") {
+        await firstImageCard.getByRole("button", { name: "Remove first-reference.png" }).click();
+      } else {
+        await firstImageCard.click({ button: "right" });
+        await menu.getByRole("menuitem", { name: "Remove first-reference.png" }).click();
+      }
+      await expect(cards).toHaveCount(2);
       await expect(references).toHaveCount(2);
       await expect(draft).toHaveValue(
         /^Review references and retain this existing draft\. \[Image\u00a01\u00a0·[^\]]+\] \[File\u00a01\u00a0·[^\]]+\]$/,
@@ -444,9 +529,12 @@ test("real Composer accepts pasted files, decorates native tokens and renumbers 
         '[data-inline-reference][data-attachment-kind="image"]',
       );
       await expect(remainingImage).toHaveCount(1);
-      await expect(remainingImage).toHaveAccessibleName("Open second-reference.png");
+      await expect(remainingImage).toHaveAccessibleName("Open second-reference.jpg");
       await remainingImage.click();
       await expect(page.getByRole("dialog").locator("img")).toBeVisible();
+      await page.getByRole("dialog").locator("img").click({ button: "right" });
+      await menu.getByRole("menuitem", { name: "Copy image" }).click();
+      await expect(page.locator("html")).toHaveAttribute("data-copied-image", "2x2");
       await page.keyboard.press("Escape");
       await expect(remainingImage).toBeFocused();
     }

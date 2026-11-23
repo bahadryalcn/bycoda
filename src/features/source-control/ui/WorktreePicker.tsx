@@ -1,11 +1,11 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { WorktreeList, useWorktreeList } from "./WorktreeList";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { worktreeRows } from "../model/worktreeRows";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useRef, useState } from "react";
@@ -176,15 +176,18 @@ export function WorktreePicker({
               setActivePath(undefined);
             }}
             trailing={
-              worktreeRemoved || opensNewSession ? (
-                <InfoPopover width={240}>
-                  {worktreeRemoved
-                    ? t("This session’s worktree was deleted. Select a worktree to continue.")
-                    : t("Another worktree opens a new session.")}
-                </InfoPopover>
+              !worktreeRemoved && opensNewSession ? (
+                <InfoTooltip label={t("Worktrees")}>
+                  {t("Another worktree opens a new session.")}
+                </InfoTooltip>
               ) : undefined
             }
           />
+          {worktreeRemoved ? (
+            <InlineMessage tone="warning" className="shrink-0 px-2 py-2">
+              {t("This session’s worktree was deleted. Select a worktree to continue.")}
+            </InlineMessage>
+          ) : null}
           <WorktreeList controller={list} loading={!data && !loadError} />
           {(error || loadError) && (
             <InlineError

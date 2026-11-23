@@ -15,6 +15,8 @@ import { mediaKind } from "../../files/public/mediaPreview";
 import { documentKind, MAX_DOCUMENT_BYTES } from "../../files/public/documentViewer";
 import { DocumentView } from "../../files/public/DocumentView";
 import { Modal } from "../../../shared/ui/Modal";
+import { usePointContextMenu, type ContextMenuActions } from "../../../shared/ui/ContextMenu";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { parseRemotePath, remotePath } from "../../connections/public/remoteProjects";
 
@@ -104,7 +106,7 @@ export function sameFilePreviewSource(opened: Attachment | null, current: Attach
 }
 
 /** A bare attachment path may belong to another OS; a recorded host identity routes it to its owner. */
-function ownedAttachmentPath(attachment: Attachment): string | undefined {
+export function ownedAttachmentPath(attachment: Attachment): string | undefined {
   return attachment.path && attachment.hostEnvironmentId && !parseRemotePath(attachment.path)
     ? remotePath(attachment.hostEnvironmentId, attachment.path)
     : attachment.path;
@@ -223,10 +225,15 @@ export function useSaveAttachmentCopy(attachment: Attachment) {
 export function AttachmentFilePreview({
   attachment,
   onClose,
+  contextActions,
+  notice,
 }: {
   attachment: Attachment;
   onClose: () => void;
+  contextActions?: ContextMenuActions;
+  notice?: string;
 }) {
+  const contextMenu = usePointContextMenu(contextActions);
   const path = ownedAttachmentPath(attachment);
   const { size, loadPreview, data } = attachment;
   const readBytes = useCallback(
@@ -252,7 +259,9 @@ export function AttachmentFilePreview({
       surface="floating"
       className={fitContent ? "" : "h-[min(760px,85dvh)]"}
     >
-      <div className={fitContent ? "min-h-0" : "h-full min-h-0"}>
+      <div className={fitContent ? "min-h-0" : "h-full min-h-0"} {...contextMenu.trigger}>
+        {contextMenu.menu}
+        {notice ? <InlineMessage tone="warning">{notice}</InlineMessage> : null}
         {mediaKind(attachment.name) ? (
           <MediaView
             path={externalPath ?? attachment.name}

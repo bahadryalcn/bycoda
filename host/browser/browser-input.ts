@@ -1,16 +1,20 @@
+type PointerPress = { button: "left" | "middle" | "right"; clickCount?: number };
+
 type BrowserInputPage = {
   evaluate?: <T, A>(callback: (arg: A) => T, arg: A) => Promise<T>;
   mouse: {
     click(x: number, y: number): Promise<void>;
     wheel(x: number, y: number): Promise<void>;
     move?(x: number, y: number): Promise<void>;
-    down?(options: { button: "left" | "middle" | "right" }): Promise<void>;
-    up?(options: { button: "left" | "middle" | "right" }): Promise<void>;
+    down?(options: PointerPress): Promise<void>;
+    up?(options: PointerPress): Promise<void>;
   };
   keyboard: {
     type(text: string): Promise<void>;
     insertText?(text: string): Promise<void>;
     press(key: string): Promise<void>;
+    down?(key: string): Promise<void>;
+    up?(key: string): Promise<void>;
   };
 };
 
@@ -30,12 +34,58 @@ const NAMED_KEYS = new Set([
   "ArrowLeft",
   "ArrowRight",
   "Space",
+  "ContextMenu",
+  "Pause",
+  "PrintScreen",
+  "Backquote",
+  "Minus",
+  "Equal",
+  "BracketLeft",
+  "BracketRight",
+  "Backslash",
+  "Semicolon",
+  "Quote",
+  "Comma",
+  "Period",
+  "Slash",
   ...Array.from({ length: 12 }, (_, index) => `F${index + 1}`),
 ]);
 
 /** Named keys and single letter/digit shortcuts; everything printable arrives as text. */
 export function browserKeyAllowed(key: unknown): key is string {
   return typeof key === "string" && (NAMED_KEYS.has(key) || /^[A-Z0-9]$/.test(key));
+}
+
+function inputModifiers(value: unknown): string[] {
+  const modifiers = value ?? [];
+  if (
+    !Array.isArray(modifiers) ||
+    modifiers.length > 4 ||
+    new Set(modifiers).size !== modifiers.length ||
+    modifiers.some((key) => !["Control", "Alt", "Shift", "Meta"].includes(key))
+  )
+    throw new Error("Unsupported browser key modifiers");
+  return modifiers;
+}
+
+/** Temporarily holds modifiers for a mouse event and releases every key even on failure. */
+async function withMouseModifiers(
+  keyboard: BrowserInputPage["keyboard"],
+  modifiers: string[],
+  work: () => Promise<void>,
+) {
+  if (modifiers.length && (!keyboard.down || !keyboard.up))
+    throw new Error("Pointer modifiers are unavailable on this host browser");
+  const held: string[] = [];
+  try {
+    for (const key of modifiers) {
+      await keyboard.down!(key);
+      held.push(key);
+    }
+    await work();
+  } finally {
+    for (const key of held.reverse()) await keyboard.up!(key).catch(() => {});
+  }
 }
 
 const CURSORS = new Set(
@@ -91,22 +141,31 @@ export async function applyBrowserInput(
       throw new Error("Invalid pointer button");
     if (!["move", "down", "up"].includes(String(params.action)))
       throw new Error("Unsupported pointer action");
+    const clickCount = params.clickCount;
+    if (clickCount !== undefined && clickCount !== 1 && clickCount !== 2 && clickCount !== 3)
+      throw new Error("Invalid pointer click count");
+    const modifiers = inputModifiers(params.modifiers);
     if (
       !page.mouse.move ||
       (params.action === "down" && !page.mouse.down) ||
       (params.action === "up" && !page.mouse.up)
     )
       throw new Error("Pointer input is unavailable on this host browser");
-    await page.mouse.move(x, y);
-    if (params.action === "down") await page.mouse.down!({ button });
-    else if (params.action === "up") await page.mouse.up!({ button });
+    const options = { button, ...(clickCount === undefined ? {} : { clickCount }) } as PointerPress;
+    await withMouseModifiers(page.keyboard, modifiers, async () => {
+      await page.mouse.move!(x, y);
+      if (params.action === "down") await page.mouse.down!(options);
+      else if (params.action === "up") await page.mouse.up!(options);
+    });
     return cursorAt(page, x, y);
   } else if (params.kind === "scroll") {
     const y = Number(params.y);
     const x = params.x === undefined ? 0 : Number(params.x);
     if (!Number.isFinite(x) || Math.abs(x) > 2000 || !Number.isFinite(y) || Math.abs(y) > 2000)
       throw new Error("Invalid scroll distance");
-    await page.mouse.wheel(x, y);
+    await withMouseModifiers(page.keyboard, inputModifiers(params.modifiers), () =>
+      page.mouse.wheel(x, y),
+    );
   } else if (params.kind === "text") {
     if (typeof params.text !== "string" || params.text.length > 4096 || params.text.includes("\0"))
       throw new Error("Invalid browser text");
@@ -114,14 +173,7 @@ export async function applyBrowserInput(
     else await page.keyboard.type(params.text);
   } else if (params.kind === "key") {
     if (!browserKeyAllowed(params.key)) throw new Error("Unsupported browser key");
-    const modifiers = params.modifiers ?? [];
-    if (
-      !Array.isArray(modifiers) ||
-      modifiers.length > 4 ||
-      new Set(modifiers).size !== modifiers.length ||
-      modifiers.some((value) => !["Control", "Alt", "Shift", "Meta"].includes(value))
-    )
-      throw new Error("Unsupported browser key modifiers");
+    const modifiers = inputModifiers(params.modifiers);
     await page.keyboard.press([...modifiers, params.key].join("+"));
   } else throw new Error("Unsupported browser input");
   return undefined;

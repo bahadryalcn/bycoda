@@ -4,7 +4,6 @@ import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Laptop, MoreHorizontal, Server } from "../../../shared/ui/icons";
@@ -91,7 +90,7 @@ function useMachineConnection(machine: RemoteMachine, probed?: MachineProbe) {
   return { status, enabled, turningOff, error: shared.error };
 }
 
-/** Why a status deserves a word more than its label gives; shown behind an info icon. */
+/** Additional context for the current machine status. */
 function statusReason(status: MachineStatus, probed?: MachineProbe, error?: string) {
   if (status === "update") return t("The host needs an update for Explorer and Changes.");
   if (status === "connected" && probed === "provider")
@@ -184,11 +183,6 @@ export function MachineRow({
                 <Badge variant="dot" size="sm" tone={MACHINE_STATUS_TONE[connection.status]}>
                   {part.text}
                 </Badge>
-                {reason ? (
-                  <InfoPopover label={t("About this status")} className="shrink-0">
-                    <Text as="p">{reason}</Text>
-                  </InfoPopover>
-                ) : null}
               </span>
             ) : (
               <span key={part.id}>{part.text}</span>
@@ -209,6 +203,11 @@ export function MachineRow({
             </span>
           ) : null}
         </Text>
+        {reason ? (
+          <Text as="p" tone="muted" size="caption" wrap="anywhere">
+            {reason}
+          </Text>
+        ) : null}
         <ConnectionSyncLine machineId={machine.id} onSyncNow={onSyncNow} />
         {local ? <LocalHostModeSwitch /> : null}
         {showDetails ? (

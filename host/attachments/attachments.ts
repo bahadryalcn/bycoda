@@ -4,11 +4,51 @@ import type { Attachment } from "../../src/features/sessions/model/session";
 import type { RemoteAttachment } from "../../src/features/connections/model/protocol";
 import type { HostStore } from "../store";
 import { mkdir, open, readdir, stat, type FileHandle } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { parseBrowserAnnotation } from "../../src/shared/lib/browserAnnotation";
 import { HOST_ATTACHMENT_ID as UUID } from "../../src/shared/model/hostAttachmentId";
 import { HostDomainRefusalError } from "../domains/context";
 import { attachmentDeletionHeld } from "../storage/snapshots";
+import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+import { createDedupedWarn } from "../diagnostics/log-dedupe";
+import { createLogger } from "../diagnostics/logger";
+import { currentRequestTrace } from "../diagnostics/request-trace";
+
+const attachmentLog = createLogger("host.attachments");
+const warnMissing = createDedupedWarn({ write: (line) => attachmentLog.warn(line) });
+const attachmentLogKey = randomBytes(32);
+type AttachmentObservation = "upload-partial" | "upload-complete" | "read" | "collected";
+const attachmentObservations = new WeakMap<
+  HostStore,
+  Map<string, { state: AttachmentObservation; at: number }>
+>();
+
+function observeAttachment(store: HostStore, id: string, state: AttachmentObservation): void {
+  let records = attachmentObservations.get(store);
+  if (!records) attachmentObservations.set(store, (records = new Map()));
+  const key = id.toLowerCase();
+  records.delete(key);
+  records.set(key, { state, at: monotonicNow() });
+  if (records.size > 1024) records.delete(records.keys().next().value!);
+}
+
+function logMissingAttachment(
+  store: HostStore,
+  id: string,
+  source: "generated" | "session-reference",
+  offset: number,
+): void {
+  const key = id.toLowerCase();
+  const ref = createHmac("sha256", attachmentLogKey).update(key).digest("hex").slice(0, 16);
+  const observed = attachmentObservations.get(store)?.get(key);
+  const trace = currentRequestTrace();
+  warnMissing(
+    `attachment bytes missing ref=${ref}`,
+    `source=${source} chunk=${offset === 0 ? "first" : "later"} lastObserved=${observed?.state ?? "unknown"}` +
+      (observed ? ` observedAgoMs=${Math.round(elapsedSince(observed.at))}` : "") +
+      (trace ? ` traceId=${trace.id}` : ""),
+  );
+}
 // Reads, status hashes and writes of the same file observe a single ordered stream.
 // Each operation closes its handle; settled queues retain neither handles nor stores.
 const attachmentOperations = new Map<string, Promise<void>>();
@@ -166,7 +206,13 @@ export async function writeAttachmentChunk(
       } else {
         throw new Error("Attachment chunks are out of order");
       }
-      return { offset: Number(offset) + bytes.length };
+      const nextOffset = Number(offset) + bytes.length;
+      observeAttachment(
+        store,
+        basename(path),
+        Math.max(nextOffset, info.size) === Number(size) ? "upload-complete" : "upload-partial",
+      );
+      return { offset: nextOffset };
     } finally {
       await handle.close();
     }
@@ -312,6 +358,12 @@ export async function readAttachmentChunk(
       handle = await open(path, "r");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      logMissingAttachment(
+        store,
+        attachment.id,
+        generated ? "generated" : "session-reference",
+        Number(offset),
+      );
       // A session can reference a file whose bytes never reached this machine. Nothing was
       // read, and asking again cannot succeed, so the answer is a non-retryable refusal.
       // The code set is closed for connected clients, so this uses the generic
@@ -332,6 +384,7 @@ export async function readAttachmentChunk(
         Math.min(3 * Math.floor(MAX_CHUNK_BYTES / 3), attachment.size - Number(offset)),
       );
       await readExactly(handle, bytes, Number(offset));
+      if (Number(offset) === 0) observeAttachment(store, attachment.id, "read");
       return {
         data: bytes.toString("base64"),
         offset: Number(offset) + bytes.length,
@@ -581,6 +634,7 @@ export async function collectAttachmentGarbage(
           }
           if (!info.isFile() || Math.max(info.mtimeMs, info.ctimeMs) > now - graceMs) continue;
           unlinkSync(path);
+          observeAttachment(store, id, "collected");
           attachmentTouches.delete(key);
           removed.push(id);
           await onRemoved?.(id.toLowerCase());

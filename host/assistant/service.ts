@@ -3287,15 +3287,20 @@ export class HostAssistant {
       }
       case "projects.list":
         return { projects: ((await this.ports.listProjects?.()) ?? []).slice(0, 1000) };
-      case "snapshot":
+      case "snapshot": {
+        const snapshot = await this.snapshot(input.limit ?? 50, admission);
+        const holds = await this.store.db.readScope(async () => ({
+          modelHolds: await modelHold.loadModelHolds(this.store.db),
+          dependencies: await jobAfter.loadJobDependencies(this.store.db),
+        }));
         return {
-          snapshot: withJobHolds(await this.snapshot(input.limit ?? 50, admission), {
+          snapshot: withJobHolds(snapshot, {
             emergencyStop: this.emergencyStop,
             canCreateGoal: !!this.ports.createGoal,
-            modelHolds: await modelHold.loadModelHolds(this.store.db),
-            dependencies: await jobAfter.loadJobDependencies(this.store.db),
+            ...holds,
           }),
         };
+      }
       case "models.pool.get":
         return assistantModelPoolOp(input, principal, {
           routing: hostModelRoutingService(this.store),
@@ -6758,7 +6763,34 @@ export class HostAssistant {
     limit: number,
     admission?: RoomManagementAdmission,
   ): Promise<AssistantSnapshot> {
-    const profile = await this.profile();
+    const records = await this.store.db.readScope(async () => {
+      const profile = await this.profile();
+      return {
+        profile,
+        briefingSchedule: await this.runtime("briefingSchedule", { enabled: true, time: "09:00" }),
+        manualPolicy: await this.manualPolicy(),
+        conversationRetentionDays: await this.runtime<number>("conversationRetentionDays", 0),
+        lastSpokenLanguage:
+          (await this.runtime<{ language: string } | null>("lastSpokenLanguage", null))?.language ??
+          null,
+        jobs: await this.repository.list<AssistantJob>("jobs", limit),
+        memory: await this.repository.list<AssistantSnapshot["memory"][number]>("memory", limit),
+        threads: await this.repository.list<AssistantThread>("threads", limit),
+        activity: await this.repository.list<AssistantActivity>("activity", limit),
+        presence: await this.runtime<AssistantPresence>("presence", {
+          state: "present",
+          since: this.now(),
+          updatedAt: this.now(),
+        }),
+        automatic: await this.runtime<AssistantAutomaticPresence | null>("automaticPresence", null),
+        review: await this.runtime<ChiefIntent | null>("chiefPendingIntent", null),
+        usage: await this.usage(profile, true),
+        paused: await this.runtime("paused", false),
+        lastHeartbeatAt: await this.runtime<number | null>("heartbeat", null),
+        briefing: await this.runtime<AssistantSnapshot["briefing"]>("briefing", null),
+      };
+    });
+    const { profile, activity, automatic, review, ...snapshotRecords } = records;
     const trash = await readAssistantTrash(
       {
         db: this.store.db,
@@ -6778,11 +6810,6 @@ export class HostAssistant {
     } catch (error) {
       notesError = String(error).slice(0, 2000);
     }
-    const automatic = await this.runtime<AssistantAutomaticPresence | null>(
-      "automaticPresence",
-      null,
-    );
-    const review = await this.runtime<ChiefIntent | null>("chiefPendingIntent", null);
     const chiefReview =
       review && ["unknown", "capacity"].includes(review.status)
         ? {
@@ -6795,21 +6822,13 @@ export class HostAssistant {
           }
         : undefined;
     return {
+      ...snapshotRecords,
       workHoursActive: assistantActiveHours(profile, this.now()),
       ownerQuestions: await this.ownerQuestions.list(),
       profile,
-      briefingSchedule: await this.runtime("briefingSchedule", { enabled: true, time: "09:00" }),
-      manualPolicy: await this.manualPolicy(),
       manualGrants: (await this.ports.manual?.list()) ?? [],
-      conversationRetentionDays: await this.runtime<number>("conversationRetentionDays", 0),
-      lastSpokenLanguage:
-        (await this.runtime<{ language: string } | null>("lastSpokenLanguage", null))?.language ??
-        null,
-      jobs: await this.repository.list("jobs", limit),
-      memory: await this.repository.list("memory", limit),
-      threads: await this.repository.list("threads", limit),
       activity: [
-        ...(await this.repository.list<AssistantActivity>("activity", limit)),
+        ...activity,
         // Action history is disclosed under its Room's native source, which the Room
         // registers only after this snapshot loads; failing here would deadlock it.
         ...(await this.actionJournal
@@ -6821,19 +6840,10 @@ export class HostAssistant {
       notes,
       ...(notesError ? { notesError } : {}),
       trash,
-      presence: await this.runtime("presence", {
-        state: "present",
-        since: this.now(),
-        updatedAt: this.now(),
-      }),
       ...(automatic?.supported ? { automaticPresence: automatic } : {}),
       ...(chiefReview ? { chiefReview } : {}),
       effectivePresence: await this.effectivePresence(),
       notifications: await this.notifications(profile),
-      usage: await this.usage(profile, true),
-      paused: await this.runtime("paused", false),
-      lastHeartbeatAt: await this.runtime("heartbeat", null),
-      briefing: await this.runtime("briefing", null),
       capabilities: {
         jobs: !!this.ports.createGoal,
         chief: !!this.ports.chiefWake,

@@ -220,7 +220,10 @@ test("the session composer renders all eight compact references in the editable 
     );
     await expect(editor).toHaveAttribute("spellcheck", "true");
     await expect(editor).toHaveCSS("font-family", /sans-serif/);
-    await expect(box.locator("[data-attachment-chip]")).toHaveCount(0);
+    await expect(box.locator("[data-attachment-chip]")).toHaveCount(4);
+    await expect(
+      box.locator('[data-attachment-chip="image"]').getByText("158 KB", { exact: true }),
+    ).toBeVisible();
     await expect(references.locator(":scope > span")).toHaveText([
       "image.png",
       "Bahadir-Halay.pdf",
@@ -314,7 +317,7 @@ test("repeated PDF references use their intrinsic width with small padding", asy
       const pdfs = editor.getByRole("button", { name: "Open Detailed-project-report-tr (1).pdf" });
       await expect(pdfs).toHaveCount(2);
       await expect(editor.locator('[data-inline-reference="skill"]')).toHaveText("ui-ux-pro-max");
-      await expect(box.locator("[data-attachment-chip]")).toHaveCount(0);
+      await expect(box.locator("[data-attachment-chip]")).toHaveCount(1);
       for (const pdf of await pdfs.all()) {
         await expect(pdf).toHaveText("Detailed-project-report-tr (1).pdf71 KB");
         await expect(pdf).toHaveCSS("padding-inline", "5px");
@@ -342,16 +345,22 @@ test("shows the complete attached filename in the card and inline while writing"
     .getByText("draft-context.txt", { exact: true });
   await expect(name).toBeVisible();
   expect(await name.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
-  await box.getByRole("button", { name: /^Insert .* into the message$/ }).click();
+  await name.click({ button: "right" });
+  const insert = page.getByRole("menuitem", { name: /^Insert .* into the message$/ });
+  await insert.click();
   const editor = box.locator("[data-composer-inline-input]");
   const label = editor.locator('[data-inline-reference="attachment"] > span');
   await expect(label).toBeVisible();
   await expect(label).toHaveText("draft-context.txt");
-  await expect(box.locator("[data-attachment-chip]")).toHaveCount(0);
+  await expect(box.locator("[data-attachment-chip]")).toHaveCount(1);
   expect(await label.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
   await expect(editor).toBeFocused();
   await editor.pressSequentially(" and reply.");
   await expect(input).toHaveValue(/and reply\.$/);
+  await name.click({ button: "right" });
+  await expect(page.getByRole("menu")).toBeVisible();
+  await expect(insert).toHaveCount(0);
+  await page.keyboard.press("Escape");
 });
 test("wraps a long attached filename on narrow layouts without losing characters", async ({
   page,

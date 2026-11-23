@@ -4,7 +4,6 @@ import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { DatePicker } from "../../../../shared/ui/DatePicker";
 import { toLocalDateTime } from "../../../../shared/ui/DateTimePicker";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { Text } from "../../../../shared/ui/Text";
@@ -233,12 +232,12 @@ export function SignupAccountDialog({
                 {signupStepLabel(registration.step)}
               </Text>
             ) : null}
-            {registration?.message ? (
-              <InfoPopover label={t("Details")}>
-                <Text as="p">{registration.message}</Text>
-              </InfoPopover>
-            ) : null}
           </div>
+        ) : null}
+        {status && registration?.message ? (
+          <Text as="p" tone="muted" size="caption" wrap="anywhere">
+            {registration.message}
+          </Text>
         ) : null}
         {live && registration?.blockers.length ? (
           <div className="social-tag-line">

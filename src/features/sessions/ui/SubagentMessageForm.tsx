@@ -4,7 +4,7 @@ import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { sessionWorkCwd, type Session } from "../model/session";
 import { Composer } from "./Composer";
@@ -152,17 +152,15 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
             : null}
       </Text>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <InfoPopover className="mr-auto" label={t("How messaging works")}>
-          <Text as="p" size="secondary" tone="inherit">
-            {direct
-              ? t(
-                  "Sent straight to this agent. While it runs, the message steers it; once it has finished, the message starts a new turn.",
-                )
-              : t(
-                  "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
-                )}
-          </Text>
-        </InfoPopover>
+        <InfoTooltip className="mr-auto" label={t("How messaging works")}>
+          {direct
+            ? t(
+                "Sent straight to this agent. While it runs, the message steers it; once it has finished, the message starts a new turn.",
+              )
+            : t(
+                "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
+              )}
+        </InfoTooltip>
         {direct && relay.onOpenConversation ? (
           <Button variant="ghost" onClick={relay.onOpenConversation}>
             {t("Open session")}

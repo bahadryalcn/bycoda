@@ -3,12 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   clearJiraCache,
   jiraProjectIdsForFetch,
+  jiraReadGeneration,
   listJiraProjects,
   requireHiddenJiraProjectIds,
+  rememberJiraFilterIssues,
   loadAllowedJiraBoardIds,
   type JiraIssue,
   type JiraProject,
 } from "./jira";
+import type { InboxFilters } from "./inboxFilters";
 
 export type JiraBoard = {
   id: number;
@@ -30,9 +33,39 @@ export type JiraTransition = {
   id: string;
   name: string;
   statusId: string;
+  statusName?: string;
   requiresFields: boolean;
 };
 export type JiraIssueScope = { scope: "board" | "backlog" | "sprint"; sprintId?: number };
+type BoardIssueFilters = {
+  assignedToMe: boolean;
+  assigneeIds: string[];
+  unassigned: boolean;
+  statuses: string[];
+  open: boolean;
+  closed: boolean;
+};
+
+export function jiraBoardIssueFilters(filters: InboxFilters): BoardIssueFilters | undefined {
+  const { assignedToMe, jiraAssignees = [], jiraUnassigned = false, jiraStatuses = [] } = filters;
+  const { open, closed } = filters.status;
+  if (
+    !assignedToMe &&
+    !jiraAssignees.length &&
+    !jiraUnassigned &&
+    !jiraStatuses.length &&
+    open === closed
+  )
+    return;
+  return {
+    assignedToMe,
+    assigneeIds: jiraAssignees,
+    unassigned: jiraUnassigned,
+    statuses: jiraStatuses,
+    open,
+    closed,
+  };
+}
 export type JiraMove = {
   target: "board" | "backlog" | "sprint" | "rank";
   sprintId?: number;
@@ -80,7 +113,9 @@ export async function jiraBoardIssues(
   boardId: number,
   scope: JiraIssueScope,
   nextPageToken?: string,
+  filters?: BoardIssueFilters,
 ) {
+  const generation = jiraReadGeneration();
   const projectIds = await visibleProjectIds();
   if (projectIds?.length === 0) return { issues: [], nextPageToken: null };
   const page = await invoke<JiraIssuePage>("jira_board_issues", {
@@ -89,13 +124,14 @@ export async function jiraBoardIssues(
     sprintId: scope.sprintId ?? null,
     nextPageToken: nextPageToken ?? null,
     projectIds,
+    ...(filters && { filters }),
   });
   const hidden = requireHiddenJiraProjectIds();
+  const issues = page.issues.filter((issue) => !hidden.includes(issue.teamId));
+  if (generation === jiraReadGeneration()) rememberJiraFilterIssues(issues);
   return {
     ...page,
-    issues: page.issues
-      .filter((issue) => !hidden.includes(issue.teamId))
-      .map((issue) => ({ ...issue, jiraBoardId: boardId })),
+    issues: issues.map((issue) => ({ ...issue, jiraBoardId: boardId })),
   };
 }
 export const jiraIssueTransitions = (key: string) =>
