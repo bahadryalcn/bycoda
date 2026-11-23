@@ -32,6 +32,18 @@
   gap: var(--ui-space-2);
   inline-size: 100%;
 }
+.stage[data-layout="stage"]:not([data-full-call]) {
+  /* Keep the scope selector above the call dock in short saved panels. */
+  --voice-stage-gap: clamp(0px, calc((var(--voice-stage-height) - 286px) / 4), var(--ui-space-2));
+  gap: var(--voice-stage-gap);
+  padding-block: min(var(--ui-space-1), var(--voice-stage-gap));
+}
+.stage[data-layout="stage"]:not([data-full-call]) .status {
+  gap: var(--voice-stage-gap);
+}
+.stage[data-layout="stage"]:not([data-full-call]) .statusText {
+  row-gap: min(var(--ui-space-1), var(--voice-stage-gap));
+}
 .stage[data-layout="stage"] .statusText {
   justify-items: center;
   max-inline-size: 100%;

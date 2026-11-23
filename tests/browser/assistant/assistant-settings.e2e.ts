@@ -88,7 +88,7 @@ for (const [theme, width] of [
     await mkdir(directory, { recursive: true });
     await page.setViewportSize({ width, height: 900 });
     await page.goto(
-      `/tests/browser/assistant/assistant-room.html?real-controls&desktop&manual&settings-layout&theme=${theme}`,
+      `/tests/browser/assistant/assistant-room.html?real-controls&desktop&manual&native-consent&settings-layout&theme=${theme}`,
     );
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const dialog = page.getByRole("dialog").first();

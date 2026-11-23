@@ -105,7 +105,9 @@ export function captureLocalVoiceHistory() {
   return {
     key: "fixture-local",
     remote: false,
-    environmentId: async () => "fixture-host",
+    environmentId: new URLSearchParams(location.search).has("local-choice")
+      ? undefined
+      : async () => "fixture-host",
     request: assistantRequest,
   };
 }

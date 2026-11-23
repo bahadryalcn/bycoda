@@ -17,7 +17,11 @@ const realControls = new URLSearchParams(location.search).has("real-controls");
 const desktopParams = new URLSearchParams(location.search);
 const globalRoomFixture = desktopParams.has("global-room");
 // Settings fixtures keep installation consent in this page's memory.
-if (desktopParams.has("work-model") || desktopParams.has("redesign")) {
+if (
+  desktopParams.has("work-model") ||
+  desktopParams.has("redesign") ||
+  desktopParams.has("native-consent")
+) {
   mockWindows("main");
   const consents = new Map<string, Record<string, unknown>>();
   mockIPC(async (command, args) => {

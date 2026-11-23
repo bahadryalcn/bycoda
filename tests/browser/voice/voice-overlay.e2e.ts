@@ -1,11 +1,27 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { PANE_MATRIX, expectLayoutContracts, openPane } from "../support/uiLayoutAssertions";
 
 // Fixture evidence: synthetic state through a stubbed IPC. Native placement,
 // always-on-top and dragging across applications need the desktop app.
 const captures = join(process.cwd(), "temp/verification/voice-overlay");
+
+async function selectOverlayMenuItem(page: Page, id: string, label: string) {
+  await page.getByRole("button", { name: "More voice options", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (itemId) =>
+          (window as any).fixtureOverlay
+            .nativeMenu()
+            ?.items.find((item: { id: string }) => item.id === itemId),
+        id,
+      ),
+    )
+    .toMatchObject({ label, disabled: false });
+  await page.evaluate((itemId) => (window as any).fixtureOverlay.pickNativeMenu(itemId), id);
+}
 test("floating full screen requests the owner workspace", async ({ page }) => {
   await page.goto("/tests/browser/voice/voice-overlay.html?compact=0");
   await page.getByRole("button", { name: "Full screen", exact: true }).click();
@@ -39,8 +55,8 @@ for (const theme of ["light", "dark"])
     const frame = page.frameLocator('iframe[title="Synthetic native voice window"]'),
       proof = page.locator("[data-native-menu-proof]");
     await expect(page.locator("[data-native-window-size]")).toHaveText("380 × 56 webview");
-    const automatic = frame.getByRole("button", { name: "Konuşmayı bitirme", exact: true });
-    await expect(automatic).toHaveText("");
+    const more = frame.getByRole("button", { name: "Diğer ses seçenekleri", exact: true });
+    await expect(more).toHaveText("");
     const inside = () =>
       frame.locator("main").evaluate(
         (element) =>
@@ -56,7 +72,7 @@ for (const theme of ["light", "dark"])
           }),
       );
     expect(await inside()).toBe(true);
-    await automatic.click();
+    await more.click();
     const menu = page.getByRole("menu", { name: "Synthetic turn ending menu", exact: true });
     await expect(
       menu.getByRole("menuitemradio", { name: "Duraklayınca yanıtla", exact: false }),
@@ -68,14 +84,22 @@ for (const theme of ["light", "dark"])
     await menu
       .getByRole("menuitemradio", { name: "Hazır olunca ben bitireceğim", exact: false })
       .click();
-    await expect(automatic).toBeVisible();
+    await expect(menu).toBeHidden();
+    await more.click();
+    await expect(
+      menu.getByRole("menuitemradio", { name: "Duraklayınca yanıtla", exact: false }),
+    ).toBeChecked();
+    const finish = menu.getByRole("menuitem", { name: "Konuşmamı bitir", exact: true });
+    await expect(finish).toHaveCount(0);
+    await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
+    await expect(menu).toBeHidden();
     await frame
       .locator("body")
       .evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
-    const finish = frame.getByRole("button", { name: "Konuşmamı bitir", exact: true });
-    await expect(finish).toHaveText("");
+    await expect(more).toHaveText("");
     expect(await inside()).toBe(true);
-    await frame.getByRole("button", { name: "Konuşmayı bitirme", exact: true }).click();
+    await more.click();
+    await expect(finish).toBeEnabled();
     await expect(
       menu.getByRole("menuitemradio", { name: "Hazır olunca ben bitireceğim", exact: false }),
     ).toBeChecked();
@@ -93,7 +117,6 @@ for (const theme of ["light", "dark"])
             ).length,
         );
     expect(await finishes()).toBe(0);
-    await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
     await finish.click();
     await expect.poll(finishes).toBe(1);
     await proof.screenshot({ path: join(output, `${theme}-800-tr-native-finish.png`) });
@@ -128,6 +151,7 @@ for (const theme of ["light", "dark"])
       await page.goto(`/tests/browser/voice/voice-native-menu.html?theme=${theme}&compact=1`);
       const frame = page.frameLocator('iframe[title="Synthetic native voice window"]');
       const proof = page.locator("[data-native-menu-proof]");
+      const more = frame.getByRole("button", { name: "More voice options", exact: true });
       const commands = () =>
         frame
           .locator("body")
@@ -137,8 +161,9 @@ for (const theme of ["light", "dark"])
               .map((call: any) => call.args.payload),
           );
       await expect(page.locator("[data-native-window-size]")).toHaveText("380 × 56 webview");
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await more.click();
       const menu = page.getByRole("menu", { name: "Synthetic turn ending menu", exact: true });
+      const finish = menu.getByRole("menuitem", { name: "Finish turn", exact: true });
       await expect(
         menu.getByRole("menuitemradio", { name: "Reply when I pause", exact: false }),
       ).toBeChecked();
@@ -161,7 +186,7 @@ for (const theme of ["light", "dark"])
           ["finishTurn", "manualTurnEnd", "automaticTurnEnd"].includes(command),
         ),
       ).toEqual([]);
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await more.click();
       await menu
         .getByRole("menuitemradio", { name: "I'll finish when ready", exact: false })
         .click();
@@ -171,11 +196,15 @@ for (const theme of ["light", "dark"])
             (await commands()).filter((command: string) => command === "manualTurnEnd").length,
         )
         .toBe(1);
-      await expect(frame.getByRole("button", { name: "Turn ending", exact: true })).toBeVisible(); // no optimistic owner ACK
+      await more.click();
+      await expect(menu.getByRole("menuitemradio", { name: "Reply when I pause" })).toBeChecked();
+      await expect(finish).toHaveCount(0);
+      await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
+      await expect(menu).toBeHidden();
       await frame
         .locator("body")
         .evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await more.click();
       await expect(
         menu.getByRole("menuitemradio", { name: "I'll finish when ready", exact: false }),
       ).toBeChecked();
@@ -189,14 +218,16 @@ for (const theme of ["light", "dark"])
       expect((await commands()).filter((command: string) => command === "finishTurn")).toHaveLength(
         0,
       );
-      await frame.getByRole("button", { name: "Finish turn", exact: true }).click();
+      await more.click();
+      await finish.click();
       await expect
         .poll(
           async () =>
             (await commands()).filter((command: string) => command === "finishTurn").length,
         )
         .toBe(1);
-      await frame.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await more.click();
+      await menu.getByRole("menuitem", { name: "Expand voice companion", exact: true }).click();
       await expect(frame.locator("main")).not.toHaveAttribute("data-compact");
       // Expanded, the turn mode button is named after the current mode.
       await frame.getByRole("button", { name: "I'll finish when ready", exact: true }).click();
@@ -227,7 +258,7 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/voice/voice-native-menu.html?theme=${theme}&compact=1&native-menu-fail`,
       );
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await more.click();
       await expect(
         frame.getByText("The turn mode menu could not be opened. Try again.", { exact: true }),
       ).toBeVisible();
@@ -246,7 +277,7 @@ for (const theme of ["light", "dark"])
       await proof.screenshot({ path: join(output, `${theme}-${width}-native-failure.png`) });
       await frame.getByRole("button", { name: "Dismiss", exact: true }).click();
       await expect(page.locator("[data-native-window-size]")).toHaveText("380 × 56 webview");
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
+      await more.click();
       await expect(
         menu.getByRole("menuitemradio", { name: "Reply when I pause", exact: false }),
       ).toBeChecked();
@@ -260,11 +291,11 @@ for (const theme of ["light", "dark"])
             (await commands()).filter((command: string) => command === "manualTurnEnd").length,
         )
         .toBe(1);
-      await expect(frame.getByRole("button", { name: "Turn ending", exact: true })).toBeVisible();
       await frame
         .locator("body")
         .evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
-      await expect(frame.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
+      await more.click();
+      await expect(finish).toBeEnabled();
     });
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
@@ -340,7 +371,7 @@ for (const theme of ["light", "dark"])
           true,
         ),
       );
-      await expect(panel.getByRole("img", { name: "Voice needs attention" })).toBeVisible();
+      await expect(panel.getByText("Voice needs attention", { exact: true })).toBeVisible();
       const errorMessage = "Voice input cleanup was not confirmed. Start voice again.";
       // The failure is one alert: a "Voice needs attention" lead-in, then the reason.
       await expect(panel.getByRole("alert")).toHaveText(`Voice needs attention: ${errorMessage}`);
@@ -350,7 +381,11 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("button", { name: "Voice needs attention", exact: true }).click();
       await expect(panel.getByRole("alert")).toContainText(errorMessage);
       await expect(panel.getByRole("button", { name: "Dismiss", exact: true })).toBeVisible();
+      const details = "Details: Voice needs attention";
+      await panel.getByRole("button", { name: details, exact: true }).click();
+      await expect(page.getByRole("dialog", { name: details })).toContainText(errorMessage);
       await page.screenshot({ path: join(output, `${theme}-${width}-error-details.png`) });
+      await page.keyboard.press("Escape");
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect.poll(() => page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(2);
       expect(await page.evaluate(() => (window as any).fixtureVoice.closes)).toBe(1);
@@ -379,7 +414,8 @@ for (const theme of ["light", "dark"])
       );
       await page.setViewportSize({ width: compactSize.width, height: compactSize.height });
       await mirror.screenshot({ path: join(output, `${theme}-${width}-floating-compact.png`) });
-      await mirror.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await selectOverlayMenuItem(page, "expand", "Expand voice companion");
+      await expect(mirror).not.toHaveAttribute("data-compact");
       await page.setViewportSize({ width, height: 900 });
       await page.evaluate(() =>
         (window as any).fixtureOverlay.emit({
@@ -679,7 +715,7 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       // Job review is opt-in (profile confirmJobs); this scenario asks for it.
       await page.goto(
-        `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&confirm-jobs`,
+        `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&confirm-jobs&local-choice`,
       );
       await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
       const panel = page.locator("section[data-voice-state]");
@@ -762,7 +798,7 @@ for (const theme of ["light", "dark"]) {
     await page.screenshot({ path: join(captures, `${theme}-compact.png`) });
 
     await page.getByRole("button", { name: "Mute microphone" }).click();
-    await page.getByRole("button", { name: "Return voice companion to the app" }).click();
+    await selectOverlayMenuItem(page, "return", "Return to app");
     const sent = await page.evaluate(() =>
       (window as any).fixtureOverlay.calls
         .filter((call: any) => call.cmd === "plugin:event|emit_to")
@@ -771,7 +807,7 @@ for (const theme of ["light", "dark"]) {
     expect(sent).toContainEqual([{ kind: "AnyLabel", label: "main" }, "toggleMute"]);
     expect(sent).toContainEqual([{ kind: "AnyLabel", label: "main" }, "dock"]);
 
-    await page.getByRole("button", { name: "Expand voice companion" }).click();
+    await selectOverlayMenuItem(page, "expand", "Expand voice companion");
     await expect(panel).not.toHaveAttribute("data-compact");
     const fits = await page.evaluate(() =>
       (window as any).fixtureOverlay.calls.filter((call: any) => call.cmd === "voice_overlay_fit"),
@@ -840,7 +876,7 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(
-        `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&confirm-jobs`,
+        `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&local-choice`,
       );
       await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
       const panel = page.locator("section[data-voice-state]");

@@ -6,7 +6,7 @@
 }
 /* The floating corner launcher would cover the first settings rows (a provider Segmented, a
    speaker Select) while a settings page is open; the shortcut and the sidebar dock still start voice. */
-:global(:root:has([data-setting-id])) .launcher {
+:global(:root:has([data-app-settings])) .launcher {
   display: none;
 }
 /* Sidebar footer dock beside Settings (voiceLauncherSlot.tsx). Empty while the companion is
@@ -172,7 +172,7 @@
   --voice-core-stage-size: clamp(5.5rem, min(51dvh, 86cqi), 33rem);
 }
 .panel[data-full-screen] > .body:has(> .decision) {
-  --voice-core-stage-size: clamp(5.5rem, min(29dvh, 65cqi), 16rem);
+  --voice-core-stage-size: clamp(5.5rem, min(22dvh, 65cqi), 13rem);
 }
 .decision {
   inline-size: min(100%, 42rem);
@@ -247,7 +247,7 @@
   display: flex;
   min-inline-size: 0;
   align-items: center;
-  gap: var(--ui-space-1, 0.25rem);
+  gap: var(--ui-space-2, 0.5rem);
   padding: var(--ui-space-2, 0.5rem);
   /* The header is a drag surface (useVoicePanelDrag). */
   touch-action: none;
@@ -321,9 +321,4 @@
 :global([data-drag-handle]) [data-small] {
   inline-size: var(--ui-control-height-sm);
   block-size: var(--ui-control-height-sm);
-}
-@media (pointer: coarse) {
-  .header {
-    gap: var(--ui-space-2, 0.5rem);
-  }
 }

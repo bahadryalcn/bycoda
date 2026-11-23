@@ -94,8 +94,10 @@ for (const theme of ["light", "dark"])
         await frame.locator("main").evaluate((node) => node.scrollWidth <= window.innerWidth),
       ).toBe(true);
       await proof.screenshot({ path: join(output, `${theme}-${width}-floating-compact.png`) });
-      await frame.getByRole("button", { name: "Turn ending", exact: true }).click();
-      await expect(page.getByRole("menu", { name: "Synthetic turn ending menu" })).toBeVisible();
+      const floatingMore = frame.getByRole("button", { name: "More voice options", exact: true });
+      const nativeMenu = page.getByRole("menu", { name: "Synthetic turn ending menu" });
+      await floatingMore.click();
+      await expect(nativeMenu).toBeVisible();
       await proof.screenshot({ path: join(output, `${theme}-${width}-floating-menu.png`) });
       await page.getByRole("button", { name: "Dismiss synthetic menu", exact: true }).click();
       await frame.getByRole("button", { name: "Mute speaker", exact: true }).click();
@@ -108,7 +110,11 @@ for (const theme of ["light", "dark"])
             ),
           ),
       ).toBe(true);
-      await frame.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await floatingMore.click();
+      await nativeMenu
+        .getByRole("menuitem", { name: "Expand voice companion", exact: true })
+        .click();
+      await expect(frame.locator("main")).not.toHaveAttribute("data-compact");
       await proof.screenshot({ path: join(output, `${theme}-${width}-floating-full.png`) });
       await frame.locator("body").evaluate(() =>
         (window as any).fixtureOverlay.emit({

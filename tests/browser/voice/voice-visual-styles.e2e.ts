@@ -282,7 +282,9 @@ for (const [theme, width] of workViewports) {
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width, height: 800 });
-    await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global`);
+    await page.goto(
+      `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&local-choice`,
+    );
     await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
     const panel = page.locator("section[data-voice-state]");
     await panel.getByRole("button", { name: "Full screen", exact: true }).click();
@@ -327,7 +329,7 @@ test("fullscreen voice questions stay accessible with Chat open on a narrow wind
   page,
 }) => {
   await page.setViewportSize({ width: 560, height: 800 });
-  await page.goto("/tests/browser/voice/voice-visual-styles.html?global");
+  await page.goto("/tests/browser/voice/voice-visual-styles.html?global&local-choice");
   await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
   const panel = page.locator("section[data-voice-state]");
   await panel.getByRole("button", { name: "Full screen", exact: true }).click();
@@ -643,7 +645,11 @@ for (const theme of ["light", "dark"])
       await floating.screenshot({
         path: join(output, `${theme}-${width}-floating-compact-automatic.png`),
       });
-      await floating.getByRole("button", { name: "Turn ending", exact: true }).click();
+      const moreFloating = floating.getByRole("button", {
+        name: "More voice options",
+        exact: true,
+      });
+      await moreFloating.click();
       await expect
         .poll(() =>
           page.evaluate(
@@ -664,9 +670,17 @@ for (const theme of ["light", "dark"])
         ),
       ).toBe(2);
       await page.evaluate(() => (window as any).fixtureOverlay.emit({ manualTurnEnd: true }));
-      await expect(
-        floating.getByRole("button", { name: "Finish turn", exact: true }),
-      ).toBeVisible();
+      await moreFloating.click();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as any).fixtureOverlay
+                .nativeMenu()
+                ?.items.find((item: any) => item.id === "finish")?.label,
+          ),
+        )
+        .toBe("Finish turn");
       expect(await floating.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await floating.screenshot({ path: join(output, `${theme}-${width}-floating-compact.png`) });
       await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}`);
@@ -699,7 +713,8 @@ async function open(
   await page.evaluate((state) => {
     const cb = (window as any).fixtureVoice.callbacks;
     if (state === "user") cb.state("speaking");
-    if (state === "thinking") cb.state("transcribing");
+    if (state === "thinking") cb.state("replying");
+    if (state === "transcribing") cb.state("transcribing");
     if (state === "assistant") cb.playback(true);
     if (state === "error") cb.error("Local voice disconnected. Start voice again.");
   }, state);
@@ -707,7 +722,7 @@ async function open(
     await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
   await expect(panel).toHaveAttribute(
     "data-voice-state",
-    state === "working" ? "listening" : state,
+    state === "working" ? "listening" : state === "transcribing" ? "thinking" : state,
   );
   return panel;
 }
@@ -721,6 +736,7 @@ for (const theme of ["light", "dark"])
           "connecting",
           "listening",
           "user",
+          "transcribing",
           "thinking",
           "assistant",
           "muted",
@@ -739,7 +755,10 @@ for (const theme of ["light", "dark"])
           });
           await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
           await expect(panel.locator(`[data-visual="${visual}"]`)).toBeVisible();
-          await expect(panel).toHaveAttribute("data-voice-state", actualState);
+          await expect(panel).toHaveAttribute(
+            "data-voice-state",
+            actualState === "transcribing" ? "thinking" : actualState,
+          );
           await panel.getByRole("button", { name: "Expand voice companion", exact: true }).click();
         }
         await panelCompact(page, visual, theme, width);
@@ -916,8 +935,8 @@ for (const theme of ["light", "dark"]) {
       await expect(
         setup.getByText("Start the microphone test, then say one sentence."),
       ).toHaveCount(0);
-      await setup.getByRole("radio", { name: "On this computer" }).click();
-      await setup.getByRole("button", { name: "Check connection" }).click();
+      await expect(setup.getByRole("radio", { name: "Local", exact: true })).toBeChecked();
+      await setup.getByRole("button", { name: "Check Local", exact: true }).click();
       await expect(next).toBeEnabled();
       await setup.screenshot({ path: join(captures, `${theme}-${width}-setup-provider.png`) });
       await next.click();
@@ -1047,7 +1066,7 @@ for (const theme of ["light", "dark"]) {
       }
       expect(settingsBox.width).toBe(24);
       expect(settingsBox.height).toBe(24);
-      await expect(trigger.locator("svg")).toHaveCSS("inline-size", "12px");
+      await expect(trigger.locator("svg")).toHaveCSS("inline-size", "14px");
       await expect(group).toHaveAttribute("data-surface", "transparent");
       if (compact) expect((await group.boundingBox())!.width).toBeLessThanOrEqual(56);
       await trigger.click();
