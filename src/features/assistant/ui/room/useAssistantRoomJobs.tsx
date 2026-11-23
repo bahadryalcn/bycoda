@@ -136,7 +136,9 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
                   p0: review.tasks.length,
                 })}
               </p>
-              <ul {...textAttributes({ tone: "inherit", leading: "inherit" }, jobStyles.deleteTasks)}>
+              <ul
+                {...textAttributes({ tone: "inherit", leading: "inherit" }, jobStyles.deleteTasks)}
+              >
                 {review.tasks.map((task) => (
                   <li key={task.id}>
                     <Text

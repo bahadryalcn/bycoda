@@ -805,9 +805,7 @@ function PaneTreeComponent({
                 </div>
               ) : maximizeButton ? (
                 // A single-session pane has no header row of its own; the button floats at its end.
-                <span className="absolute top-1 end-2 z-1">
-                  {maximizeButton}
-                </span>
+                <span className="absolute top-1 end-2 z-1">{maximizeButton}</span>
               ) : null}
               <div
                 className="flex min-h-0 min-w-0 flex-1 flex-col"

@@ -106,7 +106,9 @@ describe("FolderModelDialog", () => {
     await settleDecisionUi();
     expect(pickPath).toHaveBeenCalledWith({ title: "Choose a model folder", directory: true });
     expect(verify).toHaveBeenCalledWith({ kind: "installation_folder", path: "G:\\Models\\Clef" });
-    expect([...document.querySelectorAll<HTMLInputElement>("input")].map((input) => input.value)).toContain("Clef Flash");
+    expect(
+      [...document.querySelectorAll<HTMLInputElement>("input")].map((input) => input.value),
+    ).toContain("Clef Flash");
     expect(onAdd).not.toHaveBeenCalled();
     expect(onTest).not.toHaveBeenCalled();
     clickButton("Add and test");
@@ -137,7 +139,9 @@ describe("FolderModelDialog", () => {
     setInputValue(input, "G:\\Another");
     finish(folder);
     await settleDecisionUi();
-    expect([...document.querySelectorAll<HTMLInputElement>("input")].map((input) => input.value)).not.toContain("Clef Flash");
+    expect(
+      [...document.querySelectorAll<HTMLInputElement>("input")].map((input) => input.value),
+    ).not.toContain("Clef Flash");
     expect(onAdd).not.toHaveBeenCalled();
   });
 

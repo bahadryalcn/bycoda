@@ -49,7 +49,10 @@ for (const pane of panes) {
 
 it("lets workspace policy controls adapt through shared settings rows", () => {
   const editor = readFileSync("src/features/workspaces/ui/WorkspacePolicyEditor.tsx", "utf8");
-  const policy = readFileSync("src/features/workspaces/ui/WorkspacePolicySettings.module.css", "utf8");
+  const policy = readFileSync(
+    "src/features/workspaces/ui/WorkspacePolicySettings.module.css",
+    "utf8",
+  );
   const settings = readFileSync("src/shared/ui/settings/settings.css", "utf8");
   expect(editor).toMatch(/import \{[^}]*\bRow\b[^}]*\} from "[^"]+\/shared\/ui\/settings"/);
   expect(editor).toContain('<Row id="workspace-pinning"');

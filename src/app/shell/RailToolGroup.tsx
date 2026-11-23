@@ -73,11 +73,7 @@ export function RailToolGroup({ label, tools }: { label: string; tools: readonly
           <span className="relative inline-flex">
             {tool.icon}
             {tool.dot ? (
-              <StatusDot
-                label={tool.dot}
-                aria-hidden
-                className="absolute end-1 top-1"
-              />
+              <StatusDot label={tool.dot} aria-hidden className="absolute end-1 top-1" />
             ) : null}
           </span>
         </Button>

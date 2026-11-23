@@ -456,4 +456,3 @@ export function TabGroupMenu({
     />
   );
 }
-

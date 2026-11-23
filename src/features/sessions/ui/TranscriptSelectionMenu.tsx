@@ -383,61 +383,68 @@ export function TranscriptSelectionMenu({
         data-citation-comment
       >
         <div className={styles.comment}>
-        <div className={styles.header}>
-          <Text as="span" size="caption" tone="inherit" weight="medium" leading="inherit">
-            {t("Add citation")}
+          <div className={styles.header}>
+            <Text as="span" size="caption" tone="inherit" weight="medium" leading="inherit">
+              {t("Add citation")}
+            </Text>
+            <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={closeComment}>
+              <X />
+            </Button>
+          </div>
+          <Text as="div" size="caption" tone="secondary" leading="relaxed">
+            <blockquote
+              {...surfaceAttributes({ frame: "pane", edge: "inline-start" }, styles.quote)}
+            >
+              {selection.text}
+            </blockquote>
           </Text>
-          <Button variant="ghost" size="sm" iconOnly label={t("Close")} onClick={closeComment}>
-            <X />
-          </Button>
-        </div>
-        <Text as="div" size="caption" tone="secondary" leading="relaxed">
-          <blockquote {...surfaceAttributes({ frame: "pane", edge: "inline-start" }, styles.quote)}>
-            {selection.text}
-          </blockquote>
-        </Text>
-        <TextareaField
-          label={t("Comment")}
-          placeholder={t("Add an optional comment…")}
-          fieldSize="sm"
-          minRows={2}
-          maxRows={5}
-          autosize
-          value={citationDraft.comment}
-          onChange={(event) =>
-            setCitationDraft((current) => current && { ...current, comment: event.target.value })
-          }
-        />
-        <div className={styles.footer}>
-          <Button variant="ghost" size="sm" onClick={closeComment}>
-            {t("Cancel")}
-          </Button>
-          <Button
-            size="sm"
-            loading={pending.chat}
-            onClick={() =>
-              void run("chat", () => {
-                if (!sessionId || !selection.responseId || !selection.responseText || !onAddToChat)
-                  return;
-                onAddToChat(
-                  serializeChatCitation({
-                    version: 1,
-                    id: crypto.randomUUID(),
-                    sessionId,
-                    blockId: selection.responseId,
-                    text: selection.text,
-                    sourceText: selection.responseText,
-                    occurrence: selection.occurrence ?? 0,
-                    comment: citationDraft.comment,
-                  }),
-                );
-              })
+          <TextareaField
+            label={t("Comment")}
+            placeholder={t("Add an optional comment…")}
+            fieldSize="sm"
+            minRows={2}
+            maxRows={5}
+            autosize
+            value={citationDraft.comment}
+            onChange={(event) =>
+              setCitationDraft((current) => current && { ...current, comment: event.target.value })
             }
-          >
-            {t("Add to chat")}
-          </Button>
-        </div>
-        {errors.chat ? <InlineError>{errors.chat}</InlineError> : null}
+          />
+          <div className={styles.footer}>
+            <Button variant="ghost" size="sm" onClick={closeComment}>
+              {t("Cancel")}
+            </Button>
+            <Button
+              size="sm"
+              loading={pending.chat}
+              onClick={() =>
+                void run("chat", () => {
+                  if (
+                    !sessionId ||
+                    !selection.responseId ||
+                    !selection.responseText ||
+                    !onAddToChat
+                  )
+                    return;
+                  onAddToChat(
+                    serializeChatCitation({
+                      version: 1,
+                      id: crypto.randomUUID(),
+                      sessionId,
+                      blockId: selection.responseId,
+                      text: selection.text,
+                      sourceText: selection.responseText,
+                      occurrence: selection.occurrence ?? 0,
+                      comment: citationDraft.comment,
+                    }),
+                  );
+                })
+              }
+            >
+              {t("Add to chat")}
+            </Button>
+          </div>
+          {errors.chat ? <InlineError>{errors.chat}</InlineError> : null}
         </div>
       </Popover>
     );

@@ -112,7 +112,6 @@ export const bespokeSurfaces = new Set([
   "src/features/settings/ui/LiveBackgroundCanvas.css",
   "src/features/settings/ui/appearance/controls/BackgroundPreview.tsx",
   "src/features/settings/ui/appearance/controls/BackgroundPreview.module.css",
-  "src/features/settings/ui/appearance/controls/SidebarRowPreview.tsx",
   "src/features/settings/ui/appearance/controls/ThemePreview.tsx",
   "src/features/settings/ui/appearance/controls/TypographyPreview.tsx",
   "src/features/settings/ui/appearance/controls/SceneStrip.tsx",
@@ -617,13 +616,6 @@ export const bespokeParts = [
       "Mode option miniature draws its own base, raised shapes and accent from the option palette.",
   },
   {
-    file: "src/features/settings/ui/appearance/controls/ToneSliders.css",
-    rules: ["surface-style"],
-    selector: /^\.tone-step\[data-step="(?:base|surface|line|selected)"\] > \.tone-swatch$/,
-    reason:
-      "Four labelled theme samples display the live base, surface, divider and selected colours.",
-  },
-  {
     file: "src/features/settings/ui/appearance/controls/InterfaceSections.css",
     rules: ["surface-style"],
     selector: /^\.diff-swatch-bars > span:(?:first|last)-child$/,
@@ -708,12 +700,6 @@ export const bespokeParts = [
     rules: ["surface-style"],
     selector: /^\.(?:theme-swatch-strip|theme-suggestion-thumb|theme-palette-swatches)$/,
     reason: "Theme specimens: colour swatch strips and a suggested background thumbnail.",
-  },
-  {
-    file: "src/features/settings/ui/appearance/controls/ToneSliders.css",
-    rules: ["surface-style"],
-    selector: /^\.tone-swatch$/,
-    reason: "Tone specimen swatch of the appearance tone steps.",
   },
   {
     file: "src/features/settings/ui/appearance/sections/ThemeSection.css",

@@ -1459,7 +1459,8 @@ describe("sidebar orchestration card", () => {
     expect(props.onSelectSession).not.toHaveBeenCalled();
     // A collapsed row stays one line with no tooltip repeating its title; the model is in the
     // expanded detail below.
-    const workerA = () => card().querySelector<HTMLElement>('[data-orchestration-agent="worker-a"]')!;
+    const workerA = () =>
+      card().querySelector<HTMLElement>('[data-orchestration-agent="worker-a"]')!;
     expect(await tooltipText(workerA().querySelector<HTMLElement>("button")!)).toBe("");
     expect(workerA().textContent).not.toContain("Worker A");
     expect(card().querySelectorAll("[data-orchestration-agent]")).toHaveLength(3);
@@ -1721,9 +1722,7 @@ describe("sidebar session GitHub links", () => {
     )!;
     expect(link).toBeDefined();
     act(() => link.click());
-    return document.querySelector<HTMLInputElement>(
-      '[role="dialog"] input[type="url"]',
-    )!;
+    return document.querySelector<HTMLInputElement>('[role="dialog"] input[type="url"]')!;
   }
 
   it("manually links a session from its context menu", () => {
@@ -1782,9 +1781,7 @@ describe("sidebar session GitHub links", () => {
     act(() => edit.click());
 
     expect(
-      document.querySelector<HTMLInputElement>(
-        '[role="dialog"] input[type="url"]',
-      )?.value,
+      document.querySelector<HTMLInputElement>('[role="dialog"] input[type="url"]')?.value,
     ).toBe("https://github.com/acme/widgets/pull/42");
     const remove = Array.from(document.querySelectorAll("button")).find(
       (button) => button.textContent === "Remove link",
@@ -3266,9 +3263,7 @@ it("opens a project selector for an explicit global New request without creating
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   props.newListedSessionRequest = 1;
   await act(async () => render());
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-    "New session in",
-  );
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("New session in");
   expect(props.onNew).not.toHaveBeenCalled();
   expect(props.onNewListedSession).not.toHaveBeenCalled();
   await act(async () =>

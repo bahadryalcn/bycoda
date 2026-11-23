@@ -902,9 +902,9 @@ describe("settings pages", () => {
     // The duration and screen options are under the Sleep group's Advanced section.
     await act(async () =>
       [
-        ...toggle.closest("section")!.querySelectorAll<HTMLButtonElement>(
-          'button[aria-expanded="false"]',
-        ),
+        ...toggle
+          .closest("section")!
+          .querySelectorAll<HTMLButtonElement>('button[aria-expanded="false"]'),
       ]
         .find((button) => button.textContent?.trim() === "Advanced")
         ?.click(),

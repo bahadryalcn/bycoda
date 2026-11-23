@@ -479,123 +479,134 @@ export function GitChangesPanel({
         data-current-checkout={repository?.current || undefined}
         {...(repository ? actionHostAttributes({ hoverReveal: true }, styles.header) : {})}
       >
-        <Text as="div" size="inherit" tone={repository ? "primary" : "inherit"} className="contents">
-        {repository ? (
-          <Button
-            size="sm"
-            variant="item"
-            motion="none"
-            expanded={detailsOpen}
-            chevron="start"
-            onClick={() => repository.onToggle(!detailsOpen)}
-            // The row shows names; the hint adds where the folder is.
-            tooltip={repository.nested ? t("Separate repository · {p0}", { p0: cwd }) : cwd}
-            className={styles.disclosure}
-          >
-            {identity}
-          </Button>
-        ) : (
-          <>
-            {branchControl ?? (
-              <Text as="span" size="secondary" tone="primary" weight="medium" className="shrink-0">
-                {index?.repository === false || !index
-                  ? t("Changes")
-                  : `${t("Detached HEAD")} · ${shortSha(index.head ?? "")}`}
-              </Text>
-            )}
-            {index?.upstream && detailsOpen ? <UpstreamLabel upstream={index.upstream} /> : null}
-          </>
-        )}
-        {repository?.pointer}
-        {busy && !localProgressVisible ? (
-          <Text
-            role="status"
-            size="micro"
-            tone="secondary"
-            className="flex min-w-0 items-center gap-1"
-          >
-            <Spinner size="xs" className="shrink-0" />
-            <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
-              {pending ?? busyLabel(busy)}
-            </Text>
-          </Text>
-        ) : !busy && status ? (
-          <Text role="status" size="micro" tone="secondary" wrap="anywhere" className="min-w-0">
-            {status}
-          </Text>
-        ) : null}
-        <div className={repository ? styles.actions : "ms-auto flex min-w-0 items-center gap-1"}>
+        <Text
+          as="div"
+          size="inherit"
+          tone={repository ? "primary" : "inherit"}
+          className="contents"
+        >
           {repository ? (
+            <Button
+              size="sm"
+              variant="item"
+              motion="none"
+              expanded={detailsOpen}
+              chevron="start"
+              onClick={() => repository.onToggle(!detailsOpen)}
+              // The row shows names; the hint adds where the folder is.
+              tooltip={repository.nested ? t("Separate repository · {p0}", { p0: cwd }) : cwd}
+              className={styles.disclosure}
+            >
+              {identity}
+            </Button>
+          ) : (
             <>
-              <CheckoutStatus
-                changes={index ? files.length + conflicts.length : undefined}
-                dirty={repository.checkout?.dirty}
-                ahead={detailsOpen ? 0 : (index?.ahead ?? 0)}
-                behind={detailsOpen ? 0 : (index?.behind ?? 0)}
-              />
-              {conflicts.length > 0 ? (
-                <Text size="caption" tone="warning" className={styles.conflicts}>
-                  {t("Merge conflicts")}: {conflicts.length}
+              {branchControl ?? (
+                <Text
+                  as="span"
+                  size="secondary"
+                  tone="primary"
+                  weight="medium"
+                  className="shrink-0"
+                >
+                  {index?.repository === false || !index
+                    ? t("Changes")
+                    : `${t("Detached HEAD")} · ${shortSha(index.head ?? "")}`}
                 </Text>
-              ) : null}
+              )}
+              {index?.upstream && detailsOpen ? <UpstreamLabel upstream={index.upstream} /> : null}
             </>
+          )}
+          {repository?.pointer}
+          {busy && !localProgressVisible ? (
+            <Text
+              role="status"
+              size="micro"
+              tone="secondary"
+              className="flex min-w-0 items-center gap-1"
+            >
+              <Spinner size="xs" className="shrink-0" />
+              <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
+                {pending ?? busyLabel(busy)}
+              </Text>
+            </Text>
+          ) : !busy && status ? (
+            <Text role="status" size="micro" tone="secondary" wrap="anywhere" className="min-w-0">
+              {status}
+            </Text>
           ) : null}
-          {repository ? branchControl : null}
-          <div
-            className={styles.branchSlots}
-            // A section header offers its actions on hover or keyboard focus only.
-            data-action-slot={repository ? "collapse" : undefined}
-          >
-            {detailsOpen && !refreshInTarget ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                iconOnly
-                label={t("Refresh source control")}
-                disabled={!enabled || !!busy}
-                loading={loading}
-                loadingLabel={t("Refreshing…")}
-                onClick={() => {
-                  onMutated();
-                  checkout?.onRefresh();
-                  changesRef.current?.refreshPr?.();
-                }}
-              >
-                <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
-              </Button>
+          <div className={repository ? styles.actions : "ms-auto flex min-w-0 items-center gap-1"}>
+            {repository ? (
+              <>
+                <CheckoutStatus
+                  changes={index ? files.length + conflicts.length : undefined}
+                  dirty={repository.checkout?.dirty}
+                  ahead={detailsOpen ? 0 : (index?.ahead ?? 0)}
+                  behind={detailsOpen ? 0 : (index?.behind ?? 0)}
+                />
+                {conflicts.length > 0 ? (
+                  <Text size="caption" tone="warning" className={styles.conflicts}>
+                    {t("Merge conflicts")}: {conflicts.length}
+                  </Text>
+                ) : null}
+              </>
             ) : null}
-            {worktreesInTarget || notRepository ? null : (
-              <Button
-                size="sm"
-                variant="ghost"
-                iconOnly
-                label={t("Manage worktrees…")}
-                disabled={!enabled || !!busy}
-                onClick={() => requestWorktreeManagement(cwd)}
-              >
-                <FolderTree aria-hidden className="icon-sm" />
-              </Button>
-            )}
-            {index && !notRepository ? (
-              <GitActionsMenu
-                cwd={cwd}
-                index={index}
-                busy={busy}
-                setBusy={setBusy}
-                autoFetch={autoFetch}
-                onToggleAutoFetch={toggleAutoFetch}
-                changes={changesRef}
-                onStatus={setStatus}
-                onPending={setPending}
-                onMutated={onMutated}
-                onOpenCommit={onOpenCommit}
-                toolbar={false}
-                onRevealChanges={repository ? () => repository.onToggle(true) : undefined}
-                repositoryScope={repository?.scope}
-              />
-            ) : null}
+            {repository ? branchControl : null}
+            <div
+              className={styles.branchSlots}
+              // A section header offers its actions on hover or keyboard focus only.
+              data-action-slot={repository ? "collapse" : undefined}
+            >
+              {detailsOpen && !refreshInTarget ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={t("Refresh source control")}
+                  disabled={!enabled || !!busy}
+                  loading={loading}
+                  loadingLabel={t("Refreshing…")}
+                  onClick={() => {
+                    onMutated();
+                    checkout?.onRefresh();
+                    changesRef.current?.refreshPr?.();
+                  }}
+                >
+                  <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
+                </Button>
+              ) : null}
+              {worktreesInTarget || notRepository ? null : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  iconOnly
+                  label={t("Manage worktrees…")}
+                  disabled={!enabled || !!busy}
+                  onClick={() => requestWorktreeManagement(cwd)}
+                >
+                  <FolderTree aria-hidden className="icon-sm" />
+                </Button>
+              )}
+              {index && !notRepository ? (
+                <GitActionsMenu
+                  cwd={cwd}
+                  index={index}
+                  busy={busy}
+                  setBusy={setBusy}
+                  autoFetch={autoFetch}
+                  onToggleAutoFetch={toggleAutoFetch}
+                  changes={changesRef}
+                  onStatus={setStatus}
+                  onPending={setPending}
+                  onMutated={onMutated}
+                  onOpenCommit={onOpenCommit}
+                  toolbar={false}
+                  onRevealChanges={repository ? () => repository.onToggle(true) : undefined}
+                  repositoryScope={repository?.scope}
+                />
+              ) : null}
+            </div>
           </div>
-        </div>
         </Text>
       </header>
       {repository && operation && !detailsOpen ? (

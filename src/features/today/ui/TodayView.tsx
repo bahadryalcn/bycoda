@@ -127,7 +127,12 @@ export function TodayView() {
         <SectionLabel labelId={titleId}>{t("Activity")}</SectionLabel>
         <div className={styles.controls}>
           {updatedAt && data ? (
-            <Text size="caption" tone="muted" leading="inherit" className={`${styles.updated} tabular-nums`}>
+            <Text
+              size="caption"
+              tone="muted"
+              leading="inherit"
+              className={`${styles.updated} tabular-nums`}
+            >
               {t("Updated")} {updatedLabel(updatedAt, data.window.end)}
             </Text>
           ) : null}
@@ -181,28 +186,28 @@ export function TodayView() {
           aria-busy={refreshing}
         >
           <div className={styles.body}>
-          <div className={styles.stats}>
-            <Stat label={t("Sessions")} value={data.totals.sessions} />
-            <Stat label={t("Agent run time")} value={run(data.totals.runMs)} />
-            {activeStat}
-            <Stat
-              label={t("Cost")}
-              value={cost(data.totals)}
-              info={t("API-equivalent, not billed")}
-            />
-          </div>
-          <ActivitySources overview={overview} />
-          <TodayCharts data={data} activity={activity ? activityBars(activity) : null} />
-          <ProjectTable data={data} />
-          <div className={styles.summary}>
-            <SummaryPanel
-              key={`${loadedPeriod}:${locale}`}
-              data={data}
-              pricing={pricing}
-              activeMinutes={activeMinutes}
-              language={locale}
-            />
-          </div>
+            <div className={styles.stats}>
+              <Stat label={t("Sessions")} value={data.totals.sessions} />
+              <Stat label={t("Agent run time")} value={run(data.totals.runMs)} />
+              {activeStat}
+              <Stat
+                label={t("Cost")}
+                value={cost(data.totals)}
+                info={t("API-equivalent, not billed")}
+              />
+            </div>
+            <ActivitySources overview={overview} />
+            <TodayCharts data={data} activity={activity ? activityBars(activity) : null} />
+            <ProjectTable data={data} />
+            <div className={styles.summary}>
+              <SummaryPanel
+                key={`${loadedPeriod}:${locale}`}
+                data={data}
+                pricing={pricing}
+                activeMinutes={activeMinutes}
+                language={locale}
+              />
+            </div>
           </div>
         </Motion>
       )}

@@ -284,9 +284,7 @@ it("cold restore previews the current canonical target and connects a fresh shel
   expect(events.mounted).toEqual([]);
   expect(container.textContent).toContain("example.invalid:22");
   await act(async () =>
-    [...container.querySelectorAll("button")]
-      .find((button) => named(button, "Connect"))!
-      .click(),
+    [...container.querySelectorAll("button")].find((button) => named(button, "Connect"))!.click(),
   );
   expect(events.mounted).toEqual([server.id]);
   const terminal = container.querySelector("[data-terminal-id]")!;
@@ -403,9 +401,7 @@ it("requests startup review once for explicit live terminals and never for resto
   serverTerminalRestoreState.initialize({ version: 1, enabled: false, tabs: [] });
   const click = async (label: string) =>
     act(async () =>
-      [...container.querySelectorAll("button")]
-        .find((button) => named(button, label))!
-        .click(),
+      [...container.querySelectorAll("button")].find((button) => named(button, label))!.click(),
     );
   const prompt = async () =>
     act(async () =>

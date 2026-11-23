@@ -53,7 +53,9 @@ it.each([
   const onSubmit = vi.fn();
   view(session, onSubmit);
   // The only control is the technical-details disclosure: nothing offers to resend the old prompt.
-  const labels = [...host.querySelectorAll("button")].map((b) => b.getAttribute("aria-label") ?? "");
+  const labels = [...host.querySelectorAll("button")].map(
+    (b) => b.getAttribute("aria-label") ?? "",
+  );
   expect(labels.every((label) => label.startsWith("Technical details"))).toBe(true);
   expect(onSubmit).not.toHaveBeenCalled();
 });

@@ -102,7 +102,9 @@ describe("detached working header", () => {
     const bar = container.querySelector("[data-detached-working-bar]")!;
     await act(async () => {
       bar.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-      bar.querySelector("div[aria-hidden]")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      bar
+        .querySelector("div[aria-hidden]")!
+        .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     });
     expect(native.toggleMaximize).toHaveBeenCalledTimes(2);
     await act(async () => {

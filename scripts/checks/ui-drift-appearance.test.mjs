@@ -171,26 +171,6 @@ test("theme specimens retain paint without exempting their surrounding controls"
     ],
     ["AppearanceSettings.css", ".appearance-tone > b", "background: var(--palette-accent)"],
     [
-      "appearance/controls/ToneSliders.css",
-      '.tone-step[data-step="base"] > .tone-swatch',
-      "background: var(--color-background-base)",
-    ],
-    [
-      "appearance/controls/ToneSliders.css",
-      '.tone-step[data-step="surface"] > .tone-swatch',
-      "background: var(--ui-surface)",
-    ],
-    [
-      "appearance/controls/ToneSliders.css",
-      '.tone-step[data-step="line"] > .tone-swatch',
-      "background: var(--ui-pane-border)",
-    ],
-    [
-      "appearance/controls/ToneSliders.css",
-      '.tone-step[data-step="selected"] > .tone-swatch',
-      "background: var(--ui-surface-selected)",
-    ],
-    [
       "appearance/controls/InterfaceSections.css",
       ".diff-swatch-bars > span:first-child",
       "background: var(--swatch-add)",
@@ -223,12 +203,6 @@ test("theme specimens retain paint without exempting their surrounding controls"
         "src/features/settings/ui/AppearanceSettings.css",
       ).length > 0,
     );
-  assert.ok(
-    css(
-      '.tone-step[data-step="custom"] > .tone-swatch { background: var(--x); }',
-      "src/features/settings/ui/appearance/controls/ToneSliders.css",
-    ).includes("surface-style"),
-  );
 });
 
 test("sheet zoom typography belongs only to the document viewport", () => {
@@ -692,8 +666,8 @@ test("family recipes use Badge, ProgressBar, Tabs and SegmentedControl", () => {
 
 test("class expressions exclude identifiers while retaining painted literal branches", () => {
   assert.deepEqual(tsx('<span className={`icon-sm ${badge != null ? "ml-4" : ""}`} />'), []);
+  // The literal palette branch belongs to the theme palette checker; only the radius branch is surface paint here.
   assert.deepEqual(tsx('<span className={`icon-sm ${border ? "bg-red-500" : "rounded-sm"}`} />'), [
-    "surface-style",
     "surface-style",
   ]);
   assert.deepEqual(tsx('<span className={border ? "border" : "shadow"} />'), [
@@ -701,11 +675,12 @@ test("class expressions exclude identifiers while retaining painted literal bran
     "surface-style",
   ]);
   assert.deepEqual(css(".workspace-tab-badge { display: contents; }"), []);
+  // Literal colours and raw radii now belong to the palette and radius rules; token paint is surface style.
   assert.deepEqual(
     css(
-      ".project-badge { background: red; border-radius: 4px; } .progress-fill { background: blue; }",
+      ".project-badge { background: var(--x); border-radius: var(--ui-control-radius); } .progress-fill { background: var(--y); }",
     ),
-    ["surface-style", "surface-style"],
+    ["surface-style", "surface-style", "surface-style"],
   );
 });
 

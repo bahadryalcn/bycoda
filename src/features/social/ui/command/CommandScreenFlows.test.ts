@@ -179,7 +179,9 @@ it("runs a plan with no approved steps when the owner approves nothing", async (
     planId: "plan-1",
     approvedStepIds: [],
   });
-  const labels = [...element.querySelectorAll(".command-step-head")].map((n) => n.children[1]?.textContent);
+  const labels = [...element.querySelectorAll(".command-step-head")].map(
+    (n) => n.children[1]?.textContent,
+  );
   expect(labels).toEqual(["Needs your approval", "Done"]);
   expect(client.ai.actions.mock.calls.length).toBeGreaterThanOrEqual(2);
 });

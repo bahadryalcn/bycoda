@@ -292,13 +292,13 @@ export function TranslationResultDialog({
             <div className={styles.result}>
               {pending && !result ? (
                 <div className={styles.placeholder}>
-                <Text as="div" size="inherit" tone="secondary" leading="relaxed">
-                  <div aria-hidden="true" className={styles.skeleton}>
-                    <SkeletonBar height="8px" />
-                    <SkeletonBar height="8px" index={1} />
-                    <SkeletonBar height="8px" width="65%" index={2} />
-                  </div>
-                </Text>
+                  <Text as="div" size="inherit" tone="secondary" leading="relaxed">
+                    <div aria-hidden="true" className={styles.skeleton}>
+                      <SkeletonBar height="8px" />
+                      <SkeletonBar height="8px" index={1} />
+                      <SkeletonBar height="8px" width="65%" index={2} />
+                    </div>
+                  </Text>
                 </div>
               ) : error ? (
                 <Alert
@@ -338,19 +338,21 @@ export function TranslationResultDialog({
                 </div>
               ) : (
                 <div role="status" className={styles.placeholder}>
-                <Text as="p" size="inherit" tone="secondary" leading="relaxed">
-                  {!runnable
-                    ? reprompt
-                      ? t("This provider does not support reprompt requests. Choose another model.")
-                      : t(
-                          "This provider does not support translation requests yet. You can choose another translation model.",
-                        )
-                    : !translator.model?.trim()
+                  <Text as="p" size="inherit" tone="secondary" leading="relaxed">
+                    {!runnable
                       ? reprompt
-                        ? t("Choose a reprompt model.")
-                        : t("Choose a translation model.")
-                      : null}
-                </Text>
+                        ? t(
+                            "This provider does not support reprompt requests. Choose another model.",
+                          )
+                        : t(
+                            "This provider does not support translation requests yet. You can choose another translation model.",
+                          )
+                      : !translator.model?.trim()
+                        ? reprompt
+                          ? t("Choose a reprompt model.")
+                          : t("Choose a translation model.")
+                        : null}
+                  </Text>
                 </div>
               )}
             </div>

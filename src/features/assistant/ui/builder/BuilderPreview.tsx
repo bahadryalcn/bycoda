@@ -74,7 +74,9 @@ export function BuilderPreview({
                       t("Now: {p0}", { p0: entry.before })
                     )
                   ) : (
-                    <span {...textAttributes({ size: "inherit", tone: "secondary" }, styles.change)}>
+                    <span
+                      {...textAttributes({ size: "inherit", tone: "secondary" }, styles.change)}
+                    >
                       <span>{entry.before}</span>
                       <span aria-hidden="true">→</span>
                       <Text

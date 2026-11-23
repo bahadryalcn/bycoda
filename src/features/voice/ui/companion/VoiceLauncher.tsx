@@ -257,30 +257,30 @@ function VoiceWakeMenu({
           onDismiss={() => setOpen(false)}
         >
           <div className={styles.wakeMenu}>
-          <Switch
-            label={t("Wake and sleep phrases")}
-            labelPosition="start"
-            checked={controls.enabled}
-            onCheckedChange={controls.setEnabled}
-            description={status}
-          />
-          {failure && (
-            <InlineError action={{ label: t("Retry"), onClick: failure.retry }}>
-              {t("This change could not be saved. The saved value is still in use.")}
-            </InlineError>
-          )}
-          {indicator?.kind === "pack" && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setOpen(false);
-                controls.onSetup();
-              }}
-            >
-              {t("Set up voice")}
-            </Button>
-          )}
+            <Switch
+              label={t("Wake and sleep phrases")}
+              labelPosition="start"
+              checked={controls.enabled}
+              onCheckedChange={controls.setEnabled}
+              description={status}
+            />
+            {failure && (
+              <InlineError action={{ label: t("Retry"), onClick: failure.retry }}>
+                {t("This change could not be saved. The saved value is still in use.")}
+              </InlineError>
+            )}
+            {indicator?.kind === "pack" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setOpen(false);
+                  controls.onSetup();
+                }}
+              >
+                {t("Set up voice")}
+              </Button>
+            )}
           </div>
         </Popover>
       )}

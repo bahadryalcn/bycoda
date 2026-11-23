@@ -516,7 +516,9 @@ it("offers local and saved machines only for host tools while keeping conversati
     '[role="dialog"][aria-label="Browser controls and setup"]',
   )!;
   expect(controls).not.toBeNull();
-  const help = controls.querySelector<HTMLButtonElement>('button[aria-label="About the host browser"]')!;
+  const help = controls.querySelector<HTMLButtonElement>(
+    'button[aria-label="About the host browser"]',
+  )!;
   expect(help.getAttribute("aria-expanded")).toBe("false");
   await toolAct(() => help.click());
   expect(document.body.textContent).toContain(

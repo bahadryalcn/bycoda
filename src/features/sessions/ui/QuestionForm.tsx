@@ -409,40 +409,40 @@ function QuestionFormContent({
             legend still names the group for assistive technology. */}
         <Text as="div" size="inherit" tone={title ? "secondary" : "neutral"}>
           <div className={styles.context} data-prompt={title ? undefined : ""}>
-          <MessageSquare className="icon-sm shrink-0" tone="secondary" aria-hidden />
-          {title ? (
-            <Text
-              as="span"
-              size="caption"
-              tone="inherit"
-              weight="medium"
-              leading="inherit"
-              className={styles.contextTitle}
-              tracking="normal"
-            >
-              {title}
-            </Text>
-          ) : (
-            <Text
-              size="body"
-              tone="inherit"
-              weight="medium"
-              leading="normal"
-              className={styles.contextPrompt}
-              aria-hidden
-            >
-              {question.prompt}
-            </Text>
-          )}
-          {total > 1 ? (
-            <LiveText
-              className={`${styles.progress} tabular-nums`}
-              size="caption"
-              tone="secondary"
-              leading="inherit"
-              text={`${index + 1} / ${total}`}
-            />
-          ) : null}
+            <MessageSquare className="icon-sm shrink-0" tone="secondary" aria-hidden />
+            {title ? (
+              <Text
+                as="span"
+                size="caption"
+                tone="inherit"
+                weight="medium"
+                leading="inherit"
+                className={styles.contextTitle}
+                tracking="normal"
+              >
+                {title}
+              </Text>
+            ) : (
+              <Text
+                size="body"
+                tone="inherit"
+                weight="medium"
+                leading="normal"
+                className={styles.contextPrompt}
+                aria-hidden
+              >
+                {question.prompt}
+              </Text>
+            )}
+            {total > 1 ? (
+              <LiveText
+                className={`${styles.progress} tabular-nums`}
+                size="caption"
+                tone="secondary"
+                leading="inherit"
+                text={`${index + 1} / ${total}`}
+              />
+            ) : null}
           </div>
         </Text>
         <FieldGroup variant="bare" disabled={sending}>

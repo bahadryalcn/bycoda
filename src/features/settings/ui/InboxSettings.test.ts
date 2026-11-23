@@ -296,7 +296,11 @@ it("preserves drafts across services, offers every provider in the picker, and r
   const options = () => [...document.querySelectorAll<HTMLElement>('[role="option"]')];
   const open = () => act(async () => trigger().click());
   const choose = (id: string) =>
-    act(async () => options().find((option) => option.dataset.value === id)!.click());
+    act(async () =>
+      options()
+        .find((option) => option.dataset.value === id)!
+        .click(),
+    );
   const pick = async (id: string) => {
     await open();
     await choose(id);

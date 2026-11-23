@@ -96,84 +96,84 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
   const canSend = !relay.blockedReason && !!relay.draft.trim();
   return (
     <div className={styles.composer}>
-    <ScrollArea
-      as="form"
-      gutter="stable"
-      data-chat-column
-      {...surfaceAttributes(
-        { frame: "pane", edge: "top" },
-        "mx-auto flex min-h-0 w-full flex-1 flex-col gap-2 px-4 py-3",
-      )}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (canSend) relay.send();
-      }}
-    >
-      <TextareaField
-        label={t("Message for {p0}", { p0: name })}
-        minRows={2}
-        maxRows={5}
-        value={relay.draft}
-        aria-keyshortcuts="Control+Enter Meta+Enter"
-        onChange={(event) => relay.setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (
-            event.key === "Enter" &&
-            (event.ctrlKey || event.metaKey) &&
-            !event.nativeEvent.isComposing
-          ) {
-            event.preventDefault();
-            if (canSend) relay.send();
-          }
+      <ScrollArea
+        as="form"
+        gutter="stable"
+        data-chat-column
+        {...surfaceAttributes(
+          { frame: "pane", edge: "top" },
+          "mx-auto flex min-h-0 w-full flex-1 flex-col gap-2 px-4 py-3",
+        )}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canSend) relay.send();
         }}
-      />
-      {relay.openError ? (
-        <Text as="p" size="caption" tone="danger">
-          {relay.openError}
-        </Text>
-      ) : null}
-      {relay.blockedReason ? (
-        <Text as="p" size="caption" tone="secondary">
-          {relay.blockedReason}
-        </Text>
-      ) : null}
-      <Text
-        role="status"
-        as="p"
-        size="caption"
-        tone={relay.status === "rejected" ? "danger" : "secondary"}
-        className={` empty:hidden `}
       >
-        {relay.status === "accepted"
-          ? direct
-            ? t("Message accepted. It goes to this agent as its next input.")
-            : t("Request added to the main conversation. Delivery is not yet confirmed.")
-          : relay.status === "rejected"
-            ? t("Request was not accepted. Your message is kept here; try again.")
-            : null}
-      </Text>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <InfoPopover className="me-auto" label={t("How messaging works")}>
-          <Text as="p" size="secondary" tone="inherit">
-            {direct
-              ? t(
-                  "Sent straight to this agent. While it runs, the message steers it; once it has finished, the message starts a new turn.",
-                )
-              : t(
-                  "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
-                )}
+        <TextareaField
+          label={t("Message for {p0}", { p0: name })}
+          minRows={2}
+          maxRows={5}
+          value={relay.draft}
+          aria-keyshortcuts="Control+Enter Meta+Enter"
+          onChange={(event) => relay.setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              (event.ctrlKey || event.metaKey) &&
+              !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
+              if (canSend) relay.send();
+            }
+          }}
+        />
+        {relay.openError ? (
+          <Text as="p" size="caption" tone="danger">
+            {relay.openError}
           </Text>
-        </InfoPopover>
-        {direct && relay.onOpenConversation ? (
-          <Button variant="ghost" onClick={relay.onOpenConversation}>
-            {t("Open session")}
-          </Button>
         ) : null}
-        <Button type="submit" variant="primary" disabled={!canSend} shortcut="Mod+Enter">
-          {direct ? t("Send") : t("Relay via main agent")}
-        </Button>
-      </div>
-    </ScrollArea>
+        {relay.blockedReason ? (
+          <Text as="p" size="caption" tone="secondary">
+            {relay.blockedReason}
+          </Text>
+        ) : null}
+        <Text
+          role="status"
+          as="p"
+          size="caption"
+          tone={relay.status === "rejected" ? "danger" : "secondary"}
+          className={` empty:hidden `}
+        >
+          {relay.status === "accepted"
+            ? direct
+              ? t("Message accepted. It goes to this agent as its next input.")
+              : t("Request added to the main conversation. Delivery is not yet confirmed.")
+            : relay.status === "rejected"
+              ? t("Request was not accepted. Your message is kept here; try again.")
+              : null}
+        </Text>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <InfoPopover className="me-auto" label={t("How messaging works")}>
+            <Text as="p" size="secondary" tone="inherit">
+              {direct
+                ? t(
+                    "Sent straight to this agent. While it runs, the message steers it; once it has finished, the message starts a new turn.",
+                  )
+                : t(
+                    "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
+                  )}
+            </Text>
+          </InfoPopover>
+          {direct && relay.onOpenConversation ? (
+            <Button variant="ghost" onClick={relay.onOpenConversation}>
+              {t("Open session")}
+            </Button>
+          ) : null}
+          <Button type="submit" variant="primary" disabled={!canSend} shortcut="Mod+Enter">
+            {direct ? t("Send") : t("Relay via main agent")}
+          </Button>
+        </div>
+      </ScrollArea>
     </div>
   );
 }

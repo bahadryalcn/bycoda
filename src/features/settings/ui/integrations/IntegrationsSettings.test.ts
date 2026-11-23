@@ -96,7 +96,8 @@ it("retains account and new-account drafts while switching and locks pending sav
       for (const toggle of container.querySelectorAll<HTMLButtonElement>(
         'button[aria-expanded="false"]',
       ))
-        if (toggle.textContent?.trim() === "Advanced" && !toggle.closest("[hidden]")) toggle.click();
+        if (toggle.textContent?.trim() === "Advanced" && !toggle.closest("[hidden]"))
+          toggle.click();
     });
   const name = async (value: string) => {
     await openAdvanced();

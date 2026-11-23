@@ -143,8 +143,7 @@ it("clears quotas on failed refresh and can recover after a Pi login", async () 
       .querySelector<HTMLButtonElement>('[aria-label="Pi · Anthropic usage details"]')
       ?.click(),
   );
-  const refresh = () =>
-    document.querySelector<HTMLButtonElement>('[aria-label="Refresh usage"]');
+  const refresh = () => document.querySelector<HTMLButtonElement>('[aria-label="Refresh usage"]');
   expect(refresh()).not.toBeNull();
   await act(async () => refresh()?.click());
   expect(container.textContent).not.toContain("24%");

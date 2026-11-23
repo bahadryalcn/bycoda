@@ -203,19 +203,19 @@ export function SkillGroupEditor({
             aria-label={t("Skills")}
           >
             <div className={styles.groupEditorContent}>
-            {shown.map((entry) => (
-              <Checkbox
-                key={entry.key}
-                appearance="row"
-                size="secondary"
-                label={entry.name}
-                description={entry.primary.skill.description || undefined}
-                checked={members.has(entry.name)}
-                onChange={(event) =>
-                  event.currentTarget.checked ? apply([entry.name], []) : apply([], [entry.name])
-                }
-              />
-            ))}
+              {shown.map((entry) => (
+                <Checkbox
+                  key={entry.key}
+                  appearance="row"
+                  size="secondary"
+                  label={entry.name}
+                  description={entry.primary.skill.description || undefined}
+                  checked={members.has(entry.name)}
+                  onChange={(event) =>
+                    event.currentTarget.checked ? apply([entry.name], []) : apply([], [entry.name])
+                  }
+                />
+              ))}
             </div>
           </ScrollArea>
         </>

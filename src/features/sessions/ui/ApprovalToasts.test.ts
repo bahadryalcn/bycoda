@@ -933,7 +933,9 @@ it("lists a live owner approval in the pending card with its time left and count
   expect(card.textContent).toContain("1:30 left");
   expect(card.textContent).not.toContain("Private details");
   // The count lives once, on the trigger badge; the section label only names the group.
-  expect(document.querySelector(".notification-section-label")?.textContent).toBe("Waiting for you");
+  expect(document.querySelector(".notification-section-label")?.textContent).toBe(
+    "Waiting for you",
+  );
 });
 
 it("opens the owner request's conversation, or only closes the sheet without one", () => {

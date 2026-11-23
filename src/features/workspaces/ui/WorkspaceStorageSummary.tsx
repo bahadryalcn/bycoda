@@ -70,43 +70,43 @@ export function WorkspaceStorageSummary({
       >
         <Text as="div" size="secondary" tone="inherit" leading="inherit" className="tabular-nums">
           <div className={styles.storageBody}>
-          <div className={styles.storageLine}>
-            <span>
-              <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
-                {measure(storage.materializedBytes)}
-              </Text>{" "}
-              <Text as="span" size="caption" tone="secondary" weight="regular" leading="inherit">
-                {"/ "}
-                {t("{p0} budget", {
-                  p0: workspaceStorageSize(storage.budgetBytes),
-                })}
+            <div className={styles.storageLine}>
+              <span>
+                <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
+                  {measure(storage.materializedBytes)}
+                </Text>{" "}
+                <Text as="span" size="caption" tone="secondary" weight="regular" leading="inherit">
+                  {"/ "}
+                  {t("{p0} budget", {
+                    p0: workspaceStorageSize(storage.budgetBytes),
+                  })}
+                </Text>
+              </span>
+              <Text size="inherit" tone="secondary" leading="inherit" className={styles.free}>
+                {t("Free on disk {p0}", { p0: measure(storage.freeBytes) })}
               </Text>
-            </span>
-            <Text size="inherit" tone="secondary" leading="inherit" className={styles.free}>
-              {t("Free on disk {p0}", { p0: measure(storage.freeBytes) })}
-            </Text>
-          </div>
-          {storage.materializedBytes !== null ? (
-            <UsageMeter
-              label={t("Directory budget")}
-              segments={[
-                {
-                  id: "storage",
-                  label: t("Directory budget"),
-                  value: storage.materializedBytes,
-                },
-              ]}
-              limit={storage.budgetBytes}
-              showLegend={false}
-              compact
-              tone={warning ? "warning" : "neutral"}
-            />
-          ) : null}
-          <DescriptionList columns="auto" size="sm">
-            <DescriptionItem term={t("Recovery objects")}>
-              {measure(storage.recoveryBytes)}
-            </DescriptionItem>
-          </DescriptionList>
+            </div>
+            {storage.materializedBytes !== null ? (
+              <UsageMeter
+                label={t("Directory budget")}
+                segments={[
+                  {
+                    id: "storage",
+                    label: t("Directory budget"),
+                    value: storage.materializedBytes,
+                  },
+                ]}
+                limit={storage.budgetBytes}
+                showLegend={false}
+                compact
+                tone={warning ? "warning" : "neutral"}
+              />
+            ) : null}
+            <DescriptionList columns="auto" size="sm">
+              <DescriptionItem term={t("Recovery objects")}>
+                {measure(storage.recoveryBytes)}
+              </DescriptionItem>
+            </DescriptionList>
           </div>
         </Text>
         {storage.materialization !== "allowed" && (

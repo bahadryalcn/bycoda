@@ -152,7 +152,10 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
             dailySummary.environmentId === environmentId &&
             dailySummary.scopeKey === privacy.key && (
               <div
-                {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, styles.summary)}
+                {...surfaceAttributes(
+                  { variant: "card", frame: "card", radius: "card" },
+                  styles.summary,
+                )}
               >
                 {dailySummary.snapshot.briefing && canReadBriefing(dailySummary.snapshot) ? (
                   <>

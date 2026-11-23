@@ -227,65 +227,65 @@ function CreateToken({
           aria-busy={busy}
         >
           <div className={styles.stack}>
-          <TextField
-            ref={nameField}
-            label={t("Token name")}
-            autoFocus
-            required
-            maxLength={200}
-            value={name}
-            disabled={busy}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <SearchableSelect
-            label={t("Project")}
-            value={projectId}
-            options={projects.map((p) => ({ value: p.id, label: p.name, keywords: p.cwd }))}
-            onChange={setProjectId}
-            disabled={busy}
-          />
-          <FieldGroup legend={t("Tool groups and scopes")} disabled={busy}>
-            {groups.map((group) => (
-              <div key={group} className={styles.scope}>
-                <span>{groupLabel(group)}</span>
-                <Select
-                  hideLabel
-                  label={groupLabel(group)}
-                  value={modes[group]}
-                  disabled={busy}
-                  options={[
-                    { value: "", label: t("No access") },
-                    { value: "read", label: t("Read") },
-                    ...(group === "runtime-logs"
-                      ? []
-                      : [
-                          { value: "write", label: t("Write") },
-                          { value: "read,write", label: t("Read and write") },
-                        ]),
-                  ]}
-                  onChange={(value) => setModes((current) => ({ ...current, [group]: value }))}
-                />
-                {group === "runtime-logs" ? (
-                  <Text as="p" size="caption" tone="secondary" leading="inherit">
-                    {t("Runtime logs are read-only.")}
-                  </Text>
-                ) : null}
-              </div>
-            ))}
-          </FieldGroup>
-          <Disclosure summary={t("Advanced")} variant="row">
-            <NumberField
-              label={t("Duration (days)")}
-              min={1}
-              max={366}
-              step={1}
+            <TextField
+              ref={nameField}
+              label={t("Token name")}
+              autoFocus
               required
-              value={days}
+              maxLength={200}
+              value={name}
               disabled={busy}
-              onChange={(e) => setDays(e.target.value)}
+              onChange={(e) => setName(e.target.value)}
             />
-          </Disclosure>
-          {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
+            <SearchableSelect
+              label={t("Project")}
+              value={projectId}
+              options={projects.map((p) => ({ value: p.id, label: p.name, keywords: p.cwd }))}
+              onChange={setProjectId}
+              disabled={busy}
+            />
+            <FieldGroup legend={t("Tool groups and scopes")} disabled={busy}>
+              {groups.map((group) => (
+                <div key={group} className={styles.scope}>
+                  <span>{groupLabel(group)}</span>
+                  <Select
+                    hideLabel
+                    label={groupLabel(group)}
+                    value={modes[group]}
+                    disabled={busy}
+                    options={[
+                      { value: "", label: t("No access") },
+                      { value: "read", label: t("Read") },
+                      ...(group === "runtime-logs"
+                        ? []
+                        : [
+                            { value: "write", label: t("Write") },
+                            { value: "read,write", label: t("Read and write") },
+                          ]),
+                    ]}
+                    onChange={(value) => setModes((current) => ({ ...current, [group]: value }))}
+                  />
+                  {group === "runtime-logs" ? (
+                    <Text as="p" size="caption" tone="secondary" leading="inherit">
+                      {t("Runtime logs are read-only.")}
+                    </Text>
+                  ) : null}
+                </div>
+              ))}
+            </FieldGroup>
+            <Disclosure summary={t("Advanced")} variant="row">
+              <NumberField
+                label={t("Duration (days)")}
+                min={1}
+                max={366}
+                step={1}
+                required
+                value={days}
+                disabled={busy}
+                onChange={(e) => setDays(e.target.value)}
+              />
+            </Disclosure>
+            {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
           </div>
         </Text>
       )}
@@ -573,26 +573,26 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
         >
           <Text as="div" tone="primary" leading="inherit">
             <div className={styles.help}>
-            <p>
-              {t(
-                "Set BYCODA_MCP_TOKEN in the client environment, then restart the client. Keep it out of URLs and configuration files.",
-              )}
-            </p>
-            <p>{t("This address connects to bycoda on this computer.")}</p>
-            <Text as="strong" size="inherit" tone="inherit" weight="medium">
-              Claude Code · .mcp.json
-            </Text>
-            <OutputBlock frame="filled" scroll>
-              {examples.claude}
-            </OutputBlock>
-            <CopyButton text={examples.claude} label={t("Copy Claude Code example")} />
-            <Text as="strong" size="inherit" tone="inherit" weight="medium">
-              Codex · config.toml
-            </Text>
-            <OutputBlock frame="filled" scroll>
-              {examples.codex}
-            </OutputBlock>
-            <CopyButton text={examples.codex} label={t("Copy Codex example")} />
+              <p>
+                {t(
+                  "Set BYCODA_MCP_TOKEN in the client environment, then restart the client. Keep it out of URLs and configuration files.",
+                )}
+              </p>
+              <p>{t("This address connects to bycoda on this computer.")}</p>
+              <Text as="strong" size="inherit" tone="inherit" weight="medium">
+                Claude Code · .mcp.json
+              </Text>
+              <OutputBlock frame="filled" scroll>
+                {examples.claude}
+              </OutputBlock>
+              <CopyButton text={examples.claude} label={t("Copy Claude Code example")} />
+              <Text as="strong" size="inherit" tone="inherit" weight="medium">
+                Codex · config.toml
+              </Text>
+              <OutputBlock frame="filled" scroll>
+                {examples.codex}
+              </OutputBlock>
+              <CopyButton text={examples.codex} label={t("Copy Codex example")} />
             </div>
           </Text>
         </Popover>

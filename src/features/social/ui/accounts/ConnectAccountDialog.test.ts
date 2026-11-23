@@ -149,8 +149,9 @@ it("switches to a token connection and the bot type when Telegram is chosen", as
   render(client);
   await choose("Platform", "Telegram");
   // Telegram offers a token and a browser sign-in, so the method select stays and defaults to token.
-  expect(element.querySelector('button[aria-label="How to connect: Token from this computer"]'))
-    .not.toBeNull();
+  expect(
+    element.querySelector('button[aria-label="How to connect: Token from this computer"]'),
+  ).not.toBeNull();
   typeName("Channel bot");
   await submitForm();
   expect(create).toHaveBeenCalledWith(

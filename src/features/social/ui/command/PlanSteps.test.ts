@@ -70,11 +70,9 @@ const statusOf = (index: number) =>
 
 it("lists the steps in order with what the Host will do with each", () => {
   render();
-  expect(steps().map((step) => step.querySelector(".command-step-head")?.children[0]?.textContent)).toEqual([
-    "Reply to the pricing question",
-    "Show lists",
-    "Message the new follower",
-  ]);
+  expect(
+    steps().map((step) => step.querySelector(".command-step-head")?.children[0]?.textContent),
+  ).toEqual(["Reply to the pricing question", "Show lists", "Message the new follower"]);
   expect([0, 1, 2].map(statusOf)).toEqual([
     "Needs your approval",
     "Will run automatically",

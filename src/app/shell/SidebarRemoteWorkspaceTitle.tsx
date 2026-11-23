@@ -17,10 +17,6 @@ export function SidebarRemoteWorkspaceStatus({
   connectionIssueHandled: boolean;
 }) {
   const t = useT();
-  const { phase } = remote.dataState;
-  // The list owns actionable failures. The header keeps the machine indicator for
-  // an in-progress read or a connection issue already explained elsewhere.
-  if (phase !== "loading" && phase !== "refreshing" && !connectionIssueHandled) return null;
   return (
     <RemoteDataStatus
       cwd={cwd}

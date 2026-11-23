@@ -1140,9 +1140,7 @@ it("uses searchable custom selects in the create worktree dialog", async () => {
   await act(async () => branchType("Existing branch").click());
   let search: HTMLInputElement;
 
-  const existingBranch = document.querySelector<HTMLButtonElement>(
-    '[aria-label^="Branch:"]',
-  )!;
+  const existingBranch = document.querySelector<HTMLButtonElement>('[aria-label^="Branch:"]')!;
   expect(existingBranch.textContent).toContain("Choose a branch…");
   await act(async () => existingBranch.click());
   search = document.querySelector<HTMLInputElement>('input[placeholder="Search local branches…"]')!;

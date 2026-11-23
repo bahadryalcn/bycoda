@@ -289,11 +289,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
           )}
           {job.sessionIds.map((id, index) => (
             <div key={id}>
-              <Button
-                variant="link"
-                disabled={!onOpenSession}
-                onClick={() => onOpenSession?.(id)}
-              >
+              <Button variant="link" disabled={!onOpenSession} onClick={() => onOpenSession?.(id)}>
                 {t("Worker session {p0}", { p0: index + 1 })}
               </Button>
             </div>

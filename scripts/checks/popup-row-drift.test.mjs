@@ -19,6 +19,8 @@ test("existing appearance rules reject frames on feature option and menu rows", 
         "outline: 1px solid var(--x)",
         "box-shadow: inset 0 0 0 1px var(--x)",
       ]) {
+        // A keyboard-only focus cue (outline or inset ring under :focus-visible) is owned by the focus rule.
+        if (state === ":focus-visible" && !declaration.startsWith("border")) continue;
         const findings = scanFile(
           "src/features/demo/Choices.module.css",
           `[role="${role}"]${state} { ${declaration}; }`,

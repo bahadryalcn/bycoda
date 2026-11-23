@@ -152,3 +152,14 @@ The existing loading, native-control, surface and interaction rules also reject 
 Catalog metadata and orphan debt share `ui-drift-baseline.json`; both catalog and drift checks reject
 new debt. Baselines only fall; a new or widened rule needs a reasoned baseline approval when it records
 existing debt. Regenerate the catalog after changing component JSDoc.
+
+## Container states
+
+- List/picker: `EmptyState size="inline" context="list"`, no decorative icon; inline `LoadingText` or `Skeleton`; `FailureState size="inline"` with retry.
+- Panel/group: `EmptyState context="panel"`, title + one action; `LoadingText layout="fill"` or skeleton; `FailureState context="panel"` with promise-returning `onRetry`.
+- Page: `context="page"`; fill `LoadingText` or lazy `SurfaceLoading`. Replace content, keep header.
+- States are exclusive; Retry follows failure. Keep refresh data; errors use `InlineError`. Filtered empty: `kind="filtered"` + `onReset`. No duplicate header actions; explanations use info.
+
+## UI rounds
+
+Start from DESIGN.md "Review checklist" and `decisions.md`; route each finding to a token, shared component default, shared composition, drift rule or a local fix, in that order. End the round by promoting each recurring finding one level up (or recording why not) and writing any reversed rule into DESIGN.md and `decisions.md` in the same change; round folders under `temp/local/` hold evidence only.

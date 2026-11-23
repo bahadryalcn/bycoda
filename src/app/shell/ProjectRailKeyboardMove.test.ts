@@ -197,7 +197,7 @@ it("moves a project group with Alt+Arrow through the shared path and announces i
 it("moves a rail section with Alt+Arrow and its menu, announcing the section by name", async () => {
   await withGroupsRail(({ container }) => {
     const header = (name: string) =>
-      [...container.querySelectorAll<HTMLElement>('[data-rail-section-header]')].find((node) =>
+      [...container.querySelectorAll<HTMLElement>("[data-rail-section-header]")].find((node) =>
         node.textContent?.trim().startsWith(name),
       )!;
     const order = () =>

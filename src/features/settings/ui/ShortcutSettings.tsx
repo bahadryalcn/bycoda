@@ -643,37 +643,37 @@ export function KeybindingsPage() {
           >
             <Text as="div" size="caption" tone="secondary" leading="inherit">
               <div className={styles.filterStack}>
-              <Text as="span" size="secondary" weight="medium" tone="primary">
-                {t("Category")}
-              </Text>
-              <Select
-                hideLabel
-                label={t("Category")}
-                value={category}
-                onChange={setCategory}
-                options={[
-                  { value: "all", label: t("All categories") },
-                  ...categories.map((value) => ({ value, label: t(value) })),
-                ]}
-              />
-              <Text as="span" size="secondary" weight="medium" tone="primary">
-                {t("Status")}
-              </Text>
-              <Select
-                hideLabel
-                label={t("Status")}
-                value={status}
-                onChange={setStatus}
-                options={[
-                  { value: "all", label: t("All bindings") },
-                  { value: "modified", label: t("Modified") },
-                  { value: "disabled", label: t("Disabled") },
-                  { value: "unassigned", label: t("Unassigned") },
-                ]}
-              />
-              <Button variant="ghost" onClick={resetFilters} disabled={!filtered}>
-                {t("Reset filters")}
-              </Button>
+                <Text as="span" size="secondary" weight="medium" tone="primary">
+                  {t("Category")}
+                </Text>
+                <Select
+                  hideLabel
+                  label={t("Category")}
+                  value={category}
+                  onChange={setCategory}
+                  options={[
+                    { value: "all", label: t("All categories") },
+                    ...categories.map((value) => ({ value, label: t(value) })),
+                  ]}
+                />
+                <Text as="span" size="secondary" weight="medium" tone="primary">
+                  {t("Status")}
+                </Text>
+                <Select
+                  hideLabel
+                  label={t("Status")}
+                  value={status}
+                  onChange={setStatus}
+                  options={[
+                    { value: "all", label: t("All bindings") },
+                    { value: "modified", label: t("Modified") },
+                    { value: "disabled", label: t("Disabled") },
+                    { value: "unassigned", label: t("Unassigned") },
+                  ]}
+                />
+                <Button variant="ghost" onClick={resetFilters} disabled={!filtered}>
+                  {t("Reset filters")}
+                </Button>
               </div>
             </Text>
           </Popover>
@@ -682,19 +682,19 @@ export function KeybindingsPage() {
       {filtered ? (
         <Text as="div" size="caption" tone="secondary" leading="inherit">
           <div className={styles.activeFilters}>
-          <span>
-            {[
-              category !== "all" ? `${t("Category")}: ${t(category)}` : null,
-              status !== "all"
-                ? `${t("Status")}: ${t(status === "modified" ? "Modified" : status === "disabled" ? "Disabled" : "Unassigned")}`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-          <Button variant="ghost" size="sm" onClick={resetFilters}>
-            {t("Reset filters")}
-          </Button>
+            <span>
+              {[
+                category !== "all" ? `${t("Category")}: ${t(category)}` : null,
+                status !== "all"
+                  ? `${t("Status")}: ${t(status === "modified" ? "Modified" : status === "disabled" ? "Disabled" : "Unassigned")}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+            <Button variant="ghost" size="sm" onClick={resetFilters}>
+              {t("Reset filters")}
+            </Button>
           </div>
         </Text>
       ) : null}
@@ -722,12 +722,7 @@ export function KeybindingsPage() {
                 title={
                   <span>
                     {t(group)}{" "}
-                    <Text
-                      size="caption"
-                      tone="muted"
-                      leading="inherit"
-                      className="tabular-nums"
-                    >
+                    <Text size="caption" tone="muted" leading="inherit" className="tabular-nums">
                       · {entries.length}
                     </Text>
                   </span>

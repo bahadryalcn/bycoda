@@ -129,7 +129,9 @@ it("puts the provider scope in the scope row above the fields, not in the save b
       ),
     );
     expect(container.textContent).toContain("Defaults saved to");
-    expect(container.querySelector('[role="radiogroup"][aria-label="Provider scope"]')).not.toBeNull();
+    expect(
+      container.querySelector('[role="radiogroup"][aria-label="Provider scope"]'),
+    ).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
     container.remove();

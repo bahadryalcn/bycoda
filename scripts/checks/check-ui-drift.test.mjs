@@ -422,7 +422,8 @@ test("only counts above the baseline fail, per file and rule", (t) => {
     result.regressions.map(({ rule, baseline, count }) => [rule, baseline, count]),
     [["feature-typography", 1, 2]],
   );
-  const fixed = new Map([["src/features/demo/A.tsx", '<p className="text-ui-caption" />\n']]);
+  // Feature typography now comes from Text roles, so the fix carries no type class at all.
+  const fixed = new Map([["src/features/demo/A.tsx", "<p />\n"]]);
   assert.equal(checkUiDrift({ root, overrides: fixed }).improvements.length, 1);
 });
 

@@ -75,7 +75,9 @@ it("disables modes the transport cannot honour and skips them with the keys", as
   // The reason shows when the disabled row is inspected, not on every row.
   expect(options[0].textContent).not.toContain(reason);
   act(() => {
-    options[0].dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 3, clientY: 4 }));
+    options[0].dispatchEvent(
+      new PointerEvent("pointermove", { bubbles: true, clientX: 3, clientY: 4 }),
+    );
   });
   expect(options[0].textContent).toContain(`Unavailable: ${reason}`);
   expect(options[1].hasAttribute("aria-disabled")).toBe(false);

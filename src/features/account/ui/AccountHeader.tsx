@@ -46,26 +46,26 @@ export function AccountHeader({
     <header className={styles.header}>
       <Surface variant="card" padding="md">
         <div className={styles.identityCard}>
-        <AccountAvatar user={user} size="lg" />
-        <div className={styles.identity}>
-          <Heading size="section" truncate>
-            {user.displayName || user.email}
-          </Heading>
-          <Text size="caption" tone="secondary" leading="inherit" className={styles.email}>
-            <PrivateEmail email={user.email} />
-          </Text>
-          <div className={styles.facts}>
-            <Badge tone="accent">{planLabel(entitlements.planTier)}</Badge>
+          <AccountAvatar user={user} size="lg" />
+          <div className={styles.identity}>
+            <Heading size="section" truncate>
+              {user.displayName || user.email}
+            </Heading>
+            <Text size="caption" tone="secondary" leading="inherit" className={styles.email}>
+              <PrivateEmail email={user.email} />
+            </Text>
+            <div className={styles.facts}>
+              <Badge tone="accent">{planLabel(entitlements.planTier)}</Badge>
+            </div>
           </div>
-        </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          loading={signingOut}
-          onClick={() => signOut().catch(() => undefined)}
-        >
-          {t("Sign out")}
-        </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={signingOut}
+            onClick={() => signOut().catch(() => undefined)}
+          >
+            {t("Sign out")}
+          </Button>
         </div>
       </Surface>
       {stale ? (

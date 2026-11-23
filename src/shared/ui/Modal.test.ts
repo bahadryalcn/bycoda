@@ -91,7 +91,8 @@ describe("ModalPanel", () => {
       createElement(Sheet, { ...props, modal: false, anchor: "container" }),
     ].map((element) => renderToStaticMarkup(element));
     const header = (markup: string) =>
-      /<header[\s\S]*?<\/header>/.exec(markup)![0]
+      /<header[\s\S]*?<\/header>/
+        .exec(markup)![0]
         .replace(/id="[^"]*"/g, 'id="title"')
         // A non-modal sheet advertises Esc on its close button.
         .replace(' data-tooltip-owner=""', "");

@@ -189,7 +189,10 @@ export function ManualSessionSupervision({
   if (idle)
     return (
       <section
-        {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, sessionStyles.frame)}
+        {...surfaceAttributes(
+          { variant: "card", frame: "card", radius: "card" },
+          sessionStyles.frame,
+        )}
         aria-label={t("Manual session supervision")}
       >
         <div className={sessionStyles.statusRow}>
@@ -370,7 +373,10 @@ export function ManualSessionSupervision({
     );
   return (
     <section
-      {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, sessionStyles.frame)}
+      {...surfaceAttributes(
+        { variant: "card", frame: "card", radius: "card" },
+        sessionStyles.frame,
+      )}
       aria-label={t("Manual session supervision")}
     >
       <div className={sessionStyles.statusRow}>

@@ -523,10 +523,7 @@ function CommandDetails({
           </Text>
         ) : null}
       </section>
-      <section
-        aria-label={t("Output")}
-        className="relative flex min-h-32 flex-1 flex-col gap-1"
-      >
+      <section aria-label={t("Output")} className="relative flex min-h-32 flex-1 flex-col gap-1">
         <SectionLabel>{t("Output")}</SectionLabel>
         <div className="relative flex min-h-0 flex-1 flex-col">
           {/* The one scroll owner of the sheet: error and output read in one quiet
@@ -656,13 +653,7 @@ function PromptCard({ prompt }: { prompt: string }) {
   const t = useT();
   const assignment = delegatedBriefText(prompt);
   return (
-    <Surface
-      as="section"
-      variant="card"
-      padding="sm"
-      aria-label={t("Prompt")}
-      className="mb-2"
-    >
+    <Surface as="section" variant="card" padding="sm" aria-label={t("Prompt")} className="mb-2">
       <Text as="div" size="secondary" tone="inherit" leading="normal">
         <SectionLabel>{t("Prompt")}</SectionLabel>
         <ClampText lines={6} moreLabel={t(assignment ? "Show more" : "Show full prompt")}>

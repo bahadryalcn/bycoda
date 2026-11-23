@@ -282,34 +282,36 @@ export function TerminalTools({
   /** Suggestion exposure stays explicit: the switch, the source and the note live with the menu. */
   const suggestionSettings = remoteShell ? (
     <div className={styles.suggestionSettings}>
-    <Disclosure size="sm" summary={t("Suggestion settings")}>
-      <div className={styles.settingRow}>
-        <Text as="span" size="caption">
-          {t("Show suggestions while typing")}
-        </Text>
-        <Switch
-          checked={remoteShell.automatic}
-          onCheckedChange={remoteShell.setAutomatic}
-          aria-label={t("Show suggestions while typing")}
+      <Disclosure size="sm" summary={t("Suggestion settings")}>
+        <div className={styles.settingRow}>
+          <Text as="span" size="caption">
+            {t("Show suggestions while typing")}
+          </Text>
+          <Switch
+            checked={remoteShell.automatic}
+            onCheckedChange={remoteShell.setAutomatic}
+            aria-label={t("Show suggestions while typing")}
+          />
+        </div>
+        <Select
+          fieldSize="sm"
+          label={t("Suggestion source")}
+          value={remoteShell.source}
+          onValueChange={(value) =>
+            remoteShell.setSource(value as "commands" | "paths" | "history")
+          }
+          options={[
+            { value: "commands", label: t("Commands") },
+            { value: "paths", label: t("Remote paths") },
+            { value: "history", label: t("Reviewed history") },
+          ]}
         />
-      </div>
-      <Select
-        fieldSize="sm"
-        label={t("Suggestion source")}
-        value={remoteShell.source}
-        onValueChange={(value) => remoteShell.setSource(value as "commands" | "paths" | "history")}
-        options={[
-          { value: "commands", label: t("Commands") },
-          { value: "paths", label: t("Remote paths") },
-          { value: "history", label: t("Reviewed history") },
-        ]}
-      />
-      <Text as="p" size="caption" tone="muted" className={styles.settingNote}>
-        {t(
-          "Session only. Remote command and path names may appear here. Reviewed history uses approved command forms; arbitrary shell completion stays on Tab.",
-        )}
-      </Text>
-    </Disclosure>
+        <Text as="p" size="caption" tone="muted" className={styles.settingNote}>
+          {t(
+            "Session only. Remote command and path names may appear here. Reviewed history uses approved command forms; arbitrary shell completion stays on Tab.",
+          )}
+        </Text>
+      </Disclosure>
     </div>
   ) : null;
   const showSuggestionsItem = !!remoteShell || (!toolbarTarget && suggestionsAllowed);

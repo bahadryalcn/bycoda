@@ -367,7 +367,9 @@ export function AssistantSetup({
         ) : undefined
       }
     >
-      <div {...textAttributes({ size: "inherit", tone: "inherit", leading: "normal" }, styles.setup)}>
+      <div
+        {...textAttributes({ size: "inherit", tone: "inherit", leading: "normal" }, styles.setup)}
+      >
         {loadError && (
           <InlineError
             details={loadError}

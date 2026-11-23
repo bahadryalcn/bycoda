@@ -272,7 +272,10 @@ export function AssistantRemoteAccess({
             </Text>
             {request && (
               <div
-                {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, styles.request)}
+                {...surfaceAttributes(
+                  { variant: "card", frame: "card", radius: "card" },
+                  styles.request,
+                )}
               >
                 <Text as="p" leading="normal">
                   {t("Inspect the original request before starting another connection.")}{" "}
@@ -328,7 +331,10 @@ export function AssistantRemoteAccess({
             {error && <InlineError>{error}</InlineError>}
             {identity && (
               <div
-                {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, styles.identity)}
+                {...surfaceAttributes(
+                  { variant: "card", frame: "card", radius: "card" },
+                  styles.identity,
+                )}
               >
                 <Text as="p" tone="inherit" leading="inherit">
                   {t("Installation ID")}: <Code>{identity.installationId}</Code>

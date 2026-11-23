@@ -32,7 +32,7 @@ beforeEach(() => {
       disconnect() {}
     },
   );
-  container =document.createElement("div");
+  container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
 });

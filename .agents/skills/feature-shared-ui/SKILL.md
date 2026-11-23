@@ -23,7 +23,7 @@ Any JSX under `src/app` or `src/features`, and any change in `src/shared/ui/`. F
 
 - Dialogs: `Modal`/`Sheet` pad their body. Do not add body padding; pass `padding="none"` only for full-bleed content (lists with row padding, editors, previews, master–detail panes).
 - Forms: `Select` shows its label like `TextField`; `hideLabel` only in toolbars and compact filters, where an associated group label or accessible name identifies the control.
-- `SegmentedControl` owns short exclusive choices; `EffortScale` owns ordered model effort and subagent ceiling bars. Supply translated full labels; the scale keeps them outside its bars and in tooltips. Provider save destinations are a feature-owned multi-select, not an exclusive segmented choice.
+- `SegmentedControl` owns short exclusive choices; `EffortScale` owns ordered effort bars with translated full labels.
 - Raw tags listed in the catalog's Replaces column (`details`, `dl`, `label`, `table`, `time`, `role=tab`, …) are banned outside `src/shared/ui`; use the named component.
 - Deprecated components (catalog's last table) may not be imported in new code.
 - Actions use `Button` (or ActionHost inline actions); no screen-specific button styling.
@@ -37,18 +37,7 @@ Any JSX under `src/app` or `src/features`, and any change in `src/shared/ui/`. F
 - Import only `src/shared/ui/*` from product code, never `src/shared/ui/arc/*`.
 - A settings `Group` is already a framed card: no `Group` or card `Surface` inside it and no `Group` inside a card (`nested-surface`). Compose screens from the archetypes in DESIGN.md, not new containers.
 - Feature code places things and never chooses how they look: no type, surface, state, control size, truncation, motion or scrollbar styling in `src/features` or `src/app`, and an inline style carries custom properties only. Layout stays free. Read [appearance ownership](references/appearance-ownership.md) before writing feature CSS or classes.
-- Bespoke product surfaces (chat composer editor, transcript, terminal, code editor, appearance scene previews) may keep a custom element when no shared component can carry the behavior. Mark that one line with `// ui-drift-ignore: <rule> -- <why>` on the line above (in JSX `{/* ... */}`); everything around it still uses shared components.
-
-## Container states
-
-- List/picker: `EmptyState size="inline" context="list"`, no decorative icon; inline `LoadingText` or `Skeleton`; `FailureState size="inline"` with retry.
-- Panel/group: `EmptyState context="panel"`, title + one action; `LoadingText layout="fill"` or skeleton; `FailureState context="panel"` with promise-returning `onRetry`.
-- Page: `context="page"`; fill `LoadingText` or lazy `SurfaceLoading`. Replace content, keep header.
-- States are exclusive; Retry follows failure. Keep refresh data; errors use `InlineError`. Filtered empty: `kind="filtered"` + `onReset`. No duplicate header actions; explanations use info.
-
-## UI rounds
-
-Start from DESIGN.md "Review checklist" and `references/decisions.md`; route each finding to a token, shared component default, shared composition, drift rule or a local fix, in that order. End the round by promoting each recurring finding one level up (or recording why not) and writing any reversed rule into DESIGN.md and `decisions.md` in the same change; round folders under `temp/local/` hold evidence only.
+- Bespoke surfaces (composer editor, transcript, terminal, code editor, scene previews) may keep a custom element no shared component can carry; mark that line with `// ui-drift-ignore: <rule> -- <why>` above it.
 
 ## Focused checks
 
@@ -59,7 +48,7 @@ Start from DESIGN.md "Review checklist" and `references/decisions.md`; route eac
 
 ## References
 
-- [Appearance ownership](references/appearance-ownership.md): what feature code may not style, the rule for each, and the review item for empty, loading and failure states.
+- [Appearance ownership](references/appearance-ownership.md): what feature code may not style, the rule for each, container states (empty, loading, failure) and how to run a UI round.
 - [Decision provenance](references/decisions.md): the one file for owner UI decisions, including shell and workbench.
 - [Product design language](../../../docs/reference/DESIGN.md) for new patterns and T2 work.
 - [UI contracts](../../../docs/reference/ui-design-system.md) for tokens, feedback and field contracts.
