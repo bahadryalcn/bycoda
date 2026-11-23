@@ -47,6 +47,13 @@ describe("a machine turned off on this computer", () => {
 });
 
 describe("classifyRemoteError", () => {
+  it("keeps the native in-progress SSH dial temporary without ignoring a genuine outage", () => {
+    expect(
+      classifyRemoteError("Machine is unreachable right now: a connection attempt is in progress.")
+        .kind,
+    ).toBe("temporary");
+    expect(classifyRemoteError("Machine is unreachable: SSH timed out").kind).toBe("unreachable");
+  });
   it.each([
     ["RPC_WS_BLOCKED", "unreachable"],
     ["RPC_WS_SCHEMA", "unreachable"],

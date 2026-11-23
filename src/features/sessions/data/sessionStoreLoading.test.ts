@@ -63,6 +63,8 @@ describe("progressive stored history", () => {
       localHost: true,
       endpoint: "http://127.0.0.1:3776",
     };
+    const recentImageId = "00000000-0000-4000-8000-000000000001";
+    const olderImageId = "00000000-0000-4000-8000-000000000002";
     const block = (id: string) => ({
       id,
       role: "user",
@@ -75,7 +77,7 @@ describe("progressive stored history", () => {
       if (command === "remote_request") return { data: "YWJj", offset: 3, size: 3 } as never;
       if (command !== "session_get_page") return [] as never;
       const earlier = (args as { before?: number }).before !== undefined;
-      const message = block(earlier ? "older" : "recent");
+      const message = block(earlier ? olderImageId : recentImageId);
       const image = message.attachments[0]!;
       return {
         session: {
@@ -109,7 +111,7 @@ describe("progressive stored history", () => {
     expect(
       vi.mocked(invoke).mock.calls.filter(([command]) => command === "remote_request"),
     ).toHaveLength(2);
-    for (const attachmentId of ["recent", "older"])
+    for (const attachmentId of [recentImageId, olderImageId])
       expect(invoke).toHaveBeenCalledWith(
         "remote_request",
         expect.objectContaining({

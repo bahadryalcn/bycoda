@@ -26,7 +26,13 @@ const snapshot = (): HostSession => ({
         role: "user",
         text: "ready text",
         attachments: [
-          { id: "load-image", name: "x.png", kind: "image", mimeType: "image/png", size: 3 },
+          {
+            id: "00000000-0000-4000-8000-000000000001",
+            name: "x.png",
+            kind: "image",
+            mimeType: "image/png",
+            size: 3,
+          },
         ],
       },
     ],
@@ -56,12 +62,37 @@ it("publishes text and running status without waiting for an image RPC", async (
 });
 
 it.each([false, true])(
+  "a background read keeps image metadata and asks for bytes only on demand (pages: %s)",
+  async (pages) => {
+    const base = snapshot();
+    const methods: string[] = [];
+    vi.mocked(invoke).mockImplementation(async (_command, input) => {
+      const { method } = input as { method: string };
+      methods.push(method);
+      const sync = { kind: "snapshot", value: base };
+      if (method === "sessions.sync") return sync;
+      if (method === "sessions.page") return { sync, revision: 1, totalBlocks: 1 };
+      if (method === "attachments.read") return { data: btoa("abc"), offset: 3, size: 3 };
+      throw new Error(method);
+    });
+    const result = await loadRemoteSession("background-owner", "load-session", undefined, {
+      pages,
+      deferPreviews: true,
+    });
+    const [file] = result.session.blocks[0].attachments!;
+    expect(methods).toEqual([pages ? "sessions.page" : "sessions.sync"]);
+    await expect(file.loadPreview!()).resolves.toBe(btoa("abc"));
+    expect(methods.at(-1)).toBe("attachments.read");
+  },
+);
+
+it.each([false, true])(
   "binds document readers on the first visible remote snapshot (pages: %s)",
   async (pages) => {
     const base = snapshot();
     base.session.blocks[0].attachments = [
       {
-        id: "first-document",
+        id: "00000000-0000-4000-8000-000000000002",
         name: "report.pdf",
         kind: "file",
         mimeType: "application/pdf",
@@ -80,7 +111,7 @@ it.each([false, true])(
       if (method === "sessions.page")
         return { sync: { kind: "snapshot", value: base }, totalBlocks: 1, revision: 1 };
       if (method === "attachments.read") {
-        expect(params.id).toBe("first-document");
+        expect(params.id).toBe("00000000-0000-4000-8000-000000000002");
         return { data: btoa("pdf"), offset: 3, size: 3 };
       }
       throw new Error(method);
@@ -175,7 +206,7 @@ it("binds older uploaded and generated images to the owning Host without fetchin
           text: "Uploaded image",
           attachments: [
             {
-              id: "older-upload",
+              id: "00000000-0000-4000-8000-000000000003",
               name: "upload.png",
               kind: "image",
               mimeType: "image/png",
@@ -191,7 +222,7 @@ it("binds older uploaded and generated images to the owning Host without fetchin
             name: "generated.png",
             mimeType: "image/png",
             size: 3,
-            path: "G:/project/generated.png",
+            path: "G:/host/attachments/00000000-0000-4000-8000-000000000004",
           },
         },
       ],
@@ -210,7 +241,8 @@ it("binds older uploaded and generated images to the owning Host without fetchin
     }
     if (method === "attachments.read") {
       expect(params.offset).toBe(0);
-      if (params.id === "older-upload") return { data: btoa("old"), offset: 3, size: 3 };
+      if (params.id === "00000000-0000-4000-8000-000000000003")
+        return { data: btoa("old"), offset: 3, size: 3 };
       if (params.id === "older-generated") return { data: btoa("gen"), offset: 3, size: 3 };
     }
     throw new Error(method);

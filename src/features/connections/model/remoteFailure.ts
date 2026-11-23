@@ -161,6 +161,9 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
     return { kind: "other", message };
   }
   if (SUPERSEDED.test(text) || LOCAL_TIMEOUT.test(text)) return { kind: "temporary", message };
+  // The native SSH slot has a dial in progress; no remote operation or failed dial occurred.
+  if (message === "Machine is unreachable right now: a connection attempt is in progress.")
+    return { kind: "temporary", message };
   if (UNREACHABLE.test(text)) return { kind: "unreachable", message };
   if (TEMPORARY.test(text)) return { kind: "temporary", message };
   return { kind: "other", message };

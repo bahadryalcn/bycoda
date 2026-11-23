@@ -6,6 +6,7 @@ import type { HostStore } from "../store";
 import { mkdir, open, readdir, stat, type FileHandle } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { parseBrowserAnnotation } from "../../src/shared/lib/browserAnnotation";
+import { HOST_ATTACHMENT_ID as UUID } from "../../src/shared/model/hostAttachmentId";
 import { HostDomainRefusalError } from "../domains/context";
 import { attachmentDeletionHeld } from "../storage/snapshots";
 // Reads, status hashes and writes of the same file observe a single ordered stream.
@@ -99,7 +100,6 @@ export async function attachmentUploadStatus(
 }
 export const MAX_REMOTE_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_CHUNK_BYTES = 512 * 1024;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function attachmentPath(store: HostStore, id: string): string {
   if (!UUID.test(id)) throw new Error("Invalid attachment ID");
   return join(store.attachmentDir, id);

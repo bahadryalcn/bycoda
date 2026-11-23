@@ -458,7 +458,10 @@ it("queues an explicit refresh behind automatic polling and deduplicates repeate
   });
   expect(loadRemoteSession).toHaveBeenCalledTimes(2);
   // A host without `sessions.digests` is not asked for them.
-  expect(loadRemoteSession).toHaveBeenLastCalledWith("local", "s1", undefined, { digests: false });
+  expect(loadRemoteSession).toHaveBeenLastCalledWith("local", "s1", undefined, {
+    digests: false,
+    deferPreviews: true,
+  });
 });
 
 it("asks a host that advertises digests for them, for a refresh and for a new session", async () => {
@@ -477,7 +480,7 @@ it("asks a host that advertises digests for them, for a refresh and for a new se
   });
   expect(loadRemoteSession).toHaveBeenCalled();
   for (const call of vi.mocked(loadRemoteSession).mock.calls)
-    expect(call[3]).toEqual({ digests: true });
+    expect(call[3]).toEqual({ digests: true, deferPreviews: true });
 });
 
 it("reports an unavailable host without replacing the local conversation", async () => {

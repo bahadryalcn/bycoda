@@ -51,7 +51,7 @@ export async function listDelegatedRunSummaries(
 const port: DelegatedDiscoveryPort = {
   host: (cwd) => featureHost(cwd, "sessions.desktop"),
   list: listDelegatedRunSummaries,
-  read: (machineId, id, known) => loadRemoteSession(machineId, id, known),
+  read: (machineId, id, known) => loadRemoteSession(machineId, id, known, { deferPreviews: true }),
 };
 
 export function useDelegatedRunDiscovery(parentId: string, visible: boolean) {

@@ -201,7 +201,10 @@ export function useAdoptedSessions(
             return entries;
           },
           load: async (sessionId, known) => {
-            const host = await loadRemoteSession(machine.id, sessionId, known, { digests });
+            const host = await loadRemoteSession(machine.id, sessionId, known, {
+              digests,
+              deferPreviews: true,
+            });
             if (host.session.id !== sessionId || (target && host.projectId !== target.projectId))
               throw new Error("This conversation belongs to another project.");
             await metadata.observe(host).catch(() => undefined);
@@ -288,7 +291,10 @@ export function useAdoptedSessions(
             )
               return false;
             if (declined.get(entry.id) === entry.revision) return false;
-            const host = await loadRemoteSession(machine.id, entry.id, undefined, { digests });
+            const host = await loadRemoteSession(machine.id, entry.id, undefined, {
+              digests,
+              deferPreviews: true,
+            });
             const copy = desktopCopyOf(host, project.cwd, sameProjectPath);
             if (stopped) return false;
             if (!(await upsertSession(copy, adoptedSessionTimes(host)))) {
