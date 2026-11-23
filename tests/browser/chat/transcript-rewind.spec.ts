@@ -35,7 +35,10 @@ for (const width of [1280, 800])
       await expect(page.getByText("Couldn’t load models from Fixture PC.")).toHaveCount(0);
       await page.screenshot({ path: `${captures}/retained-${width}-${theme}.png` });
 
-      await page.evaluate(() => localStorage.removeItem("bycoda.remote-models.v1"));
+      // The first page keeps polling and re-persists its retained catalog, which would seed the
+      // next page and hide the first failure. Leave it, then clear the store before the next page boots.
+      await page.goto("about:blank");
+      await page.addInitScript(() => localStorage.removeItem("bycoda.remote-models.v1"));
       await page.goto(
         "/tests/browser/workspace/workspace-rewind.html?remoteRewind&codexCatalog=first-failure",
       );

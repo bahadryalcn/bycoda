@@ -141,6 +141,24 @@ test("cut and paste restores a PNG attachment inside the sentence", async ({
   await expect(page.locator("html")).toHaveAttribute("data-clipboard-image-bytes", "68");
 });
 
+// The copy handler writes the clipboard once, asynchronously (the formats wait for the file
+// bytes). Chromium rejects a read that overlaps that write with an InvalidStateError ("Clipboard
+// data has changed"); a read started right after the key press can land inside it. That is the
+// writer arriving, not a failure: report no HTML yet so the poll reads again, and let any other
+// error through.
+const clipboardHtml = (page: Page) =>
+  page.evaluate(async () => {
+    try {
+      const [item] = await navigator.clipboard.read();
+      return item?.types.includes("text/html")
+        ? await (await item.getType("text/html")).text()
+        : "";
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "InvalidStateError") return "";
+      throw error;
+    }
+  });
+
 test("inline composer cuts real file bytes and restores the reference on undo", async ({
   page,
   context,
@@ -159,18 +177,10 @@ test("inline composer cuts real file bytes and restores the reference on undo", 
     input.setSelectionRange(token.index, token.index + token[0].length);
   });
   await page.keyboard.press("ControlOrMeta+c");
+  let html = "";
   await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const [item] = await navigator.clipboard.read();
-        return item?.types.includes("text/html") ? (await item.getType("text/html")).text() : "";
-      }),
-    )
+    .poll(async () => (html = await clipboardHtml(page)))
     .toContain('data-bycoda-file="bycoda-usage.csv"');
-  const html = await page.evaluate(async () => {
-    const [item] = await navigator.clipboard.read();
-    return (await item.getType("text/html")).text();
-  });
   expect(html).toContain("data:text/csv;base64,ZmVhdHVyZSxldmVudHMKY29tcG9zZXIsMTI4");
   await expect(csv).toBeVisible();
   await page.keyboard.press("ControlOrMeta+x");
