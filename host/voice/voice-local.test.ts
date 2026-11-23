@@ -19,6 +19,7 @@ import {
 import * as gpuDetection from "./voice-gpu";
 import * as runtime from "./voice-runtime";
 import { perfMetrics } from "../diagnostics/perf-metrics";
+import { runWithRequestTrace, startRequestTrace } from "../diagnostics/request-trace";
 
 function startInternals(service: LocalVoiceService) {
   return service as unknown as {
@@ -29,6 +30,39 @@ function startInternals(service: LocalVoiceService) {
 const workerInfo = { model: "small", device: "cpu", turn: false };
 const metricCount = (name: string) =>
   perfMetrics.snapshot().metrics.find((metric) => metric.name === name)?.count ?? 0;
+
+it("logs only phase timings and the Host trace when voice startup is slow", async () => {
+  vi.useFakeTimers();
+  const service = new LocalVoiceService();
+  const inspect = vi.spyOn(runtime, "inspectVoiceRuntime").mockResolvedValue({
+    ready: true,
+    missing: [],
+    python: "private-python-path",
+  });
+  const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  const trace = startRequestTrace("ws");
+  vi.spyOn(startInternals(service), "ensureWorker").mockImplementation(
+    () => new Promise((resolve) => setTimeout(() => resolve(workerInfo), 5500)),
+  );
+  try {
+    const starting = runWithRequestTrace(trace, () => service.start({ natural: false }, true));
+    await vi.advanceTimersByTimeAsync(5500);
+    await expect(starting).resolves.toMatchObject({ model: workerInfo.model });
+    const line = write.mock.calls
+      .map(([value]) => String(value))
+      .find((value) => value.includes("local voice startup"));
+    expect(line).toContain(`traceId=${trace.id}`);
+    expect(line).toContain("probeOutcome=ready");
+    expect(line).toContain("recognizerMs=5500");
+    expect(line).toContain("speechOutcome=skipped");
+    expect(line).not.toContain("private-python-path");
+  } finally {
+    service.close();
+    inspect.mockRestore();
+    write.mockRestore();
+    vi.useRealTimers();
+  }
+});
 
 it("loads CPU speech alongside the recognizer", async () => {
   const service = new LocalVoiceService();

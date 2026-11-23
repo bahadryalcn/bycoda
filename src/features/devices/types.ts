@@ -1,16 +1,18 @@
 import type {
   DeviceAction,
   DeviceFrame,
-  DeviceHostStatus,
+  DeviceHostStatus as HostDeviceStatus,
   DeviceSummary,
+  DeviceTouch,
 } from "../../shared/model/host-contracts/native-devices";
 export type {
   DevicePlatform,
   DeviceAction,
   DeviceFrame,
-  DeviceHostStatus,
   DeviceSummary,
 } from "../../shared/model/host-contracts/native-devices";
+/** Local rendering capability, negotiated separately from the legacy status payload. */
+export type DeviceHostStatus = HostDeviceStatus & { touchProtocol?: 1 };
 export interface DevicePanelApi {
   /** The machine behind this API, so a failed load reruns when it answers again. */
   environmentId?: string;
@@ -23,6 +25,12 @@ export interface DevicePanelApi {
   capture: (deviceId: string) => Promise<DeviceFrame>;
   /** Long-poll read of the device's H.264 video; absent or failing means still captures only. */
   stream?: (deviceId: string, cursor?: number) => Promise<DeviceStreamChunk>;
+  subscribeStream?: (
+    deviceId: string,
+    onChunk: (chunk: DeviceStreamChunk) => void,
+    onError: (failure: unknown) => void,
+  ) => Promise<() => void>;
+  touch?: (deviceId: string, touch: DeviceTouch, leaseId: string) => Promise<void>;
   action: (deviceId: string, action: DeviceAction, leaseId?: string) => Promise<string>;
   controlStatus?: (deviceId: string) => Promise<DeviceControlStatus>;
   claimControl?: (deviceId: string, requestId: string) => Promise<DeviceControlLease>;
@@ -41,6 +49,8 @@ export interface DeviceStreamChunk {
   /** The device's display size in pixels, not the encoded video size. */
   width: number;
   height: number;
+  /** Whether this chunk ends on a complete recorder write. */
+  boundary?: boolean;
 }
 export interface DeviceControlStatus {
   deviceId: string;

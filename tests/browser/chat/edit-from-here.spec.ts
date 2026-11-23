@@ -44,7 +44,14 @@ async function restored(page: Page) {
   expect(
     await composer.evaluate((field) => ({ start: field.selectionStart, end: field.selectionEnd })),
   ).toEqual({ start: prompt.length, end: prompt.length });
-  await expect(page.getByRole("button", { name: "Remove report.csv", exact: true })).toBeVisible();
+  await page
+    .locator("[data-composer] [data-attachment-chip]")
+    .filter({ hasText: "report.csv" })
+    .click({ button: "right" });
+  await expect(
+    page.getByRole("menuitem", { name: "Remove report.csv", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
   expect((await fixture(page)).events).toEqual({ rewinds: 1, sends: 0 });
 }
 
@@ -254,7 +261,12 @@ for (const history of [false, true]) {
         const composer = page.locator("textarea");
         await expect(composer).toHaveValue("[image1] explain this screen");
         await expect(composer).toBeFocused();
-        await expect(page.getByRole("button", { name: /Remove image\.png/ })).toBeVisible();
+        await page
+          .locator('[data-composer] [data-attachment-chip][data-attachment-kind="image"]')
+          .getByRole("button", { name: "Open image.png full screen", exact: true })
+          .press("Shift+F10");
+        await expect(page.getByRole("menuitem", { name: "Remove image.png" })).toBeVisible();
+        await page.keyboard.press("Escape");
         if (history) await expect(page.locator('[data-prompt-anchor="first"]')).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
           true,

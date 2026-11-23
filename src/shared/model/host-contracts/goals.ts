@@ -76,6 +76,7 @@ export const GoalSettingsSchema = z.strictObject({
   budget: GoalBudgetSchema.optional(),
 });
 export const GoalPlanSchema = z.strictObject({
+  simple: z.literal(true).optional(),
   tasks: z.array(
     z.strictObject({
       key: z.string(),

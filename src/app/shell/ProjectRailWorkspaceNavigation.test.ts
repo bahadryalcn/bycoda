@@ -5,6 +5,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProjectRail } from "./ProjectRail";
 import { savePinnedProjects } from "../../features/projects/model/recents";
 import { OPEN_PROJECT_CHANGES_EVENT } from "../../features/projects/model/groupGit";
+import { applyRemoteGroupRecords } from "../../features/sync/model/syncGroups";
+import { applyRemoteProjectRecords } from "../../features/sync/model/syncProjects";
 import {
   loadProjectGroups,
   saveProjectGroups,
@@ -67,6 +69,50 @@ const render = async (cwd = "G:/wallet/api", paths = ["G:/wallet/api", "G:/walle
   );
 const workspaceButton = () =>
   host.querySelector<HTMLButtonElement>('button[aria-label="Open Wallet"]')!;
+
+it("keeps an unavailable remote project within its synced workspace group", async () => {
+  saveProjectGroups([]);
+  const projectId = "loc:windows:g:/wallet/mobile";
+  const rootId = "loc:windows:g:/wallet";
+  const records = [
+    { table: "group", id: "team", rev: 1, value: { id: "team", name: "Firisbe" } },
+    { table: "group", id: "wallet", rev: 2, value: { id: "wallet", name: "Wallet" } },
+    {
+      table: "workspaceLayout",
+      id: "wallet",
+      rev: 3,
+      value: { rootProjectId: rootId, includesRoot: false },
+    },
+    {
+      table: "projectPath",
+      id: projectId,
+      rev: 4,
+      value: { projectId, path: "G:/wallet/mobile", hostEnvironmentId: "windows", archived: false },
+    },
+    { table: "assignment", id: projectId, rev: 5, value: { projectId, groupId: "wallet" } },
+    { table: "assignment", id: rootId, rev: 6, value: { projectId: rootId, groupId: "team" } },
+  ] as const;
+  applyRemoteProjectRecords("fixture", records);
+  applyRemoteGroupRecords("fixture", records);
+  const open = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ProjectRail, {
+        cwd: "~",
+        recents: [],
+        onSelectProject: select,
+        onOpenProject: vi.fn(),
+        onOpenSyncedProject: open,
+      }),
+    ),
+  );
+  const row = host.querySelector<HTMLButtonElement>(
+    '[data-project-group="team"] [data-project-group="wallet"] button[data-remote-project-id]',
+  )!;
+  expect(row?.getAttribute("data-remote-project-id")).toBe(projectId);
+  await act(async () => row.click());
+  expect(open).toHaveBeenCalledWith(projectId, "mobile");
+});
 
 it.each(["panel", "navigator"] as const)(
   "opens the No project list from the %s",

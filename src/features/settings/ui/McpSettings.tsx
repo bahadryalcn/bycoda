@@ -633,6 +633,7 @@ function McpConnections({
               estimateSize={40}
               renderItem={(entry) => {
                 const status = statusOf(entry);
+                const signingIn = !!hub.signingIn && hub.signingIn === entry.hub?.name;
                 const signIn =
                   status === "sign-in" || status === "expired" ? quickSignIn(entry) : undefined;
                 const sources = entry.configs.length
@@ -648,6 +649,7 @@ function McpConnections({
                 return (
                   <CollectionRow
                     key={entry.name}
+                    interactionOpen={signingIn}
                     leading={
                       <StatusDot
                         tone={status === "off" ? "muted" : STATUS_TONE[status]}
@@ -668,10 +670,14 @@ function McpConnections({
                       </>
                     }
                     action={
-                      signIn ? (
+                      signingIn && hub.cancelSignIn ? (
+                        <InlineTextAction reveal="always" onClick={hub.cancelSignIn}>
+                          {t("Cancel")}
+                        </InlineTextAction>
+                      ) : signIn ? (
                         <InlineTextAction
                           reveal="always"
-                          disabled={actions.locked || !!hub.busy}
+                          disabled={actions.locked || !!hub.busy || !!hub.signingIn}
                           onClick={signIn}
                         >
                           {t("Sign in")}

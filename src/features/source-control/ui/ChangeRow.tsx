@@ -34,7 +34,8 @@ export const ChangeRow = memo(function ChangeRow({
   busy,
   kind,
   depth,
-  style,
+  virtualStart,
+  virtualHeight,
   position,
   tabStop,
   onOpenFile,
@@ -48,7 +49,10 @@ export const ChangeRow = memo(function ChangeRow({
   kind: GitFileDiffKind;
   /** Set in tree view: nesting level, and the folder path moves to the tree. */
   depth?: number;
-  style?: CSSProperties;
+  /** Set while the list is virtualized: the row's offset and height in px. Numbers, not a style
+   *  object, so the memo holds for rows that stay in the window while the list scrolls. */
+  virtualStart?: number;
+  virtualHeight?: number;
   /** 1-based `aria-rowindex` among every row of the grid, so a virtualized list keeps its place. */
   position?: number;
   /** The list's roving tab stop: only this row's open button is in the Tab order. The inline
@@ -114,7 +118,9 @@ export const ChangeRow = memo(function ChangeRow({
     <div
       style={
         {
-          ...style,
+          ...(virtualStart === undefined
+            ? undefined
+            : virtualRowStyle(virtualStart, virtualHeight)),
           "--control-padding-start": tree ? `${8 + depth * 12}px` : "0.5rem",
         } as CSSProperties
       }
@@ -268,6 +274,18 @@ export const ChangeRow = memo(function ChangeRow({
     </div>
   );
 });
+
+/** Absolute placement of one row inside a virtualized list. */
+export function virtualRowStyle(start: number, height?: number): CSSProperties {
+  return {
+    position: "absolute",
+    insetBlockStart: 0,
+    insetInlineStart: 0,
+    width: "100%",
+    height,
+    transform: `translateY(${start}px)`,
+  };
+}
 
 function statusLetter(status: string): string {
   if (status === "untracked") return "U";

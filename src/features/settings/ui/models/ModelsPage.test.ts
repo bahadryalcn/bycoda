@@ -468,7 +468,7 @@ describe("model defaults scope inheritance", () => {
     await render();
     await openDefaults("Claude Code");
     expect(container.textContent).not.toContain("Global settings apply to chats");
-    expect(container.querySelector('button[aria-label="Help"]')).not.toBeNull();
+    expect(container.querySelector('[role="img"][aria-label="Help"]')).not.toBeNull();
     const subagents = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
     const off = [...subagents.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
       (node) => node.textContent === "Off",

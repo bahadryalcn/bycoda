@@ -19,3 +19,4 @@ export {
   stripAttachmentTokens,
 } from "../model/attachmentTokens";
 export type { Attachment } from "../model/session";
+export { capturePastedTextAttachment, replacePastedText } from "../ui/pastedTextAttachment";

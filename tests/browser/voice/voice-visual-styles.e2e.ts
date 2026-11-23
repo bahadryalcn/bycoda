@@ -283,7 +283,7 @@ for (const [theme, width] of workViewports) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width, height: 800 });
     await page.goto(
-      `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&local-choice`,
+      `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&choice-ack-lost`,
     );
     await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
     const panel = page.locator("section[data-voice-state]");
@@ -296,10 +296,9 @@ for (const [theme, width] of workViewports) {
     await page.evaluate(() => {
       (window as Window & { fixtureVoice?: FixtureVoice }).fixtureVoice!.speech("show choices");
     });
-    const notice = panel.getByText(
-      "This choice could not be saved in the Room. Keep voice open to answer.",
-      { exact: true },
-    );
+    const notice = panel.getByRole("status").filter({
+      hasText: "Saving this question is unconfirmed. Retry to verify the original card.",
+    });
     const caption = panel.getByText("show choices", { exact: true });
     await expect(notice).toBeVisible();
     await expect(caption).toBeVisible();
@@ -321,6 +320,12 @@ for (const [theme, width] of workViewports) {
       expect(Math.abs(textCenter - center)).toBeLessThan(2);
     }
     const answer = panel.getByRole("button", { name: "Send answer", exact: true });
+    await expect(answer).toHaveCount(0);
+    const retry = panel.getByRole("button", { name: "Retry", exact: true });
+    await retry.scrollIntoViewIfNeeded();
+    await expect(retry).toBeInViewport({ ratio: 1 });
+    await retry.click();
+    await answer.scrollIntoViewIfNeeded();
     await expect(answer).toBeInViewport({ ratio: 1 });
   });
 }
@@ -984,7 +989,13 @@ test("voice surface computed probe", async ({ page }) => {
     await panel.evaluate((el) => el.setAttribute("data-surface-frame", "focus"));
     const focus = await panel.evaluate((el) => getComputedStyle(el).borderTopColor);
     await page.evaluate(() => (window as any).fixtureVoice.callbacks.error("fixture error"));
-    await expect(panel.getByRole("alert")).toHaveText("Voice needs attention: fixture error");
+    await expect(panel.getByText("Voice needs attention", { exact: true })).toBeVisible();
+    await expect(panel.getByText("fixture error", { exact: true })).toHaveCount(0);
+    await panel.getByRole("button", { name: "Details: Voice needs attention" }).click();
+    const details = page.getByRole("dialog", { name: "Details: Voice needs attention" });
+    await expect(details.getByText("fixture error", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(details).toHaveCount(0);
     await panel.getByRole("button", { name: "Compact voice companion" }).click();
     await expect(panel.locator("[data-voice-error]")).toBeVisible();
     const danger = await panel.evaluate((el) => getComputedStyle(el).borderTopColor);

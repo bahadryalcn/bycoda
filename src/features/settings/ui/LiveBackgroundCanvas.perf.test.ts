@@ -6,13 +6,13 @@ import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
 
 const state = vi.hoisted(() => ({
   draw: vi.fn(),
-  focused: true,
+  windowVisible: true,
   awake: false,
   listeners: new Set<() => void>(),
 }));
 vi.mock("../model/decorativeMotion", () => ({
   decorativeMotionEnabled: () => true,
-  windowHasFocus: () => state.focused,
+  motionWindowVisible: () => state.windowVisible,
   subscribeDecorativeMotion: (fn: () => void) => {
     state.listeners.add(fn);
     return () => state.listeners.delete(fn);
@@ -56,7 +56,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.draw.mockClear();
-  state.focused = true;
+  state.windowVisible = true;
   state.awake = false;
   state.listeners.clear();
   frameQueue = [];
@@ -119,7 +119,7 @@ const render = (props: { active?: boolean; speech?: number; activity?: number } 
 
 describe("live background frame loop", () => {
   // perf P1: an idle (no reply streaming) pane must stop scheduling frames once settled.
-  it("schedules no frames for a focused, visible pane with nothing happening", () => {
+  it("schedules no frames for a visible pane with nothing happening", () => {
     render();
     runFor(5_000);
     expect(runFor(2_000)).toBe(0);
@@ -199,16 +199,16 @@ describe("live background frame loop", () => {
     expect(state.draw.mock.calls.length / 2).toBeLessThanOrEqual(31);
   });
 
-  // perf P1: a window behind another application keeps its last frame and schedules nothing.
-  it("schedules no frames while the window is unfocused and resumes on focus", () => {
+  // perf P1: a window hidden or minimized keeps its last frame and schedules nothing.
+  it("schedules no frames while the window is minimized and resumes on restore", () => {
     render({ speech: 30, activity: 30 });
     runFor(500);
-    state.focused = false;
+    state.windowVisible = false;
     act(() => state.listeners.forEach((fn) => fn()));
     const painted = state.draw.mock.calls.length;
     expect(runFor(3_000)).toBe(0);
     expect(state.draw.mock.calls.length).toBe(painted);
-    state.focused = true;
+    state.windowVisible = true;
     act(() => state.listeners.forEach((fn) => fn()));
     expect(runFor(1_000)).toBeGreaterThan(0);
     expect(state.draw.mock.calls.length).toBeGreaterThan(painted);

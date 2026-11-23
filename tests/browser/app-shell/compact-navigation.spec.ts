@@ -833,6 +833,58 @@ test("session rows mark discussions that hold unsent composer text", async ({ pa
   }
 });
 
+test("Changes hides the full caption when it would overlap its icon or counts", async ({
+  page,
+}, testInfo) => {
+  await installNavigationFixture(page);
+  await page.goto("/tests/browser/app-shell/compact-navigation.html?railPolish");
+  const sidebar = page.locator('aside[data-side-pane="workspace"]');
+  const changes = sidebar.getByRole("tab", { name: /^Changes,/ });
+  const label = changes.locator(".workspace-tab-label");
+  const labelSlot = changes.locator(".workspace-tab-content");
+  const icon = changes.locator(".workspace-tab-icon");
+  const stats = changes.locator(".workspace-tab-stats");
+  const count = changes.locator("[data-workspace-tab-file-count]");
+  await expect(count).toHaveText("3");
+
+  await sidebar.evaluate((pane) => pane.style.setProperty("inline-size", "730px", "important"));
+  // Exercise an unbreakable translated caption alongside the same live tab contents.
+  await label.evaluate((caption) => {
+    caption.textContent = "Working tree changes";
+  });
+  const setTabWidth = (width: number) =>
+    changes.evaluate((tab, value) => {
+      tab.parentElement!.style.flex = `0 0 ${value}px`;
+    }, width);
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await setTabWidth(320);
+      expect((await label.boundingBox())!.x).toBeGreaterThan(
+        (await icon.boundingBox())!.x + (await icon.boundingBox())!.width,
+      );
+      expect((await label.boundingBox())!.y).toBeLessThan(
+        (await labelSlot.boundingBox())!.y + (await labelSlot.boundingBox())!.height,
+      );
+      await sidebar.screenshot({ path: testInfo.outputPath(`changes-wide-${theme}-${width}.png`) });
+      await setTabWidth(190);
+      expect((await label.boundingBox())!.y).toBeGreaterThanOrEqual(
+        (await labelSlot.boundingBox())!.y + (await labelSlot.boundingBox())!.height,
+      );
+      await expect(icon).toBeVisible();
+      await expect(stats).toBeVisible();
+      await expect(count).toBeVisible();
+      await sidebar.screenshot({
+        path: testInfo.outputPath(`changes-narrow-${theme}-${width}.png`),
+      });
+    }
+  }
+});
+
 test("rail polish aligns sections and swaps row actions without losing identity", async ({
   page,
 }, testInfo) => {

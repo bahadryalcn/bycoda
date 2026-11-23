@@ -46,12 +46,17 @@ it("follows the measured input while you speak and stays flat when muted", () =>
   expect(quiet).toBeCloseTo(1, 1);
 });
 
-it("stops requesting frames while the window is behind another application and resumes on focus", () => {
-  const request = vi.fn(() => 7);
+it("keeps requesting frames across blur and resumes after hiding without focus", () => {
+  let frame: FrameRequestCallback = () => {};
+  const request = vi.fn((callback: FrameRequestCallback) => {
+    frame = callback;
+    return 7;
+  });
   const cancel = vi.fn();
   vi.stubGlobal("requestAnimationFrame", request);
   vi.stubGlobal("cancelAnimationFrame", cancel);
   const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(false);
   try {
     act(() =>
       root.render(
@@ -68,15 +73,23 @@ it("stops requesting frames while the window is behind another application and r
     act(() => {
       window.dispatchEvent(new Event("blur"));
     });
-    expect(cancel).toHaveBeenCalledWith(7);
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(host.querySelector<HTMLElement>("[data-state]")?.dataset.pose).toBe("assistant");
-    hasFocus.mockReturnValue(true);
-    act(() => {
-      window.dispatchEvent(new Event("focus"));
-    });
+    expect(cancel).not.toHaveBeenCalled();
+    frame(700);
     expect(request).toHaveBeenCalledTimes(2);
+    hidden.mockReturnValue(true);
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(cancel).toHaveBeenCalledWith(7);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(host.querySelector<HTMLElement>("[data-state]")?.dataset.pose).toBe("assistant");
+    hidden.mockReturnValue(false);
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(request).toHaveBeenCalledTimes(3);
   } finally {
+    hidden.mockRestore();
     hasFocus.mockRestore();
     vi.unstubAllGlobals();
   }

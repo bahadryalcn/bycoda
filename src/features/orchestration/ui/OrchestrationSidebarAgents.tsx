@@ -239,6 +239,15 @@ export function OrchestrationSidebarAgents({
               })}
             </Text>
           )}
+          {stopping || leadBusy ? (
+            <Text as="p" size="micro" tone="warning" leading="relaxed" className="px-0.5">
+              {stopping
+                ? t("Stopping interrupted work before this run can resume.")
+                : t(
+                    "Waiting for the lead's interrupted turn to finish before this run can resume.",
+                  )}
+            </Text>
+          ) : null}
           <div className="-mr-1.5 flex items-center justify-end gap-1">
             {resumeBlocker && actions && (
               <Button
@@ -263,7 +272,9 @@ export function OrchestrationSidebarAgents({
                   : leadBusy
                     ? t("Wait for the lead's interrupted turn to finish")
                     : resumeBlocker
-                      ? undefined
+                      ? t("Stop {p0} before resuming", {
+                          p0: resumeBlocker.title || t("Another conversation"),
+                        })
                       : t(
                           "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
                         )

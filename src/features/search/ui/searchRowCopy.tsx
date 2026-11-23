@@ -1,24 +1,27 @@
 import type { ReactNode } from "react";
 import { terminalText } from "../../../shared/lib/terminalText";
-import { prettyCwd } from "../../../shared/lib/paths";
+import { prettyCwd, projectKey } from "../../../shared/lib/paths";
 import { useLocale } from "../../../shared/i18n";
 import { Folder, MessageSquare } from "../../../shared/ui/icons";
 import { MatchText, matchPositions } from "../../../shared/ui/MatchText";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayNameFrom } from "../../projects/model/projectNames";
+import { useTabGroupLogos } from "../../projects/public/useTabGroupLogos";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { useResolvedTabGroupLogo } from "../../workspace/public/tabGroups";
 import type { AppSearchHit } from "../model/appSearch";
 
 export function rowCopy(
   hit: AppSearchHit,
   query: string,
+  labels: Record<string, string>,
 ): { icon: ReactNode; title: ReactNode; meta: string; preview?: ReactNode } {
   if (hit.kind === "conversation") {
     return {
       icon: <HarnessIcon harness={hit.harness} className="icon-sm" />,
       title: <MatchText {...terminalText(hit.title, hit.positions)} active />,
-      meta: projectDisplayName(hit.cwd),
+      meta: projectDisplayNameFrom(hit.cwd, labels),
     };
   }
   if (hit.kind === "message") {
@@ -26,7 +29,7 @@ export function rowCopy(
       icon: <MessageSquare className="icon-sm" tone="secondary" strokeWidth={1.75} />,
       title: terminalText(hit.title).text,
       preview: <Highlight text={hit.preview || hit.title} query={query} />,
-      meta: projectDisplayName(hit.cwd),
+      meta: projectDisplayNameFrom(hit.cwd, labels),
     };
   }
   if (hit.kind === "file") {
@@ -45,7 +48,7 @@ export function rowCopy(
     };
   }
   return {
-    icon: <ProjectLogoIcon path={hit.path} className="icon-sm" fallback={Folder} />,
+    icon: <SearchProjectIcon path={hit.path} />,
     title: <MatchText text={hit.name} positions={hit.positions} active />,
     meta: prettyCwd(hit.path),
   };
@@ -55,6 +58,12 @@ export function rowCopy(
 function directoryOf(hit: { path: string; name: string; relative: string }) {
   const folder = hit.relative.slice(0, Math.max(0, hit.relative.length - hit.name.length));
   return folder.replace(/\/+$/, "") || prettyCwd(hit.path);
+}
+
+function SearchProjectIcon({ path }: { path: string }) {
+  const logos = useTabGroupLogos();
+  const logo = useResolvedTabGroupLogo(projectKey(path), logos);
+  return <ProjectLogoIcon path={logo} className="icon-sm" fallback={Folder} />;
 }
 
 function Highlight({ text, query }: { text: string; query: string }) {

@@ -553,9 +553,9 @@ export function noteTitle(text: string): string {
 }
 
 /** Project display name for a note saved from a session, or null without a project. */
-export function noteSourceProject(cwd?: string): string | null {
+export function noteSourceProject(cwd?: string, labels?: Record<string, string>): string | null {
   if (!cwd || !looksLikeProject(cwd)) return null;
-  const name = projectDisplayName(cwd);
+  const name = projectDisplayName(cwd, labels);
   return name || null;
 }
 

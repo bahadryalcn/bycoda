@@ -8,7 +8,7 @@ import {
   isExternalFileWorkspaceTab,
   workspaceTabCwd,
 } from "../../../features/workspace/model/workspaceTabGroups";
-import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
+import { sameProjectPath } from "../../../features/projects/model/recents";
 import { pathKey } from "../../../shared/lib/paths";
 import type { useWorkspaceNavigation } from "../../hooks/useWorkspaceNavigation";
 import type { useWorktreeFocus } from "../../../features/source-control/model/worktreeFocus";
@@ -39,7 +39,7 @@ export function useWorktreeDeckTabs({
    * path, so the switcher can show what each worktree still has open. */
   const nextWorktreeTabStats = useMemo(() => {
     const stats = new Map<string, { tabs: number; busy: boolean }>();
-    if (!sidebarCwd || sidebarCwd === "~" || isRemoteProjectPath(sidebarCwd)) return stats;
+    if (!sidebarCwd || sidebarCwd === "~") return stats;
     for (const tab of filterTabsForProject(tabs, sessions, sidebarCwd)) {
       const workspace = tabWorkspace(tab, sessions) ?? sidebarCwd;
       const key = pathKey(workspace);

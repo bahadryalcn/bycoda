@@ -27,8 +27,13 @@ for (const theme of ["dark", "light"])
       );
       const card = page.locator(`section[aria-label="${title}"]`);
       const toolbarButtons = card.getByRole("button");
-      // Source, Open in panel, Expand, Preview restrictions and Reload preview.
-      await expect(toolbarButtons).toHaveCount(5);
+      // Source, Open in panel, Expand and Reload preview.
+      await expect(toolbarButtons).toHaveCount(4);
+      const restrictions = card.getByRole("img", { name: "Preview restrictions" });
+      await restrictions.hover();
+      await expect(page.getByRole("tooltip")).toContainText("external data requests");
+      await restrictions.click();
+      await expect(page.getByRole("dialog", { name: "Preview restrictions" })).toHaveCount(0);
       const positions = await toolbarButtons.evaluateAll((buttons) =>
         buttons.map((button) => button.getBoundingClientRect().top),
       );

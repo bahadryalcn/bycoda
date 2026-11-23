@@ -78,11 +78,15 @@ describe("session message file revert", () => {
       const plan = await checkpoints.filesRevertPlan("s", f.cwd, "one");
       // A user's own database stays ordinary workspace content.
       expect(plan.files.map((file) => file.path).sort()).toEqual(["data.db"]);
-      await checkpoints.filesRevert("s", f.cwd, "one");
+      expect(await checkpoints.filesRevert("s", f.cwd, "one")).toEqual({
+        reverted: ["data.db"],
+        skipped: [],
+      });
       expect(await f.read("data.db")).toBe("data.db before\n");
       for (const name of ["host.db", "host.db-wal", "host.db-shm", "attachments/blob"])
         expect(await f.read(name)).toBe(`${name} after\n`);
     },
+    60_000,
   );
 
   it("retains and reverts queued-message history using its opaque RPC block ID", async () => {

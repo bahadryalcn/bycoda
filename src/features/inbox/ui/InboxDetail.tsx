@@ -44,7 +44,8 @@ import { sameProjectPath } from "../../projects/model/recents";
 import { sessionDisplayTitle } from "../../sessions/model/session";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import { linearIssueComment, linearIssueThread } from "../model/linear";
-import { jiraIssueComment, jiraIssueThread } from "../model/jira";
+import { jiraIssueComment, jiraIssueThread, type JiraIssueStatus } from "../model/jira";
+import { JiraStatusPicker } from "./JiraStatusPicker";
 import { gitlabWorkItemComment, gitlabWorkItemThread } from "../model/gitlab";
 import { azureDevOpsWorkItemComment, azureDevOpsWorkItemThread } from "../model/azureDevOps";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
@@ -88,6 +89,7 @@ export function InboxDetail({
   onRepairChecks,
   onOpenSession,
   onItemChange,
+  onJiraStatusChange,
 }: {
   item: InboxItem;
   cwd: string;
@@ -102,6 +104,7 @@ export function InboxDetail({
   onRepairChecks?: CiRepairProps["onRepairChecks"];
   onOpenSession?: (sessionId: string) => void | Promise<void>;
   onItemChange?: (item: InboxItem) => void;
+  onJiraStatusChange?: (status: JiraIssueStatus) => void;
 }) {
   const t = useT();
   const { formatNumber } = useFormat();
@@ -313,7 +316,17 @@ export function InboxDetail({
         {item.kind === "pr" ? (gitlab ? t("Merge request") : t("Pull request")) : t("Issue")}
       </span>
       <span className="shrink-0 tabular-nums">{inboxItemRef(item)}</span>
-      <InboxStatusBadge mark={statusMark} label={status} attention={attentionLabel} />
+      {jira && jiraKey && onJiraStatusChange ? (
+        <JiraStatusPicker
+          issueKey={jiraKey}
+          url={item.url}
+          mark={statusMark}
+          status={status}
+          onChange={onJiraStatusChange}
+        />
+      ) : (
+        <InboxStatusBadge mark={statusMark} label={status} attention={attentionLabel} />
+      )}
       {source ? <span className="min-w-0 wrap-anywhere">{source}</span> : null}
       {panel ? (
         <Button

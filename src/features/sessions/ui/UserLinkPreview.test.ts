@@ -7,6 +7,13 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(async () => undefined),
 }));
 
+vi.mock("../../connections/model/connections", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../connections/model/connections")>()),
+  useRemoteMachines: () => ({
+    machines: [{ id: "saved-host", environmentId: "windows-host", name: "Ofis PC" }],
+  }),
+}));
+
 vi.mock("../../connections/model/workspaceUrls", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../connections/model/workspaceUrls")>()),
   openWorkspaceUrl: vi.fn(async () => undefined),
@@ -102,6 +109,9 @@ describe("links in sent messages", () => {
     );
 
     expect(openWorkspaceUrl).toHaveBeenCalledWith(cwd, url, undefined);
+    expect(container.querySelector("a")?.textContent).toContain(
+      "Ofis PC · localhost:3000/report?view=pdf#page",
+    );
     expect(openUrl).not.toHaveBeenCalled();
   });
 
@@ -185,6 +195,7 @@ describe("links in sent messages", () => {
         );
       }
       const surface = compact ? document.querySelector('[role="dialog"]')! : container;
+      expect(surface.querySelector(`a[href="${url}"]`)?.textContent).toBe("Ofis PC · Report");
       await act(async () => surface.querySelector<HTMLAnchorElement>(`a[href="${url}"]`)!.click());
 
       expect(openWorkspaceUrl).toHaveBeenCalledWith(cwd, url, undefined);

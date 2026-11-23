@@ -2,6 +2,8 @@ import { pathKey } from "../../../shared/lib/paths";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
 import {
   loadProjectGroupAssignments,
+  loadProjectGroups,
+  projectGroupWorkspaceRoot,
   saveProjectGroupAssignments,
 } from "../../projects/model/projectGroups";
 import {
@@ -30,6 +32,7 @@ import {
   machineProjectIdPrefix,
 } from "./syncProjectId";
 import type {
+  SyncAssignmentValue,
   SyncProjectPathValue,
   SyncProjectValue,
   SyncRailLayoutValue,
@@ -39,6 +42,7 @@ import type {
 // Versioned: state written for the older name-based project ids is left behind unread.
 const PROJECT_ID_KEY = "bycoda.sync.localProjectIds.v3";
 const KNOWN_PATHS_KEY = "bycoda.sync.remoteProjectPaths.v2";
+const REMOTE_GROUPS_KEY = "bycoda.projectRemoteGroups";
 const HOST_ENVIRONMENT_KEY = "bycoda.sync.localHostEnvironmentId";
 const RAIL_LAYOUT_ID = "rail";
 
@@ -106,20 +110,25 @@ export type RemoteOnlyProject = {
   path: string;
   /** The host serving the machine the folder is on, when it has one. */
   hostEnvironmentId?: string;
+  groupId?: string;
 };
 
 type KnownProjectPath = { path: string; archived: boolean; hostEnvironmentId?: string };
 type KnownProjectPaths = Record<string, KnownProjectPath>;
 
-function loadKnownProjectPaths(): KnownProjectPaths {
+function loadRecordMap<T>(key: string): Record<string, T> {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(KNOWN_PATHS_KEY) ?? "{}");
+    const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? "{}");
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as KnownProjectPaths)
+      ? (parsed as Record<string, T>)
       : {};
   } catch {
     return {};
   }
+}
+
+function loadKnownProjectPaths(): KnownProjectPaths {
+  return loadRecordMap<KnownProjectPath>(KNOWN_PATHS_KEY);
 }
 
 function saveKnownProjectPaths(value: KnownProjectPaths): void {
@@ -195,6 +204,7 @@ function currentHostFolders(known: ReadonlySet<string>): Set<string> {
  * this machine's rail or in its archive, and that the user has not removed
  * from it. */
 export function remoteOnlyProjects(): RemoteOnlyProject[] {
+  const groupIds = loadRecordMap<string>(REMOTE_GROUPS_KEY);
   const ownEnvironmentId = localHostEnvironmentId();
   const known = knownHostEnvironments;
   const current = known
@@ -217,6 +227,7 @@ export function remoteOnlyProjects(): RemoteOnlyProject[] {
         projectId,
         name: folderName(entry.path),
         path: entry.path,
+        ...(typeof groupIds[projectId] === "string" ? { groupId: groupIds[projectId] } : {}),
         ...(entry.hostEnvironmentId ? { hostEnvironmentId: entry.hostEnvironmentId } : {}),
       }))
       .sort((a, b) => a.name.localeCompare(b.name) || a.projectId.localeCompare(b.projectId))
@@ -406,6 +417,10 @@ export function captureLocalProjectChanges(machineId: string): void {
   const railPaths = [
     ...loadRecents().map((item) => item.path),
     ...loadArchivedProjects().map((item) => item.path),
+    ...loadProjectGroups().flatMap((group) => {
+      const root = group.workspaceFile && projectGroupWorkspaceRoot(group);
+      return root ? [root] : [];
+    }),
   ];
   const archived = new Set(loadArchivedProjects().map((item) => pathKey(item.path)));
   const hostEnvironmentId = localHostEnvironmentId();
@@ -512,6 +527,30 @@ function recordProjectId(value: SyncProjectPathValue): string | undefined {
  * local project when the folder is on this machine, otherwise a placeholder. */
 export function applyRemoteProjectRecords(machineId: string, records: readonly SyncRecord[]): void {
   const known = loadKnownProjectPaths();
+  const assignments = records.filter((record) => record.table === "assignment");
+  if (assignments.length > 0) {
+    const remoteGroups = loadRecordMap<string>(REMOTE_GROUPS_KEY);
+    let changed = false;
+    for (const { id, value } of assignments) {
+      if (!isLocationProjectId(id)) continue;
+      const groupId = (value as SyncAssignmentValue | null)?.groupId;
+      if (typeof groupId === "string" && groupId && remoteGroups[id] !== groupId) {
+        remoteGroups[id] = groupId;
+        changed = true;
+      } else if (value === null && typeof remoteGroups[id] === "string") {
+        delete remoteGroups[id];
+        changed = true;
+      }
+    }
+    if (changed) {
+      try {
+        localStorage.setItem(REMOTE_GROUPS_KEY, JSON.stringify(remoteGroups));
+        notifyProjectPathsChanged();
+      } catch {
+        // Re-learned on the next pull.
+      }
+    }
+  }
   const ownMachinePrefix = machineProjectIdPrefix(localMachineId());
   let knownChanged = false;
   for (const record of records) {

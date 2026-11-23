@@ -8,7 +8,7 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Text, type TextTone } from "../../../shared/ui/Text";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { resolveModel } from "../../sessions/public/models";
 import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
 import { bulkTaskKey } from "../model/taskBulkActions";
@@ -75,6 +75,7 @@ export function TaskList({
   now?: number;
 }) {
   const t = useT();
+  const projectLabels = useProjectLabels();
   // The machine name only tells rows apart when the list spans several machines.
   const showMachine = new Set(tasks.map((task) => task.machineId)).size > 1;
   const activeTask = tasks.find((task) => `${task.machineId}:${task.id}` === activeKey);
@@ -153,7 +154,7 @@ export function TaskList({
               stateText
             ),
             reason,
-            projectDisplayName(task.cwd),
+            projectDisplayNameFrom(task.cwd, projectLabels),
             showMachine ? task.machineName : "",
             task.harness ? resolveModel(task.harness, task.model).name : "",
             elapsed,

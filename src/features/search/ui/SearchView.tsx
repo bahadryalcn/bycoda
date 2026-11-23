@@ -5,10 +5,10 @@ import {
   actionContentScopeAttributes,
 } from "../../../shared/ui/ActionHost";
 import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { terminalText } from "../../../shared/lib/terminalText";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Alert } from "../../../shared/ui/Alert";
@@ -22,7 +22,7 @@ import { motionAttributes } from "../../../shared/ui/Motion";
 import { Modal } from "../../../shared/ui/Modal";
 import "./search.css";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/model/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
 import { Search, Maximize2, Minimize2 } from "../../../shared/ui/icons";
 import {
@@ -153,6 +153,7 @@ export function SearchView({
   onOpenProject,
 }: Props) {
   useLocale();
+  const projectLabels = useProjectLabels();
   const inputRef = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -312,8 +313,8 @@ export function SearchView({
     deferredTrimmed,
   ]);
   const projectHits = useMemo(
-    () => (projectsEnabled && trimmed ? searchRecentProjects(recents, trimmed) : []),
-    [projectsEnabled, recents, trimmed],
+    () => (projectsEnabled && trimmed ? searchRecentProjects(recents, trimmed, projectLabels) : []),
+    [projectsEnabled, recents, trimmed, projectLabels],
   );
   const grouping = useMemo(
     () => {
@@ -387,8 +388,8 @@ export function SearchView({
     [visibleChatSessions],
   );
   const chatGroups = useMemo(
-    () => groupChatSessions(visibleChatSessions, grouping),
-    [visibleChatSessions, grouping],
+    () => groupChatSessions(visibleChatSessions, grouping, projectLabels),
+    [visibleChatSessions, grouping, projectLabels],
   );
   const chatRows = useMemo(() => chatEntries(chatGroups), [chatGroups]);
 
@@ -524,15 +525,13 @@ export function SearchView({
   const indexing = pendingIndex > 0 && (scope === "all" || chatMode);
   const noResults = !empty && rowCount === 0 && !loading && !error && !conversationError;
   const limitNotice =
-    !empty && (truncated || (!chatMode && grouped.omitted > 0)) ? (
-      <InfoPopover label={t("Search result limits")}>
-        <p>
-          {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
-          {!chatMode && grouped.omitted > 0
-            ? ` · ${grouped.omitted} ${t("more loaded matches")}`
-            : ""}
-        </p>
-      </InfoPopover>
+    !empty && resultsCurrent && (truncated || (!chatMode && grouped.omitted > 0)) ? (
+      <Text as="p" size="micro" tone="muted" className="px-2.5 py-1">
+        {truncated ? t("Results limited to the first matches") : t("Showing first matches")}
+        {!chatMode && grouped.omitted > 0
+          ? ` · ${grouped.omitted} ${t("more loaded matches")}`
+          : ""}
+      </Text>
     ) : null;
   const indexNotice =
     pendingIndex > 0 && !conversationError && conversationMode ? (
@@ -542,9 +541,9 @@ export function SearchView({
             ? t("Indexing {p0} conversation", { p0: pendingIndex })
             : t("Indexing {p0} conversations", { p0: pendingIndex })}
         </LoadingText>
-        <InfoPopover label={t("Indexing status")}>
-          <p>{t("Results may be incomplete until indexing finishes.")}</p>
-        </InfoPopover>
+        <InfoTooltip label={t("Indexing status")}>
+          {t("Results may be incomplete until indexing finishes.")}
+        </InfoTooltip>
       </div>
     ) : null;
 
@@ -624,10 +623,9 @@ export function SearchView({
           />
           {scope === "files" ? (
             <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1">
-              {projectDisplayName(cwd)}
+              {projectDisplayNameFrom(cwd, projectLabels)}
             </Text>
           ) : null}
-          {limitNotice}
           {chatMode ? (
             <ChatFilterBar
               filters={chatFilters}
@@ -636,6 +634,7 @@ export function SearchView({
             />
           ) : null}
         </div>
+        {limitNotice}
       </div>
 
       {!empty && (showFileError || showConversationError) ? (
@@ -713,6 +712,7 @@ export function SearchView({
           <>
             {indexNotice}
             <ResultList
+              projectLabels={projectLabels}
               listId={listId}
               hits={hits}
               active={resultsCurrent ? active : -1}
@@ -751,6 +751,7 @@ export function SearchView({
 }
 
 function ResultList({
+  projectLabels,
   listId,
   hits,
   active,
@@ -758,6 +759,7 @@ function ResultList({
   onActive,
   onOpen,
 }: {
+  projectLabels: Record<string, string>;
   listId: string;
   hits: AppSearchHit[];
   active: number;
@@ -800,7 +802,7 @@ function ResultList({
     <PickerListRoot id={listId} label={t("Search results")} onMouseMove={onListMouseMove}>
       {hits.map((hit, index) => {
         const highlighted = index === active;
-        const row = rowCopy(hit, query);
+        const row = rowCopy(hit, query, projectLabels);
         const heading =
           hit.kind === "conversation"
             ? t("Sessions")

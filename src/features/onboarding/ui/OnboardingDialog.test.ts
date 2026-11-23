@@ -330,12 +330,12 @@ describe("onboarding workflow", () => {
     expect(loadCrewTheme()).toBe("star-wars");
     expect(loadCrewSceneEnabled()).toBe(true);
     expect(container.textContent).not.toContain("Obi-Wan leads, Yoda advises");
-    const crewHelp = container.querySelector<HTMLButtonElement>(
-      'button.onboarding-section-info[aria-label="Help"]',
+    const crewHelp = container.querySelector<HTMLElement>(
+      '.onboarding-section-info[role="img"][aria-label="Agent crew"]',
     )!;
+    expect(crewHelp.tabIndex).toBe(0);
     await act(async () => crewHelp.click());
-    expect(document.body.textContent).toContain("Obi-Wan leads, Yoda advises");
-    await act(async () => crewHelp.click());
+    expect(document.body.textContent).not.toContain("Obi-Wan leads, Yoda advises");
     await act(async () =>
       container.querySelector<HTMLButtonElement>("#onboarding-crew-lotr")!.click(),
     );

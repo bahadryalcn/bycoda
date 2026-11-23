@@ -458,6 +458,7 @@ function StandardCodeMirrorEditor({
 
     const language = new Compartment();
     let disposed = false;
+    let chunkNavFrame = 0;
     let selectionMeasureVersion = 0;
     let saveGeneration = 0;
     let formatGeneration = 0;
@@ -833,11 +834,19 @@ function StandardCodeMirrorEditor({
         },
       }),
       EditorView.updateListener.of((update) => {
-        if (!showDiffRef.current) return;
+        if (!showDiffRef.current || disposed || chunkNavFrame) return;
         const relevant = splitDiff ? splitNavUpdateRelevant(update) : diffNavUpdateRelevant(update);
         if (!relevant) return;
         chunkNavPinnedRef.current = null;
-        syncChunkNav(update.view);
+        // The geometry read can flush a pending CodeMirror measurement.
+        // MergeView also dispatches spacer updates during that measurement.
+        chunkNavFrame = window.requestAnimationFrame(() => {
+          try {
+            if (showDiffRef.current) syncChunkNav(update.view);
+          } finally {
+            chunkNavFrame = 0;
+          }
+        });
       }),
     ];
     // Path and layout changes rebuild extensions, while the document identity stays intact.
@@ -961,6 +970,7 @@ function StandardCodeMirrorEditor({
     const unsubscribeAutosave = subscribeAutosave(scheduleAutosave);
     return () => {
       disposed = true;
+      window.cancelAnimationFrame(chunkNavFrame);
       setContextTarget(null);
       captureObserverRef.current?.attach(null);
       inputGate.release();

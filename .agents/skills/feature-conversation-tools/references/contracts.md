@@ -2,8 +2,9 @@
 
 ## Device admission and inspection
 
-Input requires Host `controlProtocol: 1` and device-bound lease; viewing, inspection selection
-and restored drafts never claim control. Retain request identity, expiry/revocation, competing
+Input requires Host `controlProtocol: 1` and a device-bound lease. The visible desktop Devices
+panel acquires control for its selected running device and releases it on hide or target change.
+Inspection selection and draft restoration carry no lease. Retain request identity, expiry/revocation, competing
 controllers and stale-node rejection. Inspect captures fresh tree then frame, never OS-atomic.
 Preview picking needs verified pixel coordinates and matching dimensions; unknown scaling
 stays list-only. Platform text limitations retain entered drafts. Browser/device annotations
@@ -38,6 +39,11 @@ page. Same-target frames survive input; serialized input checks document/lease a
 results. Capture IDs/comments retain originating annotation scope. Inspection geometry persists
 versioned/bounded; DOM node handles stay ephemeral. Traversal/layout overlays reject unsupported
 or stale targets. Native/mobile transport remains independently owned and qualified.
+
+The desktop browser's read-only binary path uses the same project or owner
+presentation scope as `browser.frame`. The native viewer owns the saved route
+and retains the newest packet. The panel checks document identity around
+decode, and its existing frame RPC covers unsupported Hosts and Room views.
 
 ## Draft transfer and recovery
 

@@ -1727,7 +1727,7 @@ describe("Composer question focus", () => {
 
     const textarea = document.querySelector("textarea")!;
     expect(textarea.value).toBe("Ship the empty-state fix");
-    expect(container.querySelector('[aria-label="Remove sketch.png"]')).not.toBeNull();
+    expect(container.querySelector('[data-attachment-name="sketch.png"]')).not.toBeNull();
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click(),
     );
@@ -1739,7 +1739,7 @@ describe("Composer question focus", () => {
     expect(onDraftChange).toHaveBeenCalledWith("");
     expect(parentDraft).toBe("");
     expect(container.querySelector("textarea")!.value).toBe("");
-    expect(container.querySelector('[aria-label="Remove sketch.png"]')).toBeNull();
+    expect(container.querySelector('[data-attachment-name="sketch.png"]')).toBeNull();
   });
 
   it("restores the draft when submit is rejected", async () => {
@@ -1787,7 +1787,7 @@ describe("Composer question focus", () => {
     expect(textarea.value).toBe("Blocked while orchestration is paused");
     expect(parentDraft).toBe("Blocked while orchestration is paused");
     expect(getComposerAttachments(sessionId)).toEqual([image]);
-    expect(container.querySelector('[aria-label="Remove sketch.png"]')).not.toBeNull();
+    expect(container.querySelector('[data-attachment-name="sketch.png"]')).not.toBeNull();
     clearComposerDraft(sessionId);
   });
 
@@ -2063,12 +2063,18 @@ describe("Composer question focus", () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Send"]')!.click(),
     );
     await act(async () => rejectResend?.({ providerRewound: false }));
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Remove owned.png"]')!.click(),
-    );
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('[aria-label="Remove borrowed.png"]')!.click(),
-    );
+    for (const name of ["owned.png", "borrowed.png"]) {
+      await act(async () => {
+        container
+          .querySelector(`[data-attachment-name="${name}"]`)!
+          .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+      });
+      const remove = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (item) => item.textContent === `Remove ${name}`,
+      );
+      expect(remove).toBeDefined();
+      await act(async () => remove!.click());
+    }
 
     expect(createObjectURL).toHaveBeenCalledOnce();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:owned");

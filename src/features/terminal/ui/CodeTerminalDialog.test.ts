@@ -18,6 +18,7 @@ const exitedController = (): CodeTerminalController => {
   };
   return {
     snapshot: () => state,
+    canDismiss: () => true,
     subscribe: () => () => {},
     start: async () => {},
     refresh: async () => "idle" as const,

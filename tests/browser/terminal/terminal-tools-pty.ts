@@ -51,7 +51,10 @@ export function subscribePty(
   onExit?: (code: number | null, outputComplete?: boolean) => void,
 ) {
   echo = onData;
-  const timer = setTimeout(() => onData("alpha target\r\nbeta target\r\nready> "), 50);
+  const timer =
+    terminalState === "silent"
+      ? undefined
+      : setTimeout(() => onData("alpha target\r\nbeta target\r\nready> "), 50);
   if (terminalState === "closed" || terminalState === "closed-error")
     setTimeout(() => onExit?.(terminalState === "closed" ? 0 : 130, true), 400);
   const listener = (event: Event) => onData((event as CustomEvent<string>).detail);

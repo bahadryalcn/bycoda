@@ -2,7 +2,7 @@ import { t } from "../../../shared/i18n";
 
 /**
  * The one statistics disclosure: what the daily signal contains, what never leaves the computer,
- * and that it stays off until the user says yes. Onboarding (behind its info icon), the consent
+ * and that it stays off until the user says yes. Onboarding, the consent
  * toast and Settings all read this string, so its wording and translations exist once.
  */
 export function statsDisclosure(): string {

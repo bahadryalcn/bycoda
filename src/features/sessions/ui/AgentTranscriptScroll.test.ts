@@ -449,6 +449,7 @@ it("keeps following when a slow streamed layout replays an older bottom offset",
 
     // Once following has settled, a new upward scroll must still be honored.
     now = 4000;
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "PageUp" })));
     geometry.top = 1790;
     act(() => scroller.dispatchEvent(new Event("scroll")));
     geometry.height = 2300;
@@ -459,7 +460,7 @@ it("keeps following when a slow streamed layout replays an older bottom offset",
   }
 });
 
-it("expires old followed offsets even after a newer pin", () => {
+it.each([1600, 300])("repins an input-free upward offset of %s after idle", (offset) => {
   let now = 1000;
   const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
   try {
@@ -470,11 +471,13 @@ it("expires old followed offsets even after a newer pin", () => {
     geometry.height = 2100;
     act(() => observer.resize());
     now = 32_020;
-    geometry.top = 1600;
+    geometry.top = offset;
     act(() => scroller.dispatchEvent(new Event("scroll")));
+    expect(geometry.top).toBe(1700);
+    expect(scroller.hasAttribute("data-jump-pill")).toBe(false);
     geometry.height = 2200;
     act(() => observer.resize());
-    expect(geometry.top).toBe(1600);
+    expect(geometry.top).toBe(1800);
   } finally {
     clock.mockRestore();
   }

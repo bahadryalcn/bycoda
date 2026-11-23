@@ -4,6 +4,7 @@ import type { ComponentProps } from "react";
 import type { Session } from "../../../features/sessions/model/session";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import { canOpenTerminalIn } from "../../../features/projects/model/recents";
+import { parseRemotePath } from "../../../features/connections/public/remoteProjects";
 import { ProjectTerminalDock } from "../../../features/terminal/ui/ProjectTerminalDock";
 import { ApprovalToasts } from "../../../features/sessions/ui/ApprovalToasts";
 import { LocalHostVersionPrompt } from "../../../features/connections/public/LocalHostDownNotice";
@@ -40,6 +41,7 @@ export interface WorkspaceFooterProps {
   runningTerminalOpen: UsageFooterProps["terminalOpen"];
   onToggleRunningTerminal: UsageFooterProps["onToggleTerminal"];
   onNewTerminal: UsageFooterProps["onNewTerminal"];
+  remoteTerminalAvailable?: boolean;
   onShowProjectTerminal: UsageFooterProps["onShowTerminal"];
   currentProjectDock: ComponentProps<typeof ProjectTerminalDock>["dock"] | undefined;
   dockVisible: boolean;
@@ -70,6 +72,7 @@ function WorkspaceFooterComponent({
   runningTerminalOpen,
   onToggleRunningTerminal,
   onNewTerminal,
+  remoteTerminalAvailable,
   onShowProjectTerminal,
   currentProjectDock,
   dockVisible,
@@ -106,14 +109,22 @@ function WorkspaceFooterComponent({
           terminals={runningTerminals}
           terminalOpen={runningTerminalOpen}
           onToggleTerminal={onToggleRunningTerminal}
-          onNewTerminal={canOpenTerminalIn(projectCwd) ? onNewTerminal : undefined}
-          onShowTerminal={canOpenTerminalIn(projectCwd) ? onShowProjectTerminal : undefined}
+          onNewTerminal={
+            remoteTerminalAvailable || canOpenTerminalIn(projectCwd) ? onNewTerminal : undefined
+          }
+          onShowTerminal={
+            currentProjectDock || remoteTerminalAvailable || canOpenTerminalIn(projectCwd)
+              ? onShowProjectTerminal
+              : undefined
+          }
           terminalUnavailableReason={
-            canOpenTerminalIn(projectCwd)
+            currentProjectDock || remoteTerminalAvailable || canOpenTerminalIn(projectCwd)
               ? undefined
-              : t(
-                  "The terminal panel is available for local folders. Open this project on its machine to use it.",
-                )
+              : parseRemotePath(projectCwd)
+                ? t("Set up an SSH connection to this project's machine to open a terminal.")
+                : t(
+                    "The terminal panel is available for local folders. Open this project on its machine to use it.",
+                  )
           }
           projectTerminalActive={!!currentProjectDock && currentProjectDock.pane.files.length > 0}
           projectTerminalVisible={dockVisible}

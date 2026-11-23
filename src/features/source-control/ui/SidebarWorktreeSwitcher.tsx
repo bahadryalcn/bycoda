@@ -26,6 +26,7 @@ export function SidebarWorktreeSwitcher({
   cwd,
   projectLabel,
   projectIcon,
+  showProjectIdentity = true,
   tabStats,
   onSelect,
   pending = false,
@@ -36,6 +37,8 @@ export function SidebarWorktreeSwitcher({
   projectLabel?: string;
   /** The project's saved identity (logo or mascot), shown before its name. */
   projectIcon?: ReactNode;
+  /** The project picker already supplies the icon and name in a shared header. */
+  showProjectIdentity?: boolean;
   onSelect?: (focus?: WorktreeFocus) => void;
   pending?: boolean;
   switchError?: string;
@@ -225,17 +228,31 @@ export function SidebarWorktreeSwitcher({
         }}
         className="flex w-fit min-w-0 max-w-full items-center gap-2 @max-[280px]/workspace-pane:gap-1"
       >
-        {projectIcon ? (
+        {showProjectIdentity && projectIcon ? (
           <span className="grid size-4 shrink-0 place-items-center">{projectIcon}</span>
         ) : null}
-        <MiddleTruncate mode="text" className="min-w-0">
-          {project}
-        </MiddleTruncate>
+        {showProjectIdentity ? (
+          <MiddleTruncate mode="text" className="min-w-0">
+            {project}
+          </MiddleTruncate>
+        ) : null}
         {copyName ? (
           <>
-            <ChevronRight aria-hidden className="icon-xs shrink-0" tone="secondary" />
+            {showProjectIdentity ? (
+              <ChevronRight
+                aria-hidden
+                data-workspace-copy-decoration
+                className="icon-xs shrink-0"
+                tone="secondary"
+              />
+            ) : null}
             {focus || !hasAll ? (
-              <GitBranch aria-hidden className="icon-xs -ms-1 shrink-0" tone="secondary" />
+              <GitBranch
+                aria-hidden
+                data-workspace-copy-decoration
+                className="icon-xs -ms-1 shrink-0"
+                tone="secondary"
+              />
             ) : null}
             <MiddleTruncate mode="text" tone="muted" className="min-w-0" data-workspace-copy-name>
               {copyName}

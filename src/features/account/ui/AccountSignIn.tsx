@@ -68,7 +68,7 @@ export function AccountSignIn({
       <Row
         label={t("An account is optional. Without one, bycoda works fully on this computer.")}
         info={
-          <InfoPopover className="shrink-0">
+          <InfoPopover className="shrink-0" label={t("Account")}>
             <ul>
               <li>{t("See your devices and active time everywhere")}</li>
               <li>{t("Choose which notifications reach you")}</li>

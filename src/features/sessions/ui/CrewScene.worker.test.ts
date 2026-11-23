@@ -16,13 +16,13 @@ const state = vi.hoisted(() => ({
     draw: ReturnType<typeof vi.fn> & { dispose: ReturnType<typeof vi.fn> };
   }[],
   enabled: true,
-  focused: true,
+  windowVisible: true,
   constructorFails: false,
 }));
 vi.mock("../../settings/model/decorativeMotion", async (original) => ({
   ...(await original<object>()),
   useDecorativeMotionEnabled: () => state.enabled,
-  useWindowHasFocus: () => state.focused,
+  useMotionWindowVisible: () => state.windowVisible,
 }));
 vi.mock("./crewCodeArt", () => ({
   CODE_WIDTH: 1040,
@@ -102,7 +102,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   localStorage.clear();
   state.painters.length = 0;
-  state.enabled = state.focused = true;
+  state.enabled = state.windowVisible = true;
   state.constructorFails = false;
   FakeWorker.instances = [];
   vi.stubGlobal("Worker", FakeWorker);
@@ -177,7 +177,7 @@ const chargesOf = (worker: FakeWorker) =>
     .at(-1)!
     .frame.activity!.map((seat) => seat.charge);
 
-it("keeps one worker and transferred canvas across focus, visibility and seat percent", async () => {
+it("keeps one worker and transferred canvas across window and element visibility and seat percent", async () => {
   saveCrewGrowthEnabled(false);
   await show({ crew: seats(0.2) });
   const worker = start();
@@ -187,13 +187,13 @@ it("keeps one worker and transferred canvas across focus, visibility and seat pe
   const creations = state.painters.length;
   const frames = worker.frames().length;
 
-  state.focused = false;
+  state.windowVisible = false;
   await show({ crew: seats(0.2) });
   expect(container.querySelector(".crew-scene")?.getAttribute("data-motion")).toBe("still");
   // The last frame may still await its acknowledgement; once it is replied nothing keeps a timer.
   acknowledge(worker);
   expect(vi.getTimerCount()).toBe(0);
-  state.focused = true;
+  state.windowVisible = true;
   await show({ crew: seats(0.2) });
 
   vi.spyOn(document, "hidden", "get").mockReturnValue(true);
@@ -235,7 +235,7 @@ it("draws a changed seat percent once while paused and then holds without timers
   expect(worker.terminate).not.toHaveBeenCalled();
 });
 
-it("keeps the main painter across focus, visibility and seat percent when the worker is off", async () => {
+it("keeps the main painter across window and element visibility and seat percent when the worker is off", async () => {
   setCanvasWorkerEnabled("classic-crew", false);
   saveCrewGrowthEnabled(false);
   await show({ crew: seats(0.2) });
@@ -244,9 +244,9 @@ it("keeps the main painter across focus, visibility and seat percent when the wo
   const painter = state.painters.at(-1)!;
   const creations = state.painters.length;
 
-  state.focused = false;
+  state.windowVisible = false;
   await show({ crew: seats(0.2) });
-  state.focused = true;
+  state.windowVisible = true;
   await show({ crew: seats(0.2) });
   vi.spyOn(document, "hidden", "get").mockReturnValue(true);
   act(() => document.dispatchEvent(new Event("visibilitychange")));
@@ -343,15 +343,15 @@ it("keeps the original main path when worker switch is off", async () => {
 
 it.each([
   ["empty hero", "preference"],
-  ["empty hero", "focus"],
+  ["empty hero", "window-hidden"],
   ["empty hero", "hidden"],
   ["Settings preview", "preference"],
-  ["Settings preview", "focus"],
+  ["Settings preview", "window-hidden"],
   ["Settings preview", "hidden"],
 ])("%s schedules no frame loop while stopped by %s", async (surface, gate) => {
   setCanvasWorkerEnabled("classic-crew", false);
   if (gate === "preference") state.enabled = false;
-  if (gate === "focus") state.focused = false;
+  if (gate === "window-hidden") state.windowVisible = false;
   if (gate === "hidden") vi.spyOn(document, "hidden", "get").mockReturnValue(true);
   await act(async () =>
     root.render(

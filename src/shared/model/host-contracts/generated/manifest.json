@@ -27560,12 +27560,52 @@
         "additionalProperties": false,
         "properties": {
           "base64": { "type": "string" },
+          "boundary": { "type": "boolean" },
           "cursor": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
           "height": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
           "reset": { "type": "boolean" },
           "width": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
         },
         "required": ["cursor", "reset", "base64", "width", "height"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "devices.touch": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": { "type": "string" },
+          "leaseId": { "type": "string" },
+          "projectId": { "type": "string" },
+          "touch": {
+            "additionalProperties": false,
+            "properties": {
+              "phase": { "enum": ["down", "move", "up", "cancel"], "type": "string" },
+              "x": { "maximum": 1, "minimum": 0, "type": "number" },
+              "y": { "maximum": 1, "minimum": 0, "type": "number" }
+            },
+            "required": ["phase", "x", "y"],
+            "type": "object"
+          }
+        },
+        "required": ["deviceId", "leaseId", "touch"],
+        "type": "object"
+      },
+      "requiredCapability": "devices.touch.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "accepted": { "const": true, "type": "boolean" } },
+        "required": ["accepted"],
         "type": "object"
       },
       "retry": "never",
@@ -28857,6 +28897,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
+              "simple": { "const": true, "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -29316,6 +29357,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
+              "simple": { "const": true, "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -29930,6 +29972,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
+              "simple": { "const": true, "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -30417,6 +30460,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
+              "simple": { "const": true, "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -30882,6 +30926,7 @@
             "plan": {
               "additionalProperties": false,
               "properties": {
+                "simple": { "const": true, "type": "boolean" },
                 "tasks": {
                   "items": {
                     "additionalProperties": false,
@@ -31347,6 +31392,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
+              "simple": { "const": true, "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -31830,6 +31876,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
+              "simple": { "const": true, "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -46932,6 +46979,19 @@
                 "additionalProperties": false,
                 "properties": { "kind": { "const": "environment", "type": "string" } },
                 "required": ["kind"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "deviceId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                  "kind": { "const": "deviceVideo", "type": "string" },
+                  "viewerId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  }
+                },
+                "required": ["kind", "deviceId", "viewerId"],
                 "type": "object"
               },
               {
@@ -65117,6 +65177,39 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "devices.touch", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "deviceId": { "type": "string" },
+                "leaseId": { "type": "string" },
+                "projectId": { "type": "string" },
+                "touch": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "phase": { "enum": ["down", "move", "up", "cancel"], "type": "string" },
+                    "x": { "maximum": 1, "minimum": 0, "type": "number" },
+                    "y": { "maximum": 1, "minimum": 0, "type": "number" }
+                  },
+                  "required": ["phase", "x", "y"],
+                  "type": "object"
+                }
+              },
+              "required": ["deviceId", "leaseId", "touch"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "devices.control.status", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -69995,6 +70088,19 @@
                       "additionalProperties": false,
                       "properties": { "kind": { "const": "environment", "type": "string" } },
                       "required": ["kind"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "deviceId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                        "kind": { "const": "deviceVideo", "type": "string" },
+                        "viewerId": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "deviceId", "viewerId"],
                       "type": "object"
                     },
                     {
@@ -81180,5 +81286,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "35dbe956a1b4b9026d6e8c911d9ba2658e3c49f2fd1b379c83eddba9085a28a7"
+  "schemaHash": "cc5d4b91ab971663d5915347a36e4292acabfe45c2868a7b7a7e6aad3ab65e54"
 }

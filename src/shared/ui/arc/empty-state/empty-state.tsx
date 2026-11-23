@@ -3,7 +3,7 @@
 "use client";
 
 import type { HTMLAttributes, ReactNode } from "react";
-import { InfoPopover } from "../../InfoPopover";
+import { InfoPopover, InfoTooltip } from "../../InfoPopover";
 import { noticeEnterClass } from "../../Notice";
 import { optionalTextAttributes, type TextRoles } from "../../Text";
 import styles from "./empty-state.module.css";
@@ -68,7 +68,11 @@ export function EmptyState({
         {title ? (
           <div className={styles.heading}>
             <h3>{title}</h3>
-            {help ? <InfoPopover>{help}</InfoPopover> : null}
+            {typeof help === "string" && help ? (
+              <InfoTooltip>{help}</InfoTooltip>
+            ) : help ? (
+              <InfoPopover>{help}</InfoPopover>
+            ) : null}
           </div>
         ) : null}
         {hasDescription ? (

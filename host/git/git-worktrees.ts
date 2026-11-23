@@ -403,7 +403,12 @@ export async function resolveHostWorktreeAsync(
 
 const STATE_PARALLELISM = 4;
 const STATE_TTL_MS = 2_000;
-type CachedState = { at: number; generation: number; promise: Promise<HostWorktrees> };
+type CachedState = {
+  lane: CachedList["lane"];
+  completedAt?: number;
+  generation: number;
+  promise: Promise<HostWorktrees>;
+};
 const stateCache = new Map<string, CachedState>();
 
 /** Same read-only probe as the desktop listing: a failed Git read stays unknown, never clean. */
@@ -448,12 +453,24 @@ async function withState(list: HostWorktrees, lane: CachedList["lane"]): Promise
 export function hostWorktreesWithState(cwd: string, background = false): Promise<HostWorktrees> {
   const lane = background ? "background" : "default";
   const hit = stateCache.get(cwd);
-  if (hit && hit.generation === listGeneration && Date.now() - hit.at < STATE_TTL_MS)
-    return hit.promise;
+  if (hit?.generation === listGeneration) {
+    const reusable =
+      hit.completedAt === undefined
+        ? hit.lane === "default" || lane === "background"
+        : Date.now() - hit.completedAt < STATE_TTL_MS;
+    if (reusable) return hit.promise;
+  }
+  // Share pending probes with compatible callers, even if they spend longer
+  // in the queue than a completed snapshot stays fresh.
   const entry: CachedState = {
-    at: Date.now(),
+    lane,
     generation: listGeneration,
-    promise: listCached(cwd, false, lane).then((list) => withState(list, lane)),
+    promise: listCached(cwd, false, lane)
+      .then((list) => withState(list, lane))
+      .then((state) => {
+        entry.completedAt = Date.now();
+        return state;
+      }),
   };
   stateCache.set(cwd, entry);
   while (stateCache.size > LIST_CACHE_LIMIT)

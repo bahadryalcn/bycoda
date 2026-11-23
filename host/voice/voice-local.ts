@@ -1,8 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import type { DiagnosticLogFields } from "@bycoda/account-contracts";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { createInterface } from "node:readline";
 import { measure } from "../diagnostics/perf-metrics";
+import { createLogger } from "../diagnostics/logger";
+import { currentRequestTrace } from "../diagnostics/request-trace";
 import { localVoicePython } from "./voice-python";
 import {
   inspectVoiceRuntime,
@@ -18,6 +21,27 @@ export type LocalVoiceInfo = { lease: string; model: string; device: string; tur
 export type LocalVoiceTranscript =
   | { text: string; language: string; inferenceMs: number; complete?: true }
   | { complete: false };
+
+const voiceStartLog = createLogger("host.voice");
+const SLOW_VOICE_START_MS = 5_000;
+type StartPhase = { at: number; outcome: "ready" | "failed" | "cached" | "not-ready"; ms?: number };
+type StartPhases = Partial<Record<"probe" | "recognizer" | "speech", StartPhase>>;
+
+async function timeStartPhase<T>(
+  phases: StartPhases,
+  name: keyof StartPhases,
+  work: () => Promise<T>,
+): Promise<T> {
+  const phase: StartPhase = { at: monotonicNow(), outcome: "failed" };
+  phases[name] = phase;
+  try {
+    const value = await work();
+    phase.outcome = "ready";
+    return value;
+  } finally {
+    phase.ms = elapsedSince(phase.at);
+  }
+}
 
 export function validateVoiceAudio(audio: unknown, language: unknown) {
   if (
@@ -114,15 +138,48 @@ export class LocalVoiceService {
 
   /** `recognitionOnly` (dictation) shares the recognizer without loading natural speech. */
   async start(value?: unknown, recognitionOnly = false): Promise<LocalVoiceInfo> {
+    const startedAt = monotonicNow();
+    const phases: StartPhases = {};
+    const trace = currentRequestTrace();
+    const recognizerPresentAtStart = this.loading !== undefined;
+    const speechStartedAtStart = this.speech.started;
+    let outcome = "failed";
     this.starting++;
     try {
-      return await this.startRuntime(value, recognitionOnly);
+      const info = await this.startRuntime(value, recognitionOnly, phases);
+      outcome = "ready";
+      return info;
     } finally {
       this.starting--;
+      const totalMs = Math.round(elapsedSince(startedAt));
+      if (outcome === "failed" || totalMs >= SLOW_VOICE_START_MS) {
+        const fields: Record<string, DiagnosticLogFields[string]> = {
+          traceId: trace?.id,
+          outcome,
+          totalMs,
+          recognitionOnly,
+          recognizerPresentAtStart,
+          speechStartedAtStart,
+        };
+        for (const name of ["probe", "recognizer", "speech"] as const) {
+          const phase = phases[name];
+          fields[`${name}Outcome`] = phase
+            ? phase.ms === undefined
+              ? "pending"
+              : phase.outcome
+            : "skipped";
+          if (phase) fields[`${name}Ms`] = Math.round(phase.ms ?? elapsedSince(phase.at));
+        }
+        voiceStartLog.warn("local voice startup", fields);
+      }
     }
   }
 
-  private async startRuntime(value: unknown, recognitionOnly: boolean): Promise<LocalVoiceInfo> {
+  private async startRuntime(
+    value: unknown,
+    recognitionOnly: boolean,
+    phases: StartPhases,
+  ): Promise<LocalVoiceInfo> {
     const config = voiceRuntimeConfig(value);
     const { idleUnloadMinutes, ...workerConfig } = config;
     const key = JSON.stringify(workerConfig);
@@ -138,7 +195,7 @@ export class LocalVoiceService {
       );
     if (!this.loading) {
       if (value !== undefined) {
-        const found = await this.inspectInstallation(key, config);
+        const found = await this.inspectInstallation(key, config, phases);
         if (!found.ready)
           throw new Error(
             `Voice setup is incomplete: ${found.missing.join(", ")}. Open Settings → Voice assistant. Choose Locate existing to find installed voice files, or Install to get missing files.`,
@@ -157,7 +214,7 @@ export class LocalVoiceService {
       this.runtimeKey = key;
     }
     if (recognitionOnly) this.runtime.idleUnloadMinutes = idleUnloadMinutes;
-    const info = await this.loadModels(recognitionOnly);
+    const info = await this.loadModels(recognitionOnly, phases);
     const lease = randomUUID();
     this.leases.set(lease, monotonicNow());
     if (recognitionOnly) this.dictation.add(lease);
@@ -176,16 +233,22 @@ export class LocalVoiceService {
     return { ...info, lease };
   }
 
-  private async inspectInstallation(key: string, config: VoiceRuntimeConfig) {
+  private async inspectInstallation(key: string, config: VoiceRuntimeConfig, phases: StartPhases) {
     const known = this.probe;
-    if (known?.key === key && elapsedSince(known.at) < VOICE_PROBE_REUSE_MS) return known.found;
+    if (known?.key === key && elapsedSince(known.at) < VOICE_PROBE_REUSE_MS) {
+      phases.probe = { at: monotonicNow(), outcome: "cached", ms: 0 };
+      return known.found;
+    }
     const cloudKey = this.dependencies.cloudKey;
-    const found = await measure("voice.local.start.inspect", () =>
-      inspectVoiceRuntime(config, {
-        readinessOnly: true,
-        cloudKey: async (provider) => Boolean(await cloudKey?.(provider)),
-      }),
+    const found = await timeStartPhase(phases, "probe", () =>
+      measure("voice.local.start.inspect", () =>
+        inspectVoiceRuntime(config, {
+          readinessOnly: true,
+          cloudKey: async (provider) => Boolean(await cloudKey?.(provider)),
+        }),
+      ),
     );
+    if (!found.ready && phases.probe) phases.probe.outcome = "not-ready";
     this.probe = found.ready ? { key, at: monotonicNow(), found } : undefined;
     return found;
   }
@@ -194,14 +257,18 @@ export class LocalVoiceService {
    * Resolves only when every model this start needs is ready. CPU and cloud speech load beside
    * the recognizer; VoxCPM2 waits for it so two models never claim GPU memory at the same time.
    */
-  private async loadModels(recognitionOnly: boolean) {
-    const worker = this.loading
-      ? this.ensureWorker()
-      : measure("voice.local.start.worker", () => this.ensureWorker());
+  private async loadModels(recognitionOnly: boolean, phases: StartPhases) {
+    const worker = timeStartPhase(phases, "recognizer", () =>
+      this.loading
+        ? this.ensureWorker()
+        : measure("voice.local.start.worker", () => this.ensureWorker()),
+    );
     const loadSpeech = () =>
-      this.speech.started
-        ? this.speech.start(this.runtime)
-        : measure("voice.local.start.speech", () => this.speech.start(this.runtime));
+      timeStartPhase(phases, "speech", () =>
+        this.speech.started
+          ? this.speech.start(this.runtime)
+          : measure("voice.local.start.speech", () => this.speech.start(this.runtime)),
+      );
     const needsSpeech = this.runtime.natural && !recognitionOnly;
     try {
       if (needsSpeech && this.runtime.engine !== "voxcpm2") {

@@ -1052,6 +1052,7 @@ describe("orchestration composer and card", () => {
       ),
     );
 
+    expect(button("Resume").hasAttribute("data-tooltip-owner")).toBe(true);
     expect(container.textContent).toContain(
       "Investigating the failure is still running in this project.",
     );

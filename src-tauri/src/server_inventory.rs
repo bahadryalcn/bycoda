@@ -609,7 +609,7 @@ fn resolve_endpoint(
     Ok(endpoint)
 }
 
-fn host_ssh_endpoint(target: &crate::remote_ssh::SshTarget) -> SshEndpoint {
+pub(crate) fn host_ssh_endpoint(target: &crate::remote_ssh::SshTarget) -> SshEndpoint {
     let (user, host) = target
         .target
         .rsplit_once('@')

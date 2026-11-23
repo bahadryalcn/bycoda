@@ -3,7 +3,6 @@ import { isUnsupportedRemoteRoute } from "../../connections/public/remoteFailure
 import { useGracedFailure } from "../../connections/public/transientFailure";
 import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { Text as UiText } from "../../../shared/ui/Text";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -1411,15 +1410,10 @@ export function FileEditor({
             "flex shrink-0 flex-wrap items-center gap-2 px-2.5 py-1",
           )}
         >
-          <span className="flex min-w-0 flex-1 items-center gap-1">
-            {t("Unsaved draft found")}
-            <InfoPopover>
-              <UiText as="p" size="caption" tone="secondary">
-                {t(
-                  "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.",
-                )}
-              </UiText>
-            </InfoPopover>
+          <span className="min-w-0 flex-1">
+            {t(
+              "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.",
+            )}
           </span>
           <Button
             size="sm"

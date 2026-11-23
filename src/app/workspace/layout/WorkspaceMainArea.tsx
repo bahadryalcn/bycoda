@@ -9,7 +9,7 @@ import type { VoiceWorkspaceOutlet } from "../../../features/voice/ui/VoiceCompa
 import { PaneTree } from "../../../features/workspace/ui/PaneTree";
 import type { EditorPane, WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ProjectTerminalDock as ProjectTerminal } from "../../../features/projects/model/projectTerminal";
-import { sameProjectPath } from "../../../features/projects/model/recents";
+import { canOpenTerminalIn, sameProjectPath } from "../../../features/projects/model/recents";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import {
   hasPendingApproval,
@@ -75,6 +75,7 @@ export interface WorkspaceMainAreaProps {
   paintDockSize: DockProps["onSizePaint"];
   commitDockSize: DockProps["onSizeCommit"];
   onNewTerminal: DockProps["onAddTerminal"];
+  remoteTerminalAvailable?: boolean;
   onNewTerminalWithProfile: DockProps["onAddTerminalWithProfile"];
   onSplitProjectTerminal: DockProps["onSplitTerminal"];
   openSettings: (section: SettingsSectionId) => void;
@@ -158,6 +159,7 @@ function WorkspaceMainAreaComponent({
   paintDockSize,
   commitDockSize,
   onNewTerminal,
+  remoteTerminalAvailable,
   onNewTerminalWithProfile,
   onSplitProjectTerminal,
   openSettings,
@@ -269,6 +271,7 @@ function WorkspaceMainAreaComponent({
           <div ref={dockGridRef} className="grid h-full min-h-0 min-w-0 flex-1">
             {projectTerminals.map((dock) => {
               const show = dock.open && sameProjectPath(dock.projectPath, projectCwd);
+              const local = canOpenTerminalIn(dock.projectPath);
               return (
                 <div
                   key={dock.projectPath}
@@ -285,10 +288,12 @@ function WorkspaceMainAreaComponent({
                     onSideChange={onProjectTerminalSide}
                     onSizePaint={paintDockSize}
                     onSizeCommit={commitDockSize}
-                    onAddTerminal={onNewTerminal}
-                    onAddTerminalWithProfile={onNewTerminalWithProfile}
-                    onSplitTerminal={onSplitProjectTerminal}
-                    onSelectDefaultProfile={selectDefaultTerminalProfile}
+                    onAddTerminal={local || remoteTerminalAvailable ? onNewTerminal : undefined}
+                    onAddTerminalWithProfile={local ? onNewTerminalWithProfile : undefined}
+                    onSplitTerminal={
+                      local || remoteTerminalAvailable ? onSplitProjectTerminal : undefined
+                    }
+                    onSelectDefaultProfile={local ? selectDefaultTerminalProfile : undefined}
                     onSelectTerminal={onSelectProjectTerminal}
                     onCloseTerminal={onCloseProjectTerminal}
                     onCloseTerminals={onCloseProjectTerminals}

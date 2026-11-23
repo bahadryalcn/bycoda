@@ -130,6 +130,45 @@ it("opens a native run in the project dock and reports its settled output once",
   }
 });
 
+it("opens a remote run in the project dock before dispatching it on the Host", async () => {
+  const controller = {
+    snapshot: () => ({ id: "remote-run", phase: "starting" }),
+    start: vi.fn(async () => {}),
+  };
+  mocks.create.mockReturnValue(controller);
+  const openRemoteTerminal = vi.fn(() => {
+    expect(controller.start).not.toHaveBeenCalled();
+    return true;
+  });
+  const cwd = "remote://mac/project";
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(CodeExecutionProvider, {
+          scope: { sessionId: "s", projectCwd: cwd, native: false, openRemoteTerminal },
+          cwd,
+          children: createElement(CodeRunButton, {
+            code: "sleep 10",
+            language: "bash",
+            incomplete: false,
+          }),
+        }),
+      ),
+    );
+    await act(async () => container.querySelector("button")!.click());
+    expect(openRemoteTerminal).toHaveBeenCalledWith(
+      "s",
+      expect.objectContaining({ controller, options: expect.objectContaining({ cwd }) }),
+    );
+    expect(controller.start).toHaveBeenCalledOnce();
+    expect(mocks.dialog).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 it("keeps a deferred native startup failure in the fallback dialog without a toast", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const controller = {

@@ -3,9 +3,8 @@ import { t } from "../../../shared/i18n";
 import { LANGUAGES as APP_LANGUAGES } from "../../../shared/i18n/languages";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { Text } from "../../../shared/ui/Text";
 import { Select } from "../../../shared/ui/Select";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { AdvancedSettings, Row } from "../../../shared/ui/settings";
 import { ProfileSegmented, ProfileSelect } from "./settings/ProfileControls";
 import { ProfileRow, ProfileSwitch, useProfileRows } from "./settings/SettingsProfileRow";
@@ -44,6 +43,8 @@ export function AssistantProfileFields({
 }) {
   const rows = useProfileRows();
   if (section === "identity") {
+    const name = value.name?.trim();
+    const showTitle = value.showTitle ?? true;
     return (
       <>
         <ProfileRow label={t("Assistant name")}>
@@ -81,7 +82,15 @@ export function AssistantProfileFields({
               </Row>
               <ProfileSwitch
                 label={t("Show title")}
-                checked={value.showTitle ?? true}
+                info={
+                  name ? (
+                    <InfoTooltip label={t("Preview")}>
+                      {showTitle ? t("Assistant {p0}", { p0: name }) : name} ·{" "}
+                      {t("Room · {p0}", { p0: name })} · {t("{p0} wrote", { p0: name })}
+                    </InfoTooltip>
+                  ) : undefined
+                }
+                checked={showTitle}
                 onCheckedChange={(showTitle) => onChange({ showTitle })}
               />
             </AdvancedSettings>
@@ -218,13 +227,7 @@ function ProfileLanguage({
     return (
       <ProfileRow
         label={t("Language")}
-        info={
-          <InfoPopover label={t("About language")}>
-            <Text as="p" size="secondary">
-              {help}
-            </Text>
-          </InfoPopover>
-        }
+        info={<InfoTooltip label={t("About language")}>{help}</InfoTooltip>}
       >
         {() => (
           <Select
@@ -248,11 +251,7 @@ function ProfileLanguage({
         options={LANGUAGE_OPTIONS}
         onValueChange={onValueChange}
       />
-      <InfoPopover label={t("About language")}>
-        <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
-          {help}
-        </Text>
-      </InfoPopover>
+      <InfoTooltip label={t("About language")}>{help}</InfoTooltip>
     </div>
   );
 }

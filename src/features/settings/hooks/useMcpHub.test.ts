@@ -40,13 +40,14 @@ async function mount(cwd = "/fixture", globalOnly = false, remote?: RemoteMcpCon
 const policy = (direct: string[], mode = "onDemand") => ({ version: 1, mode, direct });
 const gets = (method: string) => mock.remote.mock.calls.filter((c) => c[1] === method);
 
-it("relays the browser callback to the selected project on the remote computer", async () => {
+it.each(["complete", "cancel"])("%s relayed sign-in on the selected project", async (action) => {
   let signedIn = false;
   const authorizationUrl =
     "https://example.test/oauth?state=fixture-state&redirect_uri=http%3A%2F%2F127.0.0.1%3A45678%2Fcallback";
+  const callback = Promise.withResolvers<{ state: string; code: string }>();
   mock.invoke.mockImplementation(async (command: string) => {
     if (command === "mcp_oauth_callback_bind") return { id: "local-callback", port: 45678 };
-    if (command === "mcp_oauth_callback_wait") return { state: "fixture-state", code: "test-code" };
+    if (command === "mcp_oauth_callback_wait") return callback.promise;
   });
   mock.remote.mockImplementation(async (_host: string, method: string) => {
     if (method === "mcp.hub.loading.get")
@@ -64,7 +65,16 @@ it("relays the browser callback to the selected project on the remote computer",
     environmentId: "office-env",
     projectId: "host-project",
   });
-  await act(async () => hub.signIn("service"));
+  let signIn: Promise<void>;
+  await act(async () => {
+    signIn = hub.signIn("service");
+  });
+  expect(hub.signingIn).toBe("service");
+  await act(async () => {
+    if (action === "cancel") hub.cancelSignIn?.();
+    callback.resolve({ state: "fixture-state", code: "test-code" });
+    await signIn;
+  });
   expect(mock.open).toHaveBeenCalledWith(authorizationUrl);
   expect(mock.invoke).toHaveBeenCalledWith("mcp_oauth_callback_wait", {
     id: "local-callback",
@@ -81,13 +91,19 @@ it("relays the browser callback to the selected project on the remote computer",
   );
   expect(mock.remote).toHaveBeenCalledWith(
     "office",
-    "mcp.oauth.complete",
-    { name: "service", projectId: "host-project", state: "fixture-state", code: "test-code" },
+    `mcp.oauth.${action}`,
+    {
+      name: "service",
+      projectId: "host-project",
+      state: "fixture-state",
+      ...(action === "complete" && { code: "test-code" }),
+    },
     false,
     true,
     "office-env",
   );
-  expect(hub.oauth?.[0]?.state).toBe("signed-in");
+  expect(gets("mcp.oauth.complete")).toHaveLength(action === "complete" ? 1 : 0);
+  expect(hub.oauth?.[0]?.state).toBe(action === "complete" ? "signed-in" : "none");
   expect(hub.waiting).toBe("");
   await unmount();
 });
@@ -180,7 +196,7 @@ it("opens the Host URL externally, polls until the state changes, then signs out
     if (method === "mcp.oauth.status") return { servers: states };
     if (method === "mcp.oauth.start") {
       expect(params).toEqual({ name: "alpha", cwd: "/fixture" });
-      return { authorizationUrl: "https://auth.example/authorize?x=1" };
+      return { authorizationUrl: "https://auth.example/authorize?state=fixture-state-123456" };
     }
     states = [states[0], { name: "beta", state: "none" }];
     return { signedOut: true };
@@ -188,7 +204,9 @@ it("opens the Host URL externally, polls until the state changes, then signs out
   const { unmount } = await mount();
   vi.useFakeTimers();
   await act(async () => hub.signIn("alpha"));
-  expect(mock.open).toHaveBeenCalledWith("https://auth.example/authorize?x=1");
+  expect(mock.open).toHaveBeenCalledWith(
+    "https://auth.example/authorize?state=fixture-state-123456",
+  );
   expect(hub.waiting).toBe("alpha");
   // The browser redirect finishes on the Host; the next poll sees the new state and stops waiting.
   states = [{ name: "alpha", state: "signed-in" }, states[1]];
@@ -218,5 +236,41 @@ it("reports a failed start without exposing the cause", async () => {
   expect(hub.error).not.toContain("secret");
   expect(hub.waiting).toBe("");
   expect(mock.open).not.toHaveBeenCalled();
+  await unmount();
+});
+
+it.each(["starting", "waiting"])("cancels local sign-in while %s", async (phase) => {
+  const authorizationUrl = "https://auth.example/authorize?state=fixture-state-123456";
+  const start = Promise.withResolvers<{ authorizationUrl: string }>();
+  mock.remote.mockImplementation(async (_id: string, method: string) => {
+    if (method === "mcp.hub.loading.get")
+      return { policy: policy([]), corrupt: false, servers: [] };
+    if (method === "mcp.oauth.status") return { servers: [] };
+    if (method === "mcp.oauth.start") return start.promise;
+    if (method === "mcp.oauth.cancel") return { cancelled: true };
+  });
+  const { unmount } = await mount();
+  let signIn: Promise<void>;
+  await act(async () => {
+    signIn = hub.signIn("alpha");
+    if (phase === "waiting") {
+      start.resolve({ authorizationUrl });
+      await signIn;
+    }
+  });
+  await act(async () => {
+    hub.cancelSignIn?.();
+    start.resolve({ authorizationUrl });
+    await signIn;
+  });
+  expect(mock.remote).toHaveBeenCalledWith("local", "mcp.oauth.cancel", {
+    name: "alpha",
+    cwd: "/fixture",
+    state: "fixture-state-123456",
+  });
+  expect(mock.open).toHaveBeenCalledTimes(phase === "waiting" ? 1 : 0);
+  expect(hub.waiting).toBe("");
+  expect(hub.busy).toBe("");
+  expect(hub.error).toBe("");
   await unmount();
 });

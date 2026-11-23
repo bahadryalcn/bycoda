@@ -179,6 +179,44 @@ async function loadCopiedFiles(attachments: Attachment[]): Promise<CopiedFile[]>
   return files;
 }
 
+/** Copy an attachment as an OS bitmap. Clipboard image writes require PNG. */
+export async function copyAttachmentImage(attachment: Attachment): Promise<void> {
+  const image = loadCopiedFiles([attachment]).then(([file]) => clipboardPng(file));
+  const write = async () => navigator.clipboard.write([new ClipboardItem({ "image/png": image })]);
+  // WebKit needs the write to begin during the menu activation, before the bytes arrive.
+  await withTimeout(Promise.all([image, write()]), 30_000, "Image clipboard write");
+}
+
+async function clipboardPng(file: CopiedFile): Promise<Blob> {
+  const blob = new Blob([decodeBase64(file.data)], { type: file.mimeType });
+  if (file.mimeType === "image/png") return blob;
+  const url = URL.createObjectURL(blob);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const { naturalWidth: width, naturalHeight: height } = image;
+    // Bound canvas allocation even when a compressed file fits the byte budget.
+    if (!width || !height || width * height > 64_000_000) {
+      throw new Error("Image dimensions are too large to copy.");
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Image conversion is unavailable.");
+    context.drawImage(image, 0, 0);
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((png) => {
+        if (png) resolve(png);
+        else reject(new Error("Could not convert the image to PNG."));
+      });
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 function messageClipboardHtml(payload: string, files: CopiedFile[], referenceText?: string): Blob {
   // Each file's bytes are embedded once, as the data URI of its <img>/<a>; the paste side reads
   // them back from there. The base64 is already validated, so it needs no escaping, and the

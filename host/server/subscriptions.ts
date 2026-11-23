@@ -30,6 +30,7 @@ export function createSubscriptionsRuntime(
   dependencies: Pick<
     ServerBindings,
     | "engine"
+    | "deviceHost"
     | "tasks"
     | "goals"
     | "automations"
@@ -116,6 +117,31 @@ export function createSubscriptionsRuntime(
     load: async (target, principalId, signal, context) =>
       await dependencies.engine.store.db.outsideScope(async () => {
         signal.throwIfAborted();
+        if (target.kind === "deviceVideo") {
+          let chunk;
+          try {
+            chunk = await dependencies.deviceHost.streams.read(
+              target.deviceId,
+              context.revision,
+              { authorized: context.authorized },
+              { signal },
+            );
+          } catch (error) {
+            if (error instanceof Error && error.message.startsWith("DEVICE_STREAM_UNSUPPORTED:"))
+              return null;
+            throw error;
+          }
+          signal.throwIfAborted();
+          if (!chunk.base64 && context.revision === chunk.cursor)
+            return { kind: "unchanged", revision: chunk.cursor };
+          const baseline = chunk.reset || context.revision === undefined;
+          return {
+            kind: baseline ? "snapshot" : "delta",
+            revision: chunk.cursor,
+            ...(baseline ? {} : { baseRevision: context.revision }),
+            data: { ...chunk },
+          };
+        }
         pruneStreamVersions();
         const resource =
           target.kind === "session" || target.kind === "delegationMessages"

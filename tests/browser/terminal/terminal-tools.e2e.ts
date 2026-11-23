@@ -3,6 +3,114 @@ import { mkdirSync } from "node:fs";
 import { WEBGL_IDLE_DROP_MS } from "../../../src/features/terminal/runtime/terminalWebgl";
 import { terminalScrollbarWidth } from "../../../src/features/terminal/model/terminalLayout";
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`terminal dock header and close choices: ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/terminal/terminal-tools.html?dock&theme=${theme}`);
+      const dock = page.locator("[data-project-terminal-dock]");
+      const header = dock.locator(".terminal-header");
+      const root = page.locator("html");
+      const search = header.getByRole("button", { name: "Find in terminal" });
+      const close = header.getByRole("button", { name: "Close Terminals?", exact: true });
+      await expect(search).toBeEnabled();
+      await expect(header.getByRole("button", { name: "Command suggestions" })).toBeEnabled();
+      await expect(header.getByRole("button", { name: "Terminal pane actions" })).toHaveCount(1);
+      await expect(
+        dock.locator(".terminal-canvas").getByRole("button", { name: "Find in terminal" }),
+      ).toHaveCount(0);
+      await expect(header.getByRole("button", { name: "Terminal dock actions" })).toHaveCount(0);
+      await dock.screenshot({ path: info.outputPath("header.png") });
+      await header.getByRole("button", { name: "Move Terminal" }).click();
+      await expect(page.getByText("Dock Right", { exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await search.click();
+      await expect(dock.getByRole("textbox", { name: "Find in terminal" })).toBeVisible();
+      await dock.getByRole("tab", { name: "Terminal 2" }).click();
+      await expect(dock.getByRole("textbox", { name: "Find in terminal" })).toHaveCount(0);
+      await expect(search).toHaveCount(1);
+      await close.click();
+      const dialog = page.getByRole("dialog", { name: "Close Terminals?" });
+      const cancel = dialog.getByRole("button", { name: "Cancel" });
+      await expect(cancel).toBeFocused();
+      await dialog.screenshot({ path: info.outputPath("close-choices.png") });
+      await cancel.click();
+      await expect(dialog).toBeHidden();
+      await expect(root).not.toHaveAttribute("data-closed-terminal", /.+/);
+      await close.click();
+      await dialog.getByRole("button", { name: "Close Active Terminal" }).click();
+      await expect(root).toHaveAttribute("data-closed-terminal", "fixture-two");
+      await close.click();
+      await dialog.getByRole("button", { name: "Close others" }).click();
+      await expect(root).toHaveAttribute("data-closed-terminal", "except:fixture-two");
+      await close.click();
+      await dialog.getByRole("button", { name: "Close All Terminals" }).click();
+      await expect(root).toHaveAttribute("data-closed-terminal", "all");
+    });
+  }
+}
+
+test("terminal dock header fits the minimum side dock width", async ({ page }, info) => {
+  await page.goto("/tests/browser/terminal/terminal-tools.html?dock");
+  const dock = page.locator("[data-project-terminal-dock]");
+  const header = dock.locator(".terminal-header");
+  await header.getByRole("button", { name: "Move Terminal" }).click();
+  await page.getByText("Dock Right", { exact: true }).click();
+  await dock.evaluate((element) => {
+    element.parentElement!.style.width = "180px";
+  });
+  await expect
+    .poll(() => header.evaluate((element) => element.scrollWidth - element.clientWidth))
+    .toBe(0);
+  await expect(header.getByRole("button", { name: "Close Terminals?" })).toBeInViewport();
+  await header.screenshot({ path: info.outputPath("header-side-dark-180.png") });
+});
+
+test("opens an interactive SSH project tab in the terminal dock", async ({ page }, info) => {
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(
+        `/tests/browser/terminal/terminal-tools.html?project-ssh&terminal-state=silent&theme=${theme}`,
+      );
+      const root = page.locator("html");
+      await expect(root).toHaveAttribute(
+        "data-project-ssh-launch",
+        /"connectionId":"windows-machine","project":\{"environmentId":"windows-fixture","cwd":"G:\/Projects\/demo"\}/,
+      );
+      await expect(root).toHaveAttribute("data-terminal-prompt", /^PS G:\\Projects\\demo>/);
+      const dock = page.locator("[data-project-terminal-dock]");
+      await expect(dock.getByRole("tab", { name: "Terminal 1" })).toBeVisible();
+      await dock.screenshot({ path: info.outputPath(`project-ssh-${theme}-${width}.png`) });
+      await dock.getByRole("button", { name: "Close Terminals?" }).click();
+      const dialog = page.getByRole("dialog", { name: "Close Terminals?" });
+      await expect(dialog.getByRole("button", { name: "Close others" })).toBeDisabled();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+    }
+  }
+});
+
+test("shows a silent code run in the dock on both machine types", async ({ page }, info) => {
+  const base = "/tests/browser/terminal/terminal-tools.html";
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`${base}?code-terminal=running&code-dock&theme=${theme}`);
+      const dock = page.locator("[data-project-terminal-dock]");
+      await expect(dock.getByText("sleep 30")).toBeVisible();
+      await expect(dock.getByText("Running command")).toBeVisible();
+      await expect(dock.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await dock.screenshot({ path: info.outputPath(`remote-${theme}-${width}.png`) });
+      await page.goto(`${base}?silent-code&terminal-state=silent&dock&theme=${theme}`);
+      await expect(page.locator("html")).toHaveAttribute("data-terminal-command", "$ sleep 30");
+      await expect(page.locator("html")).not.toHaveAttribute("data-last-pty-write", /.+/);
+      await dock.screenshot({ path: info.outputPath(`local-${theme}-${width}.png`) });
+    }
+  }
+});
+
 test("pastes local clipboard text with Shift+Insert and a terminal right click", async ({
   page,
   context,

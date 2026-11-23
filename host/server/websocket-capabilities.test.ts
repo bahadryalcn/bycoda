@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import { hostRpcSupported } from "../../src/shared/model/host-contracts/methods";
 
@@ -25,13 +26,14 @@ import { createWebsocketRuntime } from "./websocket";
 import { HOST_WS_READ_CAPABILITY } from "../transport/ws/server";
 
 describe("Host websocket capabilities", () => {
-  it("lets the phone's background voice socket send the spoken message", () => {
-    createWebsocketRuntime({
-      server: { listening: true },
+  it("lets the phone's background voice socket send the spoken message", async () => {
+    const { websocket } = createWebsocketRuntime({
+      server: createServer(),
       engine: { store: { environmentId: "environment" } },
       domainDispatcher: { methods: [] },
       mobileAccess: { status: () => undefined, observe: () => undefined },
     } as never);
+    await websocket.close();
     // The server adds the read capability itself; the voice socket cannot fall back to HTTP,
     // so every method its policy allows must be supported on the socket.
     const capabilities = [...captured.capabilities, HOST_WS_READ_CAPABILITY];

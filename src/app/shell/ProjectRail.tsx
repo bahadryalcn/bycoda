@@ -55,7 +55,9 @@ import {
 } from "../../shared/ui/icons";
 import {
   Fragment,
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useMemo,
@@ -108,6 +110,8 @@ import {
   toggleProjectPin,
   type RecentProject,
 } from "../../features/projects/model/recents";
+import { useProjectLinks } from "../../features/projects/hooks/useProjectLinks";
+import { foldLinkedProjects } from "../../features/projects/model/projectRepositories";
 import {
   railBackgroundColor,
   resolveTabGroupColor,
@@ -141,6 +145,7 @@ import { RailBrand } from "./RailBrand";
 import {
   dismissRemoteProjects,
   type RemoteOnlyProject,
+  projectIdForPath,
 } from "../../features/sync/model/syncProjects";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
 import {
@@ -305,8 +310,8 @@ export function ProjectRail({
   resizable = true,
   presentation = "panel",
   projectFilter = "",
-  cwd,
-  recents,
+  cwd: activeCwd,
+  recents: allRecents,
   inboxUnseen = false,
   busyPaths,
   canGoBack = false,
@@ -399,6 +404,12 @@ export function ProjectRail({
     groupId: string;
     details: string;
   } | null>(null);
+  // One repository on several machines is one row: the other copies fold into it,
+  // and the row is the active one while any of its copies is open.
+  const links = useProjectLinks(allRecents);
+  const recents = foldLinkedProjects(allRecents, links);
+  const cwd = links.rowOf(activeCwd);
+  const activeCopy = sameProjectPath(cwd, activeCwd) ? "" : activeCwd;
   const [revealDismissed, setRevealDismissed] = useState<{ cwd: string; ids: string[] }>({
     cwd,
     ids: [],
@@ -538,6 +549,8 @@ export function ProjectRail({
   const groupedProjectSections = useMemo(() => {
     const byGroup = new Map<string, RecentProject[]>(projectGroups.map((group) => [group.id, []]));
     const ungrouped: RecentProject[] = [];
+    const remoteByGroup = new Map<string, RemoteOnlyProject[]>();
+    const ungroupedRemote: RemoteOnlyProject[] = [];
     // A group whose own name matches keeps all of its projects visible.
     const groupNameMatches = (groupId: string | undefined) =>
       Boolean(filterQuery) &&
@@ -552,6 +565,22 @@ export function ProjectRail({
       const items = groupId ? byGroup.get(groupId) : undefined;
       if (items) items.push(project);
       else ungrouped.push(project);
+    }
+    const workspaceByRootId = new Map(
+      projectGroups.flatMap((group) =>
+        group.syncedWorkspace ? [[group.syncedWorkspace.rootProjectId, group.id] as const] : [],
+      ),
+    );
+    for (const project of remoteOnly) {
+      const groupId = workspaceByRootId.get(project.projectId) ?? project.groupId;
+      if (!projectMatches(project.path) && !groupNameMatches(groupId)) continue;
+      if (!groupId || !byGroup.has(groupId)) {
+        ungroupedRemote.push(project);
+        continue;
+      }
+      const entries = remoteByGroup.get(groupId);
+      if (entries) entries.push(project);
+      else remoteByGroup.set(groupId, [project]);
     }
     addListedWorkspaceRoots(
       projectGroups,
@@ -582,6 +611,7 @@ export function ProjectRail({
         if (
           !groupNameMatches(group.id) &&
           (byGroup.get(group.id)?.length ?? 0) === 0 &&
+          !remoteByGroup.has(group.id) &&
           workspaceItemsOf(group.id).length === 0
         )
           continue;
@@ -595,6 +625,7 @@ export function ProjectRail({
     }
     return {
       ungrouped,
+      ungroupedRemote,
       grouped: projectGroups
         .filter((group) => !hiddenGroupIds.has(group.id))
         .filter((group) => !filterQuery || keptGroupIds.has(group.id))
@@ -603,6 +634,7 @@ export function ProjectRail({
           parentId: projectGroupParentId(group, projectGroups, projectGroupAssignments),
           locked: lock.lockedGroupIds.has(group.id),
           items: lock.lockedGroupIds.has(group.id) ? [] : (byGroup.get(group.id) ?? []),
+          remoteItems: lock.lockedGroupIds.has(group.id) ? [] : (remoteByGroup.get(group.id) ?? []),
           workspaceItems: lock.lockedGroupIds.has(group.id) ? [] : workspaceItemsOf(group.id),
         })),
     };
@@ -613,6 +645,7 @@ export function ProjectRail({
     projectGroupAssignments,
     projectGroups,
     projectMatches,
+    remoteOnly,
     sections,
     workspaceRootKeys,
   ]);
@@ -816,13 +849,21 @@ export function ProjectRail({
     );
   };
   const renderProjectGroup = (
-    { group, items, workspaceItems, locked }: (typeof groupedProjectSections.grouped)[number],
+    {
+      group,
+      items,
+      remoteItems,
+      workspaceItems,
+      locked,
+    }: (typeof groupedProjectSections.grouped)[number],
     sortableGroups: SortableHandle = groupSortable,
   ): ReactNode => (
     <ProjectGroupSection
       key={group.id}
       group={group}
       items={items}
+      remoteItems={remoteItems}
+      onOpenSynced={onOpenSyncedProject}
       workspaceItems={workspaceItems}
       working={groupWorking(group.id)}
       locked={locked}
@@ -970,8 +1011,8 @@ export function ProjectRail({
     crews:
       onOpenCrewSession && cwd && cwd !== "~" ? (
         <CrewRailSection
-          key={cwd}
-          cwd={cwd}
+          key={activeCwd}
+          cwd={activeCwd}
           drag={rail.drag("crews")}
           collapsed={rail.collapsed.crews}
           onToggleCollapsed={() => rail.toggleCollapsed("crews")}
@@ -1022,12 +1063,13 @@ export function ProjectRail({
           filterQuery &&
           pinnedProjects.length === 0 &&
           groupedProjectSections.ungrouped.length === 0 &&
+          groupedProjectSections.ungroupedRemote.length === 0 &&
           groupedProjectSections.grouped.length === 0
             ? t("No projects found")
             : undefined
         }
         onAdd={onOpenProject}
-        remoteOnly={remoteOnly}
+        remoteOnly={groupedProjectSections.ungroupedRemote}
         onOpenSynced={onOpenSyncedProject}
         cwd={cwd}
         busy={busy}
@@ -1076,7 +1118,7 @@ export function ProjectRail({
       />
     </>
   ) : null;
-  return (
+  const nav = (
     <nav
       ref={attachRailPane}
       data-side-pane="rail"
@@ -1125,8 +1167,8 @@ export function ProjectRail({
       ) : null}
 
       {/* Tools, live summary and update notices can exceed a short window. Above the short-height query the
-          ledger is the only scroll owner; below it this column scrolls without nested scrollbars. Settings
-          stays outside this column so it remains visible at every height. The popup scrolls only its ledger. */}
+        ledger is the only scroll owner; below it this column scrolls without nested scrollbars. Settings
+        stays outside this column so it remains visible at every height. The popup scrolls only its ledger. */}
       <div
         className={`flex min-h-0 flex-1 flex-col ${
           navigator
@@ -1221,7 +1263,9 @@ export function ProjectRail({
                               active: socialActive,
                               onSelect: () => {
                                 window.dispatchEvent(
-                                  new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd } }),
+                                  new CustomEvent(SOCIAL_PANEL_EVENT, {
+                                    detail: { cwd: activeCwd },
+                                  }),
                                 );
                               },
                             },
@@ -1355,6 +1399,7 @@ export function ProjectRail({
       ) : null}
     </nav>
   );
+  return <ActiveCopyContext.Provider value={activeCopy}>{nav}</ActiveCopyContext.Provider>;
 }
 
 type SortableHandle = ReturnType<typeof useAnimatedReorder>;
@@ -1709,6 +1754,8 @@ function ProjectGroupSection({
   children,
   workspaceIds = [],
   items,
+  remoteItems,
+  onOpenSynced,
   workspaceItems,
   working,
   muteStatuses,
@@ -1744,6 +1791,8 @@ function ProjectGroupSection({
   /** Orders the groups; the header is the drag handle. */
   sortableGroups: SortableHandle;
   items: RecentProject[];
+  remoteItems: RemoteOnlyProject[];
+  onOpenSynced?: (projectId: string, name: string) => void | Promise<void>;
   workspaceItems: RecentProject[];
   /** An agent works somewhere inside; the collapsed header carries the working decoration. */
   working: boolean;
@@ -1781,9 +1830,10 @@ function ProjectGroupSection({
     workspaceIds,
     onReorder,
     (path) => resolveTabGroupLabel(projectKey(path), groupLabels, basename(path)),
+    projectIdForPath,
   );
   const itemByPath = new Map(items.map((item) => [item.path, item]));
-  const memberCount = items.length + workspaceIds.length;
+  const memberCount = items.length + workspaceIds.length + remoteItems.length;
   const countLabel = `${memberCount} ${memberCount === 1 ? "project" : "projects"}`;
   const expanded = (!group.collapsed || revealed) && !locked;
   const collapsed = !expanded;
@@ -2184,6 +2234,9 @@ function ProjectGroupSection({
                   />
                 );
               })}
+              {onOpenSynced && remoteItems.length > 0 ? (
+                <RemoteProjectSuggestions projects={remoteItems} onOpen={onOpenSynced} />
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -2193,6 +2246,9 @@ function ProjectGroupSection({
 }
 
 const nameClassName = "min-w-0 flex-1 @max-[140px]/rail:hidden";
+
+/** The open copy of the selected row when it is not the row's own path, else "". */
+const ActiveCopyContext = createContext("");
 
 function ProjectCard({
   item,
@@ -2251,11 +2307,14 @@ function ProjectCard({
   const headerBackground = useRailBackground(key, "header");
   const logoPath = useProjectLogoPath(key, groupLogos, groupMascots);
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
+  // A row open on another machine's copy shows that machine and its checkout.
+  const activeCopy = useContext(ActiveCopyContext);
+  const shownPath = selected && activeCopy ? activeCopy : item.path;
   const diffEnabled = statsEnabled && Boolean(item.path) && item.path !== "~";
-  const stats = useProjectDiffStats(item.path, diffEnabled, selected);
+  const stats = useProjectDiffStats(shownPath, diffEnabled, selected);
   // No read (or a failed one) is `null`, never "clean"; a clean tree shows nothing either.
   const change = projectGitChange(stats, format.formatNumber);
-  const remote = useRemoteProject(item.path);
+  const remote = useRemoteProject(shownPath);
   const { machines } = useRemoteMachines(!!remote);
   const machine = remote
     ? machines.find((entry) => entry.environmentId === remote.environmentId)
@@ -2263,7 +2322,7 @@ function ProjectCard({
   // Keeps the machine checked while its row is on screen; the shared
   // connection status below is what the row shows.
   useRemoteMachineOnline(machine?.id);
-  const remoteConnection = useRemoteConnection(item.path);
+  const remoteConnection = useRemoteConnection(shownPath);
   const indicator = connectionIndicator(remoteConnection, remoteConnection.reconnecting);
   // A short translated status is the accessible name; the raw error text stays visible in the tooltip only.
   const connectionStatus = !remote

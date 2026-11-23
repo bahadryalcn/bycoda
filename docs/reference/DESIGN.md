@@ -408,7 +408,7 @@ around the same status.
 
 - **Collection:** PaneHeader, at most one filter row, continuous list, and in-place empty, loading and failure states. Place the primary action in the header.
 - **List and detail:** a selectable master list and detail pane separated by a Sash. Put the detail action and status in its header; show empty, loading and failure states in the affected pane.
-- **Settings:** page header followed by Group and Row controls; keep optional explanations behind info. Place any primary action with the relevant group.
+- **Settings:** page header followed by Group and Row controls. Show short optional explanations on hover and keyboard focus through the info tooltip. Keep prerequisites and consequences visible. Place any primary action with the relevant group.
 - **Panel with toolbar:** at most two chrome bands: header and one toolbar. Put status in the header and the primary action in either band. Render content states in place.
 - **Dialog or sheet form:** Modal or Sheet with FieldGroup and footer actions. Put the primary action in the footer; show validation and pending state by the affected control.
 - **State pane:** use shared empty, loading and failure components in the content region. Keep recovery with the failure and avoid hand-written substitutes.

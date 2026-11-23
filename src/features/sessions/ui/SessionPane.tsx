@@ -183,6 +183,8 @@ import { useHostSessionBinding } from "../../connections/public/useHostSessionBi
 import { SessionMachinePicker } from "../../connections/public/SessionMachinePicker";
 import { remoteExecutionEnvironment } from "../../connections/public/sessionMachineTarget";
 import { isBlankSession } from "../../projects/public/projectReturn";
+import { useProjectLinks } from "../../projects/public/projectRepositories";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { sameOptionalSessionIgnoringStreamingText, usePaneSession } from "../model/sessionsStore";
 import { FLAT_TRANSCRIPT_GLASS } from "../model/transcriptGlass";
 import {
@@ -221,7 +223,6 @@ export type SessionPaneProps = {
   onClose: (sessionId: string) => void;
   onCwdChange: (sessionId: string, cwd: string) => void;
   onSessionMachineChange?: (sessionId: string, environmentId: string | undefined) => void;
-  onSessionMachinePickerTrigger?: (sessionId: string, trigger: HTMLButtonElement | null) => void;
   onBranchChange: (sessionId: string) => void;
   onWorktreeChange?: (sessionId: string, tree: Worktree) => Promise<void>;
   onRemoteSnapshot?: (shellId: string, snapshot?: HostSession) => void;
@@ -318,6 +319,7 @@ export type SessionPaneProps = {
   onNewTerminal: (sessionId: string) => void;
   onRunProjectAction?: (sessionId: string, action: ProjectAction) => void;
   onRunCode?: CodeExecutionScope["openTerminal"];
+  onRunRemoteCode?: CodeExecutionScope["openRemoteTerminal"];
   onPaneDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
   /** Keeps this transcript mounted after the pane closes. */
   transcriptPool?: TranscriptPool;
@@ -472,7 +474,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onClose,
   onCwdChange: onCwdChangeProp,
   onSessionMachineChange,
-  onSessionMachinePickerTrigger,
   onBranchChange: onBranchChangeProp,
   onWorktreeChange: onWorktreeChangeProp,
   onRefreshAdoptedSession,
@@ -528,6 +529,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onNewTerminal,
   onRunProjectAction,
   onRunCode,
+  onRunRemoteCode,
   onPaneDragStart,
   transcriptPool,
   onRewindMessage,
@@ -642,6 +644,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
         rootMutation(() => onNewSessionProp(...args))
     : undefined;
   const t = useT();
+  const projectLinks = useProjectLinks(recents);
+  // Environment ids holding a copy of this project; "" is this computer.
+  const projectMachines =
+    session.cwd === "~"
+      ? undefined
+      : projectLinks
+          .copiesOf(session.cwd)
+          .map((copy) => parseRemotePath(copy)?.environmentId ?? "");
   const orchestrationRuns = useSyncExternalStore(
     orchestrator.subscribe,
     orchestrator.snapshot,
@@ -1499,8 +1509,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
           ? (locked) => (
               <SessionMachinePicker
                 environmentId={remoteExecutionEnvironment(session)}
-                triggerRef={(trigger) => onSessionMachinePickerTrigger?.(session.id, trigger)}
                 returnFocusRef={composerReturnFocus(paneRef)}
+                projectMachines={projectMachines}
                 onSelect={
                   !locked &&
                   !remoteSessionStarted &&
@@ -1965,6 +1975,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                               projectCwd: session.cwd,
                               native: !remote,
                               openTerminal: onRunCode,
+                              openRemoteTerminal: onRunRemoteCode,
                             }
                           : undefined
                       }

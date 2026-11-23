@@ -46,6 +46,10 @@ Complete references are highlighted in the draft and sent message. You can
 still edit or copy the reference text.
 Backspace after a reference or Delete before it removes the whole reference.
 
+## Pasted text
+
+When you paste 8,000 or more characters into a desktop chat that supports attachments, Bycoda saves the text as a UTF-8 file and shows a **Pasted text** card with its size. Open the card to read the text, remove it from the draft, or use **Download** on the sent card to save a copy. If the file cannot be saved, the pasted text stays in the draft.
+
 ## Image attachments
 
 Recognized skills, attached images and files, quotes, file references and MCP
@@ -227,9 +231,13 @@ field to its reference actions. Enter opens the focused reference. With a link
 focused, F2 shows its full address for editing.
 
 In the desktop composer, attachment references and file cards show the complete
-filename. An attachment with an inline reference appears at that reference. A long
-filename wraps when the composer is narrow. Click a file or image reference to
-preview it. Focus an attachment reference and press Delete to remove it. Click a skill
+filename. Attachment cards appear above the draft, and inline references stay
+where they were inserted. Image cards show the file size below the thumbnail.
+Click a card or an inline reference to open the preview. Right-click the card or
+the open preview for copy and save actions. Hover over or focus a card to show
+its Remove button. You can also remove the attachment from the card's menu or
+focus its inline reference and press Delete.
+A long filename wraps when the composer is narrow. Click a skill
 for its description, or a skill group to see its members. Skill icons replace the
 invocation prefix in the display. The draft keeps the original invocation.
 
@@ -256,6 +264,8 @@ If another Git client moves a linked worktree or replaces it with a separate rep
 Local downloads are limited to 1 GiB per file and four simultaneous transfers. The cache is bounded to 4 GiB. Unchanged cached snapshots can be reused; edited copies are preserved. A file changing during transfer causes a retryable failure rather than opening inconsistent bytes.
 
 ## Open a remote development website
+
+Desktop chat labels private development links with the computer's saved name, for example **Office PC · localhost:3000/patients**.
 
 On desktop, use **Open in this computer's browser** in Development servers, or click a matching development URL in a user or assistant message in the remote conversation. bycoda resolves the conversation's machine and project, finds the registered running server, and verifies its process identity before creating a private local browser address. Refresh Development servers when a process restarts.
 

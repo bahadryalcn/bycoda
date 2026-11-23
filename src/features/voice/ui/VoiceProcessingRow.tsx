@@ -1,6 +1,6 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { t } from "../../../shared/i18n";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Segmented } from "../../../shared/ui/settings";
 import type { VoiceDevice } from "../model/localVoiceClient";
 import type { VoiceSettings } from "../model/voiceSettings";
@@ -23,9 +23,9 @@ export function ProcessingRow({
       id={id}
       label={t("Processing")}
       info={
-        <InfoPopover label={`${t("Processing")}: ${t("Help")}`}>
+        <InfoTooltip label={t("Processing")}>
           {t("Automatic uses a supported NVIDIA GPU when available.")}
-        </InfoPopover>
+        </InfoTooltip>
       }
       disabled={setup.installing}
     >

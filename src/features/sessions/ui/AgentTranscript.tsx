@@ -89,7 +89,8 @@ import { TranscriptSkills } from "./SkillTokenText";
 import { RunHarness } from "./SubagentAnatomy";
 import { UserMessageMarkdown, UserTextPreview } from "./UserTextPreview";
 import { userTextParts } from "../model/userTextPreview";
-import { findTokens } from "../model/attachmentTokens";
+import { findTokens, stripAttachmentTokens } from "../model/attachmentTokens";
+import { isPastedTextAttachment } from "../model/attachmentPresentation";
 import { GeneratedImage } from "./GeneratedImage";
 import { BycodaSparkles } from "./BycodaSparkles";
 import { OrchestratorConstellation } from "./OrchestratorConstellation";
@@ -2405,7 +2406,16 @@ function UserMessageBlock({
     card && card.kind !== "handoff"
       ? ""
       : visibleUserPrompt(bycoda ? operatorUserPrompt(block) : block.text);
-  const { text, citations } = extractChatCitations(rawText);
+  const { text: messageText, citations } = extractChatCitations(rawText);
+  const attachmentFiles = block.attachments ?? [];
+  const pastedTextOnly =
+    !card &&
+    !note &&
+    !citations.length &&
+    attachmentFiles.length > 0 &&
+    attachmentFiles.every(isPastedTextAttachment) &&
+    !stripAttachmentTokens(messageText, attachmentFiles).trim();
+  const text = pastedTextOnly ? "" : messageText;
   const firstLink = text ? parseUserMessageLink(text) : null;
   // Keep the compact URL card for plain prose. Splitting a formatted message
   // at a URL would break its links, code spans, or enclosing Markdown blocks.
@@ -2418,7 +2428,6 @@ function UserMessageBlock({
   const compactText = previewParts.some((part) => part.compact);
   // A chip carries its token's label only when the message mentions it, so
   // messages sent before tokens existed look as they always did.
-  const attachmentFiles = block.attachments ?? [];
   const usedTokens = new Map(
     findTokens(text, attachmentFiles).map((match) => [match.index, match.token]),
   );
@@ -2439,7 +2448,7 @@ function UserMessageBlock({
     <>
       {text || block.attachments?.length ? (
         <CopyTurnButton
-          text={text}
+          text={messageText}
           attachments={block.attachments}
           label={t("Copy message")}
           showLabel={showLabels}
@@ -2512,7 +2521,7 @@ function UserMessageBlock({
           data-chat-message-surface={block.draft ? undefined : "user"}
           data-follow-up-delivery={delivery}
           data-bycoda={bycoda ? "true" : undefined}
-          className={`user-message-bubble relative min-w-0 px-3 py-2 font-sans text-(--transcript-ink-body) transition-[background-color] duration-200 ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
+          className={`user-message-bubble relative min-w-0 font-sans text-(--transcript-ink-body) transition-[background-color] duration-200 ${pastedTextOnly ? "" : "px-3 py-2"} ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
         >
           <ChatCitationList citations={citations} text={text} />
           {block.turnOutcome === "stopped" ? (

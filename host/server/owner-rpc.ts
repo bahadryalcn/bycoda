@@ -714,6 +714,7 @@ const handlers: Record<
   "devices.boot": handleDevicesRpc,
   "devices.capture": handleDevicesRpc,
   "devices.stream": handleDevicesRpc,
+  "devices.touch": handleDevicesRpc,
   "devices.control.status": handleDevicesRpc,
   "devices.control.claim": handleDevicesRpc,
   "devices.control.release": handleDevicesRpc,

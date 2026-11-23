@@ -105,7 +105,12 @@ export function McpServerDetail({
   const policy = hub.loading?.policy;
   const transport = hubEntry?.kind ?? entry.configs[0]?.transport ?? "";
   const hubLocked =
-    stale || hub.saving || !!hub.busy || !!hub.loading?.corrupt || managed?.enabled === false;
+    stale ||
+    hub.saving ||
+    !!hub.busy ||
+    !!hub.signingIn ||
+    !!hub.loading?.corrupt ||
+    managed?.enabled === false;
   const configLocked = stale || actions.locked;
   const staleReason = stale ? t("This server is no longer listed.") : undefined;
   const hubLockedReason =
@@ -279,7 +284,7 @@ export function McpServerDetail({
                         {hubEntry.oauthInherited ? t("Use a different account") : t("Sign in")}
                       </Button>
                     ) : null}
-                    {hub.waiting === hubEntry.name && hub.cancelSignIn ? (
+                    {hub.signingIn === hubEntry.name && hub.cancelSignIn ? (
                       <Button size="sm" variant="ghost" onClick={hub.cancelSignIn}>
                         {t("Cancel")}
                       </Button>

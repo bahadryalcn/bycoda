@@ -32,11 +32,19 @@ export type ProjectGroup = {
    * when the file changes; projects the user added by hand are never touched.
    */
   workspaceFolders?: string[];
+  /** Synced workspace header and its resolved rail location on this desktop. */
+  syncedWorkspace?: {
+    rootProjectId: string;
+    includesRoot: boolean;
+    sourceMachineId?: string;
+    path?: string;
+    parentId?: string;
+  } | null;
   /** Opening the group asks for the app lock password. See group-lock. */
   lockable?: boolean;
   /**
-   * Where nested workspaces sit among the group's projects, as member keys (see
-   * `orderProjectGroupMembers`). Projects keep the rail order among themselves.
+   * Where nested workspaces sit among the group's projects, as member keys or
+   * synced project ids. Projects keep the rail order among themselves.
    */
   memberOrder?: string[];
 };
@@ -57,6 +65,7 @@ export function orderProjectGroupMembers(
   projectPaths: readonly string[],
   groupIds: readonly string[],
   memberOrder: readonly string[] = [],
+  projectIdForPath?: (path: string) => string | undefined,
 ): ProjectGroupMember[] {
   const projects: ProjectGroupMember[] = projectPaths.map((id) => ({
     kind: "project",
@@ -67,10 +76,17 @@ export function orderProjectGroupMembers(
     id,
   }));
   const byKey = new Map([...projects, ...groups].map((member) => [memberKey(member), member]));
+  if (projectIdForPath && memberOrder.length > 0) {
+    for (const project of projects) {
+      const projectId = projectIdForPath(project.id);
+      if (projectId) byKey.set(projectId, project);
+    }
+  }
+  const seen = new Set<ProjectGroupMember>();
   const known = memberOrder.flatMap((key) => {
     const member = byKey.get(key);
-    if (!member) return [];
-    byKey.delete(key);
+    if (!member || seen.has(member)) return [];
+    seen.add(member);
     return [member];
   });
   const knownGroups = known.filter((member) => member.kind === "group");
@@ -94,7 +110,21 @@ export function saveProjectGroupMemberOrder(
 
 /** A linked workspace opens the directory containing its workspace file as a project. */
 export function projectGroupWorkspaceRoot(group: ProjectGroup): string | null {
-  return group.workspaceFile ? parentPath(slash(group.workspaceFile)) : null;
+  return group.workspaceFile
+    ? parentPath(slash(group.workspaceFile))
+    : (group.syncedWorkspace?.path ?? null);
+}
+
+export function isWorkspaceProjectGroup(group: ProjectGroup): boolean {
+  return !!(group.workspaceFile || group.syncedWorkspace);
+}
+
+export function projectGroupIncludesWorkspaceRoot(group: ProjectGroup): boolean {
+  if (!group.workspaceFile) return group.syncedWorkspace?.includesRoot === true;
+  const root = projectGroupWorkspaceRoot(group);
+  if (!root) return false;
+  const key = pathKey(root);
+  return group.workspaceFolders?.some((path) => pathKey(path) === key) ?? false;
 }
 
 /** Roots represented by workspace headers rather than standalone rail rows. */
@@ -117,7 +147,7 @@ export function addListedWorkspaceRoots(
   const projects = [...sections.pinned, ...sections.projects];
   for (const group of groups) {
     const root = projectGroupWorkspaceRoot(group);
-    if (!root || !group.workspaceFolders?.some((path) => pathKey(path) === pathKey(root))) continue;
+    if (!root || !projectGroupIncludesWorkspaceRoot(group)) continue;
     const project = projects.find((item) => pathKey(item.path) === pathKey(root)) ?? {
       path: root,
       openedAt: 0,
@@ -133,9 +163,9 @@ export function projectGroupParentId(
   assignments: Record<string, string>,
 ): string | undefined {
   const root = projectGroupWorkspaceRoot(group);
-  const id = root ? projectGroupIdForPath(root, assignments) : undefined;
+  const id = root ? projectGroupIdForPath(root, assignments) : group.syncedWorkspace?.parentId;
   return groups.some(
-    (parent) => parent.id === id && parent.id !== group.id && !parent.workspaceFile,
+    (parent) => parent.id === id && parent.id !== group.id && !isWorkspaceProjectGroup(parent),
   )
     ? id
     : undefined;
@@ -193,6 +223,7 @@ function normalizeGroup(value: unknown): ProjectGroup | null {
     workspaceFile && Array.isArray(candidate.workspaceFolders)
       ? uniquePaths(candidate.workspaceFolders)
       : [];
+  const syncedWorkspace = candidate.syncedWorkspace;
 
   return {
     id: candidate.id,
@@ -202,6 +233,28 @@ function normalizeGroup(value: unknown): ProjectGroup | null {
     ...(mascot ? { mascot } : {}),
     ...(candidate.kind === "personal" || candidate.kind === "work" ? { kind: candidate.kind } : {}),
     ...(workspaceFile ? { workspaceFile, workspaceFolders } : {}),
+    ...(syncedWorkspace === null
+      ? { syncedWorkspace: null }
+      : typeof syncedWorkspace?.rootProjectId === "string" &&
+          syncedWorkspace.rootProjectId &&
+          typeof syncedWorkspace.includesRoot === "boolean"
+        ? {
+            syncedWorkspace: {
+              rootProjectId: syncedWorkspace.rootProjectId,
+              includesRoot: syncedWorkspace.includesRoot,
+              ...(typeof syncedWorkspace.sourceMachineId === "string" &&
+              syncedWorkspace.sourceMachineId
+                ? { sourceMachineId: syncedWorkspace.sourceMachineId }
+                : {}),
+              ...(typeof syncedWorkspace.path === "string" && syncedWorkspace.path
+                ? { path: syncedWorkspace.path }
+                : {}),
+              ...(typeof syncedWorkspace.parentId === "string" && syncedWorkspace.parentId
+                ? { parentId: syncedWorkspace.parentId }
+                : {}),
+            },
+          }
+        : {}),
     ...(candidate.lockable === true ? { lockable: true } : {}),
     ...(Array.isArray(candidate.memberOrder)
       ? {
@@ -469,7 +522,7 @@ export function linkProjectGroup(
 export function unlinkProjectGroup(id: string): void {
   updateProjectGroup(id, (group) => {
     const { workspaceFile: _file, workspaceFolders: _folders, ...rest } = group;
-    return rest;
+    return { ...rest, syncedWorkspace: null };
   });
 }
 

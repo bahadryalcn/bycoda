@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
   kill: vi.fn(),
 }));
 vi.mock("../../connections/public/hostFeatureClient", () => ({ featureHost: mocks.host }));
-vi.mock("../../connections/public/connections", () => ({ remoteRequest: mocks.request }));
+vi.mock("../../connections/public/connections", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../connections/public/connections")>()),
+  remoteRequest: mocks.request,
+}));
 vi.mock("../../../platform/tauri/pty", () => ({ killPty: mocks.kill }));
 vi.mock("../model/terminalProfiles", () => ({
   listTerminalProfiles: mocks.profiles,
@@ -95,6 +98,40 @@ it("shares the initial output read with polling so chunks are never duplicated",
   });
   await Promise.all([start, poll]);
   expect(controller.snapshot().output).toBe("once");
+});
+
+it("stops the original Host process and drains the retained output before dismissal", async () => {
+  mocks.request
+    .mockResolvedValueOnce({ writable: true, profiles: [] })
+    .mockResolvedValueOnce({ id: "terminal", shell: "zsh" })
+    .mockResolvedValueOnce({
+      output: "",
+      cursor: 0,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "running", exitCode: null },
+    })
+    .mockResolvedValueOnce({ accepted: true })
+    .mockResolvedValueOnce({
+      output: "final",
+      cursor: 5,
+      truncated: false,
+      hasMore: false,
+      terminal: { state: "exited", exitCode: 130 },
+    });
+  const controller = createCodeTerminal(options);
+  await controller.start();
+  expect(controller.canDismiss()).toBe(false);
+  await controller.stop();
+  expect(mocks.request.mock.calls.map(([, method]) => method)).toEqual([
+    "terminals.list",
+    "terminals.create",
+    "terminals.read",
+    "terminals.interrupt",
+    "terminals.read",
+  ]);
+  expect(controller.snapshot()).toMatchObject({ phase: "exited", output: "final", exitCode: 130 });
+  expect(controller.canDismiss()).toBe(true);
 });
 
 it("never falls back to native or repeats an unknown Host creation", async () => {

@@ -12,7 +12,7 @@ import {
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoPopover, InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Switch } from "../../../shared/ui/Switch";
@@ -100,7 +100,7 @@ export function ModelSettingHelp({
         ) : null}
       </ClampText>
       {descriptions.length ? (
-        <InfoPopover label={t("Help")}>
+        <InfoPopover label={t("Model settings")}>
           {descriptions.map((item) => (
             <Text as="p" key={item.id} size="secondary" leading="relaxed">
               <Text size="inherit" weight="medium">
@@ -337,7 +337,7 @@ function SettingRow({
       <Text as="span" size="caption" weight="medium" tone="secondary" className="min-w-0">
         <span className="inline-flex items-center gap-1">
           {label}
-          {help ? <InfoPopover label={label}>{t(help)}</InfoPopover> : null}
+          {help ? <InfoTooltip label={label}>{t(help)}</InfoTooltip> : null}
         </span>
       </Text>
       {trailing}

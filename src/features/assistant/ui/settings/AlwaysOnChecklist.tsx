@@ -7,8 +7,7 @@ import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { RefreshCw } from "../../../../shared/ui/icons";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { Text } from "../../../../shared/ui/Text";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { Row } from "../../../../shared/ui/settings";
 import {
   deriveAlwaysOnItems,
@@ -99,11 +98,7 @@ export function AlwaysOnChecklist({
       }
       info={
         item.state === "done" && item.detail ? (
-          <InfoPopover label={item.label}>
-            <Text as="p" size="secondary">
-              {item.detail}
-            </Text>
-          </InfoPopover>
+          <InfoTooltip label={item.label}>{item.detail}</InfoTooltip>
         ) : undefined
       }
     >

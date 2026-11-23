@@ -1,5 +1,39 @@
 import { describe, expect, it, vi } from "vitest";
-import { boundedGet, boundedSet, createStore, createWindowStore } from "./store";
+import {
+  boundedGet,
+  boundedSet,
+  createObservedSnapshot,
+  createStore,
+  createWindowStore,
+} from "./store";
+
+it("shares a live snapshot and catches changes before subscription and after unmount", () => {
+  let saved = 1;
+  const read = vi.fn(() => saved);
+  const source = createStore();
+  const watch = vi.fn(source.subscribe);
+  const store = createObservedSnapshot(read, watch);
+  expect(store.getSnapshot()).toBe(1);
+  saved = 2;
+  const notify = vi.fn();
+  const first = store.subscribe(notify);
+  const second = store.subscribe(notify);
+  expect(watch).toHaveBeenCalledOnce();
+  read.mockClear();
+  expect(store.getSnapshot()).toBe(2);
+  expect(read).not.toHaveBeenCalled();
+  saved = 3;
+  source.notify();
+  expect(notify).toHaveBeenCalledTimes(2);
+  expect(read).toHaveBeenCalledOnce();
+  first();
+  first();
+  expect(source.size).toBe(1);
+  second();
+  expect(source.size).toBe(0);
+  saved = 4;
+  expect(store.getSnapshot()).toBe(4);
+});
 
 describe("createStore", () => {
   it("can retain an explicit server-rendering subscription guard", () => {

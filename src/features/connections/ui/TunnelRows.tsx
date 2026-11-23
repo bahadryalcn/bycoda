@@ -7,6 +7,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Code } from "../../../shared/ui/Code";
 import { Divider } from "../../../shared/ui/Divider";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
@@ -180,6 +181,9 @@ function TunnelRow({
                 <Code>{publicUrl}</Code>
               </Text>
             </OverflowTooltip>
+            <InfoPopover label={t("Public URL")}>
+              {t("Public access has not been verified.")}
+            </InfoPopover>
           </div>
         ) : null}
         {tunnel.issue ? (

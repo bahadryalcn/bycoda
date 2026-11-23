@@ -43,6 +43,14 @@ beforeEach(() => {
 });
 
 describe("workspace development URLs", () => {
+  it("opens a discovered remote HTTP chat link through the private system browser address", async () => {
+    const url = "http://localhost:5173/nested?x=1#here";
+    await openWorkspaceUrl(cwd, url, "composer-session");
+    expect(invoke).toHaveBeenCalledWith("remote_dev_server_url", expect.objectContaining({ url }));
+    expect(openUrl).toHaveBeenCalledWith("http://127.0.0.1:49123/nested?x=1#here");
+    expect(openHostToolsWindow).not.toHaveBeenCalled();
+  });
+
   it.each([
     "localhost",
     "127.0.0.1",
@@ -62,11 +70,11 @@ describe("workspace development URLs", () => {
     "http://10.0.0.8:3000/",
     "http://[::1]:5173/",
     "https://localhost:5173/nested",
-  ])("opens remote %s in the owning Host Browser without discovery", async (url) => {
+  ])("opens unsupported remote %s in the owning Host Browser", async (url) => {
+    remoteRequest.mockResolvedValue({ status: "ok", servers: [] });
     await openWorkspaceUrl(cwd, url, "composer-session");
     expect(featureHost).toHaveBeenCalledWith(cwd, "browser.shared");
-    expect(featureHost).not.toHaveBeenCalledWith(cwd, "dev.servers.private-access");
-    expect(remoteRequest).not.toHaveBeenCalled();
+    expect(remoteRequest).toHaveBeenCalledTimes(url.startsWith("https:") ? 0 : 1);
     expect(openHostToolsWindow).toHaveBeenCalledTimes(1);
     expect(openHostToolsWindow).toHaveBeenCalledWith({
       cwd,
@@ -82,6 +90,7 @@ describe("workspace development URLs", () => {
   });
 
   it("opens remote links without an origin session as a Host Browser request", async () => {
+    remoteRequest.mockResolvedValue({ status: "ok", servers: [] });
     await openWorkspaceUrl(cwd, "http://localhost:5173/");
     expect(openHostToolsWindow).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "", initialMachine: "project" }),
@@ -92,6 +101,7 @@ describe("workspace development URLs", () => {
     ["0.0.0.0", "127.0.0.1"],
     ["[::]", "[::1]"],
   ])("opens remote listen address %s on Host loopback", async (address, loopback) => {
+    remoteRequest.mockResolvedValue({ status: "ok", servers: [] });
     await openWorkspaceUrl(cwd, `http://${address}:5173/patients?active#today`, "composer-session");
     expect(openHostToolsWindow).toHaveBeenCalledWith(
       expect.objectContaining({ initialUrl: `http://${loopback}:5173/patients?active#today` }),
@@ -192,6 +202,7 @@ describe("workspace development URLs", () => {
   );
 
   it("routes a fully qualified localhost name through the owning host", async () => {
+    remoteRequest.mockResolvedValue({ status: "ok", servers: [] });
     await openWorkspaceUrl(cwd, "http://localhost.:5173/nested?x=1#here");
     expect(featureHost).toHaveBeenCalledWith(cwd, "browser.shared");
     expect(openHostToolsWindow).toHaveBeenCalledWith(
@@ -228,6 +239,7 @@ describe("workspace development URLs", () => {
   });
 
   it("does not open a local fallback when the owning Host browser fails", async () => {
+    remoteRequest.mockResolvedValue({ status: "ok", servers: [] });
     openHostToolsWindow.mockRejectedValue(new Error("Browser setup required"));
     await expect(openWorkspaceUrl(cwd, "http://localhost:5173", "origin")).rejects.toThrow(
       "Browser setup required",

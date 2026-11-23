@@ -103,6 +103,27 @@ it("pastes an image into a portable file while retaining its thumbnail", async (
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
 });
 
+it("replaces a long plain paste at its selection after saving it", async () => {
+  const field = document.createElement("textarea");
+  container.append(field);
+  field.value = "before replace after";
+  field.setSelectionRange(7, 14);
+  const text = "pasted source ".repeat(800);
+  const preventDefault = vi.fn();
+  await act(async () => {
+    api.onPaste({
+      target: field,
+      clipboardData: { files: [], getData: (type: string) => (type === "text/plain" ? text : "") },
+      preventDefault,
+    } as never);
+    expect(field.value).toBe(`before ${text} after`);
+    await vi.waitFor(() => expect(field.value).not.toContain(text));
+  });
+  expect(preventDefault).toHaveBeenCalled();
+  expect(field.value).toMatch(/^before \[.+\] after$/);
+  expect(api.files).toMatchObject([{ name: "Pasted text.txt", size: text.length }]);
+});
+
 it("attaches a copied file instead of leaving its URI in the prompt", async () => {
   clipboardPaths = ["/tmp/image.png"];
   const preventDefault = vi.fn();

@@ -2067,8 +2067,8 @@ it("ends voice when the provider never acknowledges a commit", async () => {
 it("keeps waiting for a commit while a long utterance is still uploading", async () => {
   vi.useFakeTimers();
   try {
-    const events = callbacks();
-    const voice = await connectedWithFakeTimers(events);
+    const events = { ...callbacks(), diagnostic: vi.fn() };
+    const voice = await connectedWithFakeTimers(events, "xai");
     sockets[0].bufferedAmount = 900_000;
     candidateAudio();
     for (const left of [600_000, 300_000]) {
@@ -2078,11 +2078,41 @@ it("keeps waiting for a commit while a long utterance is still uploading", async
     }
     // The upload stopped moving: now the connection counts as unresponsive.
     await vi.advanceTimersByTimeAsync(15_000);
+    expect(events.diagnostic).toHaveBeenCalledWith({
+      kind: "input-deadline",
+      stage: "commit",
+      elapsedMs: expect.any(Number),
+      bufferedBytes: 300_000,
+      previousBufferedBytes: 300_000,
+      uploadExtensions: 2,
+      socketState: expect.any(Number),
+      lastProviderFrameAgoMs: expect.any(Number),
+    });
     expect(events.error).toHaveBeenCalledWith(
       "Voice connection is too slow. Start voice again.",
       true,
       { recoverable: true, code: "audio-commit-unacknowledged", speechLost: true },
     );
+    voice.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("gives the xAI commit acknowledgement time after the audio upload finishes", async () => {
+  vi.useFakeTimers();
+  try {
+    const events = callbacks();
+    const voice = await connectedWithFakeTimers(events, "xai");
+    candidateAudio();
+    sockets[0].bufferedAmount = 600_000;
+    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(14_999);
+    sockets[0].bufferedAmount = 0;
+    await vi.advanceTimersByTimeAsync(1);
+    expect(events.error).not.toHaveBeenCalled();
+    acceptInput(sockets[0], "merhaba", "drained");
+    expect(events.transcript).toHaveBeenCalledExactlyOnceWith("merhaba");
     voice.close();
   } finally {
     vi.useRealTimers();

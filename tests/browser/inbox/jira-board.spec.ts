@@ -1,6 +1,242 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import "./inbox-audit.scenarios";
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`Jira board loading keeps the layout stable (${theme}, ${width})`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/inbox/jira-board.html?inbox&boardLoading&theme=${theme}`);
+      await page.getByRole("button", { name: "Board", exact: true }).click();
+      const read = (action: "Pause" | "Resume") =>
+        page.evaluate((mode) => {
+          const fixture = window as unknown as Record<string, () => void>;
+          fixture[`jiraFixture${mode}Board`]!();
+        }, action);
+      const board = page.getByRole("region", { name: "Jira board", exact: true });
+      const column = board.getByRole("region", { name: "To Do", exact: true });
+      await expect(column.locator("[data-jira-cards-loading]")).toBeVisible();
+      await expect(column.getByText("No issues")).toHaveCount(0);
+      const screenshots = `temp/verification/jira-board-loading/${theme}-${width}-${test.info().project.name}`;
+      await page.screenshot({ path: `${screenshots}-initial.png` });
+      await read("Resume");
+      const card = column.locator(".jira-board-card").filter({ hasText: "ENG-1" });
+      await expect(card).toHaveCSS("border-top-width", "1px");
+      await expect(card).not.toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+      await expect(card.getByRole("button", { name: "Drag ENG-1" })).toHaveCSS("opacity", "1");
+      await page.screenshot({ path: `${screenshots}-cards.png` });
+      await read("Pause");
+      await board.getByRole("button", { name: "Refresh" }).click();
+      await expect(board).toHaveAttribute("aria-busy", "true");
+      await expect(card).toBeVisible();
+      await expect(board.getByText(/Updates have not been verified/)).toHaveCount(0);
+      await read("Resume");
+      await expect(board).toHaveAttribute("aria-busy", "false");
+      await board.getByRole("tab", { name: "Backlog & sprints" }).click();
+      const sprint = board.getByRole("region", { name: "Sprint 21", exact: true });
+      await expect(sprint.locator(".jira-board-card")).toHaveCount(1);
+      await read("Pause");
+      const backlog = board.getByRole("region", { name: "Backlog", exact: true });
+      await backlog.locator("summary").click();
+      await expect(backlog.locator("[data-jira-cards-loading]")).toBeVisible();
+      await expect(sprint.locator(".jira-board-card")).toHaveCount(1);
+      await page.screenshot({ path: `${screenshots}-planning.png` });
+      await read("Resume");
+      await expect(backlog.locator(".jira-board-card")).toHaveCount(2);
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`Jira shared filter panel fits all views (${theme}, ${width})`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/inbox/jira-board.html?inbox&filterParity&theme=${theme}`);
+      for (const view of ["list", "kanban", "planning"]) {
+        if (view === "kanban")
+          await page.getByRole("button", { name: "Board", exact: true }).click();
+        if (view === "planning") await page.getByRole("tab", { name: "Backlog & sprints" }).click();
+        const trigger = page.getByRole("button", { name: "Filter inbox", exact: true });
+        await trigger.press("Enter");
+        const panel = page.getByRole("dialog", { name: "Filter inbox" });
+        await expect(panel.getByRole("button", { name: /^Workflow status:/ })).toBeVisible();
+        await expect(panel.getByRole("button", { name: /^Projects: All projects/ })).toBeVisible();
+        const bounds = (await panel.boundingBox())!;
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+        expect(bounds.y + bounds.height).toBeLessThanOrEqual(800);
+        await page.screenshot({
+          path: `temp/verification/jira-filter-parity/${view}-${theme}-${width}-${test.info().project.name}.png`,
+        });
+        await page.keyboard.press("Escape");
+        await expect(panel).toBeHidden();
+        await expect(trigger).toBeFocused();
+      }
+    });
+  }
+}
+
+test("Jira filters carry from list to Kanban and planning and clear in place", async ({ page }) => {
+  await page.goto("/tests/browser/inbox/jira-board.html?inbox&filterParity");
+  const trigger = page.getByRole("button", { name: /^Filter inbox/ });
+  const panel = page.getByRole("dialog", { name: "Filter inbox" });
+  await expect(
+    page.getByText("Support Jira board management", { exact: true }).first(),
+  ).toBeVisible();
+  await trigger.click();
+  await panel.getByRole("checkbox", { name: "Unassigned", exact: true }).check();
+  await page.keyboard.press("Escape");
+  const list = page.locator('[data-continuous-list^="inbox:"]');
+  await expect(list.getByText("Prepare the next release")).toBeVisible();
+  await expect(list.getByText("Support Jira board management")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  const cards = page.locator(".jira-board-card");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText("ENG-3");
+  await trigger.click();
+  await expect(panel.getByRole("checkbox", { name: "Unassigned", exact: true })).toBeChecked();
+  await panel.getByRole("checkbox", { name: "Assigned to me" }).check();
+  await panel.getByRole("button", { name: /^Workflow status:/ }).click();
+  await page.getByRole("option", { name: "In Progress", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText("ENG-2");
+
+  await page.getByRole("tab", { name: "Backlog & sprints" }).click();
+  const sprint = page.getByRole("region", { name: "Sprint 21", exact: true });
+  const backlog = page.getByRole("region", { name: "Backlog", exact: true });
+  await expect(sprint.locator(".jira-board-card")).toHaveCount(1);
+  await backlog.locator("summary").click();
+  await expect(backlog.getByText("No matches", { exact: true })).toBeVisible();
+  await trigger.click();
+  await panel.getByRole("button", { name: "Clear filters" }).click();
+  await expect(panel.getByRole("checkbox", { name: "Unassigned", exact: true })).not.toBeChecked();
+  await expect(panel.getByRole("button", { name: /^Workflow status:/ })).toHaveText("All statuses");
+  await page.keyboard.press("Escape");
+  await expect(backlog.locator(".jira-board-card")).toHaveCount(2);
+  await expect(sprint.locator(".jira-board-card")).toHaveCount(1);
+  await trigger.click();
+  await panel.getByRole("button", { name: /^Updated:/ }).click();
+  await page.getByRole("option", { name: "Today", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(backlog.getByText("No matches", { exact: true })).toBeVisible();
+  await expect(sprint.locator(".jira-board-card")).toHaveCount(1);
+  await page.getByRole("button", { name: "Reset filters", exact: true }).click();
+  await expect(backlog.locator(".jira-board-card")).toHaveCount(2);
+  const calls = await page.evaluate(
+    () =>
+      (window as unknown as { jiraFixtureCalls: { command: string; args: unknown }[] })
+        .jiraFixtureCalls,
+  );
+  expect(calls).toContainEqual({
+    command: "jira_board_issues",
+    args: expect.objectContaining({
+      scope: "sprint",
+      sprintId: 21,
+      filters: expect.objectContaining({
+        assignedToMe: true,
+        unassigned: true,
+        statuses: ["In Progress"],
+      }),
+    }),
+  });
+});
+
+for (const view of ["list", "board"] as const) {
+  for (const theme of ["light", "dark"] as const) {
+    for (const width of [1280, 800]) {
+      test(`Jira detail changes workflow status from ${view} (${theme}, ${width})`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+        await page.goto(`/tests/browser/inbox/jira-board.html?inbox&theme=${theme}`);
+        if (view === "board") {
+          await page.getByRole("button", { name: "Board", exact: true }).click();
+          await page.locator(".jira-board-card").filter({ hasText: "ENG-1" }).click();
+        } else {
+          await page.getByText("Support Jira board management", { exact: true }).first().click();
+        }
+        const changeStatus = page.getByRole("button", { name: /^Change status/ });
+        await expect(changeStatus).toHaveText("To Do");
+        await changeStatus.click();
+        const picker = page.getByRole("dialog", { name: "Change status" });
+        const transition = picker.getByRole("button", {
+          name: "Start work · In Progress",
+          exact: true,
+        });
+        await expect(transition).toBeVisible();
+        await page.screenshot({
+          path: `temp/verification/jira-detail-status/${view}-${theme}-${width}-${test.info().project.name}.png`,
+        });
+        await transition.click();
+        await expect(changeStatus).toHaveText("In Progress");
+        if (view === "board") {
+          await expect(
+            page
+              .getByRole("region", { name: "In Progress", exact: true })
+              .locator(".jira-board-card")
+              .filter({ hasText: "ENG-1" }),
+          ).toHaveCount(1);
+        } else {
+          await expect(
+            page
+              .locator('[data-continuous-list^="inbox:"]')
+              .getByText("In Progress", { exact: true }),
+          ).toHaveCount(2);
+        }
+      });
+    }
+  }
+}
+
+test("Jira detail handles a rejected write and retries a saved status read without another write", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/inbox/jira-board.html?inbox&statusRecovery");
+  await page.getByText("Support Jira board management", { exact: true }).first().click();
+  const changeStatus = page.getByRole("button", { name: /^Change status/ });
+  await changeStatus.press("Enter");
+  const picker = page.getByRole("dialog", { name: "Change status" });
+  const transition = picker.getByRole("button", { name: "Start work · In Progress" });
+  await expect(
+    picker.getByRole("button", { name: /Resolve · Requires fields in Jira/ }),
+  ).toBeDisabled();
+  await expect(picker.getByRole("button", { name: "Open in Jira" })).toBeVisible();
+  await page.evaluate(() =>
+    (window as unknown as { jiraFixtureFail: () => void }).jiraFixtureFail(),
+  );
+  await transition.click();
+  await expect(picker.getByRole("alert")).toContainText("Jira permission denied");
+  await expect(changeStatus).toHaveText("To Do");
+  await picker.getByText("Try again", { exact: true }).click();
+  await expect(transition).toBeVisible();
+  await page.evaluate(() =>
+    (
+      window as unknown as { jiraFixtureFailStatusRefresh: () => void }
+    ).jiraFixtureFailStatusRefresh(),
+  );
+  await transition.click();
+  await expect(picker.getByRole("alert")).toContainText(
+    "Saved to Jira. Could not refresh the status.",
+  );
+  await picker.getByText("Retry refresh", { exact: true }).click();
+  await expect(changeStatus).toHaveText("In Progress");
+  await expect(picker).toBeHidden();
+  const writes = await page.evaluate(() =>
+    (
+      window as unknown as { jiraFixtureCalls: { command: string; args: unknown }[] }
+    ).jiraFixtureCalls.filter(({ command }) => command === "jira_issue_transition"),
+  );
+  expect(writes.map(({ args }) => args)).toEqual([
+    { key: "ENG-1", transitionId: "31" },
+    { key: "ENG-1", transitionId: "31" },
+  ]);
+});
+
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
     test(`Jira comment preview modes ${theme} ${width}`, async ({ page }) => {
@@ -217,7 +453,9 @@ for (const variant of [
     await input.press("Tab");
     await expect(clear).toBeFocused();
     // The shared field frame owns the boundary; the clear action is its end adornment.
-    const field = await input.locator("xpath=ancestor::*[@data-field-control][1]").boundingBox(),
+    const field = await input
+        .locator('xpath=ancestor::*[@data-search-appearance="field"][1]')
+        .boundingBox(),
       button = await clear.boundingBox();
     expect(field).toBeTruthy();
     expect(field!.width).toBeGreaterThanOrEqual(140);
@@ -435,7 +673,7 @@ for (const theme of ["light", "dark"]) {
       await closed.check();
       await expect(open).toBeChecked();
       await expect(closed).toBeChecked();
-      const time = panel.getByRole("button", { name: /^Time:/ });
+      const time = panel.getByRole("button", { name: /^Updated:/ });
       await time.click();
       await page.getByRole("option", { name: "Last 7 days", exact: true }).click();
       await expect(time).toContainText("Last 7 days");

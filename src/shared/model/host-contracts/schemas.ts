@@ -74,6 +74,11 @@ export const ConnectionProbeResultSchema = z.strictObject({
 export const SubscriptionTargetSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("environment") }),
   z.strictObject({
+    kind: z.literal("deviceVideo"),
+    deviceId: z.string().min(1).max(200),
+    viewerId: IdentifierSchema,
+  }),
+  z.strictObject({
     kind: z.literal("project"),
     projectId: IdentifierSchema,
     /** Hosts advertising `transport.ws.projects.delta.v1`: changed rows against the last list. */

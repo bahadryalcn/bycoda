@@ -22,7 +22,6 @@ export interface SessionPaneDeps {
   onClosePane: P["onClose"];
   onCwdChange: P["onCwdChange"];
   onSessionMachineChange?: P["onSessionMachineChange"];
-  onSessionMachinePickerTrigger?: P["onSessionMachinePickerTrigger"];
   onBranchChange: P["onBranchChange"];
   onComposerWorktreeChange: P["onWorktreeChange"];
   onRemoteSnapshot: P["onRemoteSnapshot"];
@@ -79,6 +78,7 @@ export interface SessionPaneDeps {
   onNewTerminalInSession: P["onNewTerminal"];
   onRunSessionProjectAction: P["onRunProjectAction"];
   onRunSessionCode: P["onRunCode"];
+  onRunRemoteSessionCode: P["onRunRemoteCode"];
 }
 
 export function useSessionPaneProps({
@@ -93,7 +93,6 @@ export function useSessionPaneProps({
   onClosePane,
   onCwdChange,
   onSessionMachineChange,
-  onSessionMachinePickerTrigger,
   onBranchChange,
   onComposerWorktreeChange,
   onRemoteSnapshot,
@@ -150,6 +149,7 @@ export function useSessionPaneProps({
   onNewTerminalInSession,
   onRunSessionProjectAction,
   onRunSessionCode,
+  onRunRemoteSessionCode,
 }: SessionPaneDeps) {
   const windowMovingSessionIds = useMemo(
     () =>
@@ -170,7 +170,6 @@ export function useSessionPaneProps({
     onClose: onClosePane,
     onCwdChange: useKeepSessionAction(onCwdChange, onKeepSession)!,
     onSessionMachineChange: useKeepSessionAction(onSessionMachineChange, onKeepSession),
-    onSessionMachinePickerTrigger,
     onBranchChange: useKeepSessionAction(onBranchChange, onKeepSession)!,
     onWorktreeChange: onComposerWorktreeChange,
     onRemoteSnapshot,
@@ -229,6 +228,7 @@ export function useSessionPaneProps({
     onNewTerminal: onNewTerminalInSession,
     onRunProjectAction: onRunSessionProjectAction,
     onRunCode: onRunSessionCode,
+    onRunRemoteCode: onRunRemoteSessionCode,
   };
 
   // One object while its values hold: the main area and inbox-ask panes are memoized on it.

@@ -148,7 +148,6 @@ type Shared = {
   onRatio: (splitId: string, index: number, ratio: number) => void;
   onCwdChange: (sessionId: string, cwd: string) => void;
   onSessionMachineChange?: SessionPaneProps["onSessionMachineChange"];
-  onSessionMachinePickerTrigger?: SessionPaneProps["onSessionMachinePickerTrigger"];
   onBranchChange: (sessionId: string) => void;
   onWorktreeChange?: (sessionId: string, tree: Worktree) => Promise<void>;
   onWorkspaceModeChange: (sessionId: string, mode: WorkspaceMode, base?: string) => void;
@@ -244,6 +243,10 @@ type Shared = {
   onNewTerminal: (sessionId: string) => void;
   onRunProjectAction?: (sessionId: string, action: ProjectAction) => void;
   onRunCode?: (sessionId: string, cwd: string, profile: string, terminalId: string) => boolean;
+  onRunRemoteCode?: (
+    sessionId: string,
+    run: import("../../terminal/public/codeExecution").RemoteCodeRun,
+  ) => boolean;
   onTerminalMetaChange?: (fileId: string, patch: TerminalMetaPatch) => void;
   transcriptPool?: TranscriptPool;
 };
@@ -291,7 +294,6 @@ function PaneTreeComponent({
   onRatio,
   onCwdChange,
   onSessionMachineChange,
-  onSessionMachinePickerTrigger,
   onBranchChange,
   onWorktreeChange,
   onWorkspaceModeChange,
@@ -348,6 +350,7 @@ function PaneTreeComponent({
   onNewTerminal,
   onRunProjectAction,
   onRunCode,
+  onRunRemoteCode,
   onTerminalMetaChange,
   transcriptPool,
 }: Props) {
@@ -897,7 +900,6 @@ function PaneTreeComponent({
                           onPrepareSessionHistory={onPrepareSessionHistory}
                           onCwdChange={onCwdChange}
                           onSessionMachineChange={onSessionMachineChange}
-                          onSessionMachinePickerTrigger={onSessionMachinePickerTrigger}
                           onBranchChange={onBranchChange}
                           onWorktreeChange={onWorktreeChange}
                           onWorkspaceModeChange={onWorkspaceModeChange}
@@ -949,6 +951,7 @@ function PaneTreeComponent({
                           onNewTerminal={onNewTerminal}
                           onRunProjectAction={onRunProjectAction}
                           onRunCode={onRunCode}
+                          onRunRemoteCode={onRunRemoteCode}
                           onPaneDragStart={onPaneDragStart}
                           transcriptPool={transcriptPool}
                         />

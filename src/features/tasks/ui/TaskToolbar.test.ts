@@ -83,13 +83,14 @@ it("limits the list to the projects of the current sprint", () => {
 it("keeps a path scope selectable before and after its project is known", () => {
   const unknown = projectScopeOptions({
     t,
+    projectLabels: { "/work/alpha": "Personal project" },
     projectFilter: "path:/work/alpha",
     selectedProject: undefined,
     projectScopes: [],
     currentSprint: undefined,
     cwd: "/work/alpha",
   });
-  expect(unknown[1]).toEqual({ value: "path:/work/alpha", label: "alpha" });
+  expect(unknown[1]).toEqual({ value: "path:/work/alpha", label: "Personal project" });
   const known = projectScopeOptions({
     t,
     projectFilter: "path:/work/alpha",

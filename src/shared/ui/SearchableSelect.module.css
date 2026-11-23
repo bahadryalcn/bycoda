@@ -75,6 +75,10 @@ button:global(.bycoda-arc):is(
   background: var(--ui-surface-floating);
   padding: var(--ui-space-1, 0.25rem) var(--ui-space-2, 0.5rem);
 }
+/* Keep the inter-group space inside the measured heading in a windowed menu. */
+.groupHeading[data-after-group] {
+  padding-block-start: 0.625rem;
+}
 .pinnedOption {
   position: sticky;
   inset-block-start: 0;

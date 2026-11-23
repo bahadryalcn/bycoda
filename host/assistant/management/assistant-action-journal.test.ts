@@ -111,4 +111,6 @@ it("appends actual operation outcomes once and fences source disclosure", async 
     kind: "action.unknown",
     operation: { tool: "conversation:sessions.manage", target: "session" },
   });
+  await repository.trash("threads", "thread", 1, time++);
+  expect(await journal.activity(20, ports, admission, "thread")).toEqual([]);
 });

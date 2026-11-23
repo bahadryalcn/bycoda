@@ -220,6 +220,10 @@ import {
   sameProjectPath,
 } from "../features/projects/model/recents";
 import {
+  linkedProjectOnMachine,
+  savedProjectLinks,
+} from "../features/projects/model/projectRepositories";
+import {
   useAddNoteToChatListener,
   useAddToChatListener,
   useWorktreeManagementListener,
@@ -1050,19 +1054,6 @@ function Workspace({
     setSidebarTab("sessions");
     setNewListedSessionRequest((request) => request + 1);
   }, [lastSessionsOpen, onNewInProject, setSessionSidebarOpen, setSidebarTab]);
-  const machinePickerRequest = useRef<string | undefined>(undefined);
-  const onNewOnMachine = useStableCallback(() => {
-    machinePickerRequest.current = onNewInProject();
-  });
-  const onSessionMachinePickerTrigger = useStableCallback(
-    (sessionId: string, trigger: HTMLButtonElement | null) => {
-      if (!trigger || machinePickerRequest.current !== sessionId) return;
-      machinePickerRequest.current = undefined;
-      queueMicrotask(() => {
-        if (trigger.isConnected) trigger.click();
-      });
-    },
-  );
 
   useAddNoteToChatListener(onAddNoteToChat);
 
@@ -1090,6 +1081,7 @@ function Workspace({
   });
   const {
     focusProjectTerminal,
+    remoteTerminalAvailable,
     openProjectTerminal,
     onOpenTerminal,
     onNewTerminal,
@@ -1099,6 +1091,7 @@ function Workspace({
     onNewTerminalInSession,
     onRunSessionProjectAction,
     onRunSessionCode,
+    onRunRemoteSessionCode,
   } = useProjectTerminalOpen({
     dock: projectTerminalDock,
     activeTab,
@@ -2855,11 +2848,14 @@ function Workspace({
   const onSessionMachineChange = useSessionMachineActions({
     sessionsRef,
     onCwdChange,
-    chooseProject: async (environmentId) => {
-      if (!environmentId) return pickProjectOnMachine({ kind: "local" });
+    chooseProject: async (environmentId, cwd) => {
+      // The same repository already on that machine needs no folder picker.
+      const copy = linkedProjectOnMachine(savedProjectLinks(loadRecents()), cwd, environmentId);
+      if (copy) return copy;
+      if (!environmentId) return pickProjectOnMachine({ kind: "local" }, cwd);
       const machine = await remoteMachineFor(environmentId);
       if (!machine) throw new Error("The selected machine is unavailable");
-      return pickProjectOnMachine({ kind: "remote", machineId: machine.id });
+      return pickProjectOnMachine({ kind: "remote", machineId: machine.id }, cwd);
     },
   });
   const { sessionPaneProps } = useSessionPaneProps({
@@ -2874,7 +2870,6 @@ function Workspace({
     onClosePane,
     onCwdChange,
     onSessionMachineChange,
-    onSessionMachinePickerTrigger,
     onBranchChange,
     onComposerWorktreeChange,
     onRemoteSnapshot,
@@ -2931,6 +2926,7 @@ function Workspace({
     onNewTerminalInSession,
     onRunSessionProjectAction,
     onRunSessionCode,
+    onRunRemoteSessionCode,
   });
 
   // Settings is a dialog over the visible work context: the shared Modal makes the background
@@ -3397,7 +3393,6 @@ function Workspace({
                       onRemoveProject={sidebarActions.onRemoveProject}
                       onRenameProjectFolder={sidebarActions.onRenameProjectFolder}
                       onNew={sidebarActions.onNew}
-                      onNewOnMachine={onNewOnMachine}
                       openSessions={openProjectSessions}
                       onNewTerminal={sidebarActions.onNewTerminal}
                       onSearch={sidebarActions.onSearch}
@@ -3509,6 +3504,7 @@ function Workspace({
                           commitDockSize={commitDockSize}
                           onNewTerminal={onNewTerminal}
                           onNewTerminalWithProfile={onNewTerminalWithProfile}
+                          remoteTerminalAvailable={remoteTerminalAvailable}
                           onSplitProjectTerminal={onSplitProjectTerminal}
                           openSettings={openSettings}
                           onSelectProjectTerminal={onSelectProjectTerminal}
@@ -3706,6 +3702,7 @@ function Workspace({
                       onToggleRunningTerminal={onToggleRunningTerminal}
                       onNewTerminal={onNewTerminal}
                       onShowProjectTerminal={onShowProjectTerminal}
+                      remoteTerminalAvailable={remoteTerminalAvailable}
                       currentProjectDock={currentProjectDock}
                       dockVisible={dockVisible}
                       conversationTools={conversationTools}

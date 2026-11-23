@@ -29,7 +29,7 @@ import { NoteWordCount } from "./NoteWordCount";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { bridgeQueryEvents } from "../../../shared/lib/queryClient";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/model/projectNames";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { formatDate, t, useLocale } from "../../../shared/i18n";
@@ -178,6 +178,7 @@ export function NotesView({
   onToggleSidebar,
 }: Props) {
   useLocale();
+  const projectLabels = useProjectLabels();
   useEffect(mountNotesView, []);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -298,7 +299,7 @@ export function NotesView({
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set<string>());
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const pendingListFocus = useRef<{ id: string; group: string } | null>(null);
-  const projects = useMemo(() => noteLibraryProjects(notes), [notes]);
+  const projects = useMemo(() => noteLibraryProjects(notes, projectLabels), [notes, projectLabels]);
   const allTags = useMemo(() => [...new Set(notes.flatMap((note) => note.tags))].sort(), [notes]);
   useEffect(() => saveNoteLibraryPreferences(libraryPreferences), [libraryPreferences]);
   const [selectedId, setSelectedId] = useState<string | null>(() => {
@@ -442,8 +443,8 @@ export function NotesView({
     [notes, deferredQuery, projectFilter, tagFilter, libraryPreferences.sort, bodyMatches],
   );
   const groups = useMemo(
-    () => groupNoteLibrary(visible, libraryPreferences.grouping),
-    [visible, libraryPreferences.grouping],
+    () => groupNoteLibrary(visible, libraryPreferences.grouping, projectLabels),
+    [visible, libraryPreferences.grouping, projectLabels],
   );
   const headings = libraryPreferences.grouping !== "none";
   const libraryRows = useMemo(
@@ -571,7 +572,7 @@ export function NotesView({
   });
   const createScopeLabel = (scope: NoteCreateScope) =>
     [
-      scope.sourceCwd ? projectDisplayName(scope.sourceCwd) : t("No project"),
+      scope.sourceCwd ? projectDisplayNameFrom(scope.sourceCwd, projectLabels) : t("No project"),
       ...(scope.tags ?? []).map((tag) => `#${tag}`),
     ].join(" · ");
 
@@ -1176,6 +1177,7 @@ export function NotesView({
                     ) : null}
                     <NoteCard
                       note={row.note}
+                      projectLabels={projectLabels}
                       group={row.group.key}
                       grouping={libraryPreferences.grouping}
                       sort={libraryPreferences.sort}
@@ -1374,7 +1376,7 @@ export function NotesView({
               </Text>
               {menu.target.kind === "note" && menuNote?.sourceCwd ? (
                 <Text size="inherit" tone="inherit" truncate className="block">
-                  {projectDisplayName(menuNote.sourceCwd)}
+                  {projectDisplayNameFrom(menuNote.sourceCwd, projectLabels)}
                 </Text>
               ) : null}
             </Text>
@@ -1398,6 +1400,7 @@ export function NotesView({
 
 function NoteCard({
   note,
+  projectLabels,
   group,
   grouping,
   sort,
@@ -1410,6 +1413,7 @@ function NoteCard({
   onMenu,
 }: {
   note: NoteSummary;
+  projectLabels: Record<string, string>;
   group: string;
   grouping: NoteGrouping;
   sort: NoteSort;
@@ -1424,7 +1428,7 @@ function NoteCard({
   useLocale();
   const date = noteLibraryDate(note, sort);
   const validDate = Number.isFinite(date.timestamp) && date.timestamp > 0;
-  const project = noteSourceProject(note.sourceCwd);
+  const project = noteSourceProject(note.sourceCwd, projectLabels);
   const match = noteLibraryMatchLocation(note, query, bodyMatches);
   const preview = match === "content" ? t("Match in note") : note.preview || t("No preview");
   const secondary = [grouping !== "project" ? project : "", preview].filter(Boolean).join(" · ");
@@ -1606,6 +1610,7 @@ function NoteEditor({
 }) {
   useLocale();
   const modesId = useId();
+  const projectLabels = useProjectLabels();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const [previewEditing, setPreviewEditing] = useState(false);
   // Mode, narrow-pane routing and toolbar target; find and image insertion read
@@ -2126,7 +2131,7 @@ function NoteEditor({
                     <DescriptionItem term={t("Project")}>
                       {sourceCwd ? (
                         <>
-                          {projectDisplayName(sourceCwd)}
+                          {projectDisplayNameFrom(sourceCwd, projectLabels)}
                           <Text as="div" size="caption" tone="secondary" wrap="anywhere">
                             {sourceCwd}
                           </Text>

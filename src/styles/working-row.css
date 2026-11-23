@@ -52,6 +52,6 @@
 :root[data-working-indicator="steady"] [data-project-working]::after,
 :root[data-performance-no-shimmer] [data-project-working]::after,
 :root[data-decorative-motion="off"] [data-project-working]::after,
-:root[data-window-focus="off"] [data-project-working]::after {
+:root[data-window-visible="off"] [data-project-working]::after {
   display: none;
 }

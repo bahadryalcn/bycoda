@@ -335,7 +335,8 @@ Live voice visuals animate gently while listening, even before sound is detected
 Their painting is capped at about 30 frames per second, so a high-refresh display's
 automatic decorative-motion fallback does not freeze them. Turning decorative motion
 off explicitly, or following the system's reduced-motion setting, still stops these
-animations. Hidden and offscreen visuals pause their frame work.
+animations. Visible voice visuals keep moving when another app takes focus.
+Minimized windows and hidden or offscreen visuals pause their frame work.
 
 The visual distinguishes disconnected, connecting, listening, your speech,
 preparing a reply, assistant playback, microphone paused and error states through

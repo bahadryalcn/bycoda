@@ -17,6 +17,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 pub(crate) mod account_pairing;
 pub(crate) mod account_routes;
+pub(crate) mod browser_frames;
 pub(crate) mod host_proof;
 pub(crate) mod protocol;
 pub(crate) mod response_limit;
@@ -66,6 +67,7 @@ struct WsCapability {
 
 #[derive(Default)]
 pub struct RemoteConnections {
+    browser_frames: browser_frames::Streams,
     changes: changes::Changes,
     reads: changes::Reads,
     pub(crate) store: Arc<Mutex<()>>,
@@ -177,6 +179,7 @@ impl RemoteConnections {
         self.tunnels.clear();
     }
     pub fn detach_window(&self, label: &str) {
+        self.browser_frames.detach(label);
         self.ws.detach(label);
         self.ws.detach(&window_lists::owner(label));
     }
@@ -646,6 +649,7 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         "voice.tools.call" => std::time::Duration::from_secs(250),
         "devices.boot" => std::time::Duration::from_secs(240),
         "devices.action" => std::time::Duration::from_secs(180),
+        "devices.touch" => std::time::Duration::from_secs(35),
         // Contract deadline 180 s for a device screenshot.
         "devices.capture" => std::time::Duration::from_secs(190),
         // Contract deadline 600 s: sync may queue, pull and push on top of the 120 s limits.
@@ -927,6 +931,7 @@ fn device_http_effect(method: &str) -> bool {
             | "devices.control.release"
             | "devices.control.renew"
             | "devices.action"
+            | "devices.touch"
             | "devices.preview"
             | "devices.preview.mobile.start"
     ) && HostWsBroker::method_has_effect(method)
@@ -2829,6 +2834,21 @@ fn machine_for_request(
     Ok(machine)
 }
 
+pub(crate) fn project_terminal_ssh_target(
+    app: &AppHandle,
+    machine_id: &str,
+    environment_id: &str,
+) -> Result<SshTarget, String> {
+    account_routes::require_environment_enabled(environment_id)?;
+    let state = app.state::<RemoteConnections>();
+    let machine = machine_for_request(&state, &store_path(app)?, machine_id, Some(environment_id))?;
+    let saved = machine
+        .ssh
+        .ok_or("This project's machine has no saved SSH connection")?;
+    // Reuse the current Host tunnel's route, including the known-host alias for its alternate.
+    Ok(state.tunnels.dialed(machine_id).unwrap_or(saved))
+}
+
 pub(crate) struct NativeRecoveryReply {
     value: Value,
     guard: Option<crate::host_ws::native_profile::NativeProfileGuard>,
@@ -2976,6 +2996,7 @@ pub(crate) fn conversation_machine_call_pinned(
             | "devices.control.renew"
             | "devices.inspect"
             | "devices.action"
+            | "devices.touch"
     ) {
         return Err("Unsupported paired device operation".into());
     }

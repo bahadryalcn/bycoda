@@ -18,6 +18,7 @@ import {
   createCodeTerminal,
   type CodeTerminalController,
   type CodeTerminalOptions,
+  type RemoteCodeRun,
   CodeTerminalDialog,
   discardTerminalRun,
   loadCodeRunReport,
@@ -30,6 +31,7 @@ export type CodeExecutionScope = {
   native: boolean;
   /** Opens the queued native run as a project dock terminal; false falls back to the dialog. */
   openTerminal?: (sessionId: string, cwd: string, profile: string, terminalId: string) => boolean;
+  openRemoteTerminal?: (sessionId: string, run: RemoteCodeRun) => boolean;
 };
 
 /** Adds the settled dock run's output to the composer once, when the owner setting allows it. */
@@ -105,6 +107,18 @@ export function CodeExecutionProvider({
     };
     const controller = createCodeTerminal(options);
     const openTerminal = scope.openTerminal;
+    if (
+      !scope.native &&
+      scope.openRemoteTerminal?.(scope.sessionId, { controller, options, onReport })
+    ) {
+      void controller
+        .start()
+        .finally(() => {
+          active.current = false;
+        })
+        .catch(() => {});
+      return;
+    }
     if (!scope.native || !openTerminal) {
       setRun({ controller, options, report: onReport });
       void controller.start().catch(() => {});

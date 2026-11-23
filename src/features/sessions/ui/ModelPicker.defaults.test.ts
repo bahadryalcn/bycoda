@@ -100,7 +100,7 @@ async function open(props: { project?: string; accountId?: string; harness?: "cl
 }
 
 describe("model panel defaults", () => {
-  it("marks the default on the rail, the account and the model row", async () => {
+  it("marks the default on the rail and model row without labeling the current account", async () => {
     pinProjectDefault(PROJECT, "claude", "claude:opus-5.5", "account-work");
     await open({ project: PROJECT, accountId: "account-work" });
     expect(providerTab("Claude Code").getAttribute("aria-label")).toBe(
@@ -109,6 +109,9 @@ describe("model panel defaults", () => {
     expect(
       providerTab("Claude Code").querySelector("[data-model-account-number]")?.textContent,
     ).toBe("2");
+    const menu = panel().querySelector<HTMLButtonElement>("[data-model-account-menu]")!;
+    expect(menu.textContent).toContain("work");
+    expect(menu.textContent).not.toContain("Default model");
     expect(row("Opus 5.5").querySelector("[data-model-default]")).not.toBeNull();
     expect(row("Sonnet 5").querySelector("[data-model-default]")).toBeNull();
     expect(pinButton("Opus 5.5").getAttribute("aria-pressed")).toBe("true");

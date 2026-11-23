@@ -239,7 +239,7 @@ it("applies the selected total count to pinned rows and persists the new three-r
   }
 });
 
-it("marks only the working status dot so the root motion and focus state can pause it", async () => {
+it("marks only the working status dot so motion settings and window visibility can pause it", async () => {
   const row = (status: "working" | "done") => ({
     ...data.stored[0],
     id: status,
@@ -269,7 +269,7 @@ it("marks only the working status dot so the root motion and focus state can pau
   // The shared stylesheet pauses that class from the root attributes, with no per-row listeners.
   const css = readFileSync("src/styles/index.css", "utf8");
   expect(css).toMatch(
-    /html:is\(\[data-decorative-motion="off"\], \[data-window-focus="off"\]\) \.working-dot \{\s*animation-play-state: paused/,
+    /html:is\(\[data-decorative-motion="off"\], \[data-window-visible="off"\]\) \.working-dot \{\s*animation-play-state: paused/,
   );
 });
 

@@ -265,7 +265,9 @@ export function ServersTerminalWorkspace({
     server: ServerRecord,
     replacingPendingId?: string,
     expectedConfigurationDigest?: string,
-    shellIntegration: "auto" | "bash" | "zsh" | "powershell" = "auto",
+    shellIntegration: "auto" | "bash" | "zsh" | "powershell" | undefined = server.machine
+      ? undefined
+      : "auto",
     name = server.name,
     startupEligible = !replacingPendingId,
     mobile?: { resourceId: string; valid: () => boolean; authorize: () => Promise<boolean> },
@@ -318,7 +320,8 @@ export function ServersTerminalWorkspace({
         open,
         forwardAgent: async (server, reviewId) => {
           const id = `ssh-agent:${crypto.randomUUID()}`;
-          const approval = authorizeProxy(id, server, undefined, "auto");
+          const shellIntegration = server.machine ? undefined : "auto";
+          const approval = authorizeProxy(id, server, undefined, shellIntegration);
           const httpProxyTicketId = approval ? await approval : undefined;
           if (httpProxyTicketId === null) return;
           // Approval and this tab are ephemeral. Restore can only open an ordinary session.
@@ -330,7 +333,7 @@ export function ServersTerminalWorkspace({
               name: server.name,
               server,
               agentForwardingReviewId: reviewId,
-              shellIntegration: "auto",
+              shellIntegration,
               startupEligible: true,
               httpProxyTicketId,
             },

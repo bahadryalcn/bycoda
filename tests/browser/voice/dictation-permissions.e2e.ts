@@ -474,13 +474,9 @@ test("live permission denial returning to prompt clears stale denial without gra
     status.dispatchEvent(new Event("change"));
   });
   await expect(permission).toContainText("Not checked");
-  const help = permission.getByRole("button", { name: "Microphone access: Help", exact: true });
-  await help.focus();
-  await help.press("Enter");
   await expect(
-    page.getByText("Microphone permission is requested only", { exact: false }),
+    permission.getByText("Microphone permission is requested only", { exact: false }),
   ).toBeVisible();
-  await page.keyboard.press("Escape");
   await expect(permission).not.toContainText("Microphone access is blocked.");
   await expect(permission).not.toContainText("Microphone allowed");
   expect(await page.evaluate(() => (window as any).fixtureDictation.microphoneRequests)).toBe(1);

@@ -294,7 +294,8 @@ beforeEach(() => {
     },
   );
   vi.mocked(gitDiffIndex).mockReset();
-  vi.mocked(gitPull).mockReset();
+  vi.mocked(gitPull).mockReset().mockResolvedValue(undefined);
+  vi.mocked(gitPush).mockReset().mockResolvedValue(undefined);
   vi.mocked(gitFetch).mockReset().mockResolvedValue(undefined);
   vi.mocked(gitSync).mockReset().mockResolvedValue(undefined);
   vi.mocked(gitStash).mockReset().mockResolvedValue(undefined);
@@ -693,9 +694,31 @@ async function renderPanel(cwd = "/repo", expanded?: boolean) {
   await act(async () => {});
 }
 
-it("keeps Sync progress on its action through remount and prevents duplicate requests", async () => {
+it.each([
+  { label: "Push", upstream: "origin/feature/pull", ahead: 2, behind: 0, command: gitPush },
+  { label: "Publish Branch", upstream: null, ahead: 2, behind: 0, command: gitPush },
+  { label: "Pull", upstream: "origin/feature/pull", ahead: 0, behind: 2, command: gitPull },
+  { label: "Sync changes", upstream: "origin/feature/pull", ahead: 2, behind: 2, command: gitSync },
+])(
+  "runs only the advertised $label operation on the remote checkout",
+  async ({ label, upstream, ahead, behind, command }) => {
+    const cwd = "remote://test-host/projects/clinic";
+    vi.mocked(gitDiffIndex).mockResolvedValue(index({ remote: "origin", upstream, ahead, behind }));
+    await renderPanel(cwd);
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.startsWith(label),
+    )!;
+    await act(async () => button.click());
+    expect(command).toHaveBeenCalledExactlyOnceWith(cwd);
+    for (const other of [gitPush, gitPull, gitSync].filter((operation) => operation !== command)) {
+      expect(other).not.toHaveBeenCalled();
+    }
+  },
+);
+
+it("keeps Push progress on its action through remount and prevents duplicate requests", async () => {
   let finish!: () => void;
-  vi.mocked(gitSync).mockImplementationOnce(
+  vi.mocked(gitPush).mockImplementationOnce(
     () =>
       new Promise<void>((resolve) => {
         finish = resolve;
@@ -713,7 +736,7 @@ it("keeps Sync progress on its action through remount and prevents duplicate req
     action().click();
     action().click();
   });
-  expect(gitSync).toHaveBeenCalledTimes(1);
+  expect(gitPush).toHaveBeenCalledTimes(1);
   expect(action().getAttribute("aria-busy")).toBe("true");
   expect(action().disabled).toBe(false);
   expect(container.querySelector('header [role="status"]')).toBeNull();
@@ -982,11 +1005,11 @@ describe("GitChangesPanel action feedback", () => {
     )!;
     expect(push.disabled).toBe(false);
     await act(async () => push.click());
-    expect(gitSync).toHaveBeenCalledWith(cwd);
+    expect(gitPush).toHaveBeenCalledExactlyOnceWith(cwd);
     expect(gitCommit).not.toHaveBeenCalled();
     await act(async () => primaryAction().click());
     expect(gitCommit).toHaveBeenCalledWith(cwd, "Commit without pushing", false, false);
-    expect(gitPush).not.toHaveBeenCalled();
+    expect(gitPush).toHaveBeenCalledTimes(1);
   });
 
   it("commits every change from the primary action when nothing is staged", async () => {
@@ -1765,7 +1788,7 @@ describe("GitChangesPanel loading and publication recovery", () => {
     expect(create().disabled).toBe(false);
   });
 
-  it("drops the pushed count when Sync finishes, before the reload answers", async () => {
+  it("drops the pushed count when Push finishes, before the reload answers", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({ remote: "origin", upstream: "origin/feature/pull", ahead: 1 }),
     );
@@ -1776,7 +1799,7 @@ describe("GitChangesPanel loading and publication recovery", () => {
       );
     vi.mocked(gitDiffIndex).mockImplementation(() => new Promise(() => {}));
     await act(async () => push()!.click());
-    expect(gitSync).toHaveBeenCalledWith("/repo-sync-optimistic");
+    expect(gitPush).toHaveBeenCalledWith("/repo-sync-optimistic");
     expect(push()).toBeUndefined();
     expect(container.textContent).toContain("No uncommitted changes");
     expect(container.textContent).not.toContain("Loading changes…");

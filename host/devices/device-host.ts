@@ -13,6 +13,7 @@ import {
 } from "./device-authority";
 import { DeviceStreams } from "./device-stream";
 import { androidDeviceControl, quoteAndroidShell } from "./android-device-control";
+import { AndroidDeviceTouch } from "./android-device-touch";
 import { DeviceControlLeases } from "./device-control-leases";
 import { iosCaptureDisplay } from "./ios-display";
 import { inspectionFingerprint, inspectionNodes, type InspectionNode } from "./device-inspection";
@@ -23,6 +24,7 @@ import {
   type DeviceFrame,
   type DeviceHostStatus,
   type DeviceSummary,
+  type DeviceTouch,
 } from "../../src/shared/model/host-contracts/native-devices";
 
 export * from "./device-authority";
@@ -175,6 +177,9 @@ function localPort(): Promise<number> {
 /** One owner per host. No hub origin, daemon endpoint or token is returned to clients. */
 export class DeviceHost {
   readonly control = new DeviceControlLeases();
+  private readonly androidTouch = new AndroidDeviceTouch({
+    adbPath: () => this.androidBinary("adb"),
+  });
   private readonly inspections = new Map<
     string,
     {
@@ -268,6 +273,9 @@ export class DeviceHost {
   private entry(tool: keyof typeof TOOLS) {
     return join(this.dir(tool), "node_modules", TOOLS[tool].name, TOOLS[tool].entry);
   }
+  private hubPackageRoot() {
+    return join(this.dir("hub"), "node_modules", TOOLS.hub.name);
+  }
   private async installed(tool: keyof typeof TOOLS) {
     try {
       return (
@@ -355,13 +363,14 @@ export class DeviceHost {
     const android =
       !!sdk &&
       existsSync(join(sdk, "platform-tools", this.platform === "win32" ? "adb.exe" : "adb"));
+    const installed = await this.installed("hub");
     const result: DeviceHostStatus = {
       running:
         !!this.origin &&
         !!this.child &&
         this.child.exitCode === null &&
         this.child.signalCode === null,
-      installed: await this.installed("hub"),
+      installed,
       agentInstalled: await this.installed("agent"),
       platform: this.platform,
       controlProtocol: 1,
@@ -385,6 +394,49 @@ export class DeviceHost {
     };
     await assertDeviceAuthority(effect);
     return result;
+  }
+
+  async sendTouch(
+    id: string,
+    leaseId: string,
+    touch: DeviceTouch,
+    effect: DeviceEffectContext,
+    admitted?: () => void,
+  ) {
+    if (this.closing || this.disposed || !this.origin) throw new Error("Device host is stopped");
+    if (!["win32", "darwin"].includes(this.platform))
+      throw new Error("Live touch requires an Android device on a Windows or macOS Host");
+    if (touch.phase === "down") {
+      const device = await this.device(id);
+      if (device.platform !== "android" || !device.booted)
+        throw new Error("Live touch requires a running Android device");
+    }
+    await assertDeviceAuthority(effect);
+    admitted?.();
+    try {
+      await this.androidTouch.send(this.hubPackageRoot(), id, leaseId, touch, effect);
+    } finally {
+      if (this.lastCapture?.id === id) this.lastCapture = undefined;
+    }
+  }
+
+  async prepareTouch(id: string, leaseId: string, effect: DeviceEffectContext) {
+    if (
+      this.closing ||
+      this.disposed ||
+      !this.origin ||
+      !["win32", "darwin"].includes(this.platform)
+    )
+      return;
+    const device = await this.device(id);
+    if (device.platform !== "android" || !device.booted) return;
+    await assertDeviceAuthority(effect);
+    if (this.closing || this.disposed || !this.origin) return;
+    await this.androidTouch.prepare(this.hubPackageRoot(), id, leaseId, effect);
+  }
+
+  releaseTouch(id: string, leaseId: string) {
+    return this.androidTouch.release(id, leaseId);
   }
   /** Also runs on first use. npm (bundled beside Node) runs as Node JS, no shell or global install. */
   setup(agentAccess: boolean, effect?: DeviceEffectContext): Promise<DeviceHostStatus> {
@@ -1599,6 +1651,9 @@ export class DeviceHost {
     const child = this.child;
     this.origin = undefined;
     this.lastCapture = undefined;
+    await this.androidTouch.stop().catch((cause: unknown) => {
+      this.error = String(cause);
+    });
     await this.streams.stopAll();
     if (child) await stopDeviceChild(child);
     this.child = undefined;

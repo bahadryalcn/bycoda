@@ -3,6 +3,7 @@ import {
   applySessionOrder,
   loadSessionOrder,
   moveIdsInOrder,
+  orderLooseRows,
   saveSessionOrder,
 } from "./sessionOrder";
 
@@ -18,6 +19,21 @@ describe("session order", () => {
     });
   });
   afterEach(() => vi.unstubAllGlobals());
+
+  it("prepares the pin group without sorting loose rows before the list applies status order", () => {
+    const sessions = [{ id: "new" }, { id: "pin", pinned: true }, { id: "old" }];
+    const sort = vi.spyOn(Array.prototype, "sort");
+    let ordered;
+    let sorts;
+    try {
+      ordered = orderLooseRows(sessions, undefined);
+      sorts = sort.mock.calls.length;
+    } finally {
+      sort.mockRestore();
+    }
+    expect(ordered.map((session) => session.id)).toEqual(["pin", "new", "old"]);
+    expect(sorts).toBe(0);
+  });
 
   it("keeps recency until arranged, then leads with sessions it has not seen", () => {
     expect(applySessionOrder(rows("a", "b", "c"), undefined).map((r) => r.id)).toEqual([

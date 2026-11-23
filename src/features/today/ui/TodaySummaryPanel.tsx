@@ -94,22 +94,25 @@ export function SummaryPanel({
     );
   return (
     <div className="grid gap-2">
-      <div className="flex items-center gap-1">
-        <SectionLabel>{t("Summary")}</SectionLabel>
-        <InfoPopover>
-          <Text>
-            {t(
-              "Only the text below is sent to your own provider when you press Send. Nothing else leaves this computer.",
-            )}
-          </Text>
-        </InfoPopover>
-      </div>
+      <SectionLabel>{t("Summary")}</SectionLabel>
       <Checkbox
         label={t("Include session titles")}
         checked={includeTitles}
         onChange={(event) => setIncludeTitles(event.target.checked)}
       />
-      <Disclosure size="sm" summary={t("Request preview")}>
+      <Disclosure
+        size="sm"
+        summary={t("Request preview")}
+        summaryActions={
+          <InfoPopover>
+            <Text>
+              {t(
+                "Only the text below is sent to your own provider when you press Send. Nothing else leaves this computer.",
+              )}
+            </Text>
+          </InfoPopover>
+        }
+      >
         <TextareaField
           label={t("Request preview")}
           hideLabel

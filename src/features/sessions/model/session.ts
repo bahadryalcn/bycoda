@@ -78,6 +78,9 @@ export type ComposerTurnOptions = {
   draftBlockId?: string;
   /** Queue this message behind a running turn instead of following the follow-up setting. */
   followUpBehavior?: "queue" | "steer";
+  /** Overrides the session's card; undefined when an earlier send already carries it. */
+  noteCard?: NoteComposerCard;
+  handoffCard?: HandoffComposerCard;
 };
 
 export type PlanStatus = "streaming" | "ready" | "building" | "built";

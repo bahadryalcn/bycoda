@@ -77,7 +77,7 @@ Parts: FieldControl
 | [SelectTrigger](../../src/shared/ui/Select.tsx) | A custom select-like trigger whose owner provides the popup and selection state. | A complete short exclusive-choice field: Select. Searchable choices: SearchableSelect. |  |
 | [Switch](../../src/shared/ui/Switch.tsx) | A setting that takes effect the moment it flips (preferences, enable/disable a feature). | Choice committed with a form Save, or a selection among items: Checkbox. One of several modes: SegmentedControl or RadioGroup. |  |
 
-Parts: RadioTileGroup
+Parts: RadioTileGroup, SearchableSelectList
 
 ## Overlay
 
@@ -85,7 +85,8 @@ Parts: RadioTileGroup
 | --- | --- | --- | --- |
 | [ConfirmDialog](../../src/shared/ui/ConfirmDialog.tsx) | Blocking review of destructive consequences, typed confirmation or acknowledgement, with Cancel before confirm. | In-place single-item removal without a review step: ConfirmMorph. Forms or choices: Modal. |  |
 | [ContextMenu](../../src/shared/ui/ContextMenu.tsx) | Secondary actions of a row, file, tab or editor selection at a pointer or anchor position. | Menu opened from a visible button: DropdownMenu. Choosing a value: Select. Panel with controls: Popover. |  |
-| [InfoPopover](../../src/shared/ui/InfoPopover.tsx) | Optional explanation next to a label or setting that needs more than one line. | One-line hint on a control: Tooltip. Hover preview of an object: useHoverCard. Required state, errors or approvals: visible in layout (InlineMessage, Alert). Forms or menus: Popover / DropdownMenu. |  |
+| [InfoPopover](../../src/shared/ui/InfoPopover.tsx) | Structured guidance or optional details that need a persistent, scrollable surface. | Short explanation: InfoTooltip or Tooltip. Hover preview of an object: useHoverCard. Required state, errors or approvals: visible in layout (InlineMessage, Alert). Forms or menus: Popover / DropdownMenu. |  |
+| [InfoTooltip](../../src/shared/ui/InfoPopover.tsx) | Short optional guidance beside a label when there is no control to anchor a Tooltip to. | Required context or warnings: show them in the layout. Structured or actionable details: InfoPopover. |  |
 | [MenuRow](../../src/shared/ui/MenuRow.tsx) | Rows of an existing domain-owned or native nested menu controller that cannot use DropdownMenu. | New menus: DropdownMenu (trigger) or ContextMenu (right-click); they own focus, typeahead and submenus. |  |
 | [Modal](../../src/shared/ui/Modal.tsx) | A bounded task or form that needs the user's focus (create, edit, review). | Side panels: Sheet. Small anchored UI: Popover. Yes/no confirmations: ConfirmDialog. |  |
 | [ModalActions](../../src/shared/ui/Modal.tsx) | The Cancel and primary actions of a Modal or Sheet footer. Give the adjacent error an ID and pass it to the blocked Button's `aria-describedby`. For a footer-owned reason, set `reasonId` to that ID. A blocked Button can stay keyboard-focusable with `aria-disabled`. Use `disabledReason` only for a non-obvious cause without an adjacent explanation. | Actions at the end of the scrolling body, or a hand-built footer row. ```tsx <Modal title={t("Edit crew")} onClose={close} footer={ <ModalActions start={<Button variant="ghost" tone="danger" onClick={remove}>{t("Delete")}</Button>}> <Button variant="ghost" onClick={close}>{t("Cancel")}</Button> <Button variant="primary" type="submit" form={formId}>{t("Save")}</Button> </ModalActions> }>…</Modal> ``` |  |

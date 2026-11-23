@@ -100,7 +100,7 @@ it("shows the content again once the machine answers", async () => {
   expect(notice()).toBeNull();
 });
 
-it("shows a side panel as art and one line, and the page with Manage connections", async () => {
+it("keeps the side panel compact and offers Manage connections on the page", async () => {
   await act(async () => adoptRemoteMachineInventory([]));
   const render = (size: "page" | "panel") =>
     act(async () =>
@@ -117,10 +117,10 @@ it("shows a side panel as art and one line, and the page with Manage connections
     Array.from(notice()?.querySelectorAll("button") ?? []).map((button) => button.textContent);
 
   await render("panel");
-  // A compact panel carries no art: one line, the reason behind the info button, no action.
   expect(notice()).not.toBeNull();
   expect(notice()?.querySelector("img")).toBeNull();
-  expect(labels()).toEqual([""]);
+  expect(notice()?.querySelector('[role="img"][aria-label="Help"]')).not.toBeNull();
+  expect(labels()).toEqual([]);
   expect(notice()?.textContent).not.toContain("Add it in Connections");
 
   await render("page");

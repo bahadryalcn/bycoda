@@ -3,8 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 // Deterministic UI fixture evidence only. No device, native bridge or live Host.
 const fixture = "/tests/browser/host-tools/host-tools.html?detached=1&devicesReady=1";
 const captures = "temp/verification/2026-11-04-devices-upgrade/fixture";
-const control = (page: Page) =>
-  page.getByRole("switch", { name: "Allow device control", exact: true });
+const control = (page: Page) => page.getByRole("button", { name: "Home", exact: true });
 const image = (page: Page) => page.getByRole("img", { name: "Current device screen", exact: true });
 const preview = (page: Page) =>
   page.getByRole("button", {
@@ -76,11 +75,8 @@ for (const theme of ["light", "dark"])
     }) => {
       await page.setViewportSize({ width, height: 800 });
       await ready(page, `&theme=${theme}`);
-      await expect(control(page)).not.toBeChecked();
       expect(await actions(page)).toHaveLength(0);
-      await capture(page, `${theme}-${width}-view-only`);
-      await control(page).click();
-      await expect(control(page)).toBeChecked();
+      await expect(control(page)).toBeEnabled();
       await capture(page, `${theme}-${width}-claimed`);
       await page.getByRole("button", { name: "Inspect device screen", exact: true }).click();
       const inspector = page.getByRole("dialog", {
@@ -136,8 +132,6 @@ for (const theme of ["light", "dark"])
       expect(await page.evaluate(() => (window as any).hostDeviceImageDraft)).toBeUndefined();
       await capture(page, `${theme}-${width}-uncertain-attachment-receipt`);
       await ready(page, `&theme=${theme}`);
-      await control(page).click();
-      await expect(control(page)).toBeChecked();
       await page.getByRole("button", { name: "Device text input", exact: true }).click();
       await page
         .getByRole("textbox", { name: "Text to type on device", exact: true })
@@ -146,19 +140,13 @@ for (const theme of ["light", "dark"])
       await expectReadableTextError(page);
       await capture(page, `${theme}-${width}-text-validation`);
       await ready(page, `&theme=${theme}&deviceState=busy`);
-      await expect(control(page)).toHaveAccessibleDescription(
-        /Device control held by another controller/,
-      );
+      await expect(page.getByText("Control in use", { exact: true })).toHaveCount(0);
+      await expect(control(page)).toBeDisabled();
       await capture(page, `${theme}-${width}-other-controller`);
       expect(await actions(page)).toHaveLength(0);
-      await ready(page, `&theme=${theme}`);
-      await page.evaluate(() => {
-        (window as any).hostToolFixture.deviceLeaseMs = 500;
-        (window as any).hostToolFixture.deviceRenewDelayMs = 1000;
-      });
-      await control(page).click();
-      await expect(control(page)).toBeChecked();
-      await expect(control(page)).not.toBeChecked({ timeout: 5000 });
+      await ready(page, `&theme=${theme}&deviceState=expires`);
+      await expect(control(page)).toBeEnabled();
+      await expect(control(page)).toBeDisabled({ timeout: 5000 });
       await capture(page, `${theme}-${width}-expired-control`);
       expect(await actions(page)).toHaveLength(0);
     });
@@ -166,29 +154,42 @@ for (const theme of ["light", "dark"])
 test("competing controller and expired control never dispatch input", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 800 });
   await ready(page, "&deviceState=busy");
-  await expect(control(page)).toHaveAccessibleDescription(
-    /Device control held by another controller/,
-  );
-  await expect(control(page)).not.toBeChecked();
+  await expect(page.getByText("Control in use", { exact: true })).toHaveCount(0);
+  await expect(control(page)).toBeDisabled();
   await capture(page, "busy-controller");
   expect(await actions(page)).toHaveLength(0);
-  await ready(page);
-  await page.evaluate(() => {
-    (window as any).hostToolFixture.deviceLeaseMs = 500;
-    (window as any).hostToolFixture.deviceRenewDelayMs = 1000;
-  });
-  await control(page).click();
-  await expect(control(page)).toBeChecked();
-  await expect(control(page)).not.toBeChecked({ timeout: 5000 });
+  await ready(page, "&deviceState=expires");
+  await expect(control(page)).toBeEnabled();
+  await expect(control(page)).toBeDisabled({ timeout: 5000 });
   await capture(page, "expired-control");
+  expect(await actions(page)).toHaveLength(0);
+});
+
+test("Android sends drag movements before the pointer is released", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await ready(page, "&liveDeviceTouch");
+  await expect(control(page)).toBeEnabled();
+  const phases = () =>
+    page.evaluate(() =>
+      (window as any).hostToolCalls
+        .filter((call: any) => call.method === "devices.touch")
+        .map((call: any) => call.params.touch.phase),
+    );
+  const { x, y, width, height } = (await image(page).boundingBox())!;
+  await page.mouse.move(x + width / 2, y + height * 0.7);
+  await page.mouse.down();
+  await expect.poll(phases).toEqual(["down"]);
+  await page.mouse.move(x + width / 2, y + height * 0.3);
+  await expect.poll(phases).toEqual(["down", "move"]);
+  await page.mouse.up();
+  await expect.poll(phases).toEqual(["down", "move", "up"]);
   expect(await actions(page)).toHaveLength(0);
 });
 test("narrow short long labels, local text validation and keyboard swipe", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 390, height: 540 });
   await ready(page, "&deviceName=long&theme=light");
-  await control(page).click();
-  await expect(control(page)).toBeChecked();
+  await expect(preview(page)).toBeEnabled();
   await preview(page).focus();
   await page.keyboard.press("ArrowUp");
   await expect.poll(async () => (await actions(page)).length).toBe(1);
@@ -211,11 +212,8 @@ test("device text drafts survive switching targets without carrying control", as
   const select = async (name: string) => {
     await page.getByRole("button", { name: /^Selected device:/ }).click();
     await page.getByRole("option", { name: new RegExp(`^${name} `) }).click();
-    await expect(control(page)).not.toBeChecked();
   };
   const edit = async () => {
-    await control(page).click();
-    await expect(control(page)).toBeChecked();
     await page.getByRole("button", { name: "Device text input", exact: true }).click();
     return page.getByRole("textbox", { name: "Text to type on device", exact: true });
   };

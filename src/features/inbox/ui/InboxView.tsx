@@ -8,6 +8,7 @@ import { RemoteActivityNotices } from "../../sessions/public/RemoteActivityNotic
 import { githubRepositoryOptions } from "../model/inboxRepositoryFilters";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { Badge } from "../../../shared/ui/Badge";
+import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { Button } from "../../../shared/ui/Button";
 import "./InboxView.css";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
@@ -52,7 +53,7 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { InboxFiltersMenu, INBOX_FILTER_MENU_WIDTH } from "./InboxFiltersMenu";
+import { InboxFiltersMenu } from "./InboxFiltersMenu";
 import { InboxConnectMenu } from "./InboxConnectMenu";
 import { JiraBoardView } from "./JiraBoardView";
 import type { JiraBoardIssue } from "../model/jiraBoard";
@@ -223,6 +224,7 @@ export function InboxView({
     "list",
   );
   const [boardIssue, setBoardIssue] = useState<JiraBoardIssue | null>(null);
+  const [boardFilterItems, setBoardFilterItems] = useState<JiraBoardIssue[]>([]);
   const boardIssueOrigin = useRef<HTMLElement | null>(null);
   const closeBoardIssue = () => {
     setBoardIssue(null);
@@ -319,7 +321,7 @@ export function InboxView({
   const codeScopes = useCodeHostScopes(source, refresh);
   const [connectMenuOpen, setConnectMenuOpen] = useState(false);
   const connectButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [filterMenu, setFilterMenu] = useState<{ x: number; y: number } | null>(null);
+  const [filterMenu, setFilterMenu] = useState<HTMLButtonElement | null>(null);
 
   const projects = useMemo(() => inboxProjectsForRail(recents, cwd), [cwd, recents]);
   const projectOptions = useMemo(() => inboxProjectOptions(projects, logos), [logos, projects]);
@@ -618,6 +620,7 @@ export function InboxView({
   };
 
   const onSourceChange = (next: InboxSource) => {
+    setFilterMenu(null);
     setDetailOpen(false);
     releaseTarget();
     if (!githubKind) setSelectedKey(null);
@@ -626,17 +629,44 @@ export function InboxView({
     selectSource(next);
   };
 
-  const onFilterButtonClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    if (filterMenu) {
-      setFilterMenu(null);
-      return;
-    }
-    const rect = event.currentTarget.getBoundingClientRect();
-    setFilterMenu({
-      x: rect.right - INBOX_FILTER_MENU_WIDTH,
-      y: rect.bottom + 2,
-    });
-  };
+  const filterLabel = filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox");
+  const toggleFilterMenu = (event: ReactMouseEvent<HTMLButtonElement>) =>
+    setFilterMenu(filterMenu ? null : event.currentTarget);
+  const filterTrigger =
+    source === "jira" ? (
+      <FilterTrigger
+        label={filterLabel}
+        activeCount={filterCount}
+        onReset={resetFilters}
+        aria-expanded={!!filterMenu}
+        aria-haspopup="dialog"
+        className="shrink-0"
+        onClick={toggleFilterMenu}
+      />
+    ) : (
+      <div
+        className="relative shrink-0"
+        data-filter-trigger=""
+        data-filter-active={filtersActive ? "" : undefined}
+      >
+        <Button
+          iconOnly
+          variant="ghost"
+          label={filterLabel}
+          selected={filtersActive}
+          aria-expanded={!!filterMenu}
+          aria-haspopup="dialog"
+          onClick={toggleFilterMenu}
+        >
+          <ListFilter className="icon-sm" strokeWidth={1.75} />
+        </Button>
+        {filterCount > 0 ? (
+          <Badge variant="count" size="xs" className="pointer-events-none absolute -right-1 -top-1">
+            {filterCount}
+          </Badge>
+        ) : null}
+      </div>
+    );
 
   const sourceRow = (
     <InboxSourceRow
@@ -730,18 +760,20 @@ export function InboxView({
           <CheckCheck className="icon-sm" strokeWidth={1.75} />
         </Button>
       ) : null}
-      <Button
-        iconOnly
-        label={t("Refresh")}
-        variant="ghost"
-        type="button"
-        loading={refreshAction === "toolbar"}
-        disabled={refreshAction === "retry"}
-        onClick={() => requestRefresh("toolbar")}
-        className="shrink-0"
-      >
-        <RefreshCw className="icon-sm" strokeWidth={1.75} />
-      </Button>
+      {source === "jira" && jiraView === "board" ? null : (
+        <Button
+          iconOnly
+          label={t("Refresh")}
+          variant="ghost"
+          type="button"
+          loading={refreshAction === "toolbar"}
+          disabled={refreshAction === "retry"}
+          onClick={() => requestRefresh("toolbar")}
+          className="shrink-0"
+        >
+          <RefreshCw className="icon-sm" strokeWidth={1.75} />
+        </Button>
+      )}
     </ButtonGroup>
   );
 
@@ -836,32 +868,7 @@ export function InboxView({
                   ) : null}
                 </>
               ) : null}
-              <div
-                className="relative shrink-0"
-                data-filter-trigger=""
-                data-filter-active={filtersActive ? "" : undefined}
-              >
-                <Button
-                  iconOnly
-                  variant="ghost"
-                  label={filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox")}
-                  selected={filtersActive}
-                  aria-expanded={!!filterMenu}
-                  aria-haspopup="dialog"
-                  onClick={onFilterButtonClick}
-                >
-                  <ListFilter className="icon-sm" strokeWidth={1.75} />
-                </Button>
-                {filterCount > 0 ? (
-                  <Badge
-                    variant="count"
-                    size="xs"
-                    className="pointer-events-none absolute -right-1 -top-1"
-                  >
-                    {filterCount}
-                  </Badge>
-                ) : null}
-              </div>
+              {filterTrigger}
             </div>
           ) : null}
           {toolbarActions}
@@ -1016,14 +1023,13 @@ export function InboxView({
 
   const filtersPortal = filterMenu ? (
     <InboxFiltersMenu
-      items={items}
+      items={source === "jira" && jiraView === "board" ? boardFilterItems : items}
       codeHostProjects={codeScopes.scopes?.projects}
       hiddenCodeHostProjects={codeScopes.hidden}
       codeHostError={codeScopes.error}
       codeHostIncomplete={codeScopes.scopes?.incomplete ?? null}
       onCodeHostProjectsChange={codeScopes.save}
-      x={filterMenu.x}
-      y={filterMenu.y}
+      anchor={filterMenu}
       projects={source === "github" ? githubRepositoryOptions(projects) : projectOptions}
       linearProjects={linearProjects}
       linearTeams={linearTeams}
@@ -1112,6 +1118,8 @@ export function InboxView({
           >
             <JiraBoardView
               revision={refresh}
+              filters={activeFilters}
+              filterTrigger={filterTrigger}
               selectedIssueId={boardIssue?.id}
               onSelect={(issue) => {
                 boardIssueOrigin.current =
@@ -1120,11 +1128,12 @@ export function InboxView({
               }}
               onScopeChanged={() => setBoardIssue(null)}
               onChanged={() => setRefresh((value) => value + 1)}
-              onIssuesLoaded={(issues) =>
+              onIssuesLoaded={(issues) => {
+                setBoardFilterItems(issues);
                 setBoardIssue((old) =>
                   old ? (issues.find((issue) => issue.id === old.id) ?? old) : null,
-                )
-              }
+                );
+              }}
             />
             {boardIssue ? (
               <aside
@@ -1154,6 +1163,12 @@ export function InboxView({
                   repairSessions={repairSessions}
                   onRepairChecks={onRepairChecks}
                   onOpenSession={onOpenSession}
+                  onJiraStatusChange={(status) => {
+                    setBoardIssue((current) =>
+                      current?.id === boardIssue.id ? { ...current, ...status } : current,
+                    );
+                    setRefresh((value) => value + 1);
+                  }}
                 />
               </aside>
             ) : null}
@@ -1192,6 +1207,18 @@ export function InboxView({
                   onRepairChecks={onRepairChecks}
                   onOpenSession={onOpenSession}
                   onItemChange={updateInboxItem}
+                  onJiraStatusChange={
+                    selected
+                      ? (status) => {
+                          updateInboxItem({
+                            ...selected,
+                            state: status.state,
+                            stateType: status.stateType,
+                          });
+                          setRefresh((value) => value + 1);
+                        }
+                      : undefined
+                  }
                 />
               </div>
               {discussionOpen && selected ? (

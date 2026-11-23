@@ -1,9 +1,14 @@
-import { PickerList, PickerPopover, usePickerList } from "../../../shared/ui/picker";
+import {
+  PickerList,
+  PickerPopover,
+  usePickerList,
+  type PickerOption,
+} from "../../../shared/ui/picker";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { useT } from "../../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useTabGroupLogos } from "../hooks/useTabGroupLogos";
 import { basename } from "../../../platform/tauri/fs";
 import { prettyParent, projectKey, projectName } from "../../../shared/lib/paths";
@@ -13,30 +18,65 @@ import {
   projectRailItemsFrom,
   useProjectRailLayout,
   sameProjectPath,
-  subscribeProjectPathsChanged,
   type RecentProject,
 } from "../model/recents";
 import {
-  loadTabGroupColors,
-  loadTabGroupCustomColors,
-  loadTabGroupLabels,
-  loadTabGroupMascots,
   resolveTabGroupColor,
   resolveTabGroupLabel,
-  useResolvedTabGroupLogos,
+  useResolvedTabGroupLogo,
   resolveTabGroupMascot,
+  useTabGroupColors,
+  useTabGroupCustomColors,
+  useTabGroupMascots,
 } from "../../workspace/model/tabGroups";
+import { useProjectLabels } from "../model/projectNames";
 import { Plus } from "../../../shared/ui/icons";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { ProjectMascot } from "./ProjectMascot";
+import { PROJECT_WINDOW_THRESHOLD, ProjectOptionIcon } from "./ProjectOptionIcon";
 
-function loadAppearance() {
-  return {
-    groupLabels: loadTabGroupLabels(),
-    groupColors: loadTabGroupColors(),
-    groupCustomColors: loadTabGroupCustomColors(),
-    groupMascots: loadTabGroupMascots(),
-  };
+function ProjectPickerResults({
+  choices,
+  selected,
+  searchRef,
+  onPick,
+}: {
+  choices: readonly (PickerOption & { searchText: string })[];
+  selected?: string;
+  searchRef: RefObject<HTMLInputElement | null>;
+  onPick: (path: string) => void;
+}) {
+  const t = useT();
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLocaleLowerCase();
+  const list = usePickerList({
+    options: needle ? choices.filter((choice) => choice.searchText.includes(needle)) : choices,
+    value: selected,
+    inputRef: searchRef,
+    resetKey: query,
+    onChange: onPick,
+  });
+  return (
+    <>
+      <PopoverSearchHeader
+        {...list.searchProps}
+        size="md"
+        autoFocus={false}
+        label={t("Search projects")}
+        placeholder={t("Search projects…")}
+        value={query}
+        onValueChange={setQuery}
+        headerClassName="shrink-0"
+      />
+      <PickerList
+        label={t("Project picker")}
+        controller={list}
+        emptyLabel={t("No projects found")}
+        windowed={choices.length > PROJECT_WINDOW_THRESHOLD}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-none"
+      />
+    </>
+  );
 }
 
 type Props = {
@@ -86,13 +126,12 @@ export function SearchableProjectPicker({
 }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
   const pickerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [{ groupLabels, groupColors, groupCustomColors, groupMascots }, setAppearance] =
-    useState(loadAppearance);
-  useEffect(() => subscribeProjectPathsChanged(() => setAppearance(loadAppearance())), []);
+  const groupLabels = useProjectLabels();
+  const groupColors = useTabGroupColors();
+  const groupCustomColors = useTabGroupCustomColors();
+  const groupMascots = useTabGroupMascots();
   const groupLogos = useTabGroupLogos();
   const inProject = looksLikeProject(cwd);
   const seed = projectName(cwd);
@@ -102,46 +141,21 @@ export function SearchableProjectPicker({
     : t("Choose project");
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
   const railLayout = useProjectRailLayout();
-  const railProjects = projectRailItemsFrom(recents, railCwd ?? cwd, railLayout);
-  const projects =
-    inProject && !railProjects.some((item) => sameProjectPath(item.path, cwd))
-      ? [{ path: cwd, openedAt: 0 }, ...railProjects]
-      : railProjects;
-  const orderedProjects = [
-    ...projects.filter((item) => sameProjectPath(item.path, cwd)),
-    ...projects.filter((item) => !sameProjectPath(item.path, cwd)),
-  ].filter((item) => !localOnly || isLocalProject(item.path));
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredProjects = normalizedQuery
-    ? orderedProjects.filter((item) => {
-        const itemKey = projectKey(item.path);
-        const itemLabel = resolveTabGroupLabel(
-          itemKey,
-          groupLabels,
-          basename(item.path) || projectName(item.path),
-        );
-        return `${itemLabel}\n${item.path}`.toLocaleLowerCase().includes(normalizedQuery);
-      })
-    : orderedProjects;
-  const resolvedLogos = useResolvedTabGroupLogos(
-    [key, ...filteredProjects.map((item) => projectKey(item.path))],
-    groupLogos,
-  );
-  const logoPath = resolvedLogos[key] ?? null;
+  const logoPath = useResolvedTabGroupLogo(key, groupLogos);
+  const railProjects = open ? projectRailItemsFrom(recents, railCwd ?? cwd, railLayout) : [];
+  const currentProject = railProjects.find((item) => sameProjectPath(item.path, cwd));
+  const selected = currentProject?.path ?? (inProject ? cwd : undefined);
+  const paths = railProjects.filter((item) => item !== currentProject).map((item) => item.path);
+  if (open && selected) paths.unshift(selected);
 
-  const closePicker = () => {
-    setOpen(false);
-    setQuery("");
-    setActive(0);
-  };
+  const closePicker = () => setOpen(false);
 
   const openPicker = () => {
     if (disabled) return;
     setOpen(true);
-    setQuery("");
-    setActive(0);
   };
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- focus search on open and again after the anchored popover is placed
   useEffect(() => {
     if (!open) return;
     searchRef.current?.focus();
@@ -157,41 +171,37 @@ export function SearchableProjectPicker({
     if (!sameProjectPath(path, cwd)) onSelectProject(path);
   };
 
-  const list = usePickerList({
-    options: filteredProjects.map((item) => {
-      const itemKey = projectKey(item.path);
-      const seed = projectName(item.path);
-      const logo = resolvedLogos[itemKey];
+  const choices = paths
+    .filter((path) => !localOnly || isLocalProject(path))
+    .map((path) => {
+      const itemKey = projectKey(path);
+      const seed = projectName(path);
+      const title = resolveTabGroupLabel(itemKey, groupLabels, basename(path) || seed);
       return {
-        value: item.path,
-        title: resolveTabGroupLabel(itemKey, groupLabels, basename(item.path) || seed),
-        meta: prettyParent(item.path),
-        icon: logo ? (
-          <ProjectLogoIcon path={logo} className="icon-sm" imageClassName="icon-sm" />
-        ) : (
-          <ProjectMascot
-            project={seed}
+        value: path,
+        title,
+        searchText: `${title}\n${path}`.toLocaleLowerCase(),
+        meta: prettyParent(path),
+        icon: (
+          <ProjectOptionIcon
+            project={itemKey}
+            seed={seed}
+            logos={groupLogos}
             color={resolveTabGroupColor(itemKey, groupColors, groupCustomColors, seed)}
-            name={resolveTabGroupMascot(itemKey, groupMascots)}
-            className="icon-sm"
+            mascot={resolveTabGroupMascot(itemKey, groupMascots)}
+            logoClassName="icon-sm"
+            mascotClassName="icon-sm"
           />
         ),
         onContextMenu: onProjectContextMenu
           ? (event: React.MouseEvent<HTMLButtonElement>) => {
               event.preventDefault();
               event.stopPropagation();
-              onProjectContextMenu(item.path, event.clientX, event.clientY, searchRef.current);
+              onProjectContextMenu(path, event.clientX, event.clientY, searchRef.current);
             }
           : undefined,
       };
-    }),
-    value: filteredProjects.find((item) => sameProjectPath(item.path, cwd))?.path,
-    activeValue: filteredProjects[active]?.path ?? null,
-    onActiveValueChange: (value) =>
-      setActive(filteredProjects.findIndex((item) => item.path === value)),
-    inputRef: searchRef,
-    onChange: pickProject,
-  });
+    });
 
   const choose = chooseLabel ?? t("Choose project for note");
   const action = actionLabel ?? (mode === "move" ? t("Move note to project") : t("Switch project"));
@@ -261,24 +271,11 @@ export function SearchableProjectPicker({
           dismissible={!projectMenuActive}
           inputRef={searchRef}
         >
-          <PopoverSearchHeader
-            {...list.searchProps}
-            size="md"
-            autoFocus={false}
-            label={t("Search projects")}
-            placeholder={t("Search projects…")}
-            value={query}
-            onValueChange={(next) => {
-              setQuery(next);
-              setActive(0);
-            }}
-            headerClassName="shrink-0"
-          />
-          <PickerList
-            label={t("Project picker")}
-            controller={list}
-            emptyLabel={t("No projects found")}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-none"
+          <ProjectPickerResults
+            choices={choices}
+            selected={selected}
+            searchRef={searchRef}
+            onPick={pickProject}
           />
           {onOpenProject ? (
             <div className="shrink-0">

@@ -45,9 +45,9 @@ import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ToolNavigation, ToolNavigationContext } from "../../../app/shell/ToolNavigation";
 import { formatDate, t, useLocale } from "../../../shared/i18n";
 import {
@@ -1422,7 +1422,7 @@ function AutomationEditor({
                   className="px-1"
                   actions={
                     <InfoPopover className="shrink-0">
-                      <p>{t("Skills, @file references, and built-in commands work here.")}</p>
+                      {t("Skills, @file references, and built-in commands work here.")}
                     </InfoPopover>
                   }
                 >
@@ -1582,7 +1582,8 @@ function AutomationEditor({
                         </SettingsRow>
                         <SettingsRow
                           label={t("Session folder")}
-                          hint={
+                          hint="Where runs appear in the sidebar"
+                          status={
                             folderUnavailable
                               ? t("Open a project to use folders")
                               : (folderChoices.error ??
@@ -1736,16 +1737,22 @@ function InstructionsField({
 function SettingsRow({
   label,
   hint,
+  status,
   children,
 }: {
   label: string;
   hint?: string;
+  status?: string;
   children: ReactNode;
 }) {
   useLocale();
-  // Stacked controls leave the description room to wrap in the editor sidebar.
   return (
-    <Row label={label} description={hint ? t(hint) : undefined}>
+    <Row
+      label={label}
+      description={status}
+      descriptionVisible
+      info={hint && !status ? <InfoPopover>{t(hint)}</InfoPopover> : undefined}
+    >
       {children}
     </Row>
   );

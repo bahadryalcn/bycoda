@@ -15,6 +15,7 @@ const index = vi.hoisted(() => ({
   load: vi.fn<(cwd: string) => Promise<ProjectFile[]>>(),
   search: vi.fn(),
   conversationPending: 0,
+  conversationTruncated: false,
 }));
 
 vi.mock("../../../app/shell/TitleBar", () => ({ OverlayNav: () => null }));
@@ -36,7 +37,7 @@ vi.mock("../model/useConversationSearch", () => ({
     result: {
       sessions: [],
       pending: index.conversationPending,
-      truncated: false,
+      truncated: index.conversationTruncated,
     },
     loading: false,
     error: null,
@@ -68,6 +69,7 @@ beforeEach(() => {
   index.load.mockReset().mockImplementation(async (cwd) => index.files.get(cwd) ?? []);
   index.search.mockClear();
   index.conversationPending = 0;
+  index.conversationTruncated = false;
   localStorage.clear();
   resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -106,6 +108,14 @@ const file = (name: string, cwd = "/repo"): ProjectFile => ({
   name,
   path: `${cwd}/${name}`,
   relative: name,
+});
+
+it("shows a truncated result notice only for a search query", async () => {
+  index.conversationTruncated = true;
+  await render();
+  expect(host.textContent).not.toContain("Results limited to the first matches");
+  await typeQuery("needle");
+  expect(host.textContent).toContain("Results limited to the first matches");
 });
 
 it("keeps archived history titles and loaded messages out of All results", async () => {

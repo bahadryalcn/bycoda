@@ -56,6 +56,7 @@ vi.mock("../../sessions/model/models", () => ({
       : { effort: "default" },
 }));
 import { AssistantProfileFields } from "./AssistantProfileFields";
+import { TOOLTIP_DELAY_MS } from "../../../shared/ui/Tooltip";
 import { ProfileRowsProvider } from "./settings/SettingsProfileRow";
 import { AssistantCostInfo } from "./settings/AssistantCostFields";
 let root: Root | undefined, container: HTMLDivElement;
@@ -77,6 +78,7 @@ async function setup(
     | "presence"
     | "identity"
     | "personality" = "jobs",
+  rows = false,
 ) {
   observed.patches = [];
   observed.resolvedDefault = "catalog-default";
@@ -98,7 +100,9 @@ async function setup(
       },
     });
   }
-  await act(async () => root!.render(createElement(Form)));
+  await act(async () =>
+    root!.render(createElement(ProfileRowsProvider, { value: rows }, createElement(Form))),
+  );
 }
 async function click(text: string, scope: ParentNode = container) {
   const target = [...scope.querySelectorAll("button, summary")].find(
@@ -360,6 +364,21 @@ it("asks only for the name in setup; address, avatar and title are settings rows
   expect(container.querySelectorAll("input")).toHaveLength(1);
   expect(container.textContent).not.toContain("Avatar");
   expect(container.textContent).not.toContain("Show title");
+});
+
+it("keeps the dynamic title preview available in settings", async () => {
+  await setup({ name: "Ada", showTitle: true }, "identity", true);
+  await click("Avatar");
+  expect(container.textContent).not.toContain("Room · Ada");
+  const preview = container.querySelector<HTMLElement>('[role="img"][aria-label="Preview"]')!;
+  await act(async () => {
+    preview.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    await new Promise((resolve) => setTimeout(resolve, TOOLTIP_DELAY_MS));
+  });
+  const tooltip = document.querySelector('[role="tooltip"]');
+  expect(tooltip?.textContent).toContain("Assistant Ada");
+  expect(tooltip?.textContent).toContain("Room · Ada");
+  expect(observed.patches).toEqual([]);
 });
 
 it("keeps task observation default off but lets the owner save a preference while unavailable", async () => {

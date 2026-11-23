@@ -19,6 +19,20 @@ export function prepareFuzzyQuery(query: string): PreparedFuzzyQuery {
   };
 }
 
+/** Boolean filtering uses the same folded subsequences without scoring or collecting offsets. */
+export function fuzzyIncludes(query: PreparedFuzzyQuery, text: string): boolean {
+  const hay = text.toLowerCase();
+  for (const token of query.tokens) {
+    let offset = 0;
+    for (let i = 0; i < token.length; i++) {
+      const at = hay.indexOf(token[i], offset);
+      if (at < 0) return false;
+      offset = at + 1;
+    }
+  }
+  return true;
+}
+
 export function fuzzyMatch(query: string | PreparedFuzzyQuery, text: string): FuzzyHit | null {
   const tokens = typeof query === "string" ? prepareFuzzyQuery(query).tokens : query.tokens;
   if (tokens.length === 0) return { score: 0, positions: [] };

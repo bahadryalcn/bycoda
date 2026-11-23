@@ -102,6 +102,48 @@ export function useBrowserLiveFrames({
   return streaming;
 }
 
+/** Follows control and page state when frame reads do not carry it. */
+export function useBrowserStatusPolling(
+  enabled: boolean,
+  read: () => Promise<void>,
+  intervalMs: number,
+) {
+  const latest = useRef(read);
+  latest.current = read;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns the status timer for visible panels without RPC frames
+  useEffect(() => {
+    // Reason: paused and binary views need a separate status read to follow Host state.
+    if (!enabled) return;
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void latest.current().catch(() => {});
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [enabled, intervalMs]);
+}
+
+/** Reacquires available control for a displayed browser and backs off while it is unavailable. */
+export function useBrowserControlRecovery(enabled: boolean, acquire: () => Promise<void>) {
+  const latest = useRef(acquire);
+  latest.current = acquire;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns automatic control while the open preview is visible
+  useEffect(() => {
+    // Reason: control can become available externally while the preview is open.
+    if (!enabled) return;
+    let cancelled = false;
+    let timer: number;
+    const attempt = async () => {
+      if (cancelled) return;
+      if (!document.hidden) await latest.current().catch(() => {});
+      if (!cancelled) timer = window.setTimeout(attempt, 3000);
+    };
+    timer = window.setTimeout(attempt, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [enabled]);
+}
+
 /** How long before the lease ends the first renewal runs. */
 const LEASE_RENEW_LEAD_MS = 10_000;
 /** Pause between failed renewals. */

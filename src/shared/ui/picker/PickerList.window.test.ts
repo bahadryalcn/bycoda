@@ -111,6 +111,34 @@ it("keeps short lists fully mounted without window attributes", async () => {
   expect(container.querySelector('[role="option"]')!.hasAttribute("aria-setsize")).toBe(false);
 });
 
+it("keeps windowing enabled when a searchable list narrows below the default limit", async () => {
+  const render = (options: PickerOption[]) =>
+    act(async () =>
+      root.render(
+        createElement(PickerList, {
+          label: "Branches",
+          options,
+          value: null,
+          onChange: () => undefined,
+          windowed: true,
+        }),
+      ),
+    );
+  const options = branches(80);
+  await render([{ value: "none", title: "No project", group: "Without a project" }, ...options]);
+  expect(container.querySelectorAll('[role="option"]').length).toBeLessThan(40);
+  const firstBranch = container.querySelector('[id$="-option-b0"]');
+  expect(firstBranch?.getAttribute("aria-setsize")).toBe("81");
+
+  await render(options.slice(0, 2));
+  expect(container.querySelector('[id$="-option-b0"]')).toBe(firstBranch);
+  await render(options.slice(-2));
+  const matches = container.querySelectorAll('[role="option"]');
+  expect(matches).toHaveLength(2);
+  expect(matches[0]?.getAttribute("aria-setsize")).toBe("2");
+  expect(matches[0]?.textContent).toContain("branch-78");
+});
+
 it("brings an unmounted row into the window for End and commits it with Enter", async () => {
   const onChange = vi.fn();
   await act(async () =>

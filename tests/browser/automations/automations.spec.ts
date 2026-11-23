@@ -3,6 +3,46 @@ import { expect, test } from "@playwright/test";
 
 for (const width of [800, 1280])
   for (const theme of ["light", "dark"]) {
+    test(`automation Worktree help is a passive tooltip in ${theme} at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/automations/automations.html");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "Open Daily review", exact: true }).click();
+
+      const row = page.locator('[data-settings-part="row"]').filter({
+        has: page.getByText("Worktree", { exact: true }),
+      });
+      const help = row.locator('[aria-label="Help"]');
+      const tooltip = page.getByRole("tooltip");
+      await help.hover();
+      await expect(tooltip).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/tooltip-consistency/worktree-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await expect(tooltip).toHaveText("This repo, or a fresh worktree");
+      await help.click();
+      await expect(page.getByRole("dialog", { name: "Help", exact: true })).toBeHidden();
+      await expect(tooltip).toBeHidden();
+      await row.getByRole("button", { name: /^Worktree:/ }).focus();
+      await page.keyboard.press("Shift+Tab");
+      await expect(help).toBeFocused();
+      await expect(tooltip).toHaveText("This repo, or a fresh worktree");
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("dialog", { name: "Help", exact: true })).toBeHidden();
+      await page.keyboard.press("Escape");
+      await expect(tooltip).toBeHidden();
+    });
+  }
+
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
     test(`automation redesigned advanced and proposal ${width} ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 720 });
       await page.emulateMedia({ reducedMotion: "reduce" });

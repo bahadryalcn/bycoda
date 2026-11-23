@@ -34,6 +34,7 @@ type ProjectScope = { key: string; name: string; machineName: string; cwd: strin
 /** Options of the project picker: all projects, the scoped path, then each known project. */
 export function projectScopeOptions({
   t,
+  projectLabels,
   projectFilter,
   selectedProject,
   projectScopes,
@@ -41,6 +42,7 @@ export function projectScopeOptions({
   cwd,
 }: {
   t: (key: string) => string;
+  projectLabels?: Record<string, string>;
   projectFilter: string;
   selectedProject: ProjectScope | undefined;
   projectScopes: readonly ProjectScope[];
@@ -51,7 +53,7 @@ export function projectScopeOptions({
   return [
     { value: "all", label: t("All projects"), pinned: true },
     ...(pathScope && !selectedProject
-      ? [{ value: projectFilter, label: projectDisplayName(cwd || "") }]
+      ? [{ value: projectFilter, label: projectDisplayName(cwd || "", projectLabels) }]
       : []),
     ...projectScopes
       .filter(

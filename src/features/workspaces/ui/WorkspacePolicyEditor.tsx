@@ -1,7 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { Select } from "../../../shared/ui/Select";
@@ -59,15 +58,10 @@ export function WorkspacePolicyEditor({
       title={t("Defaults for new workspaces")}
       layout="full"
       id="workspace-policy"
-      info={
-        <InfoPopover>
-          <p>
-            {t(
-              "Saving stores every value as a project override. Reset removes the whole override immediately.",
-            )}
-          </p>
-        </InfoPopover>
-      }
+      descriptionVisible
+      description={t(
+        "Saving stores every value as a project override. Reset removes the whole override immediately.",
+      )}
       action={
         hasProjectOverride ? (
           <Button variant="link" disabled={saving || loading} onClick={async () => await save({})}>

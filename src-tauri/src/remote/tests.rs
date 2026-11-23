@@ -1020,6 +1020,7 @@ fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
         "mcp.hub.loading.set",
         "mcp.oauth.start",
         "mcp.oauth.complete",
+        "mcp.oauth.cancel",
         "mcp.oauth.status",
         "mcp.oauth.signOut",
         "mcp.tokens.create",

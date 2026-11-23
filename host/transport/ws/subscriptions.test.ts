@@ -59,6 +59,54 @@ const cursor = (event: SubscriptionEvent): StreamCursor => event.params.cursor;
 async function expectSnapshots(events: SubscriptionEvent[], count: number) {
   await vi.waitFor(() => expect(snapshots(events)).toHaveLength(count));
 }
+
+it("pushes video until four unacknowledged chunks, then resumes from the last media cursor", async () => {
+  const load = vi.fn(async (_target, _principal, _signal, context: HostStreamLoadContext) => ({
+    revision: (context.revision ?? 0) + 10,
+    data: { base64: "AA==" },
+    ...(context.revision === undefined
+      ? { kind: "snapshot" as const }
+      : { kind: "delta" as const, baseRevision: context.revision }),
+  }));
+  const { hub } = fixture({ load });
+  const { owner, events } = client("desktop");
+  const video = { kind: "deviceVideo", deviceId: "phone", viewerId: "viewer" } as const;
+  subscribe(hub, owner, "preview", video);
+  await vi.waitFor(() => expect(events).toHaveLength(4));
+  expect(events.map((event) => event.params.kind)).toEqual(["snapshot", "delta", "delta", "delta"]);
+  await settle();
+  expect(load).toHaveBeenCalledTimes(4);
+  expect(hub.acknowledge(owner.connectionId, "preview", cursor(events[0]))).toBe(true);
+  await vi.waitFor(() => expect(events).toHaveLength(5));
+  expect(events[4].params).toMatchObject({ baseRevision: 40, revision: 50 });
+  expect(load).toHaveBeenCalledTimes(5);
+});
+
+it("opens a fresh video baseline after a viewer closes, even with its previous cursor", async () => {
+  const starts: (number | undefined)[] = [];
+  const { hub } = fixture({
+    load: async (_target, _principal, _signal, context) => {
+      starts.push(context.revision);
+      return { revision: (context.revision ?? 0) + 1, data: { reset: context.forceSnapshot } };
+    },
+  });
+  const { owner, events } = client("desktop");
+  const video = { kind: "deviceVideo", deviceId: "phone", viewerId: "viewer" } as const;
+  const first = subscribe(hub, owner, "first", video);
+  await vi.waitFor(() => expect(events).toHaveLength(4));
+  const staleCursor = cursor(events[2]);
+  expect(hub.closeSubscription(owner.connectionId, "first")).toBe(true);
+  const second = subscribe(hub, owner, "second", video, staleCursor);
+  expect(second.result.streamId).not.toBe(first.result.streamId);
+  await vi.waitFor(() => expect(events[5]?.params.kind).toBe("snapshot"));
+  expect(events[4].params.kind).toBe("resync-required");
+  expect(events[5].params).toMatchObject({
+    subscriptionId: "second",
+    cursor: { sequence: 1 },
+    data: { reset: true },
+  });
+  expect(starts[4]).toBeUndefined();
+});
 function subscribe(
   hub: HostSubscriptionHub,
   owner: HostStreamConsumer,

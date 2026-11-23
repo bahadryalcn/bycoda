@@ -60,6 +60,8 @@ pub struct Transition {
     id: String,
     name: String,
     status_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status_name: Option<String>,
     requires_fields: bool,
 }
 
@@ -307,6 +309,61 @@ fn parse_page(data: &Value, site: &str) -> Result<IssuePage, String> {
     })
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardIssueFilters {
+    assigned_to_me: bool,
+    open: bool,
+    closed: bool,
+    #[serde(flatten)]
+    issue: super::filters::JiraIssueFilters,
+}
+
+fn board_issue_query(
+    path: String,
+    project_ids: Option<&[String]>,
+    filters: Option<&BoardIssueFilters>,
+) -> Result<String, String> {
+    let mut clauses = Vec::new();
+    if let Some(ids) = project_ids {
+        let ids = ids
+            .iter()
+            .map(|id| {
+                id.parse::<u64>()
+                    .ok()
+                    .filter(|id| *id > 0)
+                    .map(|id| id.to_string())
+                    .ok_or("Invalid Jira project identifier")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        clauses.push(format!("project in ({})", ids.join(",")));
+    }
+    if let Some(filters) = filters {
+        clauses.extend(
+            filters
+                .issue
+                .assignment_and_workflow(filters.assigned_to_me)?,
+        );
+        match (filters.open, filters.closed) {
+            (true, false) => clauses.push("statusCategory != Done".into()),
+            (false, true) => clauses.push("statusCategory = Done".into()),
+            _ => {}
+        }
+    }
+    if clauses.is_empty() {
+        return Ok(path);
+    }
+    let mut url =
+        url::Url::parse(&format!("https://jira.invalid{path}")).map_err(|e| e.to_string())?;
+    url.query_pairs_mut()
+        .append_pair("jql", &clauses.join(" AND "));
+    Ok(format!(
+        "{}?{}",
+        url.path(),
+        url.query().unwrap_or_default()
+    ))
+}
+
 #[tauri::command]
 pub async fn jira_board_issues(
     app: AppHandle,
@@ -315,6 +372,7 @@ pub async fn jira_board_issues(
     sprint_id: Option<u64>,
     next_page_token: Option<String>,
     project_ids: Option<Vec<String>>,
+    filters: Option<BoardIssueFilters>,
 ) -> Result<IssuePage, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let config = require_config(&app)?;
@@ -324,24 +382,11 @@ pub async fn jira_board_issues(
                 next_page_token: None,
             });
         }
-        let mut path = issue_path(board_id, &scope, sprint_id, next_page_token.as_deref())?;
-        if let Some(ids) = project_ids {
-            let ids = ids
-                .iter()
-                .map(|id| {
-                    id.parse::<u64>()
-                        .ok()
-                        .filter(|id| *id > 0)
-                        .ok_or_else(|| "Invalid Jira project identifier".to_string())
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let mut url = url::Url::parse(&format!("https://jira.invalid{path}"))
-                .map_err(|e| e.to_string())?;
-            let ids = ids.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
-            url.query_pairs_mut()
-                .append_pair("jql", &format!("project in ({ids})"));
-            path = format!("{}?{}", url.path(), url.query().unwrap_or_default());
-        }
+        let path = board_issue_query(
+            issue_path(board_id, &scope, sprint_id, next_page_token.as_deref())?,
+            project_ids.as_deref(),
+            filters.as_ref(),
+        )?;
         parse_page(&jira_get(&config, &path)?, &config.site)
     })
     .await
@@ -359,6 +404,10 @@ fn parse_transitions(data: &Value) -> Result<Vec<Transition>, String> {
                 id: string_field(v, "id")?,
                 name: string_field(v, "name")?,
                 status_id: v.pointer("/to/id")?.as_str()?.to_string(),
+                status_name: v
+                    .pointer("/to/name")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
                 requires_fields: v["fields"].as_object().is_some_and(|fields| {
                     fields.values().any(|f| {
                         f["required"].as_bool() == Some(true)
@@ -635,8 +684,39 @@ mod tests {
         assert!(issue_path(7, "shell", None, None).is_err());
     }
     #[test]
+    fn filters_board_backlog_and_sprint_pages_without_changing_rank_order() {
+        let filters: BoardIssueFilters = serde_json::from_value(json!({
+            "assignedToMe": true,
+            "assigneeIds": ["account-1"],
+            "unassigned": true,
+            "statuses": ["Ready for test"],
+            "open": false,
+            "closed": true
+        }))
+        .unwrap();
+        for (scope, sprint_id) in [("board", None), ("backlog", None), ("sprint", Some(12))] {
+            let path = board_issue_query(
+                issue_path(7, scope, sprint_id, Some("a&b")).unwrap(),
+                Some(&["10000".into()]),
+                Some(&filters),
+            )
+            .unwrap();
+            let url = url::Url::parse(&format!("https://jira.invalid{path}")).unwrap();
+            let pairs: std::collections::HashMap<_, _> = url.query_pairs().collect();
+            assert_eq!(pairs["nextPageToken"], "a&b");
+            assert_eq!(
+                pairs["jql"],
+                "project in (10000) AND (assignee = currentUser() OR assignee is EMPTY OR assignee in (\"account-1\")) AND status in (\"Ready for test\") AND statusCategory = Done"
+            );
+        }
+        let path = issue_path(7, "board", None, None).unwrap();
+        assert!(board_issue_query(path, Some(&["0".into()]), None).is_err());
+    }
+
+    #[test]
     fn rejects_required_fields_and_stale_transitions() {
-        let t = parse_transitions(&json!({"transitions":[{"id":"5","name":"Finish","to":{"id":"9"},"fields":{"resolution":{"required":true,"hasDefaultValue":false}}}]})).unwrap();
+        let t = parse_transitions(&json!({"transitions":[{"id":"5","name":"Finish","to":{"id":"9","name":"Done"},"fields":{"resolution":{"required":true,"hasDefaultValue":false}}}]})).unwrap();
+        assert_eq!(t[0].status_name.as_deref(), Some("Done"));
         assert!(require_transition(&t, "5").is_err());
         assert!(require_transition(&t, "missing").is_err());
     }

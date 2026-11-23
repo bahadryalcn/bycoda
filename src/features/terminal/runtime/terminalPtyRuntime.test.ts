@@ -14,7 +14,11 @@ const native = vi.hoisted(() => ({ invoke: vi.fn(async () => {}) }));
 vi.mock("@tauri-apps/api/core", () => native);
 vi.mock("../../../platform/tauri/pty", () => pty);
 
-import { createTerminalPtyRuntime } from "./terminalPtyRuntime";
+import {
+  createTerminalPtyRuntime,
+  terminalPtyLaunch,
+  type TerminalPtyLaunch,
+} from "./terminalPtyRuntime";
 import { queueTerminalRun, takeTerminalRun } from "../model/terminalLaunchCommand";
 
 function deferred() {
@@ -29,7 +33,11 @@ const flush = async () => {
   for (let i = 0; i < 5; i += 1) await new Promise((done) => setTimeout(done, 0));
 };
 
-function runtime(id: string, privateTerminal = true) {
+function runtime(
+  id: string,
+  privateTerminal = true,
+  launch: TerminalPtyLaunch = { kind: "local", cwd: "/work", profile: () => "profile" },
+) {
   const unsubscribe = vi.fn();
   pty.subscribePty.mockReturnValueOnce(unsubscribe);
   const handlers = {
@@ -38,13 +46,13 @@ function runtime(id: string, privateTerminal = true) {
     onSpawned: vi.fn(),
     onStartFailed: vi.fn(),
     onInputFailure: vi.fn(),
+    writeOutput: vi.fn((_data: string | Uint8Array, consumed?: () => void) => consumed?.()),
   };
   const instance = createTerminalPtyRuntime({
     id,
     privateTerminal,
-    launch: { kind: "local", cwd: "/work", profile: () => "profile" },
+    launch,
     dimensions: () => ({ cols: 80, rows: 24 }),
-    writeOutput: () => {},
     isVisible: () => true,
     canStart: { current: undefined },
     authorizeStart: { current: undefined },
@@ -59,6 +67,32 @@ beforeEach(() => {
   pty.subscribePty.mockReset().mockReturnValue(() => {});
 });
 
+it("opens a paired project PTY using its saved machine and exact remote checkout", async () => {
+  const project = { environmentId: "windows", cwd: "G:/work/my project" };
+  const { instance } = runtime(
+    "project-ssh",
+    true,
+    terminalPtyLaunch({
+      cwd: "remote://windows/G:/work/my project",
+      profile: () => undefined,
+      sshConnectionId: "saved-machine",
+      sshProject: project,
+    }),
+  );
+  instance.start();
+  await flush();
+  expect(native.invoke).toHaveBeenCalledExactlyOnceWith("ssh_terminal_spawn", {
+    id: "project-ssh",
+    connectionId: "saved-machine",
+    project,
+    cols: 80,
+    rows: 24,
+  });
+  expect(pty.spawnPty).not.toHaveBeenCalled();
+  expect(pty.writePty).not.toHaveBeenCalled();
+  await instance.retire();
+});
+
 it("runs queued code as a one-shot process and decodes split UTF-8 before reporting its exit", async () => {
   const run = {
     command: "Write-Output 'ş'; exit 7",
@@ -68,11 +102,14 @@ it("runs queued code as a one-shot process and decodes split UTF-8 before report
     onError: vi.fn(),
   };
   queueTerminalRun("one-shot", run);
-  const { instance } = runtime("one-shot", false);
+  const { instance, writeOutput } = runtime("one-shot", false);
+  instance.setOutputVisible(true);
   instance.start();
   await flush();
   expect(pty.spawnPty).toHaveBeenCalledWith("one-shot", "/work", 80, 24, "profile", run);
   expect(pty.writePty).not.toHaveBeenCalled();
+  expect(writeOutput.mock.calls.flat().join("")).toContain("Write-Output 'ş'; exit 7");
+  expect(run.onOutput).not.toHaveBeenCalled();
   expect(takeTerminalRun("one-shot")).toBeUndefined();
   const calls = pty.subscribePty.mock.calls.at(-1)!;
   const output = calls[1] as (data: Uint8Array) => void;

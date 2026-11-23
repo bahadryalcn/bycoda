@@ -121,13 +121,10 @@ test("settings expose advanced controls without opening a menu", async ({ page }
           exact: true,
         }),
       ).toBeVisible();
-      await recovery.getByRole("button", { name: "Help", exact: true }).click();
-      await expect(
-        page.getByText("You can still reconnect manually when this is off.", {
-          exact: false,
-        }),
-      ).toBeVisible();
-      await page.keyboard.press("Escape");
+      await recovery.getByRole("img", { name: "Help", exact: true }).hover();
+      await expect(page.getByRole("tooltip")).toContainText(
+        "You can still reconnect manually when this is off.",
+      );
       // Manual setup lives in the Add a computer dialog, on its address tab.
       await form.getByRole("button", { name: "Add a computer", exact: true }).first().click();
       const addDialog = page.getByRole("dialog", { name: "Add a computer", exact: true });

@@ -197,9 +197,8 @@
   inset: 0;
 }
 
-/* Stepped so the compositor swaps a frame per step, not per vsync (index.css
-   pauses it with the other decorative loops while motion is off or the window
-   is behind another application). */
+/* Stepped so the compositor swaps a frame per step. index.css pauses it
+   when motion is off or the window is hidden. */
 @media (prefers-reduced-motion: no-preference) {
   .context-signal-frame[data-working="true"] .context-speed-bolt {
     animation: context-speed-charge calc(var(--motion-feedback-duration) * 12) steps(6, jump-none)
@@ -349,6 +348,13 @@
 [data-tool-inspection] [data-fbg-item] svg {
   inline-size: var(--ui-icon-sm);
   block-size: var(--ui-icon-sm);
+}
+
+::highlight(bycoda-tool-diff-added) {
+  color: var(--color-diff-add-fg);
+}
+::highlight(bycoda-tool-diff-removed) {
+  color: var(--color-diff-del-fg);
 }
 
 .delivery-accepted {

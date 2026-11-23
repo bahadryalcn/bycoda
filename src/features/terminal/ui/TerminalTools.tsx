@@ -43,7 +43,7 @@ const SEARCH_OUTPUT_REFRESH_MS = 750;
 export function TerminalTools({
   terminalId,
   terminal,
-  mode,
+  mode: requestedMode,
   onModeChange,
   ready,
   suggestionsAllowed = true,
@@ -58,7 +58,8 @@ export function TerminalTools({
   onResetFontSize,
   onFontSizeChange,
   searchDecorations,
-  toolbarTarget,
+  toolbarTarget: headerToolbarTarget,
+  dockToolbarTarget,
 }: {
   terminalId?: string;
   terminal: Terminal | null;
@@ -83,9 +84,14 @@ export function TerminalTools({
   /** Resolved shared semantic colors; the terminal owner refreshes these with its theme. */
   searchDecorations?: ISearchOptions["decorations"];
   toolbarTarget?: HTMLDivElement | null;
+  dockToolbarTarget?: HTMLDivElement | null;
 }) {
   const t = useT();
   const toast = useToast();
+  const inDock = dockToolbarTarget !== undefined;
+  const toolbarTarget = inDock ? dockToolbarTarget : headerToolbarTarget;
+  const dockToolbarHidden = inDock && !toolbarTarget;
+  const mode = dockToolbarHidden ? null : requestedMode;
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchor = useRef<HTMLButtonElement>(null);
@@ -98,6 +104,10 @@ export function TerminalTools({
   const searchRef = useRef<SearchAddon | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [overlayRef, typing] = useHideWhileTyping<HTMLDivElement>();
+  if (dockToolbarHidden && (menuOpen || helpOpen)) {
+    setMenuOpen(false);
+    setHelpOpen(false);
+  }
 
   useEffect(() => {
     if (!terminal) return;
@@ -314,7 +324,7 @@ export function TerminalTools({
       </Disclosure>
     </div>
   ) : null;
-  const showSuggestionsItem = !!remoteShell || (!toolbarTarget && suggestionsAllowed);
+  const showSuggestionsItem = !!remoteShell || ((!toolbarTarget || inDock) && suggestionsAllowed);
   const savedFontChanged =
     !!onResetFontSize && savedFontSize !== undefined && fontSize !== savedFontSize;
   const actionRows: DropdownMenuItem[] = [
@@ -466,7 +476,8 @@ export function TerminalTools({
         void remoteShell?.request(remoteShell.source);
         break;
       case "command":
-        changeMode("command");
+        if (mode === "command") close();
+        else changeMode("command");
         break;
       case "save-command":
         changeMode(null);
@@ -533,6 +544,7 @@ export function TerminalTools({
         shortcut="Ctrl/Cmd+F"
         aria-pressed={mode === "search"}
         disabled={!terminal}
+        disabledReason={t("No terminal is open.")}
         onClick={() => {
           changeMode("search");
           inputRef.current?.focus();
@@ -553,6 +565,7 @@ export function TerminalTools({
             aria-haspopup="menu"
             data-terminal-pane-menu-trigger=""
             disabled={!terminal && !onSavedCommands}
+            disabledReason={t("No terminal is open.")}
             onClick={() => setMenuOpen(!menuOpen)}
           >
             <MoreHorizontal className="icon-sm" />
@@ -576,9 +589,8 @@ export function TerminalTools({
   );
   return (
     <>
-      {/* This target is the server's fixed header, not a floating overlay. */}
       {toolbarTarget ? <Portal target={toolbarTarget}>{toolbar}</Portal> : null}
-      {(!toolbarTarget || mode === "search") && (
+      {!dockToolbarHidden && (!toolbarTarget || mode === "search") && (
         <div
           {...overlayAppearance}
           ref={overlayRef}

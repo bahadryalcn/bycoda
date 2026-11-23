@@ -238,11 +238,9 @@ export function TunnelStartForm({
         {target === "host" ? (
           <div className="external-tunnel-actions">
             <InfoPopover label={t("Public access")}>
-              <p>
-                {t(
-                  "Host access keeps device authentication and pairing. The public URL contains no device credential.",
-                )}
-              </p>
+              {t(
+                "Host access keeps device authentication and pairing. The public URL contains no device credential.",
+              )}
             </InfoPopover>
           </div>
         ) : (

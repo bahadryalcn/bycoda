@@ -1,7 +1,7 @@
 /** Different job: Account rows combine live quota meters and account status; RadioGroup owns selection and keyboard focus. */
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Divider } from "../../../shared/ui/Divider";
@@ -169,7 +169,6 @@ export function ModelAccountControl({
       <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1 text-start">
         {listOpen || implicitAccount ? t("Accounts") : label}
       </Text>
-      {!listOpen && current && current.id === defaultAccountId ? <DefaultMark /> : null}
       {!listOpen && elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
       {!listOpen ? <Percent value={current?.usedPercent ?? null} /> : null}
     </Button>
@@ -195,13 +194,18 @@ export function ModelAccountList({
   const t = useT();
   const { formatResetDuration } = useFormat();
   const [query, setQuery] = useState("");
+  const list = useRef<HTMLDivElement>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reveal the opened account controls even when models are scrolled to the bottom.
+  useLayoutEffect(() => {
+    if (!inline) list.current?.scrollIntoView?.({ block: "nearest" });
+  }, [inline]);
   const searchable = accountSwitcherKind(accounts.length) === "search";
   const needle = query.trim().toLocaleLowerCase();
   const shown = needle
     ? accounts.filter((account) => account.label.toLocaleLowerCase().includes(needle))
     : accounts;
   return (
-    <div className="shrink-0" data-model-account-list>
+    <div ref={list} className="shrink-0" data-model-account-list>
       {searchable ? (
         <div className="px-2 pt-1 pb-1.5">
           <SearchInput

@@ -11,12 +11,16 @@ import { Alert } from "../../shared/ui/Alert";
 import { Heading } from "../../shared/ui/Heading";
 import { PanelHeader } from "../../shared/ui/PanelHeader";
 import { Progress } from "../../shared/ui/Progress";
-import { InlineError } from "../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../shared/ui/InlineError";
 import { t, useLocale } from "../../shared/i18n/technical";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useRef, useState, type ClipboardEvent, type CSSProperties } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { RoomToolsUiContext } from "./toolsUiControl";
-import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
+import {
+  hostFeatureRequest,
+  hostToolRequest,
+  openBrowserFrameStream,
+} from "../connections/model/hostFeatureClient";
 import { hostToolTargetKey, type HostToolTarget } from "../connections/model/hostToolTarget";
 import type {
   BrowserAnnotationCapture,
@@ -34,37 +38,28 @@ import { BrowserInspectorNavigation } from "./BrowserInspectorNavigation";
 import { Button } from "../../shared/ui/Button";
 import { TextareaField } from "../../shared/ui/TextareaField";
 import { Popover } from "../../shared/ui/Popover";
-import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { toolsSessionKey } from "./toolsSessionRegistry";
 import {
   readBrowserDraftTransfer,
   writeBrowserDraftTransfer,
   subscribeBrowserDraftTransfer,
 } from "./browserDraftTransfer";
-import {
-  CursorMagicSelection,
-  RefreshCw,
-  SlidersHorizontal,
-  MessageSquarePlus,
-  X,
-} from "../../shared/ui/icons";
-import {
-  BrowserAddressInput,
-  BrowserControlToggle,
-  BrowserControlsPopover,
-  BrowserLiveToggle,
-} from "./ui/BrowserControls";
+import { CursorMagicSelection, RefreshCw, MessageSquarePlus, X } from "../../shared/ui/icons";
+import { BrowserAddressInput, BrowserLiveToggle } from "./ui/BrowserControls";
 import { BrowserStartPage } from "./ui/BrowserStartPage";
 import { BrowserViewportMenu } from "./ui/BrowserViewportMenu";
 import { rememberBrowserUrl } from "./model/browserRecents";
 import { browserInputDisabledReason, browserStatusPresentation } from "./model/browserStatus";
-import { browserKeyInput } from "./model/browserKeys";
+import { browserKeyInput, browserModifiers } from "./model/browserKeys";
 import {
   readFrameWithRetry,
   useBrowserLeaseKeepAlive,
+  useBrowserControlRecovery,
   useBrowserLiveFrames,
+  useBrowserStatusPolling,
 } from "./hooks/useBrowserLiveFrames";
 import { useBrowserSelectionProbe } from "./hooks/useBrowserSelectionProbe";
+import { useBrowserFrameStream } from "./hooks/useBrowserFrameStream";
 import { Disclosure } from "../../shared/ui/Disclosure";
 import "./BrowserPanel.css";
 
@@ -136,7 +131,6 @@ function ProjectBrowserPanel({
   useLocale();
   const [state, setState] = useState<BrowserState>();
   const [url, setUrl] = useState(() => initialUrl ?? toolPreferences.browserHomeUrl.load());
-  const [text, setText] = useState("");
   const [frame, setFrame] = useState<Frame>();
   const [cursor, setCursor] = useState<string>();
   // Mounting always starts with a status read; controls wait for it instead of
@@ -151,11 +145,7 @@ function ProjectBrowserPanel({
   const activeRef = useRef(active);
   activeRef.current = active;
   const initialized = useRef(false);
-  const [controlsOpen, setControlsOpen] = useState(false);
   const [actualSize, setActualSize] = useState(() => toolPreferences.browserActualSize.load());
-  const controlsTrigger = useRef<HTMLButtonElement>(null);
-  const statusTrigger = useRef<HTMLButtonElement>(null);
-  const [controlsFromStatus, setControlsFromStatus] = useState(false);
   const [error, setError] = useState("");
   const [inputBlocked, setInputBlocked] = useState(
     () =>
@@ -187,8 +177,6 @@ function ProjectBrowserPanel({
   const [limitation, setLimitation] = useState("");
   const [notice, setNotice] = useState("");
   const alive = useRef(false);
-  /** Whether the last lease renewal failed, so an ended lease reports why. */
-  const leaseRenewalFailed = useRef(false);
   const pending = useRef(false);
   const latest = useRef<BrowserState | undefined>(undefined);
   const generation = useRef(0);
@@ -209,9 +197,23 @@ function ProjectBrowserPanel({
     | undefined
   >(undefined);
   const inputEpoch = useRef(0);
-  const pressedPointer = useRef<{ x: number; y: number; button: string } | undefined>(undefined);
+  const pressedPointer = useRef<
+    | {
+        x: number;
+        y: number;
+        button: string;
+        clickCount?: number;
+      }
+    | undefined
+  >(undefined);
+  const addressInput = useRef<HTMLInputElement>(null);
+  const lastClick = useRef<
+    | { x: number; y: number; button: string; at: number; count: number; document?: string }
+    | undefined
+  >(undefined);
   const inputReceiver = useRef<HTMLTextAreaElement>(null);
   const previewImage = useRef<HTMLImageElement>(null);
+  const previewCanvas = useRef<HTMLCanvasElement>(null);
   const wheelHandler = useRef<(event: WheelEvent) => void>(() => {});
   const completedComposition = useRef("");
   const suppressClick = useRef(false);
@@ -229,8 +231,10 @@ function ProjectBrowserPanel({
     const image = new Image();
     image.src = next.src;
     if (typeof image.decode === "function") await image.decode();
-    if (alive.current && version === generation.current && sequence === frameSequence.current)
+    if (alive.current && version === generation.current && sequence === frameSequence.current) {
+      if (previewCanvas.current) previewCanvas.current.hidden = true;
       setFrame(next);
+    }
   };
   useEffect(
     () =>
@@ -373,18 +377,41 @@ function ProjectBrowserPanel({
         throw new Error("Room browser source is unavailable.");
       const serialChange = !beside && method !== "browser.input";
       const revision = serialChange ? ++readRevision.current : readRevision.current;
-      const result = roomSubject
-        ? await invoke<BrowserState>("control_room_browser_panel_request", {
-            environmentId: roomSubject.environmentId,
-            projectId: roomSubject.projectId,
-            threadId: roomSubject.threadId,
-            projectCwd: roomSubject.cwd,
-            action: method,
-            input: parameters,
-          })
-        : annotationMethod || hostTarget.kind === "project"
-          ? await hostFeatureRequest<BrowserState>(cwd, capability, method, parameters)
-          : await hostToolRequest<BrowserState>(cwd, capability, method, parameters, hostTarget);
+      const send = (action: string, input = parameters) =>
+        roomSubject
+          ? invoke<BrowserState>("control_room_browser_panel_request", {
+              environmentId: roomSubject.environmentId,
+              projectId: roomSubject.projectId,
+              threadId: roomSubject.threadId,
+              projectCwd: roomSubject.cwd,
+              action,
+              input,
+            })
+          : annotationMethod || hostTarget.kind === "project"
+            ? hostFeatureRequest<BrowserState>(cwd, capability, action, input)
+            : hostToolRequest<BrowserState>(cwd, capability, action, input, hostTarget);
+      const first = send(method).catch((cause) => {
+        if (
+          method === "browser.frame" &&
+          revision === readRevision.current &&
+          alive.current &&
+          version === generation.current &&
+          errorText(cause).includes("Browser document changed during capture.")
+        )
+          return send(method);
+        throw cause;
+      });
+      const result = await first.catch(async (cause) => {
+        if (method !== "browser.frame" || !errorText(cause).endsWith("Open a shared browser first"))
+          throw cause;
+        const status = await send("browser.status", {
+          sessionId,
+          ownerPresentationScope,
+          leaseId: parameters.leaseId,
+        }).catch(() => undefined);
+        if (status?.open !== false) throw cause;
+        return status;
+      });
       // Page/control changes invalidate live reads; same-page input keeps streaming.
       if (beside && revision !== readRevision.current) return;
       if (
@@ -467,7 +494,10 @@ function ProjectBrowserPanel({
           navigationId: result.navigationId,
           documentId: result.documentId,
         });
-      else if (!result.open) setFrame(undefined);
+      else if (!result.open) {
+        frameSequence.current++;
+        setFrame(undefined);
+      }
       return result;
     });
     if (!beside) serial.current = call;
@@ -572,7 +602,12 @@ function ProjectBrowserPanel({
           throw new Error(t("Use an HTTP or HTTPS address."));
         const claimed = await request("browser.claim");
         if (!claimed?.controlling) throw new Error(t("Take control, then open a URL"));
-        if (await request("browser.open", { url: initialUrl })) {
+        if (
+          await request("browser.open", {
+            url: initialUrl,
+            ...(isTauri() && !roomSubject ? { preview: true } : {}),
+          })
+        ) {
           if (status.open || (await request("browser.resize", defaultViewport)))
             await request("browser.frame");
         }
@@ -596,7 +631,12 @@ function ProjectBrowserPanel({
     if (!state?.controlling || expiresAt == null) return;
     const timer = window.setTimeout(() => {
       if (latest.current?.leaseDeadline !== expiresAt) return;
-      const expired = { ...latest.current, controlling: false, leaseId: undefined };
+      const expired = {
+        ...latest.current,
+        controlling: false,
+        leaseId: undefined,
+        heldBy: undefined,
+      };
       const wasSelecting = !!mode.current;
       latest.current = expired;
       setState(expired);
@@ -604,14 +644,8 @@ function ProjectBrowserPanel({
       resetPick();
       pending.current = false;
       setBusy(false);
-      setNotice(
-        wasSelecting
-          ? t("Selection expired. Refresh the frame and select the element again.")
-          : leaseRenewalFailed.current
-            ? t("Browser control could not be renewed. Claim control again.")
-            : t("Browser control ended. Open a website or claim control to interact again."),
-      );
-      leaseRenewalFailed.current = false;
+      if (wasSelecting)
+        setNotice(t("Selection expired. Refresh the frame and select the element again."));
     }, remainingUntil(expiresAt));
     return () => window.clearTimeout(timer);
   }, [state?.controlling, state?.leaseDeadline]);
@@ -634,8 +668,47 @@ function ProjectBrowserPanel({
       setNotice(t("Connection to the Host was lost. Select the element again."));
     },
   });
+  const latestFrame = useRef(frame);
+  latestFrame.current = frame;
+  const matchesStreamFrame = (identity: { documentId: string; navigationId: string }) =>
+    alive.current &&
+    activeRef.current &&
+    !mode.current &&
+    !!latest.current?.open &&
+    latest.current.documentId === identity.documentId &&
+    latest.current.navigationId === identity.navigationId;
+  const liveEnabled = active && live && !!state?.open && !selecting;
+  const nativeStream = useBrowserFrameStream({
+    enabled: liveEnabled && !roomSubject,
+    canvas: previewCanvas,
+    open: async () =>
+      openBrowserFrameStream(cwd, hostTarget, {
+        sessionId,
+        ownerPresentationScope: await scopePromise.current,
+      }),
+    prepare: async (identity) => {
+      if (!matchesStreamFrame(identity) && !pending.current && !queuedInputs.current)
+        await request("browser.status");
+      return matchesStreamFrame(identity);
+    },
+    current: matchesStreamFrame,
+    painted: (identity) => {
+      const previous = latestFrame.current;
+      if (
+        previous &&
+        (previous.documentId !== identity.documentId ||
+          previous.navigationId !== identity.navigationId ||
+          previous.width !== identity.width ||
+          previous.height !== identity.height)
+      ) {
+        const next = { ...previous, ...identity };
+        latestFrame.current = next;
+        setFrame(next);
+      }
+    },
+  });
   const streaming = useBrowserLiveFrames({
-    enabled: active && live && !!state?.open && !selecting,
+    enabled: liveEnabled && !nativeStream,
     read: (after, beside) => request("browser.frame", { after, waitMs: 1000 }, beside),
     idle: () =>
       !pending.current && queuedInputs.current === 0 && !hoverReading.current && !mode.current,
@@ -647,59 +720,36 @@ function ProjectBrowserPanel({
       setLive(false);
     },
   });
-  useBrowserLeaseKeepAlive(
-    active && !!state?.controlling,
-    state?.leaseDeadline,
+  useBrowserStatusPolling(
+    active && !!state?.open && (!live || nativeStream) && !selecting,
     async () => {
-      const current = latest.current;
-      // Only the lease this panel already holds is renewed; after it ended a claim would
-      // create a new one.
-      if (
-        !current?.controlling ||
-        !current.leaseId ||
-        (current.leaseDeadline ?? 0) <= monotonicNow()
-      )
-        return;
-      try {
-        await request("browser.claim");
-      } catch (cause) {
-        // A revoked lease shows up in the status and stops further renewals.
-        await request("browser.status").catch(() => {});
-        throw cause;
-      }
+      if (!pending.current && !queuedInputs.current && !liveReading.current)
+        await request("browser.status");
     },
-    (failure) => {
-      leaseRenewalFailed.current = failure !== undefined;
-    },
+    nativeStream ? 1500 : 60_000,
   );
-
-  const input = async (params: Record<string, unknown>, onSuccess?: () => void) => {
-    if (!latest.current?.open || !latest.current.controlling) return;
+  useBrowserControlRecovery(active && !!state?.open && !state.controlling && !busy, async () => {
+    const current = latest.current;
+    if (pending.current || !current?.open || current.controlling) return;
+    await request(current.heldBy ? "browser.status" : "browser.claim");
+  });
+  useBrowserLeaseKeepAlive(active && !!state?.controlling, state?.leaseDeadline, async () => {
+    const current = latest.current;
+    // Only the lease this panel already holds is renewed; after it ended a claim would
+    // create a new one.
+    if (!current?.controlling || !current.leaseId || (current.leaseDeadline ?? 0) <= monotonicNow())
+      return;
     try {
-      if (!(await request("browser.input", params))) return;
+      await request("browser.claim");
     } catch (cause) {
-      inputBlockedRef.current = true;
-      setInputBlocked(true);
+      // A revoked lease shows up in the status and stops further renewals.
+      await request("browser.status").catch(() => {});
       throw cause;
     }
-    onSuccess?.();
-    try {
-      // The action already ran; only a read that keeps failing blocks further input.
-      await readFrameWithRetry(
-        () => request("browser.frame"),
-        () => !alive.current,
-      );
-    } catch (cause) {
-      inputBlockedRef.current = true;
-      setInputBlocked(true);
-      throw new Error(
-        `${t("Action completed. Refresh the frame to see the result.")} ${errorText(cause)}`,
-      );
-    }
-  };
+  });
   const scheduleInputFrame = () => {
     // The live stream already delivers the picture after each action.
-    if (inputFrameTimer.current || streaming.current) return;
+    if (inputFrameTimer.current || streaming.current || nativeStream) return;
     inputFrameTimer.current = setTimeout(() => {
       inputFrameTimer.current = undefined;
       if (!alive.current || !activeRef.current) return;
@@ -743,7 +793,8 @@ function ProjectBrowserPanel({
       previous.lease === expectedLease &&
       previous.epoch === inputEpoch.current &&
       previous.params.kind === params.kind &&
-      previous.params.action === params.action
+      previous.params.action === params.action &&
+      String(previous.params.modifiers) === String(params.modifiers)
     ) {
       if (params.kind === "scroll") {
         previous.params.x = Math.max(
@@ -819,6 +870,33 @@ function ProjectBrowserPanel({
   const canInput =
     active && !!state?.open && !!state.controlling && !busy && frameCurrent && !inputBlocked;
   const canPageInput = canInput && !selecting;
+  const focusAddress = (event: {
+    key: string;
+    ctrlKey: boolean;
+    metaKey: boolean;
+    preventDefault(): void;
+  }) => {
+    if (
+      event.key !== "F6" &&
+      !((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "l")
+    )
+      return false;
+    event.preventDefault();
+    addressInput.current?.focus();
+    addressInput.current?.select();
+    return true;
+  };
+  const pasteText = (event: ClipboardEvent) => {
+    if (!canPageInput) return;
+    const text = event.clipboardData.getData("text/plain");
+    if (!text) return;
+    event.preventDefault();
+    if (text.length > 4096) {
+      setError(t("Browser unavailable"));
+      return;
+    }
+    queueInput({ kind: "text", text });
+  };
   const inputDisabledReason = browserInputDisabledReason({
     busy,
     state,
@@ -829,15 +907,19 @@ function ProjectBrowserPanel({
   wheelHandler.current = (event) => {
     if (
       !canPageInput ||
-      (document.activeElement !== previewImage.current &&
+      (actualSize &&
+        document.activeElement !== previewImage.current &&
         document.activeElement !== inputReceiver.current)
     )
       return;
     event.preventDefault();
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? (frame?.height ?? 720) : 1;
+    const modifiers = browserModifiers(event);
     queueInput({
       kind: "scroll",
-      x: Math.max(-2000, Math.min(2000, event.deltaX)),
-      y: Math.max(-2000, Math.min(2000, event.deltaY)),
+      x: Math.max(-2000, Math.min(2000, event.deltaX * unit)),
+      y: Math.max(-2000, Math.min(2000, event.deltaY * unit)),
+      ...(modifiers.length ? { modifiers } : {}),
     });
   };
   useEffect(() => {
@@ -867,7 +949,12 @@ function ProjectBrowserPanel({
           t("Browser control is unavailable. Try again when the other device releases it."),
         );
     }
-    if (await request("browser.open", { url: resolved })) {
+    if (
+      await request("browser.open", {
+        url: resolved,
+        ...(isTauri() && !roomSubject ? { preview: true } : {}),
+      })
+    ) {
       setUrl((draft) => (draft.trim() === target ? resolved : draft));
       rememberBrowserUrl(resolved);
       if (!current.open && !(await request("browser.resize", defaultViewport))) return;
@@ -901,8 +988,12 @@ function ProjectBrowserPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, busy, navigation?.id]);
 
-  const { browserStatus, errorSummary, statusTone, statusLabel, statusDetails } =
-    browserStatusPresentation({ state, error, notice, busy, setupRequired });
+  const { errorSummary, statusTone, statusLabel } = browserStatusPresentation({
+    state,
+    error,
+    busy,
+    setupRequired,
+  });
 
   return (
     <section
@@ -939,27 +1030,15 @@ function ProjectBrowserPanel({
             void action(openWebsite);
           }}
         >
-          <Button
-            ref={statusTrigger}
-            motion="none"
-            type="button"
-            variant="ghost"
-            iconOnly
-            className="host-browser-status"
-            label={statusLabel}
-            tooltip={statusLabel}
-            tooltipDetails={statusDetails}
-            aria-haspopup="dialog"
-            aria-expanded={controlsOpen && controlsFromStatus}
-            onClick={() => {
-              setSelectionOpen(false);
-              setControlsOpen((open) => !open || !controlsFromStatus);
-              setControlsFromStatus(true);
-            }}
-          >
-            <StatusDot data-browser-status-dot="" tone={statusTone} appearance="solid" size="md" />
-          </Button>
+          <StatusDot
+            data-browser-status-dot=""
+            tone={statusTone}
+            appearance="solid"
+            size="md"
+            title={statusLabel}
+          />
           <BrowserAddressInput
+            inputRef={addressInput}
             url={url}
             busy={busy}
             selecting={selecting}
@@ -973,13 +1052,13 @@ function ProjectBrowserPanel({
             type="button"
             variant="ghost"
             iconOnly
-            label={t("Refresh frame")}
-            tooltipDetails={[t("Capture the current page without reloading it.")]}
-            disabled={busy || !state?.open}
+            label={!state && error ? t("Retry") : t("Refresh frame")}
+            disabled={busy || (!state?.open && (!!state || !error))}
             disabledReason={busy ? t("Working on the host…") : t("Open a website")}
             onClick={() =>
               void action(async () => {
-                const result = await request("browser.frame");
+                const current = latest.current ?? (await request("browser.status"));
+                const result = current?.open ? await request("browser.frame") : undefined;
                 if (result?.data) {
                   inputBlockedRef.current = false;
                   setInputBlocked(false);
@@ -990,11 +1069,7 @@ function ProjectBrowserPanel({
             <RefreshCw className="icon-sm" aria-hidden />
           </Button>
         </form>
-        <div
-          className="host-browser-view-actions"
-          role="toolbar"
-          aria-label={t("Browser controls and setup")}
-        >
+        <div className="host-browser-view-actions" role="toolbar" aria-label={t("Browser")}>
           <BrowserLiveToggle
             live={live}
             open={!!state?.open}
@@ -1039,7 +1114,6 @@ function ProjectBrowserPanel({
                 setSelecting(true);
                 setNotice("");
                 setSelection(undefined);
-                setControlsOpen(false);
               })
             }
           >
@@ -1066,10 +1140,7 @@ function ProjectBrowserPanel({
               aria-haspopup="dialog"
               aria-expanded={selectionOpen}
               selected={selectionOpen}
-              onClick={() => {
-                setControlsOpen(false);
-                setSelectionOpen((value) => !value);
-              }}
+              onClick={() => setSelectionOpen((value) => !value)}
             >
               <MessageSquarePlus className="icon-sm" aria-hidden />
             </Button>
@@ -1087,31 +1158,6 @@ function ProjectBrowserPanel({
               request={request}
             />
           ) : null}
-          <Button
-            ref={controlsTrigger}
-            variant="ghost"
-            iconOnly
-            label={t("Browser controls and setup")}
-            tooltipDetails={[t("Keyboard, scrolling, control and browser setup")]}
-            aria-haspopup="dialog"
-            aria-expanded={controlsOpen && !controlsFromStatus}
-            selected={controlsOpen && !controlsFromStatus}
-            onClick={() => {
-              setSelectionOpen(false);
-              setControlsOpen((open) => !open || controlsFromStatus);
-              setControlsFromStatus(false);
-            }}
-          >
-            <SlidersHorizontal className="icon-sm" aria-hidden />
-          </Button>
-          {state?.open ? (
-            <BrowserControlToggle
-              controlling={state.controlling}
-              busy={busy}
-              action={action}
-              request={request}
-            />
-          ) : null}
         </div>
         {busy ? (
           <Progress
@@ -1122,12 +1168,8 @@ function ProjectBrowserPanel({
           />
         ) : null}
       </div>
-      {/* State, failures and notices are shown by the status dot's tooltip and
-          the controls popover; screen readers still hear them here. */}
       <LiveText className="sr-only" text={`${statusLabel}${notice ? ` · ${notice}` : ""}`} />
-      {error && !selectionOpen && !controlsOpen ? (
-        <InlineError details={error}>{errorSummary}</InlineError>
-      ) : null}
+      {error && !selectionOpen ? <InlineError details={error}>{errorSummary}</InlineError> : null}
       {setupRequired ? (
         <Text
           as="section"
@@ -1150,33 +1192,16 @@ function ProjectBrowserPanel({
           </Button>
         </Text>
       ) : null}
+      {selecting ? (
+        <InlineMessage tone="info">
+          {t(
+            "Point at an element and click to select. Page actions are blocked. Use arrow keys and Enter on the preview; Escape cancels.",
+          )}
+        </InlineMessage>
+      ) : null}
       <div className="host-browser-workspace" data-has-selection={Boolean(selection)}>
         <div {...surfaceAttributes({ radius: "none" }, "host-browser-stage")}>
-          {selecting ? (
-            <Text
-              size="micro"
-              tone="inherit"
-              leading="inherit"
-              as="div"
-              {...surfaceAttributes(
-                { variant: "card", radius: "popup" },
-                "host-browser-selection-mode",
-              )}
-            >
-              <span>{t("Select element")}</span>
-              <InfoPopover>
-                <p>
-                  {t(
-                    "Point at an element and click to select. Page actions are blocked. Use arrow keys and Enter on the preview; Escape cancels.",
-                  )}
-                </p>
-              </InfoPopover>
-            </Text>
-          ) : null}
           {limitation ? <Alert tone="info">{limitation}</Alert> : null}
-          {!frameCurrent ? (
-            <Alert tone="info">{t("Action completed. Refresh the frame to see the result.")}</Alert>
-          ) : null}
           {frame ? (
             <div
               className="host-tool-preview host-browser-preview"
@@ -1192,7 +1217,7 @@ function ProjectBrowserPanel({
                 <img
                   ref={previewImage}
                   src={frame.src}
-                  alt={t("Shared host browser screenshot; click to interact when controlling")}
+                  alt={t("Shared host browser")}
                   {...surfaceAttributes(
                     { focusRing: "preview-inset" },
                     canInput ? "host-browser-frame host-frame-interactive" : "host-browser-frame",
@@ -1205,18 +1230,17 @@ function ProjectBrowserPanel({
                     selecting ? t("Select an element in the host browser preview") : undefined
                   }
                   onKeyDown={(event) => {
-                    if (!canInput) return;
+                    if (!canInput || event.nativeEvent.isComposing) return;
                     if (!selecting) {
+                      if (focusAddress(event)) return;
                       const key = browserKeyInput(event);
                       if (key) {
                         event.preventDefault();
                         queueInput(key);
                       } else if (
                         event.key.length === 1 &&
-                        !event.ctrlKey &&
-                        !event.altKey &&
-                        !event.metaKey &&
-                        !event.nativeEvent.isComposing
+                        ((!event.ctrlKey && !event.altKey && !event.metaKey) ||
+                          event.getModifierState("AltGraph"))
                       ) {
                         event.preventDefault();
                         queueInput({ kind: "text", text: event.key });
@@ -1242,13 +1266,9 @@ function ProjectBrowserPanel({
                       void action(() => request("browser.annotation.select", pointer.current));
                     }
                   }}
-                  onPaste={(event) => {
-                    if (!canPageInput) return;
-                    const text = event.clipboardData.getData("text/plain");
-                    if (text && text.length <= 4096) {
-                      event.preventDefault();
-                      queueInput({ kind: "text", text });
-                    }
+                  onPaste={pasteText}
+                  onContextMenu={(event) => {
+                    if (canPageInput) event.preventDefault();
                   }}
                   onCompositionEnd={(event) => {
                     if (canPageInput && event.data) queueInput({ kind: "text", text: event.data });
@@ -1272,13 +1292,45 @@ function ProjectBrowserPanel({
                       ),
                     );
                     const button = ["left", "middle", "right"][event.button];
-                    event.currentTarget.focus();
+                    const previous = lastClick.current;
+                    const document = frame.documentId ?? frame.navigationId;
+                    const count =
+                      previous?.button === button &&
+                      previous.document === document &&
+                      event.timeStamp - previous.at <= 500 &&
+                      Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 4
+                        ? (previous.count % 3) + 1
+                        : 1;
+                    lastClick.current = {
+                      x: event.clientX,
+                      y: event.clientY,
+                      button,
+                      document,
+                      at: event.timeStamp,
+                      count,
+                    };
+                    const clickCount = count > 1 ? count : undefined;
+                    event.currentTarget.focus({ preventScroll: true });
                     event.currentTarget.setPointerCapture?.(event.pointerId);
-                    pressedPointer.current = { x, y, button };
+                    pressedPointer.current = {
+                      x,
+                      y,
+                      button,
+                      ...(clickCount ? { clickCount } : {}),
+                    };
                     suppressClick.current = event.button === 0;
-                    queueInput({ kind: "pointer", action: "down", x, y, button });
+                    const modifiers = browserModifiers(event);
+                    queueInput({
+                      kind: "pointer",
+                      action: "down",
+                      ...pressedPointer.current,
+                      ...(modifiers.length ? { modifiers } : {}),
+                    });
                   }}
                   onPointerMove={(event) => {
+                    const click = lastClick.current;
+                    if (click && Math.hypot(event.clientX - click.x, event.clientY - click.y) > 4)
+                      lastClick.current = undefined;
                     if (canPageInput) {
                       const box = event.currentTarget.getBoundingClientRect();
                       if (!box.width || !box.height) return;
@@ -1298,7 +1350,14 @@ function ProjectBrowserPanel({
                       );
                       if (pressedPointer.current)
                         pressedPointer.current = { ...pressedPointer.current, x, y };
-                      queueInput({ kind: "pointer", action: "move", x, y });
+                      const modifiers = browserModifiers(event);
+                      queueInput({
+                        kind: "pointer",
+                        action: "move",
+                        x,
+                        y,
+                        ...(modifiers.length ? { modifiers } : {}),
+                      });
                       return;
                     }
                     if (!selecting || !canInput) return;
@@ -1344,13 +1403,25 @@ function ProjectBrowserPanel({
                             ),
                           )
                         : pressed.y;
-                      queueInput({ kind: "pointer", action: "up", ...pressed, x, y }, true);
+                      const modifiers = browserModifiers(event);
+                      queueInput(
+                        {
+                          kind: "pointer",
+                          action: "up",
+                          ...pressed,
+                          x,
+                          y,
+                          ...(modifiers.length ? { modifiers } : {}),
+                        },
+                        true,
+                      );
                       if (event.currentTarget.hasPointerCapture?.(event.pointerId))
                         event.currentTarget.releasePointerCapture(event.pointerId);
-                      inputReceiver.current?.focus();
+                      inputReceiver.current?.focus({ preventScroll: true });
                     }
                   }}
                   onPointerCancel={() => {
+                    lastClick.current = undefined;
                     const pressed = pressedPointer.current;
                     pressedPointer.current = undefined;
                     if (pressed) queueInput({ kind: "pointer", action: "up", ...pressed }, true);
@@ -1403,14 +1474,22 @@ function ProjectBrowserPanel({
                     else queueInput({ kind: "click", x, y });
                   }}
                 />
+                <canvas
+                  ref={previewCanvas}
+                  className="host-browser-live-canvas"
+                  aria-hidden
+                  hidden
+                />
                 <TextareaField
                   ref={inputReceiver}
                   fieldClassName="host-browser-input-receiver"
                   label={t("Direct browser input")}
                   hideLabel
                   tabIndex={-1}
+                  onPaste={pasteText}
                   onKeyDown={(event) => {
                     if (!canPageInput || event.nativeEvent.isComposing) return;
+                    if (focusAddress(event)) return;
                     const key = browserKeyInput(event);
                     if (!key) return;
                     event.preventDefault();
@@ -1761,34 +1840,6 @@ function ProjectBrowserPanel({
             ) : null}
           </section>
         </Popover>
-      ) : null}
-      {active && controlsOpen ? (
-        <BrowserControlsPopover
-          anchor={controlsFromStatus ? statusTrigger : controlsTrigger}
-          align={controlsFromStatus ? "start" : "end"}
-          onDismiss={(reason) => {
-            setControlsOpen(false);
-            if (reason === "escape")
-              (controlsFromStatus ? statusTrigger : controlsTrigger).current?.focus();
-          }}
-          state={state}
-          busy={busy}
-          selecting={selecting}
-          canInput={canInput}
-          canPageInput={canPageInput}
-          inputDisabledReason={inputDisabledReason}
-          setupRequired={setupRequired}
-          annotationsAllowed={annotationsAllowed}
-          text={text}
-          setText={setText}
-          browserStatus={browserStatus}
-          notice={notice}
-          error={error}
-          errorSummary={errorSummary}
-          action={action}
-          request={request}
-          input={input}
-        />
       ) : null}
     </section>
   );

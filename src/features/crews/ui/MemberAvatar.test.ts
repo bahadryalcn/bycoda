@@ -15,9 +15,9 @@ it("defines the blink keyframes once, scoped to the eye class", () => {
   expect(CSS).toMatch(/\.member-avatar-eye\s*\{[^}]*animation: member-avatar-blink/);
 });
 
-it("stops the blink clock with decorative motion off or the window unfocused", () => {
+it("stops the blink clock with decorative motion off or the window hidden", () => {
   expect(CSS).toMatch(
-    /html:is\(\[data-decorative-motion="off"\], \[data-window-focus="off"\]\) \.member-avatar-eye\s*\{\s*animation: none;/,
+    /html:is\(\[data-decorative-motion="off"\], \[data-window-visible="off"\]\) \.member-avatar-eye\s*\{\s*animation: none;/,
   );
 });
 

@@ -44,10 +44,12 @@ describe("OnboardingStatistics choice", () => {
     container.remove();
   });
 
-  it("keeps the disclosure behind the info icon instead of printing it inline", async () => {
+  it("shows the statistics disclosure inline before the choice", async () => {
     await render();
     expect(container.querySelector("li")).toBeNull();
-    expect(container.textContent).not.toContain("Shared statistics disclosure");
+    expect(container.querySelector(".onboarding-hint")?.textContent).toBe(
+      "Shared statistics disclosure",
+    );
   });
 
   it("shows no answer as selected while the choice is unset", async () => {

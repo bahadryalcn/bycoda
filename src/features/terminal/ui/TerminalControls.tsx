@@ -75,6 +75,7 @@ export function TerminalControls({
   onFontSizeChange,
   searchDecorations,
   toolbarTarget,
+  dockToolbarTarget,
 }: Props) {
   const t = useT();
   const shell = useSshShellIntegration(id, integrated);
@@ -185,6 +186,7 @@ export function TerminalControls({
         onFontSizeChange={onFontSizeChange}
         searchDecorations={searchDecorations}
         toolbarTarget={toolbarTarget}
+        dockToolbarTarget={dockToolbarTarget}
       />
       {integrated && terminal && (mode === null || mode === "remote") ? (
         <RemoteShellSuggestionsOverlay

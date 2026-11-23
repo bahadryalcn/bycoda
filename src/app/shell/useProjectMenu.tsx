@@ -31,7 +31,9 @@ import {
   ImagePlus,
   Lock,
   LockOpen,
+  Link2,
   RefreshCw,
+  SplitSquare,
   Ungroup,
   Trash2,
 } from "../../shared/ui/icons";
@@ -78,6 +80,7 @@ import {
   projectGroupColor,
   projectGroupIdForPath,
   projectGroupParentId,
+  isWorkspaceProjectGroup,
   projectGroupWorkspaceRoot,
   saveProjectGroups,
   setProjectGroupAssignment,
@@ -93,6 +96,14 @@ import { RemoveProjectDialog } from "../../features/projects/ui/RemoveProjectDia
 import { AdditionalDirsDialog } from "../../features/projects/ui/AdditionalDirsDialog";
 import { RenameProjectFolderDialog } from "../../features/projects/ui/RenameProjectFolderDialog";
 import { isLocalProject, isRemoteProjectPath } from "../../features/projects/model/recents";
+import {
+  hasLinkableCopy,
+  loadProjectRepositories,
+  loadSeparatedProjects,
+  projectLinks,
+  setProjectShownSeparately,
+} from "../../features/projects/model/projectRepositories";
+import { pathKey } from "../../shared/lib/paths";
 import { projectNameError } from "../../features/projects/model/projectNames";
 import { TabGroupMenu, type TabGroupMenuExtraItem } from "../../features/workspace/ui/TabGroupMenu";
 import { groupKindItem, pickKindAction, projectKindItem } from "./projectKindMenu";
@@ -508,6 +519,10 @@ export function useProjectMenu({
       const remote = remoteProjectFor(path);
       const machine = remote ? knownRemoteMachine(remote.environmentId) : undefined;
       if (machine?.ssh) requestMachineEdit(machine.id);
+    } else if (action === "toggle-machines-separate") {
+      const { siblings, copies, separated } = machineLinkState(path);
+      if (separated) for (const sibling of siblings) setProjectShownSeparately(sibling, false);
+      else for (const copy of copies) setProjectShownSeparately(copy, true);
     } else if (action === "pin" || action === "unpin") {
       toggleProjectPin(path);
     } else if (action === "background") {
@@ -538,12 +553,28 @@ export function useProjectMenu({
     }
   };
 
+  /** `path`'s copies on other machines, read from storage like the menu's other items. */
+  const machineLinkState = (path: string) => {
+    const all = loadRecents().map((item) => item.path);
+    const repositories = loadProjectRepositories();
+    const separatedKeys = loadSeparatedProjects();
+    const id = repositories[pathKey(path)];
+    const siblings = id ? all.filter((other) => repositories[pathKey(other)] === id) : [];
+    return {
+      linkable: hasLinkableCopy(path, all, repositories),
+      siblings,
+      copies: projectLinks(all, repositories, separatedKeys).copiesOf(path),
+      separated: siblings.some((other) => separatedKeys.has(pathKey(other))),
+    };
+  };
+
   const renderProjectMenu = () => {
     if (!projectMenu) return null;
     const key = projectMenu.projectKey;
     const colors = loadTabGroupColors();
     const customColors = loadTabGroupCustomColors();
     const label = resolveTabGroupLabel(key, groupLabels, basename(projectMenu.path));
+    const machineLinks = machineLinkState(projectMenu.path);
     return (
       <TabGroupMenu
         x={projectMenu.x}
@@ -656,6 +687,17 @@ export function useProjectMenu({
             projectGroupIdForPath(projectMenu.path, loadProjectGroupAssignments()),
             Boolean(onRenameProjectFolder && isLocalProject(projectMenu.path)),
           ),
+          ...(machineLinks.linkable
+            ? [
+                {
+                  id: "toggle-machines-separate",
+                  label: machineLinks.separated
+                    ? t("Combine with other machines")
+                    : t("Show machines separately"),
+                  icon: machineLinks.separated ? Link2 : SplitSquare,
+                },
+              ]
+            : []),
           projectKindItem(projectMenu.path),
         ]}
         info={
@@ -679,7 +721,8 @@ export function useProjectMenu({
       loadProjectGroupAssignments(),
     );
     const workspaceDestinations = loadProjectGroups().filter(
-      (item) => !item.workspaceFile && !getGroupLockView().lock.lockedGroupIds.has(item.id),
+      (item) =>
+        !isWorkspaceProjectGroup(item) && !getGroupLockView().lock.lockedGroupIds.has(item.id),
     );
     const lockItems: TabGroupMenuExtraItem[] = locked
       ? [
@@ -987,7 +1030,7 @@ export function useProjectMenu({
               !loadProjectGroups().some(
                 (item) =>
                   item.id === targetId &&
-                  !item.workspaceFile &&
+                  !isWorkspaceProjectGroup(item) &&
                   !currentLock.lockedGroupIds.has(item.id),
               )
             )
@@ -997,7 +1040,7 @@ export function useProjectMenu({
                 getGroupLockView().lock.lockedGroupIds.has(group.id) ||
                 (targetId !== "none" &&
                   (!loadProjectGroups().some(
-                    (item) => item.id === targetId && !item.workspaceFile,
+                    (item) => item.id === targetId && !isWorkspaceProjectGroup(item),
                   ) ||
                     getGroupLockView().lock.lockedGroupIds.has(targetId)))
               )

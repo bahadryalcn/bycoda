@@ -3,7 +3,7 @@ import "./LiveBackgroundCanvas.css";
 import {
   decorativeMotionEnabled,
   subscribeDecorativeMotion,
-  windowHasFocus,
+  motionWindowVisible,
 } from "../model/decorativeMotion";
 import {
   useLiveBackground,
@@ -207,9 +207,8 @@ export function LiveBackgroundCanvas({
     };
     // Refresh on gate notifications, not every frame (the snapshot reads storage).
     let animate = decorativeMotionEnabled();
-    // Repainting every cell each frame is the largest idle cost of a window behind another
-    // app: keep the last painted frame until the window has focus again.
-    let focused = windowHasFocus();
+    // Keep the last painted frame while the window is hidden or minimized.
+    let windowVisible = motionWindowVisible();
     const signal = createLiveSignalDriver();
     // A scene on screen holds through output pauses and after the turn ends.
     const awake = () => busy() || (animate && signal.awake());
@@ -245,7 +244,7 @@ export function LiveBackgroundCanvas({
     const running = () =>
       animate &&
       !contextLost &&
-      focused &&
+      windowVisible &&
       activeRef.current &&
       intersects &&
       width > 0 &&
@@ -303,7 +302,7 @@ export function LiveBackgroundCanvas({
     updateLoopRef.current = updateLoop;
     const syncMotion = () => {
       animate = decorativeMotionEnabled();
-      focused = windowHasFocus();
+      windowVisible = motionWindowVisible();
       updateLoop();
     };
     const unsubscribe = subscribeDecorativeMotion(syncMotion);

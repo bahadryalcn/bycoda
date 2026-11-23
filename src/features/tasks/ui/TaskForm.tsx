@@ -22,7 +22,7 @@ import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { RemoteMachine } from "../../connections/public/protocol";
 import { useProjectCrews } from "../../crews/model/crewClient";
 import { useModelRouting } from "../../model-routing/public/choice";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { looksLikeProject, type RecentProject } from "../../projects/public/recents";
 import { AccessPicker } from "../../sessions/public/AccessPicker";
 import { SkillPromptField } from "../../skills/ui/SkillPromptField";
@@ -81,6 +81,7 @@ export function TaskForm({
   onSubmit: (mode: SubmitMode, draft: TaskDraft) => void;
 }) {
   useLocale();
+  const projectLabels = useProjectLabels();
   const format = useFormat();
   const formId = useId();
   const reasonId = useId();
@@ -270,11 +271,11 @@ export function TaskForm({
               project={{
                 value: draft.cwd,
                 currentLabel: looksLikeProject(draft.cwd)
-                  ? projectDisplayName(draft.cwd)
+                  ? projectDisplayNameFrom(draft.cwd, projectLabels)
                   : undefined,
                 options: projectChoices(recents, { include: draft.cwd }).map((entry) => ({
                   value: entry.path,
-                  label: projectDisplayName(entry.path),
+                  label: projectDisplayNameFrom(entry.path, projectLabels),
                   keywords: entry.path,
                 })),
                 onChange: isEdit

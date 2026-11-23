@@ -7,9 +7,10 @@ const INPUT = z.object({
 });
 const STATUS_INPUT = z.object({ cwd: z.string().max(4096).optional() });
 const START_INPUT = z.object({ callbackPort: z.number().int().min(1024).max(65535).optional() });
+const STATE_INPUT = z.object({ state: z.string().regex(/^[A-Za-z0-9_-]{16,256}$/) });
 const COMPLETE_INPUT = z
   .object({
-    state: z.string().regex(/^[A-Za-z0-9_-]{16,256}$/),
+    ...STATE_INPUT.shape,
     code: z.string().min(1).max(8192).optional(),
     error: z.string().min(1).max(128).optional(),
   })
@@ -44,6 +45,11 @@ export async function oauthRpc(hub: McpHub, method: string, input: Record<string
     const completion = COMPLETE_INPUT.safeParse(input);
     if (!completion.success) throw new Error("Invalid MCP sign-in callback.");
     return { status: await hub.oauth.completeRelay(server, completion.data) };
+  }
+  if (method === "mcp.oauth.cancel") {
+    const cancellation = STATE_INPUT.safeParse(input);
+    if (!cancellation.success) throw new Error("Invalid MCP sign-in callback.");
+    return { cancelled: hub.oauth.cancelSignIn(server, cancellation.data.state) };
   }
   if (method === "mcp.oauth.signOut") {
     await hub.oauth.signOut(server);

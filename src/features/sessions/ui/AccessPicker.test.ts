@@ -94,13 +94,13 @@ describe("AccessPicker next-turn explanation", () => {
     expect(count(document.body.textContent ?? "", NEXT_TURN)).toBe(0);
   });
 
-  it("keeps the sentence behind one info button, never inline in the menu or the hint", () => {
+  it("keeps the next-turn explanation in one tooltip", () => {
     render({ busy: true });
     act(() => trigger().click());
     const footer = document.querySelector<HTMLElement>("[data-picker-footer]")!;
     expect(footer.textContent).not.toContain(NEXT_TURN);
     expect(count(document.body.textContent ?? "", NEXT_TURN)).toBe(0);
-    act(() => footer.querySelector<HTMLButtonElement>("button")!.click());
+    act(() => footer.querySelector<HTMLElement>('[role="img"][aria-label="Help"]')!.focus());
     expect(count(document.body.textContent ?? "", NEXT_TURN)).toBe(1);
     expect(document.querySelector("[data-access-picker]")).not.toBeNull();
   });
@@ -111,7 +111,7 @@ describe("AccessPicker next-turn explanation", () => {
       root.render(createElement(AccessPicker, { value: "supervised", onChange, busy: true })),
     );
     act(() => trigger().click());
-    act(() => document.querySelector<HTMLButtonElement>("[data-picker-footer] button")!.click());
+    act(() => document.querySelector<HTMLElement>('[data-picker-footer] [role="img"]')!.focus());
     act(() => option("Full access")?.click());
     expect(onChange).toHaveBeenCalledWith("full-access");
   });

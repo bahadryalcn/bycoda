@@ -229,7 +229,7 @@ export function NotificationAlerts() {
           dependsOn={notificationsEnabled}
           disabledReason={t("Enable Desktop notifications first")}
           info={
-            <InfoPopover>
+            <InfoPopover label={t("Daily summary")}>
               {t(
                 "One daily notification summarizes background tasks and epics across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.",
               )}

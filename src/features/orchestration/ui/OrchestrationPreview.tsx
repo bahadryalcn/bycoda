@@ -36,7 +36,7 @@ import {
 } from "../../sessions/model/models";
 import { OrchestrationActions } from "./OrchestrationActions";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { MessageMultiple, Play } from "../../../shared/ui/icons";
 
 function AssignmentModel({
@@ -179,13 +179,11 @@ function AssignmentModel({
 function WorkerHelp() {
   useLocale();
   return (
-    <InfoPopover label={t("What parallel workers means")} className="shrink-0">
-      <p>
-        {t(
-          "Tasks wait for available workers and for their dependencies to finish. A lower number runs fewer agent sessions at the same time.",
-        )}
-      </p>
-    </InfoPopover>
+    <InfoTooltip label={t("What parallel workers means")} className="shrink-0">
+      {t(
+        "Tasks wait for available workers and for their dependencies to finish. A lower number runs fewer agent sessions at the same time.",
+      )}
+    </InfoTooltip>
   );
 }
 

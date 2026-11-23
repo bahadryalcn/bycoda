@@ -354,8 +354,8 @@
 :global(html[data-decorative-motion="off"]) .skeleton {
   animation: none;
 }
-/* Loading breath pauses behind another app; the band and series stay at their current opacity. */
-:global(html[data-window-focus="off"]) .chart[data-loading] .series,
-:global(html[data-window-focus="off"]) .skeleton {
+/* Loading breath pauses hidden or minimized; the band and series stay at their current opacity. */
+:global(html[data-window-visible="off"]) .chart[data-loading] .series,
+:global(html[data-window-visible="off"]) .skeleton {
   animation-play-state: paused;
 }

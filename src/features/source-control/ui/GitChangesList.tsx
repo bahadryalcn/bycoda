@@ -15,7 +15,7 @@ import { selectTreePaths, type TreeSelectionModifiers } from "../../files/public
 
 import type { ChangesView } from "../../settings";
 import { basename, type GitChangedFile, type GitFileDiffKind } from "../../../platform/tauri/fs";
-import { ChangeRow, ChangeSelectionCtx, statusTone } from "./ChangeRow";
+import { ChangeRow, ChangeSelectionCtx, statusTone, virtualRowStyle } from "./ChangeRow";
 
 const ROW_HEIGHT_FALLBACK = 28;
 
@@ -223,8 +223,9 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
       else for (const target of chosen) rest.onAction(target, kind);
     },
   );
-  const renderRow = (index: number, style?: CSSProperties) => {
+  const renderRow = (index: number, start?: number) => {
     const row = visibleRows[index];
+    const style = start === undefined ? undefined : virtualRowStyle(start, rowHeight);
     return row.file ? (
       <ChangeRow
         key={`${rest.kind}:${row.file.path}`}
@@ -233,7 +234,8 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
         busy={rest.busy === row.file.relative || !!rest.busy?.startsWith("folder:")}
         kind={rest.kind}
         depth={row.depth}
-        style={style}
+        virtualStart={start}
+        virtualHeight={start === undefined ? undefined : rowHeight}
         position={index + 1}
         tabStop={visibleKeys[index] === tabKey}
         onOpenFile={openFile}
@@ -255,16 +257,7 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
     );
   };
   const content = virtualized
-    ? virtual.getVirtualItems().map((item) =>
-        renderRow(item.index, {
-          position: "absolute",
-          insetBlockStart: 0,
-          insetInlineStart: 0,
-          width: "100%",
-          height: rowHeight,
-          transform: `translateY(${item.start - scrollMargin}px)`,
-        }),
-      )
+    ? virtual.getVirtualItems().map((item) => renderRow(item.index, item.start - scrollMargin))
     : visibleRows.map((_, index) => renderRow(index));
   const context = useMemo(
     () => ({ paths, select, targets, action }),

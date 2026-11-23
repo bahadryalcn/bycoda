@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveCrewTheme } from "../../settings/model/settings";
 import { PacingUncle } from "./PacingUncle";
 
-const state = vi.hoisted(() => ({ motion: true, focused: true, paint: vi.fn() }));
+const state = vi.hoisted(() => ({ motion: true, windowVisible: true, paint: vi.fn() }));
 vi.mock("../../settings/model/decorativeMotion", () => ({
   useDecorativeMotionEnabled: () => state.motion,
-  useWindowHasFocus: () => state.focused,
+  useMotionWindowVisible: () => state.windowVisible,
 }));
 vi.mock("./pacingUncleArt", () => ({ drawPacingUncle: state.paint }));
 let root: Root;
@@ -18,7 +18,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.motion = true;
-  state.focused = true;
+  state.windowVisible = true;
   state.paint.mockClear();
   vi.stubGlobal("IntersectionObserver", undefined);
   vi.stubGlobal("ResizeObserver", undefined);
@@ -63,26 +63,26 @@ describe("pacing uncle animation gate", () => {
     render();
     expect(vi.getTimerCount()).toBe(1);
   });
-  it("holds the walker while the window is behind another application", () => {
+  it("holds the walker while the window is hidden or minimized", () => {
     render();
     expect(vi.getTimerCount()).toBe(1);
-    state.focused = false;
+    state.windowVisible = false;
     render();
     expect(vi.getTimerCount()).toBe(0);
     const painted = state.paint.mock.calls.length;
     act(() => vi.advanceTimersByTime(1000));
     expect(state.paint).toHaveBeenCalledTimes(painted);
-    state.focused = true;
+    state.windowVisible = true;
     render();
     expect(vi.getTimerCount()).toBe(1);
   });
-  it("keeps its canvas context and observers across focus, visibility and motion pauses", () => {
+  it("keeps its canvas context and observers across window and element visibility and motion pauses", () => {
     render();
     const contexts = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls.length;
     const canvas = container.querySelector("canvas");
     for (const next of [
-      () => (state.focused = false),
-      () => (state.focused = true),
+      () => (state.windowVisible = false),
+      () => (state.windowVisible = true),
       () => (state.motion = false),
       () => (state.motion = true),
     ]) {

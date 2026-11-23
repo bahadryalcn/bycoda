@@ -1650,5 +1650,14 @@ export async function hostFeatureRequest<T>(..._args: unknown[]): Promise<T> {
 export async function listHostToolMachines(): Promise<never[]> {
   return [];
 }
+export async function deviceTouchAvailable(): Promise<boolean> {
+  return false;
+}
+export async function subscribeDeviceVideo(): Promise<never> {
+  throw new Error("Native device video is unavailable in the Assistant Room fixture");
+}
 
 applyRecordsDataset(snapshot);
+export async function openBrowserFrameStream(): Promise<never> {
+  throw new Error("Native media is unavailable in this fixture");
+}

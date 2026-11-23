@@ -13,7 +13,7 @@ import { TimePicker } from "../../../shared/ui/TimePicker";
 import { AUTOMATION_WEEKDAYS } from "../../automations/public/automations";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections/public/protocol";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { looksLikeProject, type RecentProject } from "../../projects/public/recents";
 import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
 import {
@@ -88,6 +88,7 @@ export function StewardForm({
   onSubmit: (event: FormEvent, draft: StewardDraft) => void;
 }) {
   useLocale();
+  const projectLabels = useProjectLabels();
   const format = useFormat();
   const formId = useId();
   const { supported: routingSupported, choice } = useTaskModelRouting(
@@ -169,7 +170,7 @@ export function StewardForm({
                     ? {
                         value: draft.cwd,
                         options: [],
-                        currentLabel: projectDisplayName(draft.cwd),
+                        currentLabel: projectDisplayNameFrom(draft.cwd, projectLabels),
                       }
                     : undefined
                 }

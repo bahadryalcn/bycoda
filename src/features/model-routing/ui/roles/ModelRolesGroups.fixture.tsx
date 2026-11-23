@@ -331,12 +331,12 @@ it("groups all roles and stores fixed targets in the draft without delegation ke
 
 it("shows the no-fallback hint only while a job is Fixed", async () => {
   await render(<Groups initial={draftOf()} />);
-  const noFallback = () => rowOf("Task worker").querySelector('button[aria-label="No fallback"]');
-  expect(noFallback()).toBeNull();
+  const noFallback = () => rowOf("Task worker").textContent?.includes("No fallback:");
+  expect(noFallback()).toBe(false);
   await choose(rowOf("Task worker"), "fixed");
-  expect(noFallback()).toBeTruthy();
+  expect(noFallback()).toBe(true);
   await choose(rowOf("Task worker"), "order");
-  expect(noFallback()).toBeNull();
+  expect(noFallback()).toBe(false);
 });
 
 it("deletes a non-helper role switched to Any model, in order", async () => {

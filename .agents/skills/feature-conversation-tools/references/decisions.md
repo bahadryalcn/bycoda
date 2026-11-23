@@ -24,6 +24,15 @@ renews its own lease before expiry; hidden or closed panels do not, so control s
 expires. Key input is a validated allow-list of named keys and single letter/digit
 shortcuts. No new RPC method or transport was added, so older Hosts keep working.
 
+Owner request, 2026-11-23:
+
+> control alma kapatma var ya bunuda kaldıralım kontrol hep olsun.
+
+Implementation decision: the visible desktop Browser panel acquires and renews
+available control automatically. It retains the Host lease and waits when
+another controller owns the page. The preview handles keyboard and pointer
+input directly. Setup appears when the Host reports it is needed.
+
 ## Device live view and panel header
 
 Owner request, 2026-11-10, original Turkish:
@@ -37,6 +46,27 @@ captures remain the fallback (iOS simulators, older Hosts, no WebCodecs, any str
 failure). The Devices header shows only the picker and refresh: the platform icon is
 green while the device runs, and the permission, readiness and activity badges are not
 shown in this panel; Setup and access reports the device host state instead.
+
+## Automatic desktop device control
+
+Owner request, 2026-11-23.
+
+> control alma kapatma var ya bunuda kaldıralım kontrol hep olsun. gereksiz bir buton ve akış bu.
+
+The visible desktop Devices panel acquires control of the selected running device through
+the existing Host lease. It releases control on hide or target change and waits if another
+controller holds the device.
+
+## Android video subscription and live touch
+
+Owner request, 2026-11-23.
+
+> bizde aynı şekilde yapalım fable 5.2 ve astra ya danışabilrsin. t3code dan ilham alabilrsin.
+
+Android video uses a bounded subscription on the authenticated Host connection. Drag sends
+live touch through the same lease as other device actions. A gesture can be cancelled without
+turning it into a tap. Older Hosts retain cursor reads and release-time gestures. See
+[`docs/integrations/devices.md`](../../../../docs/integrations/devices.md) for the transport.
 
 ## Cross-provider subagents and advisor
 

@@ -17,13 +17,13 @@ Any JSX under `src/app` or `src/features`, and any change in `src/shared/ui/`. F
 1. Find the need in [the component catalog](../../../docs/reference/ui-components.md). It is generated from the JSDoc in `src/shared/ui/*.tsx`: each row says what to use and what not to.
 2. Open the chosen component and read its JSDoc header and props before using it. Use it the way its `@use` line says; when its `@avoid` line matches your case, take the component it names.
 3. Missing capability: extend the owning shared component (or add one in `src/shared/ui/`) with the full JSDoc block (`@group`, `@use`, `@avoid`, optional `@replaces`, `@status`, `@instead`, `@arc`), then run `pnpm check:ui-catalog --write`. Never hand-roll it inside a feature.
-4. Run `pnpm check:ui-catalog` and `pnpm check:changed`.
+4. Check the catalog when its inputs change. Use the verification schedule in [Testing](../../../docs/reference/testing.md#order-of-verification).
 
 ## Preserve
 
 - Dialogs: `Modal`/`Sheet` pad their body. Do not add body padding; pass `padding="none"` only for full-bleed content (lists with row padding, editors, previews, master–detail panes).
 - Forms: `Select` shows its label like `TextField`; `hideLabel` only in toolbars and compact filters, where an associated group label or accessible name identifies the control.
-- `SegmentedControl` owns short exclusive choices; `EffortScale` owns ordered effort bars with translated full labels.
+- `SegmentedControl` owns short exclusive choices; `EffortScale` owns model effort and subagent ceiling bars with translated full labels. Provider save destinations use a feature-owned multi-select.
 - Raw tags listed in the catalog's Replaces column (`details`, `dl`, `label`, `table`, `time`, `role=tab`, …) are banned outside `src/shared/ui`; use the named component.
 - Deprecated components (catalog's last table) may not be imported in new code.
 - Actions use `Button` (or ActionHost inline actions); no screen-specific button styling.
@@ -31,7 +31,7 @@ Any JSX under `src/app` or `src/features`, and any change in `src/shared/ui/`. F
 - One overlay stack: Popover, Modal, Sheet, Tooltip and the menus; no own focus trap or Escape handler.
 - One fact, one owner: render each message once (field, row, form footer, pane banner or one toast) and never repeat it in a tooltip, `disabledReason` or a second channel. `disabledReason` only for a non-obvious cause with no visible explanation.
 - An icon-only action has an accessible name (`label`); that name is not a tooltip. A tooltip appears only when it adds a shortcut, reason or detail and never repeats a visible label (`tooltip-repeats-label` catches the literal case). Shared Tooltip renders explicit content unchanged; use OverflowTooltip only to recover clipped or responsively hidden text. Familiar icons need no tooltip, and visible labels are not required everywhere.
-- No inline help paragraphs: optional help is an info (ⓘ) control on demand; required validation, consequences and recovery stay visible. Delete a redundant sentence before adding an info button.
+- No inline help paragraphs: optional help is an info (ⓘ) control on demand; required validation, consequences and recovery stay visible. Use `InfoTooltip` for a short explanation beside a label and `InfoPopover` for persistent or structured details. Delete redundant copy before adding an info control.
 - Variants, never feature styling: `Button variant="chip"` (icon plus readable value), `SectionLabel variant="rail"`, `RadioGroup` tiles `tileLayout`, `PaneHeader` `primaryAction`/`overflow`. Spacing and overlay roles are tokens: `--ui-space-*`, `--ui-list-gutter`, `--ui-floating-edge`, `--ui-floating-shadow`, `--ui-radius-floating`.
 - Overlays are opaque and theme-bound: one floating ground, edge, shadow and radius; no private frost or palette. Density is the saved preference; a narrow pane changes arrangement, never density. Check each pane at 320 px.
 - Import only `src/shared/ui/*` from product code, never `src/shared/ui/arc/*`.
@@ -44,7 +44,7 @@ Any JSX under `src/app` or `src/features`, and any change in `src/shared/ui/`. F
 - `pnpm check:ui-catalog`: every shared component has metadata and the generated catalog is current.
 - `pnpm check:ui-drift`: raw tags, deprecated imports, double Modal padding, token drift and appearance ownership (ratchet).
 - Visual acceptance: `node scripts/checks/ui-acceptance-matrix.mjs --list` and `--out temp/verification/<id>/matrix` capture every archetype in light and dark at 1280 and 800 px (see `docs/reference/testing.md`).
-- Run focused tests for the changed component and representative consumers; take light and dark screenshots of affected surfaces when the UI visibly changes.
+- When a focused test is needed, cover the changed component and representative consumers. Take light and dark screenshots of affected surfaces when the UI visibly changes.
 
 ## References
 

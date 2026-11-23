@@ -289,17 +289,14 @@ impl TrayState {
         let rows = merged_rows(&self.windows);
         let count = |status| rows.iter().filter(|(_, row)| row.status == status).count();
         let working = count(SessionStatus::Working) + count(SessionStatus::Retrying);
-        let input = count(SessionStatus::Input) + count(SessionStatus::Failed);
         let summary = format!(
-            "{} {} · {} {} · {} {} · {} {}",
+            "{} {} · {} {} · {} {}",
             working,
             self.labels.working,
-            input,
-            self.labels.input,
-            count(SessionStatus::Done),
-            self.labels.done,
-            count(SessionStatus::Active),
-            self.labels.active
+            count(SessionStatus::Failed),
+            self.labels.failed,
+            count(SessionStatus::Input),
+            self.labels.input
         );
         let rows = visible_rows(rows);
         let rendered = format!(
@@ -780,6 +777,24 @@ mod tests {
         assert!(state.plan().is_none(), "committed menu is not rebuilt");
         state.rendered = None;
         assert!(state.plan().is_some(), "cleared memo forces a rebuild");
+    }
+
+    #[test]
+    fn tooltip_shows_only_working_failed_and_input_counts() {
+        let mut state = TrayState::default();
+        state.windows.insert(
+            "main".into(),
+            vec![
+                row("working", "working", SessionStatus::Working, true, 1),
+                row("retrying", "retrying", SessionStatus::Retrying, true, 1),
+                row("failed", "failed", SessionStatus::Failed, true, 1),
+                row("input", "input", SessionStatus::Input, true, 1),
+                row("done", "done", SessionStatus::Done, true, 1),
+                row("idle", "idle", SessionStatus::Active, false, 1),
+            ],
+        );
+        let plan = state.plan().expect("tray plan");
+        assert_eq!(plan.summary, "2 Working · 1 Failed · 1 Needs input");
     }
 
     #[test]

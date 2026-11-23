@@ -8,13 +8,9 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/settings/title-settings.html?theme=${theme}`);
-      await page.getByRole("button", { name: "Help", exact: true }).click();
-      await expect(
-        page
-          .getByRole("dialog", { name: "Help" })
-          .getByText("Model set in Settings → Models → Background work.", { exact: true }),
-      ).toBeVisible();
-      await page.keyboard.press("Escape");
+      const helperModels = page.locator('[data-setting-id="helper-models"]');
+      await expect(helperModels.getByRole("img", { name: "Help", exact: true })).toHaveCount(0);
+      await expect(helperModels.getByRole("button", { name: "Help", exact: true })).toHaveCount(0);
       await page.getByRole("button", { name: "Manage models", exact: true }).click();
       await expect
         .poll(() =>

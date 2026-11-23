@@ -62,6 +62,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const trigger = () => container.querySelector("button") as HTMLButtonElement;
+
 async function render(props: Parameters<typeof SessionMachinePicker>[0]) {
   await act(async () => root.render(createElement(SessionMachinePicker, props)));
 }
@@ -70,8 +72,9 @@ it("deduplicates the local machine and separates identically named remote machin
   const onSelect = vi.fn();
   const triggerRef = createRef<HTMLButtonElement>();
   await render({ environmentId: local.environmentId, onSelect, triggerRef });
-  expect(triggerRef.current?.textContent).toBe("This computer");
-  await act(async () => triggerRef.current?.click());
+  expect(triggerRef.current).toBe(trigger());
+  expect(trigger().textContent).toBe("This computer");
+  await act(async () => trigger().click());
   const options = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
   expect(options.map((option) => option.textContent)).toEqual([
     "This computer",
@@ -87,10 +90,9 @@ it("keeps a disconnected selection visible and exposes usable alternatives", asy
     status: id === office.environmentId ? "unreachable" : "connected",
   }));
   const onSelect = vi.fn();
-  const triggerRef = createRef<HTMLButtonElement>();
-  await render({ environmentId: office.environmentId, onSelect, triggerRef });
-  expect(triggerRef.current?.textContent).toBe("Build box (http://office) · Offline");
-  await act(async () => triggerRef.current?.click());
+  await render({ environmentId: office.environmentId, onSelect });
+  expect(trigger().textContent).toBe("Build box (http://office) · Offline");
+  await act(async () => trigger().click());
   const options = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
   expect(options[1]?.getAttribute("aria-checked")).toBe("true");
   expect(options[1]?.disabled).toBe(true);
@@ -99,8 +101,45 @@ it("keeps a disconnected selection visible and exposes usable alternatives", asy
 });
 
 it("renders an established machine as a read-only label", async () => {
+  inventory.mockReturnValue({
+    machines: [local, office, { ...home, name: "Home server" }],
+    loaded: true,
+  });
   await render({ environmentId: home.environmentId, disabled: true, onSelect: vi.fn() });
-  expect(container.textContent).toContain("Build box (http://home)");
-  expect(container.textContent).not.toContain("Connected");
+  expect(container.textContent).toBe("Home server");
   expect(container.querySelector("button")).toBeNull();
+});
+
+async function optionLabels(props: Parameters<typeof SessionMachinePicker>[0]) {
+  await render(props);
+  await act(async () => trigger().click());
+  return [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].map(
+    (option) => option.textContent,
+  );
+}
+
+it("lists machines holding the project first and offers the rest as Add to", async () => {
+  const labels = await optionLabels({
+    environmentId: office.environmentId,
+    projectMachines: [office.environmentId],
+    onSelect: vi.fn(),
+  });
+  expect(labels).toEqual([
+    "Build box (http://office)",
+    "Add to this computer",
+    "Add to Build box (http://home)",
+  ]);
+});
+
+it("keeps this computer first when it holds the project", async () => {
+  const onSelect = vi.fn();
+  const labels = await optionLabels({ projectMachines: ["", home.environmentId], onSelect });
+  expect(labels).toEqual([
+    "This computer",
+    "Build box (http://home)",
+    "Add to Build box (http://office)",
+  ]);
+  const options = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
+  await act(async () => options[2]?.click());
+  expect(onSelect).toHaveBeenCalledWith(office.environmentId);
 });

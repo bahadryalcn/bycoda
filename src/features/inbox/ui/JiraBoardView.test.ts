@@ -136,6 +136,22 @@ it("requires board permission and clears a revoked board without fetching it aga
   expect(invoke).not.toHaveBeenCalled();
 });
 
+it("keeps the selected board when the refreshed catalogue still includes it", async () => {
+  const previous = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command, args) =>
+    command === "jira_list_boards"
+      ? Promise.resolve([
+          { id: 8, name: "Operations", kind: "scrum" },
+          { id: 7, name: "Engineering", kind: "scrum" },
+        ])
+      : previous(command, args),
+  );
+  invoke.mockClear();
+  await act(async () => saveAllowedJiraBoardIds([7, 8]));
+  expect(invoke).toHaveBeenCalledWith("jira_board_configuration", { boardId: 7 });
+  expect(invoke).not.toHaveBeenCalledWith("jira_board_configuration", { boardId: 8 });
+});
+
 it("keeps Kanban issues visible when Jira does not support the board backlog", async () => {
   const previous = invoke.getMockImplementation()!;
   invoke.mockImplementation((command, args) => {
@@ -260,9 +276,19 @@ it("loads subsequent issue pages and does not duplicate cards", async () => {
   );
   await click("Refresh");
   const region = container.querySelector(".jira-board-columns")!;
+  const list = region.querySelector("[data-continuous-list]")!;
   await act(async () => {
     region.dispatchEvent(new Event("scroll", { bubbles: true }));
+    const horizontalWheel = new WheelEvent("wheel", { bubbles: true, deltaY: 90 });
+    // Happy DOM's WheelEvent does not copy modifier keys from its init argument.
+    Object.defineProperty(horizontalWheel, "shiftKey", { value: true });
+    list.dispatchEvent(horizontalWheel);
   });
+  expect(invoke).not.toHaveBeenCalledWith(
+    "jira_board_issues",
+    expect.objectContaining({ nextPageToken: "next" }),
+  );
+  await act(async () => list.dispatchEvent(new Event("scroll", { bubbles: true })));
   expect(invoke).toHaveBeenCalledWith("jira_board_issues", {
     boardId: 7,
     scope: "board",
@@ -271,6 +297,54 @@ it("loads subsequent issue pages and does not duplicate cards", async () => {
     projectIds: null,
   });
   expect(container.querySelectorAll(".jira-board-card")).toHaveLength(2);
+});
+
+it("keeps known columns while awaiting issues and reuses configuration across modes", async () => {
+  const previous = invoke.getMockImplementation()!;
+  let resolvePage!: (page: unknown) => void;
+  invoke.mockClear();
+  invoke.mockImplementation((command, args) =>
+    command === "jira_board_issues" && args.scope === "sprint"
+      ? new Promise((resolve) => {
+          resolvePage = resolve;
+        })
+      : previous(command, args),
+  );
+  await click("Backlog & sprints");
+  expect(
+    container.querySelector('[aria-label="Sprint 21"] [data-jira-cards-loading]'),
+  ).not.toBeNull();
+  expect(container.querySelector('[aria-label="Backlog"]')).not.toBeNull();
+  expect(invoke).not.toHaveBeenCalledWith("jira_board_configuration", expect.anything());
+  await act(async () => resolvePage({ issues: [issue], nextPageToken: null }));
+  expect(container.querySelector('[aria-label="Sprint 21"] .jira-board-card')).not.toBeNull();
+});
+
+it("commits each open planning group without waiting for the rest of the refresh", async () => {
+  await click("Backlog & sprints");
+  await click("Backlog");
+  const previous = invoke.getMockImplementation()!;
+  let finishBacklog!: (page: unknown) => void;
+  invoke.mockImplementation((command, args) => {
+    if (command === "jira_board_issues" && args.scope === "backlog")
+      return new Promise((resolve) => {
+        finishBacklog = resolve;
+      });
+    if (command === "jira_board_issues" && args.scope === "sprint")
+      return Promise.resolve({
+        issues: [{ ...issue, title: "New sprint issue" }],
+        nextPageToken: null,
+      });
+    return previous(command, args);
+  });
+  await click("Refresh");
+  expect(container.querySelector('[aria-label="Sprint 21"]')?.textContent).toContain(
+    "New sprint issue",
+  );
+  expect(container.querySelector('[aria-label="Backlog"]')?.textContent).toContain("Fix login");
+  expect(container.textContent).not.toContain("Updates have not been verified.");
+  await act(async () => finishBacklog({ issues: [], nextPageToken: null }));
+  expect(container.querySelector('[aria-label="Backlog"] .jira-board-card')).toBeNull();
 });
 it("supports keyboard ranking within a column", async () => {
   const previous = invoke.getMockImplementation()!;

@@ -45,7 +45,8 @@
 }
 
 @container workspace-pane (inline-size < 280px) {
-  .workspaceHeader [data-workspace-copy-name] {
+  .workspaceHeader [data-workspace-copy-name],
+  .workspaceHeader [data-workspace-copy-decoration] {
     display: none;
   }
 }

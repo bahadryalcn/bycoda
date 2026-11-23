@@ -616,9 +616,15 @@ function ConnectedRemoteSession({
     hostEnvironmentId: descriptor?.environmentId,
     request: ownerRequest,
   });
-  const [selectedCwd, setSelectedCwd] = useState(
-    () => remotePendingWorktree(shell.id) ?? (owner ? shell.worktreeCwd : undefined) ?? project.cwd,
-  );
+  const [selectedCwd, setSelectedCwd] = useState(() => {
+    const worktree = parseRemotePath(shell.worktreeCwd ?? "");
+    return (
+      remotePendingWorktree(shell.id) ??
+      (worktree?.environmentId === machine.environmentId ? worktree.hostPath : undefined) ??
+      (owner ? shell.worktreeCwd : undefined) ??
+      project.cwd
+    );
+  });
   const [draftWorkspaceMode, setDraftWorkspaceMode] = useState<WorkspaceMode | undefined>(
     shell.workspaceMode,
   );

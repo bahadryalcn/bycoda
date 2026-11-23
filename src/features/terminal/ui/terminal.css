@@ -6,8 +6,14 @@
   background: var(--terminal-canvas);
   color: var(--terminal-text);
 }
-.terminal-header {
+.project-terminal-dock .terminal-header {
+  block-size: auto;
+  padding-block: var(--space-1);
   background: var(--ui-workspace-panel);
+}
+.terminal-header [data-pane-header-actions] {
+  flex-shrink: 1;
+  min-inline-size: 0;
 }
 .terminal-body {
   position: relative;

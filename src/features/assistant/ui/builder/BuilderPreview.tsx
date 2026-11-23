@@ -5,7 +5,7 @@ import type { AssistantProfilePatch } from "../../../../shared/model/host-contra
 import { Button } from "../../../../shared/ui/Button";
 import { ArrowLeft, Check } from "../../../../shared/ui/icons";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { ModalActions, ModalFooter } from "../../../../shared/ui/Modal";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
@@ -140,11 +140,11 @@ export function BuilderPreview({
         <ModalActions
           reason={nothing ? t("Select a change to apply") : undefined}
           start={
-            <InfoPopover label={t("Permissions")}>
+            <InfoTooltip label={t("Permissions")}>
               {t(
                 "Permissions stay manual: jobs and autonomy, execution access, projects and computer use are not changed here.",
               )}
-            </InfoPopover>
+            </InfoTooltip>
           }
         >
           <Button

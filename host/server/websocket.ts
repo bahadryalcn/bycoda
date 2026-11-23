@@ -7,6 +7,8 @@ import { requestingDeviceName } from "../desktop/remoteActivity";
 import { memoized } from "../desktop/requester-name";
 import type { ServerBindings } from "./bindings";
 import { createTailnetServeHosts } from "../mobile/tailnet-serve-hosts";
+import { attachBrowserMedia } from "../browser/browser-media";
+import { resolveBrowserScope } from "./rpc-browser";
 export function createWebsocketRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -25,6 +27,8 @@ export function createWebsocketRuntime(
     | "tasks"
     | "attachmentOwnership"
     | "mobileAccess"
+    | "sharedBrowser"
+    | "featureMeta"
   >,
 ) {
   const tailnetHosts = createTailnetServeHosts(() => dependencies.mobileAccess.status());
@@ -50,6 +54,8 @@ export function createWebsocketRuntime(
       "browser.ownerPresentationScopes.v1",
       "transport.ws.models.v1",
       "transport.ws.devices.v1",
+      "transport.ws.devices.video.v1",
+      "devices.touch.v1",
       "transport.ws.devices.preview.mobile.v1",
       "transport.ws.voice.v1",
       // The phone's background voice socket has no HTTP fallback: without this its spoken
@@ -142,10 +148,28 @@ export function createWebsocketRuntime(
       ),
     endpoint: async (params) => await dependencies.devServerAccess.endpoint(params),
   });
+  const closeBrowserMedia = attachBrowserMedia({
+    server: dependencies.server,
+    environmentId: dependencies.engine.store.environmentId,
+    allowedHosts: tailnetHosts.current,
+    mobileIngressSecret: dependencies.mobileIngressSecret,
+    authorized: async (token, scope) =>
+      await dependencies.engine.store.db.outsideScope(async () => {
+        if (!(await dependencies.engine.store.authenticated(token))) return false;
+        if (scope) await resolveBrowserScope(dependencies, scope);
+        return true;
+      }),
+    open: async (params, token) =>
+      await dependencies.engine.store.db.outsideScope(async () => {
+        const scope = await resolveBrowserScope(dependencies, params);
+        return dependencies.sharedBrowser.openFrameStream(scope, token);
+      }),
+  });
   return {
     websocket: {
       ...websocket,
       close: async () => {
+        closeBrowserMedia();
         await tunnel.close();
         await websocket.close();
       },

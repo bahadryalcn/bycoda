@@ -213,10 +213,12 @@ describe("project background dialog", () => {
     const heading = Array.from(dialog.querySelectorAll<HTMLElement>(".settings-row-title")).find(
       (node) => node.textContent === "Background effect",
     )!;
-    const info = heading.nextElementSibling as HTMLButtonElement;
-    await act(async () => info.click());
-    expect(document.body.textContent).toContain("Shows the original artwork.");
-    await act(async () => info.click());
+    const info = heading.parentElement!.querySelector<HTMLElement>('[role="img"]')!;
+    await act(async () => info.focus());
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
+      "Shows the original artwork.",
+    );
+    await act(async () => info.blur());
     expect(
       heading
         .closest(".settings-row")

@@ -1,5 +1,5 @@
 import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n";
 import { useAssistantSnapshot, assistantIdentity } from "../../assistant/model/assistantClient";
@@ -44,13 +44,13 @@ export function VoiceSettings() {
           id="voice-companion"
           label={t("Enable voice companion")}
           info={
-            <InfoPopover label={`${t("Enable voice companion")}: ${t("Help")}`}>
+            <InfoTooltip label={t("Enable voice companion")}>
               {settings.mode === "local"
                 ? t(
                     "Talk to your session while the agent works. Audio is processed on this computer.",
                   )
                 : t("Talk to your session while the agent works.")}
-            </InfoPopover>
+            </InfoTooltip>
           }
         >
           <Toggle
@@ -119,13 +119,13 @@ function VoiceEngine({
         label={t("Voice provider")}
         stacked
         info={
-          <InfoPopover label={`${t("Voice provider")}: ${t("Help")}`}>
+          <InfoTooltip label={`${t("Voice provider")}: ${t("Help")}`}>
             {local
               ? t("Speech is recognized on this computer; the session's provider writes replies.")
               : t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {
                   p1: voiceProviderLabel(settings.mode),
                 })}
-          </InfoPopover>
+          </InfoTooltip>
         }
         disabled={installing}
       >

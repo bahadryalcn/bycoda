@@ -80,10 +80,10 @@ export async function syncPull(
     let bytes = 256;
     let revisionStart = 0;
     function finishPage(rev: number, more: boolean): SyncPullResult {
-      const result = { rev, records, more, untilRev };
+      const result = { rev, records, more, untilRev, workspaceLayout: true };
       rememberSerializedResponse(
         result,
-        `{"rev":${JSON.stringify(rev)},"records":[${encodedRecords.join(",")}],"more":${more},"untilRev":${JSON.stringify(untilRev)}}`,
+        `{"rev":${JSON.stringify(rev)},"records":[${encodedRecords.join(",")}],"more":${more},"untilRev":${JSON.stringify(untilRev)},"workspaceLayout":true}`,
       );
       return result;
     }

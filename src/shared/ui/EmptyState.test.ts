@@ -49,7 +49,7 @@ it.each(["panel", "list"] as const)(
       expect(section.getAttribute("aria-label")).toBe("Sessions");
       expect(section.classList.contains("bycoda-arc")).toBe(true);
       expect(section.querySelector("h3")?.textContent).toBe("No sessions");
-      expect(section.querySelector('button[aria-label="Help"]')).not.toBeNull();
+      expect(section.querySelector('[role="img"][aria-label="Help"]')).not.toBeNull();
       expect(section.querySelector("button:not([aria-label])")?.textContent).toBe("Clear");
     } finally {
       done();
@@ -131,7 +131,7 @@ it("tucks a titled description behind the info affordance unless it states scope
   );
   try {
     expect(tucked.container.querySelector("p")).toBeNull();
-    expect(tucked.container.querySelector('button[aria-label="Help"]')).not.toBeNull();
+    expect(tucked.container.querySelector('[role="img"][aria-label="Help"]')).not.toBeNull();
   } finally {
     tucked.done();
   }
@@ -141,7 +141,7 @@ it("tucks a titled description behind the info affordance unless it states scope
     );
     try {
       expect(shown.container.querySelector("p")?.textContent).toBe("Create a crew.");
-      expect(shown.container.querySelector('button[aria-label="Help"]')).toBeNull();
+      expect(shown.container.querySelector('[role="img"][aria-label="Help"]')).toBeNull();
     } finally {
       shown.done();
     }

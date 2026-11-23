@@ -177,6 +177,7 @@ import type { UserQuestionPrompt, UserQuestionReply } from "../model/userQuestio
 import { historyKey, type HistoryBrowse } from "../model/composerHistory";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
+import { capturePastedTextAttachment, replacePastedText } from "./pastedTextAttachment";
 import {
   createBlankSkill,
   dollarTokenAt,
@@ -569,6 +570,14 @@ async function awaitSubmission(run: SubmissionRun): Promise<void> {
   }
 }
 
+/**
+ * Cards already carried by a send that is still starting. The session keeps them
+ * until the turn commits, and a remounted composer must not send them again.
+ */
+const dispatchedCards = new WeakSet<object>();
+const undispatched = <T extends object>(card: T | undefined) =>
+  card && !dispatchedCards.has(card) ? card : undefined;
+
 export const Composer = memo(function Composer({
   enabled = true,
   focused,
@@ -695,7 +704,8 @@ export const Composer = memo(function Composer({
   const parentClosed = useParentInputsClosed(logicalParentSessionId);
   const parentInputRef = useRef<ParentInputHandle | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const [inlineActive, setInlineActive] = useState(false);
+  const [inlineAttachments, setInlineAttachments] = useState<ReadonlySet<string> | null>(null);
+  const inlineActive = inlineAttachments !== null;
   const [initial] = useState(() => {
     const value = extractChatCitations(initialDraft ?? "");
     return {
@@ -1159,18 +1169,6 @@ export const Composer = memo(function Composer({
     (!remote || !!remoteFeatures?.attachments) && harnessSupportsAttachments(harness);
   const leadingMode = leadingModeCommand(draft, skillNames, { shell: true });
   const modeIndent = leadingMode ? MODE_COMMAND_INDENT : undefined;
-  const inlineAttachments =
-    inlineActive && !shell
-      ? new Set(
-          findTokens(draft, attachments)
-            .filter((token) => token.start >= (leadingMode?.end ?? 0))
-            .map((token) => attachments[token.index].id),
-        )
-      : undefined;
-  // Browser captures keep their review details beside the inline image token.
-  const cardAttachments = attachments.filter(
-    (file) => file.browserAnnotation || !inlineAttachments?.has(file.id),
-  );
   const composerPlaceholder = worktreeRemoved
     ? t("Select a branch or worktree to continue…")
     : inboxCard
@@ -2533,16 +2531,26 @@ export const Composer = memo(function Composer({
       !remote && !hideTopBar && !hideOrchestrator && !command.planning
         ? consumeOrchestratorCommand(command.text)
         : { text: command.text, matched: false };
-    const text = isNativeCommandPrompt(orchestratorCommand.text, harness)
+    const nativePrompt = isNativeCommandPrompt(orchestratorCommand.text, harness);
+    const sendingInboxCard = undispatched(inboxCard);
+    const sendingNoteCard = undispatched(noteCard);
+    const sendingHandoffCard = undispatched(handoffCard);
+    const text = nativePrompt
       ? orchestratorCommand.text
-      : composeInboxMessage(inboxCard, orchestratorCommand.text);
+      : composeInboxMessage(sendingInboxCard, orchestratorCommand.text);
     const submittedCitations = [...citationsRef.current];
     const submittedText = withChatCitations(
       operatorSelected && !consumeOperatorCommand(text).matched ? `/operator ${text}` : text,
       submittedCitations,
     );
     const files = attachmentsRef.current;
-    if (!text && submittedCitations.length === 0 && files.length === 0 && !noteCard && !handoffCard)
+    if (
+      !text &&
+      submittedCitations.length === 0 &&
+      files.length === 0 &&
+      !sendingNoteCard &&
+      !sendingHandoffCard
+    )
       return;
     // The files stay in the draft; say why they are not going out.
     if (files.length > 0 && !harnessSupportsAttachments(harness)) {
@@ -2601,6 +2609,18 @@ export const Composer = memo(function Composer({
       mountedClosure.publishCache(() => setComposerAttachments(sessionId, []));
     }
     publishDraft("", false);
+    // A native command or shell line leaves its cards attached for the next message.
+    const sentCards: object[] =
+      nativePrompt || shellLine
+        ? []
+        : [sendingInboxCard, sendingNoteCard, sendingHandoffCard].flatMap((card) =>
+            card ? [card] : [],
+          );
+    let sendRejected = false;
+    const releaseSentCards = () => {
+      sendRejected = true;
+      sentCards.forEach((card) => dispatchedCards.delete(card));
+    };
     const accepted = onSubmit(
       shellLine
         ? value.trim()
@@ -2620,9 +2640,13 @@ export const Composer = memo(function Composer({
             : orchestrationSelected || orchestratorCommand.matched
               ? "orchestrate"
               : "default",
+        // The session still holds these until the earlier send commits.
+        ...(noteCard && !sendingNoteCard ? { noteCard: undefined } : {}),
+        ...(handoffCard && !sendingHandoffCard ? { handoffCard: undefined } : {}),
         // Both project preparation and remote reconnect may reject after the
         // composer cleared. A newer draft keeps ownership of the composer.
         onSendRejected: () => {
+          releaseSentCards();
           retained.update({
             ...dispatchInput,
             disposition: "late-send-rejection",
@@ -2677,6 +2701,7 @@ export const Composer = memo(function Composer({
     // orchestration is paused). Keep the user's text, files and selected mode
     // intact so resolving the blocker never destroys their work.
     if (accepted === false) {
+      releaseSentCards();
       retained.release();
       if (sessionId && savedDraftAttachments.length > 0) {
         mountedClosure.publishCache(() => setComposerAttachments(sessionId, savedDraftAttachments));
@@ -2693,6 +2718,7 @@ export const Composer = memo(function Composer({
       setPasteError(t("The message was not accepted. Your text and files are kept."));
       return;
     }
+    if (!sendRejected) sentCards.forEach((card) => dispatchedCards.add(card));
     retained.update({ ...dispatchInput, disposition: "accepted-unknown" });
     pasteGenerationRef.current += 1;
     historyRef.current = null;
@@ -3202,6 +3228,39 @@ export const Composer = memo(function Composer({
         return;
       }
       const text = e.clipboardData.getData("text/plain");
+      const paste =
+        !shell && !isFileReferenceText(text)
+          ? capturePastedTextAttachment(e.currentTarget, text)
+          : undefined;
+      if (paste) {
+        e.preventDefault();
+        paste.insert();
+        rememberAttachmentRead(async (accepted) => {
+          const skips = collectSkippedAttachments();
+          const incoming = await attachmentsFromFiles([paste.file], { onSkipped: skips.onSkipped });
+          accepted.apply(() => {
+            const el = ref.current;
+            const range = el && paste.range(el.value);
+            if (!accepted.isCurrent() || !el || !range) {
+              incoming.forEach(revokeAttachment);
+              return;
+            }
+            addAttachments(incoming, skips.notice(), (attachments) => {
+              const index = attachments.findIndex((file) => file.id === incoming[0]?.id);
+              if (index >= 0) {
+                const edit = replacePastedText(
+                  el.value,
+                  range,
+                  attachmentDraftTokens(attachments)[index],
+                );
+                applyTextareaEdit(el, edit.text, edit.caret);
+              }
+              return true;
+            });
+          });
+        });
+        return;
+      }
       // Prose and whitespace alike are the webview's to insert.
       if (text && !isFileReferenceText(text)) return;
       // A file URI becomes a chip, so it is kept out of the draft; with no text
@@ -3841,14 +3900,19 @@ export const Composer = memo(function Composer({
               else publishDraft(el?.value ?? draftTextRef.current);
             }}
           />
-          {cardAttachments.length > 0 ? (
+          {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2">
-              {cardAttachments.map((file) => (
+              {attachments.map((file, index) => (
                 <AttachmentChip
                   key={file.id}
                   attachment={file}
-                  token={tokens[attachments.indexOf(file)]}
-                  onInsertToken={() => insertAttachmentToken(file.id)}
+                  token={tokens[index]}
+                  draft={{ projectRoot: executionCwd }}
+                  onInsertToken={
+                    !shell && inlineAttachments?.has(file.id)
+                      ? undefined
+                      : () => insertAttachmentToken(file.id)
+                  }
                   onRemove={() => removeAttachment(file.id)}
                 />
               ))}
@@ -3924,6 +3988,7 @@ export const Composer = memo(function Composer({
             <ComposerInlineEditor
               field={ref}
               text={draft}
+              attachmentProjectRoot={executionCwd}
               references={{
                 names: skillNames,
                 skillParts: skillTextParts,
@@ -3942,7 +4007,7 @@ export const Composer = memo(function Composer({
               disabled={disabled}
               spellCheck={spelling}
               hasSubagents={hasSubagents}
-              onReady={setInlineActive}
+              onInlineAttachments={setInlineAttachments}
               onRemoveAttachment={removeAttachment}
             />
             {/* ui-drift-ignore: raw-native-control -- bespoke composer editor: overlay highlight, auto-resize, mention/skill keyboard */}

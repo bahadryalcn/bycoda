@@ -15,7 +15,7 @@ import { backgroundMachineFor } from "../../automations/public/hostMachines";
 import type { RemoteMachine } from "../../connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import { CrewTaskPicker } from "../../crews/public/CrewTaskPicker";
-import { projectDisplayName } from "../../projects/public/projectNames";
+import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import type { RecentProject } from "../../projects/public/recents";
 import { AccessPicker } from "../../sessions/public/AccessPicker";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
@@ -80,6 +80,7 @@ export function GoalForm({
   onChangeLimits: SaveLimits;
 }) {
   useLocale();
+  const projectLabels = useProjectLabels();
   const format = useFormat();
   const formId = useId();
   const [checkingCreation, setCheckingCreation] = useState(false);
@@ -133,7 +134,10 @@ export function GoalForm({
   }
   const lead = draft.leadCwd || draft.cwds[0] || "";
   const localAccounts = Boolean(target && isLocalSyncMachine(target));
-  const projects = draft.cwds.map((cwd) => ({ value: cwd, label: projectDisplayName(cwd) }));
+  const projects = draft.cwds.map((cwd) => ({
+    value: cwd,
+    label: projectDisplayNameFrom(cwd, projectLabels),
+  }));
   const timeLimit = String(draft.maxRunMinutes);
   const fixedLimit = RUN_TIME_LIMIT_OPTIONS.find((option) => option.value === timeLimit);
   const timeLabel = fixedLimit?.label ?? format.formatDuration(draft.maxRunMinutes * 60_000);
@@ -276,7 +280,7 @@ export function GoalForm({
                     disabled={workspaceBusy}
                     options={projectChoices(recents, { exclude: draft.cwds }).map(({ path }) => ({
                       value: path,
-                      label: projectDisplayName(path),
+                      label: projectDisplayNameFrom(path, projectLabels),
                       keywords: path,
                     }))}
                     onChange={(cwd) => {

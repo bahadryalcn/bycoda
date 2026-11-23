@@ -149,6 +149,30 @@ const server: ServerRecord = {
   sshEndpoint: { host: "example.invalid", port: 22 },
   metadata: { tags: [], favorite: false },
 };
+it("opens a paired Host's login shell without a POSIX integration command", async () => {
+  const paired: ServerRecord = {
+    ...server,
+    kind: "host",
+    machine: {
+      id: server.id,
+      name: server.name,
+      endpoint: "ssh://example.invalid",
+      environmentId: "windows",
+      ssh: { target: "example.invalid", remotePort: 3776 },
+    },
+  };
+  function OpenHost() {
+    const open = useOpenServerTerminal();
+    return createElement("button", { onClick: () => void open?.(paired) }, "Open paired Host");
+  }
+  await act(async () =>
+    root.render(createElement(ServersTerminalWorkspace, { children: createElement(OpenHost) })),
+  );
+  await act(async () => container.querySelector("button")!.click());
+  const terminal = container.querySelector("[data-terminal-id]");
+  expect(terminal).not.toBeNull();
+  expect(terminal?.hasAttribute("data-integration")).toBe(false);
+});
 it("mobile review uses the canonical native form and closes its own terminal while preserving an existing desktop terminal", async () => {
   const digest = "a".repeat(64);
   configuration.preview.mockResolvedValue({

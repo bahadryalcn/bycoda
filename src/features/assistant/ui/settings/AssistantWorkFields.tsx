@@ -5,8 +5,7 @@ import {
 } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { InlineError } from "../../../../shared/ui/InlineError";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
-import { Text } from "../../../../shared/ui/Text";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { AssistantPresetNumber } from "../AssistantProfileControls";
 import { ProfileSelect } from "./ProfileControls";
 import { ExecutionPermissionPicker } from "./ExecutionPermissionPicker";
@@ -56,11 +55,7 @@ export function AssistantWorkFields({
         min={ASSISTANT_MIN_DAILY_TOKEN_BUDGET}
         info={
           rows ? (
-            <InfoPopover label={t("About daily token budget")}>
-              <Text as="p" size="secondary">
-                {budgetHelp}
-              </Text>
-            </InfoPopover>
+            <InfoTooltip label={t("About daily token budget")}>{budgetHelp}</InfoTooltip>
           ) : undefined
         }
         max={1_000_000_000}

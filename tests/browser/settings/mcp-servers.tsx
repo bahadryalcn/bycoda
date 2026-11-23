@@ -82,6 +82,7 @@ mockIPC(
   async (command, args) => {
     const params = (args ?? {}) as Record<string, unknown>;
     if (command.startsWith("plugin:event|")) return;
+    if (command === "plugin:opener|open_url") return;
     if (command === "mcp_discover") return discovered;
     if (command === "claude_mcp_list")
       return {
@@ -124,7 +125,8 @@ mockIPC(
     }
     if (method === "mcp.oauth.status") return { servers: oauth };
     if (method === "mcp.oauth.start")
-      return { authorizationUrl: "https://auth.example/authorize", expiresAt: Date.now() + 1000 };
+      return { authorizationUrl: "https://auth.example/authorize?state=fixture-state-123456" };
+    if (method === "mcp.oauth.cancel") return { cancelled: true };
     if (method === "mcp.oauth.signOut") {
       const entry = oauth.find((item) => item.name === body.name);
       if (entry) entry.state = "none";

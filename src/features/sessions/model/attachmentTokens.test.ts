@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { parser } from "@lezer/markdown";
+import { describe, expect, it, vi } from "vitest";
 import {
   attachmentLegend,
   attachmentDraftTokens,
@@ -278,6 +279,29 @@ describe("removeAttachmentFromText", () => {
 
 describe("attachmentsDroppedByEdit", () => {
   const files = [image(), doc(), image("b.png")];
+
+  it("keeps references without parsing Markdown when their spellings survive a draft edit", () => {
+    const paragraphs = "Long note with `inline code` and [unrelated links](./file.md).\n\n".repeat(
+      500,
+    );
+    const before = paragraphs + "[image1] [image1] [file1]";
+    const parse = vi.spyOn(Object.getPrototypeOf(parser), "parse");
+    try {
+      expect(attachmentsDroppedByEdit(before, before.replace("[image1] ", ""), files)).toEqual([]);
+      expect(attachmentsDroppedByEdit(before, "新" + before, files)).toEqual([]);
+      expect(parse.mock.calls.length).toBe(0);
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
+  it("keeps a surviving alias but ignores aliases in code when the last reference disappears", () => {
+    const files = [{ ...image(), id: "photo-1" }];
+    const named = "[Image: first.png; ref=photo-1]";
+    const code = "`" + named + "`";
+    expect(attachmentsDroppedByEdit("[image1] [image1]", named, files)).toEqual([]);
+    expect(attachmentsDroppedByEdit("[image1] " + code, code, files)).toEqual([0]);
+  });
 
   it("reports a token the edit deleted", () => {
     expect(attachmentsDroppedByEdit("a [image1] [file1] b", "a [file1] b", files)).toEqual([0]);

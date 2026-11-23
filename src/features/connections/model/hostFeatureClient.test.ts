@@ -15,6 +15,14 @@ vi.mock("../../automations/model/hostAutomationClient", () => ({
     machines.find((machine) => cwd.startsWith(`remote://${machine.environmentId}/`)),
   hostProjectFor: (...args: unknown[]) => hostProjectFor(...args),
 }));
+const acquireRemoteHostRuntime = vi.fn();
+const bindMachineEnvironment = vi.fn();
+vi.mock("./remoteMachineChannel", () => ({
+  acquireRemoteHostRuntime: (...args: unknown[]) => acquireRemoteHostRuntime(...args),
+}));
+vi.mock("./remoteLifecycle", () => ({
+  bindMachineEnvironment: (...args: unknown[]) => bindMachineEnvironment(...args),
+}));
 
 import {
   hostFeatureRequest,
@@ -22,6 +30,8 @@ import {
   invalidateFeatureHosts,
   listHostToolMachines,
   captureVoiceToolHost,
+  openBrowserFrameStream,
+  subscribeDeviceVideo,
 } from "./hostFeatureClient";
 import type { RemoteMachine } from "./protocol";
 
@@ -148,6 +158,23 @@ describe("explicit host tool targets", () => {
     environmentId: "mac-env",
     endpoint: "https://mac.example",
   };
+  it("opens browser media on the same Host and scope as the panel", async () => {
+    machineCapabilities.mockResolvedValue(["browser.frames.binary.v1"]);
+    const scope = { sessionId: "session-1", ownerPresentationScope: "presentation-1" };
+    await openBrowserFrameStream("/repo", { kind: "project" }, scope);
+    await openBrowserFrameStream("/repo", { kind: "machine", machineId: mac.id }, scope);
+    expect(invoke).toHaveBeenCalledWith("remote_browser_frames_open", {
+      machineId: local.id,
+      environmentId: local.environmentId,
+      scope: { projectId: "owning-project", sessionId: "session-1" },
+    });
+    expect(invoke).toHaveBeenCalledWith("remote_browser_frames_open", {
+      machineId: mac.id,
+      environmentId: mac.environmentId,
+      scope: { ownerPresentationScope: "presentation-1" },
+    });
+    expect(remoteRequest).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     invalidateFeatureHosts();
     invoke
@@ -545,5 +572,174 @@ describe("explicit host tool targets", () => {
     expect(await listHostToolMachines()).toEqual([local, mac]);
     expect(hostProjectFor).not.toHaveBeenCalled();
     expect(remoteRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("subscribeDeviceVideo", () => {
+  const local: RemoteMachine = {
+    id: "local",
+    name: "Desktop",
+    environmentId: "local-env",
+    endpoint: "http://127.0.0.1:3776",
+    localHost: true,
+  };
+  const mac: RemoteMachine = {
+    id: "mac",
+    name: "MacBook",
+    environmentId: "mac-env",
+    endpoint: "https://mac.example",
+  };
+  const videoCapabilities = ["device.host", "transport.ws.devices.video.v1"];
+  const chunk = { cursor: 1, reset: true, base64: "AAAA", width: 390, height: 844 };
+  let retainOptions: {
+    parse: (value: unknown) => { success: boolean; data?: unknown };
+    commit: (value: unknown, input: { isCurrent: () => boolean }) => void;
+    closed: () => void;
+    onError: (error: unknown) => void;
+  };
+  let retainRelease: ReturnType<typeof vi.fn>;
+  let routeRelease: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    invalidateFeatureHosts();
+    invoke
+      .mockReset()
+      .mockImplementation(async (command: string) =>
+        command === "local_host_connect" ? local : [local, mac],
+      );
+    remoteRequest.mockReset().mockResolvedValue({ ok: true });
+    machineCapabilities.mockReset().mockResolvedValue(videoCapabilities);
+    hostProjectFor.mockReset().mockResolvedValue({ id: "owning-project" });
+    bindMachineEnvironment.mockReset();
+    retainRelease = vi.fn();
+    routeRelease = vi.fn();
+    retainOptions = undefined as unknown as typeof retainOptions;
+    acquireRemoteHostRuntime.mockReset().mockImplementation(() => ({
+      runtime: {
+        retain: vi.fn((_key: unknown, options: typeof retainOptions) => {
+          retainOptions = options;
+          return retainRelease;
+        }),
+      },
+      release: routeRelease,
+    }));
+  });
+
+  it("refuses an old Host that lacks the video transport without acquiring a connection", async () => {
+    machineCapabilities.mockResolvedValue(["device.host"]);
+    await expect(
+      subscribeDeviceVideo(
+        "G:/repo",
+        { kind: "machine", machineId: "mac" },
+        "ios-simulator",
+        vi.fn(),
+        vi.fn(),
+      ),
+    ).rejects.toThrow("DEVICE_STREAM_UNSUPPORTED");
+    expect(acquireRemoteHostRuntime).not.toHaveBeenCalled();
+    expect(bindMachineEnvironment).not.toHaveBeenCalled();
+    expect(remoteRequest).not.toHaveBeenCalled();
+  });
+
+  it("subscribes only to the exact targeted machine and never falls back to this computer", async () => {
+    const pending = subscribeDeviceVideo(
+      "G:/repo",
+      { kind: "machine", machineId: "mac" },
+      "ios-simulator",
+      vi.fn(),
+      vi.fn(),
+    );
+    await vi.waitFor(() => expect(retainOptions).toBeDefined());
+    retainOptions.commit({ success: true, data: chunk }, { isCurrent: () => true });
+    const close = await pending;
+    expect(bindMachineEnvironment).toHaveBeenCalledWith("mac", "mac-env");
+    expect(acquireRemoteHostRuntime).toHaveBeenCalledTimes(1);
+    expect(acquireRemoteHostRuntime).toHaveBeenCalledWith("mac");
+    expect(invoke).not.toHaveBeenCalledWith("local_host_connect");
+    expect(hostProjectFor).not.toHaveBeenCalled();
+    expect(remoteRequest).not.toHaveBeenCalled();
+    close();
+  });
+
+  it("fails without any fallback when the targeted machine is no longer connected", async () => {
+    await expect(
+      subscribeDeviceVideo(
+        "G:/repo",
+        { kind: "machine", machineId: "removed" },
+        "ios-simulator",
+        vi.fn(),
+        vi.fn(),
+      ),
+    ).rejects.toThrow("no longer connected");
+    expect(invoke).not.toHaveBeenCalledWith("local_host_connect");
+    expect(acquireRemoteHostRuntime).not.toHaveBeenCalled();
+  });
+
+  it("delivers committed chunks and reports later stream errors through onError", async () => {
+    const onChunk = vi.fn();
+    const onError = vi.fn();
+    const pending = subscribeDeviceVideo(
+      "G:/repo",
+      { kind: "local" },
+      "ios-simulator",
+      onChunk,
+      onError,
+    );
+    await vi.waitFor(() => expect(retainOptions).toBeDefined());
+    expect(retainOptions.parse(chunk)).toMatchObject({ success: true });
+    retainOptions.commit({ success: true, data: chunk }, { isCurrent: () => true });
+    const close = await pending;
+    expect(onChunk).toHaveBeenCalledWith(chunk);
+    const failure = new Error("socket reset");
+    retainOptions.onError(failure);
+    expect(onError).toHaveBeenCalledWith(failure);
+    expect(routeRelease).not.toHaveBeenCalled();
+    close();
+    expect(retainRelease).toHaveBeenCalledTimes(1);
+    expect(routeRelease).toHaveBeenCalledTimes(1);
+    close();
+    expect(retainRelease).toHaveBeenCalledTimes(1);
+    expect(routeRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases the retained route when the Host closes before the first chunk", async () => {
+    const onError = vi.fn();
+    const pending = subscribeDeviceVideo(
+      "G:/repo",
+      { kind: "machine", machineId: "mac" },
+      "ios-simulator",
+      vi.fn(),
+      onError,
+    );
+    await vi.waitFor(() => expect(retainOptions).toBeDefined());
+    retainOptions.closed();
+    await expect(pending).rejects.toThrow("Device video connection closed.");
+    expect(onError).not.toHaveBeenCalled();
+    expect(retainRelease).toHaveBeenCalledTimes(1);
+    expect(routeRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it("times out a silent setup, releases everything, and ignores a late first chunk", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChunk = vi.fn();
+      const pending = subscribeDeviceVideo(
+        "G:/repo",
+        { kind: "machine", machineId: "mac" },
+        "ios-simulator",
+        onChunk,
+        vi.fn(),
+      );
+      const rejected = expect(pending).rejects.toThrow("Device video subscription timed out");
+      await vi.advanceTimersByTimeAsync(6_001);
+      await rejected;
+      expect(retainRelease).toHaveBeenCalledTimes(1);
+      expect(routeRelease).toHaveBeenCalledTimes(1);
+      retainOptions.commit({ success: true, data: chunk }, { isCurrent: () => true });
+      expect(onChunk).not.toHaveBeenCalled();
+      expect(routeRelease).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

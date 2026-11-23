@@ -3,6 +3,26 @@ import { dropAnnouncer, dropBadge, dropMarks, fileDrag, files } from "../support
 
 for (const theme of ["light", "dark"] as const) {
   for (const width of [1280, 800]) {
+    test(`long plain paste in Quick Composer at ${width}px in ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/quick-composer/quick-composer.html?pasted-text&theme=${theme}`,
+      );
+      const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });
+      await prompt.evaluate((element) => {
+        const clipboardData = new DataTransfer();
+        clipboardData.setData("text/plain", "Pasted content with a newline.\n".repeat(1000));
+        element.dispatchEvent(
+          new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }),
+        );
+      });
+      await expect(page.getByText("Pasted text", { exact: true })).toBeVisible();
+      await expect(prompt).toHaveValue("");
+      await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
+      await page.screenshot({ path: `temp/verification/pasted-text/quick-${theme}-${width}.png` });
+    });
+
     test(`Windows quick composer start and open ${theme} ${width}`, async ({ page }, info) => {
       await page.addInitScript(() => {
         Object.defineProperty(navigator, "platform", { get: () => "Win32" });

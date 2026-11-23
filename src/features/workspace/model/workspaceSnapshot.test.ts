@@ -483,6 +483,25 @@ describe("collectWorkspaceSnapshot", () => {
     expect(workspace?.projectTerminals?.[0]?.splitGroups).toEqual([[first.id, second.id]]);
   });
 
+  it("does not restore a remote command dock as a local terminal", () => {
+    const project = "remote://fixture/project";
+    const dock = createProjectTerminal(project, newTerminalFile(project, "Code block"));
+    const snapshot = collectWorkspaceSnapshot(
+      [{ ...newTab("s1"), id: "t1" }],
+      [],
+      "t1",
+      project,
+      new Map(),
+      [dock],
+    );
+    expect(snapshot.projectTerminals).toEqual([]);
+    const workspace = hydrateWorkspaceSnapshot(
+      { ...snapshot, projectTerminals: [dock] },
+      new Map(),
+    );
+    expect(workspace?.projectTerminals).toEqual([]);
+  });
+
   it("stores the last dock side for new projects", () => {
     const term = newTerminalFile("/tmp/a", "zsh");
     const dock = createProjectTerminal("/tmp/a", term);

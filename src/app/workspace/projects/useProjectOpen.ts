@@ -35,6 +35,7 @@ import {
   pickFolderOnMachine,
   type MachineFolderTarget,
 } from "../../../features/connections/model/machineFolderPick";
+import { addProjectToMachine } from "../../../features/connections/model/addProjectToMachine";
 import { openSyncedProjectRemotely } from "../../../features/sync/model/syncRemoteProjects";
 import type { TabActivation } from "../tabs/useTabActivation";
 
@@ -228,9 +229,12 @@ export function useProjectOpen({
    * or undefined when cancelled so the caller keeps its current view and draft.
    */
   const pickProjectOnMachine = useCallback(
-    async (target: MachineFolderTarget): Promise<string | undefined> => {
+    async (target: MachineFolderTarget, sourceCwd?: string): Promise<string | undefined> => {
       const knownBefore = loadRecents().map((item) => item.path);
-      const path = await pickFolderOnMachine(target);
+      // A project being added to another machine can be cloned there or located.
+      const path = sourceCwd
+        ? await addProjectToMachine(target, sourceCwd)
+        : await pickFolderOnMachine(target);
       if (!path) return undefined;
       setRecents(await rememberProject(path));
       promptAddedProjectNames(knownBefore);

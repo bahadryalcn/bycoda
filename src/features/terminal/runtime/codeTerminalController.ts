@@ -1,5 +1,5 @@
 import { featureHost } from "../../connections/public/hostFeatureClient";
-import { remoteRequest } from "../../connections/public/connections";
+import { classifyCommandFailure, remoteRequest } from "../../connections/public/connections";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { describeRemoteError } from "../../connections/public/remoteFailure";
 import {
@@ -36,6 +36,12 @@ export type CodeTerminalOptions = {
   command: string;
   shellKind: CodeShellKind;
   isCurrent(): boolean;
+};
+
+export type RemoteCodeRun = {
+  controller: CodeTerminalController;
+  options: CodeTerminalOptions;
+  onReport?: (text: string) => boolean | void;
 };
 
 /** `progress` made visible progress (or more is pending), `idle` read nothing new, `failed` could not read. */
@@ -81,6 +87,7 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
   let readHost: (() => Promise<CodeTerminalReadOutcome>) | undefined;
   let stopHost: (() => Promise<void>) | undefined;
   let started = false;
+  let dispatched = false;
   let reading: Promise<CodeTerminalReadOutcome> | undefined;
   const update = (patch: Partial<CodeTerminalState>) => {
     state = { ...state, ...patch };
@@ -111,7 +118,7 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
   };
   const refresh = async (): Promise<CodeTerminalReadOutcome> => {
     // Before the Host process exists there is nothing to read yet; keep the base cadence.
-    if (!readHost) return "progress";
+    if (!readHost) return state.phase === "starting" ? "progress" : "idle";
     if (state.phase === "exited") return "idle";
     if (reading) return reading;
     reading = readHost()
@@ -133,6 +140,7 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
   };
   return {
     snapshot: () => state,
+    canDismiss: () => state.phase === "exited" || (state.phase !== "starting" && !dispatched),
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {
@@ -142,7 +150,6 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
     async start() {
       if (started) return;
       started = true;
-      let dispatched = false;
       try {
         if (
           !options.command.trim() ||
@@ -164,6 +171,7 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
           queueTerminalRun(state.id, {
             command: options.command,
             shellKind: options.shellKind,
+            canStart: options.isCurrent,
             onOutput: append,
             onExit: (exitCode) => update({ phase: "exited", exitCode }),
             onError: (error) => update({ phase: "unknown", error }),
@@ -196,7 +204,6 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
           command: options.command,
           shellKind: options.shellKind,
         });
-        update({ id: terminal.id, phase: "running", shell: terminal.shell });
         let cursor = 0;
         readHost = async () => {
           const result = await request<HostTerminalRead>("terminals.read", {
@@ -227,12 +234,15 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
           return output || result.hasMore || patch.phase === "exited" ? "progress" : "idle";
         };
         stopHost = async () => {
-          await request("terminals.close", { id: terminal.id });
+          // Interrupt retains the terminal record and the unread tail for settlement.
+          await request("terminals.interrupt", { id: terminal.id });
         };
+        update({ id: terminal.id, phase: "running", shell: terminal.shell });
         await refresh();
       } catch (reason) {
         discardTerminalRun(state.id);
         const failure = actionFailurePatch(reason, dispatched);
+        if (dispatched && classifyCommandFailure(reason) !== "uncertain") dispatched = false;
         update({
           phase: failure.actionError ? "not-started" : "unknown",
           ...failure,
@@ -245,7 +255,11 @@ export function createCodeTerminal(options: CodeTerminalOptions) {
         if (stopHost) {
           await stopHost();
           if (state.actionError) update({ actionError: undefined });
-          await refresh();
+          // A poll started before the stop acknowledgement may still report "running".
+          await reading;
+          do {
+            if ((await refresh()) !== "progress") break;
+          } while (state.phase !== "exited");
         } else if (options.native && state.profile) {
           await killPty(state.id);
           update({ phase: "unknown", error: "Stop requested. Command completion is unknown." });

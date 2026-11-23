@@ -6,7 +6,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { Divider } from "../../../shared/ui/Divider";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { openExternal } from "../../../platform/tauri/openExternal";
@@ -282,13 +282,13 @@ export function PhonePairingFlow({
               <Badge size="sm" minWidth="8ch">
                 {t("{p0}s left", { p0: state.remainingSeconds })}
               </Badge>
-              <InfoPopover label={t("Connection help")}>
+              <InfoTooltip label={t("Connection help")}>
                 {localNetwork
                   ? t(
                       "Keep your phone on the same local network as this computer. Allow local network access when your phone asks.",
                     )
                   : t("Use the same Tailscale account on this machine and your phone.")}
-              </InfoPopover>
+              </InfoTooltip>
             </div>
           </Text>
           {state.statusError ? (

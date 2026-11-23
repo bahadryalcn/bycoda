@@ -77,6 +77,7 @@ afterEach(async () => {
     .forEach((element) => element.parentElement?.remove());
 
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 it("raises menus above a containing modal by default", async () => {
@@ -603,11 +604,25 @@ it("accents matched text, truncates long labels and keeps the full text availabl
   expect(option.querySelector("[title]")).toBeNull();
 });
 
-it("renders a large list and moves to the last choosable option", async () => {
+function mockMenuViewport() {
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.getAttribute("role") === "listbox" ? 240 : 32;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(280);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(240);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(280);
+}
+
+it("windows large menus while keeping the selected, pinned and last choosable options accessible", async () => {
+  mockMenuViewport();
   const options = Array.from({ length: 2000 }, (_, index) => ({
     value: `v${index}`,
     label: `Option ${index}`,
     disabled: index === 1999,
+    pinned: index === 0,
+    group: index > 0 ? `Group ${Math.floor(index / 100)}` : undefined,
   }));
   await act(async () =>
     root.render(
@@ -620,16 +635,53 @@ it("renders a large list and moves to the last choosable option", async () => {
       }),
     ),
   );
-  const started = performance.now();
   await openMenu();
-  const elapsed = performance.now() - started;
-  expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(2000);
+  expect(document.body.querySelectorAll('[role="option"]').length).toBeLessThan(40);
+  expect(document.body.querySelector("[data-pinned]")?.textContent).toContain("Option 0");
   expect(activeOption()?.textContent).toContain("Option 1500");
+  expect(activeOption()?.getAttribute("aria-posinset")).toBe("1501");
+  expect(activeOption()?.getAttribute("aria-setsize")).toBe("2000");
+  const group = activeOption()?.closest('[role="group"]');
+  expect(document.getElementById(group!.getAttribute("aria-labelledby")!)?.textContent).toBe(
+    "Group 15",
+  );
   await act(async () => dispatchKey(document.body.querySelector("[role=listbox]")!, "End"));
   expect(activeOption()?.textContent).toContain("Option 1998");
-  // happy-dom has no layout, so this guards gross regressions only; the number is recorded for evaluation.
-  expect(elapsed).toBeLessThan(5000);
-  console.info(`SearchableSelect 2000 options opened in ${Math.round(elapsed)}ms (happy-dom)`);
+  expect(
+    document.body.querySelector('[role="listbox"]')?.getAttribute("aria-activedescendant"),
+  ).toBe(activeOption()!.id);
+});
+
+it("keeps large menus windowed after narrowing, clearing and restoring their matches", async () => {
+  mockMenuViewport();
+  const options = Array.from({ length: 96 }, (_, index) => ({
+    label: `${index < 48 ? "Alpha" : "Beta"} ${index}`,
+    value: String(index),
+    description: "Project folder",
+  }));
+  const onChange = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(SearchableSelect, { label: "Project", options, value: "", onChange }),
+    ),
+  );
+  await openMenu();
+  const input = await search("beta");
+  const rows = () => document.body.querySelectorAll('[role="option"]');
+  expect(rows().length).toBeGreaterThan(0);
+  expect(rows().length).toBeLessThan(40);
+  expect(rows()[0]?.getAttribute("aria-setsize")).toBe("48");
+  await search("no match");
+  expect(rows()).toHaveLength(0);
+  await search("");
+  expect(rows().length).toBeLessThan(40);
+  expect(rows()[0]?.getAttribute("aria-setsize")).toBe("96");
+  await search("Beta 95");
+  expect(
+    document.getElementById(input.getAttribute("aria-activedescendant")!)?.textContent,
+  ).toContain("Beta 95");
+  await act(async () => dispatchKey(input, "Enter"));
+  expect(onChange).toHaveBeenCalledExactlyOnceWith("95");
 });
 
 it("closes on Tab and returns focus to the trigger", async () => {

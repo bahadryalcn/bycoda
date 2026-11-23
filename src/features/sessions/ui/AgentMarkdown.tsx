@@ -13,7 +13,10 @@ import { CopyButton } from "../../../shared/ui/CopyButton";
 import { useLocale, useT } from "../../../shared/i18n";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { resolveNoteImagePath } from "../../notes/notes";
-import { openWorkspaceUrl } from "../../connections/public/workspaceUrls";
+import {
+  openWorkspaceUrl,
+  useDevelopmentLinkMachine,
+} from "../../connections/public/workspaceUrls";
 import { TranscriptSessionId } from "./TranscriptSessionId";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import {
@@ -243,6 +246,7 @@ function MarkdownLink({
   const { enabled: allowRemoteMedia, base: remoteBase } = useContext(RemoteMediaContext);
   const localMedia = useContext(LocalMediaContext);
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const machine = useDevelopmentLinkMachine(cwd, href);
   const sessionId = useContext(TranscriptSessionId);
   const resolveFile = useWorkspaceFileResolver();
   const [linkError, setLinkError] = useState<string>();
@@ -306,6 +310,7 @@ function MarkdownLink({
           onFileContextMenu(event, file.path, file.navigation);
         }}
       >
+        {machine ? `${machine} · ` : null}
         {children}
       </Link>
       {linkError ? (

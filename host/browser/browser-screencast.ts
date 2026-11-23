@@ -49,6 +49,7 @@ export class BrowserScreencast {
   private idle?: ReturnType<typeof setTimeout>;
   private ackTimer?: ReturnType<typeof setTimeout>;
   private pendingAck?: { session: ScreencastSession; sessionId: unknown };
+  private fastReaders = 0;
 
   constructor(
     private readonly describe: () => { stamp: string; width: number; height: number },
@@ -57,6 +58,16 @@ export class BrowserScreencast {
 
   available(page: ScreencastPage | undefined) {
     return typeof page?.context === "function";
+  }
+
+  retainFastReader() {
+    this.fastReaders++;
+    if (this.ackTimer) clearTimeout(this.ackTimer);
+    this.ackTimer = undefined;
+    this.acknowledge();
+    return () => {
+      this.fastReaders--;
+    };
   }
 
   /** The newest picture after `after` for the current document, waiting up to `waitMs`. */
@@ -116,17 +127,25 @@ export class BrowserScreencast {
   /** Acks the newest picture once per interval; later frames inside the interval only replace it. */
   private scheduleAck(session: ScreencastSession, sessionId: unknown) {
     this.pendingAck = { session, sessionId };
+    if (this.fastReaders) {
+      this.acknowledge();
+      return;
+    }
     if (this.ackTimer) return;
     this.ackTimer = setTimeout(() => {
       this.ackTimer = undefined;
-      const pending = this.pendingAck;
-      this.pendingAck = undefined;
-      if (pending)
-        pending.session
-          .send("Page.screencastFrameAck", { sessionId: pending.sessionId })
-          .catch(() => {});
+      this.acknowledge();
     }, ACK_INTERVAL_MS);
     this.ackTimer.unref?.();
+  }
+
+  private acknowledge() {
+    const pending = this.pendingAck;
+    this.pendingAck = undefined;
+    if (pending)
+      void pending.session
+        .send("Page.screencastFrameAck", { sessionId: pending.sessionId })
+        .catch(() => {});
   }
 
   async stop() {

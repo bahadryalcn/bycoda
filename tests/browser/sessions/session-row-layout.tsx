@@ -6,6 +6,7 @@ import { buildGlobalRecentSessions } from "../../../src/features/sessions/model/
 import { pathKey } from "../../../src/shared/lib/paths";
 import { LastSessionsRows } from "../../../src/app/shell/LastSessionsSection";
 import { Sidebar } from "../../../src/app/shell/Sidebar";
+import { setWorktreeFocus } from "../../../src/features/source-control/model/worktreeFocus";
 import { remoteMachineFor } from "../../../src/features/connections/model/connections";
 import { rememberRemoteProject } from "../../../src/features/connections/model/remoteProjects";
 import { saveSessionFolders } from "../../../src/features/sessions/model/sessionFolders";
@@ -62,7 +63,11 @@ if (params.has("remote-settle") || params.has("local-bulk-settle")) {
           {
             id: machineId,
             environmentId: local ? "fixture-local" : "fixture-office",
-            name: local ? "This computer (local sync)" : "Office",
+            name: local
+              ? "This computer (local sync)"
+              : params.has("worktree-picker")
+                ? "Office Mac"
+                : "Office",
             endpoint: local ? "http://127.0.0.1:12345" : "http://office.invalid",
           },
         ];
@@ -86,6 +91,28 @@ if (params.has("remote-settle") || params.has("local-bulk-settle")) {
           harness: "codex",
           updatedAt: Date.now() - index * 1000,
         }));
+      }
+      if (args.method === "workspace.run" && params.has("worktree-picker")) {
+        const command = (args.params as { command: string }).command;
+        if (command === "git_worktrees") {
+          return {
+            defaultRoot: "/fixture/bycoda",
+            worktrees: [
+              { path: "/fixture/bycoda", branch: "main", isMain: true },
+              { path: "/fixture/bycoda-feature", branch: "feature", isMain: false },
+            ].map((tree) => ({
+              ...tree,
+              head: "abcdef",
+              locked: false,
+              prunable: false,
+              missing: false,
+              dirty: false,
+              unpushed: 0,
+              sessionIds: [],
+            })),
+          };
+        }
+        if (command === "git_submodules") return { paths: [] };
       }
       if (args.method === "sessions.lifecycle.list") {
         return {
@@ -366,6 +393,7 @@ function Fixture() {
         <Sidebar
           cwd={projectCwd}
           gitCwd={gitCwd}
+          onSelectWorkspace={(focus) => setWorktreeFocus(projectCwd, focus)}
           lastSessionsOpen={lastSessionsOpen}
           onOpenLastSessions={() => {
             setLastSessionsOpen(true);

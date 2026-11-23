@@ -1,7 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { Group, SettingsFeedback } from "../../../shared/ui/settings";
@@ -45,13 +45,13 @@ export function WorkspaceStorageSummary({
         }
         scope={stale && !busy ? t("Showing the last storage reading.") : undefined}
         info={
-          <InfoPopover>
+          <InfoTooltip>
             <p>
               {t(
                 "Read from the Host when this page last refreshed. Directory sizes can be unknown, and removing a directory may not free its full size.",
               )}
             </p>
-          </InfoPopover>
+          </InfoTooltip>
         }
         action={
           <Button

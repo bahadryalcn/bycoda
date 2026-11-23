@@ -124,12 +124,13 @@ export class DeviceControlLeases {
       throw new Error("DEVICE_CONTROL_LEASE_INVALID");
   }
 
-  async release(deviceId: string, owner: string, leaseId: string) {
+  async release(deviceId: string, owner: string, leaseId: string, beforeRelease?: () => void) {
     await this.assert(deviceId, owner, leaseId);
     const current = this.leases.get(deviceId);
     if (!current || current.owner !== owner || current.id !== leaseId)
       throw new Error("DEVICE_CONTROL_LEASE_INVALID");
     if (current.inFlight) throw new Error("DEVICE_CONTROL_BUSY");
+    beforeRelease?.();
     for (const [id, lease] of this.leases) if (lease === current) this.leases.delete(id);
     this.retire(current);
     return { released: true };
@@ -157,6 +158,21 @@ export class DeviceControlLeases {
     const current = this.leases.get(targetId);
     if (current && current !== lease) throw new Error("DEVICE_CONTROL_BUSY");
     this.leases.set(targetId, lease);
+  }
+
+  /** A real-time input event has one attempt and holds the lease until its write settles. */
+  async touch<T>(deviceId: string, owner: string, leaseId: string, write: () => Promise<T>) {
+    await this.assert(deviceId, owner, leaseId);
+    const lease = this.leases.get(deviceId);
+    if (!lease || lease.owner !== owner || lease.id !== leaseId || lease.deadline <= this.now())
+      throw new Error("DEVICE_CONTROL_LEASE_INVALID");
+    if (lease.inFlight) throw new Error("DEVICE_CONTROL_BUSY");
+    lease.inFlight++;
+    try {
+      return await write();
+    } finally {
+      lease.inFlight--;
+    }
   }
 
   async execute<T>(

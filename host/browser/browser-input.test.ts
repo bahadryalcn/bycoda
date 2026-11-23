@@ -11,7 +11,12 @@ function fakePage() {
       down: vi.fn(async () => {}),
       up: vi.fn(async () => {}),
     },
-    keyboard: { type: vi.fn(async () => {}), press: vi.fn(async () => {}) },
+    keyboard: {
+      type: vi.fn(async () => {}),
+      press: vi.fn(async () => {}),
+      down: vi.fn(async () => {}),
+      up: vi.fn(async () => {}),
+    },
   };
 }
 
@@ -58,6 +63,31 @@ describe("applyBrowserInput", () => {
     await expect(applyBrowserInput(page, { kind: "drag" }, viewport)).rejects.toThrow(
       "Unsupported browser input",
     );
+  });
+
+  it("forwards a modified double-click and clears modifiers after a failed event", async () => {
+    const page = fakePage();
+    const pointer = {
+      kind: "pointer",
+      x: 10,
+      y: 20,
+      button: "left",
+      clickCount: 2,
+      modifiers: ["Control"],
+    };
+    await applyBrowserInput(page, { ...pointer, action: "down" }, viewport);
+    expect(page.mouse.down).toHaveBeenCalledWith({ button: "left", clickCount: 2 });
+    expect(page.keyboard.down).toHaveBeenCalledWith("Control");
+    expect(page.keyboard.up).toHaveBeenCalledWith("Control");
+    page.mouse.up.mockRejectedValueOnce(new Error("page gone"));
+    await expect(applyBrowserInput(page, { ...pointer, action: "up" }, viewport)).rejects.toThrow(
+      "page gone",
+    );
+    expect(page.mouse.up).toHaveBeenCalledWith({ button: "left", clickCount: 2 });
+    expect(page.keyboard.up).toHaveBeenCalledTimes(2);
+    await expect(
+      applyBrowserInput(page, { ...pointer, action: "down", clickCount: 4 }, viewport),
+    ).rejects.toThrow("Invalid pointer click count");
   });
 });
 

@@ -6,7 +6,7 @@ import type {
 import { useFormat, useT } from "../../../../shared/i18n";
 import { DescriptionItem, DescriptionList } from "../../../../shared/ui/DescriptionList";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
-import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { InfoTooltip } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
@@ -80,7 +80,7 @@ function AccountShare({
               term={
                 <span className="inline-flex items-center gap-1">
                   {untracked.label}
-                  <InfoPopover label={untracked.label}>{untracked.info}</InfoPopover>
+                  <InfoTooltip label={untracked.label}>{untracked.info}</InfoTooltip>
                 </span>
               }
             >

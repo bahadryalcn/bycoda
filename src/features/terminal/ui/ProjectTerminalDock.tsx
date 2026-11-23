@@ -2,11 +2,13 @@ import { Text } from "../../../shared/ui/Text";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { TabList, Tab, Tabs } from "../../../shared/ui/Tabs";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { Button } from "../../../shared/ui/Button";
+import { Modal } from "../../../shared/ui/Modal";
 import { Sash, type SashEndInfo } from "../../../shared/ui/Sash";
 import { t, useT } from "../../../shared/i18n/technical";
 import {
-  ChevronDown,
-  MoreHorizontal,
   PanelBottom,
   PanelBottomClose,
   PanelLeft,
@@ -26,7 +28,6 @@ import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
 import "./terminal.css";
-import { IconButton } from "../../../app/shell/TitleBar";
 import {
   clampDockSize,
   dockTerminalGroup,
@@ -45,6 +46,7 @@ import {
   useTerminalProfiles,
 } from "../model/terminalProfiles";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { RemoteCodeTerminalPane } from "./CodeTerminalDialog";
 
 const TerminalView = lazySurface(async () => {
   const module = await import("./TerminalView");
@@ -61,7 +63,7 @@ type Props = {
   onSideChange: (side: DockSide) => void;
   onSizePaint: (size: number) => void;
   onSizeCommit: (size: number) => void;
-  onAddTerminal: () => void;
+  onAddTerminal?: () => void;
   /** A terminal in another shell, from the profile menu beside New Terminal. */
   onAddTerminalWithProfile?: (profile: string) => void;
   onSplitTerminal?: (fileId: string) => void;
@@ -109,7 +111,7 @@ function sideIcon(side: DockSide) {
   return <PanelBottom className="icon-sm" />;
 }
 
-/** Collapse-panel glyphs: distinct from X (close) and the profile menu's chevron. */
+/** Collapse-panel glyphs: distinct from X (close) and the profile picker. */
 function hideIcon(side: DockSide) {
   if (side === "top") return <PanelTopClose className="icon-sm" strokeWidth={1.75} />;
   if (side === "left") return <PanelLeftClose className="icon-sm" strokeWidth={1.75} />;
@@ -147,7 +149,9 @@ function ProjectTerminalDockComponent({
     initial: 200,
   });
   const { setPaneRef: attachSidebarPane } = sidebarResize;
-  const [menu, setMenu] = useState<HTMLElement | null>(null);
+  const [moveMenu, setMoveMenu] = useState<HTMLElement | null>(null);
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [toolbarTarget, setToolbarTarget] = useState<HTMLDivElement | null>(null);
   const [profileMenu, setProfileMenu] = useState<HTMLElement | null>(null);
   const [terminalMenu, setTerminalMenu] = useState<{
     x: number;
@@ -155,8 +159,9 @@ function ProjectTerminalDockComponent({
     id: string;
   } | null>(null);
   const isVisible = useStableCallback(() => visible);
-  if (!visible && (menu || profileMenu || terminalMenu)) {
-    setMenu(null);
+  if (!visible && (moveMenu || closeOpen || profileMenu || terminalMenu)) {
+    setMoveMenu(null);
+    setCloseOpen(false);
     setProfileMenu(null);
     setTerminalMenu(null);
   }
@@ -175,7 +180,7 @@ function ProjectTerminalDockComponent({
     },
   );
   const sideButton = useRef<HTMLDivElement>(null);
-  const profileButton = useRef<HTMLDivElement>(null);
+  const profileButton = useRef<HTMLButtonElement>(null);
   const profiles = useTerminalProfiles();
   const chosenProfile = useTerminalProfile();
   const defaultProfile = effectiveProfileId(profiles, chosenProfile);
@@ -183,6 +188,7 @@ function ProjectTerminalDockComponent({
   const pending = useRef(dock.size);
   const frame = useRef<number | null>(null);
   const visibleIds = dockTerminalGroup(dock, dock.pane.activeFileId);
+  const canSplit = (id: string) => !!onSplitTerminal && !dock.remoteRuns?.[id];
   const splitTerminal = (id: string) => {
     onSplitTerminal?.(id);
   };
@@ -285,51 +291,94 @@ function ProjectTerminalDockComponent({
         as="header"
         className="terminal-header"
         actions={
-          <>
-            <IconButton
-              label={t("New terminal ({p0}`)", { p0: MOD })}
-              onClick={() => {
-                onAddTerminal();
-              }}
-            >
-              <Plus className="icon-sm" strokeWidth={1.75} />
-            </IconButton>
-            {onAddTerminalWithProfile ? (
-              <div ref={profileButton} className="terminal-profile-trigger">
-                <IconButton
-                  label={t("Launch profile…")}
-                  active={!!profileMenu}
+          <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+            <div className="flex items-center">
+              {onAddTerminal ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={t("New terminal ({p0}`)", { p0: MOD })}
                   onClick={() => {
-                    setMenu(null);
-                    setProfileMenu(profileMenu ? null : profileButton.current);
+                    onAddTerminal();
                   }}
                 >
-                  <ChevronDown className="icon-sm" strokeWidth={1.75} />
-                </IconButton>
-              </div>
-            ) : null}
-            {onSplitTerminal ? (
-              <IconButton label={t("Split")} onClick={() => splitTerminal(dock.pane.activeFileId)}>
-                <SplitSquare className="icon-sm" strokeWidth={1.75} />
-              </IconButton>
-            ) : null}
-            <div ref={sideButton}>
-              <IconButton
-                label={t("Terminal dock actions")}
-                active={!!menu}
-                onClick={() => {
-                  setProfileMenu(null);
-                  setMenu(menu ? null : sideButton.current);
-                }}
-              >
-                <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
-              </IconButton>
+                  <Plus className="icon-sm" strokeWidth={1.75} />
+                </Button>
+              ) : null}
+              {onAddTerminalWithProfile ? (
+                <div className="terminal-profile-trigger">
+                  <Button
+                    ref={profileButton}
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    label={t("Launch profile…")}
+                    aria-expanded={!!profileMenu}
+                    aria-haspopup="menu"
+                    data-terminal-profile-trigger=""
+                    onClick={() => {
+                      setMoveMenu(null);
+                      setProfileMenu(profileMenu ? null : profileButton.current);
+                    }}
+                  >
+                    <Terminal className="icon-sm" />
+                  </Button>
+                </div>
+              ) : null}
+              {canSplit(dock.pane.activeFileId) ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={t("Split")}
+                  onClick={() => splitTerminal(dock.pane.activeFileId)}
+                >
+                  <SplitSquare className="icon-sm" strokeWidth={1.75} />
+                </Button>
+              ) : null}
             </div>
-            {/* Hide keeps every shell running; Close All lives in the actions menu. */}
-            <IconButton label={t("Hide terminal ({p0}J)", { p0: MOD })} onClick={onHide}>
-              {hideIcon(dock.side)}
-            </IconButton>
-          </>
+            <div ref={setToolbarTarget} />
+            <div className="flex items-center">
+              <div ref={sideButton}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconOnly
+                  label={t("Move terminal")}
+                  aria-expanded={!!moveMenu}
+                  aria-haspopup="menu"
+                  onClick={() => {
+                    setProfileMenu(null);
+                    setMoveMenu(moveMenu ? null : sideButton.current);
+                  }}
+                >
+                  {sideIcon(dock.side)}
+                </Button>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                label={t("Hide terminal ({p0}J)", { p0: MOD })}
+                onClick={onHide}
+              >
+                {hideIcon(dock.side)}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                label={t("Close Terminals?")}
+                aria-haspopup="dialog"
+                disabled={dock.pane.files.length === 0}
+                disabledReason={t("No terminal is open.")}
+                onClick={() => setCloseOpen(true)}
+              >
+                <X className="icon-sm" strokeWidth={1.75} />
+              </Button>
+            </div>
+          </div>
         }
       />
       <div className="terminal-body" ref={bodyRef}>
@@ -368,8 +417,7 @@ function ProjectTerminalDockComponent({
                     id={`terminal-tab-${file.id}`}
                     controls={`terminal-panel-${file.id}`}
                     className="terminal-list-item"
-                    tooltip={terminalTabLabel(file)}
-                    tooltipDetails={[file.cwd]}
+                    tooltip={file.cwd}
                     onClick={(event) => {
                       if (sortable.consumeClick()) event.preventDefault();
                       else if (file.id === dock.pane.activeFileId) onSelectTerminal(file.id);
@@ -393,7 +441,7 @@ function ProjectTerminalDockComponent({
                     </Text>
                   </Tab>
                   <div className="terminal-row-actions">
-                    {onSplitTerminal ? (
+                    {canSplit(file.id) ? (
                       <InlineAction
                         label={`${t("Split")} — ${terminalTabLabel(file)}`}
                         motion="none"
@@ -430,31 +478,45 @@ function ProjectTerminalDockComponent({
             } as CSSProperties
           }
         >
-          {dock.pane.files.map((file) => (
-            <div
-              key={file.id}
-              id={`terminal-panel-${file.id}`}
-              role="tabpanel"
-              aria-labelledby={`terminal-tab-${file.id}`}
-              aria-hidden={!visibleIds.includes(file.id)}
-              onMouseDown={() => onSelectTerminal(file.id)}
-              {...surfaceAttributes(
-                visibleIds.indexOf(file.id) > 0 ? { frame: "pane", edge: "inline-start" } : {},
-                visibleIds.includes(file.id) ? "terminal-split-pane" : "hidden",
-              )}
-              style={
-                { "--layout-terminal-column": visibleIds.indexOf(file.id) + 1 } as CSSProperties
-              }
-            >
-              <TerminalView
-                id={file.id}
-                cwd={file.cwd}
-                profile={file.shellProfile}
-                active={focused && file.id === dock.pane.activeFileId}
-                onMetaChange={(patch) => onTerminalMetaChange?.(file.id, patch)}
-              />
-            </div>
-          ))}
+          {dock.pane.files.map((file) => {
+            const selectedToolbarTarget =
+              visible && file.id === dock.pane.activeFileId ? toolbarTarget : null;
+            return (
+              <div
+                key={file.id}
+                id={`terminal-panel-${file.id}`}
+                role="tabpanel"
+                aria-labelledby={`terminal-tab-${file.id}`}
+                aria-hidden={!visibleIds.includes(file.id)}
+                onMouseDown={() => onSelectTerminal(file.id)}
+                {...surfaceAttributes(
+                  visibleIds.indexOf(file.id) > 0 ? { frame: "pane", edge: "inline-start" } : {},
+                  visibleIds.includes(file.id) ? "terminal-split-pane" : "hidden",
+                )}
+                style={
+                  { "--layout-terminal-column": visibleIds.indexOf(file.id) + 1 } as CSSProperties
+                }
+              >
+                {dock.remoteRuns?.[file.id] ? (
+                  <RemoteCodeTerminalPane
+                    {...dock.remoteRuns[file.id]}
+                    dockToolbarTarget={selectedToolbarTarget}
+                  />
+                ) : (
+                  <TerminalView
+                    id={file.id}
+                    cwd={file.cwd}
+                    profile={file.shellProfile}
+                    sshConnectionId={dock.sshShells?.[file.id]?.connectionId}
+                    sshProject={dock.sshShells?.[file.id]?.project}
+                    active={focused && file.id === dock.pane.activeFileId}
+                    dockToolbarTarget={selectedToolbarTarget}
+                    onMetaChange={(patch) => onTerminalMetaChange?.(file.id, patch)}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
       {visible && terminalMenu ? (
@@ -464,7 +526,9 @@ function ProjectTerminalDockComponent({
           ariaLabel={t("Terminal actions")}
           className="terminal-popup"
           items={[
-            ...(onSplitTerminal ? [{ kind: "item" as const, id: "split", label: t("Split") }] : []),
+            ...(canSplit(terminalMenu.id)
+              ? [{ kind: "item" as const, id: "split", label: t("Split") }]
+              : []),
             {
               kind: "item",
               id: "move-up",
@@ -507,26 +571,30 @@ function ProjectTerminalDockComponent({
         />
       ) : null}
       {visible && profileMenu ? (
-        <ExplorerMenu
+        <DropdownMenu
           anchor={profileMenu}
           side={dock.side === "top" ? "bottom" : "top"}
           align="end"
-          className="terminal-popup"
-          ariaLabel={t("Terminal profiles")}
+          ignore="[data-terminal-profile-trigger]"
+          label={t("Terminal profiles")}
           items={[
             ...(profiles?.profiles ?? []).map((profile) => ({
               kind: "item" as const,
               id: `profile:${profile.id}`,
               label: `${profile.name}${profile.id === defaultProfile ? ` (${t("Default")})` : ""}`,
               checked: profile.id === defaultProfile,
+              selectionRole: "radio" as const,
             })),
             ...(profiles?.error
               ? [
                   {
-                    kind: "item" as const,
+                    kind: "content" as const,
                     id: "profile-error",
-                    label: profiles.error,
-                    disabled: true,
+                    node: (
+                      <InlineError inset="row" details={profiles.error}>
+                        {t("Could not load terminal profiles.")}
+                      </InlineError>
+                    ),
                   },
                   { kind: "item" as const, id: "retry-profiles", label: t("Retry") },
                 ]
@@ -564,39 +632,77 @@ function ProjectTerminalDockComponent({
           onClose={() => setProfileMenu(null)}
         />
       ) : null}
-      {visible && menu ? (
+      {visible && moveMenu ? (
         <ExplorerMenu
-          anchor={menu}
+          anchor={moveMenu}
           side={dock.side === "top" ? "bottom" : "top"}
           align="end"
           className="terminal-popup"
-          ariaLabel={t("Terminal dock actions")}
-          items={[
-            {
-              kind: "item",
-              id: "move",
-              label: t("Move terminal"),
-              icon: sideIcon(dock.side),
-              submenu: SIDE_ITEMS.map((item) => ({
-                kind: "item" as const,
-                id: item.id,
-                label: item.label,
-                checked: item.id === dock.side,
-              })),
-            },
-            { kind: "sep" },
-            { kind: "item", id: "close-all", label: t("Close all terminals"), danger: true },
-          ]}
+          ariaLabel={t("Move terminal")}
+          items={SIDE_ITEMS.map((item) => ({
+            kind: "item",
+            id: item.id,
+            label: item.label,
+            checked: item.id === dock.side,
+          }))}
           onPick={(id) => {
             if (!isVisible()) return;
             if (id === "top" || id === "bottom" || id === "left" || id === "right") {
               onSideChange(id);
             }
-            if (id === "close-all") onCloseTerminals();
-            setMenu(null);
+            setMoveMenu(null);
           }}
-          onClose={() => setMenu(null)}
+          onClose={() => setMoveMenu(null)}
         />
+      ) : null}
+      {visible && closeOpen ? (
+        <Modal
+          title={t("Close Terminals?")}
+          size="sm"
+          onClose={() => setCloseOpen(false)}
+          initialFocus="[data-terminal-close-cancel]"
+          footer={
+            <Button data-terminal-close-cancel onClick={() => setCloseOpen(false)}>
+              {t("Cancel")}
+            </Button>
+          }
+        >
+          <div className="grid gap-2">
+            <Button
+              disabled={!dock.pane.activeFileId}
+              disabledReason={t("No active terminal.")}
+              onClick={() => {
+                setCloseOpen(false);
+                if (isVisible() && dock.pane.activeFileId) onCloseTerminal(dock.pane.activeFileId);
+              }}
+            >
+              {t("Close active terminal")}
+            </Button>
+            <Button
+              disabled={!dock.pane.activeFileId || dock.pane.files.length < 2}
+              disabledReason={
+                dock.pane.activeFileId ? t("Only one terminal is open.") : t("No active terminal.")
+              }
+              onClick={() => {
+                setCloseOpen(false);
+                if (isVisible() && dock.pane.activeFileId) onCloseTerminals(dock.pane.activeFileId);
+              }}
+            >
+              {t("Close others")}
+            </Button>
+            <Button
+              tone="danger"
+              disabled={dock.pane.files.length === 0}
+              disabledReason={t("No terminal is open.")}
+              onClick={() => {
+                setCloseOpen(false);
+                if (isVisible()) onCloseTerminals();
+              }}
+            >
+              {t("Close all terminals")}
+            </Button>
+          </div>
+        </Modal>
       ) : null}
     </section>
   );

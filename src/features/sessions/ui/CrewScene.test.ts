@@ -12,13 +12,13 @@ import type { Session } from "../model/session";
 
 const state = vi.hoisted(() => ({
   enabled: true,
-  focused: true,
+  windowVisible: true,
   paint: vi.fn(),
   dispose: vi.fn(),
 }));
 vi.mock("../../settings/model/decorativeMotion", () => ({
   useDecorativeMotionEnabled: () => state.enabled,
-  useWindowHasFocus: () => state.focused,
+  useMotionWindowVisible: () => state.windowVisible,
 }));
 vi.mock("./crewCodeArt", () => ({
   CODE_WIDTH: 1040,
@@ -38,7 +38,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   state.enabled = true;
-  state.focused = true;
+  state.windowVisible = true;
   localStorage.clear();
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(900);
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
@@ -177,17 +177,17 @@ it("cancels animation callbacks when hidden and restarts only when visible", () 
   );
   expect(vi.getTimerCount()).toBe(0);
 });
-it("holds the scene while the window is behind another application", () => {
+it("holds the scene while the window is hidden or minimized", () => {
   render();
   enter();
   expect(vi.getTimerCount()).toBe(1);
-  state.focused = false;
+  state.windowVisible = false;
   render();
   expect(vi.getTimerCount()).toBe(0);
   const count = state.paint.mock.calls.length;
   act(() => vi.advanceTimersByTime(30000));
   expect(state.paint).toHaveBeenCalledTimes(count);
-  state.focused = true;
+  state.windowVisible = true;
   render();
   // The re-armed observers report the viewport again before the loop resumes.
   enter();
@@ -311,7 +311,7 @@ it("releases the typing listeners and timer when the scene unmounts mid-burst", 
   expect(state.paint).toHaveBeenCalled();
   input.remove();
 });
-it("does not hold a scene that visibility, focus or reduced motion already stopped", () => {
+it("does not hold a scene that visibility or reduced motion already stopped", () => {
   const input = field();
   state.enabled = false;
   render();

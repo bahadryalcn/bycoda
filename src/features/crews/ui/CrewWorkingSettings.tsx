@@ -2,7 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useId, type ReactNode } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { InfoPopover, InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { NumberField } from "../../../shared/ui/NumberField";
 import type { CrewAgent, CrewPolicy } from "../model/crew";
 
@@ -77,9 +77,9 @@ function Line({
           </Text>
           {info}
           {description ? (
-            <InfoPopover label={t("About {p0}", { p0: label })}>
+            <InfoTooltip label={t("About {p0}", { p0: label })}>
               <p>{description}</p>
-            </InfoPopover>
+            </InfoTooltip>
           ) : null}
         </div>
       </div>

@@ -74,6 +74,7 @@ const { className: mentionClassName, "data-tone": mentionTone } = textAttributes
 );
 
 type WidgetActions = {
+  onInlineAttachments(ids: ReadonlySet<string>): void;
   open(reference: InlineReference, anchor: HTMLElement): void;
   remove(id: string): void;
   menu(reference: InlineReference, anchor: HTMLElement): void;
@@ -277,8 +278,19 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
       EditorView.decorations.from(field, (value) => value.markdown),
     ],
   });
+  let reported: ReadonlySet<string> | undefined;
+  function reportAttachments(state: EditorState) {
+    const ids = state.field(ranges).scan.attachmentIds;
+    if (reported && ids.size === reported.size && [...reported].every((id) => ids.has(id))) return;
+    reported = ids;
+    actions.onInlineAttachments(ids);
+  }
   const extension: Extension = [
     ranges,
+    EditorView.updateListener.of((update) => {
+      if (update.state.field(ranges).scan !== update.startState.field(ranges).scan)
+        reportAttachments(update.state);
+    }),
     EditorView.atomicRanges.of((view) => view.state.field(ranges).atomic),
     EditorState.transactionFilter.of((transaction) => {
       if (
@@ -309,5 +321,5 @@ export function inlineComposerWidgets(initial: InlineReferenceContext, actions: 
       ];
     }),
   ];
-  return { configure, extension };
+  return { configure, extension, reportAttachments };
 }

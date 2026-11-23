@@ -8,7 +8,6 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { MACHINE_SEARCH_FROM } from "./machineListSearch";
 import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import {
@@ -20,6 +19,7 @@ import {
 } from "../model/machineCandidates";
 import type { AccountPairPlan } from "../model/accountDesktopPairing";
 import { AccountPairDialog } from "./AccountPairDialog";
+import { MACHINE_SEARCH_FROM } from "./machineListSearch";
 import { useDiscoveredMachines } from "./useDiscoveredMachines";
 import type { RemoteMachine } from "../model/protocol";
 
@@ -79,13 +79,15 @@ function CandidateRow({
         variant="secondary"
         disabled={busy || (!plan && !pair)}
         disabledReason={
-          plan || pair
-            ? undefined
-            : machine.sources.includes("account")
+          !plan && !pair
+            ? machine.sources.includes("account")
               ? t(
                   "This computer has not published an address another computer can use. Turn on Tailscale or a tunnel there, or add it by its SSH address under Enter address.",
                 )
               : t("This computer has no SSH address to set it up from here yet.")
+            : busy
+              ? t("Working…")
+              : undefined
         }
         onClick={() => (plan ? onAdd(plan) : pair && onPair(pair))}
       >
