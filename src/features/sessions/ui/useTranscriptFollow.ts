@@ -67,8 +67,9 @@ export function useTranscriptFollow({
   const distanceFromBottom = useRef(0);
   const wheelHold = useRef(0);
   // Reader input that can scroll the transcript: a held pointer or touch
-  // (scrollbar drag, swipe), or a recent key, wheel or released gesture.
-  const readerInput = useRef({ held: false, until: 0, downUntil: 0 });
+  // (scrollbar drag, swipe), or a recent key, wheel or released gesture. `upTop` is the
+  // offset of an upward motion that input started, while it is still moving up.
+  const readerInput = useRef({ held: false, until: 0, downUntil: 0, upTop: -Infinity });
   // Recent offsets the transcript was pinned to while following the end.
   const followedTops = useRef<{ top: number; at: number }[]>([]);
   const scrollGeometry = useRef<{
@@ -275,13 +276,23 @@ export function useTranscriptFollow({
   useEffect(() => {
     if (!visible || !scrollerEl) return;
     syncPinned(scrollerEl);
+    const input = readerInput.current;
     const onScroll = () => {
+      // One wheel notch or key can start an animated scroll that outlasts the input window
+      // (WebKit animates a long wheel delta for over a second). While that motion keeps
+      // moving up without a pause, it is still the reader's; a stop or reversal ends it.
+      const top = scrollerEl.scrollTop;
+      const now = performance.now();
+      if (top < input.upTop && input.until > now) {
+        input.until = now + READER_INPUT_MS;
+        input.upTop = top;
+      } else input.upTop = -Infinity;
       if (scrollerEl.isConnected && scrollerEl.clientHeight > 0) syncPinned(scrollerEl);
     };
-    const input = readerInput.current;
     const recentInput = () => {
       input.until = performance.now() + READER_INPUT_MS;
       input.downUntil = 0;
+      input.upTop = scrollerEl.scrollTop;
     };
     const holdInput = () => {
       input.held = true;

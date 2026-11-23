@@ -93,6 +93,49 @@ for (const light of [true, false])
     });
 
 for (const light of [true, false])
+  test(`earlier history loads after a slow animated wheel scroll ${light ? "light" : "dark"} 1280`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(
+      `/tests/browser/sessions/session-usability.html?historyFixture${light ? "&light" : ""}`,
+    );
+    const transcript = page.locator(".agent-transcript");
+    await expect(transcript.getByText("Response 16", { exact: true })).toBeVisible();
+    await expect(transcript.locator('[data-transcript-turn="history-12"]')).toBeAttached();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(0);
+    await transcript.hover();
+    // One upward wheel event starts the motion, then the engine animates it: WebKit on CI took
+    // over a second, so the top was only reached after the wheel's input window. The wheel is
+    // dispatched in the page so no second, engine-owned wheel animation competes with this one.
+    const animatedFrom = await transcript.evaluate(
+      (element) =>
+        new Promise<number>((resolve) => {
+          element.dispatchEvent(
+            new WheelEvent("wheel", { deltaY: -1, bubbles: true, cancelable: true }),
+          );
+          // From the end (about 760px) the 320px load threshold is crossed after about 1.7s,
+          // well past the 1s input window; the CI screencast was still near the end at 1s.
+          const from = element.scrollTop;
+          const started = performance.now();
+          const step = () => {
+            const progress = Math.min(1, (performance.now() - started) / 3000);
+            element.scrollTop = Math.round(from * (1 - progress));
+            if (progress < 1) requestAnimationFrame(step);
+            else resolve(from);
+          };
+          requestAnimationFrame(step);
+        }),
+    );
+    // The motion starts from the end, far above the load threshold.
+    expect(animatedFrom).toBeGreaterThan(600);
+    await expect(transcript.getByText("Loading earlier messages…")).toBeVisible();
+    expect(await page.evaluate(() => window.sessionUsability.events.historyPages)).toBe(1);
+    await page.evaluate(() => window.sessionUsability.finishHistoryPage());
+    await expect(transcript.locator('[data-transcript-turn="history-0"]')).toHaveCount(1);
+  });
+
+for (const light of [true, false])
   for (const width of [800, 1280])
     test(`session review caller visual ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
