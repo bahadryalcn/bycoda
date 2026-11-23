@@ -79,7 +79,18 @@ for (const theme of ["light", "dark"])
     });
   }
 
-const setupTitles = ["Identity", "Voice", "Work mode", "Presence and hours", "Review"];
+// A new assistant's voice setup: one voice check per step, Speaker and Microphone optional.
+const voiceSetupTitles = ["Identity", "Voice provider", "Speaker", "Microphone", "Review"];
+// Review offers Work mode, which adds the detailed work and presence steps before Review.
+const detailedSetupTitles = [
+  "Identity",
+  "Voice provider",
+  "Speaker",
+  "Microphone",
+  "Work mode",
+  "Presence and hours",
+  "Review",
+];
 test("an untouched discovered worker becomes explicit only after choosing a work mode", async ({
   page,
 }) => {
@@ -170,7 +181,7 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(
-        `/tests/browser/assistant/assistant-room.html?theme=${theme}&real-controls&setup`,
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&real-controls&setup&fresh`,
       );
       const frames: Array<{
         step: number;
@@ -181,12 +192,14 @@ for (const theme of ["light", "dark"])
         y: number;
       }> = [];
       const dialog = page.getByRole("dialog");
-      const capture = async (index: number) => {
-        await expect(dialog).toHaveAccessibleName("Set up");
+      let titles = voiceSetupTitles;
+      const capture = async (title: string) => {
+        const index = titles.indexOf(title);
+        await expect(dialog).toHaveAccessibleName("Voice setup");
         await expect(
           dialog.getByRole("group", { name: "Set up", exact: true }).getByRole("listitem"),
-        ).toHaveCount(5);
-        await expect(dialog.locator('[aria-current="step"]')).toContainText(setupTitles[index]);
+        ).toHaveCount(titles.length);
+        await expect(dialog.locator('[aria-current="step"]')).toContainText(title);
         const box = (await dialog.boundingBox())!;
         expect(box.x).toBeGreaterThanOrEqual(0);
         expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
@@ -196,15 +209,18 @@ for (const theme of ["light", "dark"])
           true,
         );
         await expect(
-          dialog.getByRole("button", { name: index === 4 ? "Start" : "Next", exact: true }),
+          dialog.getByRole("button", {
+            name: index === titles.length - 1 ? "Start" : "Next",
+            exact: true,
+          }),
         ).toBeVisible();
         await page.screenshot({
           animations: "disabled",
-          path: join(output, `setup-${theme}-${width}-${String(index + 1).padStart(2, "0")}.png`),
+          path: join(output, `setup-${theme}-${width}-${String(frames.length + 1).padStart(2, "0")}.png`),
         });
         frames.push({
           step: index + 1,
-          title: setupTitles[index],
+          title,
           width: box.width,
           height: box.height,
           x: box.x,
@@ -220,48 +236,53 @@ for (const theme of ["light", "dark"])
       await dialog
         .getByRole("textbox", { name: "Assistant name", exact: true })
         .fill("Setup fixture");
-      await capture(0);
+      await capture("Identity");
       await chooseSetupValue(page, "Language", "English");
       await dialog.getByRole("button", { name: "Close", exact: true }).click();
       await expect(dialog).toHaveCount(0);
       await page.getByRole("button", { name: "Reopen setup", exact: true }).focus();
       await page.keyboard.press("Enter");
-      await expect(dialog).toHaveAccessibleName("Set up");
+      await expect(dialog).toHaveAccessibleName("Voice setup");
       await expect(dialog.locator('[aria-current="step"]')).toContainText("Identity");
       await page.reload();
-      await expect(dialog).toHaveAccessibleName("Set up");
+      await expect(dialog).toHaveAccessibleName("Voice setup");
       await expect(dialog.locator('[aria-current="step"]')).toContainText("Identity");
       expect((await setupDraft(page)).patch.name).toBe("Setup fixture");
       await expect(
         dialog.getByRole("button", { name: "Language: English", exact: true }),
       ).toBeVisible();
-      await capture(0);
+      await capture("Identity");
       await next();
+      // The provider check gates Next; nothing opens the microphone yet.
       await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
       expect(await page.evaluate(() => (window as any).setupVoice.microphoneStarts)).toBe(0);
       await dialog.getByRole("radio", { name: "On this computer", exact: true }).click();
       await dialog.getByRole("button", { name: "Check connection", exact: true }).click();
       await expect(dialog.getByRole("status").filter({ hasText: "Ready" }).first()).toBeVisible();
-      await capture(1);
-      await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+      await capture("Voice provider");
+      await next();
+      // Speaker and Microphone are optional checks: Next stays available.
+      await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
       await dialog.getByRole("button", { name: "Listen", exact: true }).click();
       await expect(dialog.getByRole("status").filter({ hasText: "Ready" }).first()).toBeVisible();
       await dialog.getByRole("button", { name: "Stop", exact: true }).click();
-      await capture(1);
-      await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
-      await dialog.getByRole("button", { name: "Test microphone", exact: true }).click();
-      await expect
-        .poll(() => page.evaluate(() => (window as any).setupVoice.microphoneStarts))
-        .toBe(1);
-      await expect(
-        dialog.getByRole("meter", { name: "Microphone level", exact: true }),
-      ).toHaveAttribute("value", "0.35");
-      await page.evaluate(() => (window as any).setupVoice.transcript());
-      await expect(
-        dialog.getByRole("status").filter({ hasText: "This is a synthetic microphone sentence." }),
-      ).toBeVisible();
-      await capture(1);
+      await capture("Speaker");
       await next();
+      await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+      expect(await page.evaluate(() => (window as any).setupVoice.microphoneStarts)).toBe(0);
+      // The optional microphone test records only on request; opening the step captures nothing.
+      await expect(
+        dialog
+          .getByRole("group", { name: "Microphone test", exact: true })
+          .getByRole("button", { name: "Record test", exact: true }),
+      ).toBeEnabled();
+      expect(await page.evaluate(() => (window as any).setupVoice.microphoneStarts)).toBe(0);
+      await capture("Microphone");
+      await next();
+      await capture("Review");
+      // Review offers the detailed work mode and presence steps before Start.
+      await dialog.getByRole("button", { name: "Work mode", exact: true }).click();
+      titles = detailedSetupTitles;
       for (const name of ["Only watch", "Work freely", "Work and ask"]) {
         const mode = dialog.getByRole("radio", { name: new RegExp(`^${name}`) });
         await expect(mode).toBeVisible();
@@ -277,7 +298,7 @@ for (const theme of ["light", "dark"])
           allowRoutineQuestions: true,
         });
       expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
-      await capture(2);
+      await capture("Work mode");
       await next();
       // "Work hours" is on while a range is set; off means all day.
       const workHours = dialog.getByRole("switch", { name: "Work hours", exact: true });
@@ -307,14 +328,14 @@ for (const theme of ["light", "dark"])
         })
         .toBe(true);
       await quiet.click();
-      await capture(3);
+      await capture("Presence and hours");
       await dialog
         .getByRole("textbox", { name: "Anything I should know?", exact: true })
         .fill("Keep my drafts intact.");
-      await capture(3);
+      await capture("Presence and hours");
       await next();
       await expect(dialog).toContainText("2,000,000");
-      await capture(4);
+      await capture("Review");
       expect(
         await page.evaluate(() =>
           (window as any).__setupRequests.filter(
@@ -337,7 +358,7 @@ for (const theme of ["light", "dark"])
       expect(await page.evaluate(() => (window as any).setupVoice)).toMatchObject({
         inspections: 1,
         previews: 1,
-        microphoneStarts: 1,
+        microphoneStarts: 0,
         forbiddenMediaRequests: 0,
       });
       expect(
