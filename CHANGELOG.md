@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.22]
+
+### Added
+
+- Link a project across machines and open terminals on a paired SSH machine at the project's folder.
+- Pasting 8,000 or more characters into a chat saves the text as a **Pasted text** attachment instead of filling the draft.
+- Remote conversations open matching HTTP development links in your system browser through a private forward, labeled with the computer's saved name.
+- **Settings > Chat > Advanced conversation settings > At usage limit, continue on** chooses what a conversation does when its provider stops it at a usage limit.
+- Jira Inbox changes an issue's status from its detail and shares filters across the list, Kanban and backlog views.
+- MCP sign-in can be cancelled while the browser step is pending.
+
+### Improved
+
+- The queued message editor uses the same controls as the chat composer.
+- In narrow chat panes, Access and Mode move to the model panel's **Settings** tab, and Queue and Steer take priority over Stop while you have a draft.
+- Activity lists failed and unseen completed sessions with a count per state in its header.
+- Long messages expand in place; **Expand** opens them in a dialog with the same formatting.
+- Markdown previews zoom with Ctrl and the mouse wheel, and chat links open Markdown files in Preview.
+- Device and Browser panels obtain control automatically and stream live frames where the Host supports it.
+- Assistant access presets apply one permission level and show **Custom** whenever grants differ.
+- Remote sessions load faster, and workspace file navigation follows the project on each machine.
+
+### Fixed
+
+- Pressing End in a long model list scrolls to the last model in WebKit after the list was filtered or resized.
+- A Host closing during startup no longer stops with an unhandled error.
+- Transcript activity labels show their separators and ellipses correctly.
+- WebView2 recovery on Windows relaunches the app when the browser process exits.
+
 ## [0.7.20]
 
 ### Changed
