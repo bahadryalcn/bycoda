@@ -972,18 +972,31 @@ test("busy composer keeps Send, Queue and Stop visible with shortcut hints", asy
     );
     for (const width of [390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 800 });
-      for (const control of [send, queue, stop]) await expect(control).toBeInViewport();
-      const bounds = await Promise.all([queue, send, stop].map((control) => control.boundingBox()));
-      expect(bounds[0]!.x + bounds[0]!.width).toBeLessThanOrEqual(bounds[1]!.x);
-      expect(bounds[1]!.x + bounds[1]!.width).toBeLessThanOrEqual(bounds[2]!.x);
+      // A narrow composer gives a draft's Queue and Send the room; Stop keeps its shortcut.
+      const narrow = await page
+        .locator(".composer-controls")
+        .first()
+        .evaluate(
+          (node) =>
+            getComputedStyle(node).getPropertyValue("--composer-settings-in-picker").trim() === "1",
+        );
+      const shown = narrow ? [queue, send] : [queue, send, stop];
+      if (narrow) await expect(stop).toHaveCount(0);
+      for (const control of shown) await expect(control).toBeInViewport();
+      const bounds = await Promise.all(shown.map((control) => control.boundingBox()));
+      for (let index = 1; index < bounds.length; index++)
+        expect(bounds[index - 1]!.x + bounds[index - 1]!.width).toBeLessThanOrEqual(
+          bounds[index]!.x,
+        );
       const plus = await page
         .getByRole("button", { name: "Add files or skills", exact: true })
         .boundingBox();
       const context = await page.locator(".context-meter-summary").boundingBox();
+      const last = bounds.at(-1)!;
       for (const box of [plus, context, ...bounds]) {
         expect(box).not.toBeNull();
-        expect(Math.abs(box!.height - bounds[2]!.height)).toBeLessThanOrEqual(1);
-        expect(Math.abs(box!.y - bounds[2]!.y)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box!.height - last.height)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box!.y - last.y)).toBeLessThanOrEqual(1);
       }
     }
   }

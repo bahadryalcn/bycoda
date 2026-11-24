@@ -337,6 +337,11 @@ for (const light of [false, true]) {
       await page.keyboard.press("Escape");
       await expect(addMenu).toHaveCount(0);
       await expect(addTrigger).toBeFocused();
+      // A narrow composer moves Mode into the model panel's Settings tab.
+      if (width < 1000) {
+        await expect(trigger).toHaveCount(0);
+        continue;
+      }
 
       await trigger.focus();
       await trigger.press("ArrowDown");
@@ -374,7 +379,8 @@ for (const light of [false, true]) {
     page,
   }, info) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.setViewportSize({ width: 390, height: 800 });
+    // The narrowest pane that still keeps Mode in the composer toolbar.
+    await page.setViewportSize({ width: 520, height: 800 });
     await page.goto(
       `/tests/browser/sessions/session-usability.html?lang=tr${light ? "&light" : ""}`,
     );
@@ -402,7 +408,7 @@ for (const light of [false, true]) {
     });
     expect(fits).toBe(true);
     await page.screenshot({
-      path: info.outputPath("composer-menu-tr-390.png"),
+      path: info.outputPath("composer-menu-tr-520.png"),
     });
     await menu.getByRole("menuitemcheckbox", { name: "Plan modu", exact: true }).click();
     await expect(page.getByRole("textbox")).toHaveValue("Keep this integrated draft");
@@ -446,12 +452,13 @@ for (const light of [false, true]) {
     expect(await page.evaluate(() => window.sessionUsability.events.sends)).toBe(1);
     await page.evaluate(() => window.sessionUsability.mode("working"));
     await page.setViewportSize({ width: 320, height: 800 });
-    const stop = page.getByRole("button", { name: "Stop", exact: true });
-    await expect(stop).toBeInViewport();
+    // With a draft, a narrow pane shows Queue and Send; the Stop shortcut still interrupts.
+    await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Queue message", exact: true })).toBeInViewport();
     await page.screenshot({
       path: info.outputPath("integrated-working-320.png"),
     });
-    await stop.press("Enter");
+    await input.press("Escape");
     expect(await page.evaluate(() => window.sessionUsability.events.stops)).toBe(1);
     await expect(input).toHaveValue("Keep this changed draft");
     await page.evaluate(() => window.sessionUsability.remount());

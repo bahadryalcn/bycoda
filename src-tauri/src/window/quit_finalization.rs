@@ -34,6 +34,7 @@ pub fn request_app_restart(app: AppHandle) {
 
 /// Relaunch without polling the windows, for a dead webview that cannot answer.
 /// The caller owns asking the user. A quit already finalizing stays a quit.
+#[cfg(windows)]
 pub fn restart_now(app: AppHandle) {
     if begin_finalization(&FINALIZING) {
         RESTART.store(true, Ordering::SeqCst);
@@ -41,6 +42,7 @@ pub fn restart_now(app: AppHandle) {
     }
 }
 
+#[cfg(windows)]
 pub(crate) fn is_finalizing() -> bool {
     FINALIZING.load(Ordering::SeqCst)
 }

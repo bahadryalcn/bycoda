@@ -372,6 +372,7 @@ impl PtyHost {
         sessions.remove(id)
     }
 
+    #[cfg(windows)]
     pub(crate) fn has_sessions(&self) -> bool {
         !self
             .sessions

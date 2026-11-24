@@ -1043,7 +1043,7 @@ test("rail polish aligns sections and swaps row actions without losing identity"
   }
 });
 
-test("rail attention counts approvals and retries while excluding failed results", async ({
+test("rail attention counts failed results, approvals and retries per state", async ({
   page,
 }, testInfo) => {
   await installNavigationFixture(page);
@@ -1060,17 +1060,18 @@ test("rail attention counts approvals and retries while excluding failed results
     await expect(heading).toBeVisible();
     const toggle = heading.getByRole("button", { name: "Activity", exact: false }).first();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await expect(heading.locator('[data-tone="danger"]')).toHaveCount(0);
+    // Each state has its own count: failed is danger, input requests and retries are warnings.
+    const danger = heading.locator('[data-tone="danger"]');
+    if (attention === "warning") await expect(danger).toHaveCount(0);
+    else await expect(danger).toHaveText("1");
     const warning = heading.locator('[data-tone="warning"]');
     if (attention === "failed") await expect(warning).toHaveCount(0);
-    else await expect(warning).toHaveText(attention === "multiple" ? "2" : "1");
+    else await expect(warning).toHaveText(attention === "multiple" ? ["1", "1"] : ["1"]);
     await expect(heading).not.toContainText("needs attention");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     const rows = page.locator("[data-live-agents-list]:visible");
-    if (attention !== "warning")
-      await expect(rows.getByText("Review interrupted work")).toHaveCount(0);
-    else await expect(rows.getByText("Review interrupted work")).toBeVisible();
+    await expect(rows.getByText("Review interrupted work")).toBeVisible();
     if (attention === "multiple") {
       await expect(rows.getByText("Approve next step")).toBeVisible();
       await expect(rows.getByText("Retry interrupted connection")).toBeVisible();

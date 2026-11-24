@@ -7,7 +7,9 @@ mod gzip;
 mod logs;
 mod ui_log;
 
-pub(crate) use crash::{clear_recovered_on_exit, install_panic_hook, write_atomic};
+#[cfg(windows)]
+pub(crate) use crash::write_atomic;
+pub(crate) use crash::{clear_recovered_on_exit, install_panic_hook};
 pub(crate) use file_log::flush as flush_logs;
 
 /// Starts the `bycoda.log` logger and the uptime clock (once, during setup).
