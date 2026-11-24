@@ -77,7 +77,8 @@ export interface HostProvider {
     request: number,
     decision: ApprovalDecision,
     approvalOccurrenceId?: string,
-  ): void;
+    scope?: import("../../src/shared/model/sessionApprovalGrant").SessionApprovalScope,
+  ): void | boolean;
   answer(id: string, request: number, reply: UserQuestionReply): void;
   generateTitle?(input: {
     sessionId: string;

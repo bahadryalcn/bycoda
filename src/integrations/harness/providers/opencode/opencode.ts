@@ -12,6 +12,7 @@ import {
 } from "../turnWriter";
 
 import { killChild } from "../../core/child";
+import { retryAtField, retryAtFromTimestamp } from "../../core/retryAt";
 import { withSlowStartupNotice } from "../../core/providerStartupStatus";
 import { compactionFailedText } from "../../core/providerNotices";
 import {
@@ -1741,7 +1742,12 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
         const statusType = stringField(status, "type");
         if (statusType === "retry") {
           const message = stringField(status, "message");
-          if (message) emitNative({ type: "status", text: message });
+          if (message)
+            emitNative({
+              type: "status",
+              text: message,
+              ...retryAtField(retryAtFromTimestamp(status?.next, Date.now())),
+            });
           break;
         }
         if (statusType === "idle" && live.activeTurn) {

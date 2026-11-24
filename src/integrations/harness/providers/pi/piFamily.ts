@@ -94,6 +94,7 @@ import {
   providerSessionIdFromState,
   sessionFromState,
   statusFromPiEvent,
+  piRetryAt,
   stringField,
   summarizeToolRequest,
   toolCallDeltaFromEvent,
@@ -1347,7 +1348,10 @@ function handleFrame(
     if (reason) live.onEvent({ type: "status", text: compactionFailedText(reason) });
   } else {
     const status = statusFromPiEvent(rec);
-    if (status) live.onEvent({ type: "status", text: status });
+    if (status) {
+      const retryAt = type === "auto_retry_start" ? piRetryAt(rec, Date.now()) : undefined;
+      live.onEvent({ type: "status", text: status, ...(retryAt ? { retryAt } : {}) });
+    }
   }
 
   const turnError = turnErrorFromEvent(rec);

@@ -117,6 +117,7 @@ import { useSecondOpinion } from "./workspace/sessions/useSecondOpinion";
 import { useBtwThreads } from "./workspace/sessions/useBtwThreads";
 import { useBtwActions } from "./workspace/sessions/useBtwActions";
 import { useHandoff } from "./workspace/sessions/useHandoff";
+import { useBranchSession } from "./workspace/sessions/useBranchSession";
 import { useAutoContinue } from "./workspace/sessions/useAutoContinue";
 import { useCompactAndRewind } from "./workspace/sessions/useCompactAndRewind";
 import { useOrchestrationState } from "./workspace/bridges/useOrchestrationState";
@@ -2221,6 +2222,17 @@ function Workspace({
     runBtwRequest,
   });
   const { onHandoff } = useHandoff({ sessionsRef, openSessionBeside });
+  const { onBranchFromReply, onOpenBranchSource } = useBranchSession({
+    sessionsRef,
+    setSessions,
+    setActiveTabId,
+    setProjectTerminalFocused,
+    setComposerFocused,
+    appendTab,
+    persistSession,
+    ensureSessionHistoryForExecution,
+    openSession: (sessionId) => void onPreviewHistorySession(sessionId, { keepOpen: true }),
+  });
   useAutoContinue({
     sessions,
     sessionsRef,
@@ -2931,6 +2943,8 @@ function Workspace({
     onBuildPlan,
     onSecondOpinion,
     onHandoff,
+    onBranchFromReply,
+    onOpenBranchSource,
     onBtwSubmit,
     onBtwRetry,
     onBtwDelete,

@@ -6,6 +6,12 @@ import {
   workItemSearchParams,
 } from "./work-items";
 import { SIDE_CHAT_RPC } from "./side-chat";
+import { SESSION_APPROVAL_GRANTS_CAPABILITY } from "../sessionApprovalGrant";
+import {
+  RevokeSessionApprovalGrantParamsSchema,
+  SessionApprovalGrantsParamsSchema,
+  SessionApprovalGrantsResultSchema,
+} from "./session-approval-grants";
 import { VOICE_CAPABILITY, VOICE_RPC_SCHEMAS, type VoiceMethod } from "./voice";
 import {
   SecretInputListParamsSchema,
@@ -1030,6 +1036,14 @@ export const HOST_RPC_METHODS = Object.freeze({
     true,
   ),
   ...sessionReadMethods(sessionRead),
+  "sessions.approvalGrants.list": {
+    ...read(SessionApprovalGrantsParamsSchema, SessionApprovalGrantsResultSchema),
+    requiredCapability: SESSION_APPROVAL_GRANTS_CAPABILITY,
+  },
+  "sessions.approvalGrants.revoke": {
+    ...control(RevokeSessionApprovalGrantParamsSchema, SessionApprovalGrantsResultSchema),
+    requiredCapability: SESSION_APPROVAL_GRANTS_CAPABILITY,
+  },
   "commands.status": {
     ...sessionRead(CommandsStatusParamsSchema, CommandsStatusResultSchema),
     cost: "control",

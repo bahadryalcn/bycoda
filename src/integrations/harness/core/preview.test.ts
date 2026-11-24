@@ -366,3 +366,16 @@ describe("agent titles", () => {
     );
   });
 });
+
+describe("mergeToolPreview sources", () => {
+  const sources = [{ title: "A", url: "https://a.dev/", domain: "a.dev" }];
+  it("keeps the sources when a later update carries none", () => {
+    expect(
+      mergeToolPreview({ kind: "search", query: "q" }, { kind: "search", query: "q", sources })
+        ?.sources,
+    ).toBe(sources);
+    expect(mergeToolPreview({ kind: "search", sources }, { kind: "search" })?.sources).toBe(
+      sources,
+    );
+  });
+});

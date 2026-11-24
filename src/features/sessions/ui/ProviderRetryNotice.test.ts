@@ -79,3 +79,39 @@ it("coalesces refresh clicks, reports failure locally and allows another attempt
   expect(host.querySelector('[role="alert"]')).toBeNull();
   expect(onStop).not.toHaveBeenCalled();
 });
+
+it("counts down to the provider's retry time and keeps the static text without one", () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(1_000_000);
+    act(() =>
+      root.render(
+        createElement(ProviderRetryNotice, {
+          provider: "Claude",
+          message: "Retrying (2/5)…",
+          retryAt: 1_000_000 + 12_000,
+          onStop: vi.fn(),
+        }),
+      ),
+    );
+    expect(host.textContent).toContain("Retrying in 12s");
+    expect(host.textContent).toContain("2/5");
+    act(() => vi.advanceTimersByTime(5000));
+    expect(host.textContent).toContain("Retrying in 7s");
+    act(() => vi.advanceTimersByTime(8000));
+    expect(host.textContent).not.toContain("Retrying in");
+    expect(host.textContent).toContain("2/5");
+    act(() =>
+      root.render(
+        createElement(ProviderRetryNotice, {
+          provider: "Claude",
+          message: "Retrying (3/5)…",
+          onStop: vi.fn(),
+        }),
+      ),
+    );
+    expect(host.textContent).not.toContain("Retrying in");
+  } finally {
+    vi.useRealTimers();
+  }
+});

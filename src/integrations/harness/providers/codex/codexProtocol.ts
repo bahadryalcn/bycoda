@@ -18,6 +18,7 @@ import {
 import { displayPath } from "../../../../shared/lib/paths";
 import { normalizeTaskListStatus } from "../../../../features/sessions/model/taskList";
 import { MAX_TOOL_DETAIL_CHARS } from "../../core/toolDetailLimits";
+import { parseRetryAt, retryAtField } from "../../core/retryAt";
 import { composeToolTitle, extractToolPreview, formatAgentType } from "../../core/preview";
 import { formatShellIntent, inferShellIntent } from "../../core/shellIntent";
 import { streamTextDelta } from "../../core/streamText";
@@ -527,7 +528,14 @@ export function mapCodexNotification(
     const willRetry = rec.willRetry === true;
     if (willRetry) {
       return {
-        events: [{ type: "status", key: "provider-retry", text: message }],
+        events: [
+          {
+            type: "status",
+            key: "provider-retry",
+            text: message,
+            ...retryAtField(parseRetryAt(message, Date.now())),
+          },
+        ],
         diagnostic: message,
       };
     }
@@ -662,6 +670,15 @@ function isUsageLimitError(error: Record<string, unknown> | null): boolean {
   return error?.codexErrorInfo === "usageLimitExceeded";
 }
 
+function imageAspectRatio(item: Record<string, unknown>): number | undefined {
+  const ratio = stringField(item, "aspectRatio")?.trim();
+  const size = stringField(item, "size")?.trim();
+  const dimensions =
+    ratio?.match(/^([1-9]\d{0,4})\s*[:/]\s*([1-9]\d{0,4})$/) ??
+    size?.match(/^([1-9]\d{0,4})\s*[x×]\s*([1-9]\d{0,4})$/i);
+  return dimensions ? Number(dimensions[1]) / Number(dimensions[2]) : undefined;
+}
+
 function mapItemLifecycle(method: string, rec: Record<string, unknown>): MappedCodexNotification {
   const item = asRecord(rec.item);
   if (!item) return { events: [] };
@@ -713,9 +730,28 @@ function mapItemLifecycle(method: string, rec: Record<string, unknown>): MappedC
   }
 
   if (itemType === "imageGeneration") {
-    if (!completed) return { events: [] };
+    if (!completed) {
+      const aspectRatio = imageAspectRatio(item);
+      return {
+        events: [
+          {
+            type: "image.generationStarted",
+            itemId: callId,
+            ...(aspectRatio === undefined ? {} : { aspectRatio }),
+          },
+        ],
+      };
+    }
     const result = stringField(item, "result")?.trim();
-    if (!result) return { events: [] };
+    const status = stringField(item, "status");
+    const stopped = status === "cancelled" || status === "interrupted" || status === "stopped";
+    if (stopped || status === "failed" || !result) {
+      return {
+        events: [
+          { type: "image.generationEnded", itemId: callId, status: stopped ? "stopped" : "failed" },
+        ],
+      };
+    }
     const prompt = stringField(item, "revisedPrompt")?.trim();
     return {
       events: [

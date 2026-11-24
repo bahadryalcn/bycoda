@@ -645,6 +645,7 @@ type HostCommandBody =
       /** Original source-issued request occurrence; never reconstructed by a client. */
       approvalOccurrenceId?: string;
       decision: "allow" | "deny";
+      allowForSession?: true;
     }
   | {
       type: "answer";

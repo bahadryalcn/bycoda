@@ -31,6 +31,10 @@ import {
   isApprovalOccurrenceId,
 } from "../../../../shared/model/approvalOccurrence";
 import {
+  CLAUDE_WORKSPACE_GLOB,
+  type SessionApprovalScope,
+} from "../../../../shared/model/sessionApprovalGrant";
+import {
   runNativeOutputWork,
   nativeOutputSink,
   captureNativeOutputWork,
@@ -42,6 +46,7 @@ import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { deliverQuestionReply, type QuestionDelivery } from "../questionDelivery";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { nativeModelId } from "../../../../features/sessions/model/models";
+import type { SearchSource } from "../../../../shared/model/searchSources";
 import { sameProviderAccountId } from "../../../../features/providers/model/providerAccounts";
 import type {
   Attachment,
@@ -87,6 +92,7 @@ import {
   inputJsonDeltaFromEvent,
   isAgentTaskType,
   isClaudeUltracodeEffort,
+  claudeSessionApprovalScope,
   isReplayedTaskNotificationResult,
   isSubagentMessage,
   isTerminalAgentTaskStatus,
@@ -112,6 +118,7 @@ import {
   resolveClaudeApiModelId,
   sessionIdFromMessage,
   statusTextFromSystem,
+  retryFromSystem,
   streamDeltaFromEvent,
   stringField,
   summarizeToolRequest,
@@ -168,9 +175,11 @@ import { TurnNotReadyError } from "../../core/types";
  * then cancels the control request out from under us. That is not a rejection,
  * so it gets its own outcome instead of being folded into "deny".
  */
-type ApprovalOutcome = ApprovalDecision | "cancelled";
+type ApprovalOutcome = ApprovalDecision | "cancelled" | SessionApprovalScope;
 
 type PendingApproval = {
+  responded?: true;
+  sessionApprovalScope?: SessionApprovalScope;
   occurrenceId: string;
   requestId: string;
   input: Record<string, unknown>;
@@ -186,6 +195,7 @@ type PendingQuestion = QuestionDelivery & {
 type InFlightTool = {
   id: string;
   name: string;
+  confirmedTopLevel?: boolean;
   input: Record<string, unknown>;
   inputJson: ReturnType<typeof createJsonRecordAccumulator>;
   title: string;
@@ -509,7 +519,8 @@ export function respondClaudeApproval(
   requestId: number,
   decision: ApprovalDecision,
   approvalOccurrenceId?: string,
-): void {
+  scope?: SessionApprovalScope,
+): boolean {
   const live = liveByThread.get(sessionId);
   const pending = live?.approvals.get(requestId);
   if (
@@ -517,11 +528,15 @@ export function respondClaudeApproval(
     live.cancelled ||
     live.muteUpdates ||
     !pending ||
+    pending.responded ||
+    (scope !== undefined && (decision !== "allow" || pending.sessionApprovalScope !== scope)) ||
     !isApprovalOccurrenceId(approvalOccurrenceId) ||
     pending.occurrenceId !== approvalOccurrenceId
   )
-    return;
-  pending.resolve(decision);
+    return false;
+  pending.responded = true;
+  pending.resolve(scope ?? decision);
+  return true;
 }
 
 export function respondClaudeQuestion(
@@ -1365,6 +1380,11 @@ function handleLine(sessionId: string, live: Live, line: string): void {
       }
       return;
     }
+    const retry = retryFromSystem(rec, Date.now());
+    if (retry) {
+      live.onEvent({ type: "status", key: "provider-retry", ...retry });
+      return;
+    }
     const text = statusTextFromSystem(rec);
     if (text) {
       const compact = (stringField(rec, "subtype") ?? "").startsWith("compact");
@@ -1416,6 +1436,7 @@ function handleStreamEvent(live: Live, rec: Record<string, unknown>): void {
     const tool: InFlightTool = {
       id: started.id,
       name: started.name,
+      confirmedTopLevel: rec.parent_tool_use_id === null,
       input: started.input,
       inputJson: createJsonRecordAccumulator(),
       title: toolTitle(started.name, started.input),
@@ -1531,6 +1552,7 @@ function handleAssistant(live: Live, rec: Record<string, unknown>): void {
     const tool: InFlightTool = {
       id: use.id,
       name: use.name,
+      confirmedTopLevel: rec.parent_tool_use_id === null,
       input: use.input,
       inputJson: createJsonRecordAccumulator(),
       title: toolTitle(use.name, use.input),
@@ -1564,11 +1586,12 @@ function handleAssistant(live: Live, rec: Record<string, unknown>): void {
 /** Server tools (advisor, ...) report inside the assistant message, not as a user tool_result. */
 function settleServerTools(
   live: Live,
-  results: Array<{ toolUseId: string; isError: boolean; text: string }>,
+  results: Array<{ toolUseId: string; isError: boolean; text: string; sources?: SearchSource[] }>,
 ): void {
   for (const result of results) {
     const tool = live.toolsById.get(result.toolUseId);
     if (!tool) continue;
+    const preview = previewFromTool(tool.name, tool.input, result.text);
     live.onEvent({
       type: "tool.updated",
       callId: tool.id,
@@ -1576,7 +1599,10 @@ function settleServerTools(
       kind: toolKindFromName(tool.name),
       status: result.isError ? "failed" : "completed",
       detail: result.text || undefined,
-      preview: previewFromTool(tool.name, tool.input, result.text),
+      preview:
+        result.sources?.length && preview?.kind === "search"
+          ? { ...preview, sources: result.sources }
+          : preview,
     });
   }
 }
@@ -1886,12 +1912,18 @@ async function handleControlRequest(
         return;
       }
 
+      const tool = control.toolUseId ? live.toolsById.get(control.toolUseId) : undefined;
+      const sessionApprovalScope = claudeSessionApprovalScope(
+        control,
+        tool?.confirmedTopLevel ? tool.name : undefined,
+      );
       const uiId = live.nextApprovalUiId++;
       const pending = nativeOutputSink(outputWork, waitApproval)(
         live,
         uiId,
         control.requestId,
         input,
+        sessionApprovalScope,
       );
       emitNative({
         type: "approval.requested",
@@ -1901,8 +1933,11 @@ async function handleControlRequest(
         kind: toolKindFromName(toolName),
         callId: control.toolUseId,
         preview: previewFromTool(toolName, input),
+        ...(sessionApprovalScope ? { sessionApprovalScope } : {}),
       });
-      const decision = await pending;
+      const outcome = await pending;
+      const scoped = outcome === CLAUDE_WORKSPACE_GLOB;
+      const decision = scoped ? "allow" : outcome;
       emitNative({
         type: "approval.resolved",
         requestId: uiId,
@@ -1910,9 +1945,11 @@ async function handleControlRequest(
         decision,
       });
       if (decision === "cancelled" || !Array.from(liveByThread.values()).includes(live)) return;
+      // Session grants are rooted in the admitted execution cwd even if Claude changed its cwd.
+      const approvedInput = scoped ? { ...input, path: live.cwd } : input;
       await nativeOutputSink(outputWork, writeJson)(
         live,
-        buildControlResponse(control.requestId, toClaudePermissionResult(decision, input)),
+        buildControlResponse(control.requestId, toClaudePermissionResult(decision, approvedInput)),
       );
     },
     { additionalInput: true },
@@ -1946,10 +1983,11 @@ function waitApproval(
   uiId: number,
   requestId: string,
   input: Record<string, unknown>,
+  sessionApprovalScope?: SessionApprovalScope,
 ): Promise<ApprovalOutcome> & { occurrenceId: string } {
   const occurrenceId = createApprovalOccurrenceId();
   const promise = new Promise<ApprovalOutcome>((resolve) => {
-    live.approvals.set(uiId, { requestId, input, occurrenceId, resolve });
+    live.approvals.set(uiId, { requestId, input, occurrenceId, sessionApprovalScope, resolve });
   }).finally(() => {
     if (live.approvals.get(uiId)?.occurrenceId === occurrenceId) live.approvals.delete(uiId);
   });

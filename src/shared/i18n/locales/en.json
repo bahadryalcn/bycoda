@@ -13058,5 +13058,21 @@
   "Volume": "Volume",
   "Unmute": "Unmute",
   "You stopped this turn": "You stopped this turn",
-  "Continue to pick up where it left off, or send a new message.": "Continue to pick up where it left off, or send a new message."
+  "Continue to pick up where it left off, or send a new message.": "Continue to pick up where it left off, or send a new message.",
+  "Always allow this session": "Always allow this session",
+  "Session approvals": "Session approvals",
+  "Workspace filename search": "Workspace filename search",
+  "No active session approvals": "No active session approvals",
+  "Could not load session approvals": "Could not load session approvals",
+  "Could not revoke the session approval": "Could not revoke the session approval",
+  "Branch from here": "Branch from here",
+  "Branched from {p0}": "Branched from {p0}",
+  "This conversation is owned by a bycoda Host, so it cannot be branched from here.": "This conversation is owned by a bycoda Host, so it cannot be branched from here.",
+  "This conversation has its own managed workspace, so it cannot be branched.": "This conversation has its own managed workspace, so it cannot be branched.",
+  "This conversation's workspace was removed, so it cannot be branched.": "This conversation's workspace was removed, so it cannot be branched.",
+  "The conversation is still loading. Branch it once it has loaded.": "The conversation is still loading. Branch it once it has loaded.",
+  "Answer the open approval before branching from this reply.": "Answer the open approval before branching from this reply.",
+  "This reply cannot be branched.": "This reply cannot be branched.",
+  "Could not generate image.": "Could not generate image.",
+  "Retrying in {p0}": "Retrying in {p0}"
 }

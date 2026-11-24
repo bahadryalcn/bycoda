@@ -13058,5 +13058,21 @@
   "Volume": "音量",
   "Unmute": "取消静音",
   "You stopped this turn": "您已停止此轮",
-  "Continue to pick up where it left off, or send a new message.": "从中断处继续，或发送新消息。"
+  "Continue to pick up where it left off, or send a new message.": "从中断处继续，或发送新消息。",
+  "Always allow this session": "在此会话中始终允许",
+  "Session approvals": "会话授权",
+  "Workspace filename search": "搜索工作区文件名",
+  "No active session approvals": "没有生效的会话授权",
+  "Could not load session approvals": "无法加载会话授权",
+  "Could not revoke the session approval": "无法撤销会话授权",
+  "Branch from here": "从此处创建分支",
+  "Branched from {p0}": "分支自 {p0}",
+  "This conversation is owned by a bycoda Host, so it cannot be branched from here.": "此对话由 bycoda Host 持有，无法从这里创建分支。",
+  "This conversation has its own managed workspace, so it cannot be branched.": "此对话有自己的受管工作区，无法创建分支。",
+  "This conversation's workspace was removed, so it cannot be branched.": "此对话的工作区已被移除，无法创建分支。",
+  "The conversation is still loading. Branch it once it has loaded.": "对话仍在加载。加载完成后再创建分支。",
+  "Answer the open approval before branching from this reply.": "请先处理未决的审批，再从此回复创建分支。",
+  "This reply cannot be branched.": "无法从此回复创建分支。",
+  "Could not generate image.": "无法生成图片。",
+  "Retrying in {p0}": "{p0}后重试"
 }

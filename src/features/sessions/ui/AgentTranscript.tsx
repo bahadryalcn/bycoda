@@ -1,4 +1,9 @@
 import { TranscriptHistoryNotice } from "./TranscriptHistoryNotice";
+import {
+  collectSearchSources,
+  linkSearchCitations,
+  type SearchSource,
+} from "../model/searchSources";
 import { innerScrollerTakes } from "../../../shared/hooks/useLockOverscroll";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -58,6 +63,7 @@ import {
   ChatWork,
   FilePlusCorner,
   MessageMultiple,
+  GitBranch,
   Replace,
   MoreHorizontal,
   ChartBreakoutSquare,
@@ -115,6 +121,7 @@ import type {
   FloatingButtonGroupTriggerProps,
 } from "../../../shared/ui/FloatingButtonGroup";
 import { TurnOutputActions } from "./TranscriptMessageActions";
+import { TurnChangedFiles } from "./TurnChangedFiles";
 import { ResumeTurnRow } from "./ResumeTurnRow";
 import { resumePromptKind } from "../model/resumePrompt";
 import type { ApprovalDecision } from "../../../integrations/harness";
@@ -124,7 +131,7 @@ import type { ShellRun } from "../model/shellRun";
 import { visibleUserPrompt } from "../model/userPromptText";
 import { playCue } from "../../settings/public/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
-import { useResolvedModelName } from "../model/reactiveReads";
+import { useResolvedModelName, useTurnChangedFiles } from "../model/reactiveReads";
 import { BlockScanCache } from "../model/blockScanCache";
 import { sameBlocksIgnoringStreamingText } from "../model/stableBlocks";
 import {
@@ -133,6 +140,9 @@ import {
 } from "../model/translationProjection";
 import { TranscriptTurnCache } from "../model/transcriptTurnCache";
 import { ModelSwitchRow } from "./ModelSwitchRow";
+import { BranchOriginRow } from "./BranchOriginRow";
+import { TranscriptBranchContext, type TranscriptBranch } from "./transcriptBranchContext";
+import type { BranchBlockedReason } from "../model/conversationBranch";
 import {
   hasPendingApproval,
   HARNESS_TITLE,
@@ -250,6 +260,8 @@ type Props = {
   planBuildTargets?: boolean;
   onSecondOpinion?: (target: ModelTarget, turn: Block[]) => void;
   onHandoff?: (target: ModelTarget, turn: Block[]) => void;
+  /** Branching of this conversation; absent where it does not apply. */
+  branch?: TranscriptBranch;
   onEditLastTurn?: () => void;
   canRewindMessage?: (blockId: string) => boolean;
   onRewindMessage?: (block: Block, action: "edit" | "return") => void;
@@ -938,7 +950,9 @@ function VirtualizedTranscriptComponent(props: Props) {
     <TranscriptVirtualizationContext.Provider value={virtualization}>
       <InlineVisualHost.Provider value={props.inlineVisualHost}>
         <UsageLimitRecoveryContext.Provider value={props.usageLimitRecovery}>
-          <AgentTranscriptComponent {...props} />
+          <TranscriptBranchContext.Provider value={props.branch ?? null}>
+            <AgentTranscriptComponent {...props} />
+          </TranscriptBranchContext.Provider>
         </UsageLimitRecoveryContext.Provider>
       </InlineVisualHost.Provider>
     </TranscriptVirtualizationContext.Provider>
@@ -1118,6 +1132,10 @@ const Turn = memo(function Turn({
   const [itemCache] = useState(() => new TranscriptTurnCache());
   const [rowCache] = useState(() => new TranscriptRowCache());
   const items = itemCache.turnItems(turn, settled);
+  // A reply's `[n]` cites the nth page its web searches returned, across the whole turn.
+  const turnSearchSources = collectSearchSources(
+    items.flatMap((item) => (item.type === "block" ? [item.block] : item.blocks)),
+  );
   // The leading user blocks are the turn's prompt; the reply surface starts after them.
   const firstReplyAt = items.findIndex(
     (item) => !(item.type === "block" && item.block.role === "user" && !item.block.interjection),
@@ -1237,6 +1255,7 @@ const Turn = memo(function Turn({
               items[itemIndex - 1]?.type === "subagents" ||
               (itemIndex === foldLineAt && showFoldLine))
           }
+          searchSources={isProseBlock(item.block) ? turnSearchSources : undefined}
           onApproval={onApproval}
           onSaveNote={onSaveNote}
           onSendDraft={onSendDraft}
@@ -1382,7 +1401,9 @@ const Turn = memo(function Turn({
   const promptIds = new Set(items.slice(0, promptCount).map(turnItemKey));
   const promptRows = virtualRows.filter((row) => promptIds.has(row.id));
   const replyRows = virtualRows.filter((row) => !promptIds.has(row.id));
+  const changedFiles = useTurnChangedFiles(turn, cwd, settled);
   const hasReply =
+    changedFiles.length > 0 ||
     replyRows.some((row) => row.id !== lineRow.id || showFoldLine) ||
     !!(activityPhase && activityLabel) ||
     !!latestTurnAccessory ||
@@ -1436,6 +1457,9 @@ const Turn = memo(function Turn({
           onSecondOpinion={onSecondOpinion ? (target) => onSecondOpinion(target, turn) : undefined}
           onHandoff={onHandoff ? (target) => onHandoff(target, turn) : undefined}
         />
+      ) : null}
+      {changedFiles.length > 0 ? (
+        <TurnChangedFiles files={changedFiles} onOpen={onOpenDiff ?? onOpenFile} />
       ) : null}
     </>
   );
@@ -1636,6 +1660,23 @@ function RemoteBlockLoad({
     </div>
   );
 }
+function branchBlockedText(t: ReturnType<typeof useT>, reason: BranchBlockedReason): string {
+  switch (reason) {
+    case "host":
+      return t("This conversation is owned by a bycoda Host, so it cannot be branched from here.");
+    case "managed":
+      return t("This conversation has its own managed workspace, so it cannot be branched.");
+    case "removed":
+      return t("This conversation's workspace was removed, so it cannot be branched.");
+    case "loading":
+      return t("The conversation is still loading. Branch it once it has loaded.");
+    case "approval":
+      return t("Answer the open approval before branching from this reply.");
+    default:
+      return t("This reply cannot be branched.");
+  }
+}
+
 function TurnDuration({
   elapsedMs,
   metrics,
@@ -1671,6 +1712,8 @@ function TurnDuration({
   const label = formatWorkingDuration(t, format, elapsedMs, modelName, true);
   const hasOutput = hasTurnCopyText(turn);
   const getText = useCallback(() => turnCopyText(turn), [turn]);
+  const branch = useContext(TranscriptBranchContext);
+  const branchBlocked = branch?.blockedReason(turn);
   const dot = (
     <span
       aria-hidden
@@ -1695,6 +1738,18 @@ function TurnDuration({
           getText={hasOutput ? getText : undefined}
           onSave={onSaveNote}
           extraItems={[
+            ...(branch && hasOutput
+              ? [
+                  {
+                    id: "branch",
+                    label: t("Branch from here"),
+                    icon: <GitBranch />,
+                    disabled: !!branchBlocked,
+                    tooltip: branchBlocked ? branchBlockedText(t, branchBlocked) : undefined,
+                    onSelect: () => branch.branch(turn),
+                  } satisfies FloatingButtonGroupAction,
+                ]
+              : []),
             ...(fromHarness && onHandoff
               ? [
                   {
@@ -2050,6 +2105,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   layout,
   underLine = false,
   embedded = false,
+  searchSources,
   cwd,
   onApproval,
   onSaveNote,
@@ -2076,6 +2132,8 @@ const TranscriptBlock = memo(function TranscriptBlock({
   underLine?: boolean;
   /** True when the parent surface already provides the horizontal gutter. */
   embedded?: boolean;
+  /** Pages the turn's web searches returned; `[n]` in the reply links to the nth. */
+  searchSources?: readonly SearchSource[];
   cwd?: string;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
@@ -2159,7 +2217,10 @@ const TranscriptBlock = memo(function TranscriptBlock({
     );
   }
 
-  if (block.role === "image") return block.image ? <GeneratedImage image={block.image} /> : null;
+  if (block.role === "image")
+    return block.image || block.imageGeneration ? (
+      <GeneratedImage image={block.image} generation={block.imageGeneration} />
+    ) : null;
 
   if (block.role === "tool") {
     if (block.inlineVisual) return <InlineVisual snapshot={block.inlineVisual} />;
@@ -2249,6 +2310,8 @@ const TranscriptBlock = memo(function TranscriptBlock({
     if (block.shell) {
       return <ShellRunCard run={block.shell} embedded={embedded} />;
     }
+    if (block.branchOrigin)
+      return <BranchOriginRow origin={block.branchOrigin} embedded={embedded} />;
     if (block.modelSwitch) return <ModelSwitchRow meta={block.modelSwitch} embedded={embedded} />;
     if (isSessionErrorBlock(block))
       return (
@@ -2275,7 +2338,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
       className={`min-w-0 pb-1 text-(--transcript-ink-body) ${embedded ? "" : "px-4"} ${underLine ? "pt-1" : "pt-3"}`}
     >
       <AgentMarkdown
-        text={block.text}
+        text={searchSources?.length ? linkSearchCitations(block.text, searchSources) : block.text}
         streaming={block.streaming}
         revealOnMount={revealOnMount}
         localMedia

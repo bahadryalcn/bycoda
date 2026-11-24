@@ -34,6 +34,7 @@ import { FilePreview } from "../../files/public/FilePreview";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { ToolDiffPreview } from "./ToolDiffPreview";
 import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
+import { SearchSourceChips } from "./SearchSourceChips";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { SubagentRow, SubagentStack } from "./SubagentCards";
 import { SessionErrorNotice } from "./SessionErrorNotice";
@@ -976,6 +977,9 @@ function ActivityToolRow({
         />
       )}
       {pending ? <ApprovalControls block={block} onApproval={onApproval} /> : null}
+      {block.tool?.preview?.kind === "search" ? (
+        <SearchSourceChips sources={block.tool.preview.sources} inset={!bare} />
+      ) : null}
       {errorDetail && !errorOpen ? (
         <p
           className={`m-0 line-clamp-2 min-w-0 break-words text-ui-caption text-(--ui-tone-danger-fg) ${bare ? "" : "pl-5"}`}
@@ -1415,7 +1419,13 @@ function ConnectedApprovalControls({
     >
       <ApprovalRequest
         title={approvalTitle(block, t)}
-        context={[context.session.cwd, t("This request only")]}
+        context={
+          decision.sessionAction
+            ? [context.session.cwd]
+            : [context.session.cwd, t("This request only")]
+        }
+        scope={decision.sessionAction ? t("Workspace filename search") : undefined}
+        actions={decision.sessionAction ? [decision.sessionAction] : undefined}
         detail={approvalDetail(block)}
         details={
           hasToolInspection(block)
@@ -1424,7 +1434,8 @@ function ConnectedApprovalControls({
         }
         allow={{
           label: t("Allow"),
-          pending: decision.pending && decision.decision === "allow",
+          pending:
+            decision.pending && !decision.allowForSessionPending && decision.decision === "allow",
           disabled: decision.blocked,
           onClick: () => void decision.decide("allow"),
         }}

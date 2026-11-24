@@ -1,17 +1,17 @@
-import { Skeleton } from "../../../shared/ui/Skeleton";
+import { Skeleton, SkeletonBar } from "../../../shared/ui/Skeleton";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { readBinaryFile, saveFileCopy } from "../../../platform/tauri/fs";
 import { bytesToBase64, decodeBase64 } from "../../../shared/lib/base64";
 import { errorText } from "../../../shared/lib/errors";
 import { Download } from "../../../shared/ui/icons";
 import { formatFileSize, sniffImageMime } from "../../files/public/filePreviewMetadata";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
-import type { GeneratedImageMeta } from "../model/session";
+import type { GeneratedImageMeta, ImageGenerationMeta } from "../model/session";
 import { useNearViewport } from "./useNearViewport";
 
 // Images start loading well before they scroll into view so their final height
@@ -89,23 +89,30 @@ type State =
   | { status: "ready"; url: string; size: number }
   | { status: "error" };
 
-export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
+export function GeneratedImage({
+  image,
+  generation,
+}: {
+  image?: GeneratedImageMeta;
+  generation?: ImageGenerationMeta;
+}) {
   const t = useT();
   const [state, setState] = useState<State>({ status: "loading" });
   const [open, setOpen] = useState(false);
   const [held, setHeld] = useState<{ owner: string; saving: boolean; error?: string }>();
   // A save result belongs to the image it was started for; a swapped image ignores it.
-  const save = held?.owner === image.path ? held : { saving: false, error: undefined };
+  const save = held && held.owner === image?.path ? held : { saving: false, error: undefined };
   const [nearBoxRef, near] = useNearViewport<HTMLDivElement>(NEAR_MARGIN_PX);
   const box = useRef<HTMLDivElement | null>(null);
   const attachBox = (element: HTMLDivElement | null) => {
     box.current = element;
     nearBoxRef.current = element;
   };
-  useAboveViewportCompensation(box, image.path);
+  useAboveViewportCompensation(box, generation?.itemId ?? image?.path ?? "");
 
   useEffect(() => {
-    if (!near) return;
+    // Read only after the provider publishes the asset and the frame nears the viewport.
+    if (!near || !image) return;
     let cancelled = false;
     let created: string | null = null;
     setState({ status: "loading" });
@@ -132,86 +139,119 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
         setState({ status: "loading" });
       }
     };
-  }, [near, image.path, image.data, image.loadPreview]);
+  }, [near, image?.path, image?.data, image?.loadPreview]);
 
-  const alt = image.alt || image.name;
+  const ready = image && state.status === "ready";
+  const alt = image?.alt || image?.name || "";
+  const loadingHeight =
+    !generation && image && state.status === "loading" ? knownHeights.get(image.path) : undefined;
   return (
     <div
       ref={attachBox}
-      className="min-w-0"
-      style={state.status === "loading" ? { minHeight: knownHeights.get(image.path) } : undefined}
+      className="min-w-0 min-h-(--generated-image-loading-height)"
+      style={
+        loadingHeight === undefined
+          ? undefined
+          : ({ "--generated-image-loading-height": `${loadingHeight}px` } as CSSProperties)
+      }
     >
-      {state.status === "loading" ? (
-        // Same 16:9 frame as the finished image's card, so the page does not jump when it opens.
-        <div className="min-w-0 px-4 pt-3 pb-3">
-          <div
-            {...surfaceAttributes(
-              { frame: "card", radius: "card" },
-              "aspect-video w-[min(100%,32.5rem)] overflow-hidden",
-            )}
-            data-generated-image-placeholder
-          >
-            <Skeleton delay={false} className="h-full w-full" />
-          </div>
-        </div>
+      {generation?.status === "stopped" ? (
+        <InlineMessage tone="neutral">{t("Stopped")}</InlineMessage>
+      ) : generation?.status === "failed" ? (
+        <InlineError>{t("Could not generate image.")}</InlineError>
       ) : state.status === "error" ? (
         <InlineError>{t("Could not open generated image.")}</InlineError>
       ) : (
-        <div className="min-w-0 px-4 pb-3 pt-3">
+        <div className="min-w-0 px-4 py-3">
           <div
             {...surfaceAttributes(
               { frame: "card", radius: "card" },
-              "w-fit max-w-full overflow-hidden",
+              generation
+                ? "relative overflow-hidden"
+                : ready
+                  ? "w-fit max-w-full overflow-hidden"
+                  : "aspect-video w-[min(100%,32.5rem)] overflow-hidden",
             )}
+            data-generated-image-fixed-frame={generation ? "" : undefined}
+            data-generated-image-placeholder={ready ? undefined : ""}
+            style={
+              generation?.aspectRatio === undefined
+                ? undefined
+                : ({ "--generated-image-aspect": generation.aspectRatio } as CSSProperties)
+            }
           >
-            <Button
-              fullWidth
-              layout="media"
-              label={t("Open {p0} full screen", { p0: image.name })}
-              variant="item"
-              type="button"
-              onClick={() => setOpen(true)}
-              className="max-w-full"
-            >
-              <img
-                src={state.url}
-                alt={alt}
-                loading="lazy"
-                decoding="async"
-                draggable={false}
-                className="mx-auto block h-auto w-auto max-h-[min(50dvh,480px)] max-w-full object-contain"
+            {ready ? (
+              <Button
+                fullWidth
+                layout="media"
+                label={t("Open {p0} full screen", { p0: image.name })}
+                variant="item"
+                type="button"
+                onClick={() => setOpen(true)}
+                className={generation ? "absolute inset-0 max-w-full" : "max-w-full"}
+              >
+                <img
+                  src={state.url}
+                  alt={alt}
+                  loading="lazy"
+                  decoding="async"
+                  draggable={false}
+                  className={
+                    generation
+                      ? "block size-full object-contain"
+                      : "mx-auto block h-auto w-auto max-h-[min(50dvh,480px)] max-w-full object-contain"
+                  }
+                />
+              </Button>
+            ) : generation ? (
+              <Skeleton
+                delay={false}
+                label={generation.status === "running" ? t("Generating image…") : undefined}
+                className="absolute inset-0"
+                placeholder={<SkeletonBar height="100%" className="absolute inset-0" />}
               />
-            </Button>
+            ) : (
+              <Skeleton delay={false} className="h-full w-full" />
+            )}
           </div>
-          <Text
-            as="div"
-            size="micro"
-            tone="inherit"
-            className="mt-1.5 flex min-w-0 items-center gap-2 text-(--transcript-ink-faint)"
-          >
-            <Text size="inherit" tone="inherit" truncate>
-              {image.name}
-            </Text>
-            <span>{formatFileSize(state.size)}</span>
-            <Button
-              size="sm"
-              iconOnly
-              variant="ghost"
-              type="button"
-              label={t("Save {p0}", { p0: image.name })}
-              disabled={save.saving}
-              loading={save.saving}
-              onClick={() => {
-                if (save.saving) return;
-                const owner = image.path;
-                void saveImageCopy(image, (saving, error) => setHeld({ owner, saving, error }));
-              }}
-            >
-              <Download className="icon-xs" strokeWidth={2} />
-            </Button>
-          </Text>
-          {save.error ? <InlineError details={save.error} /> : null}
-          {open ? <ImageLightbox src={state.url} alt={alt} onClose={() => setOpen(false)} /> : null}
+          {ready ? (
+            <>
+              <Text
+                as="div"
+                size="micro"
+                tone="inherit"
+                className="mt-1.5 flex min-w-0 items-center gap-2 text-(--transcript-ink-faint)"
+                data-generated-image-caption={generation ? "" : undefined}
+              >
+                <Text size="inherit" tone="inherit" truncate>
+                  {image.name}
+                </Text>
+                <span>{formatFileSize(state.size)}</span>
+                <Button
+                  size="sm"
+                  iconOnly
+                  variant="ghost"
+                  type="button"
+                  label={t("Save {p0}", { p0: image.name })}
+                  disabled={save.saving}
+                  loading={save.saving}
+                  onClick={() => {
+                    if (save.saving) return;
+                    const owner = image.path;
+                    void saveImageCopy(image, (saving, error) => setHeld({ owner, saving, error }));
+                  }}
+                >
+                  <Download className="icon-xs" strokeWidth={2} />
+                </Button>
+              </Text>
+              {save.error ? <InlineError details={save.error} /> : null}
+              {open ? (
+                <ImageLightbox src={state.url} alt={alt} onClose={() => setOpen(false)} />
+              ) : null}
+            </>
+          ) : generation ? (
+            <div className="mt-1.5" data-generated-image-caption />
+          ) : null}
         </div>
       )}
     </div>

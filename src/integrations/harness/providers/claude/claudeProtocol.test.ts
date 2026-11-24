@@ -1165,6 +1165,30 @@ describe("server tool results", () => {
       { toolUseId: "srv2", isError: true, text: "" },
     ]);
   });
+  it("carries the pages a web search returned", () => {
+    const rec = {
+      message: {
+        content: [
+          {
+            type: "web_search_tool_result",
+            tool_use_id: "srv3",
+            content: [
+              { type: "web_search_result", title: "Alpha", url: "https://www.alpha.dev/a" },
+              { type: "web_search_result", title: "Bad", url: "javascript:alert(1)" },
+            ],
+          },
+        ],
+      },
+    };
+    expect(serverToolResultsFromAssistant(rec)).toEqual([
+      {
+        toolUseId: "srv3",
+        isError: false,
+        text: "",
+        sources: [{ title: "Alpha", url: "https://www.alpha.dev/a", domain: "alpha.dev" }],
+      },
+    ]);
+  });
   it("reads a streamed result block start", () => {
     expect(
       serverToolResultFromEvent({

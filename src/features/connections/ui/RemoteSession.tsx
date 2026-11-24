@@ -11,6 +11,11 @@ import { RemoteSessionFrame, RemoteSessionContent } from "./RemoteSessionFrame";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { MachineUnavailable } from "./MachineUnavailable";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
+import {
+  SESSION_APPROVAL_GRANTS_CAPABILITY,
+  type SessionApprovalGrant,
+} from "../../../shared/model/sessionApprovalGrant";
+import { SessionApprovalGrantsDialog } from "./SessionApprovalGrantsDialog";
 import { isLocalSyncMachine } from "../model/localSync";
 import { machineLabel } from "../model/machineIdentity";
 import {
@@ -751,6 +756,17 @@ function ConnectedRemoteSession({
   }, [project.key, machine.environmentId, sessionId]);
 
   const hostSession = snapshot && snapshot.session.id === sessionId ? snapshot.session : undefined;
+  const [grantDialogOwner, setGrantDialogOwner] = useState<string | null>(null);
+  const sessionApprovalGrantsSupported =
+    descriptor?.capabilities.includes(SESSION_APPROVAL_GRANTS_CAPABILITY) === true;
+  const grantOwner =
+    hostSession?.harness === "claude" &&
+    sessionApprovalGrantsSupported &&
+    !pageCacheOnly &&
+    !remoteDeleted &&
+    snapshot?.executionOwner !== "desktop"
+      ? JSON.stringify([machine.environmentId, hostSession.id, snapshot?.authorityGeneration])
+      : null;
   const questionDraftScope = `${shell.id}:${machine.id}:${sessionId ?? ""}`;
   const previousQuestions = useRef<{ scope: string; questions: UserQuestionPrompt[] } | undefined>(
     undefined,
@@ -3444,7 +3460,10 @@ function ConnectedRemoteSession({
     requestId: number,
     decision: Parameters<SessionPaneProps["onApproval"]>[2],
     approvalOccurrenceId?: string,
+    allowForSession?: true,
   ) => {
+    if (allowForSession && !sessionApprovalGrantsSupported)
+      throw new Error("Session grants require the original Host tool request");
     const refusal = approvalOccurrenceError(approvalOccurrenceId);
     if (refusal) throw new Error(refusal);
     if (!hostSession || !snapshot?.runId) return;
@@ -3457,6 +3476,7 @@ function ConnectedRemoteSession({
       requestId,
       decision,
       approvalOccurrenceId,
+      ...(allowForSession ? { allowForSession } : {}),
     });
   };
   // The host owns the limit; a local edit would be undone by its next snapshot.
@@ -3865,6 +3885,7 @@ function ConnectedRemoteSession({
         rewind,
         compact,
         approve,
+        sessionApprovalGrantsSupported,
         approvalOccurrenceSupported:
           descriptor?.capabilities.includes("sessions.approvalOccurrence.v1") === true,
         answer,
@@ -3904,14 +3925,23 @@ function ConnectedRemoteSession({
       get approvalOccurrenceSupported() {
         return current()?.actions.approvalOccurrenceSupported === true;
       },
+      get sessionApprovalGrantsSupported() {
+        return current()?.actions.sessionApprovalGrantsSupported === true;
+      },
       approve: (
         requestId: number,
         decision: Parameters<typeof approve>[1],
         approvalOccurrenceId?: string,
+        allowForSession?: true,
       ) => {
         if (!source())
           throw new Error("Approval connection is unavailable. This decision was not sent.");
-        return current()!.actions.approve(requestId, decision, approvalOccurrenceId);
+        return current()!.actions.approve(
+          requestId,
+          decision,
+          approvalOccurrenceId,
+          allowForSession,
+        );
       },
       approvalSource: source,
       answer: (...args: Parameters<typeof answer>) => current()?.actions.answer(...args),
@@ -4126,10 +4156,11 @@ function ConnectedRemoteSession({
       ? (requestedSessionId, blockId) =>
           requestedSessionId === shell.id ? rewind(blockId) : Promise.resolve(false)
       : undefined,
-    onApproval: (_, requestId, decision, expected) => {
+    onApproval: (_, requestId, decision, expected, allowForSession) => {
       const source = () => registeredActions.approvalSource()?.session;
-      return submitApprovalIntent(source(), requestId, decision, expected, source);
+      return submitApprovalIntent(source(), requestId, decision, expected, source, allowForSession);
     },
+    onManageSessionApprovalGrants: grantOwner ? () => setGrantDialogOwner(grantOwner) : undefined,
     onQuestionReply: (_, requestId, reply) => answer(requestId, reply),
     onCompactContext: compact,
     onSelectProviderAccount: canSelectProviderAccount
@@ -4379,6 +4410,22 @@ function ConnectedRemoteSession({
         <RemoteSessionContent compact={compactPresentation}>
           {render(overrides)}
         </RemoteSessionContent>
+        {grantOwner && grantOwner === grantDialogOwner && hostSession ? (
+          <SessionApprovalGrantsDialog
+            key={grantOwner}
+            onClose={() => setGrantDialogOwner(null)}
+            request={(grantId) =>
+              ownerRequest<SessionApprovalGrant[]>(
+                grantId ? "sessions.approvalGrants.revoke" : "sessions.approvalGrants.list",
+                {
+                  sessionId: hostSession.id,
+                  ...remoteIntentAuthority(snapshot),
+                  ...(grantId ? { grantId } : {}),
+                },
+              )
+            }
+          />
+        ) : null}
       </RemoteSessionFrame>
     </ModelSourceContext.Provider>
   );

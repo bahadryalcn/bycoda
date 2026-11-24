@@ -13058,5 +13058,21 @@
   "Volume": "Lautstärke",
   "Unmute": "Stummschaltung aufheben",
   "You stopped this turn": "Sie haben diesen Durchlauf gestoppt",
-  "Continue to pick up where it left off, or send a new message.": "Fahren Sie fort, wo es aufgehört hat, oder senden Sie eine neue Nachricht."
+  "Continue to pick up where it left off, or send a new message.": "Fahren Sie fort, wo es aufgehört hat, oder senden Sie eine neue Nachricht.",
+  "Always allow this session": "Für diese Sitzung immer erlauben",
+  "Session approvals": "Sitzungsfreigaben",
+  "Workspace filename search": "Dateinamensuche im Arbeitsbereich",
+  "No active session approvals": "Keine aktiven Sitzungsfreigaben",
+  "Could not load session approvals": "Sitzungsfreigaben konnten nicht geladen werden",
+  "Could not revoke the session approval": "Die Sitzungsfreigabe konnte nicht widerrufen werden",
+  "Branch from here": "Ab hier verzweigen",
+  "Branched from {p0}": "Verzweigt von {p0}",
+  "This conversation is owned by a bycoda Host, so it cannot be branched from here.": "Diese Unterhaltung gehört einem bycoda Host und kann von hier aus nicht verzweigt werden.",
+  "This conversation has its own managed workspace, so it cannot be branched.": "Diese Unterhaltung hat einen eigenen verwalteten Arbeitsbereich und kann nicht verzweigt werden.",
+  "This conversation's workspace was removed, so it cannot be branched.": "Der Arbeitsbereich dieser Unterhaltung wurde entfernt und sie kann nicht verzweigt werden.",
+  "The conversation is still loading. Branch it once it has loaded.": "Die Unterhaltung wird noch geladen. Verzweige sie, sobald sie geladen ist.",
+  "Answer the open approval before branching from this reply.": "Beantworte die offene Freigabe, bevor du von dieser Antwort aus verzweigst.",
+  "This reply cannot be branched.": "Von dieser Antwort aus kann nicht verzweigt werden.",
+  "Could not generate image.": "Das Bild konnte nicht erzeugt werden.",
+  "Retrying in {p0}": "Neuer Versuch in {p0}"
 }

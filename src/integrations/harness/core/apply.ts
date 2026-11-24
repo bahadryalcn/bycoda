@@ -12,6 +12,7 @@ import {
 import { hasReadableText } from "../../../features/sessions/model/transcriptActivity";
 import { executionUserIndex } from "../../../features/sessions/model/executionTurn";
 import { boundedToolPreview } from "../../../features/sessions/model/toolInspection";
+import { sameSearchSources } from "../../../shared/model/searchSources";
 import { knownToolKindTitle } from "../../../shared/lib/toolKindTitles";
 import { looksLikeCallId as isCallId } from "../../../shared/lib/records";
 import type {
@@ -21,6 +22,7 @@ import type {
   Block,
   Session,
   TaskListItem,
+  ToolFileChange,
   ToolPreview,
   WorkflowAgentParent,
 } from "../../../features/sessions/model/session";
@@ -40,6 +42,7 @@ import {
   isWeakToolTitle,
   mergeToolPreview,
   stubFilePreview,
+  summarizeFileChanges,
 } from "./preview";
 import {
   AGENT_PROMPT_CHARS,
@@ -170,6 +173,7 @@ export function applyHarnessEvent(
       "turn.started",
       "question.asked",
       "approval.requested",
+      "image.generationStarted",
       "image.generated",
     ].includes(event.type)
   ) {
@@ -183,6 +187,7 @@ export function applyHarnessEvent(
       "tool.started",
       "approval.requested",
       "question.asked",
+      "image.generationStarted",
       "image.generated",
     ].includes(event.type)
   )
@@ -192,9 +197,12 @@ export function applyHarnessEvent(
       return patchStreaming(session, "assistant", event.text, true);
     case "message.completed":
       return finishRole(session, "assistant");
+    case "image.generationStarted":
+    case "image.generationEnded":
+      return applyImageEvent(session, event);
     case "image.generated":
       if (!("path" in event)) return session;
-      return appendImage(session, event);
+      return applyImageEvent(session, event);
     case "reasoning.delta":
       return patchStreaming(session, "reasoning", event.text, true);
     case "reasoning.completed":
@@ -220,6 +228,10 @@ export function applyHarnessEvent(
         status: event.status,
         detail: event.detail,
         ...(event.detailTruncated ? { detailTruncated: true } : {}),
+        ...((event.status === "completed" || event.status === "success") &&
+        (event.fileChanges || event.paths)
+          ? { fileChanges: summarizeFileChanges(event.fileChanges ?? [], event.paths) }
+          : {}),
         preview: event.preview,
         streaming:
           event.status !== "completed" && event.status !== "failed" && event.status !== "stopped",
@@ -483,11 +495,11 @@ export function applyHarnessEvent(
     case "status":
       if (event.key === COMPACTION_STATUS_KEY) return applyCompactionStatus(session, event);
       if (event.key === "provider-retry")
-        return session.retryMessage === event.text
+        return session.retryMessage === event.text && session.retryAt === event.retryAt
           ? session
-          : { ...session, retryMessage: event.text };
+          : { ...session, retryMessage: event.text, retryAt: event.retryAt };
       if (/^(?:Retrying\b|Reconnecting\b)/i.test(event.text.trim())) {
-        session = { ...session, retryMessage: event.text };
+        session = { ...session, retryMessage: event.text, retryAt: event.retryAt };
       }
       return event.key
         ? upsertKeyedStatus(session, event.key, event.text)
@@ -807,6 +819,7 @@ export function stopStreaming(
   session: Session,
   endedAt = Date.now(),
   retainQuestionDelivery = false,
+  imageStatus: "failed" | "stopped" = "stopped",
 ): Session {
   const settled = withoutBackgroundWait(settlePendingApprovals(session));
   const submitted = retainQuestionDelivery
@@ -829,7 +842,7 @@ export function stopStreaming(
         // A compaction row still running when the turn stops was cut short.
         .filter((block) => !isBareProseStream(block) && !isRunningCompaction(block))
         .map((block) =>
-          stopBlockProgress(block.streaming ? endOpenAgentRun(block, endedAt) : block),
+          stopBlockProgress(block.streaming ? endOpenAgentRun(block, endedAt) : block, imageStatus),
         ),
       endedAt,
     ),
@@ -888,7 +901,7 @@ function failStreaming(session: Session): Session {
     }),
   );
   // The provider failed, so an unconfirmed question card can never resolve.
-  const stopped = stopStreaming(session, Date.now(), false);
+  const stopped = stopStreaming(session, Date.now(), false, "failed");
   return {
     ...stopped,
     blocks: stopped.blocks.map((block) => {
@@ -947,8 +960,11 @@ export function promoteLastAssistantToPlan(session: Session, key?: string): Sess
   return { ...session, blocks };
 }
 
-function stopBlockProgress(block: Block): Block {
+function stopBlockProgress(block: Block, imageStatus: "failed" | "stopped"): Block {
   let stopped = block.streaming ? { ...block, streaming: false } : block;
+  if (stopped.imageGeneration?.status === "running") {
+    stopped = { ...stopped, imageGeneration: { ...stopped.imageGeneration, status: imageStatus } };
+  }
   if (stopped.orchestration?.status === "planning") {
     stopped = {
       ...stopped,
@@ -1066,22 +1082,62 @@ function upsertKeyedStatus(session: Session, key: string, text: string): Session
   return { ...session, blocks };
 }
 
-function appendImage(
+function applyImageEvent(
   session: Session,
-  event: Extract<HarnessEvent, { type: "image.generated"; path: string }>,
+  event: Extract<
+    HarnessEvent,
+    | { type: "image.generationStarted" | "image.generationEnded" }
+    | { path: string; type: "image.generated" }
+  >,
 ): Session {
-  return appendBlock(session, {
-    id: crypto.randomUUID(),
-    role: "image",
-    text: "",
-    image: {
-      path: event.path,
-      name: event.name,
-      mimeType: event.mimeType,
-      size: event.size,
-      ...(event.alt ? { alt: event.alt } : {}),
+  const turnStart = executionUserIndex(session.blocks);
+  const index = lastMatchingBlock(
+    session.blocks,
+    (block, at) => at > turnStart && block.imageGeneration?.itemId === event.itemId,
+  );
+  const previous = session.blocks[index];
+  if (event.type === "image.generationStarted") {
+    if (previous) return session;
+    return appendBlock(session, {
+      id: crypto.randomUUID(),
+      role: "image",
+      text: "",
+      imageGeneration: {
+        itemId: event.itemId,
+        status: "running",
+        ...(event.aspectRatio === undefined ? {} : { aspectRatio: event.aspectRatio }),
+      },
+    });
+  }
+  const generation = previous?.imageGeneration;
+  if (generation && generation.status !== "running") return session;
+  const image =
+    event.type === "image.generated"
+      ? {
+          path: event.path,
+          name: event.name,
+          mimeType: event.mimeType,
+          size: event.size,
+          ...(event.alt ? { alt: event.alt } : {}),
+        }
+      : undefined;
+  if (!generation) {
+    return image
+      ? appendBlock(session, { id: crypto.randomUUID(), role: "image", text: "", image })
+      : session;
+  }
+  const block: Block = {
+    ...previous,
+    image,
+    imageGeneration: {
+      ...generation,
+      status: event.type === "image.generated" ? "completed" : event.status,
     },
-  });
+  };
+  const blocks = session.blocks.slice();
+  blocks[index] = block;
+  registerBlockChanges(session.blocks, blocks, [block]);
+  return { ...session, blocks };
 }
 
 function appendBlock(session: Session, block: Block): Session {
@@ -1146,6 +1202,11 @@ function attachApproval(
   event: Extract<HarnessEvent, { type: "approval.requested" }>,
 ): Session {
   const occurrenceId = approvalOccurrenceForEvent(event);
+  const approval = {
+    requestId: event.requestId,
+    occurrenceId,
+    ...(event.sessionApprovalScope ? { sessionApprovalScope: event.sessionApprovalScope } : {}),
+  };
   // An actual source event/replay never creates two owners or resurrects a
   // decided occurrence. Equal content on another event is not this identity.
   if (session.blocks.some((block) => block.approval?.occurrenceId === occurrenceId)) return session;
@@ -1179,7 +1240,7 @@ function attachApproval(
               ...(preview ? { preview } : {}),
             }
           : prev.tool,
-      approval: { requestId: event.requestId, occurrenceId },
+      approval,
     };
     registerBlockChanges(session.blocks, blocks, [blocks[index]]);
     return { ...session, blocks };
@@ -1197,7 +1258,7 @@ function attachApproval(
       kind: event.kind,
       ...(preview ? { preview } : {}),
     },
-    approval: { requestId: event.requestId, occurrenceId },
+    approval,
   });
 }
 
@@ -1242,6 +1303,7 @@ function upsertTool(
     detail?: string;
     /** The provider already dropped part of `detail` before sending it. */
     detailTruncated?: boolean;
+    fileChanges?: ToolFileChange[];
     preview?: ToolPreview;
     streaming: boolean;
     agentModel?: string;
@@ -1294,6 +1356,7 @@ function upsertTool(
         status: patch.status,
         ...(detail ? { detail } : {}),
         ...(truncated ? { outputTruncated: true } : {}),
+        ...(patch.fileChanges ? { fileChanges: patch.fileChanges } : {}),
         ...(preview ? { preview } : {}),
         ...(patch.background ? { background: true } : {}),
       },
@@ -1335,6 +1398,7 @@ function upsertTool(
   );
   const kind = patch.kind ?? prev.tool?.kind;
   const status = patch.status ?? prev.tool?.status;
+  const fileChanges = patch.fileChanges ?? prev.tool?.fileChanges;
   const agentName = prev.agentRun?.steps.length ? prev.agentRun.name : label;
   if (
     prev.text === label &&
@@ -1343,6 +1407,7 @@ function upsertTool(
     prev.tool?.kind === kind &&
     prev.tool?.status === status &&
     prev.tool?.detail === detail &&
+    prev.tool?.fileChanges === fileChanges &&
     (!inlineVisual || JSON.stringify(prev.inlineVisual) === JSON.stringify(inlineVisual)) &&
     (prev.tool?.outputTruncated === true) === truncated &&
     (!patch.agentModel || prev.agentRun?.model === patch.agentModel) &&
@@ -1382,6 +1447,7 @@ function upsertTool(
       status,
       ...(detail ? { detail } : {}),
       ...(detail && truncated ? { outputTruncated: true } : {}),
+      ...(fileChanges ? { fileChanges } : {}),
       ...(preview ? { preview } : {}),
       ...(prev.tool?.background ? { background: true } : {}),
       ...(prev.tool?.agentContext ? { agentContext: prev.tool.agentContext } : {}),
@@ -1454,6 +1520,7 @@ function samePreview(a?: ToolPreview, b?: ToolPreview): boolean {
     a.title === b.title &&
     a.path === b.path &&
     a.query === b.query &&
+    sameSearchSources(a.sources, b.sources) &&
     a.fileName === b.fileName &&
     a.additions === b.additions &&
     a.deletions === b.deletions &&

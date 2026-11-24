@@ -488,6 +488,8 @@ const handlers: Record<
   "sessions.inlineVisual": handleSessionsRpc,
   "sessions.workedTime": handleSessionsRpc,
   "sessions.get": handleSessionsRpc,
+  "sessions.approvalGrants.list": handleSessionsRpc,
+  "sessions.approvalGrants.revoke": handleSessionsRpc,
   "sessions.contextual.preview": handleSessionsRpc,
   "commands.dispatch": handleSessionsRpc,
   "sync.pull": handleSessionsRpc,

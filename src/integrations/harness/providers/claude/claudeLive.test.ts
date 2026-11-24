@@ -1,4 +1,5 @@
 import { processConstructions } from "../processConstruction.testSupport";
+import { CLAUDE_WORKSPACE_GLOB } from "../../../../shared/model/sessionApprovalGrant";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -3364,6 +3365,70 @@ describe("claude stopping background work", () => {
       "failed",
     );
   });
+});
+
+it("only accepts scoped consent for the original top-level Glob and pins the approved path", async () => {
+  const { events, turn } = await startTurn("s1");
+  const sendGlob = (id: string, parent: string | null) => {
+    emit({
+      type: "assistant",
+      parent_tool_use_id: parent,
+      message: { content: [{ type: "tool_use", id, name: "Glob", input: { pattern: "**/*.ts" } }] },
+    });
+    emit({
+      type: "control_request",
+      request_id: id,
+      parent_tool_use_id: parent,
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Glob",
+        tool_use_id: id,
+        input: { pattern: "**/*.ts" },
+      },
+    });
+  };
+  sendGlob("child-glob", "agent");
+  sendGlob("root-glob", null);
+  const child = events.find(
+    (event) => event.type === "approval.requested" && event.callId === "child-glob",
+  );
+  const root = events.find(
+    (event) => event.type === "approval.requested" && event.callId === "root-glob",
+  );
+  if (child?.type !== "approval.requested" || root?.type !== "approval.requested")
+    throw new Error("Expected both original permission requests");
+  expect(child.sessionApprovalScope).toBeUndefined();
+  expect(root.sessionApprovalScope).toBe(CLAUDE_WORKSPACE_GLOB);
+  expect(
+    respondClaudeApproval(
+      "s1",
+      child.requestId,
+      "allow",
+      child.occurrenceId,
+      CLAUDE_WORKSPACE_GLOB,
+    ),
+  ).toBe(false);
+  respondClaudeApproval("s1", child.requestId, "deny", child.occurrenceId);
+  expect(
+    respondClaudeApproval("s1", root.requestId, "allow", root.occurrenceId, CLAUDE_WORKSPACE_GLOB),
+  ).toBe(true);
+  expect(
+    respondClaudeApproval("s1", root.requestId, "allow", root.occurrenceId, CLAUDE_WORKSPACE_GLOB),
+  ).toBe(false);
+  await waitFor(
+    () => parse().filter((message) => message.type === "control_response").length >= 2,
+    "original child and scoped root approval responses",
+  );
+  expect(parse()).toContainEqual({
+    type: "control_response",
+    response: {
+      subtype: "success",
+      request_id: "root-glob",
+      response: { behavior: "allow", updatedInput: { pattern: "**/*.ts", path: "/repo" } },
+    },
+  });
+  emit({ type: "result", subtype: "success", session_id: "sess_1" });
+  await turn;
 });
 
 describe("claude plan permissions", () => {

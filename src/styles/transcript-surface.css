@@ -185,6 +185,16 @@ html[data-performance-no-blur] {
   --transcript-surface-filter: none;
 }
 
+/* Reserve one frame through generation, preview loading and display. */
+[data-generated-image-fixed-frame] {
+  inline-size: min(100%, 32.5rem, calc(min(50dvh, 480px) * var(--generated-image-aspect, 16 / 9)));
+  aspect-ratio: var(--generated-image-aspect, 16 / 9);
+}
+
+[data-generated-image-caption] {
+  min-block-size: var(--ui-control-height-sm);
+}
+
 /* Per-message blur is skipped on Linux WebKit (data-transcript-glass, an engine fallback, not a GPU
    probe; set from transcriptGlass.ts), where one blur layer per message made scroll frames take
    seconds. Fill and edge stay; the composer and floating panels keep their one glass layer. */

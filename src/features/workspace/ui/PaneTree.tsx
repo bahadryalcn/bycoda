@@ -213,6 +213,8 @@ type Shared = {
   onBuildPlan: (sessionId: string, blockId: string, target?: PlanBuildTarget) => void;
   onSecondOpinion?: (sessionId: string, target: ModelTarget, turn: Block[]) => void;
   onHandoff?: (sessionId: string, target: ModelTarget, turn: Block[]) => void;
+  onBranchFromReply?: (sessionId: string, turn: Block[]) => void;
+  onOpenBranchSource?: (sessionId: string, blockId: string) => void;
   onBtwSubmit?: (
     sessionId: string,
     turn: Block[],
@@ -344,6 +346,8 @@ function PaneTreeComponent({
   onBtwStop,
   onBtwModelChange,
   onHandoff,
+  onBranchFromReply,
+  onOpenBranchSource,
   onMovePane,
   onDetachPane,
   onPopOutPane,
@@ -943,6 +947,8 @@ function PaneTreeComponent({
                           onBuildPlan={onBuildPlan}
                           onSecondOpinion={onSecondOpinion}
                           onHandoff={onHandoff}
+                          onBranchFromReply={onBranchFromReply}
+                          onOpenBranchSource={onOpenBranchSource}
                           onBtwSubmit={onBtwSubmit}
                           onBtwRetry={onBtwRetry}
                           onBtwDelete={onBtwDelete}

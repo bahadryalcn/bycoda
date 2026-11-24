@@ -374,6 +374,14 @@ update it before responding. Older saved requests without this identity remain
 readable; refresh the conversation or update its execution client to obtain a
 verifiable request. The app does not add an identity to an old queued decision.
 
+For a verified Claude workspace filename search on the Host, choose **Always allow
+this session** to allow later searches of the same kind in that conversation.
+Open **More actions > Session approvals** to see or revoke the grant. Grants
+survive turns in the same conversation and expire when it is cleared, archived,
+or deleted, when its execution settings change, or when the Host restarts.
+Shell commands, file changes, credential access and native subagent requests
+continue through the existing approval rules.
+
 Saved local conversations support [session links and Markdown references](local-session-references.md),
 including compact details and opening a cited conversation beside the current one.
 

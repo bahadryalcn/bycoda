@@ -70,6 +70,8 @@ export interface SessionPaneDeps {
   onBuildPlan: P["onBuildPlan"];
   onSecondOpinion: P["onSecondOpinion"];
   onHandoff: P["onHandoff"];
+  onBranchFromReply: P["onBranchFromReply"];
+  onOpenBranchSource: P["onOpenBranchSource"];
   onBtwSubmit: P["onBtwSubmit"];
   onBtwRetry: P["onBtwRetry"];
   onBtwDelete: P["onBtwDelete"];
@@ -141,6 +143,8 @@ export function useSessionPaneProps({
   onBuildPlan,
   onSecondOpinion,
   onHandoff,
+  onBranchFromReply,
+  onOpenBranchSource,
   onBtwSubmit,
   onBtwRetry,
   onBtwDelete,
@@ -223,6 +227,8 @@ export function useSessionPaneProps({
     onBuildPlan: useKeepSessionAction(onBuildPlan, onKeepSession)!,
     onSecondOpinion: useKeepSessionAction(onSecondOpinion, onKeepSession)!,
     onHandoff: useKeepSessionAction(onHandoff, onKeepSession)!,
+    onBranchFromReply: useKeepSessionAction(onBranchFromReply, onKeepSession),
+    onOpenBranchSource,
     onBtwSubmit: useKeepSessionAction(onBtwSubmit, onKeepSession),
     onBtwRetry: useKeepSessionAction(onBtwRetry, onKeepSession),
     onBtwDelete: useKeepSessionAction(onBtwDelete, onKeepSession),

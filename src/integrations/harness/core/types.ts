@@ -45,7 +45,7 @@ export type HarnessEvent =
    * later event with the same `key` and `running: false` settles that same
    * row; an empty `text` then closes it without leaving a row behind.
    */
-  | { type: "status"; text: string; key?: string; running?: boolean }
+  | { type: "status"; text: string; key?: string; running?: boolean; retryAt?: number }
   /** The provider refused the turn until its usage window resets (epoch ms). */
   | { type: "usage.limited"; resetsAt?: number }
   /**
@@ -60,6 +60,8 @@ export type HarnessEvent =
   /** Exact text increments; providers must normalize snapshots before emission. */
   | { type: "message.delta"; text: string }
   | { type: "message.completed" }
+  | { type: "image.generationStarted"; itemId: string; aspectRatio?: number }
+  | { type: "image.generationEnded"; itemId: string; status: "failed" | "stopped" }
   | {
       type: "image.generated";
       itemId: string;
@@ -151,6 +153,7 @@ export type HarnessEvent =
       type: "approval.requested";
       requestId: number;
       occurrenceId?: string;
+      sessionApprovalScope?: import("../../../shared/model/sessionApprovalGrant").SessionApprovalScope;
       title: string;
       kind?: string;
       callId?: string;

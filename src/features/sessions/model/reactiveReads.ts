@@ -23,6 +23,7 @@ import {
 } from "./delegatedAgents";
 import { cardedChildren, createCardPlacer } from "./delegatedCards";
 import { executionUserIndex } from "./executionTurn";
+import { turnChangedFiles } from "./turnChangedFiles";
 import { queuedSteerRoute, queuedTargetSummary } from "./messageQueue";
 import { getModelSnapshot, resolveModel, subscribeModels } from "./models";
 import { modelDisplayName, modelHarness } from "./modelDisplayName";
@@ -114,6 +115,20 @@ export function useToolCallDisplay(
     () => resolveToolCallDisplay(label, preview, cwd),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [label, preview, cwd, paths],
+  );
+}
+
+/** The files a settled turn changed, re-resolved once the home directory or path variables arrive. */
+export function useTurnChangedFiles(
+  turn: readonly Block[],
+  cwd: string | undefined,
+  settled: boolean,
+) {
+  const paths = usePathEnvironmentRevision();
+  return useMemo(
+    () => (settled ? turnChangedFiles(turn, cwd) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `paths` invalidates the path resolution
+    [settled, turn, cwd, paths],
   );
 }
 

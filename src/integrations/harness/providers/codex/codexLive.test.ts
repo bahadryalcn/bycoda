@@ -904,6 +904,13 @@ describe("codex live turn sequence", () => {
   it("materializes image generations before completing the turn", async () => {
     const { events, turn } = await startTurn("codex-live");
 
+    notify("item/started", {
+      item: { id: "image_1", type: "imageGeneration", size: "1024x1280" },
+    });
+    const started = { type: "image.generationStarted", itemId: "image_1", aspectRatio: 0.8 };
+    expect(events).toContainEqual(started);
+    expect(saveGeneratedImage).not.toHaveBeenCalled();
+
     notify("item/completed", {
       item: {
         id: "image_1",
@@ -931,12 +938,43 @@ describe("codex live turn sequence", () => {
     expect(events.reduce(applyHarnessEvent, newSession("codex", "/repo")).blocks).toMatchObject([
       {
         role: "image",
+        imageGeneration: { status: "completed", aspectRatio: 0.8 },
         image: {
           path: "/app-data/generated-images/image.png",
           mimeType: "image/png",
         },
       },
     ]);
+  });
+
+  it("settles an unfinished image when Codex interrupts the turn", async () => {
+    const { events, turn } = await startTurn("codex-live");
+    notify("item/started", { item: { id: "image_1", type: "imageGeneration" } });
+    notify("turn/completed", { turn: { id: "turn_1", status: "interrupted" } });
+    await turn;
+
+    expect(events.filter((event) => event.type.startsWith("image."))).toEqual([
+      { type: "image.generationStarted", itemId: "image_1" },
+      { type: "image.generationEnded", itemId: "image_1", status: "stopped" },
+    ]);
+  });
+
+  it("replaces the pending image with a failure if saving the result fails", async () => {
+    saveGeneratedImage.mockRejectedValueOnce(new Error("disk full"));
+    const { events, turn } = await startTurn("codex-live");
+    notify("item/started", { item: { id: "image_1", type: "imageGeneration" } });
+    notify("item/completed", {
+      item: { id: "image_1", type: "imageGeneration", result: "aW1hZ2U=" },
+    });
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    await turn;
+
+    expect(events).toContainEqual({
+      type: "image.generationEnded",
+      itemId: "image_1",
+      status: "failed",
+    });
+    expect(events.some(({ type }) => type === "session.error")).toBe(false);
   });
 
   it("keeps later notifications ordered after delayed image materialization", async () => {
@@ -2998,6 +3036,14 @@ describe("codex subagents", () => {
         agentsStates: { thr_child: { status: "running" } },
       },
     });
+    notify("item/started", {
+      threadId: "thr_child",
+      item: { id: "child_image", type: "imageGeneration" },
+    });
+    notify("item/started", {
+      threadId: "thr_child",
+      item: { id: "unfinished_child_image", type: "imageGeneration" },
+    });
     notify("item/completed", {
       threadId: "thr_child",
       item: {
@@ -3013,6 +3059,12 @@ describe("codex subagents", () => {
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
 
+    expect(events).toContainEqual({ type: "image.generationStarted", itemId: "child_image" });
+    expect(events).toContainEqual({
+      type: "image.generationEnded",
+      itemId: "unfinished_child_image",
+      status: "failed",
+    });
     expect(events).toContainEqual({
       type: "image.generated",
       itemId: "child_image",

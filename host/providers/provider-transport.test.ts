@@ -80,11 +80,23 @@ readline.createInterface({input: process.stdin}).on('line', line => {
     const turnId = 'fixture-turn-' + (++turnCounter);
     record({codexEffort: request.params.effort ?? null, fixtureTurn: request.params.input?.some(item => typeof item.text === 'string' && item.text.trimEnd().endsWith('hello'))});
     send({id: request.id, result: {turn: {id: turnId}}});
-    setTimeout(() => {
-      if (JSON.stringify(request.params.input).includes('generate-fixture-image')) send({method: 'item/completed', params: {threadId: 'fixture-thread', turnId: turnId, item: {id: 'generated-image', type: 'imageGeneration', result: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6lX8AAAAASUVORK5CYII='}}});
+    const finish = () => {
       send({method: 'item/agentMessage/delta', params: {threadId: 'fixture-thread', turnId: turnId, itemId: 'message', delta: 'Headless Codex completed'}});
       send({method: 'turn/completed', params: {threadId: 'fixture-thread', turn: {id: turnId, status: 'completed'}}});
-    }, 30);
+    };
+    if (JSON.stringify(request.params.input).includes('generate-fixture-image')) {
+      const item = {id: 'generated-image', type: 'imageGeneration', aspectRatio: '4:5'};
+      send({method: 'item/started', params: {threadId: 'fixture-thread', turnId, item}});
+      const release = require('node:path').join(__dirname, 'release-image');
+      const wait = setInterval(() => {
+        if (!require('node:fs').existsSync(release)) return;
+        clearInterval(wait);
+        send({method: 'item/completed', params: {threadId: 'fixture-thread', turnId, item: {...item, result: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6lX8AAAAASUVORK5CYII='}}});
+        finish();
+      }, 20);
+    } else {
+      setTimeout(finish, 30);
+    }
   }
   if (request.type === 'control_request' && request.request.subtype === 'initialize') {
     send({type: 'system', subtype: 'init', session_id: 'fixture-claude'});
@@ -255,7 +267,7 @@ describe("existing providers over headless process I/O", () => {
     },
   );
 
-  it("saves a generated image without window and serves only that session's image", async () => {
+  it("replaces an image placeholder headlessly and serves only that session's image", async () => {
     const project = await engine.openProject(directory);
     const { sessionId } = await engine.command({
       type: "create",
@@ -271,11 +283,27 @@ describe("existing providers over headless process I/O", () => {
       sessionId,
       text: "generate-fixture-image",
     });
+    const pending = await vi.waitFor(
+      async () => {
+        const block = (await store.session(sessionId)).session.blocks.find(
+          ({ role }) => role === "image",
+        );
+        expect(block).toMatchObject({
+          imageGeneration: { status: "running", aspectRatio: 0.8 },
+        });
+        expect(block?.image).toBeUndefined();
+        return block!;
+      },
+      { timeout: SETTLE_TIMEOUT_MS },
+    );
+    writeFileSync(join(directory, "release-image"), "");
     await vi.waitFor(async () => expect((await store.session(sessionId)).status).toBe("idle"), {
       timeout: SETTLE_TIMEOUT_MS,
     });
     const session = (await store.session(sessionId)).session;
     const image = session.blocks.find((block) => block.role === "image")!;
+    expect(image.id).toBe(pending.id);
+    expect(image.imageGeneration).toMatchObject({ status: "completed", aspectRatio: 0.8 });
     expect(image.image?.mimeType).toBe("image/png");
     expect(session.blocks.filter((block) => block.notice === "error")).toEqual([]);
     const chunk = await readAttachmentChunk(store, {

@@ -60,6 +60,7 @@ type Route = {
   sourceIdentity?: object;
   unavailable: boolean;
   occurrenceSupported?: boolean;
+  sessionGrantSupported?: boolean;
 };
 type Captured = {
   sessionId: string;
@@ -159,6 +160,10 @@ function routeFor(session: Session): Route {
       sourceHeader: sourceValue ? hostData(sourceValue.snapshot) : undefined,
       sourceIdentity: sourceValue ? hostIdentity(sourceValue.snapshot) : undefined,
       occurrenceSupported,
+      sessionGrantSupported:
+        remote?.actions.sessionApprovalGrantsSupported === true &&
+        sourceValue?.snapshot.status === "running" &&
+        sourceValue.snapshot.executionOwner !== "desktop",
       unavailable:
         !remote ||
         typeof remote.actions.approve !== "function" ||
@@ -182,6 +187,7 @@ function sameRoute(captured: Route, current: Route): boolean {
       current.remote?.actions === captured.remote.actions &&
       current.remoteMethod === captured.remoteMethod &&
       current.occurrenceSupported === captured.occurrenceSupported &&
+      current.sessionGrantSupported === captured.sessionGrantSupported &&
       current.source === captured.source &&
       (!captured.source ||
         (!!captured.sourceHeader &&
@@ -677,12 +683,25 @@ export function createApprovalIntentRegistry(
     notify();
     return true;
   };
+  const supportsSessionGrant = (token: ApprovalRequestToken | undefined): boolean => {
+    const captured = token && tokens.get(token);
+    return !!(
+      captured &&
+      captured.route.sessionGrantSupported &&
+      captured.route.occurrenceSupported &&
+      !captured.route.unavailable &&
+      captured.approval.sessionApprovalScope &&
+      isApprovalOccurrenceId(captured.occurrenceId)
+    );
+  };
+
   const submit = (
     session: Session | undefined,
     id: number,
     decision: ApprovalDecision,
     expected?: ApprovalRequestToken,
     currentSession: () => Session | undefined = () => session,
+    allowForSession?: true,
   ): boolean | Promise<boolean> => {
     const captured = expected && tokens.get(expected);
     const refuse = (message: string) => {
@@ -693,7 +712,8 @@ export function createApprovalIntentRegistry(
       !captured ||
       !currentModule() ||
       captured.requestId !== id ||
-      (decision !== "allow" && decision !== "deny")
+      (decision !== "allow" && decision !== "deny") ||
+      (allowForSession && (decision !== "allow" || !supportsSessionGrant(expected)))
     )
       return refuse(APPROVAL_INTENT_MESSAGES.changed);
     captured.refusal = undefined;
@@ -800,6 +820,7 @@ export function createApprovalIntentRegistry(
             id,
             decision,
             captured.occurrenceId,
+            ...(allowForSession ? [allowForSession] : []),
           ]);
         } else {
           // This production wrapper deliberately returns void; no adapter thenable ACK.
@@ -876,6 +897,7 @@ export function createApprovalIntentRegistry(
   }
   return {
     captureApprovalRequest: capture,
+    supportsSessionApprovalGrant: supportsSessionGrant,
     readApprovalIntent: read,
     // The same conservative repeat guard used by submit. This is not a decision
     // view joined to a replacement request or an execution context.
@@ -908,6 +930,7 @@ const retained = existing ?? newState();
 if (existing === undefined) globals[KEEPER] = retained;
 const registry = createApprovalIntentRegistry({}, retained);
 export const captureApprovalRequest = registry.captureApprovalRequest;
+export const supportsSessionApprovalGrant = registry.supportsSessionApprovalGrant;
 export const readApprovalIntent = registry.readApprovalIntent;
 export const isApprovalRequestBlocked = registry.isApprovalRequestBlocked;
 export const submitApprovalIntent = registry.submitApprovalIntent;
@@ -922,6 +945,13 @@ export function useApprovalIntent(session: Session, requestId: number) {
     registry.subscribe,
     () => readApprovalIntent(session, requestId),
     () => readApprovalIntent(session, requestId),
+  );
+}
+export function useSessionApprovalGrantSupport(token: ApprovalRequestToken | undefined) {
+  return useSyncExternalStore(
+    registry.subscribe,
+    () => supportsSessionApprovalGrant(token),
+    () => supportsSessionApprovalGrant(token),
   );
 }
 export function useApprovalRequestBlocked(sessionId: string, requestId: number) {

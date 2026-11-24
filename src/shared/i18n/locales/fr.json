@@ -13058,5 +13058,21 @@
   "Volume": "Volume",
   "Unmute": "Réactiver le son",
   "You stopped this turn": "Vous avez arrêté ce tour",
-  "Continue to pick up where it left off, or send a new message.": "Continuez là où il s'est arrêté ou envoyez un nouveau message."
+  "Continue to pick up where it left off, or send a new message.": "Continuez là où il s'est arrêté ou envoyez un nouveau message.",
+  "Always allow this session": "Toujours autoriser pour cette session",
+  "Session approvals": "Autorisations de la session",
+  "Workspace filename search": "Recherche de noms de fichiers dans l’espace de travail",
+  "No active session approvals": "Aucune autorisation active pour cette session",
+  "Could not load session approvals": "Impossible de charger les autorisations de la session",
+  "Could not revoke the session approval": "Impossible de révoquer l’autorisation de la session",
+  "Branch from here": "Créer une branche ici",
+  "Branched from {p0}": "Branche issue de {p0}",
+  "This conversation is owned by a bycoda Host, so it cannot be branched from here.": "Cette conversation appartient à un Host bycoda, elle ne peut donc pas être branchée d'ici.",
+  "This conversation has its own managed workspace, so it cannot be branched.": "Cette conversation a son propre espace de travail géré, elle ne peut donc pas être branchée.",
+  "This conversation's workspace was removed, so it cannot be branched.": "L'espace de travail de cette conversation a été supprimé, elle ne peut donc pas être branchée.",
+  "The conversation is still loading. Branch it once it has loaded.": "La conversation est encore en cours de chargement. Créez la branche une fois chargée.",
+  "Answer the open approval before branching from this reply.": "Répondez à l'approbation ouverte avant de créer une branche à partir de cette réponse.",
+  "This reply cannot be branched.": "Impossible de créer une branche à partir de cette réponse.",
+  "Could not generate image.": "Impossible de générer l’image.",
+  "Retrying in {p0}": "Nouvelle tentative dans {p0}"
 }

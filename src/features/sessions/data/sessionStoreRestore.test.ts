@@ -42,6 +42,38 @@ function codexRecord(): SessionRecord {
 describe("restoring a session whose repair cannot be persisted", () => {
   beforeEach(() => invoke.mockReset());
 
+  it("restores an orphaned generation as stopped and keeps the finished frame aspect", async () => {
+    const session = newSession("codex", "/repo");
+    session.blocks = [
+      {
+        id: "pending",
+        role: "image",
+        text: "",
+        imageGeneration: { itemId: "pending", status: "running", aspectRatio: 0.8 },
+      },
+      {
+        id: "ready",
+        role: "image",
+        text: "",
+        imageGeneration: { itemId: "ready", status: "completed", aspectRatio: 1.5 },
+        image: { path: "/app-data/image.png", name: "image.png", mimeType: "image/png", size: 8 },
+      },
+    ];
+    const saved = sanitizeSessionForPersist(session);
+    invoke.mockImplementation(async (command: string) =>
+      command === "session_get" ? saved : null,
+    );
+
+    expect((await getSession(session.id))?.blocks).toMatchObject([
+      { id: "pending", imageGeneration: { status: "stopped", aspectRatio: 0.8 } },
+      {
+        id: "ready",
+        imageGeneration: { status: "completed", aspectRatio: 1.5 },
+        image: session.blocks[1].image,
+      },
+    ]);
+  });
+
   it("preserves managed execution identity through serialization and reload", async () => {
     const session = {
       ...newSession("codex", "/repo"),

@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { MarkdownSource as IncrementalMarkdownSource } from "./markdownSource";
@@ -243,6 +244,7 @@ function MarkdownLink({
   onContextMenu,
   dir,
   previewMedia = true,
+  title,
   ...props
 }: MarkdownLinkProps) {
   useLocale();
@@ -273,49 +275,53 @@ function MarkdownLink({
     return <InboxMedia src={mediaUrl} alt={label} />;
   }
 
+  const anchor = (
+    <Link
+      href={href}
+      className={className}
+      {...props}
+      dir={dir ?? "auto"}
+      onClick={(event) => {
+        onClick?.(event);
+        if (event.defaultPrevented) return;
+        if (file && onOpenFile) {
+          event.preventDefault();
+          onOpenFile(file.path, file.navigation);
+          return;
+        }
+        event.preventDefault();
+        if (href?.startsWith("#")) {
+          scrollToMessageAnchor(event.currentTarget, href.slice(1));
+          return;
+        }
+        const open = !href
+          ? undefined
+          : /^https?:\/\//i.test(href)
+            ? () => openWorkspaceUrl(cwd, href, sessionId)
+            : /^mailto:/i.test(href)
+              ? () => openExternal(href)
+              : undefined;
+        if (open) {
+          setLinkError(undefined);
+          void open().catch((error: unknown) => {
+            setLinkError(presentRemoteError(error, { explicit: true }));
+          });
+        }
+      }}
+      onContextMenu={(event) => {
+        onContextMenu?.(event);
+        if (event.defaultPrevented || !file || !onFileContextMenu) return;
+        onFileContextMenu(event, file.path, file.navigation);
+      }}
+    >
+      {machine ? `${machine} · ` : null}
+      {children}
+    </Link>
+  );
   const link = (
     <>
-      <Link
-        href={href}
-        className={className}
-        {...props}
-        dir={dir ?? "auto"}
-        onClick={(event) => {
-          onClick?.(event);
-          if (event.defaultPrevented) return;
-          if (file && onOpenFile) {
-            event.preventDefault();
-            onOpenFile(file.path, file.navigation);
-            return;
-          }
-          event.preventDefault();
-          if (href?.startsWith("#")) {
-            scrollToMessageAnchor(event.currentTarget, href.slice(1));
-            return;
-          }
-          const open = !href
-            ? undefined
-            : /^https?:\/\//i.test(href)
-              ? () => openWorkspaceUrl(cwd, href, sessionId)
-              : /^mailto:/i.test(href)
-                ? () => openExternal(href)
-                : undefined;
-          if (open) {
-            setLinkError(undefined);
-            void open().catch((error: unknown) => {
-              setLinkError(presentRemoteError(error, { explicit: true }));
-            });
-          }
-        }}
-        onContextMenu={(event) => {
-          onContextMenu?.(event);
-          if (event.defaultPrevented || !file || !onFileContextMenu) return;
-          onFileContextMenu(event, file.path, file.navigation);
-        }}
-      >
-        {machine ? `${machine} · ` : null}
-        {children}
-      </Link>
+      {/* A markdown link title (a cited source) shows in the shared tooltip, not a native one. */}
+      {title ? <Tooltip label={title}>{anchor}</Tooltip> : anchor}
       {linkError ? (
         <FileActionError message={linkError} onDismiss={() => setLinkError(undefined)} />
       ) : null}

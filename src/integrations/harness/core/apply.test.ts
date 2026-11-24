@@ -522,6 +522,58 @@ describe("streamed markdown", () => {
     ]);
   });
 
+  it("reserves the original image block through intervening reply text and delivery", () => {
+    const start = { type: "image.generationStarted", itemId: "image_1", aspectRatio: 0.8 } as const;
+    const running = applyHarnessEvent(newSession("codex", "/tmp"), start);
+    expect(applyHarnessEvent(running, start)).toBe(running);
+    expect(sanitizeSessionForPersist(running).blocks).toEqual(running.blocks);
+    const reply = applyHarnessEvent(running, { type: "message.delta", text: "Here it comes." });
+    const result = {
+      type: "image.generated",
+      itemId: "image_1",
+      path: "/tmp/image.png",
+      name: "image",
+      mimeType: "image/png",
+      size: 8,
+    } as const;
+    const finished = applyHarnessEvent(reply, result);
+    expect(finished.blocks).toMatchObject([
+      {
+        id: running.blocks[0].id,
+        role: "image",
+        imageGeneration: { itemId: "image_1", aspectRatio: 0.8, status: "completed" },
+        image: { path: result.path },
+      },
+      { role: "assistant", text: "Here it comes.", streaming: true },
+    ]);
+    expect(changedBlocks(reply.blocks, finished.blocks)?.get(running.blocks[0].id)).toBe(
+      finished.blocks[0],
+    );
+    expect(applyHarnessEvent(finished, result)).toBe(finished);
+  });
+
+  it("settles only the matching failed image and stops any pending images when the turn stops", () => {
+    const running = applyHarnessEvents(newSession("codex", "/tmp"), [
+      { type: "image.generationStarted", itemId: "first" },
+      { type: "image.generationStarted", itemId: "second" },
+    ]);
+    const failed = applyHarnessEvent(running, {
+      type: "image.generationEnded",
+      itemId: "first",
+      status: "failed",
+    });
+    expect(failed.blocks.map((block) => block.imageGeneration?.status)).toEqual([
+      "failed",
+      "running",
+    ]);
+    expect(stopStreaming(failed).blocks.map((block) => block.imageGeneration?.status)).toEqual([
+      "failed",
+      "stopped",
+    ]);
+    const turnError = applyHarnessEvent(failed, { type: "session.error", message: "Turn failed" });
+    expect(turnError.blocks[1].imageGeneration?.status).toBe("failed");
+  });
+
   it("does not double an assistant block when a completed snapshot repeats it", () => {
     let session = newSession("claude", "/tmp");
     session = applyHarnessEvent(session, {

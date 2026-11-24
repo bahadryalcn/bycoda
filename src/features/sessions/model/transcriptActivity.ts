@@ -176,7 +176,13 @@ export function isActivityBlock(block: Block): boolean {
   if (isThinkingBlock(block)) return true;
   if (block.role === "system") {
     // A command the user ran or a model switch is theirs, not the agent's work: it keeps its row.
-    return !block.interjection && !block.shell && !block.modelSwitch && !isNoticeBlock(block);
+    return (
+      !block.interjection &&
+      !block.shell &&
+      !block.modelSwitch &&
+      !block.branchOrigin &&
+      !isNoticeBlock(block)
+    );
   }
   if (block.role !== "tool" && block.role !== "approval") return false;
   if (

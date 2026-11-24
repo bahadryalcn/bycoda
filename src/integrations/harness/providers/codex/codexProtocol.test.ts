@@ -365,7 +365,9 @@ describe("mapCodexNotification", () => {
       savedPath: "/tmp/image_1.png",
     };
 
-    expect(mapCodexNotification("item/started", { item }).events).toEqual([]);
+    expect(mapCodexNotification("item/started", { item }).events).toEqual([
+      { type: "image.generationStarted", itemId: "image_1" },
+    ]);
     expect(mapCodexNotification("item/completed", { item }).events).toEqual([
       {
         type: "image.generated",
@@ -377,16 +379,38 @@ describe("mapCodexNotification", () => {
     ]);
   });
 
-  it("does not map an empty image generation result", () => {
+  it.each([
+    [{ aspectRatio: "4:5", size: "1536x1024" }, 0.8],
+    [{ size: "1536x1024" }, 1.5],
+    [{ aspectRatio: "1:0", size: "auto" }, undefined],
+  ])("takes the requested image aspect from %j", (dimensions, aspectRatio) => {
+    expect(
+      mapCodexNotification("item/started", {
+        item: { id: "image_2", type: "imageGeneration", ...dimensions },
+      }).events,
+    ).toEqual([
+      {
+        type: "image.generationStarted",
+        itemId: "image_2",
+        ...(aspectRatio === undefined ? {} : { aspectRatio }),
+      },
+    ]);
+  });
+
+  it.each([
+    [{ result: "" }, "failed"],
+    [{ result: "error", status: "failed" }, "failed"],
+    [{ status: "cancelled" }, "stopped"],
+  ])("settles an unsuccessful image item %j", (result, status) => {
     expect(
       mapCodexNotification("item/completed", {
         item: {
           id: "image_2",
           type: "imageGeneration",
-          result: "",
+          ...result,
         },
       }).events,
-    ).toEqual([]);
+    ).toEqual([{ type: "image.generationEnded", itemId: "image_2", status }]);
   });
 
   it("maps reasoning summary deltas", () => {

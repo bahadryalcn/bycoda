@@ -32,6 +32,7 @@ import {
   retireDeletedSessionVisuals,
 } from "../conversation/inline-visual-retention";
 import { askSideQuestion } from "../side-chat/side-question";
+import { sessionApprovalGrantsRpc } from "../approvals/session-approval-grants-rpc";
 export async function handleSessionsRpc(
   dependencies: Pick<
     ServerBindings,
@@ -759,6 +760,15 @@ export async function handleSessionsRpc(
       request.result = await dependencies.sessionService.inlineVisual(
         request.params,
         request.domainContext,
+      );
+      break;
+    case "sessions.approvalGrants.list":
+    case "sessions.approvalGrants.revoke":
+      request.result = await sessionApprovalGrantsRpc(
+        dependencies.engine,
+        request.params,
+        request.domainContext,
+        request.input.method === "sessions.approvalGrants.revoke",
       );
       break;
     case "sessions.get":

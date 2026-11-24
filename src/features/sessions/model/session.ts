@@ -3,6 +3,7 @@ import { stripAttachmentTokens } from "./attachmentTokens";
 import type { BtwErrorCode } from "./btwError";
 import type { InlineVisual } from "./inlineVisual";
 import type { ToolInspection } from "./toolInspection";
+import type { SearchSource } from "./searchSources";
 import { dropContextWindow, type ContextUsage } from "./contextUsage";
 import type { SessionUsage } from "./sessionUsage";
 import type { SessionGoal } from "./providerGoal";
@@ -181,6 +182,11 @@ export type ToolPreviewLine = {
   text: string;
 };
 
+export type ToolFileChange = {
+  path: string;
+  counts?: { additions: number; deletions: number };
+};
+
 export type ToolPreview = {
   kind: ToolPreviewKind;
   title?: string;
@@ -192,6 +198,8 @@ export type ToolPreview = {
   /** Write supplied new contents without the previous file to compare. */
   contentOnly?: boolean;
   query?: string;
+  /** Pages a web search returned, when the provider reports them. */
+  sources?: SearchSource[];
   lines?: ToolPreviewLine[];
   output?: string;
   /** Bounded original edit or command for explicit inspection in saved history. */
@@ -259,6 +267,12 @@ export type AgentRunMeta = {
 };
 
 export type AttachmentKind = "image" | "audio" | "file";
+
+export type ImageGenerationMeta = {
+  itemId: string;
+  status: "running" | "completed" | "failed" | "stopped";
+  aspectRatio?: number;
+};
 
 export type GeneratedImageMeta = {
   /** Desktop preview only; persistence retains metadata, not image bytes. */
@@ -412,6 +426,7 @@ export type Block = {
   /** Accepted question replies retain authorship independently of transcript text. */
   questionAnswers?: { prompt: string; answers: string[] }[];
   image?: GeneratedImageMeta;
+  imageGeneration?: ImageGenerationMeta;
   attachments?: Attachment[];
   streaming?: boolean;
   /** Epoch ms when this user turn started. */
@@ -444,6 +459,8 @@ export type Block = {
     kind?: string;
     status?: string;
     detail?: string;
+    /** Completed per-file edits, without the provider's raw file contents. */
+    fileChanges?: ToolFileChange[];
     preview?: ToolPreview;
     /**
      * A subagent step's result, for the panel to expand. Set only on the blocks
@@ -464,6 +481,7 @@ export type Block = {
     requestId: number;
     /** Issued by the original request owner; missing only on legacy snapshots. */
     occurrenceId?: string;
+    sessionApprovalScope?: import("../../../shared/model/sessionApprovalGrant").SessionApprovalScope;
     decided?: "allow" | "deny" | "cancelled";
   };
   /** Inner activity of a delegated run. Present on Agent/Task tool blocks. */
@@ -486,6 +504,8 @@ export type Block = {
   noteCard?: NoteCardMeta;
   /** Provider, account and model switches folded into one row; system blocks only. */
   modelSwitch?: import("./modelSwitchHistory").ModelSwitchMeta;
+  /** First row of a branched session: the source session and reply it was cut at; system blocks only. */
+  branchOrigin?: { sessionId: string; blockId: string; title: string };
   /** Exact CI repair instructions and evidence supplied with this user turn. */
   ciContext?: string;
   /** Mid-turn interjection chrome; system blocks only. Body lives in text. */
@@ -582,6 +602,8 @@ export type Session = {
   busy?: boolean;
   /** Temporary provider retry, cleared on progress or turn end. */
   retryMessage?: string;
+  /** Epoch ms of the next provider attempt, when the provider reported it. Read only with `retryMessage`. */
+  retryAt?: number;
   /** Selection of the running turn, separate from the composer's next choice. In-memory only. */
   runningModelTarget?: ModelTarget;
   /** What the live turn waits on after the agent yielded with background work. In-memory only. */

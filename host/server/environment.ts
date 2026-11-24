@@ -86,6 +86,7 @@ export function createEnvironmentRuntime(
         "transport.ws.sessions.tail.v1",
         "transport.ws.projects.delta.v1",
         "sessions.approvalOccurrence.v1",
+        "sessions.approvalGrants.v1",
         "sessions.desktopControlReceipts.v1",
         PROJECTLESS_SESSIONS_CAPABILITY,
         "transport.ws.queue.v2",

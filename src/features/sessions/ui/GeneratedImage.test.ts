@@ -88,6 +88,54 @@ async function flushEffects() {
   });
 }
 
+it("keeps the requested frame mounted through generation, preview loading and delivery", async () => {
+  const generation = { itemId: "image_1", status: "running", aspectRatio: 0.8 } as const;
+  await act(async () => root.render(createElement(GeneratedImage, { generation })));
+  const frame = container.querySelector<HTMLElement>("[data-generated-image-fixed-frame]")!;
+  expect(frame.style.getPropertyValue("--generated-image-aspect")).toBe("0.8");
+  expect(frame.querySelector('[role="status"]')?.getAttribute("aria-label")).toBe(
+    "Generating image…",
+  );
+  await act(async () => intersect(true));
+  expect(fs.readBinaryFile).not.toHaveBeenCalled();
+
+  let resolvePreview!: (value: Uint8Array<ArrayBuffer>) => void;
+  vi.mocked(fs.readBinaryFile).mockReturnValueOnce(
+    new Promise((resolve) => {
+      resolvePreview = resolve;
+    }),
+  );
+  await act(async () =>
+    root.render(
+      createElement(GeneratedImage, { image, generation: { ...generation, status: "completed" } }),
+    ),
+  );
+  expect(frame.hasAttribute("data-generated-image-placeholder")).toBe(true);
+  await act(async () => resolvePreview(PNG));
+  expect(container.querySelector("[data-generated-image-fixed-frame]")).toBe(frame);
+  expect(frame.style.getPropertyValue("--generated-image-aspect")).toBe("0.8");
+  expect(frame.hasAttribute("data-generated-image-placeholder")).toBe(false);
+  expect(frame.querySelector("img")?.getAttribute("src")).toBe("blob:lazy-image");
+  await act(async () => root.unmount());
+});
+
+it.each([
+  ["failed", "Could not generate image.", "alert"],
+  ["stopped", "Stopped", "status"],
+] as const)(
+  "replaces the generation placeholder with the %s state",
+  async (status, message, role) => {
+    const generation = { itemId: "image_1", status: "running" } as const;
+    await act(async () => root.render(createElement(GeneratedImage, { generation })));
+    await act(async () =>
+      root.render(createElement(GeneratedImage, { generation: { ...generation, status } })),
+    );
+    expect(container.querySelector("[data-generated-image-placeholder]")).toBeNull();
+    expect(container.querySelector(`[role="${role}"]`)?.textContent).toBe(message);
+    expect(fs.readBinaryFile).not.toHaveBeenCalled();
+  },
+);
+
 it("decodes base64 generated images with the native decoder, keeping MIME and size", async () => {
   const nativeDecode = vi.fn(() => new Uint8Array(PNG));
   const original = (Uint8Array as unknown as { fromBase64?: unknown }).fromBase64;

@@ -11,7 +11,7 @@ import { useSessionLifecycleActions, type RemoteLifecycleTarget } from "./Sessio
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useLocale, useT } from "../../../shared/i18n";
 import { toast } from "../../../shared/ui/ToastRegion";
-import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
+import { ChevronDown, GripVertical, Shield, StickyNote, X } from "../../../shared/ui/icons";
 import { useSessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import { useCitedTurnHistory } from "./useCitedTurnHistory";
 import {
@@ -129,6 +129,8 @@ import { useQuoteRequests } from "./useQuoteRequests";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { Button } from "../../../shared/ui/Button";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
+import { branchBlockedReason as branchBlockedReasonOf } from "../model/conversationBranch";
+import type { TranscriptBranch } from "./transcriptBranchContext";
 import { TranscriptFind } from "./TranscriptFind";
 import { syncPaneBackground } from "../../../shared/lib/paneBackground";
 import {
@@ -288,6 +290,7 @@ export type SessionPaneProps = {
   onDeleteSession?: (sessionId: string) => Promise<boolean>;
   onRewindMessage?: (sessionId: string, blockId: string) => Promise<boolean>;
   onApproval: ApprovalDispatch;
+  onManageSessionApprovalGrants?: () => void;
   onQuestionReply: (sessionId: string, requestId: number, reply: UserQuestionReply) => void;
   questionDraftScope?: string;
   onQuestionInteraction?: (sessionId: string, requestId: number) => void;
@@ -297,6 +300,10 @@ export type SessionPaneProps = {
   onBuildPlan: (sessionId: string, blockId: string, target?: PlanBuildTarget) => void;
   onSecondOpinion?: (sessionId: string, target: ModelTarget, turn: Block[]) => void;
   onHandoff?: (sessionId: string, target: ModelTarget, turn: Block[]) => void;
+  /** Branches this session at a reply into a new tab. */
+  onBranchFromReply?: (sessionId: string, turn: Block[]) => void;
+  /** Opens the session a branch was cut from, at that reply. */
+  onOpenBranchSource?: (sessionId: string, blockId: string) => void;
   onBtwSubmit?: (
     sessionId: string,
     turn: Block[],
@@ -512,6 +519,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onArchiveSession,
   onDeleteSession,
   onApproval,
+  onManageSessionApprovalGrants,
   onQuestionReply: onQuestionReplyProp,
   questionDraftScope,
   onQuestionInteraction: onQuestionInteractionProp,
@@ -521,6 +529,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onBuildPlan,
   onSecondOpinion,
   onHandoff,
+  onBranchFromReply,
+  onOpenBranchSource,
   onBtwSubmit,
   onBtwRetry,
   onBtwDelete,
@@ -1317,6 +1327,21 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const handoff = useStableCallback((target: ModelTarget, turn: Block[]) =>
     onHandoff?.(session.id, target, turn),
   );
+  const branchSession = useStableCallback((turn: Block[]) => onBranchFromReply?.(session.id, turn));
+  const openBranchSource = useStableCallback((sourceId: string, blockId: string) =>
+    onOpenBranchSource?.(sourceId, blockId),
+  );
+  const branchBlockedReason = useStableCallback((turn: readonly Block[]) =>
+    branchBlockedReasonOf(stableSession, turn),
+  );
+  const branch: TranscriptBranch | undefined =
+    onBranchFromReply && !remote && !session.inboxAsk
+      ? {
+          blockedReason: branchBlockedReason,
+          branch: branchSession,
+          openSource: openBranchSource,
+        }
+      : undefined;
   const latestTurnAccessory = useMemo(
     () => (
       <LatestTurnAccessory
@@ -1426,6 +1451,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           key={session.id}
           provider={HARNESS_TITLE[session.harness]}
           message={session.retryMessage}
+          retryAt={session.retryAt}
           onStop={() => onStop(session.id)}
           onRefresh={
             session.continuingElsewhere && !session.busy && onRefreshAdoptedSession
@@ -1710,6 +1736,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
     ...(!session.inboxAsk && findAction ? [findAction] : []),
     ...(notesAction && !notesAction.active ? [notesAction] : []),
     ...(lifecycle.link ? [lifecycle.link] : []),
+    ...(onManageSessionApprovalGrants
+      ? [
+          {
+            id: "session-approval-grants",
+            label: t("Session approvals"),
+            icon: <Shield className="icon-sm" />,
+            onSelect: onManageSessionApprovalGrants,
+          },
+        ]
+      : []),
   ];
   const projectActions = visible ? (
     <ProjectQuickActions
@@ -2053,6 +2089,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           ? handoff
                           : undefined
                       }
+                      branch={branch}
                       onJumpToBottomChange={setShowJumpToBottom}
                       onReadingChange={setReadingHistory}
                       onJumpToBottomReady={onJumpToBottomReady}

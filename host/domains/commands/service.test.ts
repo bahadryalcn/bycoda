@@ -651,6 +651,29 @@ describe("command domain admission", () => {
       expect(ports.repository.adopt).not.toHaveBeenCalled();
     },
   );
+  it("refuses session consent for a desktop-owned approval", async () => {
+    const { service, ports, auth } = setup();
+    vi.mocked(ports.nativeProjection.watch).mockResolvedValue({ revision: 8, running: true });
+    await expect(
+      service.dispatch(
+        {
+          type: "approve",
+          sessionId: "s",
+          commandId: "approve-desktop",
+          runId: "desktop",
+          requestId: 7,
+          approvalOccurrenceId: "7e1c4dc0-6f53-4a8c-b8d8-000000000001",
+          decision: "allow",
+          allowForSession: true,
+        },
+        auth,
+      ),
+    ).rejects.toThrow("Session grants require the original Host tool request");
+    expect(ports.nativeProjection.prepareDesktop).not.toHaveBeenCalled();
+    expect(ports.repository.adopt).not.toHaveBeenCalled();
+    expect(ports.execution.command).not.toHaveBeenCalled();
+  });
+
   it("refuses approval admission without an original occurrence and preserves revoked authority", async () => {
     const { service, ports, auth, revoke } = setup();
     vi.mocked(ports.nativeProjection.watch).mockResolvedValue({ revision: 8, running: true });

@@ -27,6 +27,7 @@ import { reportDraftPresence } from "../drafts/rpc";
 import { createGroupLockService } from "../group-lock/rpc";
 import { SecretInputListParamsSchema } from "../../src/shared/model/host-contracts/secrets-input";
 import { voiceSocketOperations } from "../voice/voice-ws-operations";
+import { sessionApprovalGrantsRpc } from "../approvals/session-approval-grants-rpc";
 export function createRegistryRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -165,6 +166,10 @@ export function createRegistryRuntime(
       "sessions.page": dependencies.sessionService.page,
       "sessions.sync": dependencies.sessionService.sync,
       "sessions.get": dependencies.sessionService.get,
+      "sessions.approvalGrants.list": (params, context) =>
+        sessionApprovalGrantsRpc(dependencies.engine, params, context),
+      "sessions.approvalGrants.revoke": (params, context) =>
+        sessionApprovalGrantsRpc(dependencies.engine, params, context, true),
       "sessions.block": dependencies.sessionService.block,
       "sessions.inlineVisual": dependencies.sessionService.inlineVisual,
       "sessions.workedTime": dependencies.sessionService.workedTime,

@@ -201,6 +201,7 @@ type Live = {
   emittedAssistantByItem: Map<string, string>;
   emittedReasoningByItem: Map<string, string>;
   emittedGeneratedImages: Set<string>;
+  pendingGeneratedImages: Map<string, string>;
   emittedAsyncQuestions: Set<string>;
   turnGeneration: number;
   notificationQueue: Promise<void> | null;
@@ -1253,6 +1254,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       emittedAssistantByItem: new Map(),
       emittedReasoningByItem: new Map(),
       emittedGeneratedImages: new Set(),
+      pendingGeneratedImages: new Map(),
       emittedAsyncQuestions: new Set(),
       turnGeneration: 0,
       notificationQueue: null,
@@ -1618,15 +1620,11 @@ function handleNotification(
     if (duplicate && duplicateAgentRow(event)) {
       continue;
     }
-    if (event.type === "image.generated") {
-      if (live.emittedGeneratedImages.has(event.itemId)) continue;
-      live.emittedGeneratedImages.add(event.itemId);
-      if ("data" in event) {
-        const save = nativeOutputSink(outputWork, () => materializeGeneratedImage(live, event));
-        pending = pending ? pending.then(save) : save();
-        continue;
-      }
-      live.onEvent(event);
+    if (isCodexImageEvent(event)) {
+      const publish = nativeOutputSink(outputWork, () =>
+        publishImageEvent(live, live.threadId, event),
+      );
+      pending = pending ? pending.then(publish) : publish();
       continue;
     }
     trackAgentRow(live, event, live.model);
@@ -1677,6 +1675,7 @@ function handleNotification(
       live.activeTurnId = mapped.activeTurnId;
     }
     if (mapped.turnCompleted) {
+      settleThreadImages(live, live.threadId, mapped.turnCompleted.status);
       // Report the limit before the turn settles so queued follow-ups hold.
       if (live.usageLimited && !live.cancelled) {
         const resetsAt = usageLimitResetAt(live);
@@ -1774,9 +1773,52 @@ function showCodexAsyncQuestion(live: Live, rec: Record<string, unknown> | null)
   });
 }
 
+type CodexImageEvent = Extract<
+  HarnessEvent,
+  { type: "image.generationStarted" | "image.generationEnded" | "image.generated" }
+>;
+
+function isCodexImageEvent(event: HarnessEvent): event is CodexImageEvent {
+  return (
+    event.type === "image.generationStarted" ||
+    event.type === "image.generationEnded" ||
+    event.type === "image.generated"
+  );
+}
+
+function publishImageEvent(live: Live, threadId: string, event: CodexImageEvent) {
+  if (live.emittedGeneratedImages.has(event.itemId)) return;
+  if (event.type === "image.generationStarted") {
+    if (live.pendingGeneratedImages.has(event.itemId)) return;
+    live.pendingGeneratedImages.set(event.itemId, threadId);
+    live.onEvent(event);
+    return;
+  }
+  live.emittedGeneratedImages.add(event.itemId);
+  const hadPlaceholder = live.pendingGeneratedImages.delete(event.itemId);
+  if (event.type === "image.generated" && "data" in event) {
+    return materializeGeneratedImage(live, event, hadPlaceholder);
+  }
+  if (hadPlaceholder || event.type === "image.generated") live.onEvent(event);
+}
+
+function settleThreadImages(live: Live, threadId: string, status: string): void {
+  const stopped = status === "interrupted" || status === "cancelled";
+  for (const [itemId, owner] of live.pendingGeneratedImages) {
+    if (owner === threadId) {
+      publishImageEvent(live, threadId, {
+        type: "image.generationEnded",
+        itemId,
+        status: stopped ? "stopped" : "failed",
+      });
+    }
+  }
+}
+
 async function materializeGeneratedImage(
   live: Live,
   event: Extract<HarnessEvent, { type: "image.generated"; data: string }>,
+  hadPlaceholder: boolean,
 ): Promise<void> {
   return runNativeOutputWork(async (outputWork) => {
     const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
@@ -1805,6 +1847,10 @@ async function materializeGeneratedImage(
       });
     } catch (cause) {
       if (live.cancelled || live.muteUpdates || turnGeneration !== live.turnGeneration) {
+        return;
+      }
+      if (hadPlaceholder) {
+        emitNative({ type: "image.generationEnded", itemId: event.itemId, status: "failed" });
         return;
       }
       emitNative({
@@ -1973,6 +2019,7 @@ function emitSubagentNotification(
     // Unknown/missing completion state is not proof of success.
     if (status && ["completed", "failed", "interrupted", "cancelled"].includes(status)) {
       if (key) live.completedChildTurns.add(key);
+      settleThreadImages(live, threadId, status);
       settleChild(
         live,
         threadId,
@@ -1981,11 +2028,12 @@ function emitSubagentNotification(
       );
     }
   }
-  return emitSubagentSteps(live, callId, method, params);
+  return emitSubagentSteps(live, threadId, callId, method, params);
 }
 
 function emitSubagentSteps(
   live: Live,
+  threadId: string,
   callId: string,
   method: string,
   params: unknown,
@@ -2001,17 +2049,8 @@ function emitSubagentSteps(
       });
     }
   }
-  const image = mapped.find(
-    (event): event is Extract<HarnessEvent, { type: "image.generated" }> =>
-      event.type === "image.generated",
-  );
-  if (image) {
-    if (live.emittedGeneratedImages.has(image.itemId)) return;
-    live.emittedGeneratedImages.add(image.itemId);
-    if ("data" in image) return materializeGeneratedImage(live, image);
-    live.onEvent(image);
-    return;
-  }
+  const image = mapped.find(isCodexImageEvent);
+  if (image) return publishImageEvent(live, threadId, image);
   for (const event of mapCodexSubagentSteps(callId, method, params)) {
     live.onEvent(event);
   }
@@ -2137,6 +2176,7 @@ function finishActiveTurn(live: Live, extraEvents: HarnessEvent[] = []): void {
   live.emittedReasoningByItem.clear();
   live.emittedGeneratedImages.clear();
   live.emittedAsyncQuestions.clear();
+  live.pendingGeneratedImages.clear();
   live.subagentThreads.clear();
   live.childTurns.clear();
   live.terminalChildren.clear();

@@ -1,4 +1,5 @@
 import { asRecord } from "../../../../shared/lib/records";
+import { retryAtFromDelay } from "../../core/retryAt";
 import type { Attachment, TurnMetrics } from "../../../../features/sessions/model/session";
 import {
   attachmentPathText,
@@ -589,6 +590,11 @@ export function isAgentSettled(rec: Record<string, unknown>): boolean {
 export function agentEndWillRetry(rec: Record<string, unknown>): boolean | null {
   if (stringField(rec, "type") !== "agent_end") return null;
   return rec.willRetry === true;
+}
+
+/** `auto_retry_start` carries the backoff as `delayMs`. */
+export function piRetryAt(rec: Record<string, unknown>, now: number): number | undefined {
+  return retryAtFromDelay(rec.delayMs, now);
 }
 
 export function statusFromPiEvent(rec: Record<string, unknown>): string | null {

@@ -138,6 +138,8 @@ export function NotificationRequestCard({
         <div className="px-3 pb-2">
           <ApprovalRequest
             title={approvalTitle(block, t)}
+            actions={decision.sessionAction ? [decision.sessionAction] : undefined}
+            scope={decision.sessionAction ? t("Workspace filename search") : undefined}
             detail={detail}
             details={
               block && hasToolInspection(block)
@@ -146,7 +148,10 @@ export function NotificationRequestCard({
             }
             allow={{
               label: t("Allow"),
-              pending: decision.pending && decision.decision === "allow",
+              pending:
+                decision.pending &&
+                !decision.allowForSessionPending &&
+                decision.decision === "allow",
               disabled: decision.blocked,
               onClick: () => void decision.decide("allow"),
             }}

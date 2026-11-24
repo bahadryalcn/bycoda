@@ -16,7 +16,13 @@ type RemoteActions = {
   stop: () => void;
   rewind: (blockId: string) => Promise<boolean>;
   compact: () => boolean;
-  approve: (requestId: number, decision: ApprovalDecision, approvalOccurrenceId?: string) => void;
+  approve: (
+    requestId: number,
+    decision: ApprovalDecision,
+    approvalOccurrenceId?: string,
+    allowForSession?: true,
+  ) => void;
+  sessionApprovalGrantsSupported?: boolean;
   /** Observed Host capability, never an execution grant or provider ACK. */
   approvalOccurrenceSupported?: boolean;
   /** Current source owned by this registration; private observation, never authority. */

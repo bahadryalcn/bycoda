@@ -93,6 +93,27 @@ export function canRewindConversation(session: Session, blockId: string): boolea
   );
 }
 
+/** Runtime state a cut transcript must not keep: the next turn starts fresh from `replay`. Shared by rewind and branch. */
+export function replayResetFields(replay: string): Partial<Session> {
+  return {
+    context: undefined,
+    usage: undefined,
+    usageLimit: undefined,
+    retryMessage: undefined,
+    pendingQuestion: undefined,
+    submittedQuestions: undefined,
+    pendingSwitch: undefined,
+    queuedMessages: [],
+    queueStatus: undefined,
+    editingQueuedMessageId: undefined,
+    backgroundTasks: undefined,
+    backgroundAgents: undefined,
+    backgroundSince: undefined,
+    runningModelTarget: undefined,
+    pendingContextReplay: replay || undefined,
+  };
+}
+
 export function rewindConversationBeforeMessage(
   session: Session,
   blockId: string,
@@ -119,21 +140,7 @@ export function rewindConversationBeforeMessage(
     ...session,
     blocks: retained,
     ...(preserveProviderBinding ? {} : { providerSessionId: undefined }),
-    context: undefined,
-    usage: undefined,
-    usageLimit: undefined,
-    retryMessage: undefined,
-    pendingQuestion: undefined,
-    submittedQuestions: undefined,
-    pendingSwitch: undefined,
-    queuedMessages: [],
-    queueStatus: undefined,
-    editingQueuedMessageId: undefined,
-    backgroundTasks: undefined,
-    backgroundAgents: undefined,
-    backgroundSince: undefined,
-    runningModelTarget: undefined,
-    pendingContextReplay: replay || undefined,
+    ...replayResetFields(replay),
     rewindHistory: [
       ...(session.rewindHistory ?? []),
       {

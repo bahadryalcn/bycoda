@@ -427,6 +427,8 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         }
         const watch = await ports.nativeProjection.watch(sessionId);
         if (watch?.running) {
+          if (command.type === "approve" && command.allowForSession)
+            throw new Error("Session grants require the original Host tool request");
           if (!ports.nativeProjection.alive())
             throw new Error(
               "The bycoda app on that computer isn't responding. Try again when it's open.",

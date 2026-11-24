@@ -11,6 +11,10 @@ dialog with the same formatting. **Copy message** and **Save as note** use the o
 In a live reply, text inside a code fence is immediately available to select and copy.
 Syntax colors appear as the fence closes or the reply finishes.
 
+When Codex generates an inline image, a placeholder reserves its space in the conversation.
+The finished image opens in the same frame. Select it for a full-screen preview, or use Save
+beside the image details. A failed or stopped generation shows its status in place.
+
 Drafts with a very long unbroken line use the native text field so the caret stays visible
 while typing. The draft keeps its text and attachment references.
 **Copy message** includes file and image attachments, including those loaded from a connected machine or reopened from a saved conversation.
@@ -118,6 +122,8 @@ Hover or focus a reference to briefly highlight its exact source without scrolli
 Translation previews keep model selection, cancellation and retry. After applying a translation, the **Translation view** control switches between **Original text** and **Translation**. With the transcript focused, press **↑** for the original or **↓** for the translation. **Copy** copies the displayed version. **Close translation** dismisses the control and keeps the applied translation and saved message text.
 
 These details describe the tool call at that point in the conversation. They do not reread the current file and present it as historical output. New code details are bounded to keep long conversations responsive; subagent history has a shared retention budget. When only an older shortened preview remains, the viewer says so.
+
+Completed turns list their recorded file edits below the reply. Repeated edits to the same file appear on one row with combined line counts when available. Select a file to open its diff or file view. The list stays with the conversation after reload.
 
 ## Working and follow-up messages
 

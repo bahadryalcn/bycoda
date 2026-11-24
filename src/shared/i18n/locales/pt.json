@@ -13058,5 +13058,21 @@
   "Volume": "Volume",
   "Unmute": "Ativar som",
   "You stopped this turn": "Você parou este turno",
-  "Continue to pick up where it left off, or send a new message.": "Continue de onde parou ou envie uma nova mensagem."
+  "Continue to pick up where it left off, or send a new message.": "Continue de onde parou ou envie uma nova mensagem.",
+  "Always allow this session": "Permitir sempre nesta sessão",
+  "Session approvals": "Permissões da sessão",
+  "Workspace filename search": "Busca por nomes de arquivos no espaço de trabalho",
+  "No active session approvals": "Nenhuma permissão ativa nesta sessão",
+  "Could not load session approvals": "Não foi possível carregar as permissões da sessão",
+  "Could not revoke the session approval": "Não foi possível revogar a permissão da sessão",
+  "Branch from here": "Ramificar a partir daqui",
+  "Branched from {p0}": "Ramificada de {p0}",
+  "This conversation is owned by a bycoda Host, so it cannot be branched from here.": "Esta conversa pertence a um Host do bycoda, então não pode ser ramificada a partir daqui.",
+  "This conversation has its own managed workspace, so it cannot be branched.": "Esta conversa tem seu próprio espaço de trabalho gerenciado, então não pode ser ramificada.",
+  "This conversation's workspace was removed, so it cannot be branched.": "O espaço de trabalho desta conversa foi removido, então ela não pode ser ramificada.",
+  "The conversation is still loading. Branch it once it has loaded.": "A conversa ainda está carregando. Ramifique-a depois que carregar.",
+  "Answer the open approval before branching from this reply.": "Responda à aprovação em aberto antes de ramificar a partir desta resposta.",
+  "This reply cannot be branched.": "Não é possível ramificar a partir desta resposta.",
+  "Could not generate image.": "Não foi possível gerar a imagem.",
+  "Retrying in {p0}": "Tentando novamente em {p0}"
 }

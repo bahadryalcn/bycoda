@@ -13058,5 +13058,21 @@
   "Volume": "音量",
   "Unmute": "ミュート解除",
   "You stopped this turn": "このターンを停止しました",
-  "Continue to pick up where it left off, or send a new message.": "中断した箇所から続けるか、新しいメッセージを送信してください。"
+  "Continue to pick up where it left off, or send a new message.": "中断した箇所から続けるか、新しいメッセージを送信してください。",
+  "Always allow this session": "このセッションでは常に許可",
+  "Session approvals": "セッションの許可",
+  "Workspace filename search": "ワークスペース内のファイル名検索",
+  "No active session approvals": "有効なセッションの許可はありません",
+  "Could not load session approvals": "セッションの許可を読み込めませんでした",
+  "Could not revoke the session approval": "セッションの許可を取り消せませんでした",
+  "Branch from here": "ここから分岐",
+  "Branched from {p0}": "{p0} から分岐",
+  "This conversation is owned by a bycoda Host, so it cannot be branched from here.": "この会話は bycoda Host が所有しているため、ここから分岐できません。",
+  "This conversation has its own managed workspace, so it cannot be branched.": "この会話には専用の管理ワークスペースがあるため、分岐できません。",
+  "This conversation's workspace was removed, so it cannot be branched.": "この会話のワークスペースは削除されたため、分岐できません。",
+  "The conversation is still loading. Branch it once it has loaded.": "会話を読み込み中です。読み込み後に分岐してください。",
+  "Answer the open approval before branching from this reply.": "この返信から分岐する前に、未処理の承認に応答してください。",
+  "This reply cannot be branched.": "この返信からは分岐できません。",
+  "Could not generate image.": "画像を生成できませんでした。",
+  "Retrying in {p0}": "{p0}後に再試行します"
 }

@@ -13058,5 +13058,21 @@
   "Volume": "Ses düzeyi",
   "Unmute": "Sesi aç",
   "You stopped this turn": "Bu turu durdurdunuz",
-  "Continue to pick up where it left off, or send a new message.": "Kaldığı yerden devam edin veya yeni bir mesaj gönderin."
+  "Continue to pick up where it left off, or send a new message.": "Kaldığı yerden devam edin veya yeni bir mesaj gönderin.",
+  "Always allow this session": "Bu oturumda hep izin ver",
+  "Session approvals": "Oturum izinleri",
+  "Workspace filename search": "Çalışma alanında dosya adı arama",
+  "No active session approvals": "Etkin oturum izni yok",
+  "Could not load session approvals": "Oturum izinleri yüklenemedi",
+  "Could not revoke the session approval": "Oturum izni geri alınamadı",
+  "Branch from here": "Buradan dallandır",
+  "Branched from {p0}": "{p0} oturumundan dallandı",
+  "This conversation is owned by a bycoda Host, so it cannot be branched from here.": "Bu konuşma bir bycoda Host'a ait olduğu için buradan dallandırılamaz.",
+  "This conversation has its own managed workspace, so it cannot be branched.": "Bu konuşmanın kendi yönetilen çalışma alanı olduğu için dallandırılamaz.",
+  "This conversation's workspace was removed, so it cannot be branched.": "Bu konuşmanın çalışma alanı kaldırıldığı için dallandırılamaz.",
+  "The conversation is still loading. Branch it once it has loaded.": "Konuşma hâlâ yükleniyor. Yüklendikten sonra dallandırın.",
+  "Answer the open approval before branching from this reply.": "Bu yanıttan dallandırmadan önce açık onayı yanıtlayın.",
+  "This reply cannot be branched.": "Bu yanıttan dallandırılamaz.",
+  "Could not generate image.": "Görsel oluşturulamadı.",
+  "Retrying in {p0}": "{p0} sonra yeniden denenecek"
 }

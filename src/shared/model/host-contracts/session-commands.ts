@@ -245,6 +245,7 @@ export const CommandDispatchParamsSchema = z.discriminatedUnion("type", [
     requestId: SafeCounterSchema,
     approvalOccurrenceId: z.string().regex(WIRE_UUID_V4_PATTERN).optional(),
     decision: z.enum(["allow", "deny"]),
+    allowForSession: z.literal(true).optional(),
   }),
   z.strictObject({
     ...commandBase,

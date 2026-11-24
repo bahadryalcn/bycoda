@@ -2154,7 +2154,28 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
   const image = sanitizeGeneratedImage(block.image);
   const inlineVisual = block.role === "tool" ? inlineVisualValue(block.inlineVisual) : undefined;
   if (inlineVisual) next.inlineVisual = inlineVisual;
-  if (block.role === "image" && !image) return null;
+  if (block.role === "image") {
+    const generation = block.imageGeneration;
+    const itemId = sanitizeNestedId(generation?.itemId);
+    const status = generation?.status;
+    const aspectRatio = generation?.aspectRatio;
+    if (
+      itemId &&
+      status !== undefined &&
+      (image
+        ? status === "completed"
+        : status === "running" || status === "failed" || status === "stopped")
+    ) {
+      next.imageGeneration = {
+        itemId,
+        status: options?.hydrate && status === "running" ? "stopped" : status,
+        ...(typeof aspectRatio === "number" && Number.isFinite(aspectRatio) && aspectRatio > 0
+          ? { aspectRatio }
+          : {}),
+      };
+    }
+    if (!image && !next.imageGeneration) return null;
+  }
   if (image) next.image = image;
   if (block.startedAt != null) next.startedAt = block.startedAt;
   if (block.durationMs != null) next.durationMs = block.durationMs;
@@ -2266,6 +2287,15 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
     }
     if (block.shell) next.shell = sanitizeShellRun(block.shell);
     if (block.modelSwitch) next.modelSwitch = sanitizeModelSwitch(block.modelSwitch);
+    const origin = block.branchOrigin;
+    const originSession = sanitizeNestedId(origin?.sessionId);
+    const originBlock = sanitizeNestedId(origin?.blockId);
+    if (origin && originSession && originBlock && typeof origin.title === "string")
+      next.branchOrigin = {
+        sessionId: originSession,
+        blockId: originBlock,
+        title: origin.title.slice(0, 200),
+      };
   }
   return next;
 }

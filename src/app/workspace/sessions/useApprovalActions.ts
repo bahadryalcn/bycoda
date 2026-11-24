@@ -82,11 +82,17 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
       requestId: number,
       decision: ApprovalDecision,
       expected?: ApprovalRequestToken,
+      allowForSession?: true,
     ) => {
       pruneApprovalIntents(sessionsRef.current);
       const session = sessionsRef.current.find((s) => s.id === sessionId);
-      return submitApprovalIntent(session, requestId, decision, expected, () =>
-        sessionsRef.current.find((current) => current.id === sessionId),
+      return submitApprovalIntent(
+        session,
+        requestId,
+        decision,
+        expected,
+        () => sessionsRef.current.find((current) => current.id === sessionId),
+        allowForSession,
       );
     },
     [sessionsRef],

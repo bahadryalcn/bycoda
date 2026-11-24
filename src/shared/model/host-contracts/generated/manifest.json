@@ -8385,6 +8385,7 @@
           {
             "additionalProperties": false,
             "properties": {
+              "allowForSession": { "const": true, "type": "boolean" },
               "approvalOccurrenceId": {
                 "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
                 "type": "string"
@@ -39698,6 +39699,90 @@
       "retry": "never",
       "scope": "device"
     },
+    "sessions.approvalGrants.list": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+          "sessionId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "required": ["sessionId"],
+        "type": "object"
+      },
+      "requiredCapability": "sessions.approvalGrants.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
+            "scope": { "const": "claude:Glob:workspace-filename-search", "type": "string" }
+          },
+          "required": ["id", "scope"],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "sessions.approvalGrants.revoke": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "control",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+          "grantId": {
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+            "type": "string"
+          },
+          "sessionId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+            "type": "string"
+          }
+        },
+        "required": ["sessionId", "grantId"],
+        "type": "object"
+      },
+      "requiredCapability": "sessions.approvalGrants.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
+            "scope": { "const": "claude:Glob:workspace-filename-search", "type": "string" }
+          },
+          "required": ["id", "scope"],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "sessions.block": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
@@ -60480,6 +60565,7 @@
         {
           "additionalProperties": false,
           "properties": {
+            "allowForSession": { "const": true, "type": "boolean" },
             "approvalOccurrenceId": {
               "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
               "type": "string"
@@ -77294,6 +77380,68 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "sessions.approvalGrants.list", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "authorityGeneration": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "sessionId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": ["sessionId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "sessions.approvalGrants.revoke", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "authorityGeneration": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "grantId": {
+                  "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                  "type": "string"
+                },
+                "sessionId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                }
+              },
+              "required": ["sessionId", "grantId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "commands.status", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -79979,6 +80127,7 @@
                 {
                   "additionalProperties": false,
                   "properties": {
+                    "allowForSession": { "const": true, "type": "boolean" },
                     "approvalOccurrenceId": {
                       "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
                       "type": "string"
@@ -81286,5 +81435,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "cc5d4b91ab971663d5915347a36e4292acabfe45c2868a7b7a7e6aad3ab65e54"
+  "schemaHash": "a3d27e3018f016aca610f2242a9ec651905758ea734a3758517b021398bf4c1b"
 }

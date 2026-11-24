@@ -4,11 +4,13 @@ import {
   type ToolInspection,
 } from "../../../features/sessions/model/toolInspection";
 import type {
+  ToolFileChange,
   ToolPreview,
   ToolPreviewKind,
   ToolPreviewLine,
 } from "../../../features/sessions/model/session";
 import { displayPath } from "../../../shared/lib/paths";
+import type { HarnessFileChange } from "./types";
 import {
   formatShellIntent,
   inferShellIntent,
@@ -471,6 +473,7 @@ export function mergeToolPreview(next?: ToolPreview, prev?: ToolPreview): ToolPr
     deletions: next.deletions ?? prev.deletions,
     contentOnly: next.lines ? next.contentOnly : prev.contentOnly,
     query: next.query || prev.query,
+    ...(next.sources || prev.sources ? { sources: next.sources ?? prev.sources } : {}),
     lines:
       next.kind === "read" || next.kind === "search"
         ? undefined
@@ -676,14 +679,40 @@ function contentBlocks(content: unknown): Record<string, unknown>[] {
   return nested ? [nested, rec] : [rec];
 }
 
+/** Persist the paths and counts without retaining the provider's full file contents. */
+export function summarizeFileChanges(
+  changes: HarnessFileChange[],
+  paths: readonly string[] = [],
+): ToolFileChange[] {
+  const summaries = changes.map(({ path, kind, contents }): ToolFileChange => {
+    if (kind === "update") {
+      if (!/^@@\s+-\d+(?:,\d+)?\s+\+\d+/m.test(contents)) return { path };
+      const { additions, deletions } = parseGitPatch(contents);
+      return { path, counts: { additions, deletions } };
+    }
+    const lines = textLines(contents).length;
+    return {
+      path,
+      counts: { additions: kind === "add" ? lines : 0, deletions: kind === "delete" ? lines : 0 },
+    };
+  });
+  const known = new Set(changes.map(({ path }) => path));
+  for (const path of new Set(paths)) {
+    if (!known.has(path)) summaries.push({ path });
+  }
+  return summaries;
+}
+
 function parseGitPatch(text: string): {
   path?: string;
   lines: ToolPreviewLine[];
   additions: number;
   deletions: number;
 } {
-  const plus = text.match(/^\+\+\+\s+(?:b\/)?(.+)$/m);
-  const git = text.match(/^diff --git\s+\S+\s+(\S+)/m);
+  const firstHunk = text.search(/^@@\s+-/m);
+  const preamble = firstHunk < 0 ? text : text.slice(0, firstHunk);
+  const plus = preamble.match(/^\+\+\+\s+(?:b\/)?(.+)$/m);
+  const git = preamble.match(/^diff --git\s+\S+\s+(\S+)/m);
   let path = (plus?.[1] ?? git?.[1])?.replace(/^b\//, "").trim();
   if (path === "/dev/null") path = undefined;
 
@@ -691,20 +720,16 @@ function parseGitPatch(text: string): {
   let additions = 0;
   let deletions = 0;
   let newNum = 0;
+  let inHunk = false;
   for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
     const header = line.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)/);
     if (header) {
       newNum = Number(header[2]);
+      inHunk = true;
       continue;
     }
-    if (
-      line.startsWith("diff ") ||
-      line.startsWith("index ") ||
-      line.startsWith("--- ") ||
-      line.startsWith("+++ ")
-    ) {
-      continue;
-    }
+    if (line.startsWith("diff ")) inHunk = false;
+    if (!inHunk) continue;
     if (line.startsWith("+")) {
       additions += 1;
       hunks.push({ number: newNum, kind: "add", text: line.slice(1) });

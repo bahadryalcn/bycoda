@@ -564,6 +564,7 @@ export function mergeAdoptedSession(
     adoptedRunId: host.status === "running" ? host.runId : undefined,
     adoptedAuthorityGeneration: appliedAuthorityGeneration(host, local),
     retryMessage: host.status === "running" ? remote.retryMessage : undefined,
+    retryAt: host.status === "running" ? remote.retryAt : undefined,
     // A yielded host turn still waiting on background work: without these the
     // copy reads as a turn still thinking instead of background-only.
     ...backgroundWaitOf(host),

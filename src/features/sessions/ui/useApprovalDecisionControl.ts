@@ -11,6 +11,7 @@ import {
   captureApprovalRequest,
   readApprovalIntent,
   readApprovalRefusal,
+  useSessionApprovalGrantSupport,
   useApprovalIntent,
   useApprovalRequestBlocked,
 } from "../model/approvalIntents";
@@ -20,6 +21,7 @@ import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 type LocalDecision = {
   occurrence: Block["approval"];
   decision: ApprovalDecision;
+  allowForSession?: true;
   pending: boolean;
   unconfirmed: boolean;
   error: string | null;
@@ -31,6 +33,7 @@ async function runApprovalDecision({
   setLocal,
   occurrence,
   decision,
+  allowForSession,
   dispatch,
   read,
   refusal,
@@ -39,6 +42,7 @@ async function runApprovalDecision({
   setLocal: (value: LocalDecision) => void;
   occurrence: Block["approval"];
   decision: ApprovalDecision;
+  allowForSession?: true;
   dispatch: () => ReturnType<ApprovalDispatch>;
   read: () => ReturnType<typeof readApprovalIntent>;
   refusal: () => string | null | undefined;
@@ -49,6 +53,7 @@ async function runApprovalDecision({
     setLocal({
       occurrence,
       decision,
+      allowForSession,
       pending: false,
       unconfirmed: !!actual?.repeatBlocked || (result !== false && !actual),
       error:
@@ -59,7 +64,14 @@ async function runApprovalDecision({
   } catch {
     // A thrown callback may already have dispatched. Keep the original choice
     // and never present that ambiguity as permission to repeat the decision.
-    setLocal({ occurrence, decision, pending: false, unconfirmed: true, error: null });
+    setLocal({
+      occurrence,
+      decision,
+      allowForSession,
+      pending: false,
+      unconfirmed: true,
+      error: null,
+    });
   } finally {
     running.current = false;
   }
@@ -106,6 +118,7 @@ export function useApprovalDecisionControl(
     session.blocks.find(
       (block) => block.approval?.requestId === requestId && !block.approval.decided,
     )?.approval;
+  const sessionGrantSupported = useSessionApprovalGrantSupport(expected);
   const running = useRef(false);
   const [local, setLocal] = useState<LocalDecision | null>(null);
   const current = local?.occurrence === occurrence ? local : null;
@@ -123,7 +136,7 @@ export function useApprovalDecisionControl(
             ? t(APPROVAL_INTENT_MESSAGES.closed)
             : null;
   const danger = !pending && !repeatBlocked && !!(intent?.error || current?.error);
-  const decide = async (decision: ApprovalDecision) => {
+  const decide = async (decision: ApprovalDecision, allowForSession?: true) => {
     if (running.current || pending || repeatBlocked || closed) return;
     if (!expected) {
       setLocal({
@@ -136,20 +149,41 @@ export function useApprovalDecisionControl(
       return;
     }
     running.current = true;
-    setLocal({ occurrence, decision, pending: true, unconfirmed: false, error: null });
+    setLocal({
+      occurrence,
+      decision,
+      allowForSession,
+      pending: true,
+      unconfirmed: false,
+      error: null,
+    });
     await runApprovalDecision({
       running,
       setLocal,
       occurrence,
       decision,
-      dispatch: () => dispatch(session.id, requestId, decision, expected),
+      allowForSession,
+      dispatch: () =>
+        allowForSession
+          ? dispatch(session.id, requestId, decision, expected, allowForSession)
+          : dispatch(session.id, requestId, decision, expected),
       read: () => readApprovalIntent(session, requestId),
       refusal: () => readApprovalRefusal(expected),
     });
   };
+  const blocked = pending || repeatBlocked || closed;
   return {
     pending,
-    blocked: pending || repeatBlocked || closed,
+    blocked,
+    allowForSessionPending: pending && current?.allowForSession === true,
+    sessionAction: sessionGrantSupported
+      ? {
+          label: t("Always allow this session"),
+          pending: pending && current?.allowForSession === true,
+          disabled: blocked,
+          onClick: () => void decide("allow", true),
+        }
+      : undefined,
     decision: intent?.decision ?? current?.decision,
     feedback,
     danger,

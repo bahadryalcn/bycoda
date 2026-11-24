@@ -2,3 +2,4 @@
 export { REMOTE_PROVIDERS, isRemoteProvider } from "../model/protocol";
 export type { RemoteProvider } from "../model/protocol";
 export { hostSessionBinding } from "../model/sessionExecutionBinding";
+export { remoteSessionProject } from "../model/sessionMachineTarget";

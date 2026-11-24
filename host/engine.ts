@@ -30,6 +30,8 @@ import {
 } from "./sessions/live-batch-recovery";
 import { createHash, randomUUID } from "node:crypto";
 import { isApprovalOccurrenceId } from "../src/shared/model/approvalOccurrence";
+import { CLAUDE_WORKSPACE_GLOB } from "../src/shared/model/sessionApprovalGrant";
+import { SessionApprovalGrants, sessionApprovalOwner } from "./approvals/session-approval-grants";
 import { parseProviderAccountId } from "../src/features/providers/model/providerAccountId";
 import { assertHostProviderAccount } from "./providers/provider-accounts";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -492,6 +494,8 @@ function parseCommandBody(input: unknown): HostCommand {
     throw new Error("Invalid request ID");
   const requestId = Number(v.requestId);
   if (v.type === "approve" && (v.decision === "allow" || v.decision === "deny")) {
+    if (v.allowForSession !== undefined && (v.allowForSession !== true || v.decision !== "allow"))
+      throw new Error("Invalid session approval decision");
     if (!isApprovalOccurrenceId(v.approvalOccurrenceId))
       throw new Error(
         "Approval request identity is missing or invalid. Refresh this request before responding.",
@@ -504,6 +508,7 @@ function parseCommandBody(input: unknown): HostCommand {
       requestId,
       approvalOccurrenceId: v.approvalOccurrenceId,
       decision: v.decision,
+      ...(v.allowForSession === true ? { allowForSession: true } : {}),
     };
   }
   if (v.type === "answer") {
@@ -569,6 +574,8 @@ type ActiveHostTurn = {
   ending: boolean;
   persistenceFailed: boolean;
   authorityGeneration?: number;
+  approvalCwd?: string;
+  grantableApprovals?: Set<string>;
   resumeAtReset?: boolean;
   managedTurns: ManagedTurnBoundary[];
   filesTurn: boolean;
@@ -693,6 +700,7 @@ export class HostEngine {
   private readonly operations = new EngineOperations();
   /** Provider events not yet applied; one queued drain applies them as a batch. */
   private readonly pendingEvents = new PendingEvents();
+  private readonly sessionApprovalGrants = new SessionApprovalGrants();
   private switchingProjects = new Set<string>();
   private readonly deferredManagedBindings = new Map<
     string,
@@ -865,7 +873,11 @@ export class HostEngine {
     try {
       return await this.withRetiredProviderWriter(
         id,
-        remove,
+        async () => {
+          const result = await remove();
+          this.sessionApprovalGrants.end(id);
+          return result;
+        },
         async () => {
           if (!held) {
             this.deletingSessions.add(id);
@@ -2130,9 +2142,29 @@ export class HostEngine {
         await this.managedWorkspace(await this.store.session(id));
         await this.flush(id);
         const summary = await this.store.updateSession(id, patch, authorityGeneration);
+        if (patch.archived === true) this.sessionApprovalGrants.end(id);
         const live = this.live.get(id);
         if (live) live.value = await this.store.session(id);
         return summary;
+      }),
+    );
+  }
+
+  async sessionApprovalGrantList(
+    input: { sessionId: string; authorityGeneration?: number; grantId?: string },
+    authorize: () => Promise<void>,
+  ) {
+    await this.ready;
+    const id = input.sessionId;
+    return this.store.db.scope(() =>
+      this.operations.run(id, async () => {
+        await authorize();
+        await this.store.assertAuthority(id, input.authorityGeneration);
+        const value = await this.store.session(id);
+        await authorize();
+        const owner = sessionApprovalOwner(value, value.session.worktreeCwd ?? value.session.cwd);
+        if (input.grantId) this.sessionApprovalGrants.revoke(id, owner, input.grantId);
+        return this.sessionApprovalGrants.list(id, owner);
       }),
     );
   }
@@ -3523,7 +3555,11 @@ export class HostEngine {
                 );
                 if (pending.length !== 1)
                   throw new Error("Approval is already resolved or ambiguous");
-                if (pending[0].approval?.occurrenceId !== command.approvalOccurrenceId)
+                const occurrenceId = command.approvalOccurrenceId;
+                if (
+                  !isApprovalOccurrenceId(occurrenceId) ||
+                  pending[0].approval?.occurrenceId !== occurrenceId
+                )
                   throw new Error("This approval request changed. Refresh it before responding.");
                 const active = this.running.get(command.sessionId);
                 const liveOwner = this.live.get(command.sessionId);
@@ -3535,6 +3571,13 @@ export class HostEngine {
                   !liveOwner
                 )
                   throw new Error("This request belongs to a finished or replaced turn");
+                const grantOwner =
+                  active.approvalCwd && sessionApprovalOwner(value, active.approvalCwd);
+                if (
+                  command.allowForSession &&
+                  (!grantOwner || !active.grantableApprovals?.has(occurrenceId))
+                )
+                  throw new Error("This request cannot be allowed for the session");
                 const blockId = pending[0].id;
                 const authorityGeneration = value.authorityGeneration;
                 value = {
@@ -3542,7 +3585,7 @@ export class HostEngine {
                   session: applyHarnessEvent(value.session, {
                     type: "approval.resolved",
                     requestId: command.requestId,
-                    occurrenceId: command.approvalOccurrenceId,
+                    occurrenceId,
                     decision: command.decision,
                   }),
                 };
@@ -3562,7 +3605,7 @@ export class HostEngine {
                     current.value.authorityGeneration !== authorityGeneration ||
                     this.provider(current.value.session.harness) !== provider ||
                     requests?.length !== 1 ||
-                    requests[0].approval?.occurrenceId !== command.approvalOccurrenceId ||
+                    requests[0].approval?.occurrenceId !== occurrenceId ||
                     requests[0].approval?.decided !== command.decision ||
                     current.value.session.blocks.some(
                       (block) =>
@@ -3572,13 +3615,31 @@ export class HostEngine {
                     throw new Error(
                       "The original approval source changed before provider dispatch",
                     );
+                  if (
+                    command.allowForSession &&
+                    (!active.approvalCwd ||
+                      grantOwner !== sessionApprovalOwner(current.value, active.approvalCwd) ||
+                      !active.grantableApprovals?.has(occurrenceId))
+                  )
+                    throw new Error(
+                      "The original session grant scope changed before provider dispatch",
+                    );
                   // No await between the final original-source guard and the callback.
-                  provider.approve(
+                  const answered = provider.approve(
                     command.sessionId,
                     command.requestId,
                     command.decision,
-                    command.approvalOccurrenceId,
+                    occurrenceId,
+                    ...(command.allowForSession ? ([CLAUDE_WORKSPACE_GLOB] as const) : []),
                   );
+                  active.grantableApprovals?.delete(occurrenceId);
+                  if (command.allowForSession && grantOwner && answered === true)
+                    this.sessionApprovalGrants.allow(
+                      command.sessionId,
+                      grantOwner,
+                      CLAUDE_WORKSPACE_GLOB,
+                      occurrenceId,
+                    );
                 };
               } else {
                 if (value.session.pendingQuestion?.requestId !== command.requestId)
@@ -3705,6 +3766,7 @@ export class HostEngine {
         }
         const live = this.live.get(saved.session.id);
         if (live) live.value = saved;
+        if (command.type === "configure") this.sessionApprovalGrants.end(saved.session.id);
         // A receipt means durable host acceptance, not provider completion.
         if (effect) {
           const dispatch = async () => {
@@ -3835,6 +3897,7 @@ export class HostEngine {
           { ...latest, session: clearConversation(latest.session), status: "idle" },
           { type: "conversation.cleared", commandId: command.commandId },
         );
+        this.sessionApprovalGrants.end(command.sessionId);
         const live = this.live.get(command.sessionId);
         if (live) live.value = saved;
         const receipt = {
@@ -4548,6 +4611,7 @@ export class HostEngine {
             if (workspace?.path)
               session = { ...session, cwd: workspace.path, worktreeCwd: workspace.path };
             await this.runWriters.setExecutionCwd(active.hostRun!, session.cwd);
+            active.approvalCwd = session.cwd;
             if (this.closing || active.cancelled) throw new Error("Turn cancelled");
             const managedBoundary = active.managed
               ? await this.beginManagedTurn(value, userBlockId!)
@@ -5034,6 +5098,21 @@ export class HostEngine {
             .catch((error) => console.warn("Checkpoint tool attribution failed", error));
       }
     }
+    const automaticApproval =
+      event.type === "approval.requested"
+        ? await this.sessionToolApproval(live.value, event)
+        : undefined;
+    if (event.type === "approval.requested" && event.sessionApprovalScope && !automaticApproval) {
+      if (
+        !event.occurrenceId ||
+        !this.running.get(id)?.grantableApprovals?.has(event.occurrenceId)
+      ) {
+        const { sessionApprovalScope: _scope, ...request } = event;
+        event = request;
+      }
+    }
+    if (event.type === "approval.resolved" && event.occurrenceId)
+      this.running.get(id)?.grantableApprovals?.delete(event.occurrenceId);
     // The host cannot read the desktop's settings; the turn carried them.
     if (event.type === "question.asked") {
       event = { ...event, occurrenceId: randomUUID() };
@@ -5054,6 +5133,7 @@ export class HostEngine {
     let session = applyHarnessEvent(live.value.session, event, {
       resumeAtReset: this.running.get(id)?.resumeAtReset ?? false,
     });
+    if (automaticApproval) session = applyHarnessEvent(session, automaticApproval);
     if (acceptedAuthor && session.blocks.length > live.value.session.blocks.length) {
       const blocks = [...session.blocks],
         last = blocks.length - 1;
@@ -5087,8 +5167,62 @@ export class HostEngine {
         : {}),
     };
     live.events.push(event);
+    if (automaticApproval) live.events.push(automaticApproval);
     if (!BATCHED.has(event.type)) await this.flush(id);
     else this.scheduleFlush(id, runId);
+  }
+
+  private async sessionToolApproval(
+    value: HostSession,
+    event: Extract<HarnessEvent, { type: "approval.requested" }>,
+  ): Promise<Extract<HarnessEvent, { type: "approval.resolved" }> | undefined> {
+    const id = value.session.id;
+    const active = this.running.get(id);
+    const occurrence = event.occurrenceId;
+    if (
+      event.sessionApprovalScope !== CLAUDE_WORKSPACE_GLOB ||
+      !isApprovalOccurrenceId(occurrence) ||
+      !active?.approvalCwd ||
+      active.cancelled ||
+      active.ending ||
+      this.closing ||
+      value.session.blocks.some(
+        ({ approval }) =>
+          approval?.occurrenceId === occurrence ||
+          (approval?.requestId === event.requestId && !approval.decided),
+      )
+    )
+      return undefined;
+    const owner = sessionApprovalOwner(value, active.approvalCwd);
+    if (!owner) return undefined;
+    if (!this.sessionApprovalGrants.allows(id, owner, CLAUDE_WORKSPACE_GLOB)) {
+      (active.grantableApprovals ??= new Set()).add(occurrence);
+      return undefined;
+    }
+    // Use the same scheduling, authority and original-provider checks as an explicit approval.
+    try {
+      await this.checkProviderSchedule(id, active.runId);
+      await this.store.assertAuthority(id, active.authorityGeneration);
+    } catch {
+      return undefined;
+    }
+    if (
+      this.closing ||
+      this.running.get(id) !== active ||
+      this.live.get(id)?.value !== value ||
+      active.cancelled ||
+      active.ending ||
+      !this.sessionApprovalGrants.allows(id, owner, CLAUDE_WORKSPACE_GLOB) ||
+      active.provider.approve(id, event.requestId, "allow", occurrence, CLAUDE_WORKSPACE_GLOB) !==
+        true
+    )
+      return undefined;
+    return {
+      type: "approval.resolved",
+      requestId: event.requestId,
+      occurrenceId: occurrence,
+      decision: "allow",
+    };
   }
 
   private settled(
@@ -5098,7 +5232,12 @@ export class HostEngine {
     endedAt = Date.now(),
     notice: "error" | "interrupt" = "interrupt",
   ): HostSession {
-    const stopped = stopStreaming(value.session, endedAt, notice === "error" && !!message);
+    const stopped = stopStreaming(
+      value.session,
+      endedAt,
+      notice === "error" && !!message,
+      notice === "error" ? "failed" : "stopped",
+    );
     const session = {
       ...stopped,
       blocks: stopped.blocks.map((block) =>
@@ -5219,6 +5358,7 @@ export class HostEngine {
 
   private async closeOwned(): Promise<void> {
     this.closing = true;
+    this.sessionApprovalGrants.clear();
     // Revoke every original scope immediately; process shutdown can stay held.
     this.runWriters.seal();
     await this.ready;

@@ -35,7 +35,11 @@ function ConnectedDockApproval({
   const full = approvalDetail(block);
   const summary = approvalSummary(block);
   return (
-    <div className="flex min-w-0 items-center gap-1.5" data-no-drag="" data-dock-approval="">
+    <div
+      className="flex min-w-0 flex-wrap items-center gap-1.5"
+      data-no-drag=""
+      data-dock-approval=""
+    >
       <Text
         size="caption"
         tone="secondary"
@@ -57,12 +61,27 @@ function ConnectedDockApproval({
       >
         {t("Deny")}
       </Button>
+      {decision.sessionAction ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          motion="none"
+          loading={decision.sessionAction.pending}
+          disabled={decision.sessionAction.disabled}
+          onClick={decision.sessionAction.onClick}
+        >
+          {decision.sessionAction.label}
+        </Button>
+      ) : null}
       <Button
         variant="primary"
         size="sm"
         type="button"
         motion="none"
-        loading={decision.pending && decision.decision === "allow"}
+        loading={
+          decision.pending && !decision.allowForSessionPending && decision.decision === "allow"
+        }
         disabled={decision.blocked}
         tooltip={decision.blocked ? reason : full === summary ? undefined : full}
         onClick={() => void decision.decide("allow")}
