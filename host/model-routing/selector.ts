@@ -53,7 +53,9 @@ export function modelRoutingEntryStatus(
           ? entry.unknownLimit === "skip"
             ? "unknownLimit"
             : undefined
-          : quota.leftPercent < (entry.minRemainingPercent ?? reservePercent ?? 0)
+          : // An exhausted window is skipped even with no reserve set (Keep free 0).
+            quota.leftPercent <= 0 ||
+              quota.leftPercent < (entry.minRemainingPercent ?? reservePercent ?? 0)
             ? "belowLimit"
             : undefined;
   return {

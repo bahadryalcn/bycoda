@@ -85,10 +85,10 @@ describe("model routing selection", () => {
     });
     expect(ModelRoutingResolutionSchema.parse(result)).toEqual(result);
   });
-  it("accepts exact threshold and zero remaining at default threshold", () => {
+  it("accepts the exact threshold and any headroom at the default threshold", () => {
     for (const [minRemainingPercent, leftPercent] of [
       [50, 50],
-      [undefined, 0],
+      [undefined, 1],
     ] as const)
       expect(
         selectModelRouting(
@@ -188,6 +188,15 @@ describe("model routing selection", () => {
       modelRoutingEntryStatus(entry("a", { minRemainingPercent: 21 }), signals({ quota })),
     ).toEqual({ entryId: "a", skip: "belowLimit", leftPercent: 20, resetsAt: 100 });
     expect(quota).toHaveBeenCalledTimes(1);
+  });
+  it("skips an exhausted account even when no reserve is set", () => {
+    const at = (leftPercent: number) =>
+      modelRoutingEntryStatus(
+        entry("a"),
+        signals({ quota: () => ({ leftPercent, resetsAt: 100 }) }),
+      );
+    expect(at(0)).toEqual({ entryId: "a", skip: "belowLimit", leftPercent: 0, resetsAt: 100 });
+    expect(at(1)).toEqual({ entryId: "a", leftPercent: 1, resetsAt: 100 });
   });
   it("applies the provider reserve only to entries without their own", () => {
     const draft = state([
