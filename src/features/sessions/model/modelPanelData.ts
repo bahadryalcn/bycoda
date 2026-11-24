@@ -133,6 +133,8 @@ export type AccountUsageSummary = {
   usedPercent: number | null;
   /** When that window resets, if known and still ahead. */
   resetsAt: number | null;
+  /** A live window has no headroom, before rounding for display. */
+  exhausted: boolean;
 };
 
 /**
@@ -143,16 +145,25 @@ export function accountUsageSummary(
   limits: ProviderRateLimits | undefined,
   now: number,
 ): AccountUsageSummary {
-  if (limits?.status !== "ok") return { usedPercent: null, resetsAt: null };
+  if (limits?.status !== "ok") return { usedPercent: null, resetsAt: null, exhausted: false };
   let tightest: { used: number; resetsAt: number | null } | null = null;
   for (const window of [limits.session, limits.weekly, limits.monthly]) {
     if (!window) continue;
     const expired = window.resetsAt != null && window.resetsAt <= now;
     const used = expired ? 0 : Math.min(100, Math.max(0, window.usedPercent || 0));
-    if (!tightest || used > tightest.used)
-      tightest = { used, resetsAt: expired ? null : window.resetsAt };
+    const resetsAt = expired ? null : window.resetsAt;
+    // Equally exhausted windows all have to clear before the account can be chosen.
+    const resetsLater =
+      used === 100 &&
+      tightest?.used === 100 &&
+      (resetsAt ?? Infinity) > (tightest.resetsAt ?? Infinity);
+    if (!tightest || used > tightest.used || resetsLater) tightest = { used, resetsAt };
   }
   return tightest
-    ? { usedPercent: Math.round(tightest.used), resetsAt: tightest.resetsAt }
-    : { usedPercent: null, resetsAt: null };
+    ? {
+        usedPercent: Math.round(tightest.used),
+        resetsAt: tightest.resetsAt,
+        exhausted: tightest.used === 100,
+      }
+    : { usedPercent: null, resetsAt: null, exhausted: false };
 }

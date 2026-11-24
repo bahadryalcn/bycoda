@@ -37,6 +37,9 @@ import { TranscriptPages } from "../sessions/transcriptPage";
 import { RevisionWaits } from "../storage/revisionWait";
 import { SyncTransfers } from "../sync/sync-transfer";
 import { RemoteChanges } from "../workspaces/remoteChanges";
+import { AssistantQuotaReader } from "../assistant/models/assistant-quota-reader";
+import { readUsageLimits } from "../usage/limits-report";
+import { hostUsageLimitsDeps } from "./usage-limits-deps";
 import { WorkspaceCommands } from "../workspaces/workspace-commands";
 import type { ServerBindings } from "./bindings";
 import { discoverModels, providerBinaries, WATCH_STAMP_MS } from "./support";
@@ -254,6 +257,11 @@ export function createProjectsRuntime(
       ),
     providers: dependencies.providers,
     authStatus: readHarnessAuthStatus,
+    // The same provider quota samples that skip spent entries in the model order.
+    quota: new AssistantQuotaReader({
+      readLimits: () =>
+        readUsageLimits(hostUsageLimitsDeps(dependencies.engine.store.environmentId)),
+    }),
     defaultAccounts: async () =>
       providerDefaultAccounts(await readProviderAccountStyles(dependencies.engine.store)),
   });

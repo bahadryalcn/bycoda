@@ -41,6 +41,7 @@ import { DelegationOptionIcon } from "./DelegationSettings";
 import { SubagentModeControl } from "./SubagentModeControl";
 import { subagentMode } from "../model/crossDelegation";
 import { ModelSettingPicker } from "./ModelSettingPicker";
+import type { AccountLimitReason } from "./ModelAccountSwitcher";
 import { SubagentEffortSwitch } from "./SubagentEffortSwitch";
 import {
   CROSS_ADVISOR_KEY,
@@ -133,6 +134,7 @@ export function ModelSettingsColumn({
   hideAgentSettings = false,
   onEditSubagents,
   editingSubagents = false,
+  limitReason,
 }: {
   conversationSettings?: ReactNode;
   /**
@@ -142,6 +144,7 @@ export function ModelSettingsColumn({
   hideAgentSettings?: boolean;
   onEditSubagents?: () => void;
   editingSubagents?: boolean;
+  limitReason?: AccountLimitReason;
   current: AgentModel;
   settings: ModelSetting[];
   values: Record<string, string>;
@@ -261,6 +264,7 @@ export function ModelSettingsColumn({
           setting={picking}
           values={values}
           disabled={locked(picking)}
+          limitReason={limitReason}
           onChoose={(value) => onChoose(picking, value)}
           onClose={() => setPickingId(null)}
         />

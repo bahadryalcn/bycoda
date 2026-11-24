@@ -5,6 +5,7 @@ import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Home, Star } from "../../../shared/ui/icons";
 import { StatusDot } from "../../../shared/ui/StatusDot";
+import { Text } from "../../../shared/ui/Text";
 import { useEffect, useId, type ReactNode } from "react";
 import { type AgentModel, type ModelPickerTab } from "../model/models";
 import { harnessUnavailableHint } from "../../../integrations/harness/core/availability";
@@ -48,6 +49,7 @@ export type ModelBrowserProps = {
   onSelectTab: (tab: ModelPickerTab) => void;
   onActive: (index: number) => void;
   onPick: (model: AgentModel) => void;
+  modelLimitReason?: (model: AccountModelChoice) => string | undefined;
   onToggleFavorite: (id: string) => void;
   defaultMark?: ModelDefaultMark;
   railAccounts?: Partial<Record<HarnessId, ModelAccountIdentity | undefined>>;
@@ -79,6 +81,7 @@ export function ModelBrowser({
   onSelectTab,
   onActive,
   onPick,
+  modelLimitReason,
   onToggleFavorite,
   defaultMark,
   header,
@@ -109,35 +112,45 @@ export function ModelBrowser({
   const indexByKey = new Map(keys.map((key, index) => [key, index]));
   const favoriteIds = new Set(favorites);
   const options = groups.flatMap((group) =>
-    group.models.map(({ item, index }) => ({
-      value: keys[index]!,
-      title: modelChoiceBaseName(item as AccountModelChoice),
-      accessibleLabel:
-        tab === "favorites" || (item as AccountModelChoice).accountNumber !== undefined
-          ? [
-              modelChoiceBaseName(item as AccountModelChoice),
-              item.provider?.name ?? HARNESS_TITLE[item.harness],
-              (item as AccountModelChoice).accountNumber !== undefined
-                ? (item as AccountModelChoice).accountLabel
-                : undefined,
-            ]
-              .filter(Boolean)
-              .join(", ")
-          : undefined,
-      icon: <HarnessIcon harness={item.harness} className="icon-sm" />,
-      description:
-        (item as AccountModelChoice).accountNumber !== undefined ? (
-          <span className="inline-flex items-center gap-1">
-            <ModelAccountNumber account={item as AccountModelChoice} />
-            {(item as AccountModelChoice).accountLabel}
+    group.models.map(({ item, index }) => {
+      const account = item as AccountModelChoice;
+      const reason = modelLimitReason?.(account);
+      const available = source.available(item.harness);
+      const description = [
+        account.accountNumber !== undefined ? account.accountLabel : undefined,
+        reason,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return {
+        value: keys[index]!,
+        title: modelChoiceBaseName(item as AccountModelChoice),
+        accessibleLabel:
+          tab === "favorites" || (item as AccountModelChoice).accountNumber !== undefined
+            ? [
+                modelChoiceBaseName(item as AccountModelChoice),
+                item.provider?.name ?? HARNESS_TITLE[item.harness],
+                (item as AccountModelChoice).accountNumber !== undefined
+                  ? (item as AccountModelChoice).accountLabel
+                  : undefined,
+              ]
+                .filter(Boolean)
+                .join(", ")
+            : undefined,
+        icon: <HarnessIcon harness={item.harness} className="icon-sm" />,
+        description: description ? (
+          <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+            <ModelAccountNumber account={account} />
+            <Text size="inherit" tone="inherit" wrap="anywhere">
+              {description}
+            </Text>
           </span>
         ) : undefined,
-      group: group.name,
-      disabled: !source.available(item.harness),
-      disabledReason: !source.available(item.harness)
-        ? harnessUnavailableHint(item.harness)
-        : undefined,
-    })),
+        group: group.name,
+        disabled: !available || !!reason,
+        disabledReason: !available && !reason ? harnessUnavailableHint(item.harness) : undefined,
+      };
+    }),
   );
   const list = usePickerList({
     id: listId,

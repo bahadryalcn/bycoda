@@ -13074,5 +13074,8 @@
   "Answer the open approval before branching from this reply.": "Responda à aprovação em aberto antes de ramificar a partir desta resposta.",
   "This reply cannot be branched.": "Não é possível ramificar a partir desta resposta.",
   "Could not generate image.": "Não foi possível gerar a imagem.",
-  "Retrying in {p0}": "Tentando novamente em {p0}"
+  "Retrying in {p0}": "Tentando novamente em {p0}",
+  "Limit reached · resets in {p0}": "Limite atingido · reinicia em {p0}",
+  "The account for {p0} has reached its usage limit. Choose another model.": "A conta de {p0} atingiu o limite de uso. Escolha outro modelo.",
+  "The account for {p0} has reached its usage limit and resets at {p1}. Choose another model.": "A conta de {p0} atingiu o limite de uso e é redefinida em {p1}. Escolha outro modelo."
 }

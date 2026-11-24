@@ -13074,5 +13074,8 @@
   "Answer the open approval before branching from this reply.": "请先处理未决的审批，再从此回复创建分支。",
   "This reply cannot be branched.": "无法从此回复创建分支。",
   "Could not generate image.": "无法生成图片。",
-  "Retrying in {p0}": "{p0}后重试"
+  "Retrying in {p0}": "{p0}后重试",
+  "Limit reached · resets in {p0}": "已达上限 · {p0} 后重置",
+  "The account for {p0} has reached its usage limit. Choose another model.": "{p0} 的账户已达到使用上限。请选择其他模型。",
+  "The account for {p0} has reached its usage limit and resets at {p1}. Choose another model.": "{p0} 的账户已达到使用上限，将于 {p1} 重置。请选择其他模型。"
 }

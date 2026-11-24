@@ -118,6 +118,24 @@ describe("splitPanelSettings", () => {
 describe("accountUsageSummary", () => {
   const now = 1_000_000;
 
+  it.each([
+    [99.8, now + 1, "ok", false],
+    [100, now + 1, "ok", true],
+    [100, null, "ok", true],
+    [100, now, "ok", false],
+    [100, now + 1, "unavailable", false],
+  ] as const)(
+    "reads %s percent with reset %s and status %s as exhausted=%s",
+    (usedPercent, resetsAt, status, exhausted) => {
+      expect(
+        accountUsageSummary(
+          limits({ status, session: { usedPercent, windowMinutes: 300, resetsAt } }),
+          now,
+        ).exhausted,
+      ).toBe(exhausted);
+    },
+  );
+
   it("reports the tightest window and its reset", () => {
     expect(
       accountUsageSummary(
@@ -127,7 +145,19 @@ describe("accountUsageSummary", () => {
         }),
         now,
       ),
-    ).toEqual({ usedPercent: 58, resetsAt: now + 120_000 });
+    ).toEqual({ usedPercent: 58, resetsAt: now + 120_000, exhausted: false });
+  });
+
+  it("reports when the last exhausted window will reset", () => {
+    expect(
+      accountUsageSummary(
+        limits({
+          session: { usedPercent: 100, windowMinutes: 300, resetsAt: now + 60_000 },
+          weekly: { usedPercent: 100, windowMinutes: 10_080, resetsAt: now + 120_000 },
+        }),
+        now,
+      ),
+    ).toEqual({ usedPercent: 100, resetsAt: now + 120_000, exhausted: true });
   });
 
   it("counts a window whose reset has passed as unused", () => {
@@ -136,14 +166,19 @@ describe("accountUsageSummary", () => {
         limits({ weekly: { usedPercent: 100, windowMinutes: 10_080, resetsAt: now - 1 } }),
         now,
       ),
-    ).toEqual({ usedPercent: 0, resetsAt: null });
+    ).toEqual({ usedPercent: 0, resetsAt: null, exhausted: false });
   });
 
   it("has no usage without fresh data", () => {
-    expect(accountUsageSummary(undefined, now)).toEqual({ usedPercent: null, resetsAt: null });
+    expect(accountUsageSummary(undefined, now)).toEqual({
+      usedPercent: null,
+      resetsAt: null,
+      exhausted: false,
+    });
     expect(accountUsageSummary(limits({ status: "error" }), now)).toEqual({
       usedPercent: null,
       resetsAt: null,
+      exhausted: false,
     });
   });
 });

@@ -13074,5 +13074,8 @@
   "Answer the open approval before branching from this reply.": "Beantworte die offene Freigabe, bevor du von dieser Antwort aus verzweigst.",
   "This reply cannot be branched.": "Von dieser Antwort aus kann nicht verzweigt werden.",
   "Could not generate image.": "Das Bild konnte nicht erzeugt werden.",
-  "Retrying in {p0}": "Neuer Versuch in {p0}"
+  "Retrying in {p0}": "Neuer Versuch in {p0}",
+  "Limit reached · resets in {p0}": "Limit erreicht · wird in {p0} zurückgesetzt",
+  "The account for {p0} has reached its usage limit. Choose another model.": "Das Konto für {p0} hat sein Nutzungslimit erreicht. Wähle ein anderes Modell.",
+  "The account for {p0} has reached its usage limit and resets at {p1}. Choose another model.": "Das Konto für {p0} hat sein Nutzungslimit erreicht und wird am {p1} zurückgesetzt. Wähle ein anderes Modell."
 }

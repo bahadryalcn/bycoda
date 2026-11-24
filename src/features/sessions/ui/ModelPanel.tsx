@@ -24,7 +24,12 @@ import {
   subscribeProjectProviders,
 } from "../model/projectProviders";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
-import { ModelAccountControl, ModelAccountList, usePanelAccounts } from "./ModelAccountSwitcher";
+import {
+  ModelAccountControl,
+  ModelAccountList,
+  usePanelAccounts,
+  type usePickerAccountUsage,
+} from "./ModelAccountSwitcher";
 import { ModelBrowser, type ModelBrowserProps, type ModelDefaultMark } from "./ModelBrowser";
 import { ModelSettingHelp, ModelSettingsColumn } from "./ModelSettingsColumn";
 import { ModelSettingPicker } from "./ModelSettingPicker";
@@ -58,6 +63,7 @@ export function ModelPanel({
   leading,
   accountHarness,
   accountId,
+  accountUsage,
   accountListOpen,
   onAccountListOpen,
   onSelectAccount,
@@ -76,6 +82,7 @@ export function ModelPanel({
   /** Provider whose accounts the header offers; none on the mixed Favorites tab. */
   accountHarness?: HarnessId;
   accountId: string;
+  accountUsage: ReturnType<typeof usePickerAccountUsage>;
   accountListOpen: boolean;
   onAccountListOpen: (open: boolean) => void;
   onSelectAccount: (accountId: string) => void;
@@ -106,11 +113,7 @@ export function ModelPanel({
       row?.querySelector<HTMLElement>("button")
     )?.focus({ preventScroll: true });
   }, [editingSubagents]);
-  const { accounts, now } = usePanelAccounts(
-    accountHarness ?? browser.harnesses[0],
-    !!accountHarness,
-  );
-  const shownAccounts = accountHarness ? accounts : [];
+  const shownAccounts = usePanelAccounts(accountHarness, accountUsage);
   const accountControl = accountSwitcherKind(shownAccounts.length);
   const inlineAccounts =
     accountControl === "switch" ||
@@ -137,7 +140,7 @@ export function ModelPanel({
         accounts={shownAccounts}
         accountId={accountId}
         defaultAccountId={defaultAccountId}
-        now={now}
+        now={accountUsage.now}
         inline={inlineAccounts}
         onSelect={pickAccount}
       />
@@ -176,6 +179,7 @@ export function ModelPanel({
                   setting={subagents}
                   values={settings.values}
                   disabled={settings.locked(subagents)}
+                  limitReason={accountUsage.limitReason}
                   onChoose={() => undefined}
                   onClose={closeSubagents}
                   onApply={(value) => {
@@ -207,6 +211,7 @@ export function ModelPanel({
           {settings ? (
             <ModelSettingsColumn
               {...settings}
+              limitReason={accountUsage.limitReason}
               conversationSettings={conversationSettings}
               onExplain={setExplained}
               onEditSubagents={() => setEditingSubagents(true)}

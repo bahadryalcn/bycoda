@@ -38,7 +38,7 @@ import {
   type DelegationParent,
 } from "../../src/shared/model/host-contracts/delegation";
 import { truncateGraphemes } from "../../src/shared/lib/text/truncate";
-import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
+import { elapsedSince, isoTimestamp, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import {
   cancelSessionRun,
   errorMessage,
@@ -61,6 +61,7 @@ import { refuseSingleSlotChild } from "./capacity";
 import type { AgentRole } from "./tools";
 import { AgentCommunication, delegationReplyCommandId } from "./communication";
 import { agentMessageDelivery, inspectAgentSession } from "./message-delivery";
+import { limitedDelegates, usageLimitMessage, type DelegationQuota } from "./usage-limits";
 
 export type DelegationDependencies = {
   engine: SessionRunEngine & { store: HostStore };
@@ -76,6 +77,8 @@ export type DelegationDependencies = {
     provider: RemoteProvider,
     accountId?: string,
   ) => Promise<"signedIn" | "signedOut" | "unknown">;
+  /** Provider quota samples. Without them no account counts as at its limit. */
+  quota?: DelegationQuota;
   enqueueParent?: (
     sessionId: string,
     id: string,
@@ -315,16 +318,33 @@ export class ConversationDelegation {
       signedOutAccounts,
       defaultAccounts,
     };
-    const subagents = resolveSubagents(session.modelSettings[CROSS_SUBAGENTS_KEY], input);
+    const allowed = resolveSubagents(session.modelSettings[CROSS_SUBAGENTS_KEY], input);
+    // Claude Code's own advisor answers a Claude conversation's Claude pick inside its turn.
+    const allowedAdvisor = nativeAdvisor(session.harness, session.modelSettings)
+      ? undefined
+      : decodeAdvisor(session.modelSettings[CROSS_ADVISOR_KEY]);
+    // A spent account is not offered; the owner's selection itself stays unchanged.
+    const limitedSubagents = await limitedDelegates(this.deps.quota, allowed);
+    const [limitedAdvisor] = await limitedDelegates(
+      this.deps.quota,
+      allowedAdvisor ? [allowedAdvisor] : [],
+    );
+    const spent = new Set(limitedSubagents.map((entry) => delegateRefKey(entry.ref)));
+    const subagents = allowed.filter((ref) => !spent.has(delegateRefKey(ref)));
     return {
       subagents,
+      limitedSubagents,
+      limitedAdvisor,
       ...(session.modelSettings[CROSS_SUBAGENTS_KEY] === AUTOMATIC_SUBAGENTS && !subagents.length
-        ? { automatic: { reason: automaticSubagentEmptyReason(input) } }
+        ? {
+            automatic: {
+              reason: allowed.length
+                ? "all accounts at their usage limit"
+                : automaticSubagentEmptyReason(input),
+            },
+          }
         : {}),
-      // Claude Code's own advisor answers a Claude conversation's Claude pick inside its turn.
-      advisor: nativeAdvisor(session.harness, session.modelSettings)
-        ? undefined
-        : decodeAdvisor(session.modelSettings[CROSS_ADVISOR_KEY]),
+      advisor: limitedAdvisor ? undefined : allowedAdvisor,
     };
   }
 
@@ -348,7 +368,10 @@ export class ConversationDelegation {
   private async options(caller: AgentsCaller) {
     const own = await this.caller(caller);
     const catalog = await this.deps.models(caller.projectId);
-    const { subagents, advisor, automatic } = await this.selected(own.session, catalog);
+    const { subagents, advisor, automatic, limitedSubagents, limitedAdvisor } = await this.selected(
+      own.session,
+      catalog,
+    );
     const running = await this.runningCounts(caller.sessionId);
     const describe = (ref: DelegateModelRef) => {
       const model = this.resolve(ref, catalog);
@@ -370,6 +393,19 @@ export class ConversationDelegation {
     return {
       subagents: subagents.map((ref) => ({ ...describe(ref), tier: subagentTier(ref.model) })),
       ...(automatic ? { automatic } : {}),
+      // Selected models left out until their account's usage window resets.
+      ...(limitedSubagents.length || limitedAdvisor
+        ? {
+            atUsageLimit: [...limitedSubagents, ...(limitedAdvisor ? [limitedAdvisor] : [])].map(
+              (entry) => ({
+                ref: delegateRefKey(entry.ref),
+                ...(entry.resetsAt === undefined
+                  ? {}
+                  : { resetsAt: isoTimestamp(entry.resetsAt) }),
+              }),
+            ),
+          }
+        : {}),
       ...(own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY]
         ? { maxEffort: own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY] }
         : {}),
@@ -447,10 +483,30 @@ export class ConversationDelegation {
         throw new Error("Queued delegation caller configuration changed. Submit a new request.");
       }
       const catalog = await this.deps.models(caller.projectId);
-      const { subagents, advisor } = await this.selected(own.session, catalog);
+      const { subagents, advisor, limitedSubagents, limitedAdvisor } = await this.selected(
+        own.session,
+        catalog,
+      );
       const candidates = kind === "advisor" ? (advisor ? [advisor] : []) : subagents;
-      if (!candidates.length)
+      // The Host refuses a spent account instead of switching: the agent must not substitute one.
+      const limited =
+        kind === "advisor" ? (limitedAdvisor ? [limitedAdvisor] : []) : limitedSubagents;
+      const queuedLimit = existing?.pending
+        ? limited.find((entry) => delegateRefKey(entry.ref) === delegateRefKey(existing.model))
+        : undefined;
+      if (queuedLimit) {
+        await this.cancelPending(existing!);
+        throw new Error(usageLimitMessage(queuedLimit));
+      }
+      const requestedLimit =
+        args.model === undefined
+          ? undefined
+          : limited.find((entry) => delegateRefKey(entry.ref) === args.model);
+      if (requestedLimit) throw new Error(usageLimitMessage(requestedLimit));
+      if (!candidates.length) {
+        if (limited.length) throw new Error(usageLimitMessage(limited[0]!));
         throw new Error(`No ${kind} model is selected for this conversation.`);
+      }
       let ref = existing?.pending ? existing.model : candidates[0]!;
       if (
         existing?.pending &&
@@ -723,6 +779,10 @@ export class ConversationDelegation {
       if (status.status === "needsInput")
         throw new Error("Answer the approval in the child's own session first.");
       await this.verifySignIn(record.model);
+      if (!brief) {
+        const [spent] = await limitedDelegates(this.deps.quota, [record.model]);
+        if (spent) throw new Error(usageLimitMessage(spent));
+      }
       const running = await this.runningCounts(caller.sessionId);
       const limit =
         record.kind === "subagent" ? subagentLimit(own.depth) : DELEGATION_LIMITS.runningAdvisors;

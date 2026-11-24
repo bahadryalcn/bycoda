@@ -13074,5 +13074,8 @@
   "Answer the open approval before branching from this reply.": "Répondez à l'approbation ouverte avant de créer une branche à partir de cette réponse.",
   "This reply cannot be branched.": "Impossible de créer une branche à partir de cette réponse.",
   "Could not generate image.": "Impossible de générer l’image.",
-  "Retrying in {p0}": "Nouvelle tentative dans {p0}"
+  "Retrying in {p0}": "Nouvelle tentative dans {p0}",
+  "Limit reached · resets in {p0}": "Limite atteinte · réinitialisation dans {p0}",
+  "The account for {p0} has reached its usage limit. Choose another model.": "Le compte de {p0} a atteint sa limite d'utilisation. Choisissez un autre modèle.",
+  "The account for {p0} has reached its usage limit and resets at {p1}. Choose another model.": "Le compte de {p0} a atteint sa limite d'utilisation et se réinitialise le {p1}. Choisissez un autre modèle."
 }

@@ -59,6 +59,7 @@ import {
 import { AccessPicker } from "./AccessPicker";
 import { HarnessIcon } from "./HarnessIcon";
 import { ModelPanel } from "./ModelPanel";
+import { usePickerAccountUsage } from "./ModelAccountSwitcher";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import type { DropdownMenuItem } from "../../../shared/ui/dropdownMenuModel";
 import { COMPOSER_PICKER_SELECTOR } from "../model/composerPickerSelector";
@@ -75,7 +76,6 @@ import {
   type AccountModelChoice,
   type ModelAccountCatalog,
 } from "../model/accountModelChoices";
-import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/rateLimitsCache";
 import {
   defaultProviderAccountId,
   providerAccountColorValue,
@@ -222,7 +222,6 @@ export function ModelPicker({
 }: Props) {
   const t = useT();
   const source = useModelSource();
-  const usage = useSyncExternalStore(subscribeRateLimits, getAllRateLimits, getAllRateLimits);
   const switchShortcut = useKeybindingShortcut("App: Switch Model");
   const refreshSource = useStableCallback(source.refresh);
   const accountsSnapshot = useSyncExternalStore(
@@ -254,6 +253,11 @@ export function ModelPicker({
   const [activeModelKey, setActiveModelKey] = useState<string | null>(null);
   const [seenOpenRequest, setSeenOpenRequest] = useState(0);
   const [recentMenu, setRecentMenu] = useState<RecentMenu | null>(null);
+  const accountUsage = usePickerAccountUsage(
+    accountsSnapshot,
+    source.accounts === undefined && (open || recentMenu != null),
+  );
+  const { usage, limitReason } = accountUsage;
   // Account picked per provider tab while browsing; the current provider starts on its account.
   const [tabAccounts, setTabAccounts] = useState<Partial<Record<HarnessId, string>>>({});
   const [accountListOpen, setAccountListOpen] = useState(false);
@@ -737,19 +741,28 @@ export function ModelPicker({
     onSettingsChange(next);
   };
 
+  const modelAccountId = (item: AccountModelChoice) =>
+    hideSettings || recentOpen
+      ? item.accountId
+      : accountChoices && supportsProviderAccounts(item.harness)
+        ? accountFor(item.harness)
+        : undefined;
+  const modelLimitReason = (item: AccountModelChoice) =>
+    limitReason(
+      item.harness,
+      modelAccountId(item) ??
+        accountForTab(item.harness, {}, current.harness, currentAccountId, accountCatalog),
+    );
+
   const pickModel = (item: AccountModelChoice) => {
     if (
       !pickerHarnesses.includes(item.harness) ||
       !modelEnabledAtRevision(source, item.id, catalogVersion) ||
-      !source.available(item.harness)
+      !source.available(item.harness) ||
+      modelLimitReason(item)
     )
       return;
-    const accountId =
-      hideSettings || recentOpen
-        ? item.accountId
-        : accountChoices && supportsProviderAccounts(item.harness)
-          ? accountFor(item.harness)
-          : undefined;
+    const accountId = modelAccountId(item);
     if (accountId) onChange(item.harness, item.id, accountId);
     else onChange(item.harness, item.id);
     if (hideSettings || recentOpen || closeOnPick) {
@@ -763,7 +776,7 @@ export function ModelPicker({
   // Choosing an account on the current provider switches the current model to it; on another
   // provider it waits for the model picked there.
   const selectAccount = (id: string) => {
-    if (visibleTab === "favorites") return;
+    if (visibleTab === "favorites" || limitReason(visibleTab, id)) return;
     setTabAccounts((previous) => ({ ...previous, [visibleTab]: id }));
     if (visibleTab === current.harness && !inheritSelected && id !== currentAccountId)
       onChange(current.harness, current.id, id);
@@ -989,6 +1002,7 @@ export function ModelPicker({
           onSelectTab={selectTab}
           onActive={setActiveModel}
           onPick={pickModel}
+          modelLimitReason={modelLimitReason}
           onToggleFavorite={toggleFavorite}
           extras={
             showExtras
@@ -1025,6 +1039,7 @@ export function ModelPicker({
             onSelectTab: selectTab,
             onActive: setActiveModel,
             onPick: pickModel,
+            modelLimitReason,
             onToggleFavorite: toggleFavorite,
             railAccounts,
           }}
@@ -1061,6 +1076,7 @@ export function ModelPicker({
           }
           accountHarness={accountChoices && visibleTab !== "favorites" ? visibleTab : undefined}
           accountId={browsedAccountId}
+          accountUsage={accountUsage}
           accountListOpen={accountListOpen}
           onAccountListOpen={setAccountListOpen}
           onSelectAccount={selectAccount}
@@ -1148,7 +1164,8 @@ export function ModelPicker({
               ) : undefined,
               checked: modelChoiceKey(item) === currentChoiceKey,
               selectionRole: "radio",
-              disabled: !source.available(item.harness),
+              disabled: !source.available(item.harness) || !!modelLimitReason(item),
+              description: modelLimitReason(item),
             })),
           ]}
           onPick={(id) => {

@@ -30,6 +30,7 @@ import type { ModelSetting } from "../model/models";
 import { HARNESS_TITLE } from "../model/session";
 import { DelegationOptionIcon } from "./DelegationSettings";
 import { ModelAccountNumber } from "./ModelAccountIdentity";
+import type { AccountLimitReason } from "./ModelAccountSwitcher";
 
 /**
  * A long choice (subagents, advisor) given the whole settings column: search on top, options
@@ -42,6 +43,7 @@ export function ModelSettingPicker({
   setting,
   values,
   disabled,
+  limitReason,
   onChoose,
   onClose,
   onApply,
@@ -49,6 +51,7 @@ export function ModelSettingPicker({
   setting: ModelSetting;
   values: Record<string, string>;
   disabled: boolean;
+  limitReason?: AccountLimitReason;
   onChoose: (value: string) => void;
   onClose: () => void;
   /** Subagent lists are edited as a draft and committed once. */
@@ -69,20 +72,22 @@ export function ModelSettingPicker({
   const entries = settingOptions
     .filter((option) => !bulk || decodeAdvisor(option.value) !== undefined)
     .map((option) => {
-      const ref = bulk ? decodeAdvisor(option.value) : undefined;
+      const ref = decodeAdvisor(option.value);
       const harness = delegationOptionHarness(setting, option.value);
       const provider = harness ? HARNESS_TITLE[harness] : undefined;
       const group = bulk && option.accountLabel ? `${provider} · ${option.accountLabel}` : provider;
       return {
         option,
         group,
-        accountKey: ref
-          ? JSON.stringify([
-              ref.harness,
-              ref.providerAccountId ??
-                (option.accountLabel ? DEFAULT_PROVIDER_ACCOUNT_ID : undefined),
-            ])
-          : "",
+        reason: ref ? limitReason?.(ref.harness, ref.providerAccountId) : undefined,
+        accountKey:
+          bulk && ref
+            ? JSON.stringify([
+                ref.harness,
+                ref.providerAccountId ??
+                  (option.accountLabel ? DEFAULT_PROVIDER_ACCOUNT_ID : undefined),
+              ])
+            : "",
       };
     });
   const accountOptions = Array.from(
@@ -104,7 +109,13 @@ export function ModelSettingPicker({
     else groups.set(entry.group, [entry]);
   }
   const grouped = [...groups.values()].flat();
-  const options = grouped.map(({ option, group }) => {
+  const newlyExhausted = ({ option, reason }: (typeof entries)[number]) =>
+    bulk &&
+    !!reason &&
+    delegationOptionSelected(setting, selection, option.value) &&
+    !delegationOptionSelected(setting, values, option.value);
+  const options = grouped.map((entry) => {
+    const { option, group, reason } = entry;
     const picked = delegationOptionSelected(setting, selection, option.value);
     const accountShownInFilter = Boolean(accountFilter && option.accountLabel);
     return {
@@ -128,9 +139,18 @@ export function ModelSettingPicker({
             {!bulk ? option.accountLabel : null}
           </span>
         ) : undefined,
-      description: bulk ? undefined : option.detail,
+      description: reason ? (
+        <Text size="inherit" tone="inherit" wrap="anywhere">
+          {reason}
+        </Text>
+      ) : bulk ? undefined : (
+        option.detail
+      ),
       group: accountFilter ? undefined : group,
-      disabled: disabled || (bulk && !picked && modelCount >= DELEGATION_LIMITS.subagentModels),
+      disabled:
+        disabled ||
+        (!!reason && !newlyExhausted(entry)) ||
+        (bulk && !picked && modelCount >= DELEGATION_LIMITS.subagentModels),
     };
   });
   const selected = setting.options
@@ -162,8 +182,13 @@ export function ModelSettingPicker({
       option.value !== "auto" &&
       delegationOptionSelected(setting, values, option.value),
   ).length;
-  const addShown = shown.filter(({ option }) => !selected.includes(option.value));
-  const clearShown = shown.length > 0 && addShown.length === 0;
+  const addShown = shown.filter(
+    ({ option, reason }) => !reason && !selected.includes(option.value),
+  );
+  const selectedShown = shown.filter(({ option }) => selected.includes(option.value));
+  const clearShown = selectedShown.length > 0 && addShown.length === 0;
+  // A quota update can arrive while editing. Keep saved picks and let the user remove a newly blocked one before applying.
+  const blockedDraft = entries.some(newlyExhausted);
   const bulkActionLabel = clearShown ? t("Clear shown selection") : t("Select all shown");
   const BulkActionIcon = clearShown ? Minus : CheckList;
 
@@ -234,10 +259,14 @@ export function ModelSettingPicker({
               size="sm"
               type="button"
               className="col-start-2"
-              disabled={disabled || (!clearShown && modelCount >= DELEGATION_LIMITS.subagentModels)}
+              disabled={
+                disabled ||
+                (!clearShown &&
+                  (addShown.length === 0 || modelCount >= DELEGATION_LIMITS.subagentModels))
+              }
               onClick={() =>
                 setDraft((previous) =>
-                  (clearShown ? shown : addShown).reduce(
+                  (clearShown ? selectedShown : addShown).reduce(
                     (next, { option }) =>
                       delegationNextValue(setting, { [setting.id]: next }, option.value),
                     previous,
@@ -268,7 +297,7 @@ export function ModelSettingPicker({
             variant="primary"
             size="sm"
             type="button"
-            disabled={bulk && (disabled || draft === saved)}
+            disabled={bulk && (disabled || draft === saved || blockedDraft)}
             onClick={onApply ? () => onApply(draft || "[]") : onClose}
           >
             {bulk ? t("Apply") : t("Done")}

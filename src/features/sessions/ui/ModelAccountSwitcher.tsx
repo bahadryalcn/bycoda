@@ -24,7 +24,11 @@ import {
 } from "../../providers/public/providerAccounts";
 import { modelAccountIdentities } from "../model/accountModelChoices";
 import { ModelAccountNumber, type ModelAccountIdentity } from "./ModelAccountIdentity";
-import { accountSwitcherKind, accountUsageSummary } from "../model/modelPanelData";
+import {
+  accountSwitcherKind,
+  accountUsageSummary,
+  type AccountUsageSummary,
+} from "../model/modelPanelData";
 import type { HarnessId } from "../model/session";
 import { useModelSource } from "./modelSource";
 
@@ -37,19 +41,57 @@ type PanelAccount = ModelAccountIdentity & {
   label: string;
   usedPercent: number | null;
   resetsAt: number | null;
+  limitReason?: string;
   status?: string;
 };
+
+export type AccountLimitReason = (harness: HarnessId, accountId?: string) => string | undefined;
+
+/** The Accounts rows and all model choices share one snapshot of local account usage. */
+export function usePickerAccountUsage(accountsVersion: string, enabled: boolean) {
+  const t = useT();
+  const { formatResetDuration } = useFormat();
+  const { usage, now: minuteNow } = useProviderAccountUsage(accountsVersion, { enabled });
+  const [resetTick, setResetTick] = useState(0);
+  const now = Math.max(minuteNow, resetTick);
+  const summaries = new Map<string, AccountUsageSummary>();
+  let nextReset = Infinity;
+  if (enabled) {
+    for (const [key, limits] of Object.entries(usage)) {
+      const summary = accountUsageSummary(limits, now);
+      summaries.set(key, summary);
+      if (summary.exhausted && summary.resetsAt != null) {
+        nextReset = Math.min(nextReset, summary.resetsAt);
+      }
+    }
+  }
+  // Cross the actual reset instant. The existing clock handles longer countdowns.
+  useEffect(() => {
+    if (nextReset > now + 60_000) return;
+    const timer = setTimeout(() => setResetTick(Date.now()), Math.max(0, nextReset - Date.now()));
+    return () => clearTimeout(timer);
+  }, [nextReset, now]);
+  const limitReason: AccountLimitReason = (harness, id = DEFAULT_PROVIDER_ACCOUNT_ID) => {
+    const summary = summaries.get(`${harness}:${id}`);
+    if (!summary?.exhausted) return undefined;
+    return summary.resetsAt == null
+      ? t("Limit reached")
+      : t("Limit reached · resets in {p0}", { p0: formatResetDuration(summary.resetsAt - now) });
+  };
+  return { usage, summaries, now, limitReason };
+}
 
 /**
  * One provider's accounts with their cached usage. Any provider with account profiles gets
  * the same control; Host catalogs list only the Host's accounts and carry no local usage.
  */
-export function usePanelAccounts(harness: HarnessId, active: boolean) {
+export function usePanelAccounts(
+  harness: HarnessId | undefined,
+  { usage, summaries, limitReason }: ReturnType<typeof usePickerAccountUsage>,
+) {
   const t = useT();
   const source = useModelSource();
-  const [version, setVersion] = useState(0);
-  useEffect(() => subscribeProviderAccounts(() => setVersion((value) => value + 1)), []);
-  const provider = supportsProviderAccounts(harness) ? harness : undefined;
+  const provider = harness && supportsProviderAccounts(harness) ? harness : undefined;
   const local = source.accounts === undefined;
   // Local profiles live in browser storage, so React reads them through their store.
   const localAccounts: ProviderAccount[] = JSON.parse(
@@ -64,15 +106,12 @@ export function usePanelAccounts(harness: HarnessId, active: boolean) {
     : local
       ? localAccounts
       : (source.accounts?.[provider] ?? []);
-  const usage = useProviderAccountUsage(version, {
-    provider,
-    enabled: active && local && provider != null && raw.length > 1,
-  });
-  const identities = modelAccountIdentities(harness, raw);
+  const identities = harness ? modelAccountIdentities(harness, raw) : [];
   const accounts: PanelAccount[] = raw.map((account, index) => {
     const profile = local ? (account as ProviderAccount) : undefined;
-    const limits = profile ? usage.usage[accountUsageKey(profile)] : undefined;
-    const summary = accountUsageSummary(limits, usage.now);
+    const key = profile ? accountUsageKey(profile) : undefined;
+    const limits = key ? usage[key] : undefined;
+    const summary = key ? summaries.get(key) : undefined;
     // Fixed wording only: a provider's raw error text never reaches the list.
     const status = !profile
       ? undefined
@@ -87,11 +126,13 @@ export function usePanelAccounts(harness: HarnessId, active: boolean) {
       ...identities[index],
       id: account.id,
       label: identities[index]?.accountLabel ?? account.label,
-      ...summary,
+      usedPercent: summary?.usedPercent ?? null,
+      resetsAt: summary?.resetsAt ?? null,
+      limitReason: provider ? limitReason(provider, account.id) : undefined,
       status,
     };
   });
-  return { accounts, now: usage.now };
+  return accounts;
 }
 
 /** Share of the account's limit used. */
@@ -239,12 +280,14 @@ export function ModelAccountList({
           options={shown.map((account) => {
             const selected = account.id === accountId;
             const detail =
+              account.limitReason ??
               account.status ??
               (account.resetsAt != null
                 ? t("Resets in {p0}", { p0: formatResetDuration(account.resetsAt - now) })
                 : undefined);
             return {
               value: account.id,
+              disabled: !!account.limitReason,
               content: (
                 <>
                   <ModelAccountNumber account={account} />

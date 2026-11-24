@@ -1798,3 +1798,81 @@ describe("files: false", () => {
     await expect(delegate("req-same")).rejects.toThrow("different payload");
   });
 });
+
+describe("usage limits", () => {
+  const RESET = Date.UTC(2026, 10, 26, 9, 0);
+  type Reading = { leftPercent: number; resetsAt?: number } | { unknown: true };
+  const quota = (readings: Record<string, Reading>) => ({
+    warm: async () => undefined,
+    reading: (harness: string, account: string | undefined, model: string) =>
+      ({
+        sampledAt: 0,
+        ...(readings[`${harness}:${account ?? "default"}:${model}`] ?? { unknown: true }),
+      }) as never,
+  });
+  const limited = (key: string) => ({
+    [`codex:default:${key}`]: { leftPercent: 0, resetsAt: Date.now() + 3_600_000 },
+  });
+  const withQuota = (readings: Record<string, Reading>) => {
+    deps.quota = quota(readings);
+    delegation = new ConversationDelegation(deps);
+  };
+
+  it("leaves a spent account out of agents.options and names its reset", async () => {
+    setup({ subagents: [codexSix, codexFive] });
+    withQuota({ "codex:default:codex:gpt-6.1": { leftPercent: 0, resetsAt: RESET + 9e12 } });
+    const options = await call("agents.options");
+    expect((options.subagents as { ref: string }[]).map((entry) => entry.ref)).toEqual([
+      "codex:gpt-5",
+    ]);
+    expect(options.atUsageLimit).toEqual([
+      { ref: "codex:gpt-6.1", resetsAt: new Date(RESET + 9e12).toISOString() },
+    ]);
+  });
+
+  it("refuses a requested spent model with its reset time and starts no run", async () => {
+    setup({ subagents: [codexSix, codexFive] });
+    withQuota(limited("codex:gpt-6.1"));
+    await expect(delegate("limit-1", { model: "codex:gpt-6.1" })).rejects.toThrow(
+      /usage limit and resets at/,
+    );
+    expect(host.commandsOf("send")).toHaveLength(0);
+    await expect(delegate("limit-2", { model: "codex:gpt-5" })).resolves.toBeDefined();
+  });
+
+  it("refuses when the only selected model is spent, for subagent and advisor", async () => {
+    setup({ subagents: [codexFive], advisor: codexSix });
+    withQuota({
+      ...limited("codex:gpt-5"),
+      ...limited("codex:gpt-6.1"),
+    });
+    await expect(delegate("limit-3")).rejects.toThrow(/usage limit/);
+    await expect(consult("limit-4")).rejects.toThrow(/usage limit/);
+  });
+
+  it("offers the account again once its reset time has passed", async () => {
+    setup({ subagents: [codexFive] });
+    withQuota({ "codex:default:codex:gpt-5": { leftPercent: 0, resetsAt: Date.now() - 1000 } });
+    const options = await call("agents.options");
+    expect(options.subagents).toHaveLength(1);
+    expect(options.atUsageLimit).toBeUndefined();
+  });
+
+  it("never treats unknown usage or partial headroom as exhausted", async () => {
+    setup({ subagents: [codexSix, codexFive] });
+    withQuota({ "codex:default:codex:gpt-6.1": { leftPercent: 3 } });
+    const options = await call("agents.options");
+    expect(options.subagents).toHaveLength(2);
+    expect(options.atUsageLimit).toBeUndefined();
+  });
+
+  it("refuses an agents.reply that would resume a spent account", async () => {
+    setup({ subagents: [codexFive] });
+    const started = await delegate("limit-5");
+    host.finish(String(started.sessionId), "First reply");
+    withQuota(limited("codex:gpt-5"));
+    await expect(
+      call("agents.reply", { requestId: "r1", runId: started.runId, message: "more" }),
+    ).rejects.toThrow(/usage limit/);
+  });
+});

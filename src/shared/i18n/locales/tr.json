@@ -13074,5 +13074,8 @@
   "Answer the open approval before branching from this reply.": "Bu yanıttan dallandırmadan önce açık onayı yanıtlayın.",
   "This reply cannot be branched.": "Bu yanıttan dallandırılamaz.",
   "Could not generate image.": "Görsel oluşturulamadı.",
-  "Retrying in {p0}": "{p0} sonra yeniden denenecek"
+  "Retrying in {p0}": "{p0} sonra yeniden denenecek",
+  "Limit reached · resets in {p0}": "Sınıra ulaşıldı · {p0} sonra sıfırlanır",
+  "The account for {p0} has reached its usage limit. Choose another model.": "{p0} hesabı kullanım sınırına ulaştı. Başka bir model seçin.",
+  "The account for {p0} has reached its usage limit and resets at {p1}. Choose another model.": "{p0} hesabı kullanım sınırına ulaştı ve {p1} tarihinde sıfırlanır. Başka bir model seçin."
 }
