@@ -22,16 +22,59 @@ const ownedSources = new WeakMap<
 export const CATALOG_ACQUIRE_TIMEOUT_MS = 60_000;
 // The native acquire itself is never cancelled or replayed on timeout: its outcome is
 // unknown, so the attempt stays joinable until it settles on its own.
-const catalogSources = new Map<string, { acquire: Promise<OpenCodeV2Service>; settled: boolean }>();
+type CatalogAttempt = {
+  acquire: Promise<OpenCodeV2Service>;
+  settled: boolean;
+  service?: NativeOwnedOpenCode;
+};
+const catalogSources = new Map<string, CatalogAttempt>();
 const catalogRetryOperations = new Map<string, string>();
 // Enable conversation routing only after unscoped utilities and provider-open
 // share this service and physical endpoint ownership is qualified.
 const OWNED_V2_ROUTE_READY = true;
 const OWNED_UTILITY_ROUTE_READY = true;
 
+function catalogKey(path: string, cwd: string): string {
+  return JSON.stringify([path, cwd, runtimeProviderBinaryPath("opencode")]);
+}
+
+// Native codes that mean the idle-retired service behind a cached handle is gone.
+const RETIRED_SERVICE_CODES =
+  /OWNED_OPENCODE_(?:UNAVAILABLE|REFERENCE_UNKNOWN|REFERENCE_STALE|PROCESS_CLOSED)(?![A-Z_])/;
+export function isRetiredOwnedServiceError(error: unknown): boolean {
+  return RETIRED_SERVICE_CODES.test(errorText(error));
+}
+
+// Drop only the entry that still holds the stale handle: a concurrent caller that
+// already replaced it keeps its new attempt, so all callers join one re-acquire.
+function forgetStaleCatalog(path: string, cwd: string, stale: NativeOwnedOpenCode | undefined) {
+  const key = catalogKey(path, cwd);
+  const current = catalogSources.get(key);
+  if (current?.settled && current.service && current.service.referenceId === stale?.referenceId) {
+    catalogSources.delete(key);
+  }
+}
+
+/** Run one catalog read on the owned service. If native reports that the service
+ * was retired while idle, re-acquire a fresh one and retry the whole read once. */
+export async function withOwnedOpenCodeCatalog<T>(
+  path: string,
+  cwd: string,
+  read: (service: OpenCodeV2Service) => Promise<T>,
+): Promise<T> {
+  const service = await resolveOwnedOpenCodeCatalog(path, cwd);
+  try {
+    return await read(service);
+  } catch (error) {
+    if (!service.nativeOwnedService || !isRetiredOwnedServiceError(error)) throw error;
+    forgetStaleCatalog(path, cwd, service.nativeOwnedService);
+    return read(await resolveOwnedOpenCodeCatalog(path, cwd));
+  }
+}
+
 export function resolveOwnedOpenCodeCatalog(path: string, cwd: string): Promise<OpenCodeV2Service> {
   const binaryPath = runtimeProviderBinaryPath("opencode");
-  const key = JSON.stringify([path, cwd, binaryPath]);
+  const key = catalogKey(path, cwd);
   const existing = catalogSources.get(key);
   if (existing) return boundedCatalogAcquire(existing);
   // A failed acquire is retried with the same operation ID: native acquisition
@@ -72,9 +115,10 @@ export function resolveOwnedOpenCodeCatalog(path: string, cwd: string): Promise<
       }),
     };
   })();
-  const attempt = { acquire: pending, settled: false };
+  const attempt: CatalogAttempt = { acquire: pending, settled: false };
   void pending.then(
-    () => {
+    (service) => {
+      attempt.service = service.nativeOwnedService;
       attempt.settled = true;
       catalogRetryOperations.delete(key);
     },
@@ -91,10 +135,7 @@ export function resolveOwnedOpenCodeCatalog(path: string, cwd: string): Promise<
 // fails but the attempt keeps its operation ID and stays registered: a later call
 // joins the same acquire (no second native invoke while the outcome is unknown),
 // and a late success is cached for it; a late failure retries with the same ID.
-function boundedCatalogAcquire(attempt: {
-  acquire: Promise<OpenCodeV2Service>;
-  settled: boolean;
-}): Promise<OpenCodeV2Service> {
+function boundedCatalogAcquire(attempt: CatalogAttempt): Promise<OpenCodeV2Service> {
   if (attempt.settled) return attempt.acquire;
   return withTimeout(
     attempt.acquire,
@@ -108,6 +149,22 @@ export async function resolveOwnedOpenCodeUtility(
   cwd: string,
 ): Promise<OpenCodeV2Service> {
   const catalog = await resolveOwnedOpenCodeCatalog(path, cwd);
+  try {
+    return await acquireOwnedOpenCodeUtility(path, cwd, catalog);
+  } catch (error) {
+    if (!isRetiredOwnedServiceError(error)) throw error;
+    // The cached catalog handle points at a retired service: re-acquire it with a
+    // new operation ID, then retry the utility acquire once.
+    forgetStaleCatalog(path, cwd, catalog.nativeOwnedService);
+    return acquireOwnedOpenCodeUtility(path, cwd, await resolveOwnedOpenCodeCatalog(path, cwd));
+  }
+}
+
+async function acquireOwnedOpenCodeUtility(
+  path: string,
+  cwd: string,
+  catalog: OpenCodeV2Service,
+): Promise<OpenCodeV2Service> {
   if (!catalog.nativeOwnedService)
     throw new Error("Native OpenCode service identity is unavailable.");
   const binaryPath = runtimeProviderBinaryPath("opencode");

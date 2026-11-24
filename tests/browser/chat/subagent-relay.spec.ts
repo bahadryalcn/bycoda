@@ -167,7 +167,7 @@ for (const theme of ["light", "dark"])
           });
         }),
       ).toBe(true);
-      await expect(dock.locator("[data-dock-stop-all]")).toHaveCount(0);
+      await expect(dock.locator("[data-dock-stop-all]")).toBeVisible();
       await dock.screenshot({
         animations: "disabled",
         path: `temp/verification/activity-dock/summary-${theme}-${width}.png`,
@@ -179,6 +179,14 @@ for (const theme of ["light", "dark"])
       await dock.screenshot({
         animations: "disabled",
         path: `temp/verification/activity-dock/details-${theme}-${width}.png`,
+      });
+      const stopAll = dock.locator("[data-dock-stop-all]");
+      await stopAll.click();
+      await expect(stopAll).toContainText("Confirm stop");
+      await page.mouse.move(0, 0);
+      await dock.screenshot({
+        animations: "disabled",
+        path: `temp/verification/activity-dock/armed-${theme}-${width}.png`,
       });
       await page.goto(`/tests/browser/chat/subagent-relay.html?layout&theme=${theme}`);
       await page.getByRole("button", { name: "Open reviewer", exact: true }).click();
@@ -212,57 +220,52 @@ for (const theme of ["dark", "light"]) {
           ),
         );
         await expect(row).toHaveAttribute("data-dock-agent-state", state);
-        // The provider mark leads; the state reads as icon and word among the metrics.
-        const lead = row.locator("[data-dock-agent-lead]");
+        // The provider mark leads, centred on the two-line identity beside it.
+        const lead = row.locator("[data-subagent-provider]");
         await expect(lead).toBeVisible();
         const geometry = await lead.evaluate((node) => {
           const icon = node.firstElementChild!.getBoundingClientRect();
-          const title = node
-            .parentElement!.querySelector("[data-dock-agent-title]")!
+          const identity = node
+            .parentElement!.querySelector("[data-subagent-identity]")!
             .getBoundingClientRect();
           return {
             size: icon.width,
-            beforeTitle: icon.right <= title.left,
-            alignedWithTitle: Math.abs(icon.top - title.top) <= 4,
+            beforeTitle: icon.right <= identity.left,
+            centered:
+              Math.abs(icon.top + icon.height / 2 - (identity.top + identity.height / 2)) <= 2,
           };
         });
-        expect(geometry).toEqual({ size: 16, beforeTitle: true, alignedWithTitle: true });
+        expect(geometry).toEqual({ size: 24, beforeTitle: true, centered: true });
         // The state word appears once, from the status mark or from a detail that names it.
-        const word = state === "stopped" ? "stopped by you" : state;
-        const metrics = (
-          await row.locator(".activity-dock-agent-metrics").innerText()
-        ).toLowerCase();
-        expect(metrics.split(word).length - 1).toBe(1);
+        const metrics = (await row.locator("[data-subagent-state]").innerText()).toLowerCase();
+        expect(metrics.split(state).length - 1).toBe(1);
       }
       const running = dock.locator('[data-dock-agent="status-running"]');
       const geometry = await running.evaluate((node) => {
         // The title leads; the model line (marks, model, account) sits beneath it.
-        const model = node.querySelector(".activity-dock-agent-identity > span:last-child")!;
-        const metrics = node.querySelector(".activity-dock-agent-metrics")!;
-        const title = node.querySelector(".whitespace-pre-wrap")!;
+        const model = node.querySelector("[data-subagent-identity] > span:last-child")!;
+        const metrics = node.querySelector("[data-subagent-state]")!.getBoundingClientRect();
+        const title = node.querySelector("[data-subagent-title]")!.getBoundingClientRect();
         const arrow = node.lastElementChild!;
         return {
-          modelBelowTitle:
-            model.getBoundingClientRect().top >= title.getBoundingClientRect().bottom - 1,
-          metricsAfterTitle:
-            metrics.getBoundingClientRect().left >= title.getBoundingClientRect().right,
-          metricsBeforeArrow:
-            metrics.getBoundingClientRect().right <= arrow.getBoundingClientRect().left,
+          modelBelowTitle: model.getBoundingClientRect().top >= title.bottom - 1,
+          // Beside the title, or on its own line in a narrow dock.
+          metricsClearOfTitle: metrics.left >= title.right || metrics.top >= title.bottom,
+          metricsBeforeArrow: metrics.right <= arrow.getBoundingClientRect().left,
           fits: node.scrollWidth <= node.clientWidth,
         };
       });
       expect(geometry).toEqual({
         modelBelowTitle: true,
-        metricsAfterTitle: true,
+        metricsClearOfTitle: true,
         metricsBeforeArrow: true,
         fits: true,
       });
-      await expect(running.locator(".activity-dock-agent-identity > span").last()).toContainText(
+      await expect(running.locator("[data-subagent-identity] > span").last()).toContainText(
         /gpt-6.1-sol/i,
       );
-      await expect(running.locator(".activity-dock-agent-metrics")).toContainText(
-        "3 steps, 1 failed",
-      );
+      await expect(running.locator("[data-subagent-state]")).toContainText("×1");
+      await expect(running).toHaveAttribute("aria-label", /3 steps, 1 failed/);
       await running.focus();
       await expect(running).toBeFocused();
       await page.keyboard.press("Enter");

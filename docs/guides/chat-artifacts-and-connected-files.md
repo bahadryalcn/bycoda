@@ -5,8 +5,12 @@ fill. Reduced transparency and forced colors use a solid fill.
 
 Markdown formatting appears in the chat composer as you type, including drafts with inline
 attachments and links. Move the caret onto a Markdown marker to see and edit it. Sent messages
-display Markdown, and **Show full content** opens long
-messages with the same formatting. **Copy message** and **Save as note** use the original Markdown.
+display Markdown. Click a long message to read it in the chat, or use **Expand** to open it in a
+dialog with the same formatting. **Copy message** and **Save as note** use the original Markdown.
+
+In a live reply, text inside a code fence is immediately available to select and copy.
+Syntax colors appear as the fence closes or the reply finishes.
+
 Drafts with a very long unbroken line use the native text field so the caret stays visible
 while typing. The draft keeps its text and attachment references.
 **Copy message** includes file and image attachments, including those loaded from a connected machine or reopened from a saved conversation.
@@ -29,12 +33,14 @@ Repeated Stop clicks share one pending request per target. After its unconfirmed
 
 Subagent rows show the latest status, elapsed time and step counts beside the name, before the disclosure arrow. Previous status labels and counter values are replaced immediately. Completed runs use the success color, failed runs use the danger color, interrupted or stopped runs use the warning color, and running agents use the accent color. Failed-step counts appear in red; a failed step does not mean the entire run failed.
 
-Operator is hidden from the composer mode menu and command suggestions, including
-Quick Composer. Typing `/operator` still works, and existing Operator-enabled
-conversations keep their access.
+In local chats, choose Operator from the Mode menu or type `/operator`.
 
-In narrow chat panes, the access selector shows its mode icon instead of its label.
-The same access menu and keyboard controls remain available.
+In wide chat panes, use the composer toolbar to change Access or Mode. In narrow panes,
+both controls move to the bottom of the model panel's **Settings** tab so the toolbar stays
+on one row. Click the active mode icon in the composer to turn that mode off.
+
+In narrow chat panes, Queue and Steer take priority while you have a draft. Use your Stop
+shortcut to interrupt the turn while keeping the draft. Stop is visible again when the draft is empty.
 
 ## Composer mentions
 

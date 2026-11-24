@@ -23,6 +23,10 @@ vi.mock("../../../shared/ui/SearchableSelect", () => ({
     ),
 }));
 
+vi.mock("../hooks/useDiffIndex", () => ({
+  useDiffIndex: () => ({ index: { repository: true, files: [] } }),
+}));
+
 vi.mock("./GitStashSection", () => ({
   GitStashSection: () => createElement("section", { "data-section": "stashes" }),
 }));
@@ -177,8 +181,9 @@ it("offers a standalone repository selector only when Stashes is shown without G
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   expect(onChange).toHaveBeenCalledWith("/mobile");
-  saveGitPanelSection("stashes", false);
-  saveGitPanelSection("graph", false);
-  await act(async () => root.render(createElement(Panel, { repositories })));
+  await act(async () => {
+    saveGitPanelSection("stashes", false);
+    root.render(createElement(Panel, { repositories }));
+  });
   expect(host.querySelector("select")).toBeNull();
 });

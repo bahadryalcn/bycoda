@@ -1,2 +1,2 @@
 /** Public search types. */
-export type { OpenFileFn } from "./model/search";
+export type { OpenFileFn, ProjectSearchMatch } from "./model/search";

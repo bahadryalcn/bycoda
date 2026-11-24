@@ -96,6 +96,21 @@ it("mounts only the rows near the viewport of a long grouped list and keeps the 
   expect(container.querySelector("[aria-hidden]")).not.toBeNull();
 });
 
+it("keeps the full list height while the window replaces its rows", async () => {
+  await act(async () =>
+    root.render(
+      createElement(PickerList, {
+        label: "Branches",
+        options: branches(2000),
+        value: "b0",
+        onChange: () => undefined,
+      }),
+    ),
+  );
+  const list = container.querySelector<HTMLElement>('[role="listbox"]')!;
+  expect(Number.parseFloat(list.style.minBlockSize)).toBeGreaterThanOrEqual(2000 * ROW);
+});
+
 it("keeps short lists fully mounted without window attributes", async () => {
   await act(async () =>
     root.render(
@@ -162,4 +177,26 @@ it("brings an unmounted row into the window for End and commits it with Enter", 
   expect(container.querySelectorAll('[role="option"]').length).toBeLessThan(60);
   await keyDown(list, "Enter");
   expect(onChange).toHaveBeenCalledWith("b1999", expect.objectContaining({ value: "b1999" }));
+});
+
+it("keeps keyboard focus in the picker when End unmounts the focused row", async () => {
+  const input = document.createElement("input");
+  container.before(input);
+  await act(async () =>
+    root.render(
+      createElement(PickerList, {
+        label: "Branches",
+        options: branches(2000),
+        value: "b0",
+        onChange: () => undefined,
+        inputRef: { current: input },
+      }),
+    ),
+  );
+  const first = container.querySelector<HTMLElement>('[id$="-option-b0"]')!;
+  first.focus();
+  await keyDown(first, "End");
+  expect(document.querySelector('[id$="-option-b1999"]')).not.toBeNull();
+  expect(document.activeElement).toBe(input);
+  input.remove();
 });

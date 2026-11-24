@@ -40,6 +40,124 @@ const scroller = (page: Page) => page.locator(".agent-transcript");
 const reading = (page: Page) => page.locator("[data-composer][data-composer-reading]");
 const field = (page: Page) => page.locator("[data-composer] textarea");
 
+for (const light of [false, true]) {
+  test(`access stays in the model panel and narrow controls share one row (${light ? "light" : "dark"})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(url({ draft: "short" }, light));
+    await expect(field(page)).toHaveValue("Summarise the failing tests");
+    await stream(page, 1);
+    const composer = page.locator("[data-composer]");
+    const directAccess = composer.locator("[data-access-picker-trigger]");
+    const model = composer.locator("[data-model-picker-presentation]");
+    const panel = page.getByRole("dialog", { name: "Model and settings" });
+    const panelAccess = panel.locator("[data-access-picker-trigger]");
+    const accessOptions = page.getByRole("dialog", { name: "Access options" });
+    const add = composer.getByRole("button", { name: "Add files or skills" });
+    const steer = composer.getByText("Steer", { exact: true });
+    const theme = light ? "light" : "dark";
+
+    await expect(directAccess).toBeVisible();
+    await model.click();
+    await expect(panelAccess).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "Mode", exact: true })).toHaveCount(0);
+    await capture(page, `access-${theme}-1280`);
+    await page.keyboard.press("Escape");
+    await directAccess.click();
+    await expect(accessOptions).toBeVisible();
+    await accessOptions.getByRole("option", { name: /Full access/ }).click();
+    await expect(directAccess).toHaveAccessibleName("Full access");
+
+    await page.setViewportSize({ width: 800, height: 800 });
+    await composer.evaluate((element) => (element.style.maxInlineSize = "22rem"));
+    await expect(directAccess).toBeHidden();
+    for (const control of [add, steer]) {
+      const modelBox = (await model.boundingBox())!;
+      const controlBox = (await control.boundingBox())!;
+      expect(
+        Math.abs(modelBox.y + modelBox.height / 2 - controlBox.y - controlBox.height / 2),
+      ).toBeLessThan(2);
+    }
+    await capture(page, `toolbar-${theme}-800`);
+    await model.click();
+    await expect(panelAccess).toBeVisible();
+    await expect(panelAccess).toHaveAccessibleName("Full access");
+    await panelAccess.click();
+    await expect(accessOptions).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(accessOptions).toBeHidden();
+    await expect(panelAccess).toBeFocused();
+    await panelAccess.click();
+    await accessOptions.getByRole("option", { name: /Supervised/ }).click();
+    await expect(panelAccess).toHaveAccessibleName("Supervised");
+    await expect(
+      panel.locator("[data-model-setting-help]").locator("[data-access-picker-trigger]"),
+    ).toHaveCount(0);
+    await panel.getByRole("tab", { name: "Agents" }).click();
+    await expect(panelAccess).toHaveCount(0);
+    await panel.getByRole("tab", { name: "Settings" }).click();
+    const mode = panel.getByRole("button", { name: "Mode", exact: true });
+    await expect(panelAccess).toBeVisible();
+    await expect(mode).toBeVisible();
+    const accessBounds = (await panelAccess.boundingBox())!;
+    const modeBounds = (await mode.boundingBox())!;
+    expect(modeBounds.y - (accessBounds.y + accessBounds.height)).toBeGreaterThanOrEqual(9);
+    await capture(page, `access-${theme}-800`);
+    await mode.click();
+    const modeMenu = page.getByRole("menu", { name: "Mode", exact: true });
+    await expect(modeMenu).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(modeMenu).toBeHidden();
+    await expect(mode).toBeFocused();
+    await mode.click();
+    await modeMenu.getByText("Operator", { exact: true }).click();
+    await page.keyboard.press("Escape");
+    const activeMode = composer.getByRole("button", { name: "Turn off Operator" });
+    await expect(activeMode).toBeVisible();
+    await expect(activeMode).toHaveText("");
+    await capture(page, `mode-${theme}-800`);
+    await activeMode.click();
+    await expect(activeMode).toHaveCount(0);
+    await expect(field(page)).toHaveValue("Summarise the failing tests");
+  });
+}
+
+for (const light of [false, true]) {
+  test(`Stop yields to follow-up actions in a narrow composer (${light ? "light" : "dark"})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(url({ draft: "short" }, light));
+    await expect(field(page)).toHaveValue("Summarise the failing tests");
+    await stream(page, 1);
+    const composer = page.locator("[data-composer]");
+    const stop = composer.getByRole("button", { name: "Stop", exact: true });
+    const queue = composer.getByRole("button", { name: "Queue message", exact: true });
+    const steer = composer.getByText("Steer", { exact: true });
+    await expect(queue).toBeVisible();
+    await expect(steer).toBeVisible();
+    await expect(stop).toBeVisible();
+    await capture(page, `follow-up-${light ? "light" : "dark"}-1280`);
+
+    await page.setViewportSize({ width: 800, height: 800 });
+    await composer.evaluate((element) => (element.style.maxInlineSize = "22rem"));
+    await expect(queue).toBeVisible();
+    await expect(steer).toBeVisible();
+    await expect(stop).toBeHidden();
+    await capture(page, `follow-up-${light ? "light" : "dark"}-800`);
+
+    await field(page).fill("");
+    await expect(stop).toBeVisible();
+
+    await field(page).fill("Keep this draft");
+    await expect(stop).toBeHidden();
+    await field(page).press("Escape");
+    await expect.poll(async () => (await fixtureEvents(page)).stops).toBe(1);
+    await expect(field(page)).toHaveValue("Keep this draft");
+  });
+}
+
 for (const [width, light] of [
   [800, false],
   [800, true],
@@ -47,6 +165,33 @@ for (const [width, light] of [
   [1280, true],
 ] as const) {
   const surface = `${light ? "light" : "dark"}-${width}`;
+  test(`scrolling drafts stay clear of the composer controls (${surface})`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(url({ draft: "long" }, light));
+    const controls = page.locator(".composer-controls");
+    const expectGap = async (editor: Locator, kind: string) => {
+      await expect
+        .poll(() => editor.evaluate((element) => element.scrollHeight > element.clientHeight))
+        .toBe(true);
+      await editor.evaluate((element) => (element.scrollTop = 32));
+      await capture(page, `toolbar-spacing-${kind}-${surface}`);
+      await expect
+        .poll(async () => {
+          const editorBox = await editor.boundingBox();
+          const controlsBox = await controls.boundingBox();
+          return editorBox && controlsBox ? controlsBox.y - (editorBox.y + editorBox.height) : 0;
+        })
+        .toBeGreaterThanOrEqual(8);
+    };
+    await expectGap(field(page), "native");
+    await page.goto(url({ inlineExamples: "repeated-pdf" }, light));
+    const editor = page.locator("[data-composer-inline-input]");
+    await expect(editor.locator('[data-inline-reference="skill"]')).toBeVisible();
+    await editor.press("ControlOrMeta+End");
+    await page.keyboard.insertText("\nAnother line in the draft.".repeat(15));
+    await expectGap(page.locator("[data-composer] .cm-scroller"), "inline");
+  });
+
   test(`Markdown stays formatted after the inline editor activates (${surface})`, async ({
     page,
   }) => {
@@ -480,6 +625,55 @@ const expectedMessageFill = (node: Locator, opacity: number, opaque = false) =>
     },
     { opacity, opaque },
   );
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`dictation segments stay joined beside Stop (${light ? "light" : "dark"} ${width})`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ dictation: "", goal: "" }, light));
+      const group = page.getByRole("group", { name: "Dictation", exact: true });
+      const microphone = group.getByRole("button", { name: "Dictate", exact: true });
+      const options = group.getByRole("button", { name: "Dictation options" });
+      const stop = page.getByRole("button", { name: "Stop", exact: true });
+      await expect(stop).toBeVisible();
+      await expect(microphone).toBeVisible();
+      await expect(group).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      const microphoneIcon = microphone.locator("svg");
+      const optionsIcon = options.locator("svg");
+      await expect(optionsIcon).toHaveCSS(
+        "color",
+        await microphoneIcon.evaluate((icon) => getComputedStyle(icon).color),
+      );
+      await expect(optionsIcon).toHaveCSS(
+        "stroke-width",
+        await microphoneIcon.evaluate((icon) => getComputedStyle(icon).strokeWidth),
+      );
+      await capture(page, `dictation-${light ? "light" : "dark"}-${width}`);
+      const micBox = (await microphone.boundingBox())!;
+      const optionsBox = (await options.boundingBox())!;
+      const stopBox = (await stop.boundingBox())!;
+      expect(optionsBox.x).toBeCloseTo(micBox.x + micBox.width);
+      expect(optionsBox.height).toBeCloseTo(micBox.height);
+      expect(optionsBox.width).toBeLessThan(micBox.width);
+      expect(stopBox.x).toBeGreaterThan(optionsBox.x + optionsBox.width);
+      expect(
+        await group.evaluate((element) => getComputedStyle(element, "::after").display),
+      ).not.toBe("none");
+
+      await microphone.focus();
+      await page.keyboard.press("Tab");
+      await expect(options).toBeFocused();
+      await page.keyboard.press("Enter");
+      const menu = page.getByRole("menu", { name: "Dictation options" });
+      await expect(menu).toBeVisible();
+      const menuBox = (await menu.boundingBox())!;
+      expect(menuBox.y + menuBox.height).toBeLessThan(optionsBox.y);
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+      await expect(options).toBeFocused();
+    });
 
 for (const light of [true, false])
   for (const width of [800, 1280])

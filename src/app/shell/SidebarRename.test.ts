@@ -1923,10 +1923,8 @@ describe("collapsed rail Inbox actions", () => {
     )!;
     act(() => searchAll.click());
     expect(props.onSearchConversations).toHaveBeenLastCalledWith("zzz-no-such-conversation");
-    // The top-left Search remains the one shared search entry; the header no longer repeats it.
-    expect(
-      container.querySelector('[data-compact-project-rail] button[aria-label="Search"]'),
-    ).not.toBeNull();
+    // The title bar holds the one shared Search; neither the header nor the rail repeats it.
+    expect(container.querySelector('button[aria-label="Search"]')).toBeNull();
   });
 
   it("opens project and group management without pinning the rail and closes with Escape", async () => {
@@ -1984,14 +1982,15 @@ describe("collapsed rail Inbox actions", () => {
 
     const sidebar = container.querySelector("aside")!;
     expect(container.querySelector("[data-compact-project-rail]")).toBeNull();
-    expect(sidebar.querySelector('button[aria-label^="Toggle sidebar"]')).not.toBeNull();
-    expect(sidebar.querySelector('button[aria-label^="Search"]')).not.toBeNull();
+    // The sidebar takes over the rail's tools; the toggle and Search stay in the title bar.
+    expect(sidebar.querySelector('button[aria-label^="Toggle sidebar"]')).toBeNull();
+    expect(sidebar.querySelector('button[aria-label="Search"]')).toBeNull();
+    expect(sidebar.querySelector('button[aria-label^="Inbox"]')).not.toBeNull();
     expect(sidebar.querySelector('button[aria-label^="Settings"]')).not.toBeNull();
   });
 
-  it("yields its local header to the full-width title bar", async () => {
+  it("leaves the window chrome to the full-width title bar", async () => {
     props.projectRailOpen = false;
-    props.titleBarAbove = true;
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
     props.onGoBack = vi.fn();
@@ -2002,44 +2001,27 @@ describe("collapsed rail Inbox actions", () => {
     expect(rail.querySelector("[data-compact-rail-divider]")?.className).not.toContain("top-10");
     expect(container.textContent).not.toContain("Development");
     expect(container.querySelector('button[aria-label^="Back"]')).toBeNull();
+    expect(rail.querySelector("img")).toBeNull();
   });
 
-  it("keeps the location title before history, project expansion and session search", async () => {
+  it("keeps only the location, session tools and New session in the workspace header", async () => {
     props.projectRailOpen = false;
     props.lastSessionsOpen = true;
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
-    props.canGoBack = true;
-    props.canGoForward = true;
     props.onGoBack = vi.fn();
-    props.onGoForward = vi.fn();
     props.onToggleProjectRail = vi.fn();
     await act(async () => render());
     const header = container.querySelector("[data-workspace-header]")!;
     const title = header.querySelector("h2")!;
     expect(title.textContent).toBe("Last sessions");
     expect(title.closest("[data-pane-header-heading]")).not.toBeNull();
-    const labels = Array.from(header.querySelectorAll("button"), (button) =>
-      button.getAttribute("aria-label"),
-    );
-    expect(labels.indexOf("Back")).toBeLessThan(labels.indexOf("Forward"));
-    expect(labels.indexOf("Forward")).toBeLessThan(labels.indexOf("Toggle sidebar"));
-    expect(labels.indexOf("Toggle sidebar")).toBeLessThan(labels.indexOf("Search sessions"));
-    const back = header.querySelector<HTMLButtonElement>('button[aria-label="Back"]')!;
-    expect(title.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(back.closest("[data-pane-header-body]")).not.toBeNull();
-    expect(container.querySelectorAll('button[aria-label="Toggle sidebar"]')).toHaveLength(1);
-    expect(
-      container.querySelector('[data-compact-project-rail] button[aria-label="Toggle sidebar"]'),
-    ).toBeNull();
-    act(() => back.click());
-    act(() => header.querySelector<HTMLButtonElement>('button[aria-label="Forward"]')!.click());
-    act(() =>
-      header.querySelector<HTMLButtonElement>('button[aria-label="Toggle sidebar"]')!.click(),
-    );
-    expect(props.onGoBack).toHaveBeenCalledOnce();
-    expect(props.onGoForward).toHaveBeenCalledOnce();
-    expect(props.onToggleProjectRail).toHaveBeenCalledOnce();
+    const search = header.querySelector<HTMLButtonElement>('button[aria-label="Search sessions"]')!;
+    expect(title.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // History and the sidebar toggle belong to the title bar in every rail state.
+    for (const label of ["Back", "Forward", "Toggle sidebar"]) {
+      expect(container.querySelector(`button[aria-label^="${label}"]`)).toBeNull();
+    }
   });
 
   it("keeps global actions in the rail and workspace tabs in their horizontal row", async () => {
@@ -2065,7 +2047,6 @@ describe("collapsed rail Inbox actions", () => {
         button.getAttribute("aria-label")?.replace(/ \(.+\)$/, ""),
       ),
     ).toEqual([
-      "Search",
       "Inbox",
       "Crews",
       "Notes",
@@ -2109,14 +2090,9 @@ describe("collapsed rail Inbox actions", () => {
       rail.querySelector<HTMLElement>('button[aria-label="Projects and groups"]')!.textContent,
     ).toBe("");
     pressKey(document.body, "Escape");
-    act(() =>
-      container
-        .querySelector<HTMLButtonElement>(
-          '[data-workspace-header] button[aria-label="Toggle sidebar"]',
-        )!
-        .click(),
-    );
-    expect(props.onToggleProjectRail).toHaveBeenCalledOnce();
+    expect(
+      container.querySelector('[data-workspace-header] button[aria-label="Toggle sidebar"]'),
+    ).toBeNull();
   });
 
   it("opens the temporary workspace panel while keeping tabs horizontal and preserving dismissal", async () => {
@@ -2458,7 +2434,7 @@ describe("collapsed rail Inbox actions", () => {
 });
 
 describe("sidebar working agents", () => {
-  it("drops finished Activity rows as soon as a turn ends and keeps input requests", () => {
+  it("shows finished Activity rows with input requests", () => {
     props.projectRailOpen = false;
     const running = {
       id: "running-agent",
@@ -2479,14 +2455,14 @@ describe("sidebar working agents", () => {
     const row = (id: string) => preview.querySelector(`[data-live-agent-card="${id}"]`);
     expect(row(running.id)).not.toBeNull();
     expect(row(approval.id)).not.toBeNull();
-    expect(row(failed.id)).toBeNull();
+    expect(row(failed.id)?.textContent).toContain("Failed");
 
     props.liveAgents = [{ ...running, done: true, activity: "Done" }, approval];
     act(render);
-    expect(row(running.id)).toBeNull();
+    expect(row(running.id)?.textContent).toContain("Done");
     expect(row(approval.id)).not.toBeNull();
 
-    props.liveAgents = [{ ...running, done: true, activity: "Done" }];
+    props.liveAgents = [];
     act(render);
     expect(container.querySelector("[data-live-agents-preview]")).toBeNull();
   });
@@ -2519,6 +2495,7 @@ describe("sidebar working agents", () => {
     act(() => render());
 
     const preview = container.querySelector<HTMLElement>('[data-live-agents-preview="full"]')!;
+    act(() => preview.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click());
     expect(preview.querySelectorAll("[data-live-agent-card]")).toHaveLength(2);
     expect(preview.querySelector('[data-live-agent-card="agent-a"]')!.textContent).toContain(
       "alpha",
@@ -2556,6 +2533,7 @@ describe("sidebar working agents", () => {
     act(() => render());
 
     const preview = container.querySelector<HTMLElement>('[data-live-agents-preview="full"]')!;
+    act(() => preview.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!.click());
     expect(preview.querySelectorAll("[data-live-agent-card]")).toHaveLength(1);
     expect(preview.querySelector('[data-live-agent-card="agent-b"]')!.textContent).toContain(
       "beta",
@@ -3164,7 +3142,10 @@ describe("sessions hidden by a filter", () => {
 });
 
 describe("opening a session", () => {
-  it("shows the clicked card is opening until it is the open session", () => {
+  it("only shows opening for a slow selection and clears it when the selection settles", async () => {
+    vi.useFakeTimers();
+    let finish!: () => void;
+    props.onSelectSession = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     props.sessions = [1, 2].map((n) => ({
       ...props.sessions[0],
       id: `session-${n}`,
@@ -3175,11 +3156,16 @@ describe("opening a session", () => {
     const second = () => container.querySelector<HTMLElement>('[data-session-card="session-2"]')!;
     act(() => second().click());
     expect(props.onSelectSession).toHaveBeenCalledWith("session-2", { keepOpen: false });
-    expect(second().textContent).toContain("Opening…");
-
-    props = { ...props, activeSessionId: "session-2" };
-    act(() => render());
     expect(second().textContent).not.toContain("Opening…");
+    await act(async () => finish());
+    act(() => vi.advanceTimersByTime(600));
+    expect(second().textContent).not.toContain("Opening…");
+    act(() => second().click());
+    act(() => vi.advanceTimersByTime(600));
+    expect(second().textContent).toContain("Opening…");
+    await act(async () => finish());
+    expect(second().textContent).not.toContain("Opening…");
+    vi.useRealTimers();
   });
 });
 

@@ -46,6 +46,8 @@ export function useAcceptedQueueDeparture(messages: QueuedMessage[], delivery?: 
 
 export type MessageQueueProps = {
   references?: import("./ComposerHighlight").ComposerReferenceContext;
+  /** Scope of the `/` and `@` menus in the queued message editor. */
+  suggestions?: import("./QueuedEditSuggestions").QueuedEditSuggestionScope;
   sessionId?: string;
   parentSessionId?: string;
   messages: QueuedMessage[];

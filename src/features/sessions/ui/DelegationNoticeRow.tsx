@@ -24,9 +24,11 @@ export function DelegationNoticeRow({ block }: { block: Block }) {
   const sections = delegationNoticeSections(block.text, block.author).filter(
     (section) => !carded.includes(section.runId),
   );
-  if (!sections.length) return null;
+  // The prompt rail lists every notice, so a notice folded into its card still marks its place.
+  if (!sections.length) return <div data-outline-anchor={block.id} />;
   return (
     <div
+      data-outline-anchor={block.id}
       data-delegation-notice
       className="flex min-w-0 flex-col gap-0.5 px-4 font-sans pbs-1 pbe-1.5"
     >

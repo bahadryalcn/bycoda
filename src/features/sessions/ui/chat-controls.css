@@ -60,6 +60,15 @@
   display: flex;
 }
 
+.composer-steer-icon {
+  display: inline-block;
+  flex: none;
+  /* ui-drift-ignore: surface-style -- Current color fills the icon mask. */
+  background-color: currentColor;
+  mask: url("../../../../public/steer.png") center / contain no-repeat;
+  forced-color-adjust: preserve-parent-color;
+}
+
 .composer-busy-send {
   display: flex;
   align-items: center;
@@ -80,6 +89,8 @@
 }
 
 [data-composer] .composer-controls {
+  /* Keep clipped draft text clear of the controls while the editor scrolls. */
+  margin-block-start: var(--space-3);
   align-items: flex-end;
   column-gap: 0.375rem;
 }
@@ -88,21 +99,29 @@
   row-gap: 0.375rem;
 }
 
-/* Keep the toolbar and Add adjacent. Only wrap if the controls run out of room. */
+/* Keep actions on one row and let the model name give way first. */
 @container chat-composer (inline-size < 31rem) {
   [data-composer]:not([data-composer-reading]) .composer-controls {
     align-items: center;
-    flex-wrap: wrap;
     gap: var(--space-1);
     padding-inline: var(--space-1);
   }
 
-  [data-composer]:not([data-composer-reading]) .composer-toolbar {
-    flex: 0 1 auto;
-  }
-
   [data-composer]:not([data-composer-reading]) .composer-toolbar > div {
     column-gap: 0;
+    flex-wrap: nowrap;
+  }
+
+  [data-composer]:not([data-composer-reading]) .composer-toolbar > div > * {
+    flex-shrink: 0;
+  }
+
+  [data-composer]:not([data-composer-reading])
+    .composer-toolbar
+    > div
+    > [data-model-picker-presentation] {
+    flex-shrink: 1;
+    min-inline-size: 2rem;
   }
 
   [data-composer]:not([data-composer-reading]) .composer-send-controls {
@@ -110,51 +129,13 @@
   }
 }
 
-/* Give the expanded send controls a row with Add at phone widths. */
 @container chat-composer (inline-size < 24rem) {
-  [data-composer]:not([data-composer-reading]) .composer-controls[data-busy] .composer-toolbar {
-    flex-basis: 100%;
-  }
-}
-
-/* At phone widths the idle controls stay on one row. A wrapping row drops Send under the toolbar
-   as soon as a wide font adds a few pixels; instead the model name truncates to the room left.
-   Below 14rem even the fixed controls no longer fit one row, so the row wraps again. */
-@container chat-composer (14rem <= inline-size < 24rem) {
-  [data-composer]:not([data-composer-reading]) .composer-controls:not([data-busy]) {
-    flex-wrap: nowrap;
+  .composer-controls {
+    --composer-settings-in-picker: 1;
   }
 
-  [data-composer]:not([data-composer-reading])
-    .composer-controls:not([data-busy])
-    .composer-toolbar {
-    min-inline-size: 0;
-  }
-
-  [data-composer]:not([data-composer-reading])
-    .composer-controls:not([data-busy])
-    .composer-toolbar
-    > div {
-    flex-wrap: nowrap;
-  }
-
-  /* Only the model trigger gives way: its name truncates. The access and mode controls keep their
-     full hit targets, so a long model never pushes them under Add. */
-  [data-composer]:not([data-composer-reading])
-    .composer-controls:not([data-busy])
-    .composer-toolbar
-    > div
-    > * {
-    flex-shrink: 0;
-  }
-
-  [data-composer]:not([data-composer-reading])
-    .composer-controls:not([data-busy])
-    .composer-toolbar
-    > div
-    > button {
-    flex-shrink: 1;
-    min-inline-size: 2rem;
+  .composer-send-controls [data-composer-stop-optional] {
+    display: none;
   }
 }
 
@@ -316,6 +297,13 @@
 .activity-dock {
   container: activity-dock / inline-size;
 }
+
+/* The composer notice stack already scrolls. A nested scroller traps the wheel
+   at its edges while the stack can still be clipping the first or last rows. */
+[data-composer-notices] .activity-dock-list {
+  max-block-size: none;
+  overflow: clip visible;
+}
 /* The dock lists the session's subagents; the composer's own subagent control steps aside. */
 [data-composer]:has([data-dock-subagents]) [data-composer-subagents-trigger] {
   display: none;
@@ -331,7 +319,8 @@
     max-inline-size: 48%;
   }
   .activity-dock-summary {
-    flex-basis: 100%;
+    flex: 1 1 auto;
+    max-inline-size: 100%;
   }
   .activity-dock-summary > span,
   .activity-dock-summary [data-truncate] {
@@ -339,6 +328,24 @@
     overflow: visible;
     overflow-wrap: anywhere;
     text-overflow: clip;
+  }
+  /* The walker claims no width here, so it cannot push the controls to a second row. It uses the
+     free space and, when that is shorter than its path, walks behind the controls. */
+  [data-activity-status-row] {
+    isolation: isolate;
+  }
+  .activity-dock-summary [data-pacing-track] {
+    flex: 1 0 0;
+    inline-size: 0;
+    margin-inline-end: 0;
+    overflow: visible;
+  }
+  .activity-dock-summary [data-pacing-track] > * {
+    position: absolute;
+    z-index: -1;
+    inset-block-start: 0;
+    inset-inline-end: min(0px, calc(100% - 5rem));
+    inline-size: 5rem;
   }
 }
 .activity-dock-clock {

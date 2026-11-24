@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createStore } from "../../../shared/lib/store";
-import { sameProjectPath } from "../../projects/model/recents";
+import { pathKey, sameProjectPath } from "../../../shared/lib/paths";
 import {
   mergeInboxSeenStorage,
   readInboxSeenStorage,
@@ -36,7 +36,10 @@ let seenTick = 0;
 const seenTickSnapshot = () => seenTick;
 let cachedRaw: string | null | undefined;
 let cachedStore: SeenStore | undefined;
-const knownItems = new Map<string, InboxSeenEntry & { projectPaths: string[] }>();
+const knownItems = new Map<
+  string,
+  InboxSeenEntry & { projectPaths: string[]; timestamp: number }
+>();
 type ColdState = "legacy" | "loading" | "ready" | "error";
 let coldState: ColdState = "legacy";
 let coldError: string | undefined;
@@ -47,7 +50,7 @@ let coldGeneration = 0;
 const hot = new Map<string, number | undefined>();
 const pendingKeys = new Set<string>();
 let readScheduled = false;
-const aggregates = new Map<string, { generation: number; value?: boolean; pending: boolean }>();
+const aggregates = new Map<string, { generation: number; value?: boolean }>();
 let channel: BroadcastChannel | undefined;
 
 function coldAvailable() {
@@ -239,28 +242,32 @@ export function rememberInboxItems(entries: readonly (InboxSeenEntry & { project
     const previous = knownItems.get(entry.key);
     const projectPaths = previous?.projectPaths ?? [];
     const knownPath = projectPaths.some((path) => sameProjectPath(path, entry.projectPath));
-    const newer = !previous || inboxUpdatedAt(entry) > inboxUpdatedAt(previous);
+    const timestamp =
+      previous?.updatedAt === entry.updatedAt ? previous.timestamp : Date.parse(entry.updatedAt);
+    const newer =
+      !previous ||
+      (Number.isFinite(timestamp) ? timestamp : 0) >
+        (Number.isFinite(previous.timestamp) ? previous.timestamp : 0);
     if (knownPath && !newer) continue;
     knownItems.set(entry.key, {
       key: entry.key,
       updatedAt: newer ? entry.updatedAt : previous!.updatedAt,
+      timestamp: newer ? timestamp : previous!.timestamp,
       projectPaths: knownPath ? projectPaths : [...projectPaths, entry.projectPath],
     });
     changed = true;
   }
   if (changed) {
     const cutoff = retentionCutoff();
-    for (const [key, entry] of knownItems)
-      if (hasReadableTime(entry) && inboxUpdatedAt(entry) < cutoff) knownItems.delete(key);
+    for (const [key, entry] of knownItems) if (entry.timestamp < cutoff) knownItems.delete(key);
     notifyInboxSeen();
   }
 }
 
 export function knownInboxEntries(projectPaths: readonly string[]): InboxSeenEntry[] {
+  const paths = new Set(projectPaths.map(pathKey));
   return [...knownItems.values()].filter((entry) =>
-    entry.projectPaths.some(
-      (knownPath) => !knownPath || projectPaths.some((path) => sameProjectPath(path, knownPath)),
-    ),
+    entry.projectPaths.some((knownPath) => !knownPath || paths.has(pathKey(knownPath))),
   );
 }
 
@@ -487,6 +494,7 @@ export function seedInboxSeenIfNeeded(items: readonly InboxSeenEntry[]) {
     return (async () => {
       try {
         await ensureCold();
+        if (coldSeeded) return;
         await seedInboxSeenStorage(mapFrom(items));
         coldSeeded = true;
         coldGeneration++;
@@ -514,20 +522,25 @@ export function inboxHasUnseenItems(items: readonly InboxSeenEntry[]): boolean {
     const key = JSON.stringify(items.map((item) => [item.key, item.updatedAt]));
     const cached = aggregates.get(key);
     if (cached?.generation === coldGeneration) return cached.value ?? false;
-    const current = { generation: coldGeneration, pending: true } as {
-      generation: number;
-      value?: boolean;
-      pending: boolean;
-    };
+    const current: { generation: number; value?: boolean } = { generation: coldGeneration };
+    const isCurrent = () =>
+      aggregates.get(key) === current && current.generation === coldGeneration;
     aggregates.delete(key);
     aggregates.set(key, current);
     while (aggregates.size > 32) aggregates.delete(aggregates.keys().next().value!);
     queueMicrotask(() => {
       void (async () => {
         await ensureCold();
+        if (!isCurrent()) return;
+        // Adjacent storage keys let each bounded page read a dense key range.
+        const ordered =
+          items.length > 512
+            ? [...items].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+            : items;
         let unseen = false;
         for (let index = 0; index < items.length; index += 512) {
-          const page = items.slice(index, index + 512);
+          if (!isCurrent()) return;
+          const page = ordered.slice(index, index + 512);
           const found = await readInboxSeenStorage(page.map((item) => item.key).filter(Boolean));
           if (
             found.seeded &&
@@ -537,17 +550,15 @@ export function inboxHasUnseenItems(items: readonly InboxSeenEntry[]): boolean {
             break;
           }
         }
-        if (aggregates.get(key) === current && current.generation === coldGeneration) {
-          current.value = unseen;
-          current.pending = false;
-        }
+        if (isCurrent()) current.value = unseen;
       })()
         .catch((error) => {
+          if (!isCurrent()) return;
           coldState = "error";
           coldError = error instanceof Error ? error.message : "Inbox history is unavailable.";
         })
         .finally(() => {
-          notifyInboxSeen();
+          if (isCurrent()) notifyInboxSeen();
         });
     });
     return false;

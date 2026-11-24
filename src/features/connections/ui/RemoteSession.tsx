@@ -172,6 +172,7 @@ import { forgetRemoteQueue } from "../model/useRemoteQueue";
 import { useAttachmentOwnerReconcile } from "../model/useAttachmentOwnerReconcile";
 import { useQueuedSendDrain } from "../model/useQueuedSendDrain";
 import { useRemotePageCacheRestore } from "../model/useRemotePageCacheRestore";
+import { localSessionPagePreview } from "../model/localSessionPagePreview";
 import { useSharedRemoteQueue } from "../model/useSharedRemoteQueue";
 import {
   registerDeliveryResolver,
@@ -338,7 +339,7 @@ function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSessio
   const issues = useDurableRemoteOutboxIssues(project.key, machine.environmentId);
   useEffect(() => {
     let active = true;
-    void flushHostSessionBindings()
+    void flushHostSessionBindings(shell.id)
       .then(() => {
         const owner = hostSessionBinding(shell);
         const session = owner?.created ? owner.sessionId : remoteSessionFor(shell.id);
@@ -541,19 +542,24 @@ function ConnectedRemoteSession({
     changed();
     return () => window.removeEventListener(REMOTE_TAB_BINDING_CHANGE, changed);
   }, [shell.id, machine.id, machine.environmentId]);
-  const [snapshot, setSnapshot] = useState<HostSession | undefined>(() =>
-    sessionId ? cachedSessionSnapshots.get(snapshotKey(machine.id, sessionId)) : undefined,
+  const [initialPage] = useState(() =>
+    sessionId && !cachedSessionSnapshots.has(snapshotKey(machine.id, sessionId))
+      ? localSessionPagePreview(shell.id, owner)?.page
+      : undefined,
   );
-  const [pageCacheOnly, setPageCacheOnly] = useState(false);
+  const [snapshot, setSnapshot] = useState<HostSession | undefined>(() =>
+    sessionId
+      ? (cachedSessionSnapshots.get(snapshotKey(machine.id, sessionId)) ??
+        (initialPage as HostSession | undefined))
+      : undefined,
+  );
+  const [pageCacheOnly, setPageCacheOnly] = useState(!!initialPage);
+  const diskPage = useRef<HostSession | undefined>(initialPage as HostSession | undefined);
   const [remoteDeleted, setRemoteDeleted] = useState(false);
   // A cached transcript is shown while its first owner read is in flight; that
   // read is a refresh, and only its failure makes the content unverified.
   const [remoteDataState, setRemoteDataState] = useState<RemoteDataState>(() =>
-    !sessionId
-      ? { phase: "empty" }
-      : cachedSessionSnapshots.has(snapshotKey(machine.id, sessionId))
-        ? { phase: "refreshing" }
-        : { phase: "loading" },
+    !sessionId ? { phase: "empty" } : snapshot ? { phase: "refreshing" } : { phase: "loading" },
   );
   const remoteDataStateRef = useRef(remoteDataState);
   remoteDataStateRef.current = remoteDataState;
@@ -589,12 +595,15 @@ function ConnectedRemoteSession({
   useRemotePageCacheRestore({
     environmentId: machine.environmentId,
     sessionId,
+    shellId: shell.id,
+    owner,
     hasSnapshot: () => !!snapshotRef.current,
     isDeleted: () => bindingGen.currentDeleted(),
     restore: (cached) => {
-      // The disk projection has a clipped block window; invalidate any poll
-      // closure that may have captured an earlier in-memory baseline.
+      // The disk projection has a clipped block window. Only a live owner read
+      // can be the baseline of a delta.
       forceTailRead.current = true;
+      diskPage.current = cached;
       snapshotRef.current = cached;
       setSnapshot(cached);
       setPageCacheOnly(true);
@@ -1114,7 +1123,9 @@ function ConnectedRemoteSession({
           return;
         }
         const known = historyGeneration.known(
-          !pageCacheOnly && !forceTailRead.current && snapshotRef.current?.session.id === sessionId
+          snapshotRef.current !== diskPage.current &&
+            !forceTailRead.current &&
+            snapshotRef.current?.session.id === sessionId
             ? snapshotRef.current
             : undefined,
         );
@@ -1206,7 +1217,7 @@ function ConnectedRemoteSession({
         }
         const latest = snapshotRef.current;
         if (
-          !pageCacheOnly &&
+          latest !== diskPage.current &&
           known &&
           next &&
           latest &&
@@ -1240,10 +1251,11 @@ function ConnectedRemoteSession({
         failed = 0;
         if (next && sessionId)
           rememberSessionSnapshot(snapshotKey(machine.id, sessionId), next, machine.environmentId);
-        if (next && !pageCacheOnly && snapshotRef.current)
+        if (next && snapshotRef.current && snapshotRef.current !== diskPage.current)
           observeRemoteApprovalResolutions(shell.id, snapshotRef.current, next);
         setSnapshot(next);
         snapshotRef.current = next;
+        diskPage.current = undefined;
         forceTailRead.current = false;
         setPageCacheOnly(false);
         setRemoteDeleted(false);
@@ -1371,7 +1383,6 @@ function ConnectedRemoteSession({
     project.cwd,
     sessionId,
     refresh,
-    pageCacheOnly,
     onSnapshot,
   ]);
 

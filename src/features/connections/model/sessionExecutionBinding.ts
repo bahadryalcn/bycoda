@@ -213,6 +213,9 @@ export async function flushHostSessionBindings(shellId?: string): Promise<void> 
     if (shellId !== undefined) {
       const latest = await readBindingEvidence(shellId);
       if (writes.length) continue;
+      // Revalidate the owner on every open. Only a changed canonical record invalidates
+      // the bindings read by all mounted panes. Legacy readers also depend on localStorage.
+      if (canonicalEpoch && sameBindingEvidence(canonical.get(shellId), latest)) continue;
       if (latest) canonical.set(shellId, latest);
       else canonical.delete(shellId);
       bindingsChanged();
@@ -279,13 +282,7 @@ async function rebaseOnSameOwner(
     } catch {
       return false;
     }
-    if (
-      !stored ||
-      (stored.raw === expected?.raw &&
-        stored.legacyRaw === expected?.legacyRaw &&
-        stored.version === expected?.version) ||
-      !sameOwner(stored.raw, next.raw)
-    )
+    if (!stored || sameBindingEvidence(stored, expected) || !sameOwner(stored.raw, next.raw))
       return false;
     if (canonicalEpoch) next.legacyRaw = stored.legacyRaw;
     try {
@@ -296,6 +293,13 @@ async function rebaseOnSameOwner(
     }
   }
   return false;
+}
+
+function sameBindingEvidence(
+  a: StoredBindingEvidence | undefined,
+  b: StoredBindingEvidence | undefined,
+) {
+  return a?.version === b?.version && a?.raw === b?.raw && a?.legacyRaw === b?.legacyRaw;
 }
 
 function sameOwner(storedRaw: string, nextRaw: string): boolean {

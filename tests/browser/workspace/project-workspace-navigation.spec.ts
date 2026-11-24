@@ -131,6 +131,7 @@ test("session preview replaces browsing tabs and keeps drafts across themes and 
 test("working sessions and usage meters stay contained in narrow and short workspaces", async ({
   page,
 }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
   await page.goto("/tests/browser/workspace/project-workspace-navigation.html?layout=1");
   await page.emulateMedia({ reducedMotion: "reduce" });
   const rail = page.locator('[data-side-pane="rail"]');
@@ -213,10 +214,8 @@ test("working sessions and usage meters stay contained in narrow and short works
     }
   }
   const firstCard = rail.locator("[data-live-agent-card]").first();
-  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(6);
-  await expect(
-    rail.locator('[data-live-agent-card="live-6"], [data-live-agent-card="live-7"]'),
-  ).toHaveCount(0);
+  await expect(rail.locator("[data-live-agent-card]")).toHaveCount(8);
+  await expect(rail.locator('[data-live-agent-state="done"]')).toHaveCount(2);
   // The expanded list must scroll, never squeeze record rows until their text overlaps.
   for (const height of [560, 800]) {
     await page.setViewportSize({ width: 390, height });
@@ -251,14 +250,14 @@ test("working sessions and usage meters stay contained in narrow and short works
   }
   await firstCard.focus();
   await firstCard.press("Enter");
-  await expect(page.getByLabel("Selected live session")).toHaveText("live-1");
+  await expect(page.getByLabel("Selected live session")).toHaveText("live-0");
   const activity = rail.getByRole("region", { name: "Activity", exact: true });
   const activityToggle = activity.getByRole("button", { name: /^Activity/ });
   await expect(activityToggle).toHaveAttribute("aria-expanded", "true");
-  await expect(activity.getByLabel("1 needs attention", { exact: true })).toHaveText("1");
+  await expect(activity.getByLabel("Needs input: 1", { exact: true })).toHaveText("1");
   await activityToggle.click();
   await expect(activityToggle).toHaveAttribute("aria-expanded", "false");
-  await expect(activity.getByLabel("1 needs attention", { exact: true })).toHaveText("1");
+  await expect(activity.getByLabel("Needs input: 1", { exact: true })).toHaveText("1");
   await expect(firstCard).toBeHidden();
   await activityToggle.click();
   await expect(activityToggle).toHaveAttribute("aria-expanded", "true");
@@ -282,6 +281,75 @@ test("working sessions and usage meters stay contained in narrow and short works
   await expect(
     rail.getByRole("button", { name: /Improve the shared interface/ }).first(),
   ).toBeVisible();
+});
+
+test("Claude usage meters show saved data and leave every reset action visible", async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.goto(
+    "/tests/browser/workspace/project-workspace-navigation.html?layout=1&usage-resets=1",
+  );
+  await page.getByRole("button", { name: "Claude Code usage details", exact: true }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Claude Code usage details", exact: true });
+  await expect(dialog.getByRole("button", { name: "Personal", pressed: true })).toBeVisible();
+  await expect(dialog.getByText(/^Refresh failed\. Updated \d+m ago$/)).toBeVisible();
+  await expect(dialog.locator("[data-quota-reset-icon]")).toHaveCSS(
+    "mask-image",
+    /quota-reset\.png/,
+  );
+  await expect(await page.request.get("/quota-reset.png")).toBeOK();
+
+  const resets = dialog.getByRole("list", { name: "Available banked resets" });
+  const buttons = resets.getByRole("button", { name: "Use reset", exact: true });
+  await expect(resets.getByRole("heading", { level: 4 })).toHaveCount(4);
+  await expect(buttons).toHaveCount(4);
+  for (const button of await buttons.all()) {
+    await expect(button).toBeInViewport({ ratio: 1 });
+    await expect(button).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  }
+  await buttons.last().focus();
+  await page.keyboard.press("Enter");
+  await expect(resets.getByRole("button", { name: "Confirm", exact: true })).toBeInViewport();
+  await resets.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(buttons).toHaveCount(4);
+});
+
+test("usage meters share a solid popover and show reset actions only with credits", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.goto(
+    "/tests/browser/workspace/project-workspace-navigation.html?layout=1&usage-resets=1",
+  );
+  for (const [provider, resetCount] of [
+    ["Codex", 2],
+    ["OpenCode", 0],
+    ["Grok Build", 0],
+    ["Pi · OpenAI Codex", 0],
+  ] as const) {
+    if (provider.startsWith("Pi")) {
+      await page.goto(
+        "/tests/browser/workspace/project-workspace-navigation.html?layout=1&pi-usage=1",
+      );
+    }
+    const name = provider + " usage details";
+    await page.getByRole("button", { name, exact: true }).click();
+    const dialog = page.getByRole("dialog", { name, exact: true });
+    await expect(dialog.locator("..").locator(".popover-solid")).toHaveCount(1);
+    await expect(dialog.getByRole("meter").first()).toBeVisible();
+    const icon = dialog.locator("[data-quota-reset-icon]");
+    if (resetCount > 0) await expect(icon).toHaveCSS("mask-image", /quota-reset\.png/);
+    else await expect(icon).toHaveCount(0);
+    const actions = dialog.getByRole("button", { name: "Use reset", exact: true });
+    await expect(actions).toHaveCount(resetCount);
+    for (const action of await actions.all()) await expect(action).toBeInViewport({ ratio: 1 });
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+  }
 });
 
 test("Inbox keeps long issue titles readable and list actions available", async ({
@@ -633,6 +701,19 @@ test.beforeEach(async ({ page }) => {
         },
         transformCallback: () => 1,
         invoke: async (command: string, args: Record<string, unknown> = {}) => {
+          if (command === "fetch_pi_usage") {
+            return {
+              status: "ok",
+              windows: {
+                session: { usedPercent: 24, windowMinutes: 300, resetsAt: Date.now() + 3_600_000 },
+                weekly: {
+                  usedPercent: 39,
+                  windowMinutes: 10080,
+                  resetsAt: Date.now() + 86_400_000,
+                },
+              },
+            };
+          }
           const cwd = String(args.cwd ?? "G:/wallet/api");
           if (new URL(location.href).searchParams.has("inbox-review")) {
             const calls = ((window as any).inboxReviewCalls ??= []) as string[];

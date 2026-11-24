@@ -5,7 +5,7 @@ import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SelectTrigger } from "../../../shared/ui/Select";
-import { ChevronDown, WandSparkles, X } from "../../../shared/ui/icons";
+import { WandSparkles, X } from "../../../shared/ui/icons";
 import {
   delegationNextValue,
   isDelegationSetting,
@@ -126,69 +126,6 @@ export function DelegationSubagentsControl({
   );
 }
 
-/**
- * A single any-provider choice (Advisor) as a full-width field: the setting's name sits inside
- * the field's top edge, the picked model under it without the provider the icon already shows.
- */
-export function DelegationField({
-  setting,
-  label,
-  picked,
-  emptyLabel,
-  disabled,
-  describedBy,
-  onClick,
-}: {
-  setting: ModelSetting;
-  label: string;
-  picked: ModelSetting["options"][number] | undefined;
-  emptyLabel: string;
-  disabled: boolean;
-  describedBy?: string;
-  /** Opens the column-wide picker, which keeps the full "Provider · Model" labels. */
-  onClick: () => void;
-}) {
-  const t = useT();
-  return (
-    <Button
-      size="sm"
-      variant="secondary"
-      type="button"
-      fullWidth
-      align="start"
-      // The direct layout lets the label fill the field so the chevron sits at its far edge.
-      motion="none"
-      padding={{ block: "sm" }}
-      controlHeight="auto"
-      disabled={disabled}
-      aria-describedby={describedBy}
-      aria-haspopup="dialog"
-      data-model-setting-field
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
-    >
-      <span className="flex min-w-0 flex-1 flex-col items-start">
-        <Text size="micro" data-setting-label>
-          {label}
-        </Text>
-        <Text
-          as="span"
-          size="inherit"
-          tone="inherit"
-          leading="snug"
-          className="flex max-w-full min-w-0 items-center gap-1.5"
-        >
-          {picked ? <DelegationOptionIcon setting={setting} value={picked.value} /> : null}
-          <Text size="inherit" tone="inherit" truncate className="min-w-0">
-            {picked ? delegationShortLabel(setting, picked.value, t(picked.label)) : emptyLabel}
-          </Text>
-        </Text>
-      </span>
-      <ChevronDown className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
-    </Button>
-  );
-}
-
 /** The provider icon of one any-provider delegation option; nothing for Off. */
 export function DelegationOptionIcon({
   setting,
@@ -237,13 +174,24 @@ function delegationMenuItems(
     const ref = isDelegationSetting(setting) ? decodeAdvisor(option.value) : undefined;
     const provider = ref ? HARNESS_TITLE[ref.harness] : "";
     const parts = option.label.split(" · ");
-    const primary = provider && parts.length > 1 ? parts[1] : t(option.label);
-    const secondary = provider ? [provider, ...parts.slice(2)].join(" · ") : "";
+    const subagent = isSubagentSetting(setting);
+    const primary = subagent
+      ? (option.modelLabel ?? t(option.label))
+      : provider && parts.length > 1
+        ? parts[1]
+        : t(option.label);
+    const secondary = subagent
+      ? option.accountLabel
+      : provider
+        ? [provider, ...parts.slice(2)].join(" · ")
+        : "";
     const item: DropdownMenuAction = {
       kind: "item",
       id: option.value,
       label: t(option.label),
-      title: t(option.label),
+      title: subagent
+        ? delegationShortLabel(setting, option.value, t(option.label))
+        : t(option.label),
       checked: delegationOptionSelected(setting, values, option.value),
       selectionRole: "checkbox",
       icon: (
@@ -281,6 +229,18 @@ export function delegationSelectChoice(
   t: (text: string) => string,
 ) {
   const ref = isDelegationSetting(setting) ? decodeAdvisor(option.value) : undefined;
+  const group =
+    ref &&
+    new Set(setting.options.map((item) => decodeAdvisor(item.value)?.harness).filter(Boolean))
+      .size > 1
+      ? HARNESS_TITLE[ref.harness]
+      : undefined;
+  if (isSubagentSetting(setting)) {
+    return {
+      label: delegationShortLabel(setting, option.value, t(option.label)),
+      group,
+    };
+  }
   const parts = option.label.split(" · ");
   const model = ref && parts.length > 1 ? parts[1] : undefined;
   // The same model offered by several accounts needs the account in its name, or a summary of
@@ -295,11 +255,6 @@ export function delegationSelectChoice(
     meta: ref
       ? [HARNESS_TITLE[ref.harness], ...(shared ? [] : parts.slice(2))].join(" · ")
       : undefined,
-    group:
-      ref &&
-      new Set(setting.options.map((item) => decodeAdvisor(item.value)?.harness).filter(Boolean))
-        .size > 1
-        ? HARNESS_TITLE[ref.harness]
-        : undefined,
+    group,
   };
 }

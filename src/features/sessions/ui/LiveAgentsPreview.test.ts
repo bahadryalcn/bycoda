@@ -3,7 +3,8 @@ import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LiveAgent } from "../model/liveAgents";
-import { LiveAgentsPreview, summarizeLiveAgents } from "./LiveAgentsPreview";
+import { t } from "../../../shared/i18n";
+import { LiveAgentsPreview, liveActivityCounts } from "./LiveAgentsPreview";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -47,27 +48,28 @@ afterEach(() => {
 });
 
 describe("LiveAgentsPreview", () => {
-  it("puts input requests first and excludes failed results", () => {
+  it("keeps chronological order across states and opens the selected rows", () => {
     const onSelect = vi.fn();
     render({
       agents: [
         agent("a", "/a"),
         agent("b", "/b"),
-        agent("failed", "/c", { issue: "failed", done: true }),
-        agent("approval", "/d", { needsApproval: true }),
+        agent("failed", "/c", { issue: "failed", done: true, startedAt: 2_000 }),
+        agent("approval", "/d", { needsApproval: true, startedAt: 3_000 }),
       ],
       collapsible: true,
       onSelect,
     });
+    act(() => container.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click());
     const rows = Array.from(
       container.querySelectorAll<HTMLButtonElement>("[data-live-agent-card]"),
     );
-    expect(rows.map((row) => row.dataset.liveAgentCard)).toEqual(["approval", "a", "b"]);
+    expect(rows.map((row) => row.dataset.liveAgentCard)).toEqual(["approval", "failed", "a", "b"]);
     for (const row of rows.slice(0, 2)) act(() => row.click());
-    expect(onSelect.mock.calls).toEqual([["approval"], ["a"]]);
+    expect(onSelect.mock.calls).toEqual([["approval"], ["failed"]]);
   });
 
-  it("groups only working and waiting rows across projects", () => {
+  it("shows state counts and a single list across projects", () => {
     render({
       agents: [
         agent("done", "/a", { done: true }),
@@ -81,13 +83,13 @@ describe("LiveAgentsPreview", () => {
     const header = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
     act(() => header.click());
     const list = container.querySelector("[data-live-agents-list]")!;
-    expect(list.querySelectorAll("[data-live-agents-group]")).toHaveLength(2);
+    expect(list.querySelectorAll(":scope > [data-live-agent-card]")).toHaveLength(5);
     expect(
       Array.from(
         list.querySelectorAll<HTMLElement>("[data-live-agent-card]"),
         (card) => card.dataset.liveAgentCard,
       ),
-    ).toEqual(["run", "other-host", "waiting"]);
+    ).toEqual(["done", "waiting", "run", "other-host", "failed"]);
     expect(header.querySelector('[aria-label="2 working agents"]')).not.toBeNull();
     expect(header.querySelector('[aria-label="1 waiting agent"]')).not.toBeNull();
   });
@@ -121,18 +123,56 @@ describe("LiveAgentsPreview", () => {
       onSelect,
     });
     const header = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
-    const card = container.querySelector<HTMLButtonElement>('[data-live-agent-card="b"]')!;
     expect(header.getAttribute("aria-expanded")).toBe("false");
-    expect(card.closest("[hidden]")).not.toBeNull();
     expect(header.textContent).toContain("2");
+    expect(container.querySelector('[role="status"]')!.textContent).toBe("2 working agents");
     expect(onSelect).not.toHaveBeenCalled();
     act(() => header.click());
+    const card = container.querySelector<HTMLButtonElement>('[data-live-agent-card="b"]')!;
     expect(card.closest("[hidden]")).toBeNull();
     act(() => card.click());
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("b");
   });
 
-  it("keeps activity order within groups and exposes every row to scrolling", () => {
+  it("mounts no row cards while collapsed and builds them on expand", () => {
+    render({
+      agents: Array.from({ length: 40 }, (_, index) => agent(`run-${index}`, `/repo/${index % 4}`)),
+      collapsible: true,
+    });
+    const list = container.querySelector("[data-live-agents-list]")!;
+    expect(list.children).toHaveLength(0);
+    expect(list.closest("[hidden]")).not.toBeNull();
+    const header = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    expect(header.querySelector('[aria-label="40 working agents"]')!.textContent).toBe("40");
+    act(() => header.click());
+    expect(list.querySelectorAll("[data-live-agent-card]")).toHaveLength(40);
+  });
+
+  it("keeps counts, live announcements and the selected row current while collapsed", () => {
+    const onSelect = vi.fn();
+    const base = [agent("a", "/repo/a"), agent("b", "/repo/b")];
+    render({ agents: base, collapsible: true, activeSessionId: "b", onSelect });
+    const header = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    render({
+      agents: [...base, agent("c", "/repo/c", { needsApproval: true, inputKind: "approval" })],
+      collapsible: true,
+      activeSessionId: "b",
+      onSelect,
+    });
+    expect(container.querySelector("button[aria-expanded]")).toBe(header);
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect(header.querySelector('[aria-label="Need approval: 1"]')).not.toBeNull();
+    expect(container.querySelector('[role="status"]')!.textContent).toBe(
+      "2 working agents, Need approval: 1",
+    );
+    act(() => header.click());
+    expect(
+      container.querySelector('[data-live-agent-card="b"]')?.getAttribute("aria-current"),
+    ).toBe("true");
+    expect(container.querySelector('[data-live-agent-card="c"]')).not.toBeNull();
+  });
+
+  it("keeps input order for equal timestamps and exposes every row to scrolling", () => {
     render({
       agents: [
         agent("a-1", "/repo/a"),
@@ -150,16 +190,16 @@ describe("LiveAgentsPreview", () => {
 
     const cards = Array.from(container.querySelectorAll<HTMLElement>("[data-live-agent-card]"));
     expect(cards.map((card) => card.dataset.liveAgentCard)).toEqual([
-      "b-1",
       "a-1",
+      "b-1",
       "a-2",
       "b-2",
       "c-1",
       "c-2",
     ]);
-    expect(cards[1].textContent).toContain("Alpha");
-    expect(cards[0].textContent).toContain("Beta");
-    expect(cards[1].querySelector(".bycoda-sigil-active")).not.toBeNull();
+    expect(cards[0].textContent).toContain("Alpha");
+    expect(cards[1].textContent).toContain("Beta");
+    expect(cards[0].querySelector(".bycoda-sigil-active")).not.toBeNull();
     expect(
       container.querySelector("[data-live-agents-list]")?.classList.contains("overflow-y-auto"),
     ).toBe(true);
@@ -211,9 +251,9 @@ describe("LiveAgentsPreview", () => {
     ).toBe("true");
   });
 
-  it("hides Activity when only finished rows remain", () => {
+  it("shows Done when only a finished row remains", () => {
     render({ agents: [agent("background", "/repo/b", { done: true, activity: "Done" })] });
-    expect(container.querySelector("[data-live-agents-preview]")).toBeNull();
+    expect(container.querySelector('[data-live-agent-state="done"]')).not.toBeNull();
   });
 
   it("keeps elapsed timers out of its live region", () => {
@@ -236,9 +276,9 @@ it("shows the provider beside the title and keeps unknown start times empty", ()
   render({ agents: [agent("unknown", "/repo/a", { startedAt: undefined })] });
   const card = container.querySelector('[data-live-agent-card="unknown"]')!;
   expect(card.querySelector("[data-live-agent-title] img")).not.toBeNull();
-  const status = card.querySelector("[data-session-working-status]")!;
-  expect(status.getAttribute("aria-label")).toBe("Working");
-  expect(status.querySelector(".tabular-nums")).toBeNull();
+  const status = card.querySelector("[data-live-agent-status]")!;
+  expect(status.textContent).toBe("Working");
+  expect(status.querySelector("[data-live-agent-elapsed]")).toBeNull();
 });
 
 describe("LiveAgentsPreview mixed collections", () => {
@@ -256,45 +296,37 @@ describe("LiveAgentsPreview mixed collections", () => {
 
   it("keeps waiting agents out of the working count", () => {
     const waiting = { kind: "commands", count: 1 } as const;
-    const summary = summarizeLiveAgents([agent("a", "/a", { waiting }), agent("b", "/b")]);
-    expect(summary).toMatchObject({
-      working: 1,
-      waiting: 1,
-      headline: "working",
-    });
-    expect(summarizeLiveAgents([agent("a", "/a", { waiting })]).headline).toBe("waiting");
+    expect(
+      liveActivityCounts([agent("a", "/a", { waiting }), agent("b", "/b")], t, String),
+    ).toMatchObject([
+      { state: "working", count: 1 },
+      { state: "waiting", count: 1 },
+    ]);
   });
 
-  it("counts only running agents and pending input", () => {
-    expect(summarizeLiveAgents(mixed)).toEqual({
-      attention: 1,
-      working: 2,
-      waiting: 0,
-      headline: "working",
-    });
-    expect(summarizeLiveAgents(mixed.slice(0, 2)).headline).toBe("attention");
-    expect(summarizeLiveAgents(mixed.slice(4)).working).toBe(0);
-  });
-
-  it("announces only working and pending input", () => {
-    render({ agents: mixed, collapsible: true });
-    const section = container.querySelector("[data-live-agents-preview]")!;
-    expect(section.getAttribute("data-live-agents-headline")).toBe("working");
+  it("uses matching labels and icons for rows and nonzero counts", () => {
+    const question = agent("question", "/repo/f", { needsApproval: true, inputKind: "question" });
+    render({ agents: [...mixed, question], collapsible: true });
     const header = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
-    expect(header.textContent).toContain("Activity");
-    expect(header.textContent).not.toContain("need attention");
-    const cards = container.querySelectorAll("[data-live-agent-card]");
-    expect(cards[0].getAttribute("data-live-agent-card")).toBe("input");
-    expect(cards[1].getAttribute("data-live-agent-card")).toBe("run-1");
-    expect(header.textContent).not.toContain("Needs attention");
-    expect(container.querySelector('.sr-only[role="status"]')!.textContent).toBe(
-      "2 working agents, 1 needs attention",
+    act(() => header.click());
+    for (const [state, label, accessibleCount, count] of [
+      ["failed", "Failed", "Failed: 1", "1"],
+      ["working", "Working", "2 working agents", "2"],
+      ["done", "Done", "Done: 1", "1"],
+      ["question", "Question", "Question: 1", "1"],
+      ["approval", "Need approval", "Need approval: 1", "1"],
+    ]) {
+      const status = container.querySelector(
+        `[data-live-agent-state="${state}"] [data-live-agent-status]`,
+      )!;
+      const badge = header.querySelector(`[aria-label="${accessibleCount}"]`)!;
+      expect(status.textContent).toContain(label);
+      expect(badge.textContent).toBe(count);
+      expect(badge.querySelector('[aria-hidden="true"]')?.firstElementChild).not.toBeNull();
+    }
+    expect(container.querySelector('[role="status"]')!.textContent).toBe(
+      "2 working agents, Failed: 1, Question: 1, Done: 1, Need approval: 1",
     );
-  });
-
-  it("hides Activity when only failed work remains", () => {
-    render({ agents: [mixed[0]], collapsible: true });
-    expect(container.querySelector("[data-live-agents-preview]")).toBeNull();
   });
 
   it("ties the Activity control to the list it expands", () => {
@@ -304,7 +336,7 @@ describe("LiveAgentsPreview mixed collections", () => {
     expect(list.hidden).toBe(true);
     act(() => header.click());
     expect(list.hidden).toBe(false);
-    expect(list.querySelectorAll("[data-live-agent-card]")).toHaveLength(3);
+    expect(list.querySelectorAll("[data-live-agent-card]")).toHaveLength(5);
   });
 });
 
@@ -314,7 +346,7 @@ it("keeps retrying rows visible with a warning", () => {
   expect(status?.getAttribute("data-tone")).toBe("warning");
 });
 
-it("hides Activity when several failed turns remain", () => {
+it("keeps the Failed counter when several failed turns remain", () => {
   render({
     agents: [
       agent("a", "/a", { issue: "failed", done: true }),
@@ -322,5 +354,5 @@ it("hides Activity when several failed turns remain", () => {
     ],
     collapsible: true,
   });
-  expect(container.querySelector("[data-live-agents-preview]")).toBeNull();
+  expect(container.querySelector('[aria-label="Failed: 2"]')?.textContent).toBe("2");
 });

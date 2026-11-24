@@ -147,7 +147,7 @@ vi.mock("../../files/ui/ExplorerMenu", () => ({
   },
 }));
 
-it.each(["terminal", "dock", "profile"])(
+it.each(["terminal", "move", "profile"])(
   "dismisses the old project's %s menu when its retained dock becomes hidden",
   async (menu) => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -197,9 +197,7 @@ it.each(["terminal", "dock", "profile"])(
         } else {
           host
             .querySelector<HTMLButtonElement>(
-              menu === "dock"
-                ? '[aria-label="Terminal dock actions"]'
-                : '[aria-label="Launch Profile…"]',
+              menu === "move" ? '[aria-label="Move Terminal"]' : '[aria-label="Launch Profile…"]',
             )!
             .click();
         }
@@ -216,8 +214,8 @@ it.each(["terminal", "dock", "profile"])(
       const staleActions =
         menu === "profile"
           ? ["profile:shell", "split", "default"]
-          : menu === "dock"
-            ? ["top", "close", "close-others", "close-all", "hide"]
+          : menu === "move"
+            ? ["top", "bottom", "left", "right"]
             : ["split", "move-up", "close", "close-others", "close-all"];
       await act(async () => {
         for (const id of staleActions) stalePick(id);

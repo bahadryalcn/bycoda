@@ -9,6 +9,7 @@ import { formatArchiveDate } from "../../../shared/i18n/format";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import * as lockState from "../../group-lock/model/lockState";
 import * as projectData from "../../projects/model/projectData";
+import { saveTabGroupLabel } from "../../workspace/model/tabGroups";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -183,6 +184,8 @@ it("windows a large archive and filters it in place on the same list", async () 
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
   resetRetainedState();
+  rememberProject("/work/archived");
+  archiveProject("/work/archived");
   const sessions = Array.from({ length: 400 }, (_, index) => ({
     id: `s${index}`,
     cwd: "/work/app",
@@ -197,7 +200,8 @@ it("windows a large archive and filters it in place on the same list", async () 
   await act(async () =>
     root.render(createElement(ArchivePage, { ...baseProps, sessions, sessionsStatus: undefined })),
   );
-  const mounted = () => container.querySelectorAll("[data-collection-key]").length;
+  const conversations = container.querySelector('[data-setting-id="archived-conversations"]')!;
+  const mounted = () => conversations.querySelectorAll("[data-collection-key]").length;
   expect(mounted()).toBeGreaterThan(0);
   expect(mounted()).toBeLessThan(60);
   expect(container.textContent).toContain("Showing 400 of 400 archived conversations");
@@ -205,6 +209,7 @@ it("windows a large archive and filters it in place on the same list", async () 
   const search = container.querySelector<HTMLInputElement>(
     'input[aria-label="Search archived conversations"]',
   )!;
+  const reads = vi.spyOn(Storage.prototype, "getItem");
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       search,
@@ -215,5 +220,29 @@ it("windows a large archive and filters it in place on the same list", async () 
   expect(container.textContent).toContain("Showing 4 of 400 archived conversations");
   expect(mounted()).toBe(4);
   expect(container.querySelector('[data-collection-key="s7"]')).not.toBeNull();
-  expect(container.querySelectorAll("[data-continuous-list]")).toHaveLength(1);
+  expect(conversations.querySelectorAll("[data-continuous-list]")).toHaveLength(1);
+  expect(reads.mock.calls.map(([key]) => key)).not.toContain("bycoda:tab-group:labels");
+});
+
+it("windows archived projects and filters by an updated project label", async () => {
+  const projects = Array.from({ length: 200 }, (_, index) => ({
+    path: `/work/project-${index}`,
+    archivedAt: index + 1,
+  }));
+  localStorage.setItem("bycoda.archivedProjects", JSON.stringify(projects));
+  await act(async () => root.render(createElement(ArchivePage, baseProps)));
+  const group = container.querySelector('[data-setting-id="archived-projects"]')!;
+  expect(group.querySelectorAll(".settings-collection-row").length).toBeLessThan(60);
+  await act(async () => saveTabGroupLabel("/work/project-188", "Renamed archive"));
+  const search = group.querySelector("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      "RENAMED",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(group.querySelectorAll(".settings-collection-row")).toHaveLength(1);
+  expect(group.textContent).toContain("Renamed archive");
+  expect(group.textContent).toContain("project-188");
 });

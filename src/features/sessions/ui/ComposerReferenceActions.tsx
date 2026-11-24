@@ -227,6 +227,7 @@ export function ComposerSkillReference({
   skill,
   close,
   onOpenFile,
+  hover,
 }: {
   anchor: HTMLElement;
   label: string;
@@ -234,6 +235,7 @@ export function ComposerSkillReference({
   skill?: ComposerSkillDetails;
   close: () => void;
   onOpenFile?: (path: string) => void;
+  hover?: { enter: () => void; leave: () => void };
 }) {
   const t = useT();
   const path = skill?.path;
@@ -247,6 +249,10 @@ export function ComposerSkillReference({
       appearance="composer"
       aria-label={label}
       onDismiss={close}
+      autoFocus={hover ? false : undefined}
+      restoreFocus={hover ? false : undefined}
+      onPointerEnter={hover?.enter}
+      onPointerLeave={hover?.leave}
       className="flex flex-col gap-3 p-3"
     >
       <div className="flex shrink-0 items-center gap-2">

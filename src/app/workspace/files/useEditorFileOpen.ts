@@ -22,7 +22,11 @@ import {
   rememberOpenedFile,
   resolveFileOpenRequest,
 } from "../../../features/files/model/fileIndex";
-import type { EditorNavigationTarget, OpenFileFn } from "../../../features/search/model/search";
+import {
+  editorPathsEqual,
+  type EditorNavigationTarget,
+  type OpenFileFn,
+} from "../../../features/search/model/search";
 import { useExternalFileDrop } from "./useExternalFileDrop";
 
 export interface EditorFileOpenDeps {
@@ -130,6 +134,22 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
         };
         const pin = !!options?.pin;
         const foreground = request === openRequest.current;
+        const updateFileNavigation = () => {
+          if (!foreground) return;
+          if (navigation) {
+            editorNavigationToken.current += 1;
+            setEditorNavigation({
+              path: resolved,
+              ...navigation,
+              token: editorNavigationToken.current,
+            });
+            return;
+          }
+          // A path-only reopen should not replay a previous source jump.
+          setEditorNavigation((previous) =>
+            previous && editorPathsEqual(previous.path, resolved) ? null : previous,
+          );
+        };
         if (checkout || (options?.placement !== "pane" && loadFileTabMode() === "workspace")) {
           // Built once: the updater may run twice in StrictMode.
           const created = newEditorWorkspaceTab(pin ? file : { ...file, preview: true });
@@ -138,6 +158,7 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
           // before a render would otherwise both miss the preview and append
           // twice. flushSync runs the updater now so `target` is set below.
           flushSync(() => {
+            updateFileNavigation();
             setTabs((prev) => {
               const result = openWorkspaceFile(
                 prev,
@@ -165,18 +186,11 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
           }
           setProjectTerminalFocused(false);
           setComposerFocused(false);
-          if (navigation) {
-            editorNavigationToken.current += 1;
-            setEditorNavigation({
-              path: resolved,
-              ...navigation,
-              token: editorNavigationToken.current,
-            });
-          }
           return;
         }
         if (!tab) return;
-        flushSync(() =>
+        flushSync(() => {
+          updateFileNavigation();
           setTabs((prev) =>
             prev.map((entry) => {
               if (entry.id !== tab.id) return entry;
@@ -198,8 +212,8 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
                     }),
                   };
             }),
-          ),
-        );
+          );
+        });
         if (!foreground) return;
         lastOpenedLocation.current = {
           request,
@@ -207,14 +221,6 @@ export function useEditorFileOpen(deps: EditorFileOpenDeps): EditorFileOpen {
           tab: tab.id,
           focus: tabsRef.current.find((entry) => entry.id === tab.id)?.focusedId,
         };
-        if (navigation) {
-          editorNavigationToken.current += 1;
-          setEditorNavigation({
-            path: resolved,
-            ...navigation,
-            token: editorNavigationToken.current,
-          });
-        }
         setComposerFocused(false);
       })().catch((error) => console.error("Failed to open file:", error));
     },

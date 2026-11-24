@@ -8,6 +8,7 @@ import {
   getCachedRateLimits,
   getAllRateLimits,
   loadFreshRateLimits,
+  loadPolledRateLimits,
   loadRateLimits,
   refreshClaudeQuotaOnce,
 } from "./rateLimitsCache";
@@ -179,6 +180,37 @@ it("tries again by itself after a failed read, and stops once it works", async (
   });
 
   await vi.advanceTimersByTimeAsync(60 * 60_000);
+  expect(fetchClaude).toHaveBeenCalledTimes(2);
+});
+
+it("honors Claude retry backoff when the foreground poll comes due", async () => {
+  fetchClaude
+    .mockResolvedValueOnce(rateLimited())
+    .mockResolvedValueOnce(rateLimited())
+    .mockResolvedValueOnce(usage(12));
+  await loadRateLimits("claude");
+  await vi.advanceTimersByTimeAsync(120_000);
+
+  const polled = await loadPolledRateLimits("claude", "default", true, () => true);
+
+  expect(polled.status).toBe("error");
+  expect(fetchClaude).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(getCachedRateLimits("claude")).toMatchObject({
+    status: "ok",
+    session: { usedPercent: 12 },
+  });
+  expect(fetchClaude).toHaveBeenCalledTimes(3);
+});
+
+it("allows a manual Claude refresh while an automatic retry is scheduled", async () => {
+  fetchClaude.mockResolvedValueOnce(rateLimited()).mockResolvedValueOnce(usage(20));
+  await loadRateLimits("claude");
+
+  const refreshed = await loadRateLimits("claude", "default", true, () => true, true);
+
+  expect(refreshed).toMatchObject({ status: "ok", session: { usedPercent: 20 } });
+  await vi.advanceTimersByTimeAsync(60_000);
   expect(fetchClaude).toHaveBeenCalledTimes(2);
 });
 

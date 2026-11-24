@@ -213,7 +213,10 @@ export function useSessionPaneProps({
     onQuestionReply: useKeepSessionAction(onQuestionReply, onKeepSession)!,
     onQuestionInteraction: useKeepSessionAction(onQuestionInteraction, onKeepSession),
     onOpenFile: useStableCallback<Parameters<P["onOpenFile"]>, void>((path, navigation, options) =>
-      onOpenFile(path, navigation, { ...options, placement: "pane" }),
+      onOpenFile(path, navigation && { ...navigation, keepMarkdownView: true }, {
+        ...options,
+        placement: "pane",
+      }),
     ),
     onOpenDiff,
     onOpenPlan,

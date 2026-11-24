@@ -6,13 +6,14 @@ import { newSession } from "../../../features/sessions/model/session";
 import { useSessionComposerDraft } from "../../../features/sessions/ui/useSessionComposerDraft";
 import { useSessionLoading, type SessionLoadingDeps } from "./useSessionLoading";
 
-const mocks = vi.hoisted(() => ({ reserve: vi.fn(), get: vi.fn() }));
+const mocks = vi.hoisted(() => ({ reserve: vi.fn(), get: vi.fn(), page: vi.fn() }));
 vi.mock("../../model/sessionWindowOwnership", () => ({
   reserveSessionWindow: mocks.reserve,
   remoteSessionOwnershipKey: (cwd: string, id: string) => `${cwd}:${id}`,
 }));
 vi.mock("../../../features/sessions/data/sessionStore", () => ({
   getSession: mocks.get,
+  getEarlierStoredHistory: mocks.page,
   persistFingerprint: () => "fingerprint",
 }));
 
@@ -100,6 +101,8 @@ function retryHarness(initial: ReturnType<typeof newSession>) {
   const root = createRoot(document.createElement("div"));
   return {
     refs,
+    publications: deps.setSessions,
+    loadHistory: (signal: AbortSignal) => actions.onLoadSessionHistory(initial.id, signal),
     mount: () => act(async () => root.render(createElement(Harness))),
     retry: (id: string) => act(async () => actions.onRetrySessionHistory(id)),
     edit: (text: string) => act(async () => draft.change(text)),
@@ -107,6 +110,41 @@ function retryHarness(initial: ReturnType<typeof newSession>) {
     unmount: () => act(async () => root.unmount()),
   };
 }
+
+it.each([false, true])(
+  "reads all Find pages without intermediate publication or execution hydration; abort %s",
+  async (abort) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const session = {
+      ...newSession("codex", "/repo"),
+      storedHistory: { before: 400, revision: 2 },
+      historyLoading: true,
+    };
+    const h = retryHarness(session);
+    const controller = new AbortController();
+    const block = (id: string) => ({ id, role: "user", text: id });
+    mocks.page
+      .mockReset()
+      .mockImplementationOnce(() => {
+        if (abort) controller.abort();
+        return { blocks: [block("middle")], cursor: { revision: 2, before: 200 } };
+      })
+      .mockResolvedValueOnce({ blocks: [block("first")], cursor: { revision: 2 } });
+    mocks.get.mockClear();
+    try {
+      await h.mount();
+      expect(await h.loadHistory(controller.signal)).toBe(abort ? 0 : 2);
+      expect(mocks.page).toHaveBeenCalledTimes(abort ? 1 : 2);
+      expect(h.publications).toHaveBeenCalledTimes(abort ? 0 : 1);
+      expect(h.refs.current[0].blocks.map((b) => b.id)).toEqual(abort ? [] : ["first", "middle"]);
+      expect(h.refs.current[0].historyLoading).toBe(true);
+      expect(mocks.get).not.toHaveBeenCalled();
+    } finally {
+      await h.unmount();
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 const failedTail = () => ({
   ...newSession("codex", "/repo"),

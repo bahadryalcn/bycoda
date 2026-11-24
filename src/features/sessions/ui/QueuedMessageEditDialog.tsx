@@ -15,7 +15,6 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from "react";
-import { FilePlus } from "../../../shared/ui/icons";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
@@ -36,8 +35,20 @@ import {
   revokeAttachment,
 } from "../model/attachments";
 import { collectSkippedAttachments } from "../model/attachmentSkips";
-import { attachmentDraftTokens } from "../model/attachmentTokens";
+import { attachmentDraftTokens, insertAtSelection } from "../model/attachmentTokens";
+import { extractChatCitations, withChatCitations, type ChatCitation } from "../model/chatCitation";
+import { removeCitationFromText } from "../model/citationTokens";
+import { HARNESS_TITLE } from "../model/session";
+import { ComposerAddMenu } from "./ComposerAddMenu";
+import { ComposerCitations } from "./ComposerCitations";
 import { ComposerHighlight, type ComposerReferenceContext } from "./ComposerHighlight";
+import { ComposerInlineEditor } from "./ComposerInlineEditor";
+import { leadingModeCommand, MODE_COMMAND_INDENT } from "./modeCommands";
+import {
+  QueuedEditSuggestions,
+  type QueuedEditSuggestionScope,
+  type QueuedEditSuggestionsHandle,
+} from "./QueuedEditSuggestions";
 import { applyMentionDeletion } from "./composerTextareaEdit";
 import {
   addDraftAttachments,
@@ -67,6 +78,8 @@ type Props = {
   /** False when the harness cannot take attachments: chips can then only be removed. */
   canAttach: boolean;
   references?: ComposerReferenceContext;
+  /** Enables the composer's `/` and `@` menus for this chat. */
+  suggestions?: QueuedEditSuggestionScope;
   onSave: (text: string, attachments: Attachment[]) => void;
   /** Take the message out of the queue; offered when nothing would be left to send. */
   onRemove: () => void;
@@ -125,13 +138,22 @@ function QueueEditContent({
   message,
   canAttach,
   references,
+  suggestions,
   onSave,
   onRemove,
   onCancel,
 }: Props) {
   const t = useT();
   const parentClosed = useParentInputsClosed(parentSessionId);
-  const [draft, setDraft] = useState<QueuedEditDraft>(() => queuedEditDraft(message));
+  // Quotes live beside the text, as in the composer; the row's text keeps them serialized.
+  const [source] = useState(() => extractChatCitations(message.text));
+  const body = { ...message, text: source.text };
+  const [citations, setCitations] = useState<ChatCitation[]>(source.citations);
+  const [inlineAttachments, setInlineAttachments] = useState<ReadonlySet<string> | null>(null);
+  const inlineActive = inlineAttachments !== null;
+  const menus = useRef<QueuedEditSuggestionsHandle>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [draft, setDraft] = useState<QueuedEditDraft>(() => queuedEditDraft(body));
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingAttachments, setLoadingAttachments] = useState(0);
@@ -179,9 +201,19 @@ function QueueEditContent({
     setDraft(next);
   };
 
-  const empty = isQueuedEditEmpty(message, draft);
-  const dirty = hasQueuedEditChanges(message, draft);
+  const empty = citations.length === 0 && isQueuedEditEmpty(body, draft);
+  const dirty =
+    hasQueuedEditChanges(body, draft) ||
+    JSON.stringify(citations) !== JSON.stringify(source.citations);
   const tokens = attachmentDraftTokens(draft.attachments);
+  const skillPrefix =
+    suggestions && !suggestions.remote
+      ? suggestions.harness === "codex"
+        ? ("$" as const)
+        : ("/" as const)
+      : undefined;
+  const skillNames = references?.names ?? new Set<string>();
+  const leadingMode = leadingModeCommand(draft.text, skillNames, { shell: true });
 
   useEffect(() => {
     const el = field.current;
@@ -224,7 +256,7 @@ function QueueEditContent({
       el.setSelectionRange(pendingCaret.current, pendingCaret.current);
       pendingCaret.current = null;
     }
-  }, [draft.text]);
+  }, [draft.text, inlineActive]);
 
   const requestClose = () => {
     parentChanged();
@@ -236,7 +268,8 @@ function QueueEditContent({
   const save = () =>
     mutateParentInput(parentChanged, () => {
       if (empty || pendingAttachments.current > 0) return;
-      const next = applyQueuedEdit(message, draft);
+      const edited = applyQueuedEdit(body, draft);
+      const next = { ...edited, text: withChatCitations(edited.text, citations) };
       const input = {
         source: "queue-edit-save-intent",
         message,
@@ -294,9 +327,31 @@ function QueueEditContent({
     field.current?.focus();
   };
 
+  const insertToken = (token: string) => {
+    const el = field.current;
+    if (!el) return;
+    const edit = insertAtSelection(el.value, captureDraft(el), token);
+    change(edit.text, edit.caret);
+    el.focus();
+  };
+
+  const changeCitations = (next: ChatCitation[], removed?: number) => {
+    if (!parentChanged.canMutate()) return;
+    const current = draftRef.current.text;
+    const text = removeCitationFromText(current, citations.length, removed ?? -1);
+    setCitations(next);
+    if (text !== current) change(text, Math.min(field.current?.selectionStart ?? 0, text.length));
+    else parentChanged();
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (isImeComposition(event.nativeEvent)) return;
     if (!parentChanged.canMutate()) return;
+    if (event.key === "Escape" && menus.current?.dismiss()) {
+      event.preventDefault();
+      return;
+    }
+    if (menus.current?.keyDown(event)) return;
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       save();
@@ -470,34 +525,40 @@ function QueueEditContent({
       size="md"
       fitViewport
       onClose={requestClose}
+      onEscape={() => {
+        if (!menus.current?.dismiss()) requestClose();
+      }}
       footer={
         confirmingDiscard ? (
-          <div className="min-w-0 flex-1">
-            <Alert tone="warning">
-              <span className="mr-auto">{t("Discard your changes?")}</span>
-              <Button
-                variant="ghost"
-                type="button"
-                onClick={() => {
-                  parentChanged();
-                  setConfirmingDiscard(false);
-                }}
-              >
-                {t("Keep editing")}
-              </Button>
-              <Button
-                variant="secondary"
-                tone="danger"
-                type="button"
-                onClick={() => {
-                  parentChanged();
-                  onCancel();
-                }}
-              >
-                {t("Discard")}
-              </Button>
-            </Alert>
-          </div>
+          <ModalActions
+            start={
+              <Text size="body" tone="secondary" role="status">
+                {t("Discard your changes?")}
+              </Text>
+            }
+          >
+            <Button
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                parentChanged();
+                setConfirmingDiscard(false);
+              }}
+            >
+              {t("Keep editing")}
+            </Button>
+            <Button
+              variant="primary"
+              tone="danger"
+              type="button"
+              onClick={() => {
+                parentChanged();
+                onCancel();
+              }}
+            >
+              {t("Discard")}
+            </Button>
+          </ModalActions>
         ) : (
           <ModalActions
             start={
@@ -574,61 +635,132 @@ function QueueEditContent({
           ref={field}
           label={t("Queued message text")}
           readOnly={parentClosed}
+          hidden={inlineActive}
+          aria-hidden={inlineActive || undefined}
           value={draft.text}
+          indent={leadingMode ? MODE_COMMAND_INDENT : undefined}
           overlay={
-            <ComposerHighlight
-              text={draft.text}
-              mode={null}
-              names={references?.names ?? new Set()}
-              skillParts={references?.skillParts ?? ((text) => [{ text }])}
-              mentions={references?.mentions ?? new Map()}
-              mcpTags={references?.mcpTags ?? []}
-              {...references}
-              attachments={draft.attachments}
-              citations={0}
-              field={field}
-            />
+            inlineActive ? undefined : (
+              <ComposerHighlight
+                text={draft.text}
+                mode={leadingMode}
+                names={skillNames}
+                skillParts={references?.skillParts ?? ((text) => [{ text }])}
+                mentions={references?.mentions ?? new Map()}
+                mcpTags={references?.mcpTags ?? []}
+                {...references}
+                attachments={draft.attachments}
+                citations={citations.length}
+                field={field}
+              />
+            )
           }
           minRows={5}
           maxRows={14}
           spellCheck={false}
           placeholder={t("Message")}
-          onChange={(event) =>
-            change(event.target.value, event.target.selectionStart ?? event.target.value.length)
-          }
+          // The inline editor writes the field's value directly, so React's change tracking misses it.
+          onChange={() => {}}
+          onInput={(event) => {
+            const el = event.currentTarget;
+            change(el.value, el.selectionStart ?? el.value.length);
+            menus.current?.sync(el);
+          }}
+          onClick={(event) => menus.current?.sync(event.currentTarget)}
+          onKeyUp={(event) => menus.current?.sync(event.currentTarget, true)}
+          onSelect={(event) => menus.current?.sync(event.currentTarget, true)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           frameProps={{ ref: dropBox }}
+          frameClassName="[--composer-draft-max-height:20rem]"
           header={
-            draft.attachments.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
-                {draft.attachments.map((file, index) => (
-                  <AttachmentChip
-                    key={file.id}
-                    attachment={file}
-                    token={tokens[index]}
-                    onRemove={() => remove(file.id)}
-                  />
-                ))}
-              </div>
+            citations.length > 0 || draft.attachments.length > 0 ? (
+              <>
+                <ComposerCitations
+                  citations={citations}
+                  disabled={parentClosed}
+                  onChange={changeCitations}
+                />
+                {draft.attachments.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+                    {draft.attachments.map((file, index) => (
+                      <AttachmentChip
+                        key={file.id}
+                        attachment={file}
+                        token={tokens[index]}
+                        draft={suggestions ? { projectRoot: suggestions.executionCwd } : undefined}
+                        onInsertToken={
+                          inlineAttachments?.has(file.id)
+                            ? undefined
+                            : () => insertToken(tokens[index])
+                        }
+                        onRemove={() => remove(file.id)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </>
             ) : null
           }
           toolbarLeading={
-            canAttach ? (
-              <Button
-                iconOnly
-                label={t("Add files or images")}
-                variant="ghost"
-                type="button"
-                aria-label={t("Add files or images")}
+            canAttach || skillPrefix ? (
+              <ComposerAddMenu
+                open={addOpen}
+                onOpenChange={setAddOpen}
+                align="start"
                 disabled={parentClosed}
-                onClick={() => void collect(pickAttachments)}
-              >
-                <FilePlus className="icon-sm" />
-              </Button>
+                uploadUnavailable={
+                  canAttach || !suggestions
+                    ? undefined
+                    : t("{p0} does not support attachments", {
+                        p0: HARNESS_TITLE[suggestions.harness],
+                      })
+                }
+                skillPrefix={skillPrefix}
+                onUpload={() => void collect(pickAttachments)}
+                onSkills={() => menus.current?.openSkills()}
+              />
             ) : undefined
           }
-        />
+        >
+          <ComposerInlineEditor
+            field={field}
+            text={draft.text}
+            attachmentProjectRoot={suggestions?.executionCwd}
+            references={{
+              names: skillNames,
+              skillParts: references?.skillParts ?? ((text) => [{ text }]),
+              skillGroups: references?.skillGroups,
+              skillDetails: references?.skillDetails,
+              mentions: references?.mentions ?? new Map(),
+              mcpTags: references?.mcpTags ?? [],
+              attachments: draft.attachments,
+              citations: citations.length,
+              modeEnd: leadingMode?.end ?? 0,
+              onOpenFile: references?.onOpenFile,
+            }}
+            label={t("Queued message text")}
+            placeholder={t("Message")}
+            readOnly={parentClosed}
+            disabled={false}
+            spellCheck={false}
+            hasSubagents={false}
+            onInlineAttachments={setInlineAttachments}
+            onRemoveAttachment={remove}
+          />
+        </PromptField>
+        {suggestions ? (
+          <QueuedEditSuggestions
+            ref={menus}
+            scope={suggestions}
+            parentSessionId={parentSessionId}
+            field={field}
+            anchor={dropBox}
+            canEdit={parentChanged.canMutate}
+            onEdit={change}
+            onError={setError}
+          />
+        ) : null}
 
         {loadingAttachments > 0 ? <LoadingText delay={false}>{t("Loading…")}</LoadingText> : null}
 

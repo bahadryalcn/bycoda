@@ -1297,14 +1297,14 @@ const STORED_HISTORY_INITIAL_BLOCKS = 48;
 const STORED_HISTORY_INITIAL_TURNS = 10;
 const STORED_HISTORY_PAGE_BLOCKS = 80;
 
-export async function getEarlierStoredHistory(session: Session) {
+export async function getEarlierStoredHistory(session: Session, forFind = false) {
   const cursor = session.storedHistory;
   if (cursor?.before == null || deletedSessionIds.has(session.id)) return null;
   const page = await invoke<StoredTranscriptPage | null>("session_get_page", {
     sessionId: session.id,
     before: cursor.before,
     revision: cursor.revision,
-    limit: STORED_HISTORY_PAGE_BLOCKS,
+    limit: forFind ? 200 : STORED_HISTORY_PAGE_BLOCKS,
   });
   if (deletedSessionIds.has(session.id)) return null;
   if (
@@ -2260,6 +2260,9 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
     if (interjection) next.interjection = interjection;
     if (block.notice === "error" || block.notice === "interrupt" || block.notice === "info") {
       next.notice = block.notice;
+    }
+    if (block.notice === "interrupt" && block.autoContinueArmed === true) {
+      next.autoContinueArmed = true;
     }
     if (block.shell) next.shell = sanitizeShellRun(block.shell);
     if (block.modelSwitch) next.modelSwitch = sanitizeModelSwitch(block.modelSwitch);

@@ -262,7 +262,9 @@ for (const theme of ["light", "dark"]) {
       const typography = session.getByRole("group", { name: "Terminal text size" });
       await expect(typography).toHaveCount(0);
       await session.getByRole("button", { name: "Terminal pane actions", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Suggestions", exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Bash suggestions", exact: true }),
+      ).toBeVisible();
       await page.keyboard.press("Escape");
       expect(await requests()).toHaveLength(1);
       await page.evaluate(

@@ -8,6 +8,8 @@ use tauri::{AppHandle, Emitter, Manager};
 /// Whether the run that finalizes relaunches instead of exiting. Each started run
 /// stores its own kind, so an aborted restart cannot turn a later quit into one.
 static RESTART: AtomicBool = AtomicBool::new(false);
+/// Set once the app has committed to exiting or relaunching.
+static FINALIZING: AtomicBool = AtomicBool::new(false);
 
 fn begin_finalization(finalizing: &AtomicBool) -> bool {
     !finalizing.swap(true, Ordering::SeqCst)
@@ -28,6 +30,19 @@ pub fn request_app_quit(app: AppHandle) {
 #[tauri::command]
 pub fn request_app_restart(app: AppHandle) {
     start_run(&app, true);
+}
+
+/// Relaunch without polling the windows, for a dead webview that cannot answer.
+/// The caller owns asking the user. A quit already finalizing stays a quit.
+pub fn restart_now(app: AppHandle) {
+    if begin_finalization(&FINALIZING) {
+        RESTART.store(true, Ordering::SeqCst);
+        finalize(app);
+    }
+}
+
+pub(crate) fn is_finalizing() -> bool {
+    FINALIZING.load(Ordering::SeqCst)
 }
 
 fn start_run(app: &AppHandle, restart: bool) {
@@ -62,10 +77,12 @@ fn start_run(app: &AppHandle, restart: bool) {
 
 /// Persist already happened in JS. Show windows so window-state doesn't save hidden.
 pub fn confirm_quit(app: AppHandle) {
-    static FINALIZING: AtomicBool = AtomicBool::new(false);
-    if !begin_finalization(&FINALIZING) {
-        return;
+    if begin_finalization(&FINALIZING) {
+        finalize(app);
     }
+}
+
+fn finalize(app: AppHandle) {
     crate::host_lifecycle::begin_quit();
     *QUIT_RUN.lock().unwrap_or_else(|error| error.into_inner()) = None;
     if crate::host_lifecycle::owned_pid().is_some() {

@@ -68,6 +68,38 @@ test("goal commands stay locked during work and long objectives remain readable"
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
+test("every prompt bar lands on its own turn in the real transcript", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/chat/chat-chrome.html?transcript");
+  const rail = page.getByRole("toolbar", { name: "Prompts", exact: true });
+  await expect(rail.locator("[data-prompt-bar]")).toHaveCount(90);
+  // Newest first: the last bar is a subagent result, as in a delegating session.
+  for (const index of [89, 88, 0, 2, 45, 44, 71, 89, 1]) {
+    const id = `prompt-${index}`;
+    await rail.locator(`[data-prompt-bar="${id}"]`).click();
+    await expect
+      .poll(
+        () =>
+          page.evaluate((turnId) => {
+            const scroller = document.querySelector<HTMLElement>(".agent-transcript")!;
+            const turn = scroller.querySelector(`[data-transcript-turn="${turnId}"]`);
+            if (!turn) return `${turnId} not mounted`;
+            const view = scroller.getBoundingClientRect();
+            const box = turn.getBoundingClientRect();
+            const atEnd = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 2;
+            const aligned = Math.abs(box.top - view.top - 8) <= 3;
+            const clamped = atEnd || scroller.scrollTop === 0;
+            return aligned || (clamped && box.top >= view.top && box.top < view.bottom)
+              ? "on target"
+              : `${turnId} is ${Math.round(box.top - view.top)}px from the top`;
+          }, id),
+        { message: `bar ${id}` },
+      )
+      .toBe("on target");
+  }
+});
+
 for (const dark of [false, true]) {
   test(`prompt preview stays compact without duplicate tooltip, ${dark ? "dark" : "light"}`, async ({
     page,

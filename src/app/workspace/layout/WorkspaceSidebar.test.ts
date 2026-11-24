@@ -32,8 +32,6 @@ it("skips equivalent navigation objects but invokes the latest committed action"
       ...actions,
       recoveryControl,
       workspaceNavigation: { pending: pending ? { project: pending } : null },
-      tabVisitNav: { canBack: false, canForward: false },
-      surfaceForward: { canForward: false },
     } as unknown as WorkspaceSidebarProps);
   }
   const host = document.createElement("div"),

@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   isPhoneConnectEnabled,
   isSignedIn,
@@ -14,19 +14,65 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Group, Row } from "../../../shared/ui/settings";
+import { Group, Row, useConfirmedPreferences } from "../../../shared/ui/settings";
 import { Switch } from "../../../shared/ui/Switch";
 import { Text } from "../../../shared/ui/Text";
 import { KeyRound, Laptop, Plus, RefreshCw, Smartphone } from "../../../shared/ui/icons";
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { isLocalSyncMachine } from "../model/localSync";
-import { revokePairedDevice, type PairedDevice } from "../model/pairedDevices";
+import { accountDeviceAccess } from "../model/accountDeviceAccess";
+import {
+  revokePairedDevice,
+  setPairedDeviceManagement,
+  type PairedDevice,
+} from "../model/pairedDevices";
 import type { PhoneConnectionPanelProps } from "../model/phonePairingTypes";
 import type { RemoteMachine } from "../model/protocol";
 import { usePhonePairing } from "../model/usePhonePairing";
 import { LocalNetworkAccessRow } from "./LocalNetworkAccessRow";
 import { PhonePairingDialog } from "./PhonePairingDialog";
 import { entryKey, usePairedDevices, type PairedDevicesEntry } from "./usePairedDevices";
+
+function RefreshDevicesButton({
+  disabled,
+  readDevices,
+  refreshInventory,
+}: {
+  disabled: boolean;
+  readDevices: () => Promise<void>;
+  refreshInventory: PhoneConnectionPanelProps["onRefresh"];
+}) {
+  const [pending, setPending] = useState(false);
+  const started = useRef(false);
+  const refresh = async () => {
+    if (started.current) return;
+    started.current = true;
+    setPending(true);
+    try {
+      const results = await Promise.allSettled(
+        [readDevices, refreshInventory].map(async (load) => load()),
+      );
+      for (const result of results)
+        if (result.status === "rejected") console.warn("Could not refresh devices", result.reason);
+    } finally {
+      started.current = false;
+      setPending(false);
+    }
+  };
+  return (
+    <Button
+      iconOnly
+      variant="ghost"
+      label={t("Refresh devices")}
+      disabled={disabled && !pending}
+      aria-disabled={pending || undefined}
+      aria-busy={pending || undefined}
+      onClick={refresh}
+    >
+      <RefreshCw aria-hidden className="icon-md" />
+    </Button>
+  );
+}
 
 function DeviceIcon({ device }: { device: PairedDevice }) {
   const Icon = device.kind === "phone" ? Smartphone : device.kind === "desktop" ? Laptop : KeyRound;
@@ -45,6 +91,9 @@ function DeviceRow({
   onRevoked: () => void;
 }) {
   const format = useFormat();
+  const settings = useConfirmedPreferences();
+  const canEdit = !device.isCurrent && !device.isLocalDesktop && canRevoke;
+  const permission = device.canManageDevices;
   const now = wallClockNow();
   const activity =
     device.lastSeenAt !== undefined
@@ -61,12 +110,30 @@ function DeviceRow({
             {device.name}
           </Text>
           {device.isCurrent ? <Badge tone="accent">{t("This desktop")}</Badge> : null}
+          {!device.isCurrent && device.isLocalDesktop ? <Badge>{t("Local desktop")}</Badge> : null}
         </span>
       }
       description={activity}
       descriptionVisible={Boolean(activity)}
+      feedback={settings.feedback(device.id)}
     >
-      {device.isCurrent ? null : (
+      {canEdit && permission !== undefined ? (
+        <Switch
+          label={t("Manage devices")}
+          checked={permission}
+          disabled={settings.pending(device.id)}
+          onCheckedChange={(enabled) =>
+            settings.commit(device.id, {
+              write: async () => {
+                const updated = await setPairedDeviceManagement(machine, device, enabled);
+                onRevoked();
+                return updated;
+              },
+            })
+          }
+        />
+      ) : null}
+      {!device.isCurrent && !device.isLocalDesktop ? (
         <ConfirmMorph
           label={t("Revoke")}
           tone="danger"
@@ -80,7 +147,7 @@ function DeviceRow({
             onRevoked();
           }}
         />
-      )}
+      ) : null}
     </Row>
   );
 }
@@ -89,10 +156,12 @@ function ComputerDevices({
   machine,
   entry,
   onChanged,
+  onRetry,
 }: {
   machine: RemoteMachine;
   entry: PairedDevicesEntry | undefined;
   onChanged: () => void;
+  onRetry: () => void;
 }) {
   const format = useFormat();
   const title = isLocalSyncMachine(machine) ? t("This computer") : machine.name;
@@ -103,12 +172,12 @@ function ComputerDevices({
     !entry || entry.phase === "loading" ? (
       <LoadingText>{t("Loading devices…")}</LoadingText>
     ) : entry.phase === "error" ? (
-      <InlineError retry={{ onRetry: onChanged }}>
+      <InlineError retry={{ onRetry }}>
         {t("Could not read the devices of {p0}.", { p0: title })}
       </InlineError>
     ) : entry.stale ? (
       // The last good list stays (and stays revocable); it just must not pass for current.
-      <InlineMessage tone="warning" retry={{ onRetry: onChanged }}>
+      <InlineMessage tone="warning" retry={{ onRetry }}>
         {t("Could not refresh. Showing the list from {p0}.", {
           p0: format.formatRelativeTime(entry.updatedAt, { now: wallClockNow() }),
         })}
@@ -127,16 +196,17 @@ function ComputerDevices({
       </InlineMessage>
     ) : entry.canRevoke ? undefined : (
       <InlineMessage tone="neutral">
-        {t("Update the host on {p0} to revoke devices from here.", { p0: title })}
+        {devices.some((device) => device.isCurrent && device.canManageDevices === false)
+          ? t("This desktop cannot manage devices on {p0}.", { p0: title })
+          : t("Update the host on {p0} to revoke devices from here.", { p0: title })}
       </InlineMessage>
     );
   return (
     <Group
       title={title}
-      description={t(
-        "Every phone or computer that can manage {p0}. Revoking signs it out immediately; it needs a new QR code to connect again.",
-        { p0: title },
-      )}
+      description={t("Phones and computers with access to {p0}. Revoked devices must pair again.", {
+        p0: title,
+      })}
       feedback={feedback}
     >
       {devices.map((device) => (
@@ -170,12 +240,19 @@ export function PairedDevicesPanel({
   const ordered = [...machines].sort(
     (a, b) => Number(isLocalSyncMachine(b)) - Number(isLocalSyncMachine(a)),
   );
-  const { entries, refresh } = usePairedDevices(ordered, active);
   const { state, coordinator } = usePhonePairing();
   const [pairing, setPairing] = useState(false);
-  const signedIn = isSignedIn(useAccountState());
+  const account = useAccountState();
+  const { entries, scope, retry, refreshAfterChange } = usePairedDevices(
+    ordered,
+    active,
+    isSignedIn(account) ? account.context.user.id : null,
+  );
+  const signedIn = isSignedIn(account);
   const accountConnect = useSyncExternalStore(subscribePhoneConnect, isPhoneConnectEnabled);
   const local = ordered.find(isLocalSyncMachine);
+  const accessSync = useSyncExternalStore(accountDeviceAccess.subscribe, accountDeviceAccess.load);
+  const accountDeviceId = isSignedIn(account) ? account.deviceId : null;
   const openPairing = () => {
     const machine = ordered[0];
     if (!machine) return;
@@ -184,7 +261,7 @@ export function PairedDevicesPanel({
   };
   const closePairing = () => {
     // A phone that just paired shows up at once instead of on the next poll.
-    if (state.stage === "paired") refresh();
+    if (state.stage === "paired") refreshAfterChange();
     coordinator.close();
     setPairing(false);
   };
@@ -201,18 +278,12 @@ export function PairedDevicesPanel({
         as="h2"
         actions={
           <>
-            <Button
-              iconOnly
-              variant="ghost"
-              label={t("Refresh devices")}
+            <RefreshDevicesButton
+              key={scope}
               disabled={!loaded || loading}
-              onClick={() => {
-                refresh();
-                void onRefresh();
-              }}
-            >
-              <RefreshCw aria-hidden className="icon-md" />
-            </Button>
+              readDevices={retry}
+              refreshInventory={onRefresh}
+            />
             <Button
               variant="primary"
               aria-haspopup="dialog"
@@ -247,11 +318,36 @@ export function PairedDevicesPanel({
               key={machine.id}
               machine={machine}
               entry={entries[entryKey(machine)]}
-              onChanged={refresh}
+              onChanged={refreshAfterChange}
+              onRetry={retry}
             />
           ))}
         </div>
-        <div>
+        <div className="settings-topics">
+          {local ? (
+            <Group title={t("Account recovery")}>
+              <Row
+                label={t("Manage this computer from my account")}
+                info={t(
+                  "Your account stores device names and permissions. Changes apply when bycoda is open and signed in on this computer.",
+                )}
+                disabled={!accountDeviceId}
+                disabledReason={t("Sign in to your account first")}
+              >
+                <Switch
+                  aria-label={t("Manage this computer from my account")}
+                  checked={Boolean(accountDeviceId && accessSync === accountDeviceId)}
+                  disabled={!accountDeviceId}
+                  onCheckedChange={(enabled) => {
+                    if (accountDeviceId)
+                      accountDeviceAccess.save(
+                        enabled ? accountDeviceId : `off:${accountDeviceId}`,
+                      );
+                  }}
+                />
+              </Row>
+            </Group>
+          ) : null}
           <Group title={t("Phone access")}>
             {local ? <LocalNetworkAccessRow machine={local} active={active} /> : null}
             <Row

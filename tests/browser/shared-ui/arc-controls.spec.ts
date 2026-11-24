@@ -2110,7 +2110,8 @@ test.describe("shared control state matrix", () => {
     const big = triggerOf(page, "Big list");
     await expect(big).toContainText("refs/heads/feature/branch-250");
     await big.click();
-    await expect(page.getByRole("option")).toHaveCount(500);
+    await expect(page.getByRole("option").first()).toHaveAttribute("aria-setsize", "500");
+    await expect.poll(() => page.getByRole("option").count()).toBeLessThan(64);
     await expect(page.getByRole("dialog").locator("input").first()).toBeFocused();
     await page.keyboard.type("branch-499");
     await expect(page.getByRole("option")).toHaveCount(1);

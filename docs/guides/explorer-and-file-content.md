@@ -115,8 +115,12 @@ the saved file and those candidates before retrying; an uncertain result is not
 a confirmed failed write.
 
 Use the eye and code icons in the upper right to switch modes; their tooltips
-show Preview and Source. In a Markdown preview, hold Ctrl and scroll the mouse
-wheel to zoom between 50% and 200%, or use the minus and plus controls. Click
+show Preview and Source. Markdown files opened from chat start in Preview and
+reopen in the last selected mode during the app session. A chat link with a line
+number reveals that line when Source is selected.
+
+In a Markdown preview, hold Ctrl and scroll the mouse wheel to zoom between 50%
+and 200%, or use the minus and plus controls. Click
 the percentage to reset to 100%. Preview zoom stays in that open viewer across
 mode switches; source editors retain their separate code zoom.
 Right-click source code (or press Shift+F10) to open editor actions: Undo, Redo,

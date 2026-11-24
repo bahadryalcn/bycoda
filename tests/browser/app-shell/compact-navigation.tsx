@@ -1,8 +1,10 @@
 import { ControlLayoutFixture } from "./control-layout";
-import { useState, type ComponentProps } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Sidebar } from "../../../src/app/shell/Sidebar";
+import { TitleBar } from "../../../src/app/shell/TitleBar";
+import { BelowWindowChrome } from "../../../src/app/shell/WindowControls";
 import { APP_MENU_TOGGLE_EVENT, MenuBar } from "../../../src/app/shell/MenuBar";
 import { SessionRecoveryControl } from "../../../src/app/shell/SessionRecoveryControl";
 import { Badge } from "../../../src/shared/ui/Badge";
@@ -126,8 +128,61 @@ const railAgents: LiveAgent[] = railPolish
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const badgeCount = Number(new URLSearchParams(location.search).get("badgeCount"));
 const expandedRail = new URLSearchParams(location.search).has("expandedRail");
-const headerNavigation = new URLSearchParams(location.search).has("headerNavigation");
+const lastSessionsHeader = new URLSearchParams(location.search).has("lastSessionsHeader");
 const projectHeader = new URLSearchParams(location.search).has("projectHeader");
+const titleBar = new URLSearchParams(location.search).has("titleBar");
+
+const WINDOW_FRAME = "flex h-dvh min-w-0 overflow-hidden bg-background-base text-content";
+
+/** With `?titleBar` the fixture is a whole main window: the title bar above the rail and panes. */
+function WindowFrame({
+  cwd,
+  onPick,
+  onSearch,
+  children,
+}: {
+  cwd: string;
+  onPick: (action: string) => void;
+  onSearch: () => void;
+  children: ReactNode;
+}) {
+  if (!titleBar) return <div className={WINDOW_FRAME}>{children}</div>;
+  return (
+    <div className={`${WINDOW_FRAME} flex-col`}>
+      <TitleBar
+        spansWindow
+        tabs={[
+          {
+            id: "open",
+            project: "clinic",
+            title: "Fix Clinic pre-commit failure",
+            more: [],
+            sessionCount: 1,
+            harnesses: ["claude"],
+            busyHarnesses: [],
+            files: [],
+          },
+        ]}
+        activeId="open"
+        cwd={cwd}
+        projectRailOpen={expandedRail}
+        canGoBack
+        onGoBack={() => onPick("Back")}
+        onGoForward={() => onPick("Forward")}
+        onToggleSidebar={() => onPick("Toggle sidebar")}
+        onSearch={onSearch}
+        onSelect={onPick}
+        onNew={() => onPick("New session")}
+        onClose={onPick}
+        onCloseMany={() => onPick("Close tabs")}
+        onReorder={() => onPick("Reorder tabs")}
+      />
+      <BelowWindowChrome titleBarAbove>
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">{children}</div>
+      </BelowWindowChrome>
+    </div>
+  );
+}
 
 function ApplicationMenuFixture() {
   const [selected, setSelected] = useState("");
@@ -162,7 +217,6 @@ function Fixture() {
   const [cwd, setCwd] = useState(projects[0]);
   const [tab, setTab] = useState<ComponentProps<typeof Sidebar>["tab"]>("sessions");
   const [selected, setSelected] = useState("");
-  const [projectToggleCount, setProjectToggleCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [request, setRequest] = useState<SearchRequest>();
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -175,17 +229,13 @@ function Fixture() {
   };
   return (
     <QueryClientProvider client={client}>
-      <div className="flex h-dvh min-w-0 overflow-hidden bg-background-base text-content">
+      <WindowFrame cwd={cwd} onPick={setSelected} onSearch={openSearch}>
         <Sidebar
           cwd={cwd}
           open={sidebarOpen}
           projectRailOpen={expandedRail}
           compactProjectRail
-          titleBarAbove={!headerNavigation}
-          lastSessionsOpen={headerNavigation && !projectHeader}
-          canGoBack={headerNavigation}
-          canGoForward={headerNavigation}
-          onGoForward={() => setSelected("Forward")}
+          lastSessionsOpen={lastSessionsHeader && !projectHeader}
           sessions={history}
           liveAgents={railAgents}
           recentSessions={
@@ -222,10 +272,7 @@ function Fixture() {
           recents={projects.map((path) => ({ path, openedAt: 1 }))}
           onSelectProject={setCwd}
           onOpenProject={() => setSelected("Add project")}
-          onToggleProjectRail={() => {
-            setSelected("Expand projects");
-            setProjectToggleCount((count) => count + 1);
-          }}
+          onToggleProjectRail={() => setSelected("Expand projects")}
           onOpenLastSessions={() => setSelected("Last sessions")}
           onShowWorkspace={() => setView("workspace")}
           onOpenCrewSession={() => setSelected("Crew")}
@@ -239,10 +286,7 @@ function Fixture() {
             setView("inbox");
           }}
           inboxActive={view === "inbox"}
-          onGoBack={() => {
-            if (headerNavigation) setSelected("Back");
-            else setView("workspace");
-          }}
+          onGoBack={() => setView("workspace")}
           onOpenNotes={() => setSelected("Notes")}
           onOpenServers={() => setSelected("Servers")}
           onOpenTasks={() => setSelected("Tasks")}
@@ -297,9 +341,6 @@ function Fixture() {
           <output aria-label="Selected action" className="sr-only">
             {selected}
           </output>
-          <output aria-label="Project panel toggle count" className="sr-only">
-            {projectToggleCount}
-          </output>
         </main>
         {searchOpen && (
           <SearchView
@@ -316,7 +357,7 @@ function Fixture() {
             onOpenProject={setCwd}
           />
         )}
-      </div>
+      </WindowFrame>
     </QueryClientProvider>
   );
 }

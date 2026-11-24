@@ -1,5 +1,19 @@
 # Remote access (experimental)
 
+## Manage device access
+
+Open **Settings → Connections → Devices** and find the computer whose access
+you want to manage. **Manage devices** lets another paired device grant or remove
+device management and revoke access on that computer. New pairings start with
+standard access. The computer's own local desktop retains management access.
+
+For recovery, enable **Manage this computer from my account** on each computer
+you want to manage, while signed in to your bycoda account. Then sign in at
+[account.bycoda.codes](https://account.bycoda.codes/) and open **Devices →
+Computer access**. The portal shows the latest synchronized device list. A
+permission change or revocation queues while the target computer cannot sync
+and takes effect when bycoda is open and signed in there.
+
 ## Work from both computers
 
 Before installing an update, the confirmation lists machines with running sessions
@@ -64,12 +78,15 @@ When a continued Codex conversation is archived in Codex, sending a follow-up as
 ## Free access outside your network
 
 In **Settings → Connections → Sharing**, choose **Create link**, select the computer,
-then choose **bycoda host** and **Cloudflare**. Enable **Access from outside the network
-(Cloudflare Quick Tunnel)** for that Host. It is off by default.
+then choose **bycoda host** and **Cloudflare**. Select **Start sharing** to open the
+tunnel. Check **Restart tunnel automatically** before starting if you want the Host
+to keep the tunnel available. The option is off by default.
 No Cloudflare account, token or paid service is needed. bycoda uses an installed
 cloudflared or downloads a pinned, checksum-verified copy into its private data
 directory. The URL changes whenever the tunnel starts. The Host starts it again
-after restart or verified unexpected exit. Stopping the tunnel disables this setting.
+after restart or verified unexpected exit if you enabled the option. Use **Stop tunnel**
+on the shared link or **Stop automatic Host access** in the Cloudflare Host form to
+stop automatic access.
 A running tunnel keeps its URL through isolated origin errors, such as the Host
 restarting, and through a single lost connection; it is retired and reported as a
 connection failure only when every connection stays down for 30 seconds or the

@@ -40,6 +40,72 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it("defers decoration and selection listeners on distant working-tree summaries while keeping their controls", async () => {
+  const observed = new Set<Element>();
+  let visibility!: (entries: { target: Element; isIntersecting: boolean }[]) => void;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: typeof visibility) {
+        visibility = callback;
+      }
+      observe(target: Element) {
+        observed.add(target);
+      }
+      unobserve(target: Element) {
+        observed.delete(target);
+      }
+      disconnect() {}
+    },
+  );
+  const files = Array.from({ length: 150 }, (_, index) => ({
+    id: String(index),
+    label: `src/feature-${index}/index.ts`,
+    path: String(index),
+    emptyMessage: "Loading…",
+    additions: 4,
+    deletions: 2,
+    blocks: [],
+    canStage: true,
+  }));
+  const stage = vi.fn();
+  const needed = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(UnifiedDiffView, {
+        files,
+        onStageFile: stage,
+        onSectionNeeded: needed,
+        deferFileChrome: true,
+      }),
+    ),
+  );
+  const last = container.querySelector<HTMLElement>('[data-diff-file="149"]')!;
+  const toggle = last.querySelector<HTMLButtonElement>("button[aria-expanded=true]")!;
+  expect(toggle.textContent).toContain(files[149].label);
+  expect(last.textContent).toContain("Loading…");
+  expect(last.querySelector("svg")).toBeNull();
+  expect(last.querySelector("[data-selectable-agent-response]")).toBeNull();
+  expect(observed.size).toBe(files.length);
+  expect(needed).not.toHaveBeenCalled();
+  await act(async () => visibility([{ target: last, isIntersecting: true }]));
+  expect(needed).toHaveBeenCalledWith("149", true);
+  const selection = last.querySelector("[data-selectable-agent-response]");
+  expect(selection).not.toBeNull();
+  await act(async () => visibility([{ target: last, isIntersecting: false }]));
+  expect(needed).toHaveBeenCalledWith("149", false);
+  expect(last.querySelector("[data-selectable-agent-response]")).toBe(selection);
+  expect(last.querySelector("svg")).toBeNull();
+  const action = last.querySelector<HTMLButtonElement>('button[aria-label="Stage file"]')!;
+  await act(async () => action.focus());
+  expect(last.querySelector("svg")).toBeTruthy();
+  expect(document.activeElement).toBe(action);
+  await act(async () => action.click());
+  expect(stage).toHaveBeenCalledWith("149");
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+});
+
 it.each(["workspace", "embedded PR"])(
   "installs text selection on rendered %s patches and leaves unvisited placeholders inert",
   async (surface) => {
@@ -83,8 +149,14 @@ it.each(["workspace", "embedded PR"])(
     await act(async () => visibility.get(far)?.([{ isIntersecting: true }]));
     const selection = far.querySelector("[data-selectable-agent-response]");
     expect(selection?.querySelector("[data-diff-body]")).not.toBeNull();
+    const action = selection!.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Comment on line"]',
+    )!;
+    await act(async () => action.focus());
     await act(async () => visibility.get(far)?.([{ isIntersecting: false }]));
     expect(far.querySelector("[data-selectable-agent-response]")).toBe(selection);
+    expect(action.isConnected).toBe(true);
+    expect(document.activeElement).toBe(action);
     await act(async () => visibility.get(far)?.([{ isIntersecting: true }]));
     expect(far.querySelector("[data-selectable-agent-response]")).toBe(selection);
   },

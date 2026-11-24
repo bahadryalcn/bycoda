@@ -1,5 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { mkdirSync } from "node:fs";
+
+const actionPosition = (button: Locator) =>
+  button.evaluate((element) => {
+    const buttonBounds = element.getBoundingClientRect();
+    const sectionBounds = element.closest("#setting-remote-machines")!.getBoundingClientRect();
+    return {
+      right: Math.round(sectionBounds.right - buttonBounds.right),
+      top: Math.round(buttonBounds.top - sectionBounds.top),
+    };
+  });
 
 for (const theme of ["light", "dark"]) {
   for (const width of [390, 800, 1280, 1440]) {
@@ -17,17 +27,6 @@ for (const theme of ["light", "dark"]) {
       await expect(root.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
       // Adding a computer happens in a dialog; the saved list stays uncluttered.
       const addComputer = root.getByRole("button", { name: "Add a computer", exact: true });
-      const actionPosition = (button: typeof addComputer) =>
-        button.evaluate((element) => {
-          const buttonBounds = element.getBoundingClientRect();
-          const sectionBounds = element
-            .closest("#setting-remote-machines")!
-            .getBoundingClientRect();
-          return {
-            right: Math.round(sectionBounds.right - buttonBounds.right),
-            top: Math.round(buttonBounds.top - sectionBounds.top),
-          };
-        });
       const computersActionPosition = await actionPosition(addComputer);
       await addComputer.click();
       const addDialog = page.getByRole("dialog", { name: "Add a computer", exact: true });
@@ -116,10 +115,25 @@ for (const theme of ["light", "dark"]) {
       await page.keyboard.press("Escape");
       await expect(phone).toHaveCount(0);
       expect(await root.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    });
 
+    test(`sharing: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=connections&connections=1&sharing-history=1&theme=${theme}&lang=en`,
+      );
+      const root = page.locator("#setting-remote-machines");
+      const evidence = "temp/verification/connections-redesign";
+      mkdirSync(evidence, { recursive: true });
+      const addComputer = root.getByRole("button", { name: "Add a computer", exact: true });
+      const computersActionPosition = await actionPosition(addComputer);
       await root.getByRole("tab", { name: "Sharing", exact: true }).click();
       const tunnels = root.getByRole("region", { name: "External tunnels", exact: true });
       await expect(root.getByRole("button", { name: "Start tunnel", exact: true })).toHaveCount(0);
+      const links = tunnels.getByRole("region", { name: "Tunnel status", exact: true });
+      await expect(links.getByRole("status")).toHaveText(["Connected", "Stopped"]);
+      await expect(links.getByRole("button", { name: "Copy URL", exact: true })).toBeVisible();
       // Starting a link happens in a share dialog; its draft survives closing.
       const createLink = tunnels.getByRole("button", { name: "Create link", exact: true });
       expect(await actionPosition(createLink)).toEqual(computersActionPosition);
@@ -135,11 +149,45 @@ for (const theme of ["light", "dark"]) {
       await root.getByRole("tab", { name: "Sharing", exact: true }).click();
       await createLink.click();
       await expect(share.getByRole("textbox", { name: "Local URL or port" })).toHaveValue("4567");
+      await share.getByText("bycoda host", { exact: true }).click();
+      const restart = share.getByRole("checkbox", { name: "Restart tunnel automatically" });
+      await expect(restart).not.toBeChecked();
+      await restart.check();
+      await expect(share.getByRole("button", { name: "Start sharing", exact: true })).toBeEnabled();
+      await page.screenshot({ path: `${evidence}/${theme}-${width}-host-share.png` });
+      await share.getByRole("button", { name: "Cancel", exact: true }).click();
+      await createLink.click();
+      await expect(restart).not.toBeChecked();
+      await share.getByText("ngrok", { exact: true }).click();
+      await expect(
+        share.getByRole("button", { name: "Start sharing", exact: true }),
+      ).toBeDisabled();
+      await page.screenshot({ path: `${evidence}/${theme}-${width}-ngrok-share.png` });
       await share.getByRole("button", { name: "Cancel", exact: true }).click();
       expect(await root.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
       await page.screenshot({
         path: `${evidence}/${theme}-${width}-tunnels.png`,
       });
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [800, 1280]) {
+    test(`project tunnel layout: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/connections/connection-dialogs.html?dialog=tunnel-rows&theme=${theme}`,
+      );
+      const dialog = page.getByRole("dialog", { name: "External tunnels", exact: true });
+      await expect(dialog.getByRole("status")).toHaveText(["Error", "Starting", "Connected"]);
+      await expect(dialog.getByRole("button", { name: "Copy URL", exact: true })).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Start tunnel", exact: true })).toBeEnabled();
+      await dialog.getByRole("textbox", { name: "Local URL or port" }).focus();
+      const evidence = "temp/verification/connections-redesign";
+      mkdirSync(evidence, { recursive: true });
+      await page.screenshot({ path: `${evidence}/${theme}-${width}-project-tunnels.png` });
     });
   }
 }

@@ -65,9 +65,6 @@
     "src/features/settings/model/themePalettes.ts": {
       "theme-palette-literal": 6
     },
-    "src/features/settings/ui/ArchiveSettings.tsx": {
-      "nested-surface": 2
-    },
     "src/features/settings/ui/TerminalSettings.tsx": {
       "nested-surface": 1
     },

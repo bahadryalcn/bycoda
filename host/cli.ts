@@ -551,7 +551,11 @@ Connect another computer using an SSH forward to the loopback port.`);
     throw error;
   }
   if (command === "pair") {
-    const device = await store.issueDevice(option("name", "Desktop"), "desktop");
+    const device = await store.issueDevice(
+      option("name", "Desktop"),
+      "desktop",
+      args.includes("--local-sync"),
+    );
     console.log(
       JSON.stringify(
         { ...device, environmentId: store.environmentId },

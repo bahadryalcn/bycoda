@@ -1,8 +1,14 @@
 import { LeaseHeldError } from "../../src/features/sync/model/runLease";
+import { crewManagedSession } from "../crews/crew-managed-session";
 import { refuseHost } from "../domains/context";
+import { hostModelRoutingService } from "../model-routing/runtime";
+import { hostProviderAccounts } from "../providers/provider-accounts";
 import { QueueDrainer, queueRowCommands } from "../sessions/queue-drainer";
+import { createUsageLimitFailover } from "../sessions/usage-limit-failover";
+import { readUsageLimits } from "../usage/limits-report";
 import type { ServerBindings } from "./bindings";
 import { WATCH_STAMP_MS } from "./support";
+import { hostUsageLimitsDeps } from "./usage-limits-deps";
 export async function createSessionQueueRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -17,6 +23,11 @@ export async function createSessionQueueRuntime(
     | "touchSessionWorkspace"
     | "withRetiredDesktopWriters"
     | "inHost"
+    | "tasks"
+    | "goals"
+    | "stewards"
+    | "automations"
+    | "models"
   >,
   publish: (runtime: Awaited<ReturnType<typeof createSessionQueueRuntime>>) => void,
 ) {
@@ -227,9 +238,40 @@ export async function createSessionQueueRuntime(
     Date.now,
     false,
   );
+  const usageLimitFailover = createUsageLimitFailover({
+    engine: dependencies.engine,
+    withWriters: (id, run) => dependencies.withRetiredDesktopWriters(id, run),
+    workRecords: async (id) => {
+      const [crew, tasks, goals, stewards, automations] = await Promise.all([
+        crewManagedSession(dependencies.engine.store, id),
+        dependencies.tasks.list(),
+        dependencies.goals.list(),
+        dependencies.stewards.list(),
+        dependencies.automations.list(),
+      ]);
+      const runs = await Promise.all(
+        automations.map((automation) => dependencies.automations.runs(automation.id)),
+      );
+      return [
+        ...(crew ? [{ sessionId: id }] : []),
+        ...tasks,
+        ...goals,
+        ...stewards,
+        ...runs.flat(),
+      ];
+    },
+    accounts: () => hostProviderAccounts(),
+    limits: () => readUsageLimits(hostUsageLimitsDeps(dependencies.engine.store.environmentId)),
+    models: () => dependencies.models(),
+    routing: () => hostModelRoutingService(dependencies.engine.store),
+  });
   dependencies.engine.onSettled = async (id, outcome) => {
     await dependencies.touchSessionWorkspace(id);
     await queueDrainer.settled(id, outcome);
+    // Not awaited: the engine releases this turn only after the callback returns.
+    void dependencies.engine.store.db
+      .outsideScope(() => usageLimitFailover.settled(id, outcome))
+      .catch((error: unknown) => console.warn("Usage limit failover failed", error));
   };
   // A turn found running at startup was cut short: its queue waits for the owner.
   for (const id of dependencies.engine.recoveredInterrupted)

@@ -144,12 +144,8 @@ it("summarises the saved subagents: Off, the one model, then the first plus a co
   const one = { [CROSS_SUBAGENTS_KEY]: encodeSubagents([ref(codex)])! };
   const two = { [CROSS_SUBAGENTS_KEY]: encodeSubagents([ref(codex), ref(cursor)])! };
   expect(crossDelegationSummary(setting(CROSS_SUBAGENTS_KEY), {})).toBe("Off");
-  expect(crossDelegationSummary(setting(CROSS_SUBAGENTS_KEY, one), one)).toBe(
-    "Codex · GPT 6.1 Sol",
-  );
-  expect(crossDelegationSummary(setting(CROSS_SUBAGENTS_KEY, two), two)).toBe(
-    "Codex · GPT 6.1 Sol +1",
-  );
+  expect(crossDelegationSummary(setting(CROSS_SUBAGENTS_KEY, one), one)).toBe("GPT 6.1 Sol");
+  expect(crossDelegationSummary(setting(CROSS_SUBAGENTS_KEY, two), two)).toBe("GPT 6.1 Sol +1");
 });
 
 it("toggles several subagents in place and writes the encoded list", () => {
@@ -321,14 +317,14 @@ it("distinguishes Automatic, Off and explicit lists and switches modes without s
   expect(container.textContent).not.toContain("Strong");
 });
 
-it("names the account on a subagent model that more than one account offers", () => {
+it("names the account on an advisor model that more than one account offers", () => {
   const option = (account: string, model = "Haiku 5.5") => ({
     value: encodeAdvisor({ harness: "claude", model: "claude:haiku", providerAccountId: account })!,
     label: `Claude · ${model} · ${account}`,
   });
   const setting = {
-    id: CROSS_SUBAGENTS_KEY,
-    label: "Subagents (any provider)",
+    id: CROSS_ADVISOR_KEY,
+    label: "Advisor (any provider)",
     value: "",
     options: [option("work"), option("home"), option("work", "Fable 5.2")],
   } as unknown as ModelSetting;

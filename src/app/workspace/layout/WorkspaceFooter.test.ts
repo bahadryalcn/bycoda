@@ -37,7 +37,6 @@ it("re-renders the memoized footer's translated strings after a language switch"
     automationsViewOpen: false,
     settingsOpen: false,
     projectCwd: "/remote/project",
-    active: undefined,
   } as unknown as WorkspaceFooterProps;
   await act(async () => setLanguagePreference("en"));
   await act(async () => root.render(createElement(WorkspaceFooter, props)));

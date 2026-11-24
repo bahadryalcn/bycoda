@@ -31,7 +31,9 @@
 .bubble {
   min-inline-size: 0;
   max-inline-size: 100%;
-  padding: var(--space-2) var(--space-4);
+  --message-bubble-inset-x: var(--space-4);
+  --message-bubble-inset-y: var(--space-2);
+  padding: var(--message-bubble-inset-y) var(--message-bubble-inset-x);
   border-radius: var(--ui-radius-popup);
   background: var(--ui-message-bubble);
   overflow-wrap: anywhere;
@@ -42,7 +44,8 @@
 }
 
 .message[data-plain="true"] .bubble {
-  padding: 0;
+  --message-bubble-inset-x: 0px;
+  --message-bubble-inset-y: 0px;
   border-radius: 0;
   background: transparent;
 }

@@ -215,7 +215,11 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   "Percentage rules compare the account's weekly or 5-hour usage with your threshold. They do not reserve provider capacity.",
                 )}
               </li>
-              <li>{t("Missing or stale data blocks new turns only when blocking is enabled.")}</li>
+              <li>
+                {t(
+                  "If usage cannot be verified, a blocking rule warns and still sends the message.",
+                )}
+              </li>
               <li>{t("Running turns can exceed a budget.")}</li>
             </ul>
           </InfoPopover>
@@ -506,7 +510,7 @@ function BudgetEditor({
               <InfoPopover label={t("About machine budgets")}>
                 <p>
                   {t(
-                    "Supported local Codex and Claude usage. Missing, unsupported or private data stays unknown; a blocking rule refuses new turns until usage can be verified.",
+                    "Supported local Codex and Claude usage. Missing, unsupported or private data stays unknown; a blocking rule then warns and still sends the message.",
                   )}
                 </p>
                 <p>
@@ -594,7 +598,9 @@ function BudgetEditor({
           note={
             action === "block" ? (
               <Text as="p" size="secondary">
-                {t("Missing or stale data blocks new turns. Running turns can exceed the budget.")}
+                {t(
+                  "If usage cannot be verified, the message is sent with a warning. Running turns can exceed the budget.",
+                )}
               </Text>
             ) : undefined
           }

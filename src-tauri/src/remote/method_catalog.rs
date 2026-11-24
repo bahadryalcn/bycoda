@@ -143,6 +143,8 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "devices.list"
             | "devices.paired"
             | "devices.revokeOther"
+            | "devices.setManagement"
+            | "devices.applyRecovery"
             | "host.access.read"
             | "devices.boot"
             | "devices.capture"

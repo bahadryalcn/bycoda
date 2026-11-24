@@ -114,6 +114,7 @@ import {
   Strikethrough as LucideStrikethrough,
   Table as LucideTable,
   MoreHorizontal as LucideMoreHorizontal,
+  OctagonX as LucideOctagonX,
   Palette as LucidePalette,
   Pause as LucidePause,
   PanelBottom as LucidePanelBottom,
@@ -498,6 +499,7 @@ export const Minus = wrap(LucideMinus, "Minus");
 export const Strikethrough = wrap(LucideStrikethrough, "Strikethrough");
 export const Table = wrap(LucideTable, "Table");
 export const MoreHorizontal = wrap(LucideMoreHorizontal, "MoreHorizontal");
+export const OctagonX = wrap(LucideOctagonX, "OctagonX");
 export const Palette = wrap(LucidePalette, "Palette");
 export const Pause = wrap(LucidePause, "Pause");
 export const PanelBottom = wrap(LucidePanelBottom, "PanelBottom");

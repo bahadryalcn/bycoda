@@ -1,7 +1,13 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { Badge } from "../../../shared/ui/Badge";
-import { SkillGroupIcon, SkillIcon } from "../../../shared/ui/icons";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Button } from "../../../shared/ui/Button";
+import styles from "../../../shared/ui/DraftToken.module.css";
+import { ChevronDown, SkillGroupIcon, SkillIcon } from "../../../shared/ui/icons";
+import {
+  HOVER_CARD_CLOSE_MS,
+  HOVER_CARD_OPEN_MS,
+  useHoverIntent,
+} from "../../../shared/ui/Tooltip";
 import { skillTextParts } from "../../skills/model/skills";
 import {
   cachedSkillPolicy,
@@ -11,6 +17,7 @@ import {
   type SkillGroupPickerItem,
 } from "../../skills/public/skillGroups";
 import type { HarnessId } from "../model/session";
+import { ComposerSkillReference } from "./ComposerReferenceActions";
 import { useComposerSkills } from "./useComposerSkills";
 
 const EMPTY_NAMES: ReadonlySet<string> = new Set();
@@ -57,25 +64,72 @@ export function SkillTokenText({ text }: { text: string }) {
   const groups = useContext(TranscriptSkillGroups);
   return skillGroupRuns(text, groups).map((run, index) =>
     run.group ? (
-      <Tooltip
-        key={index}
-        asChild
-        details={run.group.members.map((member) => `${run.group?.prefix}${member}`)}
-      >
-        <Badge
-          size="xs"
-          tone="accent"
-          appearance="subtle"
-          icon={<SkillGroupIcon />}
-          className="text-skill"
-          data-skill-group-token="true"
-        >
-          {`${run.group.name} · ${run.group.members.length}`}
-        </Badge>
-      </Tooltip>
+      <SkillGroupToken key={index} group={run.group} />
     ) : (
       <SkillRuns key={index} text={run.text} names={names} />
     ),
+  );
+}
+
+function SkillGroupToken({ group }: { group: { name: string; members: readonly string[] } }) {
+  const intent = useHoverIntent({
+    group: "hover-card",
+    openDelay: HOVER_CARD_OPEN_MS,
+    closeDelay: HOVER_CARD_CLOSE_MS,
+  });
+  const [pinned, setPinned] = useState<HTMLButtonElement | null>(null);
+  const anchor = pinned ?? intent.anchor;
+  const close = () => {
+    setPinned(null);
+    intent.close();
+  };
+
+  return (
+    <>
+      {/* ui-drift-ignore: hand-rolled-disclosure -- this trigger opens a popover dialog. */}
+      <Button
+        variant="link"
+        layout="text"
+        motion="none"
+        data-skill-group-token="true"
+        aria-haspopup="dialog"
+        aria-expanded={Boolean(anchor)}
+        className="no-underline!"
+        onPointerEnter={(event) => {
+          if (!pinned && event.pointerType !== "touch") intent.scheduleOpen(event.currentTarget);
+        }}
+        onPointerLeave={() => intent.scheduleClose()}
+        onFocus={(event) => {
+          if (!pinned && event.currentTarget.matches(":focus-visible"))
+            intent.scheduleOpen(event.currentTarget, 0);
+        }}
+        onBlur={() => intent.scheduleClose()}
+        onClick={(event) => {
+          event.stopPropagation();
+          if (pinned) close();
+          else {
+            intent.close();
+            setPinned(event.currentTarget);
+          }
+        }}
+      >
+        <span className={styles.compact} data-inline-reference="group">
+          <SkillGroupIcon aria-hidden />
+          <span>{group.name}</span>
+          <small>{group.members.length}</small>
+          <ChevronDown aria-hidden />
+        </span>
+      </Button>
+      {anchor ? (
+        <ComposerSkillReference
+          anchor={anchor}
+          label={group.name}
+          group={group}
+          close={close}
+          hover={{ enter: intent.cancel, leave: intent.scheduleClose }}
+        />
+      ) : null}
+    </>
   );
 }
 

@@ -906,6 +906,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   documentPath,
   hardBreaks,
   renderProse,
+  isProseLine,
 }: {
   text: string;
   streaming?: boolean;
@@ -924,6 +925,8 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   hardBreaks?: boolean;
   /** Render application tokens in prose after Markdown parsing and sanitization. */
   renderProse?: (text: string) => ReactNode;
+  /** Retain lines with application tokens as prose during file auto-linking. */
+  isProseLine?: (line: string) => boolean;
 }) {
   const t = useT();
   const codePlugin = useCodeHighlightPlugin();
@@ -1006,9 +1009,9 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     () => [
       ...Object.values(defaultRemarkPlugins),
       remarkLocalSessionLinks,
-      [remarkWorkspaceFileLinks, { cwd }],
+      [remarkWorkspaceFileLinks, { cwd, isProseLine }],
     ],
-    [cwd],
+    [cwd, isProseLine],
   );
   const remoteMedia = !!allowRemoteMedia;
   const textMode = useSyncExternalStore(

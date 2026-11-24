@@ -87,6 +87,43 @@ function accountStatus(state: MockState): AccountStatus {
 }
 
 const handlers: Record<RouteName, Handler> = {
+  listHostDeviceAccess: ({ state }) => ({ items: state.hostDeviceAccess }),
+  syncHostDeviceAccess: ({ state, now, body }) => {
+    const { applied, ...snapshot } = body;
+    const index = state.hostDeviceAccess.findIndex(
+      (host) => host.environmentId === snapshot.environmentId,
+    );
+    const previous = state.hostDeviceAccess[index];
+    const pending = previous?.pending.filter((item) => !applied.includes(item.requestId)) ?? [];
+    const report = {
+      ...snapshot,
+      id: previous?.id ?? crypto.randomUUID(),
+      lastSynced: now.toISOString(),
+      pending,
+    };
+    if (previous) state.hostDeviceAccess[index] = report;
+    else state.hostDeviceAccess.push(report);
+    return { pending };
+  },
+  changeHostDeviceAccess: ({ state, params, body }) => {
+    const host = state.hostDeviceAccess.find(
+      (item) => item.id === params.id && item.environmentId === body.environmentId,
+    );
+    if (!host?.devices.some((device) => device.id === body.deviceId))
+      throw new MockHttpError(404, "not_found", "Host device access not found");
+    if (host.pending.some((item) => item.deviceId === body.deviceId))
+      throw new MockHttpError(409, "conflict", "This device already has a pending change");
+    host.pending.push({
+      requestId: crypto.randomUUID(),
+      deviceId: body.deviceId,
+      management: body.management,
+    });
+    return null;
+  },
+  disableHostDeviceAccess: ({ state }) => {
+    state.hostDeviceAccess = [];
+    return null;
+  },
   getMe: ({ state }) => ({ user: state.user, entitlements: state.entitlements, organizations: [] }),
   updateProfile: ({ state, body }) => {
     state.user = { ...state.user, ...body };

@@ -14,6 +14,10 @@ function installFakeIndexedDb(initial: {
     meta: keyed(initial.meta),
     seedItems: new Map(),
   };
+  const bulkKeys = vi.fn();
+  const bulkValues = vi.fn();
+  const get = vi.fn();
+  vi.stubGlobal("IDBKeyRange", { bound: (lower: string, upper: string) => ({ lower, upper }) });
   let tail: Promise<void> = Promise.resolve();
   const database = {
     onversionchange: null as null | (() => void),
@@ -52,8 +56,25 @@ function installFakeIndexedDb(initial: {
             });
             return result;
           };
+          const rangeRows = (range: { lower: string; upper: string }, limit: number) =>
+            [...store]
+              .map(([raw, value]) => [JSON.parse(raw) as string, value] as const)
+              .filter(([key]) => key >= range.lower && key <= range.upper)
+              .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+              .slice(0, limit);
           return {
-            get: (key: string) => request(() => store.get(JSON.stringify(key))),
+            get: (key: string) => {
+              get(name);
+              return request(() => store.get(JSON.stringify(key)));
+            },
+            getAllKeys: (range: { lower: string; upper: string }, limit: number) => {
+              bulkKeys(limit);
+              return request(() => rangeRows(range, limit).map(([key]) => key));
+            },
+            getAll: (range: { lower: string; upper: string }, limit: number) => {
+              bulkValues(limit);
+              return request(() => rangeRows(range, limit).map(([, value]) => value));
+            },
             put: (value: unknown, key: string) =>
               request(() => {
                 store.set(JSON.stringify(key), value);
@@ -96,6 +117,9 @@ function installFakeIndexedDb(initial: {
     },
   });
   return {
+    get,
+    bulkKeys,
+    bulkValues,
     items: () =>
       Object.fromEntries([...rows.items!].map(([key, value]) => [JSON.parse(key), value])),
     meta: (key: string) => rows.meta!.get(JSON.stringify(key)),
@@ -161,3 +185,25 @@ describe("malformed Inbox seen rows", () => {
     await expect(readInboxSeenStorage(["a"])).rejects.toThrow();
   });
 });
+
+it.each([false, true])(
+  "reads only requested identities, including missing and malformed rows (sparse=%s)",
+  async (sparse) => {
+    const keys = Array.from({ length: 40 }, (_, i) => "key" + String(i).padStart(2, "0"));
+    const items: Record<string, unknown> = Object.fromEntries(
+      keys.slice(1, -1).map((key, i) => [key, i]),
+    );
+    items[keys[2]!] = "invalid";
+    items["key01-extra"] = 99;
+    if (sparse) for (const key of keys) items[key + "-other"] = 100;
+    const db = installFakeIndexedDb({ items, meta: { seeded: true } });
+    const { readInboxSeenStorage } = await load();
+    const result = await readInboxSeenStorage([...keys].reverse());
+    expect(result.items.size).toBe(keys.length);
+    for (const key of keys)
+      expect(result.items.get(key)).toBe(typeof items[key] === "number" ? items[key] : undefined);
+    expect(db.bulkKeys).toHaveBeenCalledWith(keys.length + 1);
+    expect(db.bulkValues).toHaveBeenCalledTimes(sparse ? 0 : 1);
+    expect(db.get).toHaveBeenCalledTimes(sparse ? keys.length + 1 : 1);
+  },
+);

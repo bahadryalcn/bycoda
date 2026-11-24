@@ -1,52 +1,53 @@
 .external-tunnels-panel,
+.external-tunnel-controls {
+  display: grid;
+  gap: var(--space-5);
+  min-inline-size: 0;
+}
+
 .external-tunnel-group,
-.external-tunnel-controls,
 .external-tunnel-credentials,
 .external-tunnel-form,
-.external-tunnels-panel {
-  gap: 1rem;
+.external-tunnel-details {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
 }
 
 .external-tunnel-choices {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   align-items: start;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .external-tunnel-main {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  display: grid;
+  gap: var(--space-1);
   min-inline-size: 0;
-}
-.external-tunnel-main {
-  flex: 1 1 18rem;
-  gap: 0.25rem;
 }
 .external-tunnel-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 0.75rem;
-  padding: 0.625rem 0.75rem;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   min-inline-size: 0;
 }
-.external-tunnel-head,
+.external-tunnel-details {
+  grid-column: 2 / -1;
+}
+.external-tunnel-meta,
 .external-tunnel-actions,
 .external-tunnel-credentials form {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-inline-size: 0;
 }
-.external-tunnel-head {
-  flex-wrap: nowrap;
-}
-.external-tunnel-main > .external-tunnel-actions {
-  flex-wrap: nowrap;
+.external-tunnel-credentials form {
+  align-items: end;
 }
 .external-tunnel-qr code {
   overflow-wrap: anywhere;
@@ -55,7 +56,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1rem;
+  gap: var(--space-5);
   text-align: center;
 }
 .external-tunnel-qr svg {

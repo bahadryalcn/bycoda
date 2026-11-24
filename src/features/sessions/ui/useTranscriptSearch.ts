@@ -30,7 +30,7 @@ type Options = {
   visibleTurnCount: number;
   openWork: Record<string, boolean>;
   setOpenWork: Dispatch<SetStateAction<Record<string, boolean>>>;
-  revealBlock: (blockId: string) => boolean;
+  prepareReveal: (blockId: string, forSearch: boolean) => boolean;
   findTurn: (blockId: string) => Block[] | undefined;
   onNavigateReady?: (
     navigate: ((blockId: string | null, query?: string) => boolean) | null,
@@ -65,7 +65,7 @@ export function useTranscriptSearch({
   visibleTurnCount,
   openWork,
   setOpenWork,
-  revealBlock,
+  prepareReveal,
   findTurn,
   onNavigateReady,
 }: Options) {
@@ -101,16 +101,20 @@ export function useTranscriptSearch({
         return true;
       }
       const turn = findTurn(blockId);
-      if (!turn || !revealBlock(blockId)) return false;
+      if (!turn) return false;
       const turnId = turn[0].id;
-      // A result inside folded work needs its row rendered before measuring it.
-      flushSync(() => {
+      // Mount the target window, unfold its work and mark the match in one commit
+      // before reading its position. Painting an intermediate old window stalls every jump.
+      const found = flushSync(() => {
+        if (!prepareReveal(blockId, !!query)) return false;
         if (!openWork[turnId]) {
           setOpenWork((current) => (current[turnId] ? current : { ...current, [turnId]: true }));
         }
         setSearchCurrent(blockId);
         setSearchQuery(query);
+        return true;
       });
+      if (!found) return false;
       const el = scroller.current;
       if (!el) return false;
       el.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));

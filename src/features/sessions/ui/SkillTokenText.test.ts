@@ -2,8 +2,9 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
-import { TranscriptSkillNames } from "./SkillTokenText";
+import { TranscriptSkillGroups, TranscriptSkillNames } from "./SkillTokenText";
 import { AttachmentTokenText } from "./AttachmentTokenText";
+import { UserMessageMarkdown } from "./UserTextPreview";
 
 it("emphasizes recognized skills alongside attachments without changing copied text", () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -50,8 +51,7 @@ it("emphasizes recognized skills alongside attachments without changing copied t
   }
 });
 
-it("shows a sent skill group as one chip", async () => {
-  const { TranscriptSkillGroups } = await import("./SkillTokenText");
+it("shows a sent skill group at the start of a Markdown line as one chip", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const container = document.createElement("div");
   const root = createRoot(container);
@@ -69,22 +69,29 @@ it("shows a sent skill group as one chip", async () => {
     body: "",
   };
   try {
-    act(() =>
+    await act(() =>
       root.render(
         createElement(TranscriptSkillNames, {
           value: new Set(["lint", "test"]),
           children: createElement(TranscriptSkillGroups, {
             value: [group],
-            children: createElement(AttachmentTokenText, {
-              text: "/lint /test fix it",
-              attachments: undefined,
+            children: createElement(UserMessageMarkdown, {
+              text: "Review this\n\n/lint /test fix it\n\n/src/App.tsx",
+              cwd: "/workspace",
             }),
           }),
         }),
       ),
     );
-    expect(container.querySelector("[data-skill-group-token]")?.textContent).toBe("Review · 2");
+    expect(
+      container.querySelector("[data-skill-group-token] [data-inline-reference] > span")
+        ?.textContent,
+    ).toBe("Review");
+    expect(container.querySelector("[data-skill-group-token] small")?.textContent).toBe("2");
     expect(container.querySelectorAll("[data-skill-token]")).toHaveLength(0);
+    expect(Array.from(container.querySelectorAll("a"), (link) => link.textContent)).toEqual([
+      "/src/App.tsx",
+    ]);
   } finally {
     act(() => root.unmount());
   }

@@ -544,10 +544,8 @@ test("compact navigation keeps workspace tabs in place and stacks app tool short
   await page.getByRole("button", { name: "Pin session list", exact: true }).click();
   await expect(tabs).toBeVisible();
 
-  await rail.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByRole("radio", { name: "All", exact: true })).toBeChecked();
-  await page.keyboard.press("Escape");
+  // Search moved to the window title bar; the compact rail no longer carries it.
+  await expect(rail.getByRole("button", { name: "Search", exact: true })).toHaveCount(0);
   // "Search sessions" is an inline filter of the session list now, not the shared dialog.
   // At this pane width the session tools fold into the "More actions" menu.
   await page.getByRole("button", { name: "More actions", exact: true }).click();
@@ -565,14 +563,14 @@ test("compact navigation keeps workspace tabs in place and stacks app tool short
   expect(errors).toEqual([]);
 });
 
-test("workspace header keeps location before history and project controls", async ({
+test("workspace header keeps location before session tools and holds no window navigation", async ({
   page,
 }, testInfo) => {
   await installNavigationFixture(page);
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const project of [false, true]) {
     await page.goto(
-      `/tests/browser/app-shell/compact-navigation.html?headerNavigation${project ? "&projectHeader" : ""}`,
+      `/tests/browser/app-shell/compact-navigation.html?lastSessionsHeader${project ? "&projectHeader" : ""}`,
       { waitUntil: "domcontentloaded" },
     );
     const header = page.locator("[data-workspace-header]");
@@ -582,16 +580,15 @@ test("workspace header keeps location before history and project controls", asyn
           .getByRole("button", { name: "Switch worktree", exact: true })
           .getByText("bycoda", { exact: true })
       : header.getByText("Last sessions", { exact: true });
-    const toggle = page.getByRole("button", { name: "Toggle sidebar", exact: true });
-    await expect(toggle).toHaveCount(1);
-    await expect(header.getByRole("button", { name: "Toggle sidebar", exact: true })).toHaveCount(
-      1,
-    );
-    await expect(
-      page
-        .locator("[data-compact-project-rail]")
-        .getByRole("button", { name: "Toggle sidebar", exact: true }),
-    ).toHaveCount(0);
+    // Back, Forward and the sidebar toggle live in the window title bar, not the pane or rail.
+    const windowControls = ["Back", "Forward", "Toggle sidebar"];
+    for (const name of windowControls) {
+      await expect(header.getByRole("button", { name, exact: true })).toHaveCount(0);
+      await expect(
+        page.locator("[data-compact-project-rail]").getByRole("button", { name, exact: true }),
+      ).toHaveCount(0);
+    }
+    await expect(page.locator("[data-workspace-navigation]")).toHaveCount(0);
     const titleFrame = header.locator("[data-pane-header-heading]");
     const workspacePane = page.locator('[data-side-pane="workspace"]');
     const resize = page.getByRole("separator", { name: "Resize sidebar", exact: true });
@@ -614,7 +611,6 @@ test("workspace header keeps location before history and project controls", asyn
         headerBounds.x + headerBounds.width,
       );
       await search.press("Escape");
-      await expect(header.getByRole("button", { name: "Back", exact: true })).toBeVisible();
     }
     for (const pane of ["default", "wide"]) {
       await page.setViewportSize({ width: 1280, height: 800 });
@@ -657,15 +653,15 @@ test("workspace header keeps location before history and project controls", asyn
               340
             );
           });
-          const back = (await header
-            .getByRole("button", { name: "Back", exact: true })
-            .boundingBox())!;
-          // A narrow pane keeps one header row: the location sits beside Back, not above it.
+          // A narrow pane keeps one header row: the location sits beside the tools, not above them.
           if (constrained) {
+            const tool = (await header
+              .getByRole("button", { name: "More actions", exact: true })
+              .boundingBox())!;
             const headerBox = (await header.boundingBox())!;
-            expect(headerBox.height).toBeLessThan(back.height * 2);
-            expect(frame.y).toBeLessThan(back.y + back.height);
-            expect(back.y).toBeLessThan(frame.y + frame.height);
+            expect(headerBox.height).toBeLessThan(tool.height * 2);
+            expect(frame.y).toBeLessThan(tool.y + tool.height);
+            expect(tool.y).toBeLessThan(frame.y + frame.height);
           }
           let previousRight = constrained ? (await header.boundingBox())!.x : frame.x + frame.width;
           // Measure the element that clips the title: an inline text span inside a truncating
@@ -689,16 +685,13 @@ test("workspace header keeps location before history and project controls", asyn
           }
           // A narrow pane folds the session tools into "More actions".
           const sessionTools = constrained ? "More actions" : "Search sessions";
-          for (const name of ["Back", "Forward", "Toggle sidebar", sessionTools]) {
-            const control = header.getByRole("button", { name, exact: true });
-            await expect(control).toBeInViewport();
-            const bounds = (await control.boundingBox())!;
-            expect(
-              bounds.x,
-              `${name} must follow the title and prior controls`,
-            ).toBeGreaterThanOrEqual(previousRight);
-            previousRight = bounds.x + bounds.width;
-          }
+          const toolsControl = header.getByRole("button", { name: sessionTools, exact: true });
+          await expect(toolsControl).toBeInViewport();
+          const toolsBounds = (await toolsControl.boundingBox())!;
+          expect(toolsBounds.x, `${sessionTools} must follow the title`).toBeGreaterThanOrEqual(
+            previousRight,
+          );
+          previousRight = toolsBounds.x + toolsBounds.width;
           if (project) {
             const label = newSession.getByText("New session", { exact: true });
             const showLabel = pane === "wide" && width === 1280;
@@ -739,12 +732,6 @@ test("workspace header keeps location before history and project controls", asyn
         }
       }
     }
-    await header.getByRole("button", { name: "Back", exact: true }).click();
-    await expect(page.getByLabel("Selected action")).toHaveText("Back");
-    await header.getByRole("button", { name: "Forward", exact: true }).click();
-    await expect(page.getByLabel("Selected action")).toHaveText("Forward");
-    await toggle.click();
-    await expect(page.getByLabel("Project panel toggle count")).toHaveText("1");
   }
 });
 
@@ -1292,3 +1279,92 @@ for (const theme of ["light", "dark"])
       await expect(outer).toHaveCSS("opacity", "1");
     });
   }
+
+for (const platform of ["MacIntel", "Win32"]) {
+  test(`title bar leads the window in one control order on ${platform}`, async ({
+    page,
+  }, testInfo) => {
+    await installNavigationFixture(page);
+    await page.addInitScript((value) => {
+      Object.defineProperty(navigator, "platform", { get: () => value });
+    }, platform);
+    const mac = platform === "MacIntel";
+    const lead = page.locator("[data-title-lead]");
+    const toggle = lead.locator('button[aria-label^="Toggle sidebar"]');
+    const brand = lead.locator("[data-title-brand]");
+    const wordmark = lead.locator(".bycoda-title-wordmark");
+    const back = lead.locator('button[aria-label^="Back"]');
+    const forward = lead.locator('button[aria-label^="Forward"]');
+    const search = lead.locator("[data-title-search]");
+    const edges = async (locator: typeof lead) => {
+      const box = (await locator.boundingBox())!;
+      return { left: box.x, right: box.x + box.width, bottom: box.y + box.height };
+    };
+    const open = async (expanded: boolean, theme: string) => {
+      await page.goto(
+        `/tests/browser/app-shell/compact-navigation.html?railPolish&titleBar${expanded ? "&expandedRail" : ""}`,
+      );
+      // The brand artwork follows the scheme event the appearance settings send, not the class.
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+        window.dispatchEvent(
+          new CustomEvent("bycoda:schemechange", { detail: light ? "light" : "dark" }),
+        );
+      }, theme === "light");
+      await expect(lead).toBeVisible();
+    };
+
+    for (const theme of ["dark", "light"]) {
+      for (const width of [1280, 800]) {
+        await page.setViewportSize({ width, height: 800 });
+        const toggleLeft: number[] = [];
+        for (const expanded of [true, false]) {
+          await open(expanded, theme);
+          // The traffic lights get their space on macOS; elsewhere the bar starts at the edge.
+          await expect(lead.locator("[data-window-chrome-inset]")).toHaveCount(mac ? 1 : 0);
+          await expect(toggle).toHaveAttribute("aria-pressed", String(expanded));
+          // The wordmark belongs to the expanded rail; a collapsed rail leaves the mark alone.
+          await expect(wordmark).toHaveCount(expanded ? 1 : 0);
+          if (expanded) await expect(wordmark).toBeVisible();
+          if (mac) await expect(brand).not.toHaveRole("button");
+          else await expect(brand).toHaveAttribute("aria-label", /^Application menu/);
+          // The field keeps its label while the bar has room; below that only the icon stays.
+          const searchLabel = search.locator("[data-title-search-label]");
+          if (width >= 960) await expect(searchLabel).toBeVisible();
+          else await expect(searchLabel).toBeHidden();
+
+          // One order, nothing overlapping, and the tabs start after the last control.
+          const order = [toggle, brand, back, forward, search];
+          let previous = mac ? 78 : 0;
+          for (const control of order) {
+            const box = await edges(control);
+            expect(box.left).toBeGreaterThanOrEqual(previous - 0.5);
+            previous = box.right;
+          }
+          const tabs = await edges(page.locator("[data-title-tab-strip]"));
+          expect(tabs.left).toBeGreaterThanOrEqual(previous - 0.5);
+          expect(tabs.right).toBeLessThanOrEqual(width + 0.5);
+
+          // Rail and workspace header start under the bar and repeat none of its controls.
+          const bar = await edges(page.locator("header.bycoda-titlebar"));
+          const header = page.locator("[data-workspace-header]");
+          expect((await header.boundingBox())!.y).toBeGreaterThanOrEqual(bar.bottom - 0.5);
+          for (const name of ["Back", "Forward", "Toggle sidebar", "Search"]) {
+            await expect(
+              page.locator(`aside button[aria-label="${name}"], nav button[aria-label="${name}"]`),
+            ).toHaveCount(0);
+          }
+          toggleLeft.push((await edges(toggle)).left);
+          await page.screenshot({
+            path: testInfo.outputPath(
+              `title-bar-${mac ? "macos" : "windows"}-${expanded ? "expanded" : "collapsed"}-${theme}-${width}.png`,
+            ),
+            clip: { x: 0, y: 0, width, height: 220 },
+          });
+        }
+        // Collapsing the rail must not move the toggle from under the pointer.
+        expect(toggleLeft[1]).toBe(toggleLeft[0]);
+      }
+    }
+  });
+}

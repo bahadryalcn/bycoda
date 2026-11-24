@@ -79,7 +79,6 @@ export function UsageFooter({
   embedded = false,
   providers,
   session,
-  project,
   terminals = [],
   terminalOpen = false,
   onToggleTerminal,
@@ -95,7 +94,6 @@ export function UsageFooter({
   embedded?: boolean;
   providers: RateLimitProvider[];
   session?: UsageFooterSession;
-  project?: string;
   terminals?: RunningTerminal[];
   terminalOpen?: boolean;
   onToggleTerminal?: (fileId: string) => void;
@@ -344,7 +342,6 @@ export function UsageFooter({
                 limits={codex}
                 usageOnly
                 now={now}
-                project={project}
                 accounts={codexAccounts}
                 accountId={codexAccountId}
                 onSelectUsageAccount={(accountId) => saveUsageDisplayAccount("codex", accountId)}
@@ -363,7 +360,6 @@ export function UsageFooter({
               <UsageProviderChip
                 limits={opencode}
                 now={now}
-                project={project}
                 refreshing={refreshing}
                 onRefresh={() => refresh("opencode")}
               />
@@ -372,7 +368,6 @@ export function UsageFooter({
               <UsageProviderChip
                 limits={grok}
                 now={now}
-                project={project}
                 refreshing={refreshing}
                 onRefresh={() => refresh("grok")}
               />

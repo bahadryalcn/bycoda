@@ -142,7 +142,6 @@ export function loadRateLimits(
       if (cached && hasWindows(cached)) {
         result = {
           ...errorRateLimits(provider, result.error ?? "", cached, result.reason),
-          updatedAt: cached.updatedAt,
           ...(renewalPending ? { renewalPending } : {}),
         };
       }
@@ -159,6 +158,19 @@ export function loadRateLimits(
 /** An explicit bounded observation; never queues a replay or schedules background retries. */
 export function refreshClaudeQuotaOnce(accountId: string, canPublish: () => boolean) {
   return loadRateLimits("claude", accountId, true, canPublish, false, true);
+}
+
+export function loadPolledRateLimits(
+  provider: RateLimitProvider,
+  accountId: string,
+  force: boolean,
+  canRetry: () => boolean,
+): Promise<ProviderRateLimits> {
+  // A periodic tick must not shorten the backoff after a failed Claude quota read.
+  if (provider === "claude" && retryTimers.has(keyFor(provider, accountId))) {
+    return Promise.resolve(getCachedRateLimits(provider, accountId));
+  }
+  return loadRateLimits(provider, accountId, force, canRetry, true);
 }
 
 /**

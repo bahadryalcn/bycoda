@@ -207,7 +207,13 @@ pub(crate) fn repair_local_pairing(app: &AppHandle, machine_id: &str) -> Result<
     let pair = run_launcher(
         &program,
         &base_args,
-        &["pair", "--name", &local_device_name(), "--json"],
+        &[
+            "pair",
+            "--name",
+            &local_device_name(),
+            "--local-sync",
+            "--json",
+        ],
         Duration::from_secs(45),
     )
     .ok_or("The local Host did not issue a new pairing")?;
@@ -359,7 +365,13 @@ pub(crate) fn local_host_connect_blocking(app: AppHandle) -> Result<Option<Machi
     let Some(pair) = run_launcher(
         &program,
         &base_args,
-        &["pair", "--name", &local_device_name(), "--json"],
+        &[
+            "pair",
+            "--name",
+            &local_device_name(),
+            "--local-sync",
+            "--json",
+        ],
         Duration::from_secs(45),
     ) else {
         return Ok(None);

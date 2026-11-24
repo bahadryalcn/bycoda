@@ -39,6 +39,7 @@ import { rowCopy } from "./searchRowCopy";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import {
   conversationRowsFrom,
   flattenGrouped,
@@ -57,10 +58,10 @@ import {
 import {
   loadProjectFiles,
   peekProjectFiles,
-  rankProjectFiles,
   recentOpenedFiles,
   subscribeProjectFiles,
-} from "../../files/model/fileIndex";
+  useFileRanking,
+} from "../../files/public/fileIndex";
 import { pathKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -133,6 +134,8 @@ type Props = {
   onOpenSession: (sessionId: string, blockId?: string, query?: string) => void;
   onOpenProject: (path: string) => void;
 };
+
+const NO_RECENT_PATHS: string[] = [];
 
 export function SearchView({
   open,
@@ -274,13 +277,16 @@ export function SearchView({
     () => (localConversationsEnabled ? conversationRowsFrom(history, deferredSessions) : []),
     [localConversationsEnabled, history, deferredSessions],
   );
-  const fileHits = useMemo(
-    () =>
-      filesEnabled && deferredTrimmed && looksLikeProject(cwd)
-        ? hitsFromFileRanks(rankProjectFiles(files, deferredTrimmed, recentOpenedFiles(cwd), 40))
-        : [],
-    [filesEnabled, cwd, files, deferredTrimmed],
+  const recentPaths = recentOpenedFiles(cwd);
+  const { results: rankedFiles, pending: rankingPending } = useFileRanking(
+    filesEnabled && !!trimmed && looksLikeProject(cwd),
+    cwd,
+    files,
+    deferredTrimmed,
+    recentPaths.length ? recentPaths : NO_RECENT_PATHS,
+    { limit: 40, backgroundQuery: trimmed },
   );
+  const fileHits = useMemo(() => hitsFromFileRanks(rankedFiles), [rankedFiles]);
   const titleHits = useMemo(
     () =>
       localConversationsEnabled && deferredTrimmed
@@ -371,6 +377,7 @@ export function SearchView({
   const showFileError = !!error && !fileShownCentrally;
   const showConversationError = !!conversationError && !conversationShownCentrally;
   const loading =
+    rankingPending ||
     (fileMode && projectSearch.loading) ||
     (conversationMode && conversation.loading) ||
     deferredTrimmed !== trimmed;
@@ -394,8 +401,9 @@ export function SearchView({
   );
   const chatRows = useMemo(() => chatEntries(chatGroups), [chatGroups]);
 
+  const hasQuery = !!trimmed;
   const grouped = useMemo(() => {
-    const eligible = trimmed
+    const eligible = hasQuery
       ? mergeHits(
           titleHits,
           liveMessageHits,
@@ -424,7 +432,7 @@ export function SearchView({
     remoteHits,
     scope,
     titleHits,
-    trimmed,
+    hasQuery,
     lock,
     cwd,
   ]);
@@ -434,7 +442,7 @@ export function SearchView({
   // through; every other tab steps through `hits`.
   const chatMode = scope === "conversations";
   const rowCount = chatMode ? chatRows.length : hits.length;
-  const resultsCurrent = deferredTrimmed === trimmed;
+  const resultsCurrent = deferredTrimmed === trimmed && !rankingPending;
   const rowIds = useMemo(
     () => (chatMode ? chatRows : hits).map((row) => row.id),
     [chatMode, chatRows, hits],
@@ -484,7 +492,7 @@ export function SearchView({
     onClose();
   };
 
-  const openHit = (hit: AppSearchHit | null) => {
+  const openHit = useStableCallback((hit: AppSearchHit | null) => {
     if (!resultsCurrent || !hit) return;
     if (hit.kind === "file") {
       onOpenFile(hit.path, undefined, { exact: true });
@@ -496,7 +504,11 @@ export function SearchView({
       onOpenSession(hit.sessionId, hit.blockId, trimmed);
     } else onOpenProject(hit.path);
     onClose();
-  };
+  });
+
+  const onActiveResult = useStableCallback((index: number) => {
+    if (resultsCurrent) setActive(index);
+  });
 
   const onQueryKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (isImeComposition(event.nativeEvent)) return;
@@ -727,10 +739,8 @@ export function SearchView({
               counts={grouped.counts}
               hits={hits}
               active={resultsCurrent ? active : -1}
-              query={trimmed}
-              onActive={(index) => {
-                if (resultsCurrent) setActive(index);
-              }}
+              query={deferredTrimmed}
+              onActive={onActiveResult}
               onOpen={openHit}
             />
           </>
@@ -801,6 +811,7 @@ function ResultList({
   onActive: (index: number) => void;
   onOpen: (hit: AppSearchHit) => void;
 }) {
+  "use memo";
   useLocale();
   const activeRef = useRef<HTMLButtonElement>(null);
   const pointer = useRef({ x: Number.NaN, y: Number.NaN, allow: false });

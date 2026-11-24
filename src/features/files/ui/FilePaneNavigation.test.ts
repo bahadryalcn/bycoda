@@ -59,7 +59,13 @@ describe("file pane source navigation", () => {
     vi.unstubAllGlobals();
   });
 
-  async function render(path: string, line: number, review = false, navigate = true) {
+  async function render(
+    path: string,
+    line: number,
+    review = false,
+    navigate = true,
+    keepMarkdownView = false,
+  ) {
     const pane = newEditorPane(newFileTab(path, "/repo", review));
     paneProps = {
       pane,
@@ -77,7 +83,9 @@ describe("file pane source navigation", () => {
       onOpenFile: () => {},
       onUpdatePlan: () => {},
       onBuildPlan: () => {},
-      editorNavigation: navigate ? { path, line, column: 2, token: 1 } : undefined,
+      editorNavigation: navigate
+        ? { path, line, column: 2, token: 1, keepMarkdownView: keepMarkdownView || undefined }
+        : undefined,
     };
     await act(async () => root.render(createElement(FilePane, paneProps)));
     await vi.waitFor(
@@ -91,6 +99,24 @@ describe("file pane source navigation", () => {
     );
     return EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
   }
+
+  it("opens chat Markdown in preview and remembers the last selected mode on reopen", async () => {
+    const path = "/repo/chat-guide.md";
+    await render(path, 2, false, true, true);
+    const tab = (name: string) =>
+      container.querySelector<HTMLButtonElement>(`[role="tab"][aria-label="${name}"]`)!;
+    expect(tab("Preview").getAttribute("aria-selected")).toBe("true");
+    await act(async () => tab("Source").click());
+    await render(path, 2, false, true, true);
+    expect(tab("Source").getAttribute("aria-selected")).toBe("true");
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+    await act(async () => vi.waitFor(() => expect(view.state.selection.main.head).toBe(12)));
+    await act(async () => tab("Preview").click());
+    await render(path, 3, false, true, true);
+    expect(tab("Preview").getAttribute("aria-selected")).toBe("true");
+    await render(path, 1, false, false);
+    expect(tab("Preview").getAttribute("aria-selected")).toBe("true");
+  });
 
   async function reload(path: string, view: EditorView, content: string) {
     disk.content = content;

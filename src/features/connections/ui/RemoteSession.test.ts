@@ -36,6 +36,7 @@ import {
 } from "../model/remoteSessionSnapshotCache";
 import {
   REMOTE_CAPABILITIES_TTL_MS,
+  adoptRemoteMachineInventory,
   recordRemoteCapabilities,
   rememberRemoteSession,
   remoteSessionFor,
@@ -77,7 +78,16 @@ import type {
 import { preloadModelPicker } from "../../sessions/ui/ModelPicker";
 import { invalidateMachineSnapshot } from "../../automations/model/machineSnapshot";
 import { newLocalHostSession } from "../model/newLocalHostSession";
-import { hostSessionBinding, restoreHostSessionShell } from "../model/sessionExecutionBinding";
+import {
+  prefetchLocalSessionPage,
+  localSessionPagePreview,
+} from "../model/localSessionPagePreview";
+import {
+  flushHostSessionBindings,
+  hostSessionBinding,
+  restoreHostSessionShell,
+  saveHostSessionBinding,
+} from "../model/sessionExecutionBinding";
 import { shouldPersistSession, upsertSession } from "../../sessions/data/sessionStore";
 
 const transportProbe = vi.hoisted(() => ({
@@ -121,6 +131,7 @@ vi.mock("@tauri-apps/api/window", () => ({
   getAllWindows: async () => [{ label: "main" }],
 }));
 vi.mock("../model/remotePageCache", () => ({
+  remotePageDeletionRevision: 0,
   readRemotePageCache: vi.fn(),
   writeRemotePageCache: vi.fn(),
   flushRemotePageCache: vi.fn().mockResolvedValue(undefined),
@@ -1500,6 +1511,7 @@ it("shows a preloaded conversation's transcript on its first render", async () =
     ),
   );
   expect(document.body.textContent).toContain("Earlier message");
+  expect(flushHostSessionBindings).toHaveBeenCalledWith("shell");
   expect(document.body.textContent).not.toContain("Work on repo.");
 });
 
@@ -5472,6 +5484,50 @@ it("local Host opt-in: real creation and first send preserve local cwd, account 
     sessionId: session.id,
     text: "Second local Host message",
   });
+});
+
+it("shows a prefetched local page once and holds sends until its owner verifies it", async () => {
+  localExecutionHost();
+  adoptRemoteMachineInventory(await invoke<RemoteMachine[]>("remote_machines"));
+  lazyHistorySupported = true;
+  const shell = await newLocalHostSession("/home/me/repo");
+  openExistingChat();
+  host!.session.id = shell.id;
+  const owner = { ...hostSessionBinding(shell)!, created: true };
+  const session = saveHostSessionBinding(shell, owner);
+  const saved = {
+    ...host!,
+    history: { totalBlocks: host!.session.blocks.length, revision: host!.revision },
+  };
+  vi.mocked(readRemotePageCache).mockResolvedValue(saved);
+  prefetchLocalSessionPage(session.id, owner, () => true);
+  expect(await localSessionPagePreview(session.id, owner)!.read).toBe(saved);
+  let release!: () => void;
+  tailReadDelay = new Promise<void>((done) => (release = done));
+  try {
+    await render(session);
+    expect(document.body.textContent).toContain("Earlier reply");
+    await send("Wait for the owner");
+    expect(commands.some((command) => command.type === "send")).toBe(false);
+    expect(container.querySelector("textarea")!.value).toBe("Wait for the owner");
+    expect(
+      vi.mocked(readRemotePageCache).mock.calls.filter(([key]) => key.sessionId === session.id),
+    ).toHaveLength(1);
+    const pages = () =>
+      vi
+        .mocked(invoke)
+        .mock.calls.filter(
+          ([, args]) => (args as { method?: string } | undefined)?.method === "sessions.page",
+        );
+    expect(pages()).toHaveLength(1);
+    release();
+    await settle();
+    await act(async () => byLabel("Send")!.click());
+    await vi.waitFor(() => expect(commands.some((command) => command.type === "send")).toBe(true));
+    expect(pages()).toHaveLength(1);
+  } finally {
+    release();
+  }
 });
 
 it("local Host opt-in: lost atomic first-turn receipt survives restart and reconciles the same ID", async () => {

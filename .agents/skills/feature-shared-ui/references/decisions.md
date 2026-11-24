@@ -198,6 +198,16 @@ Owner decision, 2026-10-31, V3-033, source: `temp/local/2026-10-31-ui-refinement
 
 Recorded direction: the project rail and sidebars use the chat canvas in light, dark and custom themes; pane borders provide separation.
 
+## Shell and workbench: One title bar across the window
+
+Owner decision, 2026-11-24 (macOS and Windows screenshots of the top-left window chrome; variant B of `temp/local/top-chrome-preview/`):
+
+> these places are very inconsistent and overlap […] show it in a better form that fits both platforms, does not get mixed up and has no unnecessary things (translated)
+
+> when it is shrunk only the logo can stay, no need to write bycoda (translated)
+
+Recorded direction: every main window has one title bar across its full width with one slot order on every platform: window slot (macOS traffic-light inset), sidebar toggle, brand, Back, Forward, Search, session tabs, then the Windows and Linux window buttons. The brand shows its wordmark only while the project rail is expanded; off macOS it is the application menu button. The project rail, the compact rail and the sidebars hold no brand row, history buttons, sidebar toggle or Search. Surfaces below the bar reserve no traffic-light inset and draw no window buttons (`WindowTitleBarAbove`, `BelowWindowChrome`). Detached session and tool windows keep their own title bar.
+
 ## Shell and workbench: Focus frames and edge stripes
 
 Owner correction, 2026-10-28, session `0567326f-aade-4baa-89f3-b44c6256ae9e`:

@@ -2,8 +2,6 @@ import type {
   ModelRoutingEntry,
   ModelRoutingEntryStatus,
 } from "../../../shared/model/host-contracts/model-routing";
-import type { ProviderRateLimits } from "../../providers/public/accountUsage";
-import { exhaustedWindowResetAt } from "../../providers/public/rateLimitsCache";
 import { DEFAULT_PROVIDER_ACCOUNT_ID } from "../../providers/public/providerAccounts";
 import type { HarnessId } from "./session";
 
@@ -47,17 +45,17 @@ export async function pickAccountFailover(input: {
   model: string;
   accountIds: readonly string[];
   limited: (key: string) => boolean;
-  readLimits: (accountId: string) => Promise<ProviderRateLimits>;
+  hasQuota: (accountId: string) => Promise<boolean>;
 }): Promise<FailoverTarget | undefined> {
   for (const accountId of input.accountIds) {
     if (input.limited(failoverAccountKey(input.harness, accountId))) continue;
-    let limits: ProviderRateLimits;
+    let available: boolean;
     try {
-      limits = await input.readLimits(accountId);
+      available = await input.hasQuota(accountId);
     } catch {
       continue;
     }
-    if (limits.status !== "ok" || exhaustedWindowResetAt(limits) != null) continue;
+    if (!available) continue;
     return { harness: input.harness, model: input.model, providerAccountId: accountId };
   }
   return undefined;

@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -13,6 +13,22 @@ const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0)) await close();
 });
+it("keeps a Host closing during setup from becoming an unhandled rejection", async () => {
+  const unhandled = vi.fn();
+  process.on("unhandledRejection", unhandled);
+  try {
+    const journal = new AssistantObservationJournal({
+      ready: Promise.resolve(),
+      db: { exec: () => Promise.reject(new Error("closing")) },
+    } as unknown as HostStore);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(unhandled).not.toHaveBeenCalled();
+    await expect(journal.ready).rejects.toThrow("closing");
+  } finally {
+    process.off("unhandledRejection", unhandled);
+  }
+});
+
 async function fixture() {
   const dir = mkdtempSync(join(tmpdir(), "assistant-observations-"));
   const store = new HostStore(join(dir, "host.db"));

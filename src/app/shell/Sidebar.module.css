@@ -30,7 +30,6 @@
 @container workspace-pane (inline-size < 440px) {
   .workspaceHeader,
   .workspaceHeader > [data-pane-header-body],
-  .workspaceHeader [data-workspace-navigation],
   .workspaceHeader [data-session-tools] {
     column-gap: 0;
   }
@@ -46,8 +45,7 @@
 
 @container workspace-pane (inline-size < 280px) {
   .workspaceHeader [data-workspace-copy-name],
-  .workspaceHeader [data-workspace-copy-decoration],
-  .workspaceHeader:has([data-session-tools] [data-expanded]) [data-workspace-navigation] {
+  .workspaceHeader [data-workspace-copy-decoration] {
     display: none;
   }
 }

@@ -15,7 +15,6 @@ import { Tooltip } from "../../shared/ui/Tooltip";
 import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
 import { WorkingIndicator } from "../../shared/ui/WorkingIndicator";
 import { Sash } from "../../shared/ui/Sash";
-import { WindowChromeInset } from "../../shared/ui/PaneHeader";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
 import { useFormat, useLocale, useT } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
@@ -92,7 +91,6 @@ import {
   saveProjectRailWidth,
 } from "../../features/settings/model/appearance";
 import { basename } from "../../platform/tauri/fs";
-import { IS_MAC } from "../../platform/tauri/platform";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { DiffStat } from "../../shared/ui/DiffStat";
 import { pathKey, projectKey, projectName } from "../../shared/lib/paths";
@@ -130,17 +128,17 @@ import {
   updateProjectGroup,
   type ProjectGroup,
 } from "../../features/projects/model/projectGroups";
-import { isLiveActivityAgent, type LiveAgent } from "../../features/sessions/model/liveAgents";
+import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import {
   LiveAgentsPreview,
-  liveHeadline,
-  summarizeLiveAgents,
+  liveActivityCounts,
+  liveActivityStatus,
+  orderLiveActivity,
 } from "../../features/sessions/ui/LiveAgentsPreview";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { RailToolGroup } from "./RailToolGroup";
-import { RailBrand } from "./RailBrand";
 import {
   dismissRemoteProjects,
   type RemoteOnlyProject,
@@ -153,7 +151,6 @@ import {
   useRemoteOpenTargets,
 } from "../../features/sync/model/syncRemoteProjects";
 import { LastSessionsSection, type RecentSessionsSource } from "./LastSessionsSection";
-import { TabVisitNav } from "./TitleBar";
 import {
   openAssistantRoom,
   useAssistantRoomLabel,
@@ -242,11 +239,6 @@ type Props = {
   recents: RecentProject[];
   inboxUnseen?: boolean;
   busyPaths?: Iterable<string>;
-  canGoBack?: boolean;
-  canGoForward?: boolean;
-  onGoBack?: () => void;
-  onGoForward?: () => void;
-  onSearch?: () => void;
   searchActive?: boolean;
   onOpenInbox?: () => void;
   inboxActive?: boolean;
@@ -261,7 +253,6 @@ type Props = {
   assistantActive?: boolean;
   onOpenServers?: () => void;
   serversActive?: boolean;
-  onTogglePanel?: () => void;
   /** Called when a drag ends far below the minimum width; omit to only clamp at the minimum. */
   onCollapse?: () => void;
   onSelectProject: (path: string) => void;
@@ -313,11 +304,6 @@ export function ProjectRail({
   recents: allRecents,
   inboxUnseen = false,
   busyPaths,
-  canGoBack = false,
-  canGoForward = false,
-  onGoBack,
-  onGoForward,
-  onSearch,
   searchActive = false,
   onOpenInbox,
   inboxActive = false,
@@ -332,7 +318,6 @@ export function ProjectRail({
   assistantActive = false,
   onOpenServers,
   serversActive = false,
-  onTogglePanel,
   onCollapse,
   onSelectProject,
   onOpenNoProject,
@@ -825,15 +810,6 @@ export function ProjectRail({
     socialActive ||
     assistantActive ||
     serversActive;
-  const brand = (placement: "title" | "column", narrowOnly = false) => (
-    <RailBrand
-      placement={placement}
-      narrowOnly={narrowOnly}
-      showSearch={!settingsOpen}
-      searchActive={searchActive}
-      onSearch={onSearch}
-    />
-  );
   // A group is working when any project in it, its workspace root or a nested workspace is.
   const groupWorking = (groupId: string): boolean => {
     const entry = groupedProjectSections.grouped.find((item) => item.group.id === groupId);
@@ -1135,34 +1111,6 @@ export function ProjectRail({
           {t("Could not add projects to the group. Please try again.")}
         </InlineError>
       )}
-      {!navigator ? (
-        <div
-          className="@container/rail flex h-10 shrink-0 select-none items-center overflow-hidden"
-          data-tauri-drag-region="deep"
-        >
-          <WindowChromeInset />
-          {IS_MAC ? null : brand("title")}
-          {IS_MAC ? <div className="min-w-0 flex-1" /> : null}
-          {/* Icon-only, just the panel toggle fits; in settings nothing does. */}
-          <div
-            className={`me-1.5 shrink-0 @max-[140px]/rail:mx-auto ${
-              settingsOpen
-                ? "bycoda-rail-visit-nav--settings @max-[140px]/rail:hidden"
-                : "bycoda-rail-visit-nav"
-            }`}
-          >
-            <TabVisitNav
-              canGoBack={canGoBack}
-              canGoForward={canGoForward}
-              onGoBack={onGoBack}
-              onGoForward={onGoForward}
-              onTogglePanel={settingsOpen ? undefined : onTogglePanel}
-              panelActive={visible}
-            />
-          </div>
-        </div>
-      ) : null}
-
       {/* Tools, live summary and update notices can exceed a short window. Above the short-height query the
         ledger is the only scroll owner; below it this column scrolls without nested scrollbars. Settings
         stays outside this column so it remains visible at every height. The popup scrolls only its ledger. */}
@@ -1173,7 +1121,6 @@ export function ProjectRail({
             : "[container:rail/size] overflow-y-auto overflow-x-hidden overscroll-none"
         }`}
       >
-        {navigator ? null : IS_MAC ? brand("column") : brand("column", true)}
         {settingsOpen && !navigator ? (
           <Button
             variant="ghost"
@@ -2750,12 +2697,12 @@ function CompactLiveAgents({
   groupMascots: Record<string, string>;
 }) {
   const t = useT();
+  const format = useFormat();
   const [expanded, setExpanded] = useState(false);
   const listId = useId();
-  const activeAgents = agents.filter(isLiveActivityAgent);
-  if (activeAgents.length === 0) return null;
-  const summary = summarizeLiveAgents(activeAgents);
-  const { title: heading, count: headlineCount } = liveHeadline(summary, t);
+  const rows = orderLiveActivity(agents);
+  if (rows.length === 0) return null;
+  const counts = liveActivityCounts(rows, t, format.formatNumber);
   return (
     <section
       aria-label={t("Activity")}
@@ -2766,13 +2713,20 @@ function CompactLiveAgents({
         iconOnly
         label={t("Activity")}
         tooltip={t("Activity")}
-        tooltipDetails={[`${heading}, ${headlineCount}`]}
+        tooltipDetails={counts.map(({ label }) => label)}
         tooltipSide="right"
         expanded={expanded}
         aria-controls={listId}
         onClick={() => setExpanded((value) => !value)}
       >
-        {summary.attention > 0 ? (
+        {counts.some(
+          ({ state }) =>
+            state === "question" ||
+            state === "approval" ||
+            state === "input" ||
+            state === "retrying" ||
+            state === "failed",
+        ) ? (
           <CircleAlert aria-hidden className="icon-sm" tone="warning" strokeWidth={1.75} />
         ) : (
           <Clock aria-hidden className="icon-sm" strokeWidth={1.75} />
@@ -2783,18 +2737,12 @@ function CompactLiveAgents({
         hidden={!expanded}
         className="max-h-[min(14rem,30vh)] w-full overflow-y-auto overscroll-none"
       >
-        {activeAgents.map((agent) => {
+        {rows.map((agent) => {
           const seed = projectName(agent.cwd);
           const key = projectKey(agent.cwd);
           const project = resolveTabGroupLabel(key, groupLabels, seed);
           const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
-          const activity = agent.needsApproval
-            ? t(agent.inputKind === "question" ? "Question" : "Need approval")
-            : agent.issue === "retrying"
-              ? t("Retrying")
-              : agent.waiting
-                ? t("Waiting")
-                : agent.activity;
+          const { state, label: activity, tone } = liveActivityStatus(agent, t);
           const parts = [agent.title, project, activity].filter(Boolean);
           return (
             <Button
@@ -2820,12 +2768,12 @@ function CompactLiveAgents({
                 color={color}
                 name={resolveTabGroupMascot(key, groupMascots)}
                 className="size-3"
-                active={!agent.needsApproval && !agent.issue && !agent.waiting}
+                active={state === "working"}
               />
-              {agent.needsApproval ? (
+              {tone === "warning" || tone === "danger" || tone === "success" ? (
                 <StatusDot
                   label={activity}
-                  tone="warning"
+                  tone={tone}
                   aria-hidden
                   className="absolute right-1.5 top-1.5"
                 />

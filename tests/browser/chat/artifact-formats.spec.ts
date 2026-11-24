@@ -255,7 +255,7 @@ test("chat file changes and long content fit a narrow column", async ({ page }, 
   await page.keyboard.press("Escape");
   await expect(preview).toHaveCount(0);
   await expect(trigger).toBeFocused();
-  await page.getByRole("button", { name: "Show full long text", exact: true }).click();
+  await page.getByRole("button", { name: "Expand", exact: true }).click();
   await expect(preview.locator(".agent-markdown")).toHaveText("unbroken".repeat(200));
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
   await page.keyboard.press("Escape");
@@ -578,7 +578,7 @@ for (const theme of ["light", "dark"])
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",
       );
-      await page.getByRole("button", { name: "Show full long text", exact: true }).click();
+      await page.getByRole("button", { name: "Expand", exact: true }).click();
       const dialog = page.getByRole("dialog");
       await expect(dialog).toBeVisible();
       await expect(dialog.locator(".agent-markdown")).toContainText("unbroken");

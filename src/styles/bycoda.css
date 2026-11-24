@@ -31,93 +31,47 @@
 .bycoda-sidebar.body-glass {
   background: var(--ui-surface-panel);
 }
-.bycoda-rail-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 8px 7px var(--space-2) var(--space-3);
-  color: var(--color-content);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: -0.025em;
-}
-/* Mark plus outlined wordmark; both stay legible on screen shares at every rail width. */
-.bycoda-rail-lockup {
+/* Title bar identity: the mark, plus the outlined wordmark while the project rail is expanded. */
+.bycoda-title-lockup {
   display: flex;
   flex: none;
   align-items: center;
   gap: var(--space-2);
 }
-.bycoda-rail-mark {
+.bycoda-title-mark {
   width: 24px;
   height: 24px;
   flex: none;
   object-fit: contain;
 }
 /* The 280x56 artwork carries side padding; cover-cropping keeps only the lettering. */
-.bycoda-rail-wordmark {
+.bycoda-title-wordmark {
   width: 58px;
   height: 14px;
   flex: none;
   object-fit: cover;
 }
-/* Windows: the column copy only fills in what the title row drops at narrow widths. */
-@container rail (width >= 200px) {
-  .bycoda-rail-brand--narrow-only {
+/* The global Search is a full field while the title bar has room. Below that it is its icon,
+   and the wordmark steps aside before the tabs run out of space. */
+.bycoda-titlebar {
+  container: titlebar / inline-size;
+}
+.bycoda-title-search {
+  inline-size: 13rem;
+}
+@container titlebar (inline-size < 960px) {
+  .bycoda-title-search {
+    inline-size: auto;
+  }
+  [data-title-search-label],
+  [data-title-search-shortcut] {
     display: none;
   }
 }
-@container rail (width >= 140px) {
-  .bycoda-rail-brand--narrow-only .bycoda-rail-lockup {
+@container titlebar (inline-size < 720px) {
+  .bycoda-title-wordmark {
     display: none;
   }
-}
-/* Back and Forward yield to the lockup before Search does; the panel toggle always stays. */
-@container rail (width < 240px) {
-  .bycoda-rail-visit-nav button:not(:last-child) {
-    display: none;
-  }
-}
-/* Settings has no Search or panel toggle; its Back/Forward pair yields whole below 200px. */
-@container rail (width < 200px) {
-  .bycoda-rail-visit-nav--settings {
-    display: none;
-  }
-}
-/* The column row (macOS, Windows narrow fallback) fits lockup and Search from 140px. */
-.bycoda-rail-brand.bycoda-rail-brand--column {
-  gap: var(--space-2);
-}
-@container rail (width < 200px) {
-  .bycoda-rail-brand--title .bycoda-rail-search-slot {
-    display: none;
-  }
-}
-@container rail (width < 140px) {
-  .bycoda-rail-brand--title {
-    display: none;
-  }
-  /* Icon-only rail: the centered mark alone above an icon-only Search. */
-  .bycoda-rail-brand--column {
-    flex-direction: column;
-    justify-content: center;
-    gap: var(--space-2);
-    padding-inline: var(--space-1);
-  }
-  .bycoda-rail-brand--column .bycoda-rail-wordmark {
-    display: none;
-  }
-  .bycoda-rail-brand--column .bycoda-rail-search-slot {
-    width: 100%;
-    flex: none;
-  }
-}
-.bycoda-rail-brand button > svg {
-  width: 14px;
-  height: 14px;
-}
-.bycoda-rail-brand button > span {
-  font-size: 12px;
 }
 .bycoda-project-rail button,
 .bycoda-sidebar button {
@@ -491,14 +445,14 @@ html.theme-light .project-sigil {
     display: inline-flex;
   }
 }
-@container workspace-tab (inline-size < 184px) {
+@container workspace-tab (inline-size < 152px) {
   [data-workspace-tab-churn] .workspace-tab-content {
     display: none;
   }
 }
 /* Reserve space for the counts. A caption that cannot fit moves as a whole
    below the clipped first line, including when translations grow. */
-@container workspace-tab (inline-size >= 184px) {
+@container workspace-tab (inline-size >= 152px) {
   [data-workspace-tab-churn] .workspace-tab-stats {
     flex-shrink: 0;
   }
@@ -539,14 +493,17 @@ html.theme-light .project-sigil {
   border-bottom: 1px solid var(--ui-pane-border);
 }
 /* Keep the same native controls on the highest visible chrome row. */
-[data-workspace-chrome]:has(> [data-workspace-menubar]) {
+:is([data-workspace-chrome], [data-window-chrome]):has(> [data-workspace-menubar]) {
   position: relative;
   --workspace-menu-height: var(--ui-control-height-compact);
 }
-[data-workspace-chrome]:has(> .bycoda-titlebar [data-window-controls]) > [data-workspace-menubar] {
+:is([data-workspace-chrome], [data-window-chrome]):has(> .bycoda-titlebar [data-window-controls])
+  > [data-workspace-menubar] {
   padding-inline-end: calc(7.5rem + 1px);
 }
-[data-workspace-chrome]:has(> [data-workspace-menubar]) > .bycoda-titlebar [data-window-controls] {
+:is([data-workspace-chrome], [data-window-chrome]):has(> [data-workspace-menubar])
+  > .bycoda-titlebar
+  [data-window-controls] {
   position: absolute;
   inset-block-start: 0;
   inset-inline-end: 0;
@@ -560,41 +517,10 @@ html.theme-light .project-sigil {
   color: var(--ui-text-secondary);
   border: 1px solid var(--color-stroke);
 }
-/* Short windows hand the brand row's height to the scrolling project ledger. */
+/* Short windows hand spare height to the scrolling project ledger. */
 @media (max-height: 720px) {
-  .bycoda-rail-brand {
-    padding-block: var(--space-2) var(--space-1);
-  }
   .bycoda-project-ledger {
     padding-top: var(--space-1);
-  }
-}
-.bycoda-project-rail > [data-tauri-drag-region] {
-  height: calc(var(--ui-control-height-compact) + 0.5rem);
-}
-.bycoda-rail-brand.bycoda-rail-brand--title {
-  min-inline-size: 0;
-  flex: 1;
-  gap: var(--space-1);
-  padding-block: 0;
-  padding-inline: 7px 0;
-}
-.bycoda-rail-search-slot {
-  container: rail-search / inline-size;
-  min-inline-size: var(--ui-control-height-sm);
-}
-@container rail-search (inline-size < 110px) {
-  [data-rail-search-label],
-  [data-rail-search-shortcut] {
-    display: none;
-  }
-  [data-rail-search] {
-    justify-content: center;
-  }
-}
-@container rail (width < 340px) {
-  .bycoda-rail-brand--title [data-rail-search-shortcut] {
-    display: none;
   }
 }
 .bycoda-rail-tools > button {

@@ -23,6 +23,10 @@ import { registerHarness } from "../../../src/integrations/harness/core/registry
 import { languageReady } from "../../../src/shared/i18n";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import {
+  loadVoiceSettings,
+  saveVoiceSettings,
+} from "../../../src/features/voice/model/voiceSettings";
+import {
   loadAppearancePreferences,
   applyAppearancePreferences,
   normalizeAppearancePreferences,
@@ -60,6 +64,7 @@ const modelSource = {
 };
 
 const params = new URLSearchParams(location.search);
+if (params.has("dictation")) saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true });
 const exampleSkills = ["frontend-design", "ui-ux-pro-max", "unslop"];
 if (params.has("inlineExamples")) {
   createSkillGroup({
@@ -294,7 +299,7 @@ function Fixture() {
     onWorktreeBaseChange: noop,
     onModelChange: (_id, harness, model) => setSession((value) => ({ ...value, harness, model })),
     onModelSettingsChange: noop,
-    onRuntimeModeChange: noop,
+    onRuntimeModeChange: (_id, runtimeMode) => setSession((value) => ({ ...value, runtimeMode })),
     onSubmit: () => {
       events.sends++;
       return false;

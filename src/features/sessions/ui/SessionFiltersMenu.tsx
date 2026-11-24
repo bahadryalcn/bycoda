@@ -7,11 +7,13 @@ import {
 import {
   DEFAULT_SESSION_SIDEBAR_FILTERS,
   hasActiveSessionFilters,
+  type GlobalSessionListView,
   type SessionSidebarFilters,
   type SessionTimeFilter,
 } from "../model/sessionFilters";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
+import { ArrowDown, CircleDot, FolderTree } from "../../../shared/ui/icons";
 import { useAssistantIdentity } from "../../assistant/model/assistantClient";
 import {
   type SessionListDensity,
@@ -34,6 +36,8 @@ type Props = {
   settled?: boolean;
   allowedTimeFilters?: readonly SessionTimeFilter[];
   defaultFilters?: SessionSidebarFilters;
+  listView?: GlobalSessionListView;
+  onListViewChange?: (view: GlobalSessionListView) => void;
 };
 
 const DENSITY_OPTIONS: { id: SessionListDensity; label: string }[] = [
@@ -95,6 +99,8 @@ export function SessionFiltersMenu({
   settled = false,
   allowedTimeFilters,
   defaultFilters = DEFAULT_SESSION_SIDEBAR_FILTERS,
+  listView,
+  onListViewChange,
 }: Props) {
   const t = useT();
   const hiddenHarnesses = new Set(filters.hiddenHarnesses);
@@ -142,6 +148,45 @@ export function SessionFiltersMenu({
     (option) => !allowedTimeFilters || allowedTimeFilters.includes(option.id),
   );
   const items: DropdownMenuItem[] = [
+    ...(listView && onListViewChange
+      ? [
+          toggle(
+            check("group:project", t("Group by project"), listView.groupBy === "project", {
+              icon: <FolderTree className="icon-xs" />,
+            }),
+            () =>
+              onListViewChange({
+                ...listView,
+                groupBy: listView.groupBy === "project" ? "none" : "project",
+              }),
+          ),
+          toggle(
+            check("group:state", t("Group by state"), listView.groupBy === "state", {
+              icon: <CircleDot className="icon-xs" />,
+            }),
+            () =>
+              onListViewChange({
+                ...listView,
+                groupBy: listView.groupBy === "state" ? "none" : "state",
+              }),
+          ),
+          {
+            kind: "item" as const,
+            id: "sort",
+            label: t("Sort"),
+            icon: <ArrowDown className="icon-xs" />,
+            submenu: [
+              toggle(radio("sort:newest", t("Newest first"), listView.sort === "newest"), () =>
+                onListViewChange({ ...listView, sort: "newest" }),
+              ),
+              toggle(radio("sort:oldest", t("Oldest first"), listView.sort === "oldest"), () =>
+                onListViewChange({ ...listView, sort: "oldest" }),
+              ),
+            ],
+          },
+          { kind: "sep" as const },
+        ]
+      : []),
     toggle(check("archived", t("Archived"), filters.showArchived), toggleArchived),
     ...(settled
       ? [

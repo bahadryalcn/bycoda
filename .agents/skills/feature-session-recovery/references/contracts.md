@@ -14,7 +14,7 @@ Read only the section needed for the change. Source owners remain in [the surfac
 
 - `useRecoveryAutoResolve` resolves entries confirmed Done/Idle (references only, never history or running work), skips loading/unreadable/unverified/unavailable ones, and opens the dialog after boot only when attention work remains. The rail count is then the attention count.
 
-- Recovered/dismissed/resolved IDs remain held from automatic continuation; list cleanup does not stop work or erase conversation history.
+- A new interruption note is armed for one automatic continuation. The next launch spends it whatever the outcome (setting off, uncertain transcript, queued messages), so an interruption the owner left alone is never sent later and notes without the flag stay manual. Recovery journal membership neither blocks nor grants continuation, and a chat continuing on its own does not open the dialog. List cleanup does not stop work or erase conversation history.
 
 - Explicit owner Stop is terminal idle for recovery, even when older history uses `notice: "interrupt"`. Never auto-continue that stop or remove its history note; retain actual app/Host interruptions and unknown/unverified read handling.
 

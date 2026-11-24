@@ -4,7 +4,13 @@ import { rankProjectFiles, type RankedFile } from "../model/fileIndex";
 import type { FileRankingMessage } from "../model/fileRanking.worker";
 
 const EMPTY: RankedFile[] = [];
-type Request = { cwd: string; files: ProjectFile[]; query: string; recents: string[] };
+type Request = {
+  cwd: string;
+  files: ProjectFile[];
+  query: string;
+  recents: string[];
+  limit?: number;
+};
 
 export function useFileRanking(
   enabled: boolean,
@@ -12,10 +18,14 @@ export function useFileRanking(
   files: ProjectFile[],
   query: string,
   recents: string[],
+  { limit, backgroundQuery = query }: { limit?: number; backgroundQuery?: string } = {},
 ) {
   const [failed, setFailed] = useState(false);
   const background = enabled && files.length >= 1000 && typeof Worker !== "undefined" && !failed;
-  const request = useMemo(() => ({ cwd, files, query, recents }), [cwd, files, query, recents]);
+  const request = useMemo(
+    () => ({ cwd, files, query: backgroundQuery, recents, limit }),
+    [cwd, files, backgroundQuery, recents, limit],
+  );
   const submit = useRef<((next: Request) => void) | null>(null);
   const [answer, setAnswer] = useState<{ request: Request; results: RankedFile[] } | null>(null);
 
@@ -45,6 +55,7 @@ export function useFileRanking(
         worker.postMessage({
           query: next.query,
           recents: next.recents,
+          limit: next.limit,
           files: sentFiles ? undefined : files,
         } satisfies FileRankingMessage);
         sentFiles = true;
@@ -78,15 +89,16 @@ export function useFileRanking(
   }, [background, request]);
 
   const local = useMemo(
-    () => (enabled && !background ? rankProjectFiles(files, query, recents) : EMPTY),
-    [enabled, background, files, query, recents],
+    () => (enabled && !background ? rankProjectFiles(files, query, recents, limit) : EMPTY),
+    [enabled, background, files, query, recents, limit],
   );
   if (!background) return { results: local, pending: false };
   return {
     results:
       answer?.request.files === files &&
       answer.request.cwd === cwd &&
-      answer.request.recents === recents
+      answer.request.recents === recents &&
+      answer.request.limit === limit
         ? answer.results
         : EMPTY,
     pending: answer?.request !== request,

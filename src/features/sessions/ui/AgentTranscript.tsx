@@ -476,17 +476,15 @@ function AgentTranscriptComponent({
     virtualization.setAdjusted(anchorAdjusted);
     return () => virtualization.setAdjusted(undefined);
   }, [virtualization, anchorAdjusted]);
-  const revealBlock = useCallback(
-    (blockId: string) => {
-      if (!findTurn(blockId)) return false;
-      flushSync(() => virtualization.reveal(blockId));
-      // Callers align the block now and once more on the next frame; after
-      // that the reveal must not keep forcing its rows mounted or groups open.
-      virtualization.settleRevealAfterAlignment(blockId);
-      return pagingRevealBlock(blockId);
-    },
-    [findTurn, pagingRevealBlock, virtualization],
-  );
+  const prepareReveal = (blockId: string, forSearch = false) => {
+    if (!pagingRevealBlock(blockId, forSearch)) return false;
+    virtualization.reveal(blockId);
+    // Callers align the block now and once more on the next frame; after
+    // that the reveal must not keep forcing its rows mounted or groups open.
+    virtualization.settleRevealAfterAlignment(blockId);
+    return true;
+  };
+  const revealBlock = useStableCallback((id: string) => flushSync(() => prepareReveal(id)));
   useEffect(() => {
     onRevealReady?.(revealBlock);
     return () => onRevealReady?.(null);
@@ -542,7 +540,7 @@ function AgentTranscriptComponent({
     visibleTurnCount,
     openWork,
     setOpenWork,
-    revealBlock,
+    prepareReveal,
     findTurn,
     onNavigateReady: registerNavigate,
   });
@@ -776,12 +774,16 @@ function AgentTranscriptComponent({
                 turn={turn}
                 seenOutput={seenOutput}
                 allowMountReveal={
-                  visible && wasVisible.current && !historyLoading && !remoteHistoryLoading
+                  isLastTurn &&
+                  visible &&
+                  wasVisible.current &&
+                  !historyLoading &&
+                  !remoteHistoryLoading
                 }
                 managed={managed}
                 settled={settled}
                 live={live}
-                visible={visible}
+                activeTurnVisible={visible && !settled}
                 isLastTurn={isLastTurn}
                 turnHarness={turnHarnesses?.[turnIndex]}
                 clockStart={
@@ -972,7 +974,7 @@ type TurnProps = {
   managed: boolean;
   settled: boolean;
   live: boolean;
-  visible: boolean;
+  activeTurnVisible: boolean;
   isLastTurn: boolean;
   /** One-based position in the whole transcript, not in the visible window. */
   /** The provider that produced the turn, resolved for the whole transcript. */
@@ -1046,7 +1048,7 @@ const Turn = memo(function Turn({
   managed,
   settled,
   live,
-  visible,
+  activeTurnVisible,
   isLastTurn,
   turnHarness,
   clockStart,
@@ -1175,13 +1177,13 @@ const Turn = memo(function Turn({
       />
     ) : item.type === "activity" ? (
       itemIndex === initialThinkingAt ? (
-        <InitialThinking key={item.blocks[0].id} live={visible && !settled} />
+        <InitialThinking key={item.blocks[0].id} live={activeTurnVisible} />
       ) : (
         <ActivityPhases
           key={item.blocks[0].id}
           blocks={item.blocks}
           cwd={cwd}
-          done={!visible || settled || itemIndex < foldedAt || (answering && !workStillRunning)}
+          done={!activeTurnVisible || itemIndex < foldedAt || (answering && !workStillRunning)}
           onApproval={onApproval}
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
@@ -1201,9 +1203,8 @@ const Turn = memo(function Turn({
         ) : null}
         <TranscriptBlock
           block={item.block}
-          revealOnMount={allowMountReveal && isLastTurn && !seenOutput.has(item.block.id)}
+          revealOnMount={allowMountReveal && !seenOutput.has(item.block.id)}
           layout={transcriptLayout}
-          visible={item.block.role === "user" ? visible : undefined}
           // Prose reads the same wherever it lands: under the fold
           // line at the top of the turn, or under the work it follows.
           underLine={
@@ -1292,10 +1293,10 @@ const Turn = memo(function Turn({
       // List every value the row factory/renderItem reads here, or the row goes stale.
       [
         item, index, rail, tail, pinnedItem(item, index), isCurrentItem(item),
-        cwd, live, visible, settled,
+        cwd, live, activeTurnVisible, settled,
         index === initialThinkingAt,
-        !visible || settled || index < foldedAt || (answering && !workStillRunning),
-        allowMountReveal && isLastTurn && item.type === "block" && !seenOutput.has(item.block.id),
+        !activeTurnVisible || index < foldedAt || (answering && !workStillRunning),
+        allowMountReveal && item.type === "block" && !seenOutput.has(item.block.id),
         transcriptLayout, items[index - 1]?.type, index === foldLineAt && showFoldLine,
         busy, planHarness, planModel, planModelSettings, editableUserBlockId, editingLastTurn,
         onApproval, onSaveNote, onSendDraft, onEditDraft, onRemoveDraft, onOpenFile, onOpenDiff,
@@ -2000,7 +2001,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
   block,
   revealOnMount,
   layout,
-  visible,
   underLine = false,
   embedded = false,
   cwd,
@@ -2025,7 +2025,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
   block: Block;
   layout: TranscriptLayout;
   revealOnMount?: boolean;
-  visible?: boolean;
   /** True when something already sits directly above this in the turn. */
   underLine?: boolean;
   /** True when the parent surface already provides the horizontal gutter. */
@@ -2080,7 +2079,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
                   questionAnswer
                   block={{ ...block, text: answers.join("\n"), questionAnswers: undefined }}
                   layout={layout}
-                  visible={visible ?? true}
                   cwd={cwd}
                   onOpenFile={onOpenFile}
                   onSaveNote={onSaveNote}
@@ -2100,7 +2098,6 @@ const TranscriptBlock = memo(function TranscriptBlock({
         block={block}
         layout={layout}
         busy={planBusy}
-        visible={visible ?? true}
         cwd={cwd}
         onOpenFile={onOpenFile}
         onEdit={onEditLastTurn}
@@ -2300,7 +2297,6 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
 function UserMessageBlock({
   block,
   layout,
-  visible,
   onEdit,
   canRewind = false,
   onRewind,
@@ -2316,7 +2312,6 @@ function UserMessageBlock({
 }: {
   block: Block;
   layout: TranscriptLayout;
-  visible: boolean;
   onEdit?: () => void;
   canRewind?: boolean;
   onRewind?: (action: "edit" | "return") => void;
@@ -2391,13 +2386,7 @@ function UserMessageBlock({
     findTokens(text, attachmentFiles).map((match) => [match.index, match.token]),
   );
   const referencedTokens = attachmentFiles.map((_, index) => usedTokens.get(index));
-  const overflows = useClampOverflow(
-    textRef,
-    Boolean(text),
-    expanded,
-    text,
-    (visible ? 1 : 0) + (compactText ? 2 : 0),
-  );
+  const overflows = useClampOverflow(textRef, Boolean(text), expanded, text, compactText ? 1 : 0);
 
   const toggle = () => {
     if (overflows) setExpanded((value) => !value);
@@ -2439,7 +2428,7 @@ function UserMessageBlock({
       {block.startedAt != null ? (
         <Timestamp
           value={block.startedAt}
-          className="ms-1 whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--ui-text-muted)"
+          className={`${showLabels ? "ms-auto" : "ms-1"} whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--ui-text-muted)`}
         />
       ) : null}
     </>
@@ -2480,7 +2469,7 @@ function UserMessageBlock({
           data-chat-message-surface={block.draft ? undefined : "user"}
           data-follow-up-delivery={delivery}
           data-bycoda={bycoda ? "true" : undefined}
-          className={`user-message-bubble relative min-w-0 font-sans text-(--ui-text-secondary) transition-[background-color] duration-200 ${pastedTextOnly ? "" : "bg-(--ui-message-bubble) px-3 py-2"} ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
+          className={`user-message-bubble relative min-w-0 font-sans text-(--ui-text-secondary) transition-[background-color] duration-200 ${pastedTextOnly ? "" : "bg-(--ui-message-bubble) px-(--message-bubble-inset-x) py-(--message-bubble-inset-y) [--message-bubble-inset-x:--spacing(3)] [--message-bubble-inset-y:--spacing(2)]"} ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
         >
           <ChatCitationList citations={citations} text={text} />
           {block.turnOutcome === "stopped" ? (

@@ -194,18 +194,18 @@ function observeListOffset(
   };
 }
 
-export function SessionListWindow({
+export function SessionListWindow<Row extends SessionListRow | { kind: "heading"; key: string }>({
   rows,
   scrollRef,
   activeKey,
   activeRowKey,
   renderRow,
 }: {
-  rows: readonly SessionListRow[];
+  rows: readonly Row[];
   scrollRef: RefObject<HTMLDivElement | null>;
   activeKey: string | null;
   activeRowKey?: string | null;
-  renderRow: (row: SessionListRow, props: SessionListVirtualProps) => ReactNode;
+  renderRow: (row: Row, props: SessionListVirtualProps) => ReactNode;
 }) {
   const listRef = useRef<HTMLUListElement>(null);
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);

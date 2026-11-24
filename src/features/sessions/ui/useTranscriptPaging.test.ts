@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
 import {
   MAX_TRANSCRIPT_WINDOW_TURNS,
+  pageRemainder,
   runRemoteLoad,
   useTranscriptPaging,
 } from "./useTranscriptPaging";
@@ -13,6 +14,8 @@ let root: Root;
 let host: HTMLDivElement;
 let api: ReturnType<typeof useTranscriptPaging>;
 let scroller: HTMLDivElement;
+/** The number of turns each committed render showed. */
+let shown: number[] = [];
 const history = (count: number, start = 0): Block[][] =>
   Array.from({ length: count }, (_, i) => [
     { id: `u-${start + i}`, role: "user", text: `Question ${start + i}` },
@@ -43,6 +46,7 @@ function Harness({
     remoteHistoryHasMore: more,
     onLoadRemoteHistory: load,
   });
+  shown.push(api.visibleTurns.length);
   return createElement(
     "div",
     { ref: scroll, "data-scroll": true },
@@ -167,6 +171,79 @@ it("bounds repeated earlier/newer paging and preserves an overlapping turn's vie
   expect(api.visibleTurns.length).toBeLessThanOrEqual(MAX_TRANSCRIPT_WINDOW_TURNS);
 });
 
+it("mounts an earlier page in two commits and ends on the same window as one commit", async () => {
+  render(history(100));
+  scroller.scrollTop = 0;
+  const first = api.firstVisibleTurn;
+  const count = api.visibleTurns.length;
+  const id = api.visibleTurns[0][0].id;
+  shown = [];
+  await act(() => api.loadEarlier());
+  expect(shown).toContain(count + 8);
+  expect(shown.at(-1)).toBe(count + 20);
+  expect(api.firstVisibleTurn).toBe(first - 20);
+  expect(
+    scroller.querySelector(`[data-transcript-turn="${id}"]`)!.getBoundingClientRect().top,
+  ).toBe(0);
+});
+
+it("drops the rest of an earlier page when the reader navigates before it is mounted", async () => {
+  render(history(100));
+  act(() => api.revealBlock("u-50"));
+  await act(async () => {
+    void api.loadEarlier();
+    api.jumpLatest();
+  });
+  expect(api.lastVisibleTurn).toBe(100);
+  expect(api.visibleTurns.length).toBe(20);
+});
+
+it("applies the rest of a page only to the navigation and session that began it", () => {
+  const current = { firstId: "u-1", offset: 0, count: 28, tail: false };
+  const full = { firstId: "u-1", offset: 0, count: 40, tail: false };
+  const rest = { window: full, navigation: 3, sessionId: "a" };
+  expect(pageRemainder(current, rest, { navigation: 3, sessionId: "a" })).toBe(full);
+  // A reveal that needed no window move still counts as a navigation.
+  expect(pageRemainder(current, rest, { navigation: 4, sessionId: "a" })).toBe(current);
+  expect(pageRemainder(current, rest, { navigation: 3, sessionId: "b" })).toBe(current);
+});
+
+it("does not align a reveal that moved nothing to the anchor of an earlier page", async () => {
+  render(history(100), undefined, false, false);
+  scroller.scrollTop = 0;
+  const shownId = api.visibleTurns[0][0].id;
+  await act(async () => {
+    void api.loadEarlier();
+    // Already in the window: the reveal moves nothing but ends the page's navigation.
+    api.revealBlock(shownId);
+  });
+  // Without a live anchor the prepend keeps the distance from the bottom, as any prepend does.
+  expect(scroller.scrollTop).toBe(scroller.scrollHeight - scroller.clientHeight);
+  expect(api.visibleTurns.length).toBe(28);
+});
+
+it("keeps a remote page's reading position and finishes the full page", async () => {
+  let finish!: (added: number) => void;
+  const load = () =>
+    new Promise<number>((resolve) => {
+      finish = resolve;
+    });
+  render(history(10, 20), load, true, false);
+  scroller.scrollTop = 120;
+  act(() => api.onHistoryScroll(120, true));
+  const row = () => scroller.querySelector<HTMLElement>('[data-transcript-turn="u-21"]')!;
+  const offset = row().getBoundingClientRect().top;
+  shown = [];
+  await act(async () => {
+    root.render(createElement(Harness, { turns: history(30), load, more: false, follow: false }));
+    finish(20);
+  });
+  expect(shown).toContain(18);
+  expect(api.visibleTurns.length).toBe(30);
+  expect(api.visibleTurns[0][0].id).toBe("u-0");
+  expect(row().getBoundingClientRect().top).toBe(offset);
+});
+
 it("recenters any reveal without mounting intervening saved turns and returns to live tail", () => {
   render(history(10_000));
   act(() => {
@@ -183,6 +260,17 @@ it("recenters any reveal without mounting intervening saved turns and returns to
   act(() => api.jumpLatest());
   expect(api.lastVisibleTurn).toBe(10_000);
   expect(scroller.children.length).toBe(20);
+});
+
+it("mounts the distant search target promptly and leaves every later turn reachable", () => {
+  render(history(5000));
+  act(() => expect(api.revealBlock("u-2000", true)).toBe(true));
+  expect(scroller.querySelector('[data-transcript-turn="u-2000"]')).not.toBeNull();
+  expect(api.visibleTurnCount).toBeLessThanOrEqual(8);
+  const next = api.lastVisibleTurn;
+  act(() => api.loadNewer());
+  expect(api.firstVisibleTurn).toBeLessThanOrEqual(next);
+  expect(api.lastVisibleTurn).toBeGreaterThan(next);
 });
 
 it("retains exact historical IDs when saved history prepends or live output appends", () => {

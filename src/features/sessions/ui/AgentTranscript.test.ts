@@ -793,7 +793,9 @@ describe("AgentTranscript collapsed work", () => {
       },
     ]);
 
-    expect(markup.replace(/<[^>]*>/g, "")).toContain("3 steps, 1 failed");
+    // The visible row shows the count and mark; its accessible description spells them out.
+    expect(markup).toContain("3 steps, 1 failed");
+    expect(markup.replace(/<[^>]*>/g, "")).toContain("×1");
   });
 
   it("opens a lone subagent straight into its own transcript", () => {
@@ -827,7 +829,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).not.toContain("Show every subagent");
     expect(markup).toContain("Correctness review");
     expect(markup).toContain("1 step");
-    expect(markup).not.toContain("done");
+    expect(markup.replace(/<[^>]*>/g, "")).not.toContain("done");
     expect(markup).toContain("Show Correctness review&#x27;s work");
   });
 

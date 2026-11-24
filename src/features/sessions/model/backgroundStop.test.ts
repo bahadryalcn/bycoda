@@ -56,13 +56,26 @@ describe("stopAllControl", () => {
     expect(stopAllControl(working, true)).toMatchObject({
       kind: "task",
       label: "Stop all background work",
+      confirmLabel: "Confirm stop 1?",
     });
     expect(stopAllControl(working, true)?.title).toContain("not interrupted");
   });
 
+  it("counts reported background tasks in the confirmation when they outnumber rows", () => {
+    const waiting = dockFor([user, agentBlock("a", "in_progress")], {
+      backgroundTasks: ["one", "two", "three"],
+      agents: 1,
+    });
+    expect(stopAllControl(waiting, true)?.confirmLabel).toBe("Confirm stop 3?");
+  });
+
   it("says plainly that it ends the turn when it cannot", () => {
     const control = stopAllControl(working, false);
-    expect(control).toMatchObject({ kind: "turn", label: "Stop all" });
+    expect(control).toMatchObject({
+      kind: "turn",
+      label: "Stop all",
+      confirmLabel: "Confirm stop?",
+    });
     expect(control?.title).toContain("Interrupt the whole turn");
   });
 

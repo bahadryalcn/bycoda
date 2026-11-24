@@ -1,6 +1,7 @@
 import type { CodeHighlighterPlugin, ThemeInput } from "@streamdown/code";
 import { bundledLanguages, bundledLanguagesInfo } from "shiki/langs";
 import type { BoundedCodePlugin } from "./codeHighlightCore";
+import { highlightInWorker } from "./highlightInWorker";
 export type { BoundedCodePlugin } from "./codeHighlightCore";
 const aliases = Object.fromEntries(
   bundledLanguagesInfo.flatMap((info) => (info.aliases ?? []).map((alias) => [alias, info.id])),
@@ -14,7 +15,13 @@ export function createBoundedCodePlugin(
   let loading: Promise<BoundedCodePlugin> | undefined;
   const load = () =>
     (loading ??= import("./codeHighlightCore")
-      .then((core) => (delegate = core.createBoundedCodePlugin(options)))
+      .then(
+        (core) =>
+          (delegate = core.createBoundedCodePlugin(
+            options,
+            typeof Worker === "undefined" ? undefined : highlightInWorker,
+          )),
+      )
       .catch((error) => {
         loading = undefined;
         throw error;

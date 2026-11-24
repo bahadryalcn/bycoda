@@ -1,6 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Button } from "../../../shared/ui/Button";
+import { ListRow } from "../../../shared/ui/ListRow";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -13,6 +14,7 @@ import {
   usePickerList,
   type PickerOption,
 } from "../../../shared/ui/picker";
+import { PickerChoice } from "../../../shared/ui/picker/PickerChoice";
 import { t, useLocale } from "../../../shared/i18n";
 import { useNativePopoverHost } from "../../../shared/ui/Popover";
 import {
@@ -388,10 +390,7 @@ function WorkspaceModePicker({
         footer={
           onOpenSettings ? (
             <PickerFooter align="start">
-              <Button
-                variant="ghost"
-                size="sm"
-                type="button"
+              <ListRow
                 aria-label={t("Open worktree settings")}
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={closeWorktreeMenu}
@@ -400,9 +399,12 @@ function WorkspaceModePicker({
                   onOpenSettings();
                 }}
               >
-                <Settings aria-hidden className="icon-sm" strokeWidth={1.75} />
-                {t("Worktree settings")}
-              </Button>
+                <PickerChoice
+                  selected={false}
+                  icon={<Settings className="icon-md" />}
+                  label={t("Worktree settings")}
+                />
+              </ListRow>
             </PickerFooter>
           ) : null
         }

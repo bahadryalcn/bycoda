@@ -282,17 +282,20 @@ export function FileEditor({
   useLayoutEffect(() => {
     setLoadedMode.current = setMode;
   }, [setMode]);
+  const keepMarkdownView = markdown && navigation?.keepMarkdownView;
   const sourceNavigationToken = useRef<number | undefined>(undefined);
+  // Source navigation switches panes unless a chat link keeps the Markdown view.
   useEffect(() => {
     if (
       !navigation ||
+      keepMarkdownView ||
       (!markdown && !svg && !html) ||
       sourceNavigationToken.current === navigation.token
     )
       return;
     sourceNavigationToken.current = navigation.token;
     setMode("source");
-  }, [markdown, svg, html, navigation, setMode]);
+  }, [keepMarkdownView, markdown, svg, html, navigation, setMode]);
   const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   const saveGeneration = useRef(0);
   const loadGeneration = useRef(0);
@@ -1380,7 +1383,7 @@ export function FileEditor({
     retainedState: retainedEditor,
     showDiff,
     gitOriginal,
-    navigation,
+    navigation: keepMarkdownView && mode === "preview" ? null : navigation,
     onDirtyChange: dirtyChange,
     onErrorCountChange: errorCountChange,
     onSave: save,

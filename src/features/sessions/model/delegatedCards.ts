@@ -58,7 +58,7 @@ function failedCardOf(block: Block): Block | undefined {
 
 function parseDelegateCall(block: Block): DelegateCall | undefined {
   // A path-shaped argument (a model ref like `grok:grok-4.6`) can turn the title into
-  // "Read Ã¢â‚¬Â¦"; the preview keeps the tool's own name.
+  // "Read …"; the preview keeps the tool's own name.
   const kind = delegationToolKind(block);
   if (kind !== "delegate" && kind !== "wait" && kind !== "reply") return undefined;
   const sessionIds: string[] = [];

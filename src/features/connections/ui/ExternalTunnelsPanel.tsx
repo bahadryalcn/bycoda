@@ -147,7 +147,7 @@ function MachineSharing({
       {hasContent ? (
         <div className="external-tunnel-group" aria-busy={state.pending || phase === "loading"}>
           {grouped ? (
-            <SectionLabel as="h3" count={count || null}>
+            <SectionLabel as="h3" truncate>
               {machineLabel(machine)}
             </SectionLabel>
           ) : null}
@@ -244,6 +244,7 @@ export function ExternalTunnelsPanel({
     <section className="external-tunnels-panel" aria-label={t("External tunnels")}>
       <SectionLabel
         as="h2"
+        size="secondary"
         count={total || undefined}
         actions={
           <Button

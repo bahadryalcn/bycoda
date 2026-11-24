@@ -1,17 +1,16 @@
-import { actionContentAttributes } from "../../../shared/ui/ActionHost";
-import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { Text } from "../../../shared/ui/Text";
-import { ModelLabel } from "./ModelLabel";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { createContext, useContext, useEffect } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
-import { Check, ExternalLink, Square } from "../../../shared/ui/icons";
+import { Check, ChevronDown, ExternalLink, Square } from "../../../shared/ui/icons";
+import { blockLifecycle } from "../model/activityDock";
 import { crewMemberOf, delegationParentOf } from "../model/delegatedAgents";
+import { modelNameBesideIcon } from "../model/modelDisplayName";
 import { delegationResultFor } from "../model/delegationNotice";
 import { delegatedChildIdOf } from "../model/delegatedBlockId";
-import type { Block } from "../model/session";
+import { sessionNeedsInput, type Block } from "../model/session";
+import { subagentStepStrip } from "../model/subagentStepStrip";
 import { useSession, useSessionsSelector } from "../model/sessionsStore";
 import { useSubagentModelName } from "../model/reactiveReads";
 import {
@@ -25,19 +24,27 @@ import { useStopRequests } from "./useStopRequests";
 import { ActivityPhases } from "./AgentTranscriptActivity";
 import { blockForStep } from "./agentStepBlocks";
 import { SubagentRetryButton } from "./SubagentRetryButton";
-import { SubagentMarks, SubagentReport, SubagentStateLine } from "./SubagentAnatomy";
+import styles from "./SubagentRow.module.css";
+import { SubagentRowContent } from "./SubagentRowContent";
+import { subagentRunDescription, SubagentRunStatus } from "./SubagentRunStatus";
+import { runLabelWith, SubagentReport } from "./SubagentAnatomy";
 import { consumeOpenSubagent, OPEN_SUBAGENT_EVENT, requestViewSubagent } from "./subagentFocus";
 import { TranscriptVirtualRows } from "./TranscriptVirtualRows";
 import { useTranscriptRevealTarget } from "./transcriptVirtualization";
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
+import { useSubagentRunIdentity, type SubagentRunSession } from "./useSubagentRunIdentity";
 
 /** The conversation whose transcript renders these rows; Crew member cards open and stop through it. */
 export const DelegatedRunOwner = createContext<string | undefined>(undefined);
 
 type DelegatedCard = {
-  member?: CrewMemberChild;
-  /** The task, in the slot a native run gives to its model. */
+  /** The child session, for its provider, account and effort. */
+  session?: SubagentRunSession;
+  /** The task, leading the row's detail line. */
   subtitle?: string;
+  /** A Crew member's handle, beside the name. */
+  handle?: string;
+  needsInput?: boolean;
   onOpen: () => void;
   /** Present while the member is still running. */
   onStop?: () => void;
@@ -55,8 +62,8 @@ type DelegatedCard = {
  * watching must not move while that happens, so these rows are never part of a
  * fold and hold their place from the moment the agents start.
  *
- * A row is a mascot, a name, and what that agent is doing right now. Click it
- * and the agent's own trail opens underneath.
+ * A row is the provider, the run's name and detail, and what it is doing right
+ * now. Click it and the agent's own trail opens underneath.
  */
 export function SubagentStack({
   blocks,
@@ -136,8 +143,10 @@ export function SubagentRow({
   const delegated: DelegatedCard | undefined =
     childId && parentId
       ? {
-          member: child && crewMemberOf(child),
+          session: child,
+          handle: child && crewMemberOf(child)?.handle,
           subtitle: child?.title,
+          needsInput: !!child && sessionNeedsInput(child),
           onOpen: () => requestViewDelegated(parentId, childId),
           resultReceived,
           ...(toolCallState(block) === "rejected"
@@ -222,87 +231,79 @@ function SubagentPanel({
   const report = subagentReport(block);
   const openPanel = delegated?.onOpen ?? (() => requestViewSubagent(block.id));
 
-  // Identity row: marks, name and the model beside it; the name gives room
-  // back so a run named with its whole brief cannot push the state off the row.
-  const nameClass = "min-w-0 text-start font-sans";
-  const label = (
-    <span className="flex min-w-0 flex-1 items-baseline gap-2">
-      {active ? (
-        <WorkingIndicator
-          glyph={false}
-          className={nameClass}
-          truncate
-          text={{ size: "body", weight: "medium" }}
-        >
-          {name}
-        </WorkingIndicator>
-      ) : (
-        <Text
-          size="body"
-          weight="medium"
-          truncate
-          tone={state === "rejected" ? "danger" : "secondary"}
-          {...motionAttributes({ transition: "colors", duration: "standard" })}
-          {...actionContentAttributes(
-            { phase: "always", interactionTone: state === "rejected" ? undefined : "neutral" },
-            nameClass,
-          )}
-        >
-          {name}
-        </Text>
-      )}
-      {(subtitle ?? model) ? (
-        <Text size="caption" tone="muted" truncate className="max-w-[40%] shrink-0">
-          {subtitle ?? <ModelLabel model={block.agentRun?.model ?? ""} name={model} size="xs" />}
-        </Text>
-      ) : null}
-    </span>
+  const needsInput = !!delegated?.needsInput || needsApproval(block);
+  const strip = subagentStepStrip(steps, active && !needsInput);
+  const description = subagentRunDescription(
+    needsInput && active ? t("Needs input") : runLabelWith(block, live, t),
+    strip,
+    state === "rejected",
+    t,
   );
-  const marks = (
-    <SubagentMarks
-      name={name}
+  const { account, effort } = useSubagentRunIdentity(delegated?.session, block.agentRun?.model);
+  const round = block.agentRun?.round;
+  const session = delegated?.session;
+  const rowContent = (chevron: boolean) => (
+    <SubagentRowContent
+      harness={session?.runningModelTarget?.harness ?? session?.harness}
       model={block.agentRun?.model}
-      member={delegated?.member}
+      account={account}
+      name={name}
       active={active}
       failed={state === "rejected"}
-    />
-  );
-  const stateLine = (
-    <SubagentStateLine
-      block={block}
-      busy={live}
-      steps={steps}
-      inline
-      className="max-w-[55%] shrink-0"
+      handle={delegated?.handle}
+      subtitle={subtitle}
+      details={[
+        round && round > 1 ? t("Round {p0}", { p0: round }) : undefined,
+        model && modelNameBesideIcon(model),
+        account?.accountLabel,
+        effort,
+      ]}
+      status={
+        <SubagentRunStatus
+          status={blockLifecycle(block, live)}
+          needsInput={needsInput}
+          startedAt={block.agentRun?.startedAt}
+          endedAt={block.agentRun?.endedAt}
+          strip={strip}
+        />
+      }
+      chevron={
+        chevron ? (
+          <ChevronDown
+            {...motionAttributes(
+              { transition: "transform", duration: "standard" },
+              `icon-sm ${open ? "rotate-180" : ""}`,
+            )}
+          />
+        ) : undefined
+      }
     />
   );
 
   const stopButton = delegated?.onStop ? (
-    <>
-      {delegated.stopFailed ? (
-        <Text as="span" size="caption" tone="danger" className="shrink-0">
-          {t("Stop failed. Retry")}
-        </Text>
-      ) : null}
-      <Button
-        motion="none"
-        iconOnly
-        variant="ghost"
-        type="button"
-        label={
-          delegated.stopping
-            ? t("Stopping {p0}…", { p0: name })
-            : delegated.stopFailed
-              ? t("Could not stop. Retry")
-              : t("Stop {p0}", { p0: name })
-        }
-        disabled={delegated.stopping}
-        onClick={delegated.onStop}
-        className="shrink-0"
-      >
-        <Square className="icon-xs" strokeWidth={1.75} aria-hidden />
-      </Button>
-    </>
+    <Button
+      motion="none"
+      iconOnly
+      variant="ghost"
+      type="button"
+      label={
+        delegated.stopping
+          ? t("Stopping {p0}…", { p0: name })
+          : delegated.stopFailed
+            ? t("Could not stop. Retry")
+            : t("Stop {p0}", { p0: name })
+      }
+      disabled={delegated.stopping}
+      onClick={delegated.onStop}
+      className={styles.stopSlot}
+    >
+      <Square className="icon-xs" strokeWidth={1.75} aria-hidden />
+    </Button>
+  ) : null;
+  const stopFailure = delegated?.stopFailed ? (
+    <Text as="span" size="caption" tone="danger" className="self-end">
+      {t("Stop failed. Retry")}
+    </Text>
   ) : null;
 
   // A run can report its first step late (or never). Its prompt and status
@@ -310,62 +311,63 @@ function SubagentPanel({
   if (steps.length === 0 && !report) {
     return (
       <div className="flex min-w-0 flex-col">
-        <div className="-mx-1.5 flex min-w-0 items-center gap-0.5">
+        <div className={`-mx-1.5 ${styles.row}`}>
           <Button
             motion="none"
             variant="item"
             type="button"
             aria-label={t("Open {p0} in its own panel", { p0: name })}
+            aria-description={description}
             onClick={openPanel}
-            className="min-w-0 flex-1"
+            className="min-w-0"
           >
-            {marks}
-            {label}
-            {stateLine}
-            <span className="icon-sm shrink-0" />
+            {rowContent(false)}
           </Button>
-          {stopButton}
+          <div className={styles.actions}>{stopButton}</div>
         </div>
+        {stopFailure}
       </div>
     );
   }
 
   return (
     <div className="flex min-w-0 flex-col">
-      <div className="-mx-1.5 flex min-w-0 items-center gap-0.5">
+      <div className={`-mx-1.5 ${styles.row}`}>
+        {/* An open row keeps the wash it lit up under the cursor, so the panel
+            below reads as hanging off it rather than off the transcript. */}
         <Button
           motion="none"
-          className="min-w-0 flex-1 text-left"
+          className="min-w-0 text-left"
           variant="item"
           type="button"
           selected={open}
-          expanded={open}
+          aria-expanded={open}
           aria-label={
             open ? t("Hide {p0}'s work", { p0: name }) : t("Show {p0}'s work", { p0: name })
           }
+          aria-description={description}
           onClick={onToggle}
-          // An open row keeps the wash it lit up under the cursor, so the panel
-          // below reads as hanging off it rather than off the transcript.
         >
-          {marks}
-          {label}
-          {stateLine}
+          {rowContent(true)}
         </Button>
-        <Button
-          motion="none"
-          iconOnly
-          label={t("Open {p0} in its own panel", { p0: name })}
-          variant="ghost"
-          type="button"
-          aria-label={t("Open {p0} in its own panel", { p0: name })}
-          tooltip={t("Open in panel")}
-          onClick={openPanel}
-          className="shrink-0"
-        >
-          <ExternalLink className="icon-sm" aria-hidden />
-        </Button>
-        {stopButton}
+        <div className={styles.actions}>
+          <Button
+            motion="none"
+            iconOnly
+            label={t("Open {p0} in its own panel", { p0: name })}
+            variant="ghost"
+            type="button"
+            aria-label={t("Open {p0} in its own panel", { p0: name })}
+            tooltip={t("Open in panel")}
+            onClick={openPanel}
+            className={styles.openSlot}
+          >
+            <ExternalLink className="icon-sm" aria-hidden />
+          </Button>
+          {stopButton}
+        </div>
       </div>
+      {stopFailure}
       <div className="zen-phase-body" data-open={open}>
         {open ? (
           /*

@@ -649,7 +649,7 @@ for (const light of [true, false])
     });
 for (const light of [true, false])
   for (const width of [800, 1280])
-    test(`project background and mascot ${light ? "light" : "dark"} ${width}`, async ({
+    test(`project background and Codex usage ${light ? "light" : "dark"} ${width}`, async ({
       page,
     }, info) => {
       await page.setViewportSize({ width, height: 900 });
@@ -674,13 +674,13 @@ for (const light of [true, false])
       await expect(swatch).toHaveCSS("background-color", "rgb(18, 52, 86)");
       await swatch.screenshot({ path: info.outputPath(`project-swatch-${light}-${width}.png`) });
       await page.goto(
-        `/tests/browser/sessions/session-usability.html?projectVisual=mascot${suffix}`,
+        `/tests/browser/sessions/session-usability.html?projectVisual=usage${suffix}`,
       );
       await page.getByRole("button", { name: "Codex usage details" }).click();
-      const mascot = page.locator('[data-reset-mascot-mood="happy"] svg');
-      await expect(mascot).toBeVisible();
-      await mascot.screenshot({ path: info.outputPath(`project-mascot-${light}-${width}.png`) });
       const usage = page.getByRole("dialog", { name: "Codex usage details" });
+      const resetIcon = usage.locator("[data-quota-reset-icon]");
+      await expect(resetIcon).toBeVisible();
+      await expect(resetIcon).toHaveCSS("mask-image", /quota-reset\.png/);
       const heading = usage.getByRole("heading", { name: "Codex usage", exact: true });
       const refresh = usage.getByRole("button", { name: "Refresh usage" });
       await expect(refresh).toBeVisible();

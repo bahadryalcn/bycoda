@@ -18,6 +18,19 @@ function declarations(selector: string): string[] {
 }
 
 describe("code block header action inset", () => {
+  it("keeps header state checks out of the highlighted token subtree", () => {
+    const stylesheet = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const selectors = [...stylesheet.matchAll(/([^{}]+)\s*\{/g)].map((match) => match[1]!);
+    const codeSelectors = selectors.filter((selector) =>
+      /markdown-code-|\[data-streamdown="code-block-header"\]/.test(selector),
+    );
+    for (const selector of codeSelectors) {
+      for (const match of selector.matchAll(/:has\(([^)]+)\)/g)) {
+        expect(match[1], selector).toMatch(/^> div > \.markdown-code-(run|icon)$/);
+      }
+    }
+  });
+
   it("stops the path and fallback label at the shared actions inset", () => {
     for (const selector of [
       ".agent-markdown .markdown-code-path",
@@ -42,14 +55,14 @@ describe("code block header action inset", () => {
       "--markdown-code-actions-end: 68px;",
     );
     expect(
-      declarations(".agent-markdown .markdown-code-shell:has(.markdown-code-run)")[0],
+      declarations(".agent-markdown .markdown-code-shell:has(> div > .markdown-code-run)")[0],
     ).toContain("--markdown-code-actions-end: 96px;");
     // The coarse-pointer block indents its rules, so match without the line-start anchor.
     expect(css).toMatch(
       /html \.agent-markdown \.markdown-code-shell \{\s*--markdown-code-actions-end: 96px;/,
     );
     expect(css).toMatch(
-      /html \.agent-markdown \.markdown-code-shell:has\(\.markdown-code-run\) \{\s*--markdown-code-actions-end: 140px;/,
+      /html \.agent-markdown \.markdown-code-shell:has\(> div > \.markdown-code-run\) \{\s*--markdown-code-actions-end: 140px;/,
     );
   });
 

@@ -8,8 +8,15 @@ import { setWorktreeFocus } from "../../../src/features/source-control/model/wor
 import { UsageFooter } from "../../../src/app/shell/UsageFooter";
 import { SessionRecoveryControl } from "../../../src/app/shell/SessionRecoveryControl";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ProviderRateLimits } from "../../../src/features/providers/model/rateLimits";
+import type {
+  ProviderRateLimits,
+  RateLimitProvider,
+} from "../../../src/features/providers/model/rateLimits";
 import { setCachedRateLimits } from "../../../src/features/providers/model/rateLimitsCache";
+import {
+  editProviderAccount,
+  saveProviderAccount,
+} from "../../../src/features/providers/model/providerAccounts";
 import { InboxView } from "../../../src/features/inbox/ui/InboxView";
 import {
   saveInboxConnections,
@@ -73,15 +80,50 @@ if (syncedWorkspace) {
 }
 const layoutClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const layoutNow = Date.now();
-for (const provider of ["claude", "codex"] as const) {
+const layoutQuery = new URLSearchParams(location.search);
+const usageResets = layoutQuery.has("usage-resets");
+const piUsage = layoutQuery.has("pi-usage");
+const usageProviders: RateLimitProvider[] = usageResets
+  ? ["claude", "codex", "opencode", "grok"]
+  : ["claude", "codex"];
+if (usageResets) {
+  editProviderAccount("claude", "default", { label: "Personal", color: "green" });
+  saveProviderAccount({ id: "work", provider: "claude", label: "Work", color: "teal" });
+  saveProviderAccount({ id: "bycoda", provider: "claude", label: "Bycoda", color: "orange" });
+}
+const creditKinds = ["weekly", "fable", "fable", "fable"] as const;
+for (const provider of usageProviders) {
+  const stale = usageResets && provider === "claude";
   const limits: ProviderRateLimits = {
     provider,
-    session: { usedPercent: 24, windowMinutes: 300, resetsAt: layoutNow + 3_600_000 },
+    session:
+      stale || provider === "grok"
+        ? null
+        : { usedPercent: 24, windowMinutes: 300, resetsAt: layoutNow + 3_600_000 },
     weekly: { usedPercent: 39, windowMinutes: 10080, resetsAt: layoutNow + 86_400_000 },
-    monthly: null,
-    updatedAt: layoutNow,
-    error: null,
-    status: "ok",
+    monthly:
+      provider === "opencode"
+        ? { usedPercent: 51, windowMinutes: 43200, resetsAt: layoutNow + 604_800_000 }
+        : null,
+    resetCredits:
+      usageResets && (provider === "claude" || provider === "codex")
+        ? {
+            availableCount: stale ? 4 : 2,
+            credits: creditKinds.slice(0, stale ? 4 : 2).map((kind, index) => ({
+              id: `fixture-reset-${index}`,
+              kind: stale ? kind : undefined,
+              resetType: stale ? "unknown" : "codexRateLimits",
+              status: "available",
+              grantedAt: null,
+              expiresAt: layoutNow + (index === 0 ? 16 : 105) * 86_400_000,
+              title: index === 0 ? "Referral reward" : "Backup reset",
+              description: null,
+            })),
+          }
+        : null,
+    updatedAt: layoutNow - (stale ? 47 * 60_000 : 0),
+    error: stale ? "Fixture refresh failed" : null,
+    status: stale ? "error" : "ok",
   };
   layoutClient.setQueryData(["rate-limits", provider, "default"], limits);
   setCachedRateLimits(provider, "default", limits);
@@ -147,7 +189,8 @@ function ShellLayoutFixture() {
           </main>
         </div>
         <UsageFooter
-          providers={["claude", "codex"]}
+          providers={usageProviders}
+          session={piUsage ? { harness: "pi", model: "pi:openai-codex/gpt-5.4" } : undefined}
           onNewTerminal={() => setSelected("terminal")}
         />
       </div>

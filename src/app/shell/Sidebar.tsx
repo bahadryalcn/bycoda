@@ -59,7 +59,6 @@ import {
   preloadSidebarSurfaces,
 } from "./sidebarSurfaces";
 import { RelativeSessionTime } from "./RelativeSessionTime";
-import { CompactRailLogo } from "./RailBrand";
 import { SessionDetailTimes } from "./SessionDetailTimes";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
 import { SIDE_BY_SIDE_LIMIT } from "../../features/workspace/model/workspaceTabGroups";
@@ -125,6 +124,7 @@ import {
   Plus,
   Search,
   Share,
+  SlidersHorizontal,
   Sparkles,
   SplitSquare,
   StickyNote,
@@ -199,6 +199,7 @@ import {
 import { TransientNotice } from "../../shared/ui/TransientNotice";
 import { toast } from "../../shared/ui/ToastRegion";
 import { reportFailure } from "../../shared/ui/reportFailure";
+import { LOADING_DELAY_MS } from "../../shared/hooks/useDelayedVisible";
 import "./sessionList.css";
 import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
@@ -318,6 +319,7 @@ import {
   DEFAULT_SESSION_SIDEBAR_FILTERS,
   loadSessionSidebarFilters,
   saveSessionSidebarFilters,
+  type GlobalSessionListView,
   type SessionSidebarFilters,
 } from "../../features/sessions/model/sessionFilters";
 import { HARNESS_TITLE } from "../../features/sessions/model/session";
@@ -374,7 +376,7 @@ import { detailTooltipFrame, Tooltip } from "../../shared/ui/Tooltip";
 import { Spinner } from "../../shared/ui/Spinner";
 import { PaneHeader } from "../../shared/ui/PaneHeader";
 import { Sash } from "../../shared/ui/Sash";
-import { IconButton, TabVisitNav } from "./TitleBar";
+import { IconButton } from "./TitleBar";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { Popover } from "../../shared/ui/Popover";
 import { useProjectMenu } from "./useProjectMenu";
@@ -501,12 +503,12 @@ type Props = {
   status: "idle" | "error";
   /** First listing for this project has not arrived yet. */
   pending: boolean;
-  onSelectSession: (sessionId: string, options?: { keepOpen?: boolean }) => void;
+  onSelectSession: (sessionId: string, options?: { keepOpen?: boolean }) => void | Promise<unknown>;
   onSelectRemoteSession?: (
     project: string,
     sessionId: string,
     options?: { preview?: boolean },
-  ) => void;
+  ) => void | Promise<unknown>;
   onRemoteSessionDeleted?: (sessionId: string, project?: string) => void;
   onSessionNavigationOrder?: (ids: readonly string[]) => void;
   onPrefetchSession?: (sessionId: string) => void;
@@ -550,10 +552,7 @@ type Props = {
   onFilesSearchOpenChange: (open: boolean) => void;
   onOpenFilesSearch?: () => void;
   searchFocusToken?: number;
-  canGoBack?: boolean;
-  canGoForward?: boolean;
   onGoBack?: () => void;
-  onGoForward?: () => void;
   onOpenDiff?: (path: string, kind?: GitFileDiffKind, pin?: boolean) => void;
   onOpenAllChanges?: (kind: GitFileDiffKind) => void;
   onOpenCommit?: (commit: GitHistoryCommit, pin?: boolean) => void;
@@ -597,7 +596,6 @@ type Props = {
   onToggleProjectRail?: () => void;
   projectRailOpen?: boolean;
   compactProjectRail?: boolean;
-  titleBarAbove?: boolean;
   unseenFinishedIds?: Set<string>;
   inboxUnseen?: boolean;
   /** Linked GitHub work changed after the session last advanced. */
@@ -688,11 +686,8 @@ function SidebarComponent({
   onFilesSearchOpenChange,
   onOpenFilesSearch,
   searchFocusToken = 0,
-  canGoBack = false,
-  canGoForward = false,
   onGoBack,
   onShowWorkspace,
-  onGoForward,
   onOpenDiff,
   onOpenAllChanges,
   onOpenCommit,
@@ -733,7 +728,6 @@ function SidebarComponent({
   onToggleProjectRail,
   projectRailOpen = true,
   compactProjectRail = true,
-  titleBarAbove = false,
   unseenFinishedIds: unseenFinishedIdsProp,
   inboxUnseen = false,
   linkedSessionUpdateIds = EMPTY_IDS,
@@ -1361,6 +1355,10 @@ function SidebarComponent({
   const [sessionFilters, setSessionFilters] = useState(loadSessionSidebarFilters);
   const [globalSessionFilters, setGlobalSessionFilters] =
     useState<SessionSidebarFilters>(GLOBAL_SESSION_FILTERS);
+  const [globalListView, setGlobalListView] = useState<GlobalSessionListView>({
+    groupBy: "none",
+    sort: "newest",
+  });
   const [filterMenu, setFilterMenu] = useState<{ x: number; y: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sessionSearchExpanded, setSessionSearchExpanded] = useState(false);
@@ -1498,15 +1496,24 @@ function SidebarComponent({
     setHandledNewSessionRequest(newListedSessionRequest);
     if (newListedSessionRequest > 0) setNewSessionProjectOpen(true);
   }
-  const [openingSessionId, setOpeningSessionId] = useState<string | null>(null);
-  // Once the opened session is the active one, its card stops spinning.
-  if (openingSessionId && openingSessionId === activeListedSessionId) setOpeningSessionId(null);
+  const [opening, setOpening] = useState<{ id: string } | null>(null);
+  const [slowOpening, setSlowOpening] = useState<typeof opening>(null);
+  if (opening && opening.id === activeListedSessionId) setOpening(null);
+  const openingSessionId = opening && slowOpening === opening ? opening.id : null;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- show a pending row only when its own open outlasts the shared loading delay
   useEffect(() => {
-    if (!openingSessionId) return;
-    // A load that fails or is cancelled must not leave the card spinning.
-    const timer = window.setTimeout(() => setOpeningSessionId(null), 20_000);
-    return () => window.clearTimeout(timer);
-  }, [activeListedSessionId, openingSessionId]);
+    if (!opening) return;
+    const timer = window.setTimeout(() => setSlowOpening(opening), LOADING_DELAY_MS);
+    // A fire-and-forget opener can transfer focus to another window.
+    const timeout = window.setTimeout(
+      () => setOpening((current) => (current === opening ? null : current)),
+      20_000,
+    );
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(timeout);
+    };
+  }, [opening]);
   const searchNarrowed = Boolean(deferredSearchQuery.trim());
   const listFilters = lastSessionsOpen ? globalSessionFilters : sessionFilters;
   const sessionListKey = JSON.stringify([
@@ -1522,11 +1529,17 @@ function SidebarComponent({
     listFilters.hiddenHarnesses,
     listFilters.status,
     deferredSearchQuery,
+    lastSessionsOpen ? globalListView : null,
   ]);
   const retainSessionsScroll = useRetainedScroll<HTMLDivElement>(sessionListKey, {
     ready: tab === "sessions",
   });
   const rank = useSessionRankSignals(visibleSessions, unseenFinishedIds, activeListedSessionId);
+  const globalRank = useSessionRankSignals(
+    lastSessionsOpen && globalListView.groupBy === "state" ? (lastSessionsData?.rows ?? []) : [],
+    unseenFinishedIds,
+    null,
+  );
   // Keep the complete loaded collection in the model; the shared window bounds the mounted rows.
   // oxlint-disable-next-line bycoda/compiler-owns-memo -- reuse project folder membership and saved order while filtering this uncompiled sidebar
   const { reminderIds, reminderGroup, ungrouped, compareStatus } = useMemo(() => {
@@ -2952,13 +2965,19 @@ function SidebarComponent({
     setSessionMenu(null);
     if (selection.select(sessionId, event, sessionNavigationIds, activeListedSessionId)) return;
     setDrawerOpen(false);
-    // Opening reads the conversation first (from disk, or over SSH for a
-    // remote one); the card says so until it is the open session.
-    if (sessionId !== activeListedSessionId) setOpeningSessionId(sessionId);
+    const request = sessionId !== activeListedSessionId ? { id: sessionId } : null;
+    setOpening(request);
     // Following another project restores its remembered tab; keep this list in view.
     const target = tab === "sessions" ? summaryById.get(sessionId) : undefined;
     if (target) onTabChange("sessions", target.cwd);
-    onSelectSession(sessionId, { keepOpen: (event.detail ?? 0) > 1 });
+    const pending = onSelectSession(sessionId, { keepOpen: (event.detail ?? 0) > 1 });
+    if (pending) {
+      const finish = () => setOpening((current) => (current === request ? null : current));
+      void pending.then(finish, (error: unknown) => {
+        finish();
+        void reportFailure(error, { toast }).catch(() => {});
+      });
+    }
   };
 
   // Cards are memoized. Their handlers go through one stable set that calls
@@ -3542,7 +3561,11 @@ function SidebarComponent({
           hasPopup
           onClick={onFilterButtonClick}
         >
-          <ListFilter className="icon-xs" strokeWidth={1.75} />
+          {lastSessionsOpen ? (
+            <SlidersHorizontal className="icon-xs" strokeWidth={1.75} />
+          ) : (
+            <ListFilter className="icon-xs" strokeWidth={1.75} />
+          )}
         </SessionsHeaderButton>
       ) : null}
     </div>
@@ -3750,15 +3773,14 @@ function SidebarComponent({
     );
   });
 
-  // With no title bar above, back/forward and the workspace controls share this one row instead
-  // of leaving an empty row over the Workspace selector.
-  const workspaceHeader = (withVisitNav = false) => {
+  // Back/Forward and the sidebar toggle live in the window title bar; this row holds the
+  // location, the session list's own tools and New session.
+  const workspaceHeader = () => {
     const switcher = !lastSessionsOpen && cwd && cwd !== "~";
     const createSession = lastSessionsOpen ? undefined : onNew;
     return (
       <PaneHeader
         dragRegion
-        chromeInset={withVisitNav}
         data-workspace-header
         className={styles.workspaceHeader}
         titleAs={switcher ? "div" : "h2"}
@@ -3787,28 +3809,6 @@ function SidebarComponent({
           ) : null
         }
       >
-        {withVisitNav || (compactRailVisible && onToggleProjectRail) ? (
-          <div className="flex shrink-0 items-center gap-1" data-workspace-navigation>
-            {withVisitNav ? (
-              <TabVisitNav
-                canGoBack={canGoBack}
-                canGoForward={canGoForward}
-                onGoBack={onGoBack}
-                onGoForward={onGoForward}
-              />
-            ) : null}
-            {compactRailVisible && onToggleProjectRail ? (
-              <IconButton
-                label={t("Toggle sidebar")}
-                command="App: Toggle Sidebar"
-                active={railVisible}
-                onClick={onToggleProjectRail}
-              >
-                <PanelLeft className="icon-sm" strokeWidth={1.75} />
-              </IconButton>
-            ) : null}
-          </div>
-        ) : null}
         {sessionToolbar ? (
           <WorkspaceToolbar
             active={selectionMode || filtersActive || searchQuery.trim().length > 0}
@@ -3835,7 +3835,11 @@ function SidebarComponent({
                 id: "filter",
                 label: t("Filter sessions"),
                 checked: filtersActive,
-                icon: <ListFilter className="icon-sm" />,
+                icon: lastSessionsOpen ? (
+                  <SlidersHorizontal className="icon-sm" />
+                ) : (
+                  <ListFilter className="icon-sm" />
+                ),
               },
             ]}
             onPick={(id, anchor) => {
@@ -3907,22 +3911,7 @@ function SidebarComponent({
         </>
       ) : (
         <>
-          {titleBarAbove || compactRailVisible ? null : (
-            <PaneHeader
-              dragRegion
-              chromeInset
-              actions={
-                <TabVisitNav
-                  canGoBack={canGoBack}
-                  canGoForward={canGoForward}
-                  onGoBack={onGoBack}
-                  onGoForward={onGoForward}
-                  onTogglePanel={compactProjectRail ? undefined : onToggleProjectRail}
-                />
-              }
-            />
-          )}
-          {compactRailVisible ? workspaceHeader(!titleBarAbove) : null}
+          {compactRailVisible ? workspaceHeader() : null}
           {(lastSessionsOpen || cwd === "~" || (remoteProject && !onSelectProject)) &&
           !compactRailVisible ? (
             workspaceHeader()
@@ -3941,7 +3930,6 @@ function SidebarComponent({
               onRemoveProject={onRemoveProject}
               onNew={onNew}
               onChooseNewSessionProject={chooseNewSessionProject}
-              onSearch={onSearch}
               onOpenInbox={onOpenInbox}
               onOpenNotificationSettings={onOpenNotificationSettings}
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
@@ -3949,7 +3937,6 @@ function SidebarComponent({
               serversActive={serversActive}
               onOpenAutomations={onOpenAutomations}
               onOpenTasks={onOpenTasks}
-              searchActive={searchActive}
               inboxActive={inboxActive}
               notesActive={notesActive}
               automationsActive={automationsActive}
@@ -4211,14 +4198,29 @@ function SidebarComponent({
                     ),
                     deferredSearchQuery,
                   );
+                  const isActive = (session: SessionSummary) =>
+                    sameProjectPath(session.cwd, cwd) &&
+                    (session.id === activeSessionId ||
+                      (isRemoteProjectPath(session.cwd) && session.id === activeRemoteId));
                   return rows.length ? (
                     <GlobalSessionListWindow
                       sessions={rows}
                       scrollRef={sessionsScrollRef}
-                      isActive={(session) =>
-                        sameProjectPath(session.cwd, cwd) &&
-                        (session.id === activeSessionId ||
-                          (isRemoteProjectPath(session.cwd) && session.id === activeRemoteId))
+                      isActive={isActive}
+                      view={globalListView}
+                      stateOf={(session) =>
+                        sessionRowStatusKind({
+                          issue: session.issue,
+                          interrupted: session.interrupted,
+                          needsApproval: approvalSessionIds.has(session.id),
+                          busy: busySessionIds.has(session.id),
+                          wait: sessionWaits?.get(session.id),
+                          opening: false,
+                          done: unseenFinishedIds.has(session.id),
+                          draft:
+                            !!session.draft ||
+                            (!isActive(session) && globalRank.draftIds.has(session.id)),
+                        })
                       }
                       renderSession={(session, active) => (
                         <SessionCard
@@ -4706,6 +4708,8 @@ function SidebarComponent({
           filters={lastSessionsOpen ? globalSessionFilters : sessionFilters}
           allowedTimeFilters={lastSessionsOpen ? GLOBAL_SESSION_TIME_FILTERS : undefined}
           defaultFilters={lastSessionsOpen ? GLOBAL_SESSION_FILTERS : undefined}
+          listView={lastSessionsOpen ? globalListView : undefined}
+          onListViewChange={lastSessionsOpen ? setGlobalListView : undefined}
           onChange={lastSessionsOpen ? setGlobalSessionFilters : onSessionFiltersChange}
           onClose={() => setFilterMenu(null)}
         />
@@ -4790,7 +4794,6 @@ function SidebarComponent({
             if (!sidebarAvailable || lastSessionsOpen) onShowWorkspace?.();
             if (!open) setDrawerOpen(!drawerVisible);
           }}
-          onSearch={onSearch}
           searchActive={searchActive}
           onOpenInbox={onOpenInbox}
           inboxActive={inboxActive}
@@ -4809,7 +4812,6 @@ function SidebarComponent({
           onOpenAccountSettings={openAccountSettings}
           onOpenCrews={requestOpenCrewsPage}
           onLeaveActive={onGoBack}
-          titleBarAbove={titleBarAbove}
           recentSessions={recentSessions}
           activeSessionId={activeSessionId}
           onSelectAgent={onSelectAgent}
@@ -4834,11 +4836,6 @@ function SidebarComponent({
           activeSessionId={activeSessionId}
           onSelectAgent={onSelectAgent}
           recentSessions={recentSessions}
-          canGoBack={canGoBack}
-          canGoForward={canGoForward}
-          onGoBack={onGoBack}
-          onGoForward={onGoForward}
-          onSearch={onSearch}
           searchActive={searchActive}
           onOpenInbox={onOpenInbox}
           inboxActive={inboxActive}
@@ -4853,7 +4850,6 @@ function SidebarComponent({
           tasksActive={tasksActive}
           socialActive={socialActive}
           assistantActive={assistantActive}
-          onTogglePanel={onToggleProjectRail}
           onCollapse={compactProjectRail ? onToggleProjectRail : undefined}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
@@ -4954,12 +4950,10 @@ function SidebarComponent({
                 showLiveAgents={!(sidebarVisible || drawerRendered)}
                 recentSessions={recentSessions}
                 busyPaths={busyProjectPaths}
-                onTogglePanel={() => setProjectNavigationAnchor(null)}
                 onOpenSettings={closeProjectNavigationThen(onOpenSettings)}
                 onSelectSettingsSection={onSelectSettingsSection}
                 onOpenNotificationSettings={onOpenNotificationSettings}
                 notesEnabled={notesEnabled}
-                onSearch={closeProjectNavigationThen(onSearch)}
                 onOpenInbox={closeProjectNavigationThen(onOpenInbox)}
                 onOpenNotes={closeProjectNavigationThen(onOpenNotes)}
                 onOpenServers={closeProjectNavigationThen(onOpenServers)}
@@ -5108,14 +5102,12 @@ function SidebarProjectPicker({
   onRemoveProject,
   onNew,
   onChooseNewSessionProject,
-  onSearch,
   onOpenInbox,
   onOpenNotificationSettings,
   onOpenNotes,
   onOpenServers,
   onOpenAutomations,
   onOpenTasks,
-  searchActive = false,
   inboxActive = false,
   notesActive = false,
   serversActive = false,
@@ -5138,14 +5130,12 @@ function SidebarProjectPicker({
   onRemoveProject?: Props["onRemoveProject"];
   onNew?: () => string | void;
   onChooseNewSessionProject?: () => void;
-  onSearch?: () => void;
   onOpenInbox?: () => void;
   onOpenNotificationSettings?: (projectPath?: string) => void;
   onOpenNotes?: () => void;
   onOpenServers?: () => void;
   onOpenAutomations?: () => void;
   onOpenTasks?: () => void;
-  searchActive?: boolean;
   inboxActive?: boolean;
   notesActive?: boolean;
   serversActive?: boolean;
@@ -5168,16 +5158,6 @@ function SidebarProjectPicker({
         <>
           {onNew ? (
             <WorkspaceNewSessionButton onNew={onNew} onChooseProject={onChooseNewSessionProject} />
-          ) : null}
-          {onSearch ? (
-            <IconButton
-              label={t("Search")}
-              command="App: Search"
-              active={searchActive}
-              onClick={onSearch}
-            >
-              <Search className="icon-sm" strokeWidth={1.75} />
-            </IconButton>
           ) : null}
           {onOpenInbox ? (
             <WorkspaceFeatureGate id="inbox" active={inboxActive}>
@@ -5308,7 +5288,6 @@ function CompactProjectRail({
   onOpenProjectNavigation,
   projectNavigationOpen,
   onOpenWorkspace,
-  onSearch,
   searchActive,
   onOpenInbox,
   inboxActive,
@@ -5327,7 +5306,6 @@ function CompactProjectRail({
   onOpenAccountSettings,
   onOpenCrews,
   onLeaveActive,
-  titleBarAbove,
 }: {
   onOpenLastSessions?: () => void;
   lastSessionsOpen?: boolean;
@@ -5341,7 +5319,6 @@ function CompactProjectRail({
   onOpenProjectNavigation?: (anchor: HTMLElement) => void;
   projectNavigationOpen?: boolean;
   onOpenWorkspace: () => void;
-  onSearch?: () => void;
   searchActive: boolean;
   onOpenInbox?: () => void;
   inboxActive: boolean;
@@ -5360,7 +5337,6 @@ function CompactProjectRail({
   onOpenAccountSettings?: () => void;
   onOpenCrews?: () => void;
   onLeaveActive?: () => void;
-  titleBarAbove: boolean;
   recentSessions?: RecentSessionsSource;
   activeSessionId?: string;
   onSelectAgent?: (sessionId: string) => void;
@@ -5388,33 +5364,16 @@ function CompactProjectRail({
       data-compact-project-rail
       className="sidebar-glass relative flex h-full w-14 shrink-0 flex-col items-center"
     >
-      {titleBarAbove ? null : (
-        // The row shares its height and rule with the workspace header beside it. It stays a
-        // window drag region; the mark is the same product logo the full rail shows.
-        <PaneHeader dragRegion className="w-full px-0! [&>div]:justify-center">
-          <CompactRailLogo />
-        </PaneHeader>
-      )}
       <Divider
         decorative
         orientation="vertical"
         data-compact-rail-divider
-        className={`pointer-events-none absolute bottom-0 right-0 ${
-          titleBarAbove ? "top-0" : "top-[calc(var(--ui-control-height-compact)+0.5rem)]"
-        }`}
+        className="pointer-events-none absolute bottom-0 right-0 top-0"
       />
       <div
         data-compact-rail-actions
         className="flex min-h-0 w-full flex-col items-center gap-1.5 overflow-y-auto px-1 py-1.5"
       >
-        {titleBarAbove ? <CompactRailLogo /> : null}
-        <CompactRailAction
-          label={t("Search")}
-          command="App: Search"
-          icon={Search}
-          active={searchActive}
-          onClick={action(searchActive, onSearch)}
-        />
         <WorkspaceFeatureGate id="inbox" active={inboxActive}>
           <CompactRailAction
             label={inboxUnseen ? t("Inbox, new items") : t("Inbox")}

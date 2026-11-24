@@ -22,6 +22,7 @@ pub(crate) mod native_delivery;
 #[cfg(all(test, windows))]
 mod native_projection_join_tests;
 pub(crate) mod native_raw_capture;
+mod open_retry;
 pub(crate) mod pin_receipts;
 pub(crate) mod project_sessions;
 mod provenance;
@@ -98,7 +99,7 @@ impl SessionStore {
         let admission = cohort::OpenAdmission::begin(&path)?;
         let path = admission.path().to_owned();
         let conn = cohort::RegisteredConnection::new(
-            Connection::open(&path).map_err(|e| e.to_string())?,
+            Connection::open(&path).map_err(open_retry::describe)?,
             admission.registration.clone(),
         );
         conn.verify_connection(&conn)?;
@@ -120,9 +121,9 @@ impl SessionStore {
              PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;
              PRAGMA journal_size_limit = 67108864; PRAGMA cache_size = -65536;",
         )
-        .map_err(|e| e.to_string())?;
-        migrate(&conn).map_err(|e| e.to_string())?;
-        ensure_window_in_flight(&conn).map_err(|e| e.to_string())?;
+        .map_err(open_retry::describe)?;
+        migrate(&conn).map_err(open_retry::describe)?;
+        ensure_window_in_flight(&conn).map_err(open_retry::describe)?;
         authority::clear_stale_cli_ingress(&conn, started_at);
         crate::ssh_group_defaults::migrate(&conn)?;
         // Only the fast, Git-free half of removal recovery runs during launch.
@@ -314,9 +315,10 @@ fn init_with(
 ) -> Result<(), String> {
     // Preserve the database filename used by existing installations.
     let path = data_dir()?.join("bycoda.db");
-    let store = open_waiting_out_locks(
+    let store = open_retry::open_waiting_out_failures(
         || open(path.clone()),
         OPEN_LOCKED_WAIT,
+        open_retry::OPEN_IO_WAIT,
         std::time::Duration::from_secs(1),
     )?;
     manage(store);
@@ -327,24 +329,6 @@ fn init_with(
 /// sessions while the app was closed recovers the whole WAL on every connection, which took
 /// seconds for a 500 MB WAL. Launch failed with "database is locked" and the app stayed closed.
 const OPEN_LOCKED_WAIT: std::time::Duration = std::time::Duration::from_secs(90);
-
-/// Retries `open` while the database is locked, up to `wait`; any other error returns at once.
-fn open_waiting_out_locks<T>(
-    open: impl Fn() -> Result<T, String>,
-    wait: std::time::Duration,
-    pause: std::time::Duration,
-) -> Result<T, String> {
-    let started = std::time::Instant::now();
-    loop {
-        match open() {
-            Err(error) if error.contains("database is locked") && started.elapsed() < wait => {
-                log::warn!("session store open waits for a locked database: {error}");
-                std::thread::sleep(pause);
-            }
-            result => return result,
-        }
-    }
-}
 
 /// Builds the message-content search index for sessions it does not cover yet
 /// (a fresh migration, a bulk import) off the startup path.
@@ -4718,42 +4702,6 @@ mod tests {
         assert_eq!(raw["modelSettings"]["effort"], "high");
         assert_eq!(raw["blocks"][0]["text"], "h\u{e9}llo \"q\"");
         assert_eq!(get_session_json(&conn, "missing").unwrap(), "null");
-    }
-
-    #[test]
-    fn launch_waits_out_a_locked_database_but_not_other_errors() {
-        let attempts = std::cell::Cell::new(0);
-        let pause = std::time::Duration::ZERO;
-        let opened = open_waiting_out_locks(
-            || {
-                attempts.set(attempts.get() + 1);
-                if attempts.get() < 3 {
-                    Err("database is locked".to_string())
-                } else {
-                    Ok(attempts.get())
-                }
-            },
-            std::time::Duration::from_secs(5),
-            pause,
-        );
-        assert_eq!(opened, Ok(3));
-        attempts.set(0);
-        let failed: Result<(), String> = open_waiting_out_locks(
-            || {
-                attempts.set(attempts.get() + 1);
-                Err("file is not a database".to_string())
-            },
-            std::time::Duration::from_secs(5),
-            pause,
-        );
-        assert_eq!(failed, Err("file is not a database".to_string()));
-        assert_eq!(attempts.get(), 1);
-        let gave_up: Result<(), String> = open_waiting_out_locks(
-            || Err("database is locked".to_string()),
-            std::time::Duration::ZERO,
-            pause,
-        );
-        assert_eq!(gave_up, Err("database is locked".to_string()));
     }
 
     #[test]

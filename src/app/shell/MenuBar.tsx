@@ -45,6 +45,14 @@ type MenuKey = "file" | "view" | "terminal";
  */
 export const APP_MENU_TOGGLE_EVENT = "bycoda:app-menu-toggle";
 
+/** Toggles the compact application menu so it drops down under `anchor`. */
+export function toggleAppMenuAt(anchor: Element) {
+  const rect = anchor.getBoundingClientRect();
+  window.dispatchEvent(
+    new CustomEvent(APP_MENU_TOGGLE_EVENT, { detail: { x: rect.left, y: rect.bottom + 2 } }),
+  );
+}
+
 type Props = {
   onNew: () => void;
   onNewTerminal?: () => void;

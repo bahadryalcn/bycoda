@@ -2,6 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { LiveText } from "../../../shared/ui/LiveText";
 import { Select } from "../../../shared/ui/Select";
 import {
   decodeAdvisor,
@@ -14,7 +15,8 @@ import {
   PopoverSearchHeader,
   usePickerList,
 } from "../../../shared/ui/picker";
-import { ArrowLeft } from "../../../shared/ui/icons";
+import { ArrowLeft, CheckList, Minus } from "../../../shared/ui/icons";
+import { DEFAULT_PROVIDER_ACCOUNT_ID } from "../../providers/public/providerAccounts";
 import {
   delegationOptionHarness,
   delegationOptionSelected,
@@ -31,7 +33,7 @@ import { ModelAccountNumber } from "./ModelAccountIdentity";
 
 /**
  * A long choice (subagents, advisor) given the whole settings column: search on top, options
- * grouped by provider, and for multi-select a footer with Done that stays under the list.
+ * grouped by provider, with a fixed footer for multi-select actions.
  * @use Column navigation inside the model panel, built from shared picker primitives.
  * @avoid Standalone fields: SearchableSelect.
  * @replaces The model panel's local choice rows and search header.
@@ -74,7 +76,13 @@ export function ModelSettingPicker({
       return {
         option,
         group,
-        accountKey: ref ? JSON.stringify([ref.harness, ref.providerAccountId]) : "",
+        accountKey: ref
+          ? JSON.stringify([
+              ref.harness,
+              ref.providerAccountId ??
+                (option.accountLabel ? DEFAULT_PROVIDER_ACCOUNT_ID : undefined),
+            ])
+          : "",
       };
     });
   const accountOptions = Array.from(
@@ -98,11 +106,15 @@ export function ModelSettingPicker({
   const grouped = [...groups.values()].flat();
   const options = grouped.map(({ option, group }) => {
     const picked = delegationOptionSelected(setting, selection, option.value);
+    const accountShownInFilter = Boolean(accountFilter && option.accountLabel);
     return {
       value: option.value,
-      title: option.modelLabel ?? delegationShortLabel(setting, option.value, t(option.label)),
+      title:
+        bulk && !accountShownInFilter
+          ? delegationShortLabel(setting, option.value, t(option.label))
+          : (option.modelLabel ?? delegationShortLabel(setting, option.value, t(option.label))),
       accessibleLabel: option.modelLabel
-        ? [option.modelLabel, group, !bulk ? option.accountLabel : undefined]
+        ? [option.modelLabel, group, !bulk ? option.accountLabel : option.detail]
             .filter(Boolean)
             .join(", ")
         : undefined,
@@ -110,14 +122,14 @@ export function ModelSettingPicker({
         <DelegationOptionIcon setting={setting} value={option.value} showAccountNumber={false} />
       ),
       meta:
-        option.accountNumber !== undefined ? (
+        option.accountNumber !== undefined && !accountShownInFilter ? (
           <span className="inline-flex items-center gap-1">
             <ModelAccountNumber account={option} />
             {!bulk ? option.accountLabel : null}
           </span>
         ) : undefined,
-      description: option.detail,
-      group,
+      description: bulk ? undefined : option.detail,
+      group: accountFilter ? undefined : group,
       disabled: disabled || (bulk && !picked && modelCount >= DELEGATION_LIMITS.subagentModels),
     };
   });
@@ -152,6 +164,8 @@ export function ModelSettingPicker({
   ).length;
   const addShown = shown.filter(({ option }) => !selected.includes(option.value));
   const clearShown = shown.length > 0 && addShown.length === 0;
+  const bulkActionLabel = clearShown ? t("Clear shown selection") : t("Select all shown");
+  const BulkActionIcon = clearShown ? Minus : CheckList;
 
   return (
     // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Handle Escape from any of the editor's keyboard controls.
@@ -201,20 +215,24 @@ export function ModelSettingPicker({
         {...list.searchProps}
       />
       {bulk ? (
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-1 px-2 py-1">
+        <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-2 py-1">
           {accountOptions.length > 1 ? (
             <Select
               label={t("Accounts")}
               hideLabel
+              fieldSize="sm"
               value={accountFilter}
               options={[{ value: "", label: t("All accounts") }, ...accountOptions]}
               onValueChange={setAccountFilter}
             />
           ) : null}
           <Button
-            variant="ghost"
+            iconOnly
+            label={bulkActionLabel}
+            variant="secondary"
             size="sm"
             type="button"
+            className="col-start-2"
             disabled={
               disabled ||
               !shown.length ||
@@ -230,7 +248,7 @@ export function ModelSettingPicker({
               )
             }
           >
-            {clearShown ? t("Clear shown selection") : t("Select all shown")}
+            <BulkActionIcon className="icon-sm" aria-hidden />
           </Button>
         </div>
       ) : null}
@@ -241,11 +259,14 @@ export function ModelSettingPicker({
         emptyLabel={t("No matching models")}
       />
       {multi ? (
-        // Stays under the scrolling list, so Done never needs a scroll back up.
         <PickerFooter align="between">
-          <Text tone="secondary" truncate className="min-w-0 flex-1">
-            {t("{p0} selected", { p0: bulk ? modelCount : picked })}
-          </Text>
+          <LiveText
+            text={t("{p0} selected", { p0: bulk ? modelCount : picked })}
+            size="caption"
+            tone="secondary"
+            truncate
+            className="min-w-0 flex-1"
+          />
           {bulk ? (
             <Button variant="ghost" size="sm" type="button" onClick={onClose}>
               {t("Cancel")}

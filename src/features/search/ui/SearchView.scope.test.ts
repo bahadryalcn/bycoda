@@ -152,3 +152,47 @@ it("skips retained closed search projections when loaded sessions change", async
   expect(index.rank).not.toHaveBeenCalled();
   expect(index.listeners.size).toBe(0);
 });
+
+it("ranks large file indexes off-thread and never opens a previous query's answer", async () => {
+  const files = Array.from({ length: 1200 }, (_, i) => ({
+    name: `path-${i}.ts`,
+    path: `/repo/path-${i}.ts`,
+    relative: `path-${i}.ts`,
+  }));
+  index.load.mockResolvedValue(files);
+  const post = vi.fn();
+  const terminate = vi.fn();
+  let respond!: (index: number) => void;
+  vi.stubGlobal(
+    "Worker",
+    class {
+      onmessage?: (message: { data: unknown }) => void;
+      postMessage = post;
+      terminate = terminate;
+      constructor() {
+        respond = (i) => this.onmessage?.({ data: [{ ...files[i], score: 1, positions: [] }] });
+      }
+    },
+  );
+  await render();
+  await scope("Files");
+  await typeQuery("path-1");
+  expect(post).toHaveBeenCalledWith(expect.objectContaining({ query: "path-1", files, limit: 40 }));
+  act(() => respond(1));
+  await typeQuery("path-2");
+  const pressEnter = () =>
+    act(() => {
+      host
+        .querySelector("input")!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+  pressEnter();
+  expect(props.onOpenFile).not.toHaveBeenCalled();
+  act(() => respond(2));
+  pressEnter();
+  expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(files[2].path, undefined, {
+    exact: true,
+  });
+  await scope("Projects");
+  expect(terminate).toHaveBeenCalledTimes(1);
+});

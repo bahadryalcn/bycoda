@@ -494,6 +494,8 @@ export type Block = {
   shell?: ShellRun;
   /** An error or interruption row the reader must not miss; never folds into the trail. */
   notice?: "error" | "interrupt" | "info";
+  /** Interruption notes only: the next launch may still continue this turn on its own. */
+  autoContinueArmed?: boolean;
   statusKey?: string;
   /** Status rows only: when the work behind this row started, while it still runs. */
   statusRunningSince?: number;

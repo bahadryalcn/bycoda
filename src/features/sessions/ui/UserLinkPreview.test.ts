@@ -191,7 +191,7 @@ describe("links in sent messages", () => {
       );
       if (compact) {
         await act(async () =>
-          container.querySelector<HTMLButtonElement>('[aria-label="Show full long text"]')!.click(),
+          container.querySelector<HTMLButtonElement>('[aria-label="Expand"]')!.click(),
         );
       }
       const surface = compact ? document.querySelector('[role="dialog"]')! : container;

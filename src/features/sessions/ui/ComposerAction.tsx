@@ -9,7 +9,7 @@ export function ComposerAction({
   hasValue,
   allowBusySubmit = true,
   label: labelProp,
-  busyLabel,
+  followUpAction,
   blockedReason,
   onSend,
   onQueue,
@@ -26,7 +26,7 @@ export function ComposerAction({
   allowBusySubmit?: boolean;
   label?: string;
   /** Describes the existing follow-up route without changing send behavior. */
-  busyLabel?: string;
+  followUpAction?: "queue" | "steer";
   /** Shown instead of the label while Send cannot reach its destination. */
   blockedReason?: string;
   onSend: () => void;
@@ -40,6 +40,7 @@ export function ComposerAction({
 }) {
   const t = useT();
   const label = labelProp ?? t("Send");
+  const busyLabel = followUpAction && t(followUpAction === "steer" ? "Steer" : "Queue message");
   if (disabled && !busy && !submitting) {
     return (
       <Button
@@ -57,9 +58,10 @@ export function ComposerAction({
     );
   }
   if (busy) {
+    const showFollowUp = (hasValue && allowBusySubmit && !disabled) || !!submitting;
     return (
       <>
-        {(hasValue && allowBusySubmit && !disabled) || submitting ? (
+        {showFollowUp ? (
           <>
             {onQueue ? (
               <Button
@@ -88,7 +90,13 @@ export function ComposerAction({
               loading={submitting === "send"}
               loadingLabel={t("Sending…")}
               disabled={submitting === "queue"}
-              startIcon={busyLabel ? <ArrowUp className="icon-sm" strokeWidth={2} /> : undefined}
+              startIcon={
+                followUpAction === "steer" ? (
+                  <span className="composer-steer-icon icon-sm" aria-hidden="true" />
+                ) : busyLabel ? (
+                  <ArrowUp className="icon-sm" strokeWidth={2} />
+                ) : undefined
+              }
               onClick={onSend}
             >
               {busyLabel ? (
@@ -107,6 +115,9 @@ export function ComposerAction({
           label={t("Stop")}
           shortcut={stopShortcut}
           data-usage-guide="stop-button"
+          data-composer-stop-optional={
+            showFollowUp && hasValue && onQueue && !submitting && !stopping ? "" : undefined
+          }
           loading={stopping}
           loadingLabel={t("Stopping…")}
           onClick={onStop}

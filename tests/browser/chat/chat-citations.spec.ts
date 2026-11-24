@@ -17,7 +17,7 @@ test("interrupted recovery keeps Continue on the right above a distinct composer
       });
       const notice = page.locator("[data-interrupted-turn]");
       const button = notice.getByRole("button", { name: "Continue", exact: true });
-      // The notice itself is the polite status; Continue follows the copy inline.
+      // The notice itself is the polite status; Continue is a button beside the copy.
       await expect(notice).toHaveRole("status");
       await expect(button).toBeVisible();
       const b = (await button.boundingBox())!;

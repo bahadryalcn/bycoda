@@ -144,7 +144,7 @@ export function isHiddenTool(block: Block): boolean {
 }
 
 /**
- * A system row the reader must not miss â€” an error, or the note that a quit
+ * A system row the reader must not miss — an error, or the note that a quit
  * cut the turn short. Sessions persisted before the `notice` tag still carry
  * the interrupt's literal text, so it is recognised by content as well.
  */
@@ -162,13 +162,13 @@ function isStatusStep(block: Block): boolean {
 
 /**
  * Foldable work: tool calls, thinking, and edits. An edit still awaiting
- * approval stays out â€” you cannot judge a diff you cannot see.
+ * approval stays out — you cannot judge a diff you cannot see.
  *
  * A status row ("Advisor reviewed this turn") is turn chrome, not transcript
  * text: it joins the work around it instead of splitting the group. An
- * interjection stays a standalone block while the turn is live â€” the reader
- * should see it land â€” and joins the trail only once the turn settles, which
- * is the caller's branch to make. A notice â€” an error, an interruption â€” is
+ * interjection stays a standalone block while the turn is live — the reader
+ * should see it land — and joins the trail only once the turn settles, which
+ * is the caller's branch to make. A notice — an error, an interruption — is
  * neither work nor chrome, so it keeps its own row live and settled alike.
  */
 export function isActivityBlock(block: Block): boolean {
@@ -380,7 +380,7 @@ export function resolveToolCallDisplay(
 /**
  * User turns, with handoff dividers sitting on their own row. `managed` is for
  * a worker's own transcript, where the app-written turns are the orchestrator
- * talking to it â€” the whole prompt side of that conversation, and the only
+ * talking to it — the whole prompt side of that conversation, and the only
  * thing its replies are answering.
  */
 export function groupTurns(blocks: Block[], managed = false): Block[][] {
@@ -488,7 +488,7 @@ export function groupTurnsStable(
  * A settled turn puts every kind of process into the trail: interjections and
  * delegated runs, which keep their own rows while the turn is live so the
  * reader sees them land and knows where to watch, fold in once there is
- * nothing left to watch â€” what remains is the prompt, the work, and the answer.
+ * nothing left to watch — what remains is the prompt, the work, and the answer.
  */
 export function groupTurnItems(blocks: Block[], options?: { settled?: boolean }): TurnItem[] {
   const settled = options?.settled ?? false;
@@ -629,7 +629,7 @@ export function hasRunningSubagent(blocks: Block[]): boolean {
 
 /**
  * A delegated run: the tool call that spawned a subagent. One still waiting on
- * you is not one yet â€” it stays in the work trail, where its approval controls
+ * you is not one yet — it stays in the work trail, where its approval controls
  * are.
  */
 /** A call to the provider's own advisor (Claude Code's server-side advisor tool). */
@@ -651,7 +651,7 @@ export function isSubagentBlock(block: Block): boolean {
  */
 export function subagentBrief(block: Block): string {
   const name = block.agentRun?.name?.trim() || (block.text || block.tool?.title || "").trim();
-  const stripped = name.replace(/^(?:agent|task|subagent)\b[\s:Â·-]*/i, "").trim();
+  const stripped = name.replace(/^(?:agent|task|subagent)\b[\s:·-]*/i, "").trim();
   return stripped || "Subagent";
 }
 
@@ -660,7 +660,7 @@ const MAX_SUBAGENT_NAME = 56;
 
 /**
  * What to call a run on its row. A row is one line next to a live status, so
- * take the brief's first sentence and cap it on a word â€” the full text stays
+ * take the brief's first sentence and cap it on a word — the full text stays
  * one hover away.
  */
 export function subagentName(block: Block): string {
@@ -692,7 +692,7 @@ export function subagentReport(block: Block): string | undefined {
 
 /**
  * A run is counted, never narrated. Echoing the call in flight put a second
- * scrolling command line on every row â€” the shimmer on the name already says
+ * scrolling command line on every row — the shimmer on the name already says
  * the agent is working, and the count says how far it has got.
  */
 export function subagentStatusLine(block: Block, steps: AgentStep[]): string {
@@ -740,8 +740,8 @@ export function subagentFailureSummary(blocks: Block[]): string | undefined {
 }
 
 /**
- * What a run of tool calls was for. Reads and searches are one thing â€” looking
- * around â€” so a grep followed by the file it turned up stays one group.
+ * What a run of tool calls was for. Reads and searches are one thing — looking
+ * around — so a grep followed by the file it turned up stays one group.
  */
 export type ActivityWorkKind = "research" | "edit" | "run" | "agent" | "other";
 
@@ -995,8 +995,8 @@ function currentWorkKind(steps: Block[]): ActivityWorkKind | undefined {
 }
 
 /**
- * What a run of work adds up to, one clause per kind: "Read 3 files Â· Edited 2
- * files Â· Ran a command". While the run is live, the clause for the call in
+ * What a run of work adds up to, one clause per kind: "Read 3 files · Edited 2
+ * files · Ran a command". While the run is live, the clause for the call in
  * flight is present tense, so "Running 2 commands" settles to "Ran 2 commands"
  * when it folds. Interjections the turn absorbed ride along as a trailing
  * "N notes" clause; a group holding nothing but notes is just that clause.
@@ -1027,7 +1027,7 @@ function summarizeWork(steps: Block[], live: boolean): string {
   return [
     ...tally.order.map((kind) => workSummary(kind, tally, kind === running)),
     ...(notes ? [notes] : []),
-  ].join(" Â· ");
+  ].join(" · ");
 }
 
 /** The icon a run of work answers to: whatever it did most of. */
@@ -1120,7 +1120,7 @@ function yieldedAt(items: TurnItem[]): number {
 
 function isFoldableItem(item: TurnItem): boolean {
   // A stack of delegated runs is work, so the fold reaches across it and the
-  // turn's status line stays at the top. The rows themselves never collapse â€”
+  // turn's status line stays at the top. The rows themselves never collapse —
   // the transcript pins them outside the fold's body.
   if (item.type === "subagents") return true;
   return item.type === "activity" ? !item.blocks.some(needsApproval) : isProseBlock(item.block);

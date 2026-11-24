@@ -1,7 +1,6 @@
 import { memo } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { ComponentProps } from "react";
-import type { Session } from "../../../features/sessions/model/session";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import { canOpenTerminalIn } from "../../../features/projects/model/recents";
 import { parseRemotePath } from "../../../features/connections/public/remoteProjects";
@@ -32,7 +31,6 @@ export interface WorkspaceFooterProps {
   settingsSection: SettingsSectionId;
   openSettings: WorkspaceNoticesProps["openSettings"];
   // Usage and project terminal
-  active: Session | undefined;
   projectCwd: string;
   usageProviders: UsageFooterProps["providers"];
   usageSession: UsageFooterProps["session"];
@@ -63,7 +61,6 @@ function WorkspaceFooterComponent({
   settingsOpen,
   settingsSection,
   openSettings,
-  active,
   projectCwd,
   usageProviders,
   usageSession,
@@ -103,7 +100,6 @@ function WorkspaceFooterComponent({
           embedded
           providers={usageProviders}
           session={usageSession}
-          project={active?.cwd ?? projectCwd}
           onSelectAccount={onSelectProviderAccount}
           onManageAccounts={() => openSettings("providers", "provider-accounts")}
           terminals={runningTerminals}

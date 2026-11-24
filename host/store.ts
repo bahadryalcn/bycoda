@@ -710,6 +710,7 @@ export class HostStore {
       );
       CREATE TABLE IF NOT EXISTS events (session_id TEXT NOT NULL REFERENCES sessions(id), revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id, revision));
       CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, hash TEXT NOT NULL UNIQUE);
+      CREATE TABLE IF NOT EXISTS device_recovery_receipts (id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS sync_records (table_name TEXT NOT NULL, id TEXT NOT NULL, value TEXT, rev INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (table_name, id));`);
     await initializeNativeDeliveryStore(this.db);
     // Additive, host-local records: deleting a conversation or project must not
@@ -765,6 +766,8 @@ export class HostStore {
         ALTER TABLE devices ADD COLUMN last_seen_at INTEGER;
         COMMIT;`);
     }
+    if (!deviceColumns.some((column) => column.name === "management"))
+      await this.db.exec("ALTER TABLE devices ADD COLUMN management INTEGER NOT NULL DEFAULT 0");
     const columns = await this.db.prepare("PRAGMA table_info(sessions)").all();
     if (!columns.some((column) => column.name === "summary"))
       await this.db.exec("ALTER TABLE sessions ADD COLUMN summary TEXT");
@@ -3216,13 +3219,16 @@ export class HostStore {
   async issueDevice(
     name: string,
     kind?: "phone" | "desktop",
+    localDesktop = false,
   ): Promise<{ id: string; token: string }> {
     return this.db.storeScope(async () => {
       const id = randomUUID();
       const token = randomBytes(32).toString("base64url");
       await this.db
-        .prepare("INSERT INTO devices (id, name, hash, kind, paired_at) VALUES (?, ?, ?, ?, ?)")
-        .run(id, name, this.hash(token), kind ?? null, Date.now());
+        .prepare(
+          "INSERT INTO devices (id, name, hash, kind, paired_at, management) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(id, name, this.hash(token), kind ?? null, Date.now(), localDesktop ? 2 : 0);
       return { id, token };
     });
   }
@@ -3266,6 +3272,8 @@ export class HostStore {
       kind?: "phone" | "desktop";
       pairedAt?: number;
       lastSeenAt?: number;
+      canManageDevices: boolean;
+      isLocalDesktop: boolean;
     }[];
     devicesTruncated: boolean;
   }> {
@@ -3273,7 +3281,7 @@ export class HostStore {
       const paired = await this.pairedDevices(currentToken);
       const rows = await this.db
         .prepare(
-          "SELECT id, kind, paired_at, last_seen_at FROM devices ORDER BY (hash=?) DESC, id LIMIT 256",
+          "SELECT id, kind, paired_at, last_seen_at, management FROM devices ORDER BY (hash=?) DESC, id LIMIT 256",
         )
         .all(this.hash(currentToken));
       const metadata = new Map(rows.map((row) => [String(row.id), row]));
@@ -3283,6 +3291,8 @@ export class HostStore {
           const row = metadata.get(device.id);
           return {
             ...device,
+            canManageDevices: Number(row?.management) > 0,
+            isLocalDesktop: Number(row?.management) === 2,
             ...(row?.kind === "phone" || row?.kind === "desktop" ? { kind: row.kind } : {}),
             ...(typeof row?.paired_at === "number" &&
             Number.isSafeInteger(row.paired_at) &&
@@ -3299,25 +3309,62 @@ export class HostStore {
       };
     });
   }
+  async setDeviceManagement(id: string, currentToken: string, enabled: boolean): Promise<boolean> {
+    return this.changeOtherDevice(id, currentToken, enabled ? 1 : 0);
+  }
+  async applyDeviceRecovery(
+    request: { requestId: string; deviceId: string; management: boolean | null },
+    currentToken: string,
+  ): Promise<void> {
+    await this.transaction(async () => {
+      const caller = await this.db
+        .prepare("SELECT management FROM devices WHERE hash=?")
+        .get(this.hash(currentToken));
+      if (Number(caller?.management) !== 2) throw new Error("Local desktop permission required");
+      const receipt = await this.db
+        .prepare("INSERT OR IGNORE INTO device_recovery_receipts (id) VALUES (?)")
+        .run(request.requestId);
+      if (!receipt.changes) return;
+      await this.changeOtherDevice(
+        request.deviceId,
+        currentToken,
+        request.management === null ? undefined : Number(request.management),
+      );
+    }, "critical");
+  }
   /** The current device has a separate explicit revoke-self flow. */
   async revokeOtherDevice(id: string, currentToken: string): Promise<boolean> {
+    return this.changeOtherDevice(id, currentToken);
+  }
+  private async changeOtherDevice(
+    id: string,
+    currentToken: string,
+    management?: number,
+  ): Promise<boolean> {
     return this.db.storeScope(async () => {
       const hash = this.hash(currentToken);
-      const caller = await this.db.prepare("SELECT id FROM devices WHERE hash=?").get(hash);
+      const caller = await this.db
+        .prepare("SELECT id, management FROM devices WHERE hash=?")
+        .get(hash);
       if (!caller) throw new Error("Device authorization was revoked");
       if (caller.id === id) throw new Error("Use the revoke-self action for this device");
-      this.clearAuthCache();
-      return (
-        Number(
-          (
-            await this.db
-              .prepare(
-                "DELETE FROM devices WHERE id=? AND hash<>? AND EXISTS (SELECT 1 FROM devices WHERE hash=?)",
-              )
-              .run(id, hash, hash)
-          ).changes,
-        ) > 0
-      );
+      if (!Number(caller.management)) throw new Error("Device management permission required");
+      const target = "WHERE id=? AND hash<>? AND management<>2";
+      if (management === undefined) {
+        this.clearAuthCache();
+        const result = await this.db
+          .prepare(
+            `DELETE FROM devices ${target} AND EXISTS (SELECT 1 FROM devices WHERE hash=? AND management>0)`,
+          )
+          .run(id, hash, hash);
+        return Number(result.changes) > 0;
+      }
+      const result = await this.db
+        .prepare(
+          `UPDATE devices SET management=? ${target} AND EXISTS (SELECT 1 FROM devices WHERE hash=? AND management>0)`,
+        )
+        .run(management, id, hash, hash);
+      return Number(result.changes) > 0;
     });
   }
   /** Lets a desktop revoke only the credential it is using. */
