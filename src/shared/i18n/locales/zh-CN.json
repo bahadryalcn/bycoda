@@ -4271,6 +4271,7 @@
   "CLI path and installation": "CLI 路径与安装",
   "Default provider": "默认提供商",
   "OpenRouter prices could not be loaded, so built-in prices are used.": "无法加载 OpenRouter 价格，因此使用内置价格。",
+  "Using built-in prices while model prices load.": "模型价格加载期间使用内置价格。",
   "Refreshing usage… Previous results remain visible.": "正在刷新用量… 之前的结果仍会显示。",
   "Usage could not be read for the selected accounts. Reload usage to try again.": "无法读取所选账户的用量。请重新加载用量以重试。",
   "Quick Composer needs ⌘ or Ctrl as a global hotkey": "快速输入的全局快捷键需要 ⌘ 或 Ctrl",

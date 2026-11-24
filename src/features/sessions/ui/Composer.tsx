@@ -303,7 +303,7 @@ import {
   type DeferredExternalDraft,
 } from "./composerExternalDraft";
 import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
-import { useComposerMentionSources } from "./useComposerMentionSources";
+import { useComposerMentionSources, usePendingMentionPick } from "./useComposerMentionSources";
 import { workItemMentionOf } from "../model/workItemMentionRows";
 import { CREWS_MENTION_SCOPE, crewMentionOf } from "../model/crewMentions";
 import {
@@ -1212,6 +1212,7 @@ export const Composer = memo(function Composer({
   const {
     mentionIndex,
     rankedFiles,
+    fileRankingPending,
     scope: mentionScope,
     scopeLoading: mentionScopeLoading,
     filesFailed,
@@ -1951,6 +1952,14 @@ export const Composer = memo(function Composer({
     [canMutateDraft, syncHasText, remote],
   );
 
+  const pickPendingMention = usePendingMentionPick(
+    executionCwd,
+    sessionId,
+    mentionOpen ? mention : null,
+    fileRankingPending,
+    rankedFiles[mentionActive],
+    pickMention,
+  );
   const lastFocusToken = useRef(focusToken);
   useEffect(() => {
     const requested = lastFocusToken.current !== focusToken;
@@ -2873,6 +2882,7 @@ export const Composer = memo(function Composer({
         e.preventDefault();
         const file = rankedFiles[mentionActive];
         if (file) pickMention(file);
+        else pickPendingMention(e.currentTarget);
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
@@ -2880,6 +2890,11 @@ export const Composer = memo(function Composer({
         if (file) {
           e.preventDefault();
           pickMention(file);
+          return;
+        }
+        if (fileRankingPending && !e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          pickPendingMention(e.currentTarget);
           return;
         }
         setMention(null);
@@ -3868,6 +3883,7 @@ export const Composer = memo(function Composer({
                 serversLoading ||
                 workItemsLoading ||
                 mentionScopeLoading ||
+                fileRankingPending ||
                 (!serversScoped &&
                   !workItemsScoped &&
                   !mentionScope &&

@@ -4271,6 +4271,7 @@
   "CLI path and installation": "Caminho CLI e instalação",
   "Default provider": "Provedor padrão",
   "OpenRouter prices could not be loaded, so built-in prices are used.": "Não foi possível carregar preços do OpenRouter; são usados os preços internos.",
+  "Using built-in prices while model prices load.": "Os preços integrados são usados enquanto os preços dos modelos são carregados.",
   "Refreshing usage… Previous results remain visible.": "Atualizando uso… Os resultados anteriores permanecem visíveis.",
   "Usage could not be read for the selected accounts. Reload usage to try again.": "Não foi possível ler o uso das contas selecionadas. Recarregue para tentar novamente.",
   "Quick Composer needs ⌘ or Ctrl as a global hotkey": "O atalho global de composição rápida exige ⌘ ou Ctrl",

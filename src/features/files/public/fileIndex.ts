@@ -4,6 +4,7 @@ export {
   loadProjectFiles,
   peekProjectFiles,
   recentOpenedFiles,
+  revalidateProjectFiles,
   resolveFileOpenRequest,
   subscribeProjectFiles,
 } from "../model/fileIndex";

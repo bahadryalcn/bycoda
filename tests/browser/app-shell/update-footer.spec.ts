@@ -9,7 +9,8 @@ const appVersion = (
 
 const route = "/tests/browser/app-shell/update-footer.html";
 const captureRoot = "temp/verification/2026-10-27-update-footer";
-const nextVersion = "0.6.93";
+const [major, minor, patch] = appVersion.split("-")[0].split(".");
+const nextVersion = `${major}.${minor}.${Number(patch) + 1}`;
 const accountCaptureRoot = "temp/verification/2026-11-11-rail-size-reset";
 const toolsCaptureRoot = "temp/verification/2026-11-13-rail-tools-selection";
 
@@ -91,7 +92,13 @@ test.beforeEach(async ({ page }) => {
                 rid: 1,
                 currentVersion,
                 version: availableVersion,
-                body: "Fixture release notes",
+                body: location.search.includes("long-notes")
+                  ? "### Fixes\n\n" +
+                    Array.from(
+                      { length: 12 },
+                      (_, index) => `- Fix ${index + 1} keeps workspace state after reconnecting.`,
+                    ).join("\n")
+                  : "Fixture release notes",
                 rawJson: {},
               };
             if (command === "plugin:opener|open_url") {
@@ -415,6 +422,39 @@ async function openUpdatePrompt(page: Page) {
     close: dialog.getByRole("button", { name: "Dismiss GitHub repository prompt", exact: true }),
   };
 }
+
+test("update dialog shows the start of the notes and a high-contrast download icon", async ({
+  page,
+}) => {
+  const capture = "temp/verification/update-dialog";
+  mkdirSync(capture, { recursive: true });
+  writeFileSync(
+    `${capture}/README.md`,
+    "# Update dialog\n\nBrowser fixture with mocked native updates.\n",
+  );
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 560 });
+      await page.goto(`${route}?account&long-notes`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const { dialog } = await openUpdatePrompt(page);
+      await dialog.screenshot({ path: `${capture}/${theme}-${width}.png` });
+      const install = dialog.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
+      await expect(install).toBeInViewport();
+      await expect(
+        dialog.getByText("Fix 1 keeps workspace state after reconnecting.", { exact: true }),
+      ).toBeInViewport();
+      const icon = install.locator("svg");
+      await expect(icon).toBeVisible();
+      expect(await icon.evaluate((element) => getComputedStyle(element).stroke)).toBe(
+        await install.evaluate((element) => getComputedStyle(element).color),
+      );
+    }
+  }
+});
 
 test("update dialog star and dismiss retain separate pointer targets", async ({ page }) => {
   await page.goto(`${route}?account&compact`);

@@ -88,3 +88,46 @@ function compareRanked(
   }
   return a.file.relative.localeCompare(b.file.relative);
 }
+
+/** Mention menus also offer shallow folders and files when the query is empty. */
+export function rankMentionCandidates(
+  usable: ProjectFile[],
+  query: string,
+  recents: string[],
+  limit = 30,
+): RankedFile[] {
+  const needle = query.replace(/\/+$/, "").trim();
+  if (needle) return rankProjectFiles(usable, needle, recents, limit);
+
+  const byPath = new Map(usable.map((file) => [file.path, file]));
+  const out: RankedFile[] = [];
+  const seen = new Set<string>();
+  for (const path of recents) {
+    const file = byPath.get(path);
+    if (!file || seen.has(path)) continue;
+    seen.add(path);
+    out.push({ ...file, score: 0, positions: [] });
+    if (out.length >= limit) return out;
+  }
+
+  const rest = [...usable].sort((a, b) => {
+    const depth = pathDepth(a.relative) - pathDepth(b.relative);
+    if (depth !== 0) return depth;
+    const dir = Number(Boolean(b.isDir)) - Number(Boolean(a.isDir));
+    if (dir !== 0) return dir;
+    return a.relative.localeCompare(b.relative);
+  });
+  for (const file of rest) {
+    if (seen.has(file.path)) continue;
+    seen.add(file.path);
+    out.push({ ...file, score: 0, positions: [] });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function pathDepth(relative: string): number {
+  let depth = 0;
+  for (const ch of relative) if (ch === "/") depth += 1;
+  return depth;
+}

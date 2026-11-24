@@ -7,6 +7,7 @@ import {
   mergeModelSettings,
 } from "../../../features/sessions/model/models";
 import { defaultProviderAccountId } from "../../../features/providers/model/providerAccounts";
+import { PROVIDER_ACCOUNT_PROVIDERS } from "../../../features/providers/model/providerAccountId";
 import { gitStagedContext, gitRangeContext } from "../../../platform/tauri/fs";
 import {
   buildCommitMessagePrompt,
@@ -36,16 +37,18 @@ async function selectedGitPrompt(
   operationContext?: HarnessOperationContext,
 ) {
   const model = resolveModel(choice.harness, choice.model);
+  const accountProvider = PROVIDER_ACCOUNT_PROVIDERS.find(
+    (provider) => provider === choice.harness,
+  );
   return runHarnessTextPrompt({
     cwd,
     operationContext,
     harness: choice.harness,
     model: nativeModelId(model),
     modelSettings: mergeModelSettings(model, choice.modelSettings),
-    providerAccountId:
-      choice.harness === "claude" || choice.harness === "codex"
-        ? (choice.providerAccountId ?? defaultProviderAccountId(choice.harness))
-        : undefined,
+    providerAccountId: accountProvider
+      ? (choice.providerAccountId ?? defaultProviderAccountId(accountProvider))
+      : undefined,
     intent: "plan",
     prompt,
     timeoutMs: 90_000,

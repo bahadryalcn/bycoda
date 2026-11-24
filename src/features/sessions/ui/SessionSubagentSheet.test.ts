@@ -46,6 +46,7 @@ vi.mock("../model/sessionsStore", async (original) => ({
   // Pure selectors (selectSessionById, ...) stay real; only the store reads are faked.
   ...(await original<object>()),
   useSession: (id: string | undefined) => (id ? fake.sessions.get(id) : undefined),
+  usePaneSession: (id: string | undefined) => (id ? fake.sessions.get(id) : undefined),
   getSessions: () => [...fake.sessions.values()],
   getShellSessions: () => [...fake.sessions.values()],
   subscribeSessionCommits: () => () => undefined,

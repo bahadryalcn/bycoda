@@ -4527,6 +4527,7 @@
   "CLI path and installation": "CLI yolu ve kurulum",
   "Default provider": "Varsayılan sağlayıcı",
   "OpenRouter prices could not be loaded, so built-in prices are used.": "OpenRouter fiyatları yüklenemedi; yerleşik fiyatlar kullanılıyor.",
+  "Using built-in prices while model prices load.": "Model fiyatları yüklenirken yerleşik fiyatlar kullanılıyor.",
   "Refreshing usage… Previous results remain visible.": "Kullanım yenileniyor… Önceki sonuçlar görünür kalır.",
   "Usage could not be read for the selected accounts. Reload usage to try again.": "Seçili hesapların kullanımı okunamadı. Yeniden denemek için kullanımı yenileyin.",
   "Quick Composer needs ⌘ or Ctrl as a global hotkey": "Hızlı mesaj penceresi genel kısayolu ⌘ veya Ctrl gerektirir",

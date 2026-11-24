@@ -3,10 +3,11 @@ import { AgentMarkdown } from "../../features/sessions/ui/AgentMarkdown";
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { Modal, ModalActions } from "../../shared/ui/Modal";
-import { ArrowDownCircle, RefreshCw } from "../../shared/ui/icons";
+import { ArrowDownCircle, ArrowRight, Download, RefreshCw } from "../../shared/ui/icons";
 import { InlineError } from "../../shared/ui/InlineError";
 import { Spinner } from "../../shared/ui/Spinner";
 import { StatusDot } from "../../shared/ui/StatusDot";
+import { Surface } from "../../shared/ui/Surface";
 import { useEffect, useRef, useState } from "react";
 import { claimStartupUpdatePrompt, installAppUpdate, useAppUpdater } from "../model/useAppUpdater";
 import { type UpdaterSnapshot } from "../model/updater";
@@ -170,21 +171,38 @@ export function SidebarUpdateFooter({
             </ModalActions>
           }
         >
-          <div className="flex flex-col gap-3">
-            <GithubStarPrompt oncePerVersion version={snapshot.currentVersion} />
+          <div className="flex min-w-0 flex-col gap-3">
             {snapshot.availableVersion ? (
-              <Text as="p" size="body" tone="primary">
-                v{snapshot.currentVersion} → v{snapshot.availableVersion}
-              </Text>
+              <Surface
+                variant="inset"
+                tone="accent"
+                padding="md"
+                className="flex flex-wrap items-center gap-3"
+              >
+                <Text size="secondary" tone="secondary" wrap="anywhere">
+                  v{snapshot.currentVersion}
+                </Text>
+                <ArrowRight className="icon-sm shrink-0 rtl:rotate-180" />
+                <Text as="strong" size="heading" tone="primary" weight="medium" wrap="anywhere">
+                  v{snapshot.availableVersion}
+                </Text>
+              </Surface>
             ) : null}
             {snapshot.error ? <InlineError>{snapshot.error}</InlineError> : null}
             {notes ? (
-              <Disclosure summary={t("Release notes")} defaultOpen>
-                <div className="max-h-64 overflow-y-auto [margin-block-start:0.5rem]">
-                  <AgentMarkdown className="whats-new-md" text={notes} streaming={false} />
-                </div>
+              <Disclosure
+                summary={t("Release notes")}
+                defaultOpen
+                variant="row"
+                chevron="end"
+                weight="medium"
+              >
+                <AgentMarkdown className="whats-new-md" text={notes} streaming={false} />
               </Disclosure>
             ) : null}
+            <div className="max-w-full self-start empty:hidden">
+              <GithubStarPrompt oncePerVersion version={snapshot.currentVersion} />
+            </div>
           </div>
         </Modal>
       ) : null}
@@ -241,16 +259,11 @@ export function SidebarUpdate({
       fullWidth={!compact}
       motion="none"
       label={label}
+      startIcon={busy ? <Spinner size="md" /> : <Download className="icon-md" />}
+      aria-busy={busy || undefined}
       tooltip={label}
       tooltipWhen="overflow"
     >
-      <span className="icon-md grid shrink-0 place-items-center">
-        {busy ? (
-          <Spinner size="md" className="opacity-70" />
-        ) : (
-          <ArrowDownCircle className="icon-md" tone="accent" aria-hidden />
-        )}
-      </span>
       <span className="flex min-w-0 flex-1 items-center gap-3">
         <Text
           size="caption"

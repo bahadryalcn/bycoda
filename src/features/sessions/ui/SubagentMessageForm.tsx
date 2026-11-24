@@ -7,7 +7,9 @@ import { Button } from "../../../shared/ui/Button";
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { sessionWorkCwd, type Session } from "../model/session";
+import { setComposerDraft } from "../model/draftCache";
 import { Composer } from "./Composer";
+import { useSessionComposerDraft } from "./useSessionComposerDraft";
 import styles from "./SubagentSheet.module.css";
 
 type SubagentChatComposerProps = {
@@ -42,6 +44,7 @@ export function SubagentChatComposer({
   ...controls
 }: SubagentChatComposerProps) {
   const t = useT();
+  const draft = useSessionComposerDraft(session.id);
   return (
     <div className="shrink-0 px-2 pb-2">
       <Composer
@@ -57,6 +60,11 @@ export function SubagentChatComposer({
         cwd={session.cwd}
         executionCwd={sessionWorkCwd(session)}
         sessionId={session.id}
+        initialDraft={draft.initialDraft}
+        onDraftChange={(text) => {
+          draft.change(text);
+          setComposerDraft(session.id, text);
+        }}
         busy={!!session.busy || !!session.continuingElsewhere}
         runningModelTarget={session.runningModelTarget}
         queuedMessages={session.queuedMessages}

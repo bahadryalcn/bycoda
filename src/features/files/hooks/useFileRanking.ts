@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectFile } from "../../../platform/tauri/fs";
 import { rankProjectFiles, type RankedFile } from "../model/fileIndex";
+import { rankMentionCandidates } from "../model/rankProjectFiles";
 import type { FileRankingMessage } from "../model/fileRanking.worker";
 
 const EMPTY: RankedFile[] = [];
@@ -10,6 +11,7 @@ type Request = {
   query: string;
   recents: string[];
   limit?: number;
+  mentions: boolean;
 };
 
 export function useFileRanking(
@@ -18,13 +20,17 @@ export function useFileRanking(
   files: ProjectFile[],
   query: string,
   recents: string[],
-  { limit, backgroundQuery = query }: { limit?: number; backgroundQuery?: string } = {},
+  {
+    limit,
+    backgroundQuery = query,
+    mentions = false,
+  }: { limit?: number; backgroundQuery?: string; mentions?: boolean } = {},
 ) {
   const [failed, setFailed] = useState(false);
   const background = enabled && files.length >= 1000 && typeof Worker !== "undefined" && !failed;
   const request = useMemo(
-    () => ({ cwd, files, query: backgroundQuery, recents, limit }),
-    [cwd, files, backgroundQuery, recents, limit],
+    () => ({ cwd, files, query: backgroundQuery, recents, limit, mentions }),
+    [cwd, files, backgroundQuery, recents, limit, mentions],
   );
   const submit = useRef<((next: Request) => void) | null>(null);
   const [answer, setAnswer] = useState<{ request: Request; results: RankedFile[] } | null>(null);
@@ -56,6 +62,7 @@ export function useFileRanking(
           query: next.query,
           recents: next.recents,
           limit: next.limit,
+          mentions: next.mentions,
           files: sentFiles ? undefined : files,
         } satisfies FileRankingMessage);
         sentFiles = true;
@@ -88,17 +95,20 @@ export function useFileRanking(
     if (background) submit.current?.(request);
   }, [background, request]);
 
-  const local = useMemo(
-    () => (enabled && !background ? rankProjectFiles(files, query, recents, limit) : EMPTY),
-    [enabled, background, files, query, recents, limit],
-  );
+  const local = useMemo(() => {
+    if (!enabled || background) return EMPTY;
+    const rank = mentions ? rankMentionCandidates : rankProjectFiles;
+    return rank(files, query, recents, limit);
+  }, [enabled, background, files, query, recents, limit, mentions]);
   if (!background) return { results: local, pending: false };
   return {
     results:
       answer?.request.files === files &&
       answer.request.cwd === cwd &&
       answer.request.recents === recents &&
-      answer.request.limit === limit
+      answer.request.limit === limit &&
+      answer.request.mentions === mentions &&
+      (!mentions || answer.request.query === query)
         ? answer.results
         : EMPTY,
     pending: answer?.request !== request,

@@ -152,7 +152,16 @@ Dismissal applies to both compact and expanded footers for the current version.
 The docked voice companion and GitHub icon have transparent idle backgrounds like Settings
 and Account; the floating voice companion keeps its raised surface.
 In an expanded footer with enough room, hovering or focusing the update icon reveals
-its label. Clicking it opens the existing update dialog.
+its label. Click it to compare your installed version with the available version
+and read the release notes. Use the download button to start the update or choose
+**Remind me tomorrow** to see the prompt later.
+
+**Ctrl+B** on Windows and Linux or **Command+B** on macOS cycles through three layouts.
+With both panes open, the first press collapses the project list while keeping the
+Sessions, Explorer, or Changes pane fixed on the left. The next press closes that pane
+for conversation focus. Press again to restore both panes. Collapsed project navigation
+uses the compact icon rail when enabled. **Ctrl+Shift+B** or **Command+Shift+B** still
+toggles the session sidebar independently.
 
 Collapsed project navigation uses a 56px icon rail with a centered divider.
 Expanded sections share label and count columns; Last

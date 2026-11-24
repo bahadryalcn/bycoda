@@ -190,6 +190,14 @@ Owner correction, 2026-10-28, session `0567326f-aade-4baa-89f3-b44c6256ae9e`:
 
 Recorded direction: the rail uses one neutral ground with no inner tray; section headings use a tight rhythm; development build identity moves to the lower-left footer as a compact status label or icon. Ordinary settings use a bounded shell; list/detail workspaces may use a wider, maximize-capable shell.
 
+## Shell and workbench: Sidebar shortcut cycles through pane layouts
+
+Owner decision, 2026-11-24:
+
+> From the full layout, one Ctrl+B press should switch to the current fixed-left layout, one more to conversation focus, and one more back to the full layout. Leave the floating layouts out for now. (translated)
+
+The shortcut follows that order using the existing pane preferences. The session sidebar retains its independent toggle.
+
 ## Shell and workbench: Navigation shares the chat canvas
 
 Owner decision, 2026-10-31, V3-033, source: `temp/local/2026-10-31-ui-refinements-3/TODO.md` (rail/sidebar/chat screenshots):

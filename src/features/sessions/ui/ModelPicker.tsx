@@ -283,6 +283,7 @@ export function ModelPicker({
   const field = presentation === "field";
   const inherit = hideSettings ? undefined : inheritChoice;
   const inheritSelected = inherit?.selected === true;
+  const settingsEnabled = !inheritSelected || settingsScope === "reasoning-and-speed";
   // The local default account lives in browser storage, so React reads it through its store.
   const localDefaultAccountId = useSyncExternalStore(
     subscribeProviderAccounts,
@@ -406,7 +407,7 @@ export function ModelPicker({
   const settings = useMemo(() => {
     // In beside-picker mode every option row renders as a toolbar pill, so the
     // menu lists models only.
-    if (hideSettings || inheritSelected) return [];
+    if (hideSettings || !settingsEnabled) return [];
     if (settingsScope === "reasoning-and-speed")
       return [effortSetting(current), fastSetting(current)].filter(
         (setting): setting is ModelSetting => setting !== undefined,
@@ -438,8 +439,8 @@ export function ModelPicker({
     currentAccountId,
     hideAgentSettings,
     hideSettings,
-    inheritSelected,
     pickerHarnesses,
+    settingsEnabled,
     settingsScope,
     source,
     t,
@@ -774,11 +775,11 @@ export function ModelPicker({
   };
 
   // Choosing an account on the current provider switches the current model to it; on another
-  // provider it waits for the model picked there.
+  // provider it waits for the model picked there. Scoped settings can pin the current default.
   const selectAccount = (id: string) => {
     if (visibleTab === "favorites") return;
     setTabAccounts((previous) => ({ ...previous, [visibleTab]: id }));
-    if (visibleTab === current.harness && !inheritSelected && id !== currentAccountId)
+    if (visibleTab === current.harness && settingsEnabled && id !== currentAccountId)
       onChange(current.harness, current.id, id);
   };
 
@@ -1129,7 +1130,7 @@ export function ModelPicker({
             ) : undefined
           }
           settings={
-            inheritSelected
+            !settingsEnabled || (settingsScope && settings.length === 0)
               ? undefined
               : {
                   current,

@@ -4,6 +4,10 @@ Open **Settings > Usage & limits** for usage reports, provider quotas and local
 budgets. This page sits beside Providers in the Agents group. The workspace usage
 footer and existing provider-usage links open it directly.
 
+Token totals and recorded time appear as soon as the local logs are read. Cost estimates
+use built-in prices until the model price list arrives. Open **Limits** to load quotas and
+budget rules. Switching between Usage tabs preserves an unfinished budget edit.
+
 Custom periods use the shared date/time range field. Select two calendar days or a
 preset, adjust the Start or End hour/minute columns, then Apply. The end instant is
 exclusive. Typing local `YYYY-MM-DDTHH:mm` endpoints remains available; invalid or

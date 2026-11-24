@@ -4271,6 +4271,7 @@
   "CLI path and installation": "CLIパスとインストール",
   "Default provider": "既定のプロバイダー",
   "OpenRouter prices could not be loaded, so built-in prices are used.": "OpenRouterの価格を読み込めないため、組み込みの価格を使用します。",
+  "Using built-in prices while model prices load.": "モデル料金の読み込み中は内蔵の料金を使用します。",
   "Refreshing usage… Previous results remain visible.": "使用状況を更新中… 前の結果は表示されたままです。",
   "Usage could not be read for the selected accounts. Reload usage to try again.": "選択したアカウントの使用状況を読み取れませんでした。再読み込みして再試行してください。",
   "Quick Composer needs ⌘ or Ctrl as a global hotkey": "クイック入力のグローバルショートカットには⌘またはCtrlが必要です",

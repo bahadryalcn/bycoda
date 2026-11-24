@@ -20,6 +20,7 @@ import type { ParentAdmission } from "../data/parentInputClosure";
 import {
   getSessions,
   selectSessionById,
+  usePaneSession,
   useSession,
   useSessionsSelector,
 } from "../model/sessionsStore";
@@ -384,7 +385,14 @@ export function SessionSubagentSheet({
   onOpenDiff?: (path: string) => void;
 }) {
   const translate = useT();
-  const child = useSession(delegated.childId);
+  const panelSelected = !native.block && delegated.isOpen !== false;
+  // Keep the closed sheet's last child so its scroll and disclosure state survive.
+  // Reopening selects the current snapshot, including everything received while closed.
+  const child = usePaneSession(
+    native.block ? undefined : delegated.childId,
+    visible && panelSelected,
+    (a, b) => a === b || (!panelSelected && a?.id === b?.id),
+  );
   // The pane skips running command output. An open details sheet follows its own block.
   const currentBlock = useSessionsSelector((sessions) => {
     if (!visible || !native.block || !native.liveSessionId) return native.block;
@@ -435,7 +443,10 @@ export function SessionSubagentSheet({
   );
   // A subagent's own subagents: listed at the top of its sheet, and their
   // requests answered here, so nothing waits unseen one level down.
-  const nestedAgents = useDelegatedDockAgents(delegated.childId ?? "", child?.blocks ?? NO_BLOCKS);
+  const nestedAgents = useDelegatedDockAgents(
+    selected ? child.id : "",
+    selected ? child.blocks : NO_BLOCKS,
+  );
   const waitingIds = nestedAgents.flatMap((agent) =>
     agent.needsInput && agent.sessionId ? [agent.sessionId] : [],
   );
@@ -443,7 +454,7 @@ export function SessionSubagentSheet({
     (sessions) => sessions.filter((session) => waitingIds.includes(session.id)),
     (a, b) => a.length === b.length && a.every((entry, index) => entry === b[index]),
   );
-  const owner = useNestedDelegationOwner(delegated.childId);
+  const owner = useNestedDelegationOwner(selected ? child.id : undefined);
 
   if (currentBlock) {
     const callId = currentBlock.agentRun?.workflow ? undefined : currentBlock.tool?.callId;

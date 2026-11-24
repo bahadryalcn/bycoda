@@ -10,24 +10,24 @@ import type { UsageTurnReport } from "../model/usageAnalytics";
 
 export type UsageAccountRead = { account: ProviderAccount; rows: UsageRow[]; failed: boolean };
 export type UsageSources = {
-  reports: UsageAccountRead[];
+  reports: Promise<UsageAccountRead[]>;
   /** Null when the recorded-turn read failed. */
-  turns: UsageTurnReport | null;
+  turns: Promise<UsageTurnReport | null>;
   /** Null when the price list is unavailable. */
-  prices: ModelPrices | null;
+  prices: Promise<ModelPrices | null>;
 };
 
 /**
  * The reads behind every Usage figure: provider logs per account, recorded turns and prices.
  * The dashboard and the voice report share it so both see the same sources for one interval.
  */
-export async function loadUsageSources(
+export function loadUsageSources(
   accounts: readonly ProviderAccount[],
   sinceMs: number,
   untilMs: number,
-): Promise<UsageSources> {
-  const [reports, turns, prices] = await Promise.all([
-    Promise.all(
+): UsageSources {
+  return {
+    reports: Promise.all(
       accounts.map(async (account): Promise<UsageAccountRead> => {
         try {
           const report = await fetchProviderUsage(
@@ -41,8 +41,7 @@ export async function loadUsageSources(
         }
       }),
     ),
-    invoke<UsageTurnReport>("session_usage_report", { sinceMs, untilMs }).catch(() => null),
-    fetchModelPrices().catch(() => null),
-  ]);
-  return { reports, turns, prices };
+    turns: invoke<UsageTurnReport>("session_usage_report", { sinceMs, untilMs }).catch(() => null),
+    prices: fetchModelPrices().catch(() => null),
+  };
 }

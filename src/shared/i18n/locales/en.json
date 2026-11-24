@@ -4739,6 +4739,7 @@
   "CLI path and installation": "CLI path and installation",
   "Default provider": "Default provider",
   "OpenRouter prices could not be loaded, so built-in prices are used.": "OpenRouter prices could not be loaded, so built-in prices are used.",
+  "Using built-in prices while model prices load.": "Using built-in prices while model prices load.",
   "Refreshing usage… Previous results remain visible.": "Refreshing usage… Previous results remain visible.",
   "Usage could not be read for the selected accounts. Reload usage to try again.": "Usage could not be read for the selected accounts. Reload usage to try again.",
   "Quick Composer needs ⌘ or Ctrl as a global hotkey": "Quick Composer needs ⌘ or Ctrl as a global hotkey",

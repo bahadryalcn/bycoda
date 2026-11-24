@@ -44,17 +44,18 @@ function bindingsChanged(): void {
   bindingRevision += 1;
   for (const listener of bindingListeners) listener();
 }
+function onBindingStorage(event: StorageEvent): void {
+  if (event.key === null || event.key.startsWith(PREFIX)) bindingsChanged();
+}
 /** Subscribe to stored-owner changes (also other windows), for the binding hooks. */
 export function subscribeHostSessionBindings(listener: () => void): () => void {
+  if (!bindingListeners.size && typeof window !== "undefined")
+    window.addEventListener("storage", onBindingStorage);
   bindingListeners.add(listener);
-  // Another window's legacy write changes what `read` returns in this one.
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === null || event.key.startsWith(PREFIX)) listener();
-  };
-  if (typeof window !== "undefined") window.addEventListener("storage", onStorage);
   return () => {
     bindingListeners.delete(listener);
-    if (typeof window !== "undefined") window.removeEventListener("storage", onStorage);
+    if (!bindingListeners.size && typeof window !== "undefined")
+      window.removeEventListener("storage", onBindingStorage);
   };
 }
 const MIGRATION_SCOPE = "host-session-bindings-migration.v1";

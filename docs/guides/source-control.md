@@ -12,10 +12,11 @@ repository, using that Host's Git model routing and provider accounts. They neve
 fall back to a local provider when the remote Host is unavailable. Stopping
 generation dismisses the pending result; the Host call retains its 90-second
 provider deadline. Edited drafts and changed staged content remain protected.
-The arrow beside **Generate commit message** opens the model picker with the
-selected model's supported effort and speed controls. The choice is saved per
-checkout and applies to commit messages. **Automatic** clears the commit-specific
-choice. Remote checkouts list models from their own Host.
+The arrow beside **Generate commit message** opens the account and model picker
+with **Reasoning** and **Fast** where the model supports them. Choosing an
+account for the current provider or editing a model setting saves the model and
+its options for the selected checkout. **Automatic** clears the commit-specific
+choice. Remote checkouts list accounts and models from their own Host.
 
 Linked workspace repository lists include every declared folder, including `.`
 when the containing folder is itself a repository. Root and nested repositories

@@ -74,6 +74,24 @@ it("passes the selected native model, account and advisor to isolated Git genera
   );
   expect(generateHarnessCommitMessage).not.toHaveBeenCalled();
 });
+it.each([
+  ["claude", "claude:sonnet-5"],
+  ["codex", "codex:gpt-5.4"],
+  ["grok", "grok:grok-build"],
+] as const)("uses the selected %s account for commit generation", async (harness, model) => {
+  vi.mocked(runHarnessTextPrompt).mockResolvedValue('{"subject":"Fix generation","body":""}');
+  await expect(
+    generateCommitMessage("/repo", undefined, undefined, {
+      harness,
+      model,
+      modelSettings: {},
+      providerAccountId: "work",
+    }),
+  ).resolves.toBe("Fix generation");
+  expect(runHarnessTextPrompt).toHaveBeenCalledWith(
+    expect.objectContaining({ harness, providerAccountId: "work" }),
+  );
+});
 it("uses Codex advertised reasoning and service tier for PR generation", async () => {
   setHarnessModels("codex", [
     {
