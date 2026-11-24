@@ -7,6 +7,7 @@ import { TitleBar } from "../../../src/app/shell/TitleBar";
 import { BelowWindowChrome } from "../../../src/app/shell/WindowControls";
 import { APP_MENU_TOGGLE_EVENT, MenuBar } from "../../../src/app/shell/MenuBar";
 import { SessionRecoveryControl } from "../../../src/app/shell/SessionRecoveryControl";
+import { ApprovalToasts } from "../../../src/features/sessions/ui/ApprovalToasts";
 import { Badge } from "../../../src/shared/ui/Badge";
 import { SearchView } from "../../../src/features/search/ui/SearchView";
 import type { SearchRequest } from "../../../src/features/search/model/appSearch";
@@ -128,6 +129,7 @@ const railAgents: LiveAgent[] = railPolish
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const badgeCount = Number(new URLSearchParams(location.search).get("badgeCount"));
 const expandedRail = new URLSearchParams(location.search).has("expandedRail");
+const notificationFixture = new URLSearchParams(location.search).has("notificationBell");
 const lastSessionsHeader = new URLSearchParams(location.search).has("lastSessionsHeader");
 const projectHeader = new URLSearchParams(location.search).has("projectHeader");
 const titleBar = new URLSearchParams(location.search).has("titleBar");
@@ -223,6 +225,8 @@ function Fixture() {
     !new URLSearchParams(location.search).has("closed"),
   );
   const [view, setView] = useState("workspace");
+  const [notificationTarget, setNotificationTarget] = useState<HTMLSpanElement | null>(null);
+  const [extraNotification, setExtraNotification] = useState(false);
   const openSearch = () => {
     setRequest(undefined);
     setSearchOpen(true);
@@ -234,6 +238,7 @@ function Fixture() {
           cwd={cwd}
           open={sidebarOpen}
           projectRailOpen={expandedRail}
+          notificationTriggerRef={notificationFixture ? setNotificationTarget : undefined}
           compactProjectRail
           lastSessionsOpen={lastSessionsHeader && !projectHeader}
           sessions={history}
@@ -297,7 +302,28 @@ function Fixture() {
           onNew={() => setSelected("New session")}
         />
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-(--ui-surface)">
+          {notificationFixture ? (
+            <ApprovalToasts
+              triggerTarget={notificationTarget}
+              notices={(extraNotification
+                ? [...history, { ...history[0], id: "extra-notification" }]
+                : history
+              ).map((session) => ({
+                sessionId: session.id,
+                requestId: 1,
+                label: "Fixture question",
+                kind: "question",
+                session: { ...session, modelSettings: {}, blocks: [] },
+              }))}
+              popupNotices={[]}
+              onFocusSession={setSelected}
+              onApproval={() => false}
+            />
+          ) : null}
           <div className="flex h-10 shrink-0 items-center gap-2 border-b border-stroke px-4">
+            {notificationFixture ? (
+              <Button onClick={() => setExtraNotification(true)}>Add fixture notification</Button>
+            ) : null}
             <span className="min-w-0 flex-1 truncate text-ui-body">
               Review workspace navigation
             </span>

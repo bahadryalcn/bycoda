@@ -54,8 +54,9 @@ errors appear at the top center. Notices normally disappear after ten seconds of
 focused window time; hovering or focusing them pauses the timer. Requests that need
 an owner decision retain their existing actions and placement.
 
-Open the bell in the workspace footer to revisit dismissed or expired notice text
-in Notifications. This device keeps the latest 100 entries across restarts. The log
+Open the bell next to Settings at the bottom of the left sidebar to revisit dismissed or
+expired notices. When the sidebar is hidden, the bell moves to the left end of the
+workspace footer. This device keeps the latest 100 entries across restarts. The log
 keeps plain-text summaries, not interactive controls or secret inputs. Provider
 update notices include the offered versions; closing a notice leaves an update
 running. Completion or failure appears separately and enters the same log. Open
@@ -73,7 +74,7 @@ or keyboard focus. Click it to refresh conversations. Loading and connection fai
 keep their existing feedback; a healthy remote project has no success checkmark.
 
 The workspace footer uses one compact spacing rhythm for conversation tools,
-terminal, navigation, sound, view refresh, fullscreen and notifications.
+terminal, navigation, sound, view refresh and fullscreen.
 Click a provider's quota summary to open its usage panel. Where the panel lists
 accounts, browsing them leaves the conversation's selected account in place.
 **Refresh usage** reloads the displayed provider and account. **Refresh current

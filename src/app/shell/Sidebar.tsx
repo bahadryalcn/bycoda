@@ -481,6 +481,7 @@ type Props = {
     options?: { keepOpen?: boolean },
   ) => void;
   recoveryControl?: ReactNode;
+  notificationTriggerRef?: (element: HTMLSpanElement | null) => void;
   cwd: string;
   /** Working copy for Changes / explorer git. Falls back to `cwd`. */
   gitCwd?: string;
@@ -637,6 +638,7 @@ function SidebarComponent({
   onOpenLastSessions,
   onSelectListedSession,
   recoveryControl,
+  notificationTriggerRef,
   cwd,
   gitCwd,
   explorerRootLabel,
@@ -4487,6 +4489,7 @@ function SidebarComponent({
               />
             ) : (
               <SidebarAccountFooter
+                notificationTriggerRef={sidebarVisible ? notificationTriggerRef : undefined}
                 updateNotice={
                   <SidebarUpdateFooter
                     noticesOnly
@@ -4776,6 +4779,7 @@ function SidebarComponent({
     >
       {compactRailVisible ? (
         <CompactProjectRail
+          notificationTriggerRef={notificationTriggerRef}
           onOpenLastSessions={onOpenLastSessions}
           lastSessionsOpen={lastSessionsOpen}
           onPreviewSession={onPreviewSession}
@@ -4819,6 +4823,7 @@ function SidebarComponent({
       ) : null}
       {railMounted.current && onSelectProject && onOpenProject ? (
         <ProjectRail
+          notificationTriggerRef={railVisible ? notificationTriggerRef : undefined}
           onOpenNoProject={onOpenNoProject}
           onOpenLastSessions={onOpenLastSessions}
           lastSessionsOpen={lastSessionsOpen}
@@ -5277,6 +5282,7 @@ function SidebarProjectPicker({
 }
 
 function CompactProjectRail({
+  notificationTriggerRef,
   onOpenLastSessions,
   lastSessionsOpen,
   recoveryControl,
@@ -5312,6 +5318,7 @@ function CompactProjectRail({
   cwd: string;
   workingSessionsBadge?: ReactNode;
   recoveryControl?: ReactNode;
+  notificationTriggerRef?: (element: HTMLSpanElement | null) => void;
   recents: RecentProject[];
   tabShown: boolean;
   inboxUnseen: boolean;
@@ -5472,6 +5479,7 @@ function CompactProjectRail({
       <div className="min-h-2 flex-1" />
       <SidebarAccountFooter
         compact
+        notificationTriggerRef={notificationTriggerRef}
         recoveryControl={recoveryControl}
         onOpenSettings={onOpenSettings}
         onOpenAccountSettings={onOpenAccountSettings}

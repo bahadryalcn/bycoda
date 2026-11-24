@@ -894,6 +894,8 @@ function Workspace({
     liveAgentsEnabled,
   });
 
+  const [notificationTriggerTarget, setNotificationTriggerTarget] =
+    useState<HTMLSpanElement | null>(null);
   const { hiddenApprovalToasts, pendingNotifications } = useWorkspaceNotifications({
     sessions,
     activeTabId,
@@ -3342,6 +3344,7 @@ function Workspace({
                 <div className="flex min-h-0 min-w-0 flex-1">
                   {!detachedSessionWindow ? (
                     <WorkspaceSidebar
+                      notificationTriggerRef={setNotificationTriggerTarget}
                       newListedSessionRequest={newListedSessionRequest}
                       onNewListedSession={sidebarActions.onNewListedSession}
                       onOpenNoProject={sidebarActions.onOpenNoProject}
@@ -3691,6 +3694,7 @@ function Workspace({
                       setCollapsedProjectRailMode={setCollapsedProjectRailMode}
                     />
                     <WorkspaceFooter
+                      notificationTriggerTarget={notificationTriggerTarget}
                       searchViewOpen={searchViewOpen}
                       inboxViewOpen={inboxViewOpen}
                       notesViewOpen={notesViewOpen}

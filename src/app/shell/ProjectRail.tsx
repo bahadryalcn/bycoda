@@ -18,6 +18,7 @@ import { Sash } from "../../shared/ui/Sash";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
 import { useFormat, useLocale, useT } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
+import { observeResize } from "../../shared/lib/observeResize";
 import {
   ProjectMultiSelect,
   useProjectMultiSelect,
@@ -226,6 +227,7 @@ const RAIL_COLLAPSE_MARGIN = 40;
 type Props = {
   onRenameProjectFolder?: (path: string, name: string) => Promise<void>;
   recoveryControl?: ReactNode;
+  notificationTriggerRef?: (element: HTMLSpanElement | null) => void;
   visible?: boolean;
   resizable?: boolean;
   /** Navigator embeds the same project/group ledger without application chrome. */
@@ -296,6 +298,7 @@ type Props = {
 export function ProjectRail({
   onRenameProjectFolder,
   recoveryControl,
+  notificationTriggerRef,
   visible = true,
   resizable = true,
   presentation = "panel",
@@ -360,6 +363,7 @@ export function ProjectRail({
   const assistantLabel = useAssistantRoomLabel();
   // Read once: the saved width is localStorage, which the compiler cannot see change.
   const [initialRailWidth] = useState(loadProjectRailWidth);
+  const [compactFooter, setCompactFooter] = useState(false);
   const commitRailWidth = (width: number) => saveProjectRailWidth(width);
   const resize = useDragResize({
     min: railMin,
@@ -1285,11 +1289,19 @@ export function ProjectRail({
       </div>
       {!navigator && !settingsOpen ? (
         <nav
+          ref={(element) =>
+            element && notificationTriggerRef
+              ? observeResize(element, ({ contentRect }) =>
+                  setCompactFooter(contentRect.width <= 140),
+                )
+              : undefined
+          }
           aria-label={t("Account")}
           className="bycoda-rail-tools bycoda-rail-tools--footer @container/rail shrink-0"
         >
           <div className="@max-[140px]/rail:hidden">
             <SidebarAccountFooter
+              notificationTriggerRef={compactFooter ? undefined : notificationTriggerRef}
               recoveryControl={recoveryControl}
               updateNotice={
                 <SidebarUpdateFooter
@@ -1313,6 +1325,7 @@ export function ProjectRail({
             />
             <SidebarAccountFooter
               compact
+              notificationTriggerRef={compactFooter ? notificationTriggerRef : undefined}
               recoveryControl={recoveryControl}
               onOpenSettings={onOpenSettings}
               onOpenAccountSettings={openAccountSettings}

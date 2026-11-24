@@ -1,5 +1,65 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test("notification bell lives beside Settings in both left rail modes", async ({ page }) => {
+  await installNavigationFixture(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const theme of ["light", "dark"]) {
+    for (const [width, expanded] of [
+      [1280, true],
+      [800, false],
+    ] as const) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(
+        `/tests/browser/app-shell/compact-navigation.html?notificationBell${expanded ? "&expandedRail" : ""}`,
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const bell = page.getByRole("button", { name: "Notifications", exact: true });
+      const footer = page.locator("[data-sidebar-account-footer]").filter({ has: bell });
+      await expect(bell).toHaveCount(1);
+      await expect(bell).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(bell).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+      await expect(footer.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
+      await expect(bell.locator("[data-notification-badge]")).toHaveText("9");
+      const badgeMotion = bell.locator("[data-enter=rise]");
+      await expect(badgeMotion).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(badgeMotion).toHaveCSS("animation-name", "none");
+      const bounds = (await bell.boundingBox())!;
+      const glyph = (await bell.locator("svg").boundingBox())!;
+      const badge = (await bell.locator("[data-notification-badge]").boundingBox())!;
+      expect(badge.x).toBeGreaterThan(glyph.x + glyph.width / 2);
+      expect(badge.y + badge.height / 2).toBeLessThan(glyph.y);
+      expect(bounds.x + bounds.width).toBeLessThan(width / 2);
+      expect(bounds.y).toBeGreaterThan(650);
+      await page.screenshot({ path: `temp/verification/notification-bell/${theme}-${width}.png` });
+      await bell.focus();
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("dialog", { name: "Notifications", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(bell).toBeFocused();
+    }
+  }
+});
+
+test("notification bell updates only the count when a notification arrives", async ({ page }) => {
+  await installNavigationFixture(page);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/tests/browser/app-shell/compact-navigation.html?notificationBell");
+  const bell = page.getByRole("button", { name: "Notifications", exact: true });
+  const glyph = bell.locator("svg");
+  const bounds = await bell.boundingBox();
+  const glyphBounds = await glyph.boundingBox();
+  await page.getByRole("button", { name: "Add fixture notification" }).click();
+  await expect(bell).toHaveAccessibleDescription("10");
+  await expect(bell.locator("[data-notification-badge]")).toHaveText("10");
+  await expect(bell.locator("[data-enter=rise]")).toHaveCSS("animation-name", /motion-rise/);
+  await expect(glyph).toHaveCSS("transform", "none");
+  expect(await bell.boundingBox()).toEqual(bounds);
+  expect(await glyph.boundingBox()).toEqual(glyphBounds);
+});
+
 test("Windows application menu exposes separate window and tray actions", async ({
   page,
 }, info) => {

@@ -46,6 +46,7 @@ export interface WorkspaceFooterProps {
   conversationTools: Omit<UsageFooterTools, "onOpenFile"> | null | undefined;
   onOpenFile: UsageFooterTools["onOpenFile"];
   // Approval toasts
+  notificationTriggerTarget: HTMLSpanElement | null;
   pendingNotifications: ApprovalProps["notices"];
   hiddenApprovalToasts: ApprovalProps["popupNotices"];
   onOpenApprovalSession: (sessionId: string) => void | Promise<boolean>;
@@ -75,6 +76,7 @@ function WorkspaceFooterComponent({
   dockVisible,
   conversationTools,
   onOpenFile,
+  notificationTriggerTarget,
   pendingNotifications,
   hiddenApprovalToasts,
   onOpenApprovalSession,
@@ -90,6 +92,16 @@ function WorkspaceFooterComponent({
         "@container/footer flex h-8 min-w-0 shrink-0 items-center gap-1 px-1.5",
       )}
     >
+      <ApprovalToasts
+        triggerTarget={notificationTriggerTarget}
+        notices={pendingNotifications}
+        popupNotices={hiddenApprovalToasts}
+        onFocusSession={onOpenApprovalSession}
+        onOpenHistorySession={onOpenApprovalSession}
+        onOpenBackground={requestBackgroundTarget}
+        onOpenSettings={() => openSettings("notifications", "notifications")}
+        onApproval={onApproval}
+      />
       {searchViewOpen ||
       inboxViewOpen ||
       notesViewOpen ||
@@ -138,15 +150,6 @@ function WorkspaceFooterComponent({
       <div className="flex shrink-0 items-center gap-1">
         <LocalHostVersionPrompt onUpdateApp={updateApp} />
         <HiddenDictationIndicator onOpenSession={onOpenApprovalSession} />
-        <ApprovalToasts
-          notices={pendingNotifications}
-          popupNotices={hiddenApprovalToasts}
-          onFocusSession={onOpenApprovalSession}
-          onOpenHistorySession={onOpenApprovalSession}
-          onOpenBackground={requestBackgroundTarget}
-          onOpenSettings={() => openSettings("notifications", "notifications")}
-          onApproval={onApproval}
-        />
       </div>
     </div>
   );

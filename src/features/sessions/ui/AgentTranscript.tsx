@@ -77,6 +77,7 @@ import {
 } from "react";
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { AttachmentChip } from "./AttachmentChip";
+import { inlineMediaAttachmentPath, LocalMedia } from "./LocalMedia";
 import { WorkItemMentionCwd } from "./WorkItemMentionChip";
 import { TranscriptSessionId } from "./TranscriptSessionId";
 import { ChatCitationList } from "./ChatCitationText";
@@ -2386,6 +2387,12 @@ function UserMessageBlock({
     findTokens(text, attachmentFiles).map((match) => [match.index, match.token]),
   );
   const referencedTokens = attachmentFiles.map((_, index) => usedTokens.get(index));
+  // Local video and audio play in the bubble; their chip stays below the player for its actions.
+  const mediaAttachments = attachmentFiles.flatMap((file, index) => {
+    const path = inlineMediaAttachmentPath(file);
+    return path ? [{ file, path, index }] : [];
+  });
+  const chipAttachments = attachmentFiles.length > mediaAttachments.length;
   const overflows = useClampOverflow(textRef, Boolean(text), expanded, text, compactText ? 1 : 0);
 
   const toggle = () => {
@@ -2477,15 +2484,31 @@ function UserMessageBlock({
               {t("Stopped by you")}
             </Badge>
           ) : null}
-          {block.attachments?.length ? (
+          {mediaAttachments.length ? (
+            <div
+              className={`flex w-[30rem] min-w-0 max-w-full flex-col items-start ${chipAttachments || text || card || note ? "mbe-2" : ""}`}
+            >
+              {mediaAttachments.map(({ file, path, index }) => (
+                <LocalMedia
+                  key={file.id}
+                  path={path}
+                  label={file.name}
+                  fallback={<AttachmentChip attachment={file} token={referencedTokens[index]} />}
+                />
+              ))}
+            </div>
+          ) : null}
+          {chipAttachments ? (
             <div
               role="group"
               aria-label={t("Attachments")}
               className={`user-message-attachments flex min-w-0 max-w-full gap-2 overflow-x-auto ${text || card || note ? "mbe-2" : ""}`}
             >
-              {block.attachments.map((file, index) => (
-                <AttachmentChip key={file.id} attachment={file} token={referencedTokens[index]} />
-              ))}
+              {attachmentFiles.map((file, index) =>
+                inlineMediaAttachmentPath(file) ? null : (
+                  <AttachmentChip key={file.id} attachment={file} token={referencedTokens[index]} />
+                ),
+              )}
             </div>
           ) : null}
           {note ? (

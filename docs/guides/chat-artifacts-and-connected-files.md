@@ -249,6 +249,8 @@ invocation prefix in the display. The draft keeps the original invocation.
 
 Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio use native playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.
 
+Video and audio files on this computer play inline in the conversation: an assistant reply that links, embeds or names one as a code path shows a player above it, and a video or audio file you attach shows a player above its card in your sent message. Attachments read from a connected machine keep their card and open in the media dialog.
+
 On desktop, use **Download** on a file attachment card to choose where to save a copy. The action also works with formats such as ZIP that the conversation does not preview. Attachment copies are limited to 20 MiB.
 
 CSV and TSV file tabs offer **Preview** and **Source**. Switching views retains source edits. The preview displays the saved file; unsaved changes remain in Source. Delimited values are displayed as text, without evaluating formulas.

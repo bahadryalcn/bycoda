@@ -85,6 +85,7 @@ import { resolveInboxMediaUrl } from "../../inbox/model/inboxMedia";
 import { isNoteImagePath } from "../../notes";
 import { InboxMedia } from "../../inbox/ui/InboxMedia";
 import { isLocalMediaPath, LocalMedia } from "./LocalMedia";
+import { mediaKind } from "../../files/public/mediaPreview";
 import { DocumentImage, ImageAltText } from "./DocumentImage";
 import { resolveDocumentImage } from "../../../shared/lib/paths";
 import { rehypeHoldImageSources, rehypeRestoreImageSources } from "./documentImageSources";
@@ -427,6 +428,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const incomplete = useIsCodeFenceIncomplete();
   const block = Object.prototype.hasOwnProperty.call(props, "data-block");
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const localMedia = useContext(LocalMediaContext);
   const resolveFile = useWorkspaceFileResolver();
   const text = block ? "" : textContent(children);
   const slashCommand = /^\/[\p{L}\p{N}_-]+$/u.test(text.trim());
@@ -460,7 +462,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
           ? candidate
           : undefined;
     const open = file && onOpenFile ? () => onOpenFile(file.path, file.navigation) : undefined;
-    return (
+    const span = (
       <span className="inline-flex max-w-full items-center align-baseline">
         {isEmailAddress(text) ? <EmailCopyButton key={text} text={text} /> : null}
         <code
@@ -497,6 +499,12 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
         </code>
         {file && file.path === verifiedPath ? <FileRevealButton path={file.path} /> : null}
       </span>
+    );
+    // A video or audio path written as code plays above its path, like a linked one.
+    return localMedia && file && mediaKind(file.path) && isLocalMediaPath(file.path) ? (
+      <LocalMedia key={file.path} path={file.path} label={fileName || text} fallback={span} />
+    ) : (
+      span
     );
   }
 
