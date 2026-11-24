@@ -88,10 +88,18 @@ for (const theme of ["light", "dark"]) {
       expect(
         await page.evaluate(() => (window as unknown as { refreshEvents: number }).refreshEvents),
       ).toBe(1);
+      // Without a sidebar the bell sits alone at the footer's start; the other tools form one group.
+      const bell = bar.getByRole("button", { name: "Notifications", exact: true });
       const actions = bar.locator(
-        'nav button:visible, [data-usage-guide="terminal-toggle"], button[aria-label="Conversation tools"], button[aria-label="Notifications"]',
+        'nav button:visible, [data-usage-guide="terminal-toggle"], button[aria-label="Conversation tools"]',
       );
-      await expect(actions).toHaveCount(6);
+      await expect(actions).toHaveCount(5);
+      const bellBox = await bell.evaluate((button) => {
+        const box = button.getBoundingClientRect();
+        const icon = button.querySelector("svg")!.getBoundingClientRect();
+        return { x: box.x, width: box.width, height: box.height, iconWidth: icon.width };
+      });
+      expect(bellBox).toMatchObject({ width: 28, height: 28, iconWidth: 14 });
       const boxes = await actions.evaluateAll((buttons) =>
         buttons
           .map((button) => {
@@ -114,6 +122,7 @@ for (const theme of ["light", "dark"]) {
         expect(box.iconHeight).toBe(14);
         if (index > 0) expect(box.x - boxes[index - 1].x - boxes[index - 1].width).toBe(4);
       }
+      expect(bellBox.x).toBeLessThan(boxes[0].x);
       expect(await bar.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
       await page.screenshot({
         path: `temp/verification/2026-11-15-workspace-footer/footer-${theme}-${width}.png`,

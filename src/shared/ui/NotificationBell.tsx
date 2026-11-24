@@ -13,6 +13,8 @@ type Props = Pick<
   countId: string;
   tone: "warning" | "accent";
   muted?: boolean;
+  /** `sm` matches the workspace footer rhythm; `md` matches the sidebar Settings icon. */
+  iconSize?: "sm" | "md";
 };
 
 /**
@@ -21,7 +23,15 @@ type Props = Pick<
  * @use Open the notification center and show its waiting or unread count.
  * @avoid Ordinary icon actions: Button. Static row counts: Badge.
  */
-export function NotificationBell({ label, count, countId, tone, muted, ...buttonProps }: Props) {
+export function NotificationBell({
+  label,
+  count,
+  countId,
+  tone,
+  muted,
+  iconSize = "md",
+  ...buttonProps
+}: Props) {
   const Icon = muted ? BellOff : Bell;
   return (
     <Button
@@ -33,7 +43,7 @@ export function NotificationBell({ label, count, countId, tone, muted, ...button
       motion="none"
     >
       <span className="relative inline-flex shrink-0">
-        <Icon className="icon-md shrink-0" aria-hidden />
+        <Icon className={iconSize === "sm" ? "icon-sm shrink-0" : "icon-md shrink-0"} aria-hidden />
         {count > 0 ? (
           <Motion
             as="span"
