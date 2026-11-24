@@ -33,6 +33,7 @@ vi.mock("../../../../features/settings/model/exactGitRewind", () => ({
 }));
 import {
   getWorkspaceCapabilities,
+  resolveWorkspaceContext,
   workspaceRequest,
 } from "../../../../features/workspaces/model/workspaceClient";
 
@@ -314,6 +315,42 @@ it("dispatches two projectless sends using scratch without reading the Host work
   ]);
   expect(saved.blocks.some((block) => block.workspacePreparationPending)).toBe(false);
   expect(saved.blocks.some((block) => block.notice === "error")).toBe(false);
+});
+
+it.each([false, true])("sends a projectless turn in scratch (retry: %s)", async (retrying) => {
+  const original = {
+    ...newSession("antigravity", "~"),
+    model: "antigravity:gemini-3.8-flash-high",
+    blocks: retrying
+      ? [
+          {
+            id: "user",
+            role: "user" as const,
+            text: "Hello from scratch",
+            workspacePreparationPending: true,
+          },
+          {
+            id: "error",
+            role: "system" as const,
+            text: "Choose a project to use managed workspaces.",
+            notice: "error" as const,
+          },
+        ]
+      : [],
+  };
+  resetSessionsStore([original]);
+  const text = retrying ? failedTurnRetry(original)!.text : "Hello from scratch";
+  await vi.mocked(resolveWorkspaceContext).withImplementation(
+    async () => {
+      throw new Error("Choose a project to use managed workspaces.");
+    },
+    () => submit("completed", {}, text),
+  );
+  expect(getWorkspaceCapabilities).not.toHaveBeenCalled();
+  expect(workspaceRequest).not.toHaveBeenCalled();
+  expect(sends).toHaveLength(1);
+  expect(sends[0].input.cwd).toBe(`~/.bycoda-host/scratch/session-${original.id}`);
+  expect(getSessions()[0].blocks.some((block) => block.workspacePreparationPending)).toBe(false);
 });
 
 it("retries a transient first-send preparation failure in Current after persistence reload", async () => {

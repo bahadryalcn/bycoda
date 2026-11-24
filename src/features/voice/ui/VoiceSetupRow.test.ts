@@ -67,7 +67,7 @@ it("makes Get Python the only primary action and offers no Install when Python i
 
 it("offers Locate files directly, with no menu and one retry on failure", async () => {
   const setup = await render({
-    visibleError: { message: "This computer is unavailable. Try again." },
+    visibleError: { message: "This computer is unavailable. Try again.", detail: "" },
     setupError: true,
     check: vi.fn(),
     resetJob: vi.fn(),

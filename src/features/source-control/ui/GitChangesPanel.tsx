@@ -661,6 +661,7 @@ export function GitChangesPanel({
               title={t("This folder is not a Git repository")}
               action={{
                 label: t("Initialize Repository"),
+                variant: "primary",
                 pending: busy === "init",
                 disabled: !enabled || (!!busy && busy !== "init"),
                 onClick: async () => {
@@ -718,7 +719,7 @@ export function GitChangesPanel({
         </div>
       )}
       {/* An overview row leaves Stashes and Graph to the one shared set below the rows. */}
-      {!embedded && !repository && !notRepository ? (
+      {!embedded && !repository && index && !notRepository ? (
         <GitPanelSections
           cwd={cwd}
           enabled={enabled}

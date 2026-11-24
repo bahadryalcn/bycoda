@@ -1,4 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
+import { DropdownMenu, type DropdownMenuAction } from "../../../shared/ui/DropdownMenu";
+import { useRef } from "react";
 import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useLocale, useT } from "../../../shared/i18n";
 import {
@@ -9,8 +11,8 @@ import {
   CursorMagicSelection,
   MessageSquare,
   Share,
+  SlidersHorizontal,
   Terminal,
-  X,
 } from "../../../shared/ui/icons";
 import { BTW_COMMAND } from "../model/btw";
 import { SUBAGENTS_COMMAND, TASK_COMMAND } from "../model/delegationCommands";
@@ -190,6 +192,64 @@ export function ModeCommandText({
   );
 }
 
+export function ComposerModePicker({
+  choices,
+  onPick,
+  open,
+  onOpenChange,
+  settings,
+}: {
+  choices: DropdownMenuAction[];
+  onPick: (id: string) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  settings: boolean;
+}) {
+  const t = useT();
+  const anchor = useRef<HTMLButtonElement>(null);
+  const selected = choices.find((choice) => choice.checked);
+  return (
+    <div className="relative flex shrink-0">
+      {/* oxlint-disable-next-line bycoda/transcript-row-trigger -- opens the Mode menu from the composer, not a transcript row */}
+      <Button
+        ref={anchor}
+        size="sm"
+        variant={settings ? "secondary" : "ghost"}
+        iconOnly={!settings}
+        label={t("Mode")}
+        selected={open}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        expanded={settings ? open : undefined}
+        data-composer-mode-trigger
+        onClick={() => onOpenChange(!open)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            onOpenChange(true);
+          }
+        }}
+      >
+        {settings ? (selected?.label ?? t("Default")) : <SlidersHorizontal className="icon-sm" />}
+      </Button>
+      {open ? (
+        <DropdownMenu
+          anchor={anchor}
+          returnFocusRef={anchor}
+          label={t("Mode")}
+          side="top"
+          align={settings ? "end" : "start"}
+          size="md"
+          onClose={() => onOpenChange(false)}
+          data-composer-mode-menu
+          items={[{ kind: "group", id: "mode", label: t("Mode"), items: choices }]}
+          onPick={onPick}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export function ModeCommandPill({ name, onClear }: { name: string; onClear: () => void }) {
   const t = useT();
   const style = MODE_COMMAND_STYLES[name];
@@ -201,13 +261,13 @@ export function ModeCommandPill({ name, onClear }: { name: string; onClear: () =
       className="shrink-0"
       variant="ghost"
       type="button"
-      aria-label={t("Turn off {p0}", { p0: pill.title })}
+      iconOnly
+      selected
+      label={t("Turn off {p0}", { p0: pill.title })}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClear}
     >
       <Icon className="icon-sm" />
-      <span className="composer-mode-shimmer">{pill.label}</span>
-      <X className="icon-xs" />
     </Button>
   );
 }

@@ -145,7 +145,7 @@ import {
 import { useDesktopLiveHandlers } from "./workspace/control/useDesktopLiveHandlers";
 import { useWindowDragPreview } from "./model/useWindowDragPreview";
 import { DetachedWorkingBar } from "./shell/DetachedWorkingBar";
-import { WindowControlsVisible } from "./shell/WindowControls";
+import { BelowWindowChrome } from "./shell/WindowControls";
 import { useFittedShellPanes } from "./shell/fitShellPanes";
 import { remoteSessionSummary } from "./shell/sidebarSessionCollections";
 import { Suspense, useCallback, useMemo, useEffect, useRef, useState } from "react";
@@ -585,7 +585,7 @@ function Workspace({
   const linkedWorkItemActivityFetches = useRef(new Map<string, number>());
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
-  // Provider adapters ask this for a session's extra folders at launch.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Register the provider adapters' folder resolver while this workspace is mounted.
   useEffect(() => {
     setAdditionalDirsResolver((sessionId) => {
       const session = sessionsRef.current.find((item) => item.id === sessionId);
@@ -885,6 +885,7 @@ function Workspace({
 
   const { nextLiveAgents, liveAgents, ownedLiveSessionKeys, sessionWaits } = useLiveAgentStatus({
     sessions,
+    tabs,
     listedRemoteSessions,
     unseenFinishedIds,
     unopenedRemote,
@@ -893,6 +894,8 @@ function Workspace({
     liveAgentsEnabled,
   });
 
+  const [notificationTriggerTarget, setNotificationTriggerTarget] =
+    useState<HTMLSpanElement | null>(null);
   const { hiddenApprovalToasts, pendingNotifications } = useWorkspaceNotifications({
     sessions,
     activeTabId,
@@ -1533,13 +1536,21 @@ function Workspace({
     workspaceNavigation,
   });
 
-  const closeSurfaces = () => {
+  const closeSurfaces = useCallback(() => {
+    setSettingsOpen(false);
     setSearchViewOpen(false);
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
     setServersViewOpen(false);
-  };
+  }, [
+    setSettingsOpen,
+    setSearchViewOpen,
+    setInboxViewOpen,
+    setNotesViewOpen,
+    setAutomationsViewOpen,
+    setServersViewOpen,
+  ]);
   const {
     onApproval,
     onQuestionReply,
@@ -1557,6 +1568,7 @@ function Workspace({
     dismissRemoteFinished,
     onSelectRemoteSession,
     closeSurfaces,
+    workspaceNavigation,
   });
 
   const { sessionReminders } = useSessionReminderActions({
@@ -2564,6 +2576,7 @@ function Workspace({
     }
     return { ownedWindowSessionIds, announcedSessionIds };
   }, [sessions, tabs, remoteBindingRevision]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep native window ownership claims in sync with the open session panes.
   useEffect(() => {
     void syncSessionWindowOwnership(ownedWindowSessionIds).catch((error) => {
       console.error("Conversation ownership synchronization failed", error);
@@ -2935,25 +2948,16 @@ function Workspace({
   // while Settings presents as a dialog) that those chrome conditions still read.
   const settingsPageOpen = false;
 
-  const {
-    chromeSurfaceOpen,
-    compactProjectRail,
-    detachedSessionWindow,
-    compactRailActive,
-    trayProjectKeys,
-  } = useWorkspaceChromeFlags({
-    serversViewOpen,
-    toolWindow,
-    windowTransfer,
-    searchViewOpen,
-    settingsOpen: settingsPageOpen,
-    inboxViewOpen,
-    notesViewOpen,
-    automationsViewOpen,
-    collapsedProjectRailMode: fittedPanes.compactRailForced ? "compact" : collapsedProjectRailMode,
-    projectRailOpen,
-    visibleRecents,
-  });
+  const { compactProjectRail, detachedSessionWindow, compactRailActive, trayProjectKeys } =
+    useWorkspaceChromeFlags({
+      toolWindow,
+      windowTransfer,
+      collapsedProjectRailMode: fittedPanes.compactRailForced
+        ? "compact"
+        : collapsedProjectRailMode,
+      projectRailOpen,
+      visibleRecents,
+    });
   useTraySessions({
     history,
     live: railLiveSessions,
@@ -2967,7 +2971,9 @@ function Workspace({
     },
   });
 
-  const compactTitleBar = IS_MAC && compactRailActive && !chromeSurfaceOpen;
+  // Every main window has one title bar across its full width, above the rail and the panes.
+  // A detached window has no rail and keeps the bar inside its single column.
+  const titleBarAbove = !detachedSessionWindow;
   const layoutControl = useLayoutControl({
     activeTab,
     activeTabId,
@@ -3018,7 +3024,9 @@ function Workspace({
     sidebarCwd,
     projectRailOpen,
     sessionSidebarOpen,
-    compactTitleBar,
+    spansWindow: titleBarAbove,
+    searchActive: searchViewOpen,
+    onSearch: onOpenSearch,
     tabVisitNav,
     surfaceForward,
     onRailBack,
@@ -3189,7 +3197,6 @@ function Workspace({
     onFileMoved: onFileMoved,
     onFileDeleted: onFileDeleted,
     onGoBack: onRailBack,
-    onGoForward: onRailForward,
     onOpenDiff: onOpenWorkingTreeDiff,
     onOpenAllChanges: onOpenAllChanges,
     onOpenCommit: onOpenCommit,
@@ -3275,6 +3282,32 @@ function Workspace({
     }),
     [onboardingProjects, onboardingSessions, onboardingRestored, onboardingTransferred],
   );
+  const workspaceMenuBar = !IS_MAC ? (
+    <WorkspaceMenuBar
+      activeTabId={activeTabId}
+      onNew={onNew}
+      onNewTerminal={onNewTerminal}
+      onToggleTerminal={onToggleProjectTerminal}
+      onGoToFile={onGoToFile}
+      onToggleSidebar={onToggleSidebar}
+      onToggleSessionSidebar={onToggleSessionSidebar}
+      onShowSourceControl={onToggleChanges}
+      onCloseCurrentTab={onCloseCurrentTab}
+      onCloseOtherTabs={onCloseOtherTabs}
+      onCloseIdleTabs={onCloseIdleTabs}
+      countIdleTabs={countIdleTabs}
+      onCloseAllTabs={onCloseAllTabs}
+      onPickProject={pickProject}
+      onFindInProject={onFindInProject}
+      onSearch={onOpenSearch}
+      onOpenInbox={onOpenInbox}
+      onOpenNotes={notesEnabled ? onOpenNotes : undefined}
+      onZoomIn={onZoomIn}
+      onZoomOut={onZoomOut}
+      onZoomReset={onZoomReset}
+      layout={layoutControl}
+    />
+  ) : null;
   return (
     <RemoteConnectionFeedbackProvider>
       <LocalSessionReferenceProvider value={localSessionReferences}>
@@ -3286,7 +3319,12 @@ function Workspace({
               tone="primary"
               className="app-canvas flex h-full flex-col"
             >
-              {compactTitleBar ? workspaceTitleBar : null}
+              {titleBarAbove ? (
+                <div data-window-chrome className="flex shrink-0 flex-col">
+                  {workspaceMenuBar}
+                  {workspaceTitleBar}
+                </div>
+              ) : null}
               <CrewManagedSessionsFeed cwds={crewFeedCwds} />
               {!detachedSessionWindow && <AssistantNotifications />}
               {!detachedSessionWindow && !toolWindow && !windowTransfer && (
@@ -3302,10 +3340,11 @@ function Workspace({
               {detachedSessionWindow && (!IS_MAC || liveAgents.length > 0) ? (
                 <DetachedWorkingBar agents={liveAgents} onSelectAgent={onSelectLiveAgent} />
               ) : null}
-              <WindowControlsVisible.Provider value={!detachedSessionWindow}>
+              <BelowWindowChrome titleBarAbove={titleBarAbove}>
                 <div className="flex min-h-0 min-w-0 flex-1">
                   {!detachedSessionWindow ? (
                     <WorkspaceSidebar
+                      notificationTriggerRef={setNotificationTriggerTarget}
                       newListedSessionRequest={newListedSessionRequest}
                       onNewListedSession={sidebarActions.onNewListedSession}
                       onOpenNoProject={sidebarActions.onOpenNoProject}
@@ -3364,16 +3403,13 @@ function Workspace({
                       onOpenTerminal={sidebarActions.onOpenTerminal}
                       onFileMoved={sidebarActions.onFileMoved}
                       onFileDeleted={sidebarActions.onFileDeleted}
-                      tabVisitNav={tabVisitNav}
                       searchViewOpen={searchViewOpen}
                       inboxViewOpen={inboxViewOpen}
                       notesViewOpen={notesViewOpen}
                       serversViewOpen={serversViewOpen}
                       automationsViewOpen={automationsViewOpen}
                       auxiliaryTool={auxiliaryTool}
-                      surfaceForward={surfaceForward}
                       onGoBack={sidebarActions.onGoBack}
-                      onGoForward={sidebarActions.onGoForward}
                       onOpenDiff={sidebarActions.onOpenDiff}
                       onOpenAllChanges={sidebarActions.onOpenAllChanges}
                       onOpenCommit={sidebarActions.onOpenCommit}
@@ -3413,7 +3449,6 @@ function Workspace({
                       notesEnabled={notesEnabled}
                       projectRailOpen={projectRailOpen}
                       compactProjectRail={compactProjectRail}
-                      titleBarAbove={compactTitleBar}
                       onToggleProjectRail={sidebarActions.onToggleProjectRail}
                       unseenFinishedIds={unseenFinishedIds}
                       inboxUnseen={inboxUnseen}
@@ -3462,33 +3497,8 @@ function Workspace({
                         undefined
                       }
                     >
-                      {!IS_MAC ? (
-                        <WorkspaceMenuBar
-                          activeTabId={activeTabId}
-                          onNew={onNew}
-                          onNewTerminal={onNewTerminal}
-                          onToggleTerminal={onToggleProjectTerminal}
-                          onGoToFile={onGoToFile}
-                          onToggleSidebar={onToggleSidebar}
-                          onToggleSessionSidebar={onToggleSessionSidebar}
-                          onShowSourceControl={onToggleChanges}
-                          onCloseCurrentTab={onCloseCurrentTab}
-                          onCloseOtherTabs={onCloseOtherTabs}
-                          onCloseIdleTabs={onCloseIdleTabs}
-                          countIdleTabs={countIdleTabs}
-                          onCloseAllTabs={onCloseAllTabs}
-                          onPickProject={pickProject}
-                          onFindInProject={onFindInProject}
-                          onSearch={onOpenSearch}
-                          onOpenInbox={onOpenInbox}
-                          onOpenNotes={notesEnabled ? onOpenNotes : undefined}
-                          onZoomIn={onZoomIn}
-                          onZoomOut={onZoomOut}
-                          onZoomReset={onZoomReset}
-                          layout={layoutControl}
-                        />
-                      ) : null}
-                      {compactTitleBar ? null : workspaceTitleBar}
+                      {titleBarAbove ? null : workspaceMenuBar}
+                      {titleBarAbove ? null : workspaceTitleBar}
 
                       <SessionPanelTargetsContext.Provider value={socialSessionTargets}>
                         <WorkspaceMainArea
@@ -3684,6 +3694,7 @@ function Workspace({
                       setCollapsedProjectRailMode={setCollapsedProjectRailMode}
                     />
                     <WorkspaceFooter
+                      notificationTriggerTarget={notificationTriggerTarget}
                       searchViewOpen={searchViewOpen}
                       inboxViewOpen={inboxViewOpen}
                       notesViewOpen={notesViewOpen}
@@ -3692,7 +3703,6 @@ function Workspace({
                       settingsOpen={settingsPageOpen}
                       settingsSection={settingsSection}
                       openSettings={openSettings}
-                      active={active}
                       projectCwd={projectCwd}
                       usageProviders={usageProviders}
                       usageSession={usageSession}
@@ -3772,7 +3782,7 @@ function Workspace({
                   providerSignInRequest={providerSignInRequest}
                   setProviderSignInRequest={setProviderSignInRequest}
                 />
-              </WindowControlsVisible.Provider>
+              </BelowWindowChrome>
             </Text>
             <TranscriptPoolOutlet pool={transcriptPool} />
           </OrchestrationWorkers.Provider>

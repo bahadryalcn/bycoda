@@ -191,7 +191,54 @@ afterEach(() => {
   copied.length = 0;
 });
 
+it("keeps Show all bounded and reaches the last file and the entire selection by keyboard", async () => {
+  directories.set(
+    cwd,
+    Array.from({ length: 3000 }, (_, i) => file(`item${String(i).padStart(4, "0")}.ts`)),
+  );
+  await refreshDir(cwd);
+  await act(async () => render());
+  const showAll = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent.includes("Show all"),
+  );
+  await act(async () => showAll!.click());
+  expect(container.querySelectorAll("[role=treeitem]").length).toBeLessThan(400);
+  await press(row("item0000.ts"), { key: "End" });
+  expect(document.activeElement).toBe(row("item2999.ts"));
+  await press(row("item2999.ts"), { key: "Enter" });
+  expect(props.onOpenFile).toHaveBeenCalledWith(`${cwd}/item2999.ts`, undefined, { exact: true });
+  await press(row("item2999.ts"), { key: "a", ctrlKey: true });
+  await press(row("item2999.ts"), { key: "Enter" });
+  expect(props.onOpenFile).toHaveBeenCalledTimes(3001);
+  expect(container.querySelectorAll("[role=treeitem]").length).toBeLessThan(400);
+});
+
 describe("NameRow filesystem collision ownership", () => {
+  it("keeps a focused rename field when a directory refresh moves its row across a virtual page boundary", async () => {
+    const entries = Array.from({ length: 424 }, (_, i) =>
+      file(`item${String(i).padStart(4, "0")}.ts`),
+    );
+    directories.set(cwd, entries);
+    await refreshDir(cwd);
+    await act(async () => render());
+    const showAll = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent.includes("Show all"),
+    );
+    await act(async () => showAll!.click());
+    await press(row("item0000.ts"), { key: "End" });
+    await press(row("item0423.ts"), { key: "F2" });
+    const input = container.querySelector<HTMLInputElement>("[data-name-row] input")!;
+    expect(document.activeElement).toBe(input);
+    directories.set(cwd, [file("another.ts"), ...entries]);
+    await act(async () => {
+      await refreshDir(cwd);
+      announceDirListings();
+    });
+    expect(row("another.ts")).toBeTruthy();
+    expect(container.querySelector("[data-name-row] input")).toBe(input);
+    expect(document.activeElement).toBe(input);
+  });
+
   it("submits a case variant to the owner and displays its collision rejection", async () => {
     const onCommit = vi
       .fn()

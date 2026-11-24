@@ -1233,6 +1233,55 @@ for (const light of [false, true]) {
 
 for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
+    test(`Last sessions grouping and sort ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?global&${theme}${width === 1280 ? "&wide-workspace" : ""}`,
+      );
+      const list = page.locator("[data-session-list]");
+      const rows = list.locator("[data-session-card]");
+      const menu = page.getByRole("menu", { name: "Filter sessions" });
+      const project = menu.getByRole("menuitemcheckbox", { name: "Group by project" });
+      const state = menu.getByRole("menuitemcheckbox", { name: "Group by state" });
+      const screenshot = (mode: string) =>
+        page.screenshot({
+          path: `temp/verification/last-sessions-organization/${theme}-${width}-${mode}.png`,
+          animations: "disabled",
+        });
+
+      await expect(rows.first()).toHaveAttribute("data-session-card", "row-demo");
+      if (width === 1280) {
+        await page.getByRole("button", { name: "Filter sessions", exact: true }).click();
+      } else {
+        await page.getByRole("button", { name: "More actions", exact: true }).click();
+        await page.getByRole("menuitemcheckbox", { name: "Filter sessions", exact: true }).click();
+      }
+      await expect(menu.getByRole("menuitemcheckbox").first()).toHaveText("Group by project");
+      await project.click();
+      await expect(project).toBeChecked();
+      await expect(list.getByRole("heading")).toHaveText(["demo-repo", "bycoda"]);
+      await screenshot("project-menu");
+
+      await state.click();
+      await expect(project).not.toBeChecked();
+      await expect(state).toBeChecked();
+      await expect(list.getByRole("heading")).toHaveText(["Idle", "Working", "Interrupted"]);
+      await menu.getByRole("menuitem", { name: "Sort", exact: true }).click();
+      await expect(page.getByRole("menuitemradio", { name: "Newest first" })).toBeChecked();
+      await screenshot("state-sort");
+      await page.getByRole("menuitemradio", { name: "Oldest first" }).click();
+      await expect(rows.first()).toHaveAttribute("data-session-card", "row-long");
+      await state.click();
+      await expect(list.getByRole("heading")).toHaveCount(0);
+      await expect(rows.first()).toHaveAttribute("data-session-card", "row-long");
+      await expect(rows.last()).toHaveAttribute("data-session-card", "row-demo");
+      await page.getByRole("heading", { name: "Last sessions", exact: true }).click();
+      await expect(menu).toBeHidden();
+      await rows.last().locator("[data-session-select]").click();
+      await expect(page.getByRole("status", { name: "Selected session" })).toHaveText("row-demo");
+    });
+
     test(`global Last sessions row actions ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.emulateMedia({ reducedMotion: "reduce" });

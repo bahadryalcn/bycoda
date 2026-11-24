@@ -983,11 +983,13 @@ mod tests {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null());
             crate::hide_window_console(&mut cmd);
+            // Output bounds are under test, not the deadline: a loaded runner can take seconds
+            // to start PowerShell.
             run_token_command(
                 registry.clone(),
                 flight.clone(),
                 cmd,
-                Duration::from_secs(5),
+                Duration::from_secs(60),
             );
             let result = flight.result.lock().unwrap();
             if expected {

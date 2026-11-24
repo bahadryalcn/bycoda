@@ -1295,20 +1295,19 @@ export function contextUsedFromAssistant(rec: Record<string, unknown>): number |
  */
 export function contextFromResult(
   rec: Record<string, unknown>,
+  model?: string,
 ): { used?: number; window?: number } | undefined {
   const usage = asRecord(rec.usage);
   const iterations = Array.isArray(usage?.iterations) ? usage.iterations : [];
   const last = asRecord(iterations[iterations.length - 1]);
   const used = contextUsedFromUsage(last);
 
-  let window: number | undefined;
   const modelUsage = asRecord(rec.modelUsage);
-  for (const entry of Object.values(modelUsage ?? {})) {
-    const contextWindow = numberField(asRecord(entry), "contextWindow");
-    if (contextWindow > 0) {
-      window = Math.max(window ?? 0, contextWindow);
-    }
-  }
+  const entries = model && modelUsage ? [modelUsage[model]] : Object.values(modelUsage ?? {});
+  const windows = entries
+    .map((entry) => numberField(asRecord(entry), "contextWindow"))
+    .filter((window) => Number.isSafeInteger(window) && window > 0);
+  const window = windows.every((value) => value === windows[0]) ? windows[0] : undefined;
 
   if (!used && !window) return undefined;
   return { used: used > 0 ? used : undefined, window };

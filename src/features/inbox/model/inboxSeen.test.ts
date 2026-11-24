@@ -248,3 +248,23 @@ describe("inbox seen items", () => {
     ).toBe(false);
   });
 });
+
+it("does not parse retained timestamps again when an unrelated feed advances", () => {
+  clearKnownInboxItems();
+  const updatedAt = new Date().toISOString();
+  rememberInboxItems(
+    Array.from({ length: 320 }, (_, i) => ({
+      key: String(i),
+      updatedAt,
+      projectPath: "/in-scope",
+    })),
+  );
+  const parse = vi.spyOn(Date, "parse");
+  try {
+    rememberInboxItems([{ key: "outside", updatedAt, projectPath: "/outside" }]);
+    expect(parse.mock.calls.length).toBeLessThan(4);
+  } finally {
+    parse.mockRestore();
+    clearKnownInboxItems();
+  }
+});

@@ -1648,10 +1648,18 @@ describe("HostStore device credentials", () => {
         id: current.id,
         name: "Phone",
         isCurrent: true,
+        canManageDevices: false,
+        isLocalDesktop: false,
         kind: "phone",
         pairedAt,
       });
-      expect(details.devices[1]).toEqual({ id: "other-000", name: "other-000", isCurrent: false });
+      expect(details.devices[1]).toEqual({
+        id: "other-000",
+        name: "other-000",
+        isCurrent: false,
+        canManageDevices: false,
+        isLocalDesktop: false,
+      });
       expect(details.devices.at(-1)?.id).toBe("other-254");
       expect(JSON.stringify(details)).not.toContain("hash");
       expect(JSON.stringify(details)).not.toContain(current.token);
@@ -1675,10 +1683,18 @@ describe("HostStore device credentials", () => {
             id: current.id,
             name: "Desktop name",
             isCurrent: true,
+            canManageDevices: false,
+            isLocalDesktop: false,
             kind: "desktop",
             pairedAt: 100_000,
           },
-          { id: "legacy", name: "Old device", isCurrent: false },
+          {
+            id: "legacy",
+            name: "Old device",
+            isCurrent: false,
+            canManageDevices: false,
+            isLocalDesktop: false,
+          },
         ],
         devicesTruncated: false,
       });
@@ -1694,6 +1710,8 @@ describe("HostStore device credentials", () => {
         id: current.id,
         name: "Desktop name",
         isCurrent: true,
+        canManageDevices: false,
+        isLocalDesktop: false,
       });
       await store.revokeToken(current.token);
       await expect(store.pairedDeviceDetails(current.token)).rejects.toThrow("revoked");

@@ -20,12 +20,14 @@ export function SidebarAccountFooter({
   compact = false,
   updateNotice,
   recoveryControl,
+  notificationTriggerRef,
   onOpenSettings,
   onOpenAccountSettings,
 }: {
   compact?: boolean;
   updateNotice?: ReactNode;
   recoveryControl?: ReactNode;
+  notificationTriggerRef?: (element: HTMLSpanElement | null) => void;
   onOpenSettings?: () => void;
   onOpenAccountSettings?: () => void;
 }) {
@@ -88,6 +90,9 @@ export function SidebarAccountFooter({
           </div>
         </div>
         <div {...surfaceAttributes(compact ? { frame: "pane", edge: "top" } : {}, styles.personal)}>
+          {notificationTriggerRef ? (
+            <span className="inline-flex" ref={notificationTriggerRef} />
+          ) : null}
           {settings}
           {account}
         </div>

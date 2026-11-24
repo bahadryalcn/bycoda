@@ -197,15 +197,16 @@ it("collapses and reopens Working in the workspace when the project rail is clos
   await render();
   const preview = container.querySelector('[data-live-agents-preview="full"]')!;
   const header = preview.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
-  const card = preview.querySelector<HTMLButtonElement>('[data-live-agent-card="background"]')!;
+  const card = () =>
+    preview.querySelector<HTMLButtonElement>('[data-live-agent-card="background"]');
   expect(header.getAttribute("aria-expanded")).toBe("false");
-  expect(card.closest("[hidden]")).not.toBeNull();
+  expect(card()).toBeNull();
   expect(header.textContent).toContain("1");
   expect(props.onSelectAgent).not.toHaveBeenCalled();
   act(() => header.click());
   expect(header.getAttribute("aria-expanded")).toBe("true");
-  expect(card.closest("[hidden]")).toBeNull();
-  act(() => card.click());
+  expect(card()!.closest("[hidden]")).toBeNull();
+  act(() => card()!.click());
   expect(props.onSelectAgent).toHaveBeenCalledExactlyOnceWith("background");
 });
 

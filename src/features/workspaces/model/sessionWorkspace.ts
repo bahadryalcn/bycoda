@@ -28,6 +28,7 @@ export function isNewWorkspaceSession(session: Session): boolean {
 export function needsSessionWorkspace(session: Session): boolean {
   if (isProjectlessCwd(session.cwd)) return false;
   return (
+    session.cwd !== "~" &&
     !session.worktreeCwd &&
     session.workspaceMode !== "current" &&
     (session.workspaceMode === "worktree" ||

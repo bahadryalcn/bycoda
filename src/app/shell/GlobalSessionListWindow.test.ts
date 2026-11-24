@@ -30,6 +30,8 @@ function Window({ sessions }: { sessions: SessionSummary[] }) {
     createElement(GlobalSessionListWindow, {
       sessions,
       scrollRef: scrollRef as RefObject<HTMLDivElement | null>,
+      view: { groupBy: "none", sort: "newest" },
+      stateOf: () => "idle" as const,
       isActive: (session) => session.cwd === "/workspace/two" && session.id === "session-250",
       renderSession: (session, active) =>
         createElement(

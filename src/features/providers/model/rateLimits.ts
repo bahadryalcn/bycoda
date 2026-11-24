@@ -126,7 +126,7 @@ export function unavailableRateLimits(
   };
 }
 
-/** `reason` replaces the retained snapshot's: a new failure never inherits an old cause. */
+/** A new failure retains the last usage observation and uses its own cause. */
 export function errorRateLimits(
   provider: RateLimitProvider,
   error: string,
@@ -137,12 +137,11 @@ export function errorRateLimits(
     previous &&
     (previous.session || previous.weekly || previous.monthly || previous.resetCredits)
   ) {
-    const { reason: _previousReason, ...retained } = previous;
+    const { reason: _previousReason, renewalPending: _previousRenewal, ...retained } = previous;
     return {
       ...retained,
       error,
       status: "error",
-      updatedAt: Date.now(),
       ...(reason ? { reason } : {}),
     };
   }

@@ -39,6 +39,38 @@ it("ignores pointer and focus events from portalled picker content", async () =>
   expect(document.querySelector('[role="tooltip"]')).toBeNull();
 });
 
+it("does not open when a dialog moves focus after a pointer press", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  roots.push(root);
+  await act(async () =>
+    root.render(
+      createElement(Tooltip, {
+        label: "Close",
+        asChild: true,
+        children: createElement("button", { type: "button" }, "x"),
+      }),
+    ),
+  );
+  const button = host.querySelector("button")!;
+  vi.spyOn(button, "matches").mockReturnValue(true);
+  const focus = async () => {
+    await act(async () => {
+      button.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  };
+  document.documentElement.dataset.inputModality = "pointer";
+  await focus();
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  document.documentElement.dataset.inputModality = "keyboard";
+  await focus();
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Close");
+  delete document.documentElement.dataset.inputModality;
+});
+
 it("adds shared hints to an existing element without a layout box or lost events", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");

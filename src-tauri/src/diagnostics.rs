@@ -7,6 +7,8 @@ mod gzip;
 mod logs;
 mod ui_log;
 
+#[cfg(windows)]
+pub(crate) use crash::write_atomic;
 pub(crate) use crash::{clear_recovered_on_exit, install_panic_hook};
 pub(crate) use file_log::flush as flush_logs;
 

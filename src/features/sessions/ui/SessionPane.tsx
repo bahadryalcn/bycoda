@@ -47,7 +47,7 @@ import "./session-notes-layout.css";
 import { ProjectQuickActions } from "../../projects/public/ProjectQuickActions";
 import type { ExpandingButtonGroupItem } from "../../../shared/ui/ButtonGroup";
 import type { ProjectAction } from "../../projects";
-import type { OpenFileFn } from "../../search/model/search";
+import type { OpenFileFn } from "../../search";
 import {
   sessionProviderAccountId,
   subscribeProviderAccounts,
@@ -229,8 +229,8 @@ export type SessionPaneProps = {
   onRefreshAdoptedSession?: RefreshAdoptedSession;
   /** Reads this conversation's stored history again after it failed to load. */
   onRetrySessionHistory?: (sessionId: string) => void;
-  onLoadSessionHistory?: (sessionId: string) => Promise<number>;
-  onPrepareSessionHistory?: (sessionId: string) => Promise<boolean>;
+  onLoadSessionHistory?: (sessionId: string, findAll?: AbortSignal) => Promise<number>;
+  onPrepareSessionHistory?: (sessionId: string, mode?: "prefetch") => Promise<boolean>;
   onWorkspaceModeChange: (sessionId: string, mode: WorkspaceMode, base?: string) => void;
   onWorktreeBaseChange: (sessionId: string, base: string) => void;
   onManageWorktrees?: () => void;
@@ -977,14 +977,19 @@ const LocalSessionPane = memo(function LocalSessionPane({
     () => peekTranscriptJump(session.id),
     () => null,
   );
+  const hasEarlierHistory = session.storedHistory?.before != null || remoteHistoryHasMore;
+  const readEarlierHistory =
+    session.storedHistory && onLoadSessionHistory
+      ? (findAll?: AbortSignal) => onLoadSessionHistory(session.id, findAll)
+      : onLoadRemoteHistory;
   useCitedTurnHistory({
     visible,
     jump: jumpRequest,
     blocks: stableBlocks,
-    hasMore: remoteHistoryHasMore,
+    hasMore: hasEarlierHistory,
     loading: remoteHistoryLoading,
     error: remoteHistoryError,
-    load: onLoadRemoteHistory,
+    load: readEarlierHistory,
   });
   useEffect(() => {
     if (!visible || !navigatorReady || !jumpRequest) return;
@@ -1066,7 +1071,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
     initialDraft: composerDraftSeed,
     text: composerDraftText,
     change: setComposerDraftState,
-  } = useSessionComposerDraft(session.id);
+  } = useSessionComposerDraft(
+    session.id,
+    visible && !remoteSession && !session.busy && session.historyLoading
+      ? session.storedHistory?.revision
+      : undefined,
+    onPrepareSessionHistory,
+  );
   const parentChanged = useParentInputClosure({
     kind: "session-parent",
     sessionId: session.id,
@@ -1993,16 +2004,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       onRetryHistory={
                         onRetrySessionHistory ? () => onRetrySessionHistory(session.id) : undefined
                       }
-                      remoteHistoryHasMore={
-                        remoteHistoryHasMore || session.storedHistory?.before != null
-                      }
+                      remoteHistoryHasMore={hasEarlierHistory}
                       remoteHistoryLoading={remoteHistoryLoading}
                       remoteHistoryError={remoteHistoryError}
-                      onLoadRemoteHistory={
-                        session.storedHistory && onLoadSessionHistory
-                          ? () => onLoadSessionHistory(session.id)
-                          : onLoadRemoteHistory
-                      }
+                      onLoadRemoteHistory={readEarlierHistory}
                       onLoadRemoteBlock={onLoadRemoteBlock}
                       inlineVisualHost={inlineVisualHost}
                       canRewindMessage={canRewindMessage}
@@ -2067,9 +2072,29 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 >
                   {(findBlocks) => (
                     <TranscriptFind
+                      key={session.id}
                       sessionId={session.id}
                       onTriggerChange={setFindAction}
                       blocks={findBlocks}
+                      historyPage={
+                        session.storedHistory?.before != null
+                          ? `local:${session.storedHistory.revision}:${session.storedHistory.before}`
+                          : remoteHistoryHasMore
+                            ? `remote:${findBlocks[0]?.id ?? ""}`
+                            : undefined
+                      }
+                      historyLoading={
+                        remoteHistoryLoading ||
+                        (!!session.historyLoading &&
+                          !session.storedHistory &&
+                          !remoteHistoryHasMore)
+                      }
+                      historyLoadError={session.historyLoadError}
+                      retryHistory={
+                        onRetrySessionHistory ? () => onRetrySessionHistory(session.id) : undefined
+                      }
+                      loadHistory={readEarlierHistory}
+                      loadBlock={onLoadRemoteBlock}
                       visible={visible}
                       focused={focused}
                       onNavigate={navigateBlock}
@@ -2151,6 +2176,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           cwd={workCwd}
           native={{
             block: subagentSheet.block,
+            liveSessionId: remote ? undefined : session.id,
             relay: subagentRelay,
             blockedReason: subagentRelayBlockedReason,
             close: closeSubagentSheet,

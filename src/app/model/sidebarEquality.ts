@@ -74,6 +74,7 @@ export function liveAgentsEqual(a: readonly LiveAgent[], b: readonly LiveAgent[]
       return (
         agent.id === other.id &&
         agent.cwd === other.cwd &&
+        agent.listedRemote === other.listedRemote &&
         agent.title === other.title &&
         agent.harness === other.harness &&
         agent.activity === other.activity &&

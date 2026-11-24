@@ -4,6 +4,11 @@ import type { SessionSummary } from "../data/sessionStore";
 
 export type SessionTimeFilter = "all" | "today" | "7d" | "30d";
 
+export type GlobalSessionListView = {
+  groupBy: "none" | "project" | "state";
+  sort: "newest" | "oldest";
+};
+
 export type SessionStatusFilter = {
   working: boolean;
   needsApproval: boolean;

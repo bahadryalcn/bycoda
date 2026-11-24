@@ -50,7 +50,6 @@ it("places collapsed Activity below Projects and the recovery icon directly befo
           recents: [],
           onSelectProject,
           onOpenProject: vi.fn(),
-          onSearch: vi.fn(),
           onOpenInbox: vi.fn(),
           recoveryControl: createElement(SessionRecoveryControl, { count: 28, onOpen: vi.fn() }),
           liveAgents: [

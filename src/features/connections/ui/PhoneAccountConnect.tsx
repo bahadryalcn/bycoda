@@ -17,6 +17,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { usePhoneApprovalRequest } from "./PhoneApprovalRequest";
 import { createAccountPairingCode } from "../model/accountPairingCode";
 import { remoteRequest } from "../model/connections";
+import { accountDeviceAccess, startAccountDeviceAccess } from "../model/accountDeviceAccess";
 import type { HostDescriptor, RemoteMachine } from "../model/protocol";
 
 const PLATFORM = {
@@ -79,11 +80,19 @@ export function PhoneAccountConnect() {
   const account = useAccountState();
   const enabled = useSyncExternalStore(subscribePhoneConnect, isPhoneConnectEnabled);
   const deviceId = isSignedIn(account) ? account.deviceId : null;
+  const accessSync = useSyncExternalStore(accountDeviceAccess.subscribe, accountDeviceAccess.load);
   const { confirm, dialog } = usePhoneApprovalRequest();
   const confirmRef = useRef(confirm);
   useLayoutEffect(() => {
     confirmRef.current = confirm;
   }, [confirm]);
+
+  // Keep the enrolled local Host's device access synchronized while this account is active.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- holds the device-access sync for the signed-in device.
+  useEffect(() => {
+    if (!deviceId || (accessSync !== deviceId && accessSync !== `off:${deviceId}`)) return;
+    return startAccountDeviceAccess(deviceId, localMachine, report);
+  }, [accessSync, deviceId]);
 
   useEffect(() => {
     if (!enabled || !deviceId) return;

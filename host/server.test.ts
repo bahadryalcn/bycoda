@@ -16,6 +16,7 @@ import {
 } from "../src/shared/model/host-contracts";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
+import { HostLimits } from "./limits";
 import { createHostServer } from "./server";
 import { MAX_BODY, REQUEST_RECEIVE_TIMEOUT_MS } from "./server/support";
 import { BrowserRuntime } from "./browser/browser-runtime";
@@ -1608,6 +1609,18 @@ it("scopes access-center device identity and revocation to authenticated paired 
     const report = (await s.call("host.access.read")).value.result;
     expect(report.devices).toHaveLength(2);
     expect(report.devices[0]).toEqual({ id: s.first.id, name: "Laptop", isCurrent: true });
+    const scoped = (await s.call("host.access.read", { includeDevicePermissions: true })).value
+      .result;
+    expect(scoped.devices).toEqual([
+      expect.objectContaining({ id: s.first.id, isLocalDesktop: true, canManageDevices: true }),
+      expect.objectContaining({ id: s.second.id, isLocalDesktop: false, canManageDevices: false }),
+    ]);
+    expect(
+      (await s.call("devices.setManagement", { id: s.second.id, enabled: true })).value.result,
+    ).toEqual({ updated: true });
+    expect(
+      (await s.call("devices.revokeOther", { id: s.first.id }, s.second.token)).value.result,
+    ).toEqual({ revoked: false });
     expect(JSON.stringify(report)).not.toContain(s.second.token);
     expect(JSON.stringify(report)).not.toContain('"hash"');
     expect((await s.call("devices.revokeOther", { id: s.first.id })).value.error).toMatch(
@@ -3278,7 +3291,7 @@ async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = fa
     throw error;
   }
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/rpc`;
-  const first = await store.issueDevice("Laptop");
+  const first = await store.issueDevice("Laptop", "desktop", true);
   const second = await store.issueDevice("Other computer");
   const call = async (
     method: string,
@@ -4214,6 +4227,33 @@ describe("shared queued messages", () => {
       await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
       expect(s.turn().text).toBe("send a");
       s.finish();
+    });
+
+    it("runs usage-limit failover from a settled Host turn", async () => {
+      const s = await setup();
+      const sessionId = await create(s, "usage-failover");
+      await new HostLimits(s.store).save({
+        agentDefaults: { usageLimitFailover: "order" },
+        expectedAgentDefaultsVersion: 0,
+      });
+      const sent = await s.call("commands.dispatch", {
+        type: "send",
+        commandId: "usage-failover-send",
+        sessionId,
+        text: "Work",
+      });
+      expect(sent.value.error).toBeUndefined();
+      await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+      s.turn().onEvent({ type: "usage.limited", resetsAt: Date.now() + 3_600_000 });
+      s.finish();
+      // An empty order has nowhere to continue, so this needs no provider account or quota.
+      await vi.waitFor(async () => {
+        const { session } = await s.store.session(sessionId);
+        expect(session.blocks.map((block) => block.text)).toContain(
+          "No model in the model order has quota left. Waiting for the usage limit to reset.",
+        );
+      });
+      expect(s.send).toHaveBeenCalledOnce();
     });
 
     it("answers the queue and adopted cursors with the host's boot, so a restart resets a client", async () => {

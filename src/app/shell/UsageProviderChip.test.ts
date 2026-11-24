@@ -6,11 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { getLanguagePreference, setLanguagePreference } from "../../shared/i18n";
 import type { ProviderRateLimits } from "../../features/providers/model/rateLimits";
-import { projectKey } from "../../shared/lib/paths";
-import {
-  saveTabGroupCustomColor,
-  saveTabGroupMascot,
-} from "../../features/workspace/model/tabGroups";
 import { providerAccountSignedOut } from "../../features/providers/model/accountUsage";
 import { UsageProviderChip } from "./UsageProviderChip";
 import { saveShowRemainingUsage } from "../../features/settings/model/displayPrefs";
@@ -113,6 +108,25 @@ function button(label: string): HTMLButtonElement {
 }
 
 describe("UsageProviderChip", () => {
+  it("shows a failed quota refresh with the age of the saved reading", async () => {
+    const limits: ProviderRateLimits = {
+      ...codexLimits(),
+      provider: "claude",
+      updatedAt: now - 16 * 60_000,
+      status: "error",
+      error: "temporary quota failure",
+    };
+    act(() => root.render(createElement(UsageProviderChip, { limits, now })));
+
+    await act(async () => button("Claude Code usage details").click());
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.querySelector('[role="status"]')?.textContent).toBe(
+      "Refresh failed. Updated 16m ago",
+    );
+    expect(dialog?.textContent).toContain("Weekly limit");
+  });
+
   it("keeps the details header to an icon-only refresh without a provider-usage link", async () => {
     const onRefresh = vi.fn(async () => {});
     act(() =>
@@ -750,7 +764,6 @@ describe("UsageProviderChip", () => {
     // Provider descriptions are not part of the normal view.
     expect(document.body.textContent).not.toContain("One Codex rate-limit reset");
     expect(document.body.textContent).not.toContain("A second Codex rate-limit reset");
-    expect(document.querySelector('[data-reset-mascot-mood="happy"]')).not.toBeNull();
     expect(document.body.textContent).toContain("Referral reward");
     expect(document.body.textContent).toContain("Backup reset");
     expect(document.body.textContent).toContain("Expires in 12d");
@@ -761,6 +774,7 @@ describe("UsageProviderChip", () => {
       (item) => item.textContent === "Use reset",
     );
     expect(useButtons).toHaveLength(2);
+    expect(useButtons[0]?.getAttribute("data-button-variant")).toBe("secondary");
     act(() => useButtons[1]?.click());
     expect(document.body.textContent).toContain("Spend this reset now?");
     await act(async () => button("Confirm").click());
@@ -791,6 +805,8 @@ describe("UsageProviderChip", () => {
 
     await act(async () => button("Claude Code usage details").click());
     const items = [...document.querySelectorAll('[aria-label="Available banked resets"] article')];
+    expect(document.querySelector("[data-quota-reset-icon]")).not.toBeNull();
+    expect(items[0]?.querySelector("h4")?.textContent).toBe("Full limit reset");
     expect(items.map((item) => item.textContent)).toEqual([
       "Full limit resetExpires in 12dUse reset",
       "Fable limit resetExpires in 18dUse reset",
@@ -859,26 +875,19 @@ describe("UsageProviderChip", () => {
     expect(onConsumeReset).toHaveBeenCalledTimes(2);
   });
 
-  it("uses the project's picked mascot when banked resets are available", async () => {
-    const project = "/repo/mascot-lab";
-    saveTabGroupMascot(projectKey(project), "cat");
+  it("uses the banked reset icon in the Codex panel", async () => {
     act(() =>
       root.render(
         createElement(UsageProviderChip, {
           limits: codexLimits(),
           now,
-          project,
         }),
       ),
     );
 
     await act(async () => button("Codex usage details").click());
-    const mascot = document.querySelector('[data-reset-mascot-mood="happy"]');
-    expect(mascot?.getAttribute("data-mascot-name")).toBe("link");
-    act(() => saveTabGroupCustomColor(projectKey(project), "#123456"));
-    const mascotSvg = mascot?.querySelector("svg");
-    expect(mascotSvg).toBeInstanceOf(SVGElement);
-    expect(mascotSvg!.style.color).toBe("#123456");
+    const icon = document.querySelector("[data-quota-reset-icon]");
+    expect(icon?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("hides the banked resets card when no resets are available", async () => {
@@ -888,7 +897,7 @@ describe("UsageProviderChip", () => {
 
     await act(async () => button("Codex usage details").click());
     expect(document.body.textContent).not.toContain("Banked resets");
-    expect(document.querySelector(".reset-mascot-scene")).toBeNull();
+    expect(document.querySelector("[data-quota-reset-icon]")).toBeNull();
     expect(document.querySelector('[aria-label="Available banked resets"]')).toBeNull();
   });
 

@@ -3,6 +3,40 @@ import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
+    test(`plain folder offers initialization without requesting Graph ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/source-control/git-workspace.html?submodules&plain-folder");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "fixture", exact: true }).click();
+      const initialize = page.getByRole("button", { name: "Initialize Repository" });
+      await expect(initialize).toBeVisible();
+      await expect(initialize).toHaveAttribute("data-button-variant", "primary");
+      const evidence = "temp/verification/git-folder-empty";
+      mkdirSync(evidence, { recursive: true });
+      await page.screenshot({ path: `${evidence}/${theme}-${width}.png`, animations: "disabled" });
+      await expect(page.getByRole("button", { name: "Graph", exact: true })).toHaveCount(0);
+      await page.getByRole("button", { name: "core-pack main", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Graph", exact: true })).toBeVisible();
+      expect(
+        await page.evaluate(() =>
+          Reflect.get(window, "gitFixtureCalls").filter(
+            (call: { command: string; args: { cwd: string } }) =>
+              call.command === "git_history" && call.args.cwd === "/fixture",
+          ),
+        ),
+      ).toEqual([]);
+      await initialize.click();
+      await expect(initialize).toHaveCount(0);
+      await expect(page.getByText("Auto · fixture", { exact: true })).toBeVisible();
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
     test(`commit shows Push 1 during status refresh in ${theme} at ${width}px`, async ({
       page,
     }) => {

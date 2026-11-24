@@ -139,6 +139,7 @@ const showProjectPicker = new URLSearchParams(location.search).has("project-pick
 const longAccount = new URLSearchParams(location.search).has("long-account");
 // Test-only data boundary. The URL retains the stress case across reloads.
 const worstModelData = new URLSearchParams(location.search).get("data") === "worst";
+const savedSubagents = new URLSearchParams(location.search).has("saved-subagents");
 if (new URLSearchParams(location.search).has("large-model-catalog")) {
   setHarnessModels("claude", [
     ...modelsFor("claude"),
@@ -342,7 +343,15 @@ function Fixture() {
                 .map((model) => ({ harness: "claude", model: model.id })),
             ) ?? "",
         }
-      : {},
+      : savedSubagents
+        ? {
+            crossSubagents: encodeSubagents([
+              { harness: "claude", model: "claude:opus-5-5", providerAccountId: "default" },
+              { harness: "claude", model: "claude:sonnet-5-5", providerAccountId: "account-work" },
+              { harness: "opencode", model: "opencode:beam-free" },
+            ])!,
+          }
+        : {},
   );
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("supervised");
   const [busy, setBusy] = useState(
@@ -714,7 +723,6 @@ function Fixture() {
                 setPullRequestsOnly={() => {}}
                 onOpenInbox={() => {}}
                 openSettings={() => {}}
-                active={undefined}
                 projectCwd={fixtureCwd}
                 usageProviders={["claude", "codex"]}
                 usageSession={undefined}

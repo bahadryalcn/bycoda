@@ -1,7 +1,6 @@
 import { memo } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import type { ComponentProps } from "react";
-import type { Session } from "../../../features/sessions/model/session";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import { canOpenTerminalIn } from "../../../features/projects/model/recents";
 import { parseRemotePath } from "../../../features/connections/public/remoteProjects";
@@ -32,7 +31,6 @@ export interface WorkspaceFooterProps {
   settingsSection: SettingsSectionId;
   openSettings: (section?: SettingsSectionId, anchor?: SettingsAnchor) => void;
   // Usage and project terminal
-  active: Session | undefined;
   projectCwd: string;
   usageProviders: UsageFooterProps["providers"];
   usageSession: UsageFooterProps["session"];
@@ -48,6 +46,7 @@ export interface WorkspaceFooterProps {
   conversationTools: Omit<UsageFooterTools, "onOpenFile"> | null | undefined;
   onOpenFile: UsageFooterTools["onOpenFile"];
   // Approval toasts
+  notificationTriggerTarget: HTMLSpanElement | null;
   pendingNotifications: ApprovalProps["notices"];
   hiddenApprovalToasts: ApprovalProps["popupNotices"];
   onOpenApprovalSession: (sessionId: string) => void | Promise<boolean>;
@@ -63,7 +62,6 @@ function WorkspaceFooterComponent({
   settingsOpen,
   settingsSection,
   openSettings,
-  active,
   projectCwd,
   usageProviders,
   usageSession,
@@ -78,6 +76,7 @@ function WorkspaceFooterComponent({
   dockVisible,
   conversationTools,
   onOpenFile,
+  notificationTriggerTarget,
   pendingNotifications,
   hiddenApprovalToasts,
   onOpenApprovalSession,
@@ -93,6 +92,16 @@ function WorkspaceFooterComponent({
         "@container/footer flex h-8 min-w-0 shrink-0 items-center gap-1 px-1.5",
       )}
     >
+      <ApprovalToasts
+        triggerTarget={notificationTriggerTarget}
+        notices={pendingNotifications}
+        popupNotices={hiddenApprovalToasts}
+        onFocusSession={onOpenApprovalSession}
+        onOpenHistorySession={onOpenApprovalSession}
+        onOpenBackground={requestBackgroundTarget}
+        onOpenSettings={() => openSettings("notifications", "notifications")}
+        onApproval={onApproval}
+      />
       {searchViewOpen ||
       inboxViewOpen ||
       notesViewOpen ||
@@ -103,7 +112,6 @@ function WorkspaceFooterComponent({
           embedded
           providers={usageProviders}
           session={usageSession}
-          project={active?.cwd ?? projectCwd}
           onSelectAccount={onSelectProviderAccount}
           onManageAccounts={() => openSettings("providers", "provider-accounts")}
           terminals={runningTerminals}
@@ -142,15 +150,6 @@ function WorkspaceFooterComponent({
       <div className="flex shrink-0 items-center gap-1">
         <LocalHostVersionPrompt onUpdateApp={updateApp} />
         <HiddenDictationIndicator onOpenSession={onOpenApprovalSession} />
-        <ApprovalToasts
-          notices={pendingNotifications}
-          popupNotices={hiddenApprovalToasts}
-          onFocusSession={onOpenApprovalSession}
-          onOpenHistorySession={onOpenApprovalSession}
-          onOpenBackground={requestBackgroundTarget}
-          onOpenSettings={() => openSettings("notifications", "notifications")}
-          onApproval={onApproval}
-        />
       </div>
     </div>
   );

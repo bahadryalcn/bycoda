@@ -54,8 +54,9 @@ errors appear at the top center. Notices normally disappear after ten seconds of
 focused window time; hovering or focusing them pauses the timer. Requests that need
 an owner decision retain their existing actions and placement.
 
-Open the bell in the workspace footer to revisit dismissed or expired notice text
-in Notifications. This device keeps the latest 100 entries across restarts. The log
+Open the bell next to Settings at the bottom of the left sidebar to revisit dismissed or
+expired notices. When the sidebar is hidden, the bell moves to the left end of the
+workspace footer. This device keeps the latest 100 entries across restarts. The log
 keeps plain-text summaries, not interactive controls or secret inputs. Provider
 update notices include the offered versions; closing a notice leaves an update
 running. Completion or failure appears separately and enters the same log. Open
@@ -73,11 +74,15 @@ or keyboard focus. Click it to refresh conversations. Loading and connection fai
 keep their existing feedback; a healthy remote project has no success checkmark.
 
 The workspace footer uses one compact spacing rhythm for conversation tools,
-terminal, navigation, sound, view refresh, fullscreen and notifications.
-Click a provider's quota summary to inspect its accounts. Refresh usage in that
-panel reloads the displayed provider and account; Refresh current view remains
-in the workspace controls. Browsing quota accounts does not change a conversation's
-selected account.
+terminal, navigation, sound, view refresh and fullscreen.
+Click a provider's quota summary to open its usage panel. Where the panel lists
+accounts, browsing them leaves the conversation's selected account in place.
+**Refresh usage** reloads the displayed provider and account. **Refresh current
+view** is in the workspace controls.
+If a quota refresh fails and a saved reading exists, the panel shows that reading
+and its age.
+Claude and Codex show available credits under the banked-reset icon. Each credit
+shows its expiry next to **Use reset**. Select **Confirm** to spend that credit.
 
 Tools navigation omits the standalone Terminal tab and picker option, including
 the combined tools window. Open project terminals from the workspace terminal actions.
@@ -149,11 +154,11 @@ and Account; the floating voice companion keeps its raised surface.
 In an expanded footer with enough room, hovering or focusing the update icon reveals
 its label. Clicking it opens the existing update dialog.
 
-Collapsed project navigation uses a 56px icon rail with a centered divider and a
-small-size vector mark. Expanded sections share label and count columns; Last
+Collapsed project navigation uses a 56px icon rail with a centered divider.
+Expanded sections share label and count columns; Last
 sessions keeps separate collapse and open actions. The workspace header emphasizes
-the current location. Back, Forward, Expand projects and conversation tools align
-to the right. **New session** sits at the far right, with a label when the workspace
+the current location and holds only the conversation tools, aligned to the right,
+and **New session** at the far right, with a label when the workspace
 pane is wide and an icon when space is limited. Click the main button to start in
 the current project. Click its arrow or right-click the main button to open the
 project picker directly. Choosing another project opens its **Sessions** list
@@ -259,16 +264,20 @@ model from the conversation provider, preferring Haiku, Terra or Flash. If no
 lightweight model is available, choose one explicitly. Failed generation keeps the
 current title and offers Retry; a concurrent manual rename is preserved.
 
-Activity shows work in progress and groups retries and input requests under **Needs attention**.
-Finished and failed turns leave Activity as soon as they end. Conversation history retains
-the results, and the Settled shelf shows conversations that have been settled. A conversation whose own subagents
+Activity lists sessions by turn start time, newest first when known. Each row has
+a status badge, and the header shows a count for each status.
+Select a row to open its conversation or bring its existing window forward.
+Unseen completions and sessions with a failed turn also appear in Activity.
+Conversation history retains the results, and the Settled shelf shows conversations
+that have been settled. A conversation whose own subagents
 or background commands still run counts as running and shows **Working**; its tooltip
 names what runs ("Subagents running: 4"). Conversations waiting only on delegated
 tasks or a pull request watch show **Waiting**, keep their own group and do not count
 as running. Last Sessions keeps the complete list.
 
 Above the composer, **Background work** shows a labeled count for each status.
-Open it to see subagents and commands. Subagent rows show the title first, the
+Open it to see subagents and commands. Scroll the notice area to reach every row
+when the list is long. Subagent rows show the title first, the
 reported model and provider below it, and step counts and elapsed time beside the
 opening chevron. Animated bars mark running work, a green check marks completed
 work, a red cross marks failure, and warning icons distinguish stopped and
@@ -414,6 +423,9 @@ Time spent answering those dialogs does not consume the timeout for saving the
 workspace. A failed save keeps the app open and reports the failure.
 
 Opening a conversation already held by another window focuses that window.
+The sidebar shows **Opening…** when a selection takes longer than half a second.
+When available, the last saved page of a local Host conversation can appear while
+the Host confirms the transcript. You can keep typing a draft during this check.
 Local conversations and remote Host conversations keep one window owner, including
 idle tabs. If the owner cannot be verified, opening stops with an error so you can
 retry. Moving tabs keeps the source until the destination confirms receipt;
@@ -433,8 +445,10 @@ tabs or consume its recovery state. If storage cannot load, the startup retry
 screen remains available.
 
 Click **Last sessions** in the project rail to open a combined workspace list. It
-shows conversations active during the last seven days, newest first, with each
-project's saved icon, color and background. This view stays open when a conversation
+shows conversations active during the last seven days, newest first by default, with
+each project's saved icon, color and background. The sliders menu groups conversations
+by project or state and sorts by newest or oldest activity. Select an active grouping
+again to return to the flat list. This view stays open when a conversation
 is selected. A refresh keeps the previous complete list visible until the new
 history has loaded; an error leaves that list available while retrying.
 Explorer and Changes follow that conversation's real project and
@@ -445,7 +459,7 @@ checkout. Choosing the current project keeps Last sessions open. Choosing anothe
 project opens its **Sessions** list. Choose **No project** to start a conversation
 without a project. Bycoda gives it its own working directory under
 `~/.bycoda-host/scratch` when it first runs. The files stay on disk when the
-conversation is deleted. Choose **No project** under **Projects** to browse these
+conversation is deleted. Choose **No project** next to **Last sessions** to browse these
 conversations or start another one. Older projectless conversations keep the folder
 configured under **Settings → General**. Choosing a project from the rail returns
 to its own conversation list. The
@@ -529,9 +543,17 @@ Only ungrouped projects can be pinned. Groups and linked workspaces have no pin 
 and a project's earlier pin is dropped when it joins a group. Group members are
 indented under the header on a guide line.
 
-A single conversation shows one compact title row with its tabs and actions; a
+One title bar runs across the top of every main window, in the same order on
+macOS, Windows and Linux: the sidebar toggle, the bycoda mark, Back, Forward,
+Search, then the open tabs. On macOS the window buttons sit before the toggle;
+on Windows and Linux the window buttons close the bar on the right. The bycoda
+wordmark shows beside the mark while the project rail is expanded. Search shrinks
+to its icon in a narrow window. The project rail and the sidebars below the bar
+hold no window controls, history buttons or Search of their own.
+
+A single conversation shows its tabs and actions in that title bar; a
 pane gets its own header only when the workspace is split. On Windows and Linux
-the menu button at the start of the title row opens the application menus, and
+the bycoda mark at the start of the title bar opens the application menus, and
 Alt or F10 still opens them from the keyboard: the menu bar takes focus, Left and
 Right move between menus, Down opens one, and Escape hides the bar and returns
 focus to where you were. The Changes tab always shows how
@@ -667,6 +689,10 @@ reset and newer changes from another window take precedence over an older drag.
 
 Maximizing a split panel changes its corner action to Restore panel layout and
 shows inward arrows. Restoring returns the outward arrows and the previous split.
+
+The context meter stays available while the provider's reading is pending or
+unavailable. It shows the reported token count as soon as it arrives and adds a
+percentage when the model's context limit is known.
 
 After successful context compaction, the context meter replaces its old reading
 with the provider's new count when available. Otherwise the old fullness clears

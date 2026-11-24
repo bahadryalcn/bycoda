@@ -126,9 +126,6 @@
     "src/features/settings/model/appearance.ts": {
       "theme-palette-literal": 1
     },
-    "src/features/settings/ui/ArchiveSettings.tsx": {
-      "nested-surface": 2
-    },
     "src/features/settings/ui/BycodaSettings.css": {
       "shared-internal-selector": 1
     },

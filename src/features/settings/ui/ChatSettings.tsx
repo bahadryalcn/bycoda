@@ -271,6 +271,11 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
                     "The switch shows in the conversation. If nothing is available, the limit notice stays and Resume at reset still applies.",
                   )}
                 </p>
+                <p>
+                  {t(
+                    "Saved on this computer. Chats running on another computer follow the setting saved there.",
+                  )}
+                </p>
               </InfoPopover>
             }
           >

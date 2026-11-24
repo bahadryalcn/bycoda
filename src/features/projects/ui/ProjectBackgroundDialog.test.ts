@@ -213,12 +213,14 @@ describe("project background dialog", () => {
     const heading = Array.from(dialog.querySelectorAll<HTMLElement>(".settings-row-title")).find(
       (node) => node.textContent === "Background effect",
     )!;
-    const info = heading.parentElement!.querySelector<HTMLElement>('[role="img"]')!;
-    await act(async () => info.focus());
-    expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
-      "Shows the original artwork.",
-    );
-    await act(async () => info.blur());
+    // The effect explanation opens on click in a popover beside the heading.
+    const info = heading.parentElement!.querySelector<HTMLButtonElement>(
+      'button[aria-haspopup="dialog"]',
+    )!;
+    await act(async () => info.click());
+    expect(info.getAttribute("aria-expanded")).toBe("true");
+    expect(document.body.textContent).toContain("Shows the original artwork.");
+    await act(async () => info.click());
     expect(
       heading
         .closest(".settings-row")

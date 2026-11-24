@@ -366,6 +366,11 @@ for (const light of [false, true]) {
       await page.keyboard.press("Escape");
       await expect(addMenu).toHaveCount(0);
       await expect(addTrigger).toBeFocused();
+      // A narrow composer moves Mode into the model panel's Settings tab.
+      if (width < 1000) {
+        await expect(trigger).toHaveCount(0);
+        continue;
+      }
 
       await trigger.focus();
       await trigger.press("ArrowDown");
@@ -403,7 +408,8 @@ for (const light of [false, true]) {
     page,
   }, info) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.setViewportSize({ width: 390, height: 800 });
+    // The narrowest pane that still keeps Mode in the composer toolbar.
+    await page.setViewportSize({ width: 520, height: 800 });
     await page.goto(
       `/tests/browser/sessions/session-usability.html?lang=tr${light ? "&light" : ""}`,
     );
@@ -431,7 +437,7 @@ for (const light of [false, true]) {
     });
     expect(fits).toBe(true);
     await page.screenshot({
-      path: info.outputPath("composer-menu-tr-390.png"),
+      path: info.outputPath("composer-menu-tr-520.png"),
     });
     await menu.getByRole("menuitemcheckbox", { name: "Plan modu", exact: true }).click();
     await expect(page.getByRole("textbox")).toHaveValue("Keep this integrated draft");
@@ -475,12 +481,13 @@ for (const light of [false, true]) {
     expect(await page.evaluate(() => window.sessionUsability.events.sends)).toBe(1);
     await page.evaluate(() => window.sessionUsability.mode("working"));
     await page.setViewportSize({ width: 320, height: 800 });
-    const stop = page.getByRole("button", { name: "Stop", exact: true });
-    await expect(stop).toBeInViewport();
+    // With a draft, a narrow pane shows Queue and Send; the Stop shortcut still interrupts.
+    await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Queue message", exact: true })).toBeInViewport();
     await page.screenshot({
       path: info.outputPath("integrated-working-320.png"),
     });
-    await stop.press("Enter");
+    await input.press("Escape");
     expect(await page.evaluate(() => window.sessionUsability.events.stops)).toBe(1);
     await expect(input).toHaveValue("Keep this changed draft");
     await page.evaluate(() => window.sessionUsability.remount());
@@ -678,7 +685,7 @@ for (const light of [true, false])
     });
 for (const light of [true, false])
   for (const width of [800, 1280])
-    test(`project background and mascot ${light ? "light" : "dark"} ${width}`, async ({
+    test(`project background and Codex usage ${light ? "light" : "dark"} ${width}`, async ({
       page,
     }, info) => {
       await page.setViewportSize({ width, height: 900 });
@@ -703,13 +710,13 @@ for (const light of [true, false])
       await expect(swatch).toHaveCSS("background-color", "rgb(18, 52, 86)");
       await swatch.screenshot({ path: info.outputPath(`project-swatch-${light}-${width}.png`) });
       await page.goto(
-        `/tests/browser/sessions/session-usability.html?projectVisual=mascot${suffix}`,
+        `/tests/browser/sessions/session-usability.html?projectVisual=usage${suffix}`,
       );
       await page.getByRole("button", { name: "Codex usage details" }).click();
-      const mascot = page.locator('[data-reset-mascot-mood="happy"] svg');
-      await expect(mascot).toBeVisible();
-      await mascot.screenshot({ path: info.outputPath(`project-mascot-${light}-${width}.png`) });
       const usage = page.getByRole("dialog", { name: "Codex usage details" });
+      const resetIcon = usage.locator("[data-quota-reset-icon]");
+      await expect(resetIcon).toBeVisible();
+      await expect(resetIcon).toHaveCSS("mask-image", /quota-reset\.png/);
       const heading = usage.getByRole("heading", { name: "Codex usage", exact: true });
       const refresh = usage.getByRole("button", { name: "Refresh usage" });
       await expect(refresh).toBeVisible();

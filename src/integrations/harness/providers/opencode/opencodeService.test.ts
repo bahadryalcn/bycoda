@@ -24,6 +24,8 @@ import {
   parseOpenCodeServiceUrl,
   releaseOwnedOpenCodeForCapability,
   resolveOwnedOpenCodeCatalog,
+  resolveOwnedOpenCodeUtility,
+  withOwnedOpenCodeCatalog,
   resolveOpenCodeV2Service,
   resolveOpenCodeV2ServiceUrl,
 } from "./opencodeService";
@@ -202,6 +204,103 @@ describe("OpenCode v2 background service", () => {
         settled,
       );
       expect(operationIds).toHaveLength(1);
+    });
+  });
+
+  describe("idle-retired owned service recovery", () => {
+    function stubServices() {
+      const catalogOperations: unknown[] = [];
+      let generation = 0;
+      mocks.invoke.mockImplementation((command: string, args: Record<string, unknown>) => {
+        if (command === "canonical_store_page_token") return Promise.resolve("page");
+        if (command === "harness_management_grant")
+          return Promise.resolve({ token: "grant", routeId: "route" });
+        if (command === "owned_opencode_catalog_acquire") {
+          catalogOperations.push(args.operationId);
+          generation += 1;
+          return Promise.resolve({
+            serviceId: `s${generation}`,
+            referenceId: `c${generation}`,
+            endpoint: `http://127.0.0.1:${9000 + generation}`,
+          });
+        }
+        if (command === "owned_opencode_utility_acquire") {
+          const handle = args.handle as { serviceId: string };
+          if (handle.serviceId !== `s${generation}` || generation === 1)
+            return Promise.reject("OWNED_OPENCODE_REFERENCE_STALE");
+          return Promise.resolve({
+            serviceId: handle.serviceId,
+            referenceId: "u",
+            endpoint: `http://127.0.0.1:${9000 + generation}`,
+          });
+        }
+        return Promise.reject(new Error(`unexpected ${command}`));
+      });
+      return catalogOperations;
+    }
+
+    it("re-acquires once with a new operation and retries the whole catalog read", async () => {
+      const operations = stubServices();
+      const urls: string[] = [];
+      const read = vi.fn((service: { url: string }) => {
+        urls.push(service.url);
+        return urls.length === 1
+          ? Promise.reject("OWNED_OPENCODE_PROCESS_CLOSED: Original process lifetime is closed")
+          : Promise.resolve("models");
+      });
+
+      await expect(withOwnedOpenCodeCatalog("/opencode", "/idle-read", read)).resolves.toBe(
+        "models",
+      );
+      expect(urls).toEqual(["http://127.0.0.1:9001", "http://127.0.0.1:9002"]);
+      expect(new Set(operations).size).toBe(2);
+    });
+
+    it("passes other errors through without a retry", async () => {
+      const operations = stubServices();
+      const read = vi.fn(() => Promise.reject(new Error("OWNED_OPENCODE_CATALOG_SCOPE_DENIED")));
+
+      await expect(withOwnedOpenCodeCatalog("/opencode", "/idle-other", read)).rejects.toThrow(
+        "CATALOG_SCOPE_DENIED",
+      );
+      expect(read).toHaveBeenCalledOnce();
+      expect(operations).toHaveLength(1);
+    });
+
+    it("does not retry a second failure", async () => {
+      stubServices();
+      const read = vi.fn(() => Promise.reject("OWNED_OPENCODE_UNAVAILABLE"));
+
+      await expect(withOwnedOpenCodeCatalog("/opencode", "/idle-twice", read)).rejects.toBe(
+        "OWNED_OPENCODE_UNAVAILABLE",
+      );
+      expect(read).toHaveBeenCalledTimes(2);
+    });
+
+    it("joins one re-acquire for concurrent callers", async () => {
+      const operations = stubServices();
+      const run = () =>
+        withOwnedOpenCodeCatalog("/opencode", "/idle-join", (service) =>
+          service.url.endsWith("9001")
+            ? Promise.reject("OWNED_OPENCODE_REFERENCE_UNKNOWN")
+            : Promise.resolve(service.url),
+        );
+
+      await expect(Promise.all([run(), run(), run()])).resolves.toEqual([
+        "http://127.0.0.1:9002",
+        "http://127.0.0.1:9002",
+        "http://127.0.0.1:9002",
+      ]);
+      expect(operations).toHaveLength(2);
+    });
+
+    it("retries a utility acquire against a re-acquired catalog service", async () => {
+      const operations = stubServices();
+
+      await expect(
+        resolveOwnedOpenCodeUtility("/opencode", "/idle-utility"),
+      ).resolves.toMatchObject({ nativeOwnedService: { serviceId: "s2", referenceId: "u" } });
+      expect(operations).toHaveLength(2);
     });
   });
 

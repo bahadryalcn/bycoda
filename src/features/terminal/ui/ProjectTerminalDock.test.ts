@@ -146,8 +146,12 @@ vi.mock("../../files/ui/ExplorerMenu", () => ({
     );
   },
 }));
+// The profile menu is a DropdownMenu; it reuses the recording ExplorerMenu stand-in above.
+vi.mock("../../../shared/ui/DropdownMenu", async () => ({
+  DropdownMenu: (await import("../../files/ui/ExplorerMenu")).ExplorerMenu,
+}));
 
-it.each(["terminal", "dock", "profile"])(
+it.each(["terminal", "move", "profile"])(
   "dismisses the old project's %s menu when its retained dock becomes hidden",
   async (menu) => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -197,9 +201,7 @@ it.each(["terminal", "dock", "profile"])(
         } else {
           host
             .querySelector<HTMLButtonElement>(
-              menu === "dock"
-                ? '[aria-label="Terminal dock actions"]'
-                : '[aria-label="Launch profile…"]',
+              menu === "move" ? '[aria-label="Move terminal"]' : '[aria-label="Launch profile…"]',
             )!
             .click();
         }
@@ -216,8 +218,8 @@ it.each(["terminal", "dock", "profile"])(
       const staleActions =
         menu === "profile"
           ? ["profile:shell", "split", "default"]
-          : menu === "dock"
-            ? ["top", "close", "close-others", "close-all", "hide"]
+          : menu === "move"
+            ? ["top", "bottom", "left", "right"]
             : ["split", "move-up", "close", "close-others", "close-all"];
       await act(async () => {
         for (const id of staleActions) stalePick(id);

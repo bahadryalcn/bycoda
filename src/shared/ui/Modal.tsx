@@ -126,6 +126,8 @@ type Props = {
   className?: string;
   /** Workspace panels docked at the end use the workspace panel ground. */
   surface?: "floating" | "workspace-panel";
+  /** Translucent shared glass for reading dialogs; popup grounds all use the floating surface, so this is kept for callers. */
+  frosted?: boolean;
   /** Keep taller dialogs inside the viewport, scrolling their content. Off: a top-anchored palette capped at 80% of the window. */
   fitViewport?: boolean;
   /**
@@ -200,6 +202,7 @@ export function ModalPanel({
   minimalHeader = false,
   className,
   surface,
+  frosted = false,
   fitViewport = true,
   placement = "center",
   panelStyle,
@@ -359,7 +362,7 @@ export function ModalPanel({
                 .filter(Boolean)
                 .join(" ")}
             >
-              {!popupHost && (!docked || expanded) ? <PopupBackdrop /> : null}
+              {!popupHost && (!docked || expanded) ? <PopupBackdrop frosted={frosted} /> : null}
               <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
                 <PanelHeader
                   className={

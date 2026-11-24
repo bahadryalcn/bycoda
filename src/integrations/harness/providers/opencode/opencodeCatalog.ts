@@ -8,7 +8,11 @@ import {
 } from "../../../../features/sessions/model/models";
 import { execChild, hasHeadlessChildBackend, resolveOpenCodeBinary } from "../../core/child";
 import { OpenCodeClient } from "./opencodeClient";
-import { resolveOpenCodeV2Service, resolveOwnedOpenCodeCatalog } from "./opencodeService";
+import {
+  resolveOpenCodeV2Service,
+  withOwnedOpenCodeCatalog,
+  type OpenCodeV2Service,
+} from "./opencodeService";
 import { isTauri } from "@tauri-apps/api/core";
 import {
   asRecord,
@@ -103,31 +107,32 @@ export async function discoverOpenCodeModels(workingDirectory?: string): Promise
 }
 
 async function discoverOpenCodeV2Models(path: string, cwd: string): Promise<AgentModel[]> {
-  const service =
-    typeof isTauri === "function" && isTauri() && !hasHeadlessChildBackend()
-      ? await resolveOwnedOpenCodeCatalog(path, cwd)
-      : await resolveOpenCodeV2Service(path, cwd);
-  // Catalog requests stay on the server's default location: location-scoped
-  // requests return an empty model snapshot for some projects on 2.x and a
-  // 500 for directories the server has not registered.
-  const client = new OpenCodeClient(
-    service.url,
-    "",
-    "v2",
-    service.password,
-    undefined,
-    undefined,
-    undefined,
-    service.nativeOwnedService,
-  );
-  const [rawModels, rawProviders, rawAgents] = await Promise.all([
-    client.listModels(),
-    client.listProviders(),
-    // Agent discovery is optional, as in the v1 path: its failure must not
-    // lose models and providers.
-    client.listAgents().catch(() => []),
-  ]);
-  return flattenOpenCodeModels(parseV2Catalog(rawModels, rawProviders), parseV2Agents(rawAgents));
+  const read = async (service: OpenCodeV2Service) => {
+    // Catalog requests stay on the server's default location: location-scoped
+    // requests return an empty model snapshot for some projects on 2.x and a
+    // 500 for directories the server has not registered.
+    const client = new OpenCodeClient(
+      service.url,
+      "",
+      "v2",
+      service.password,
+      undefined,
+      undefined,
+      undefined,
+      service.nativeOwnedService,
+    );
+    const [rawModels, rawProviders, rawAgents] = await Promise.all([
+      client.listModels(),
+      client.listProviders(),
+      // Agent discovery is optional, as in the v1 path: its failure must not
+      // lose models and providers.
+      client.listAgents().catch(() => []),
+    ]);
+    return flattenOpenCodeModels(parseV2Catalog(rawModels, rawProviders), parseV2Agents(rawAgents));
+  };
+  return typeof isTauri === "function" && isTauri() && !hasHeadlessChildBackend()
+    ? withOwnedOpenCodeCatalog(path, cwd, read)
+    : read(await resolveOpenCodeV2Service(path, cwd));
 }
 
 export function parseV2Catalog(

@@ -1689,7 +1689,22 @@ pub(crate) fn probe_local_link_token(
             .ok_or("This connection is not the local host")?;
         (machine.endpoint.clone(), machine.token.clone())
     };
-    rpc(&endpoint, &token, None, "environment.describe", json!({})).map(|_| ())
+    let descriptor = rpc(&endpoint, &token, None, "environment.describe", json!({}))?;
+    let supports_management = descriptor["capabilities"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item == "devices.setManagement"));
+    if supports_management {
+        let paired = rpc(&endpoint, &token, None, "devices.paired", json!({}))?;
+        let local = paired["devices"].as_array().is_some_and(|devices| {
+            devices
+                .iter()
+                .any(|device| device["isCurrent"] == true && device["isLocalDesktop"] == true)
+        });
+        if !local {
+            return Err("[RPC_AUTHORIZATION] Local desktop pairing needs to be renewed".into());
+        }
+    }
+    Ok(())
 }
 
 /// Swaps in a fresh token for the saved local link, in place: the machine id
@@ -1762,6 +1777,15 @@ pub(crate) fn replace_local_pairing(
         .map_err(|_| "Connection store is locked")?;
     let path = store_path(app)?;
     let mut machines = read(&path)?;
+    let previous_token = machines
+        .iter()
+        .find(|machine| {
+            machine.id == machine_id
+                && machine.environment_id == environment_id
+                && is_local_sync(machine, &local_name)
+                && machine.token != token
+        })
+        .map(|machine| machine.token.clone());
     let machine = apply_local_repair(
         &mut machines,
         machine_id,
@@ -1773,6 +1797,16 @@ pub(crate) fn replace_local_pairing(
     state.invalidate_ws(machine_id);
     state.invalidate_ws(&machine.id);
     state.observe_ws_capability(&machine, &descriptor);
+    drop(_guard);
+    if let Some(previous_token) = previous_token {
+        let _ = rpc(
+            &endpoint,
+            &previous_token,
+            Some(&environment_id),
+            "devices.revokeSelf",
+            json!({}),
+        );
+    }
     Ok(machine.public())
 }
 

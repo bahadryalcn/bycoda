@@ -116,6 +116,7 @@ export function markTurnInterrupted(session: Session): Session {
         role: "system",
         text: INTERRUPT_MESSAGE,
         notice: "interrupt",
+        autoContinueArmed: true,
       },
     ],
   };

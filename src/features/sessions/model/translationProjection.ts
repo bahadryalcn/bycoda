@@ -1,6 +1,6 @@
 import type { Block } from "./session";
 import type { TranslationHistory } from "./translationHistory";
-import { registerStreamingTextUpdate, streamingTextUpdate } from "./stableBlocks";
+import { registerStreamingBlockUpdate, streamingBlockUpdate } from "./stableBlocks";
 
 type Translation = TranslationHistory & { source: string; translatedVisible: boolean };
 export type TranslationProjection = {
@@ -9,7 +9,7 @@ export type TranslationProjection = {
   blocks: Block[];
 };
 
-/** Preserve text-only streaming lineage through unchanged translation history. */
+/** Preserve streaming lineage through unchanged translation history. */
 export function projectTranslatedBlocks(
   source: Block[],
   translations: TranslationProjection["translations"],
@@ -22,19 +22,14 @@ export function projectTranslatedBlocks(
     const text = entry.translatedVisible ? entry.translated : entry.original;
     return text === block.text ? block : { ...block, text };
   };
-  const index =
+  const update =
     previous?.translations === translations
-      ? streamingTextUpdate(previous.source, source)
+      ? streamingBlockUpdate(previous.source, source)
       : undefined;
-  if (
-    index !== undefined &&
-    previous &&
-    previous.blocks.length === source.length &&
-    source[index]
-  ) {
+  if (update && previous && previous.blocks.length === source.length && source[update.index]) {
     const blocks = [...previous.blocks];
-    blocks[index] = project(source[index]);
-    registerStreamingTextUpdate(previous.blocks, blocks, index);
+    blocks[update.index] = project(source[update.index]);
+    registerStreamingBlockUpdate(previous.blocks, blocks, update.index, update.kind);
     return blocks;
   }
   return source.map(project);

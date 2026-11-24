@@ -33,8 +33,15 @@ The first discovery shows its loading state and offers a retry if it fails.
 
 In the conversation picker's **Agents** tab, open **Custom** or **Add** under
 **Subagents** to edit the list in one pass. Search for models or filter by account.
-**Select all shown** adds matching rows to your draft, within the model limit.
+Use the checklist icon beside the account filter to select matching models
+within the limit. When every match is selected, the same button clears those selections.
 **Apply** saves the entire selection. **Cancel** discards changes made in the editor.
+
+In **Advisor**, use **Add** to choose a model and the edit icon to change it.
+Choose **Off** in the model picker to clear the advisor.
+
+Subagent rows show the provider icon, model name and any known account name.
+Saved models stay listed and can be removed when they are no longer offered.
 
 Every explicit-save editor in Settings uses one save bar. Its count opens the list of
 unsaved changes, grouped by provider, account or section, each with its own undo. Switching
@@ -216,6 +223,12 @@ Decision models keep connection status on each model row. Open Details for full 
 In **Settings > Models > Background work > Limits**, token and cost limits can be set for all providers and for each provider, per local calendar day, week (Monday to Sunday) or month. The table shows token limits; **Cost limits** reveals the USD columns, which stay open while any cost is set (subscription plans have no real dollar cost, so USD is the API list-price equivalent). Token cells accept shorthand such as 500K or 5M. Empty values and zero mean unlimited. Limits prevent new unattended turns after a threshold is reached; a turn already running can exceed it. For Claude, Codex and OpenCode, **Keep free (%)** is a provider default for models without their own reserve: those models are skipped while less than that share of the account's plan quota is left.
 
 ## Automatic compaction
+
+In Claude Code chats, the context meter reads the active model's capacity from
+the running Claude process when available. It combines that limit with the main
+model's token usage while the turn is running and updates from the turn result.
+The meter uses the model's context limit, independently of the auto-compact
+threshold.
 
 The model picker offers the compaction controls supported by the current provider.
 Save them in **Settings > Models > Chats**, as Bycoda defaults or as

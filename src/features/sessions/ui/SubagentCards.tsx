@@ -1,16 +1,16 @@
-import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { Text } from "../../../shared/ui/Text";
-import { ModelLabel } from "./ModelLabel";
 import { createContext, useContext, useEffect } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
 import { Check, ExternalLink, Square } from "../../../shared/ui/icons";
+import { blockLifecycle } from "../model/activityDock";
 import { crewMemberOf, delegationParentOf } from "../model/delegatedAgents";
+import { modelNameBesideIcon } from "../model/modelDisplayName";
 import { delegationResultFor } from "../model/delegationNotice";
 import { delegatedChildIdOf } from "../model/delegatedBlockId";
-import type { Block } from "../model/session";
+import { sessionNeedsInput, type Block } from "../model/session";
+import { subagentStepStrip } from "../model/subagentStepStrip";
 import { useSession, useSessionsSelector } from "../model/sessionsStore";
 import { useSubagentModelName } from "../model/reactiveReads";
 import {
@@ -24,19 +24,26 @@ import { useStopRequests } from "./useStopRequests";
 import { ActivityPhases } from "./AgentTranscriptActivity";
 import { blockForStep } from "./agentStepBlocks";
 import { SubagentRetryButton } from "./SubagentRetryButton";
-import { SubagentMarks, SubagentReport, SubagentStateLine } from "./SubagentAnatomy";
+import { SubagentRowContent } from "./SubagentRowContent";
+import { subagentRunDescription, SubagentRunStatus } from "./SubagentRunStatus";
+import { runLabelWith, SubagentReport } from "./SubagentAnatomy";
 import { consumeOpenSubagent, OPEN_SUBAGENT_EVENT, requestViewSubagent } from "./subagentFocus";
 import { TranscriptVirtualRows } from "./TranscriptVirtualRows";
 import { useTranscriptRevealTarget } from "./transcriptVirtualization";
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
+import { useSubagentRunIdentity, type SubagentRunSession } from "./useSubagentRunIdentity";
 
 /** The conversation whose transcript renders these rows; Crew member cards open and stop through it. */
 export const DelegatedRunOwner = createContext<string | undefined>(undefined);
 
 type DelegatedCard = {
-  member?: CrewMemberChild;
-  /** The task, in the slot a native run gives to its model. */
+  /** The child session, for its provider, account and effort. */
+  session?: SubagentRunSession;
+  /** The task, leading the row's detail line. */
   subtitle?: string;
+  /** A Crew member's handle, beside the name. */
+  handle?: string;
+  needsInput?: boolean;
   onOpen: () => void;
   /** Present while the member is still running. */
   onStop?: () => void;
@@ -54,8 +61,8 @@ type DelegatedCard = {
  * watching must not move while that happens, so these rows are never part of a
  * fold and hold their place from the moment the agents start.
  *
- * A row is a mascot, a name, and what that agent is doing right now. Click it
- * and the agent's own trail opens underneath.
+ * A row is the provider, the run's name and detail, and what it is doing right
+ * now. Click it and the agent's own trail opens underneath.
  */
 export function SubagentStack({
   blocks,
@@ -135,8 +142,10 @@ export function SubagentRow({
   const delegated: DelegatedCard | undefined =
     childId && parentId
       ? {
-          member: child && crewMemberOf(child),
+          session: child,
+          handle: child && crewMemberOf(child)?.handle,
           subtitle: child?.title,
+          needsInput: !!child && sessionNeedsInput(child),
           onOpen: () => requestViewDelegated(parentId, childId),
           resultReceived,
           ...(toolCallState(block) === "rejected"
@@ -221,68 +230,51 @@ function SubagentPanel({
   const report = subagentReport(block);
   const openPanel = delegated?.onOpen ?? (() => requestViewSubagent(block.id));
 
-  // Identity row: marks, name and the model beside it; the name gives room
-  // back so a run named with its whole brief cannot push the state off the row.
-  const nameClass = "min-w-0 text-start font-sans";
-  const label = (
-    <span className="flex min-w-0 flex-1 items-baseline gap-2">
-      {active ? (
-        <WorkingIndicator
-          glyph={false}
-          className={nameClass}
-          truncate
-          text={{ size: "body", weight: "medium" }}
-        >
-          {name}
-        </WorkingIndicator>
-      ) : (
-        <Text
-          size="body"
-          weight="medium"
-          truncate
-          tone={state === "rejected" ? "danger" : "inherit"}
-          className={nameClass}
-        >
-          {name}
-        </Text>
-      )}
-      {(subtitle ?? model) ? (
-        <Text size="caption" tone="inherit" truncate className="max-w-[40%] shrink-0">
-          {subtitle ?? <ModelLabel model={block.agentRun?.model ?? ""} name={model} size="xs" />}
-        </Text>
-      ) : null}
-    </span>
+  const needsInput = !!delegated?.needsInput || needsApproval(block);
+  const strip = subagentStepStrip(steps, active && !needsInput);
+  const description = subagentRunDescription(
+    needsInput && active ? t("Needs input") : runLabelWith(block, live, t),
+    strip,
+    state === "rejected",
+    t,
   );
-  const marks = (
-    <SubagentMarks
-      name={name}
+  const { account, effort } = useSubagentRunIdentity(delegated?.session, block.agentRun?.model);
+  const round = block.agentRun?.round;
+  const session = delegated?.session;
+  const rowContent = () => (
+    <SubagentRowContent
+      harness={session?.runningModelTarget?.harness ?? session?.harness}
       model={block.agentRun?.model}
-      member={delegated?.member}
+      account={account}
+      name={name}
       active={active}
       failed={state === "rejected"}
+      handle={delegated?.handle}
+      subtitle={subtitle}
+      details={[
+        round && round > 1 ? t("Round {p0}", { p0: round }) : undefined,
+        model && modelNameBesideIcon(model),
+        account?.accountLabel,
+        effort,
+      ]}
+      status={
+        <SubagentRunStatus
+          status={blockLifecycle(block, live)}
+          needsInput={needsInput}
+          startedAt={block.agentRun?.startedAt}
+          endedAt={block.agentRun?.endedAt}
+          strip={strip}
+        />
+      }
+      layout="dock"
     />
   );
-  const stateLine = (
-    <SubagentStateLine
-      block={block}
-      busy={live}
-      steps={steps}
-      inline
-      className="max-w-[55%] shrink-0"
-    />
-  );
-  const summary = (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5">
-      {marks}
-      {label}
-      {stateLine}
-      {delegated?.onStop && delegated.stopFailed ? (
-        <Text as="span" size="caption" tone="danger" className="shrink-0">
-          {t("Stop failed. Retry")}
-        </Text>
-      ) : null}
-    </span>
-  );
+
+  const stopFailure = delegated?.stopFailed ? (
+    <Text as="span" size="caption" tone="danger" className="self-end">
+      {t("Stop failed. Retry")}
+    </Text>
+  ) : null;
 
   const stopButton = delegated?.onStop ? (
     <Button
@@ -334,9 +326,11 @@ function SubagentPanel({
           variant="step"
           collapsible={false}
           summaryLabel={name}
-          summary={summary}
+          aria-description={description}
+          summary={rowContent()}
           summaryActions={actions}
         />
+        {stopFailure}
       </div>
     );
   }
@@ -348,10 +342,11 @@ function SubagentPanel({
         chevron="end"
         open={open}
         onOpenChange={onToggle}
+        aria-description={description}
         summaryLabel={
           open ? t("Hide {p0}'s work", { p0: name }) : t("Show {p0}'s work", { p0: name })
         }
-        summary={summary}
+        summary={rowContent()}
         summaryActions={actions}
       >
         <div className="zen-phase-body" data-open={open}>
@@ -398,6 +393,7 @@ function SubagentPanel({
           ) : null}
         </div>
       </Disclosure>
+      {stopFailure}
     </div>
   );
 }

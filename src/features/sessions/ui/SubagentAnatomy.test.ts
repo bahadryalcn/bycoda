@@ -64,21 +64,26 @@ it("keeps only the latest lifecycle and counters with independent failure tones"
   }
 });
 
-it("draws a crew member's portrait instead of the generic mascot", async () => {
+it("marks a run with one provider icon and the account number only when it has one", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   try {
-    await act(async () => root.render(createElement(SubagentMarks, { name: "Ada" })));
-    const plain = container.querySelectorAll("svg").length;
-    const members = { id: "m1", name: "Ada", handle: "ada" };
+    await act(async () => root.render(createElement(SubagentMarks, { harness: "claude" })));
+    expect(container.querySelector('[data-subagent-provider="claude"]')).not.toBeNull();
+    expect(container.querySelectorAll("img, svg")).toHaveLength(1);
+    expect(container.querySelector("[data-model-account-number]")).toBeNull();
+
     await act(async () =>
-      root.render(createElement(SubagentMarks, { name: "Ada", member: members })),
+      root.render(
+        createElement(SubagentMarks, {
+          harness: "claude",
+          account: { accountNumber: 2, accountLabel: "Personal" },
+        }),
+      ),
     );
-    const portrait = container.querySelector('svg[viewBox="0 0 24 24"][width="16"]');
-    expect(portrait).not.toBeNull();
-    expect(container.querySelectorAll("svg").length).toBe(plain);
+    expect(container.querySelector("[data-model-account-number]")?.textContent).toBe("2");
   } finally {
     await act(async () => root.unmount());
     container.remove();

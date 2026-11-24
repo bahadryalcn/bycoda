@@ -131,6 +131,7 @@ export function remoteLiveAgents(
       return {
         id: session.id,
         cwd: project,
+        listedRemote: true,
         title: sessionDisplayTitle(session.title, session.harness),
         harness: session.harness,
         issue: session.issue,

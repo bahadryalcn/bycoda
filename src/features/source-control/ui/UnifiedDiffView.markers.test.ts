@@ -8,6 +8,7 @@ vi.mock("../../files/editor/syntaxTokens", () => ({
 }));
 
 import { buildUnifiedFile } from "../model/unifiedDiff";
+import { editorSurfaceActive } from "../../files/editor/editorSurfaceVisibility";
 import { UnifiedDiffView } from "./UnifiedDiffView";
 
 let container: HTMLDivElement;
@@ -24,6 +25,22 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it("leaves the overview track interactive without a hit box over the diff", async () => {
+  const style = document.createElement("style");
+  style.textContent =
+    ".pointer-events-none { pointer-events: none } .contents { display: contents }";
+  document.head.append(style);
+  try {
+    const file = { ...buildUnifiedFile("before", "after"), id: "a", path: "a", label: "a" };
+    await act(async () => root.render(createElement(UnifiedDiffView, { files: [file] })));
+    const track = container.querySelector("canvas")!.parentElement!;
+    expect(editorSurfaceActive(track)).toBe(true);
+    expect(getComputedStyle(track.parentElement!).display).toBe("contents");
+  } finally {
+    style.remove();
+  }
 });
 
 it("marks added and removed lines with a glyph, not only color", async () => {

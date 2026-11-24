@@ -317,7 +317,6 @@ function Fixture() {
           open
           projectRailOpen={false}
           compactProjectRail
-          titleBarAbove
           sessions={history}
           liveAgents={[]}
           busySessionIds={new Set(busy ? [sessionId] : [])}

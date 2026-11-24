@@ -11,6 +11,7 @@ import {
   type SetStateAction,
 } from "react";
 import { flushSync } from "react-dom";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useGracedFailure } from "../../connections/public/transientFailure";
 import type { Block } from "../model/session";
 import { pinToBottom, syncTranscriptViewport } from "./transcriptScroll";
@@ -20,10 +21,17 @@ import { useReleasedTail } from "./useReleasedTail";
 const INITIAL_TURNS = 20;
 const FIRST_PAINT_TURNS = 3;
 const TURN_PAGE_SIZE = 20;
+/** Earlier turns mounted by the first commit of a page; the rest of the page follows in a transition. */
+const PAGE_FIRST_TURNS = 8;
 const EARLIER_SCROLL_THRESHOLD = 320;
 export const MAX_TRANSCRIPT_WINDOW_TURNS = 60;
 export type Window = { firstId?: string; offset: number; count: number; tail: boolean };
 type Anchor = {
+  /** The navigation and session it was taken for; a later one makes it stale. */
+  navigation: number;
+  sessionId?: string;
+  /** Where the reader was when the anchor was taken; a page that commits later honors any scrolling since. */
+  scrollTop: number;
   id?: string;
   offset: number;
   row?: { id: string; offset: number };
@@ -73,6 +81,20 @@ export async function runRemoteLoad({
     loadingRef.current = false;
     setPagingLoading(false);
   }
+}
+
+/** The part of an earlier page still to mount, and the navigation and session it belongs to. */
+type Remainder = { window: Window; navigation: number; sessionId?: string };
+
+/** The window once the rest of a page is mounted; unchanged when the reader has moved on since. */
+export function pageRemainder(
+  current: Window,
+  rest: Remainder,
+  live: { navigation: number; sessionId?: string },
+): Window {
+  return live.navigation === rest.navigation && live.sessionId === rest.sessionId
+    ? rest.window
+    : current;
 }
 
 /**
@@ -167,6 +189,8 @@ export function useTranscriptPaging({
   const [pagingLoading, setPagingLoading] = useState(false);
   const [failure, setFailure] = useState<{ sessionId?: string; cause: unknown } | null>(null);
   const previousScrollTop = useRef<number | undefined>(undefined);
+  // The part of an earlier page not yet mounted, valid until the next navigation.
+  const restRef = useRef<Remainder | null>(null);
   useLayoutEffect(() => {
     sessionRef.current = sessionId;
     turnsRef.current = turns;
@@ -203,6 +227,9 @@ export function useTranscriptPaging({
         );
       const rowId = row?.dataset.transcriptVirtualBlockId;
       anchorRef.current = {
+        navigation: navigationRef.current,
+        sessionId,
+        scrollTop: el?.scrollTop ?? 0,
         id: node?.dataset.transcriptTurn,
         offset: node ? node.getBoundingClientRect().top - top : 0,
         row:
@@ -212,13 +239,18 @@ export function useTranscriptPaging({
       prependHeightRef.current = null;
       stickToBottomRef.current = false;
     },
-    [scrollerRef, prependHeightRef, stickToBottomRef],
+    [scrollerRef, prependHeightRef, stickToBottomRef, sessionId],
   );
 
   useLayoutEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    const anchor = anchorRef.current;
+    let anchor = anchorRef.current;
+    // A reveal that needed no window move, or another session, outdates an anchor still waiting.
+    if (anchor && (anchor.navigation !== navigationRef.current || anchor.sessionId !== sessionId)) {
+      anchorRef.current = null;
+      anchor = null;
+    }
     if (anchor) {
       anchorRef.current = null;
       firstBlockRef.current = previous.current?.firstId;
@@ -232,11 +264,15 @@ export function useTranscriptPaging({
         [...el.querySelectorAll<HTMLElement>("[data-transcript-turn]")].find(
           (turn) => turn.dataset.transcriptTurn === anchor.id,
         );
+      // The prepend does not move the scroller (overflow-anchor is none), so a scrollTop that
+      // differs from the capture is the reader's own scrolling. A clamped scroller cannot tell.
+      const moved =
+        anchor.scrollTop <= el.scrollHeight - el.clientHeight ? el.scrollTop - anchor.scrollTop : 0;
       if (node)
         el.scrollTop +=
           node.getBoundingClientRect().top -
           el.getBoundingClientRect().top -
-          (row ? anchor.row!.offset : anchor.offset);
+          ((row ? anchor.row!.offset : anchor.offset) - moved);
       else el.scrollTop = anchor.edge === "end" ? el.scrollHeight - el.clientHeight : 0;
       distanceFromBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight;
       return;
@@ -256,6 +292,7 @@ export function useTranscriptPaging({
     scrollerRef,
     stickToBottomRef,
     distanceFromBottomRef,
+    sessionId,
   ]);
 
   useLayoutEffect(() => {
@@ -275,10 +312,37 @@ export function useTranscriptPaging({
   }, [count, selected.tail, turns.length, scrollerRef]);
   useEffect(() => {
     startTransition(() =>
-      setWindow((current) => ({ ...current, count: Math.max(current.count, INITIAL_TURNS) })),
+      setWindow((current) =>
+        current.count >= INITIAL_TURNS ? current : { ...current, count: INITIAL_TURNS },
+      ),
     );
   }, []);
 
+  /** Mounts a page of earlier turns: the nearest ones now, the rest once they are painted. */
+  const showEarlierPage = useStableCallback((first: Window, rest?: Window) => {
+    navigationRef.current++;
+    captureAnchor("start");
+    setWindow(first);
+    restRef.current = rest ? { window: rest, navigation: navigationRef.current, sessionId } : null;
+  });
+  // Mounting a whole page in one commit blocks input for as long as its markdown takes. Reads
+  // the page's remainder after the first commit, as a time-sliced update anchored like any page.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- anchors the remainder on the scroller DOM that the page's first commit just painted, which exists only after that commit
+  useEffect(() => {
+    const rest = restRef.current;
+    restRef.current = null;
+    if (!rest || rest.navigation !== navigationRef.current) return;
+    startTransition(() => {
+      captureAnchor("start");
+      // The update renders later: a navigation or session change since then outdates it.
+      setWindow((current) =>
+        pageRemainder(current, rest, {
+          navigation: navigationRef.current,
+          sessionId: sessionRef.current,
+        }),
+      );
+    });
+  }, [selected.firstId, selected.offset, selected.count, captureAnchor]);
   const moveWindow = useCallback(
     (first: number, nextCount: number, edge: Anchor["edge"]) => {
       const all = turnsRef.current;
@@ -298,7 +362,19 @@ export function useTranscriptPaging({
     if (loadingRef.current) return;
     const range = rangeRef.current;
     if (range.first > 0) {
-      moveWindow(Math.max(0, range.first - TURN_PAGE_SIZE), range.count + TURN_PAGE_SIZE, "start");
+      const all = turnsRef.current;
+      const page = (turns: number): Window => ({
+        firstId: all[range.first - turns]?.[0]?.id,
+        offset: 0,
+        count: Math.min(MAX_TRANSCRIPT_WINDOW_TURNS, range.count + turns),
+        tail: false,
+      });
+      const turns = Math.min(TURN_PAGE_SIZE, range.first);
+      setFailure(null);
+      showEarlierPage(
+        page(Math.min(turns, PAGE_FIRST_TURNS)),
+        turns > PAGE_FIRST_TURNS ? page(turns) : undefined,
+      );
       return;
     }
     if (!remoteHistoryHasMore || !onLoadRemoteHistory) return;
@@ -311,20 +387,19 @@ export function useTranscriptPaging({
       stale: () =>
         sessionRef.current !== sessionId || navigationRef.current !== requestedNavigation,
       apply: () => {
-        navigationRef.current++;
-        captureAnchor("start");
-        setWindow({
+        const page = (turns: number): Window => ({
           firstId,
-          offset: -TURN_PAGE_SIZE,
-          count: Math.min(MAX_TRANSCRIPT_WINDOW_TURNS, range.count + TURN_PAGE_SIZE),
+          offset: -turns,
+          count: Math.min(MAX_TRANSCRIPT_WINDOW_TURNS, range.count + turns),
           tail: false,
         });
+        showEarlierPage(page(PAGE_FIRST_TURNS), page(TURN_PAGE_SIZE));
       },
       loadingRef,
       setPagingLoading,
       setPagingFailure: (cause) => setFailure(cause === undefined ? null : { sessionId, cause }),
     });
-  }, [captureAnchor, moveWindow, remoteHistoryHasMore, onLoadRemoteHistory, sessionId]);
+  }, [showEarlierPage, remoteHistoryHasMore, onLoadRemoteHistory, sessionId]);
   const { visibleError, pending } = useGracedFailure({
     error: remoteHistoryHasMore && failure?.sessionId === sessionId ? failure?.cause : undefined,
     retry: loadEarlier,
@@ -346,11 +421,13 @@ export function useTranscriptPaging({
   };
   const loadNewer = useCallback(() => {
     const range = rangeRef.current;
+    // A search jump mounts a smaller window. Keep its next page contiguous.
+    const count = Math.max(range.count, TURN_PAGE_SIZE);
     const first = Math.min(
-      Math.max(0, turnsRef.current.length - range.count),
-      range.first + TURN_PAGE_SIZE,
+      Math.max(0, turnsRef.current.length - count),
+      Math.min(range.last, range.first + TURN_PAGE_SIZE),
     );
-    moveWindow(first, range.count, "end");
+    moveWindow(first, count, "end");
   }, [moveWindow]);
   const jumpLatest = useCallback(() => {
     navigationRef.current++;
@@ -361,7 +438,7 @@ export function useTranscriptPaging({
     flushSync(() => setWindow({ offset: 0, count: INITIAL_TURNS, tail: true }));
   }, [prependHeightRef, stickToBottomRef]);
   const revealBlock = useCallback(
-    (blockId: string): boolean => {
+    (blockId: string, forSearch = false): boolean => {
       const all = turnsRef.current;
       const index = all.findIndex((turn) => turn.some((block) => block.id === blockId));
       if (index < 0) return false;
@@ -369,19 +446,15 @@ export function useTranscriptPaging({
       setFailure(null);
       const range = rangeRef.current;
       if (index >= range.first && index < range.last) return true;
+      // Find moves repeatedly between distant blocks. Mount its target and nearby
+      // context in the first paint; normal paging can extend in both directions.
+      const count = forSearch ? PAGE_FIRST_TURNS : MAX_TRANSCRIPT_WINDOW_TURNS;
       const first = Math.max(
         0,
-        Math.min(index - TURN_PAGE_SIZE, all.length - MAX_TRANSCRIPT_WINDOW_TURNS),
+        Math.min(index - (forSearch ? 2 : TURN_PAGE_SIZE), all.length - count),
       );
       captureAnchor("start");
-      flushSync(() =>
-        setWindow({
-          firstId: all[first]?.[0]?.id,
-          offset: 0,
-          count: MAX_TRANSCRIPT_WINDOW_TURNS,
-          tail: false,
-        }),
-      );
+      setWindow({ firstId: all[first]?.[0]?.id, offset: 0, count, tail: false });
       return true;
     },
     [captureAnchor],
@@ -392,7 +465,7 @@ export function useTranscriptPaging({
     [],
   );
   useEffect(() => {
-    onRevealReady?.(revealBlock);
+    onRevealReady?.((id) => flushSync(() => revealBlock(id)));
     return () => onRevealReady?.(null);
   }, [revealBlock, onRevealReady]);
   return {

@@ -220,7 +220,7 @@ function TooltipBody({
  * add a second hint.
  *
  * Pointer hover opens after `delay` (450 ms; at once within 250 ms of another hint closing);
- * keyboard focus (`:focus-visible`) opens at once; leave, press, blur and Escape close. Touch
+ * keyboard focus (`:focus-visible`, unless the last input was a pointer) opens at once; leave, press, blur and Escape close. Touch
  * never opens it. Disabled anchors still open on hover (pointer events reach disabled controls;
  * nothing here relies on mouse events or on the anchor's own click handling); keyboard users
  * reach a disabled reason only on a focusable `aria-disabled` control, such as a Button with
@@ -341,6 +341,8 @@ export function useTooltip({
       onPointerDown: hide,
       onFocus: (event) => {
         if (empty || !event.currentTarget.contains(event.target as Node)) return;
+        // A dialog moving focus to its first control after a click is not keyboard navigation.
+        if (event.target.ownerDocument.documentElement.dataset.inputModality === "pointer") return;
         const target = tooltipAnchor(event.currentTarget);
         if (event.target.matches(":focus-visible") && eligible(target))
           intent.scheduleOpen(target, 0);

@@ -10,6 +10,8 @@ export type PairedDevice = {
   kind?: "phone" | "desktop";
   pairedAt?: number;
   lastSeenAt?: number;
+  canManageDevices?: boolean;
+  isLocalDesktop?: boolean;
 };
 
 export type PairedDeviceList =
@@ -51,6 +53,12 @@ export function readPairedDevices(value: unknown): { devices: PairedDevice[]; tr
       ...(kind ? { kind } : {}),
       ...(pairedAt !== undefined ? { pairedAt } : {}),
       ...(lastSeenAt !== undefined ? { lastSeenAt } : {}),
+      ...(typeof entry.canManageDevices === "boolean"
+        ? { canManageDevices: entry.canManageDevices }
+        : {}),
+      ...(typeof entry.isLocalDesktop === "boolean"
+        ? { isLocalDesktop: entry.isLocalDesktop }
+        : {}),
     };
   });
   if (new Set(devices.map((device) => device.id)).size !== devices.length)
@@ -96,4 +104,20 @@ export async function revokePairedDevice(machine: RemoteMachine, device: PairedD
     true,
   );
   if (result?.revoked !== true) throw new Error("This device was already removed.");
+}
+
+export async function setPairedDeviceManagement(
+  machine: RemoteMachine,
+  device: PairedDevice,
+  enabled: boolean,
+) {
+  const result = await remoteRequest<{ updated?: unknown }>(
+    machine.id,
+    "devices.setManagement",
+    { id: device.id, enabled },
+    false,
+    true,
+    machine.environmentId,
+  );
+  return result?.updated === true;
 }

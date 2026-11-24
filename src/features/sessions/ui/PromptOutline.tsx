@@ -49,7 +49,8 @@ const BAR_STACK_MAX_PX = 330;
 const BAR_STACK_PANE_SHARE = 0.75;
 const SCROLLER = ".agent-transcript";
 const TURN = ".transcript-turn";
-const ANCHOR = "[data-prompt-anchor]";
+// Delegation notices use their own attribute: `data-prompt-anchor` also starts the sent-prompt rise.
+const ANCHOR = "[data-prompt-anchor], [data-outline-anchor]";
 
 type Hover = { id: string; el: HTMLElement };
 type StackLayout = {
@@ -131,7 +132,7 @@ export const PromptOutline = memo(function PromptOutline({
     }
     const anchors: OutlineAnchor[] = [];
     for (const el of scroller.querySelectorAll<HTMLElement>(ANCHOR)) {
-      const id = el.dataset.promptAnchor;
+      const id = el.dataset.promptAnchor ?? el.dataset.outlineAnchor;
       if (id) anchors.push({ id, ...promptBand(el, viewport) });
     }
     setActiveId(
@@ -239,7 +240,8 @@ export const PromptOutline = memo(function PromptOutline({
     // The transcript scrolls to the bottom on each streaming update until a
     // wheel-up event occurs. Send one, so the jump stays.
     scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
-    const selector = `[data-prompt-anchor="${CSS.escape(id)}"]`;
+    const escaped = CSS.escape(id);
+    const selector = `[data-prompt-anchor="${escaped}"], [data-outline-anchor="${escaped}"]`;
     let anchor = scroller.querySelector<HTMLElement>(selector);
     if (!anchor && revealBlock?.(id)) {
       anchor = scroller.querySelector<HTMLElement>(selector);
@@ -307,6 +309,7 @@ export const PromptOutline = memo(function PromptOutline({
         size="lg"
         maxHeight={360}
         density="compact"
+        windowed
         initialActiveId={activeId ?? undefined}
         // Numbered single-line rows: the list scans like a table of contents, the current turn checked.
         items={prompts.map((prompt, index) => ({

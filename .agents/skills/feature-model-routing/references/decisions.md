@@ -75,3 +75,13 @@ Owner decision, 2026-11-17:
 (Gloss: fix all of it, including automatic failover, but the owner must be able to turn it on and off.)
 
 Recorded decision: a Chat setting (`usageLimitFailover`: off, another account, model order; default off) lets a local conversation stopped at a usage limit switch once per limit and send Continue. Model order reads the main order and its live status and skips the limited account. Routing runs keep their run-start snapshot; this is an explicit chat preference, not order or quota changes moving a running session.
+
+## Host-run chats use the same failover setting
+
+Owner decision, 2026-11-24, answering whether Host-run chats should also switch at a usage limit:
+
+> olur ekliyelim
+
+(Gloss: yes, let's add it.)
+
+Recorded decision: the Host applies its own saved `usageLimitFailover` to ordinary conversations it runs, once per limit reported by a live turn. Work sessions (tasks, goals, crews, stewards, automations, Assistant, delegated children) and Native conversations the desktop still writes never switch. Account and order choices respect the project's work or personal scope, and an unreadable quota is not headroom. The note, switch and Continue commit together, so a refused send leaves the chat on the limited target with its notice.

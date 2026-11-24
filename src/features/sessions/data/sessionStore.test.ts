@@ -1050,6 +1050,7 @@ describe("sanitizeSessionForPersist", () => {
         role: "system",
         text: "Turn interrupted when Bycoda quit.",
         notice: "interrupt",
+        autoContinueArmed: true,
       },
       {
         id: "info",
@@ -1074,6 +1075,7 @@ describe("sanitizeSessionForPersist", () => {
     const persisted = sanitizeSessionForPersist(session).blocks;
     expect(persisted[0]?.notice).toBe("error");
     expect(persisted[1]?.notice).toBe("interrupt");
+    expect(persisted[1]?.autoContinueArmed).toBe(true);
     expect(persisted[2]?.notice).toBe("info");
     expect(persisted[3]?.notice).toBeUndefined();
     expect(persisted[4]?.notice).toBeUndefined();

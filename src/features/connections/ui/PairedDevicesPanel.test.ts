@@ -3,6 +3,10 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { setLanguagePreference } from "../../../shared/i18n";
+import * as clock from "../../../shared/lib/time/wallClock";
+import * as accountState from "../../account";
+import { ACCOUNT_CONTEXT } from "../../account/model/testFixtures";
+import * as pairing from "../model/usePhonePairing";
 import type { PairedDevice, PairedDeviceList } from "../model/pairedDevices";
 import type { PhonePairingApi } from "../model/phonePairingTypes";
 import type { RemoteMachine } from "../model/protocol";
@@ -121,6 +125,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -139,7 +144,9 @@ async function click(text: string, within: Element = container) {
   await act(async () => button!.click());
 }
 
-async function render(props: { active?: boolean; machines?: RemoteMachine[] } = {}) {
+async function render(
+  props: { active?: boolean; machines?: RemoteMachine[]; onRefresh?: () => void } = {},
+) {
   await act(async () =>
     root.render(
       createElement(PairedDevicesPanel, {
@@ -166,17 +173,117 @@ it("lists each computer's devices and offers revoke only for the others", async 
   expect(api.enable).not.toHaveBeenCalled();
 });
 
+it("handles a burst of refresh clicks with one inventory read and one read per Host, then accepts another refresh", async () => {
+  const onRefresh = vi.fn();
+  await render({ onRefresh });
+  const pairingRender = vi.spyOn(pairing, "usePhonePairing");
+  devices.loadPairedDevices.mockClear();
+  let finish!: (value: PairedDeviceList) => void;
+  const pending = new Promise<PairedDeviceList>((resolve) => {
+    finish = resolve;
+  });
+  devices.loadPairedDevices.mockReturnValue(pending);
+  const button = buttons().find((entry) => entry.getAttribute("aria-label") === "Refresh devices")!;
+  for (let i = 0; i < 8; i++) await act(async () => button.click());
+  expect(onRefresh).toHaveBeenCalledTimes(1);
+  expect(pairingRender).not.toHaveBeenCalled();
+  expect(devices.loadPairedDevices.mock.calls.map(([machine]) => machine.id).sort()).toEqual([
+    "local",
+    "remote",
+  ]);
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  await act(async () => finish({ state: "ready", devices: [desktop, phone], truncated: false }));
+  expect(button.disabled).toBe(false);
+  await click("Refresh devices");
+  expect(onRefresh).toHaveBeenCalledTimes(2);
+  expect(devices.loadPairedDevices).toHaveBeenCalledTimes(4);
+});
+
+it("joins an unfinished initial Host read without losing the explicit inventory refresh", async () => {
+  const onRefresh = vi.fn();
+  let finish!: (value: PairedDeviceList) => void;
+  devices.loadPairedDevices.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render({ machines: [local], onRefresh });
+  await click("Refresh devices");
+  expect(onRefresh).toHaveBeenCalledOnce();
+  expect(devices.loadPairedDevices).toHaveBeenCalledOnce();
+  await act(async () => finish({ state: "ready", devices: [desktop, phone], truncated: false }));
+  expect(container.textContent).toContain("Pixel 9");
+});
+
+it("reads the same Host again when the account changes and ignores the old account's late refresh", async () => {
+  const state = vi.spyOn(accountState, "useAccountState");
+  const first = {
+    phase: "signed-in" as const,
+    context: ACCOUNT_CONTEXT,
+    deviceId: null,
+    stale: false,
+    verifiedAt: 1,
+  };
+  try {
+    state.mockReturnValue(first);
+    await render({ machines: [local] });
+    let finish!: (value: PairedDeviceList) => void;
+    devices.loadPairedDevices.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await click("Refresh devices");
+    state.mockReturnValue({
+      ...first,
+      context: { ...ACCOUNT_CONTEXT, user: { ...ACCOUNT_CONTEXT.user, id: "second-user" } },
+    });
+    devices.loadPairedDevices.mockResolvedValue({
+      state: "ready",
+      devices: [desktop, { ...phone, name: "Other account phone" }],
+      truncated: false,
+    });
+    await render({ machines: [local] });
+    expect(container.textContent).toContain("Other account phone");
+    await act(async () => finish({ state: "ready", devices: [desktop, phone], truncated: false }));
+    expect(container.textContent).not.toContain("Pixel 9");
+    expect(
+      buttons().find((entry) => entry.getAttribute("aria-label") === "Refresh devices")?.disabled,
+    ).toBe(false);
+  } finally {
+    state.mockRestore();
+  }
+});
+
 it("revokes another device after an in-place confirmation and reloads the list", async () => {
-  await render();
+  await render({ machines: [local] });
+  let finishOldRead!: (value: PairedDeviceList) => void;
+  devices.loadPairedDevices.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishOldRead = resolve;
+      }),
+  );
+  await click("Refresh devices");
   await click("Revoke");
   expect(devices.revokePairedDevice).not.toHaveBeenCalled();
   // ConfirmMorph ignores an answer within ~280 ms of the question being asked.
   await act(async () => new Promise((resolve) => setTimeout(resolve, 320)));
+  devices.loadPairedDevices.mockResolvedValue({
+    state: "ready",
+    devices: [desktop],
+    truncated: false,
+  });
   await click("Revoke access", document.body);
   expect(devices.revokePairedDevice).toHaveBeenCalledWith(local, phone);
-  expect(devices.loadPairedDevices.mock.calls.filter(([machine]) => machine === local).length).toBe(
-    2,
+  expect(devices.loadPairedDevices).toHaveBeenCalledTimes(3);
+  expect(container.textContent).not.toContain("Pixel 9");
+  await act(async () =>
+    finishOldRead({ state: "ready", devices: [desktop, phone], truncated: false }),
   );
+  expect(container.textContent).not.toContain("Pixel 9");
 });
 
 it("warns when the host's list is cut off at its limit", async () => {
@@ -199,21 +306,31 @@ it("never shows a previous Host's list after the connection is rebound to anothe
 });
 
 it("keeps the last good list when a refresh fails, marks it stale and retries on request", async () => {
+  const now = vi.spyOn(clock, "wallClockNow").mockReturnValue(1_000_000);
   await render({ machines: [local] });
+  now.mockReturnValue(1_600_000);
+  await click("Refresh devices");
+  now.mockReturnValue(1_660_000);
   devices.loadPairedDevices.mockRejectedValue(new Error("unreachable"));
   await click("Refresh devices");
-  expect(container.textContent).toContain("Could not refresh. Showing the list from");
+  expect(container.textContent).toContain("Could not refresh. Showing the list from 1 minute ago.");
   expect(container.textContent).not.toContain("Could not read the devices");
   // The last good list stays, and so does revoking from it.
   expect(container.textContent).toContain("Pixel 9");
   const revoke = buttons().find((entry) => entry.textContent?.trim() === "Revoke")!;
   expect(revoke.disabled).toBe(false);
-  devices.loadPairedDevices.mockResolvedValue({
-    state: "ready",
-    devices: [desktop, phone],
-    truncated: false,
-  });
+  devices.loadPairedDevices.mockClear();
+  let finish!: (value: PairedDeviceList) => void;
+  devices.loadPairedDevices.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
   await click("Try again");
+  await click("Try again");
+  expect(devices.loadPairedDevices).toHaveBeenCalledOnce();
+  await act(async () => finish({ state: "ready", devices: [desktop, phone], truncated: false }));
   expect(container.textContent).not.toContain("Could not refresh");
   expect(container.textContent).toContain("Pixel 9");
 });

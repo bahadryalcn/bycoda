@@ -1,7 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
-import { Badge } from "../../../shared/ui/Badge";
 import { Divider } from "../../../shared/ui/Divider";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
@@ -12,14 +11,13 @@ import { ClampText } from "../../../shared/ui/ClampText";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { useDelegatedRunDiscovery } from "../../connections/public/delegatedRuns";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { AccountColorDot } from "../../providers/public/accountIdentity";
 import {
   providerAccounts,
   subscribeProviderAccounts,
   supportsProviderAccounts,
   type ProviderAccount,
 } from "../../providers/public/providerAccounts";
-import { Check, ChevronRight, CircleAlert, Square, X } from "../../../shared/ui/icons";
+import { Check, ChevronRight, CircleAlert, Square } from "../../../shared/ui/icons";
 import { useActivityDock, useDockCountParts, useStopAllControl } from "../model/reactiveReads";
 import {
   groupDockAgents,
@@ -31,13 +29,16 @@ import { hasPendingApproval, type Block, type HarnessId } from "../model/session
 import { executionUserIndex } from "../model/executionTurn";
 import { useTurnClockInTranscript, useTurnClockOrigin } from "../model/turnActivity";
 import { AgentClock } from "./AgentClock";
-import { SubagentStatusSummary } from "./SubagentAnatomy";
+import { AgentStatusDot } from "./AgentStatusDot";
+import { DockAgentCard } from "./DockAgentCard";
+import rowStyles from "./SubagentRow.module.css";
 import { HarnessIcon } from "./HarnessIcon";
 import type { TextTone } from "../../../shared/ui/Text";
 import { formatElapsed, useElapsedFrom } from "./useElapsedFrom";
 import { STOP_ALL, useStopRequests } from "./useStopRequests";
 import { PacingUncle } from "./PacingUncle";
 import { DockApprovalActions } from "./ActivityDockApproval";
+import { DockStopAll } from "./ActivityDockStopAll";
 import "./chat-controls.css";
 
 const expandedBySession = new Map<string, boolean>();
@@ -271,25 +272,6 @@ function DockBody({
   const clock = (dock.state === "working" || dock.state === "waiting") && !clockInTranscript;
   const stopAllWhenWired = useStopAllControl(dock, stop.perItem);
   const stopAll = stop.onAll ? stopAllWhenWired : null;
-  const stopAllButton = stopAll ? (
-    <Button
-      data-dock-stop-all=""
-      className="shrink-0"
-      variant="ghost"
-      type="button"
-      tooltip={stop.failed.has(STOP_ALL) ? t("Could not stop it. Try again.") : stopAll.title}
-      startIcon={<Square className="icon-xs" strokeWidth={1.75} />}
-      reserveLabels={[stopAll.label, t("Stopping…"), t("Retry stop")]}
-      disabled={stop.stopping.has(STOP_ALL)}
-      onClick={() => stop.request(STOP_ALL, () => stop.onAll!())}
-    >
-      {stop.stopping.has(STOP_ALL)
-        ? t("Stopping…")
-        : stop.failed.has(STOP_ALL)
-          ? t("Retry stop")
-          : stopAll.label}
-    </Button>
-  ) : null;
 
   const summary = (
     <span className="activity-dock-summary">
@@ -305,8 +287,8 @@ function DockBody({
         {label}
       </Text>
       {clock ? <DockClock startedAt={clockOrigin} /> : null}
-      {/* Inside the summary: a narrow dock gives the summary a full row, and the
-            walker must stay on it instead of wrapping below the label. */}
+      {/* Inside the summary so it stays on the label's row. In a narrow dock it takes no
+            width of its own and walks behind the controls. */}
       {dock.state === "working" || dock.state === "waiting" ? (
         <span
           data-pacing-track="reserved"
@@ -379,17 +361,25 @@ function DockBody({
         <div className="relative flex min-h-8 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1">
           {hasAgents ? toggle : summary}
           {dock.state === "needs-input" ? <DockApprovalActions blocks={blocks} /> : null}
-          {!hasAgents ? stopAllButton : null}
+          {stopAll ? (
+            // Keyed so a confirmation armed in one session cannot carry into another.
+            <DockStopAll
+              key={sessionId}
+              control={stopAll}
+              stopping={stop.stopping.has(STOP_ALL)}
+              failed={stop.failed.has(STOP_ALL)}
+              onStop={() => stop.request(STOP_ALL, () => stop.onAll!())}
+            />
+          ) : null}
           {goalControl}
         </div>
       </Text>
       {open ? (
         <div id={listId}>
           <Divider inset="md" decorative />
-          {stopAllButton ? <div className="flex justify-end px-3 pt-1">{stopAllButton}</div> : null}
           <div
             ref={lockList}
-            className="activity-dock-list flex max-h-60 flex-col gap-0.5 overflow-x-hidden overflow-y-auto overscroll-none px-1 py-1"
+            className="activity-dock-list flex max-h-[min(26rem,45vh)] flex-col gap-0.5 overflow-x-hidden overflow-y-auto overscroll-none px-1 py-1"
           >
             {/* Running rows lead, so their Stop buttons are not buried under
               finished ones. The sort is stable: transcript order otherwise. */}
@@ -535,7 +525,9 @@ function DockAgentRow({
   const stoppable = canStopAgent(agent, stop.perItem) && !!stop.onAgent;
   const stopping = stop.stopping.has(key);
   return (
-    <div className="activity-dock-item flex min-w-0 items-start py-0.5">
+    <div
+      className={`activity-dock-item flex min-w-0 py-0.5 ${agent.kind === "agent" ? "items-center" : "items-start"}`}
+    >
       <Button
         variant="item"
         type="button"
@@ -543,108 +535,76 @@ function DockAgentRow({
         data-dock-agent={agent.blockId}
         data-dock-agent-state={agent.status}
         onClick={() => onOpen(agent)}
-        className="activity-dock-agent min-w-0 flex-1 items-center text-left"
+        className={`activity-dock-agent min-w-0 flex-1 items-center text-left ${agent.kind === "agent" ? rowStyles.row : ""}`}
       >
-        {/* The provider leads an agent row, so mixed-provider runs read apart at a glance;
-            a command has no provider and keeps its state mark. */}
-        <span className="flex shrink-0 self-start pt-0.5" aria-hidden="true" data-dock-agent-lead>
-          {agent.kind === "agent" && provider ? (
-            <HarnessIcon harness={provider} size="md" />
-          ) : (
-            <AgentStatusDot status={agent.status} size="md" />
-          )}
-        </span>
-        <span className="activity-dock-agent-identity flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex min-w-0 items-start gap-1.5" data-dock-agent-title>
-            <ClampText
-              as="span"
-              lines={2}
-              expandable={false}
-              size="inherit"
-              tone="neutral"
-              weight="medium"
-              className="whitespace-pre-wrap [overflow-wrap:anywhere]"
+        {agent.kind === "agent" ? (
+          <DockAgentCard agent={agent} provider={provider} />
+        ) : (
+          <>
+            {/* A command has no provider and keeps its state mark. */}
+            <span
+              className="flex shrink-0 self-start pt-0.5"
+              aria-hidden="true"
+              data-dock-agent-lead
             >
-              {agent.name}
-              {agent.crewMember?.handle ? (
-                <Text size="inherit" tone="muted" weight="regular" className="ml-1.5">
-                  @{agent.crewMember.handle}
-                </Text>
-              ) : null}
-              {agent.round && agent.round > 1 ? (
-                <Badge size="xs" appearance="subtle" tone="neutral" className="ml-1.5">
-                  {t("Round {p0}", { p0: agent.round })}
-                </Badge>
-              ) : null}
-            </ClampText>
-          </span>
-          {agent.kind === "agent" ? (
-            <Text size="micro" tone="muted" className="flex min-w-0 items-center gap-1.5">
-              <Text size="inherit" tone="inherit" truncate>
-                {agent.model ?? t("Subagent")}
-              </Text>
-              {account ? <AccountColorDot account={account} /> : null}
-              {accountLabel ? (
-                <Text size="inherit" tone="inherit" truncate>
-                  {accountLabel}
-                </Text>
-              ) : null}
-              {agent.nested ? (
-                <Text size="inherit" tone="inherit" className="shrink-0" data-dock-agent-nested>
-                  {t("Subagents: {p0}", { p0: agent.nested })}
-                </Text>
-              ) : null}
-              {agent.needsInput ? (
-                <Badge size="xs" tone="warning" appearance="subtle" className="shrink-0">
-                  {t("Needs input")}
-                </Badge>
-              ) : null}
-            </Text>
-          ) : null}
-        </span>
-        <Text
-          size="inherit"
-          tone="secondary"
-          className="activity-dock-agent-metrics flex shrink-0 flex-wrap items-center justify-end gap-x-2"
-        >
-          {agent.detail ? (
+              <AgentStatusDot status={agent.status} size="md" />
+            </span>
+            <span className="activity-dock-agent-identity flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="flex min-w-0 items-start gap-1.5" data-dock-agent-title>
+                <ClampText
+                  as="span"
+                  lines={2}
+                  expandable={false}
+                  size="inherit"
+                  tone="neutral"
+                  weight="medium"
+                  className="whitespace-pre-wrap [overflow-wrap:anywhere]"
+                >
+                  {agent.name}
+                </ClampText>
+              </span>
+            </span>
             <Text
               size="inherit"
-              tone={
-                agent.status === "failed"
-                  ? "danger"
-                  : agent.status === "stopped" || agent.status === "interrupted"
-                    ? "warning"
-                    : "inherit"
-              }
-              className="min-w-0"
+              tone="secondary"
+              className="activity-dock-agent-metrics flex shrink-0 flex-wrap items-center justify-end gap-x-2"
             >
-              {agent.detailParts ? (
-                <SubagentStatusSummary parts={agent.detailParts} />
-              ) : (
-                agent.detail
+              {agent.detail ? (
+                <Text
+                  size="inherit"
+                  tone={
+                    agent.status === "failed"
+                      ? "danger"
+                      : agent.status === "stopped" || agent.status === "interrupted"
+                        ? "warning"
+                        : "inherit"
+                  }
+                  className="min-w-0"
+                >
+                  {agent.detail}
+                </Text>
+              ) : null}
+              {/* A detail that already names the state ("stopped by you") keeps it once. */}
+              {agent.detail?.toLocaleLowerCase().includes(statusWord.toLocaleLowerCase()) ? null : (
+                <Text
+                  size="inherit"
+                  tone={STATUS_TONE[agent.status]}
+                  weight={agent.status === "failed" ? "medium" : undefined}
+                  className="inline-flex shrink-0 items-center gap-1"
+                  data-dock-agent-status
+                >
+                  <AgentStatusDot status={agent.status} />
+                  {statusWord}
+                </Text>
               )}
+              <AgentClock
+                startedAt={agent.startedAt}
+                endedAt={agent.endedAt}
+                live={agent.status === "running"}
+              />
             </Text>
-          ) : null}
-          {/* A detail that already names the state ("Interrupted", "stopped by you") keeps it once. */}
-          {agent.detail?.toLocaleLowerCase().includes(statusWord.toLocaleLowerCase()) ? null : (
-            <Text
-              size="inherit"
-              tone={STATUS_TONE[agent.status]}
-              weight={agent.status === "failed" ? "medium" : undefined}
-              className="inline-flex shrink-0 items-center gap-1"
-              data-dock-agent-status
-            >
-              <AgentStatusDot status={agent.status} />
-              {statusWord}
-            </Text>
-          )}
-          <AgentClock
-            startedAt={agent.startedAt}
-            endedAt={agent.endedAt}
-            live={agent.status === "running"}
-          />
-        </Text>
+          </>
+        )}
         <ChevronRight className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
       </Button>
       {stoppable ? (
@@ -672,27 +632,4 @@ function DockAgentRow({
       ) : null}
     </div>
   );
-}
-
-export function AgentStatusDot({
-  status,
-  size = "xs",
-}: {
-  status: DockAgent["status"];
-  size?: "xs" | "md";
-}) {
-  useLocale();
-  if (status === "running") return <WorkingIndicator size={size} />;
-  const className = `${size === "md" ? "icon-md" : "icon-xs"} shrink-0`;
-  if (status === "done") return <Check className={className} tone="success" strokeWidth={2} />;
-  if (status === "failed") {
-    return <X className={className} tone="danger" strokeWidth={2} />;
-  }
-  if (status === "stopped") {
-    return <Square className={className} tone="warning" strokeWidth={2} />;
-  }
-  if (status === "interrupted") {
-    return <CircleAlert className={className} tone="warning" strokeWidth={2} />;
-  }
-  return null;
 }

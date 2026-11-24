@@ -972,18 +972,31 @@ test("busy composer keeps Send, Queue and Stop visible with shortcut hints", asy
     );
     for (const width of [390, 768, 1024, 1440]) {
       await page.setViewportSize({ width, height: 800 });
-      for (const control of [send, queue, stop]) await expect(control).toBeInViewport();
-      const bounds = await Promise.all([queue, send, stop].map((control) => control.boundingBox()));
-      expect(bounds[0]!.x + bounds[0]!.width).toBeLessThanOrEqual(bounds[1]!.x);
-      expect(bounds[1]!.x + bounds[1]!.width).toBeLessThanOrEqual(bounds[2]!.x);
+      // A narrow composer gives a draft's Queue and Send the room; Stop keeps its shortcut.
+      const narrow = await page
+        .locator(".composer-controls")
+        .first()
+        .evaluate(
+          (node) =>
+            getComputedStyle(node).getPropertyValue("--composer-settings-in-picker").trim() === "1",
+        );
+      const shown = narrow ? [queue, send] : [queue, send, stop];
+      if (narrow) await expect(stop).toHaveCount(0);
+      for (const control of shown) await expect(control).toBeInViewport();
+      const bounds = await Promise.all(shown.map((control) => control.boundingBox()));
+      for (let index = 1; index < bounds.length; index++)
+        expect(bounds[index - 1]!.x + bounds[index - 1]!.width).toBeLessThanOrEqual(
+          bounds[index]!.x,
+        );
       const plus = await page
         .getByRole("button", { name: "Add files or skills", exact: true })
         .boundingBox();
       const context = await page.locator(".context-meter-summary").boundingBox();
+      const last = bounds.at(-1)!;
       for (const box of [plus, context, ...bounds]) {
         expect(box).not.toBeNull();
-        expect(Math.abs(box!.height - bounds[2]!.height)).toBeLessThanOrEqual(1);
-        expect(Math.abs(box!.y - bounds[2]!.y)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box!.height - last.height)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box!.y - last.y)).toBeLessThanOrEqual(1);
       }
     }
   }
@@ -1645,11 +1658,16 @@ test("composer shows the account name when it fits and keeps narrow controls ali
       );
       expect(numberBounds.y).toBeLessThan(iconBounds.y);
       const model = (await trigger.boundingBox())!;
-      const accessBounds = (await access.boundingBox())!;
-      const modeBounds = (await mode.boundingBox())!;
       const modelCenter = model.y + model.height / 2;
-      expect(accessBounds.y + accessBounds.height / 2).toBeCloseTo(modelCenter, 0);
-      expect(modeBounds.y + modeBounds.height / 2).toBeCloseTo(modelCenter, 0);
+      if (width === 320) {
+        await expect(access).toHaveCount(0);
+        await expect(mode).toHaveCount(0);
+      } else {
+        for (const control of [access, mode]) {
+          const bounds = (await control.boundingBox())!;
+          expect(bounds.y + bounds.height / 2).toBeCloseTo(modelCenter, 0);
+        }
+      }
       await expect(send).toBeInViewport();
       await expect(add).toBeInViewport();
       if (width <= 420) {
@@ -1657,8 +1675,7 @@ test("composer shows the account name when it fits and keeps narrow controls ali
         const sendBounds = (await send.boundingBox())!;
         expect(Math.abs(addBounds.y + addBounds.height / 2 - modelCenter)).toBeLessThanOrEqual(1);
         expect(Math.abs(sendBounds.y + sendBounds.height / 2 - modelCenter)).toBeLessThanOrEqual(1);
-        expect(addBounds.x - (modeBounds.x + modeBounds.width)).toBeGreaterThanOrEqual(0);
-        expect(addBounds.x - (modeBounds.x + modeBounds.width)).toBeLessThanOrEqual(6);
+        expect(addBounds.x).toBeGreaterThanOrEqual(model.x + model.width);
       }
       expect(await box.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(
         1,
@@ -1732,10 +1749,12 @@ test("a long model name truncates without hiding or overlapping any narrow compo
     await trigger
       .locator("[data-model-trigger-name]")
       .evaluate((node, text) => void (node.textContent = text), longName);
+    const toolbarMode = box.locator("[data-composer-mode-trigger]");
+    const toolbarAccess = box.locator("[data-access-picker-trigger]");
+    const inToolbar = (await toolbarMode.count()) > 0;
     const controls = [
       trigger,
-      box.locator("[data-access-picker-trigger]"),
-      box.locator("[data-composer-mode-trigger]"),
+      ...(inToolbar ? [toolbarAccess, toolbarMode] : []),
       box.getByRole("button", { name: "Add files or skills" }),
       box.getByRole("button", { name: "Send", exact: true }),
     ];
@@ -1774,10 +1793,13 @@ test("a long model name truncates without hiding or overlapping any narrow compo
         .locator("[data-model-trigger-name]")
         .evaluate((node) => node.scrollWidth > node.clientWidth),
     ).toBe(true);
-    const mode = box.locator("[data-composer-mode-trigger]");
+    const panel = page.getByRole("dialog", { name: "Model and settings" });
+    if (!inToolbar) await trigger.click();
+    const mode = inToolbar ? toolbarMode : panel.getByRole("button", { name: "Mode", exact: true });
     await mode.click();
     await expect(page.getByRole("menu", { name: "Mode", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
+    if (!inToolbar) await page.keyboard.press("Escape");
     expect(await box.evaluate((node) => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(
       1,
     );
@@ -1938,7 +1960,8 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
   await expect(main).toHaveAttribute("aria-haspopup", "dialog");
   await expect(page.getByRole("button", { name: "Extras", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
-  const advisorField = settingsColumn.getByRole("button", { name: /^Advisor\b/ });
+  const advisor = settingsColumn.locator('[data-setting-id="crossAdvisor"]');
+  const advisorField = advisor.locator("button[aria-haspopup=dialog]");
   // Advisor opens beside the models. The batch editor uses the browser column.
   const delegate = async (name: "Advisor" | "Subagents", label: RegExp) => {
     await openPanel("agents");
@@ -1957,8 +1980,8 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
     await expect(picker).toHaveCount(0);
   };
   await delegate("Advisor", /^Claude Opus 5\.5\b/);
-  await expect(advisorField).toContainText("Claude Opus 5.5");
-  await delegate("Subagents", /^Claude Haiku 4\.5\b/);
+  await expect(advisor).toContainText("Claude Opus 5.5");
+  await delegate("Subagents", /^Haiku 4\.5\b/);
   await expect(page.getByTestId("choice")).toContainText('"model":"claude:sonnet-5"');
   await expect
     .poll(delegation)
@@ -2431,6 +2454,45 @@ test("remote model picker selects a Host account in both themes and widths", asy
   }
 });
 
+test("saved subagent rows show only model and account names", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const width of [1280, 800]) {
+    for (const theme of ["light", "dark"]) {
+      await page.setViewportSize({ width, height: 850 });
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&accounts=2&saved-subagents&theme=${theme}`,
+      );
+      await page
+        .getByRole("button", { name: /^Claude Code/ })
+        .first()
+        .click();
+      const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+      await panel.getByRole("tab", { name: "Agents", exact: true }).click();
+      const selected = panel.getByRole("group", { name: "Subagents", exact: true });
+      await expect(selected.getByText("Opus 5.5 · personal", { exact: true })).toBeVisible();
+      await expect(selected.getByText("Sonnet 5.5 · work", { exact: true })).toBeVisible();
+      await expect(selected.getByText("Beam Free", { exact: true })).toBeVisible();
+      await expect(selected).not.toContainText(/Unavailable|Claude|OpenCode/);
+      await panel.screenshot({
+        path: `temp/verification/subagent-model-labels/selected-${width}-${theme}.png`,
+      });
+      await selected.getByRole("button", { name: "Add", exact: true }).click();
+      const editor = panel.locator("[data-model-subagent-editor]");
+      const retired = editor.getByRole("option", { name: /^Sonnet 5\.5,.*work/ });
+      await expect(retired).toHaveText(/Sonnet 5\.5 · work/);
+      await expect(retired).not.toContainText(/Unavailable|Claude/);
+      await retired.scrollIntoViewIfNeeded();
+      await panel.screenshot({
+        path: `temp/verification/subagent-model-labels/picker-${width}-${theme}.png`,
+      });
+      await retired.click();
+      await editor.getByRole("button", { name: "Apply", exact: true }).click();
+      await expect(selected.getByText("Sonnet 5.5 · work", { exact: true })).toHaveCount(0);
+    }
+  }
+});
+
 test("model picker shows account identity and applies subagent picks as a batch", async ({
   page,
 }) => {
@@ -2466,17 +2528,38 @@ test("model picker shows account identity and applies subagent picks as a batch"
         path: `temp/verification/model-picker-rollout/favorites-${width}-${theme}.png`,
       });
       await panel.getByRole("tab", { name: "Agents", exact: true }).click();
-      const advisor = panel.locator('[data-setting-id="crossAdvisor"] button');
-      await advisor.click();
-      const advisorChoice = panel
-        .locator('[data-model-setting-picker="crossAdvisor"]')
-        .getByRole("option", { name: /^Claude Opus 5\.5/ });
+      const advisor = panel.locator('[data-setting-id="crossAdvisor"]');
+      const advisorHeading = advisor.locator("[data-setting-label]");
+      const imageHeading = panel.locator('[data-setting-id="imageModels"] [data-setting-label]');
+      await expect(advisorHeading).toHaveText("Advisor");
+      await expect(imageHeading).toHaveText("Image models");
+      expect((await advisorHeading.boundingBox())?.x).toBe((await imageHeading.boundingBox())?.x);
+      await expect(advisor.getByText("Off", { exact: true })).toBeVisible();
+      const addAdvisor = advisor.getByRole("button", { name: "Add · Advisor", exact: true });
+      await expect(addAdvisor).not.toContainText("Advisor");
+      await panel.screenshot({
+        path: `temp/verification/advisor-row/off-${width}-${theme}.png`,
+      });
+      await addAdvisor.click();
+      const advisorPicker = panel.locator('[data-model-setting-picker="crossAdvisor"]');
+      const advisorChoice = advisorPicker.getByRole("option", { name: /^Claude Opus 5\.5/ });
       await expect(advisorChoice.locator("img, svg").first()).toBeVisible();
       await panel.screenshot({
         path: `temp/verification/model-picker-rollout/advisor-${width}-${theme}.png`,
       });
       await advisorChoice.click();
       await expect(advisor.locator("img").first()).toBeVisible();
+      const editAdvisor = advisor.getByRole("button", { name: "Edit Advisor", exact: true });
+      await expect(editAdvisor).toBeFocused();
+      await expect(editAdvisor).toHaveText("");
+      await editAdvisor.press("Enter");
+      await expect(advisorPicker.getByRole("combobox", { name: "Search models" })).toBeFocused();
+      await advisorPicker.getByRole("button", { name: "Back", exact: true }).click();
+      await expect(editAdvisor).toBeFocused();
+      await panel.getByRole("tab", { name: "Agents", exact: true }).focus();
+      await panel.screenshot({
+        path: `temp/verification/advisor-row/selected-${width}-${theme}.png`,
+      });
       await panel.getByRole("radio", { name: "Custom", exact: true }).click();
       const editor = panel.locator("[data-model-subagent-editor]");
       const pickerOptions = editor.getByRole("option");
@@ -2493,7 +2576,29 @@ test("model picker shows account identity and applies subagent picks as a batch"
       await pickerOptions.first().click();
       await filter.click();
       await accounts.getByRole("option", { name: "Claude Code · work" }).click();
-      await pickerOptions.first().click();
+      const selectShown = editor.getByRole("button", { name: "Select all shown", exact: true });
+      await expect(selectShown).toHaveText("");
+      await expect(selectShown.locator("svg")).toBeVisible();
+      const filterBounds = (await filter.boundingBox())!;
+      const actionBounds = (await selectShown.boundingBox())!;
+      expect(actionBounds.y).toBeLessThan(filterBounds.y + filterBounds.height);
+      expect(actionBounds.x).toBeGreaterThanOrEqual(filterBounds.x + filterBounds.width);
+      await expect(pickerOptions.first()).not.toContainText(" · work");
+      await expect(pickerOptions.first().locator("[data-model-account-number]")).toHaveCount(0);
+      await expect(editor.getByText("Claude Code · work", { exact: true })).toHaveCount(1);
+      await panel.screenshot({
+        path: `temp/verification/subagent-toolbar/filtered-${width}-${theme}.png`,
+      });
+      const search = editor.getByRole("combobox", { name: "Search models" });
+      await search.fill("Opus 5.5");
+      await expect(pickerOptions).toHaveCount(1);
+      await selectShown.press("Space");
+      await expect(editor.getByRole("status")).toHaveText("2 selected");
+      const clearShown = editor.getByRole("button", { name: "Clear shown selection", exact: true });
+      await clearShown.press("Space");
+      await expect(editor.getByRole("status")).toHaveText("1 selected");
+      await selectShown.click();
+      await search.clear();
       await expect(editor.getByText("2 selected")).toBeVisible();
       await expect(page.getByTestId("choice")).not.toContainText('"crossSubagents":"[');
       await panel.screenshot({
@@ -3089,6 +3194,70 @@ for (const theme of ["light", "dark"] as const) {
       await page.screenshot({ path: `temp/verification/pasted-text/queue-${theme}-${width}.png` });
     });
   }
+}
+
+for (const theme of ["dark", "light"] as const) {
+  test(`queued message editor works like the chat composer in ${theme}`, async ({ page }) => {
+    await initializeChatLayout(page);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/tests/browser/chat/composer-extras.html?chat-layout&queue-state=one");
+    await page.evaluate((theme) => {
+      document.documentElement.classList.toggle("theme-light", theme === "light");
+      const ipc = (
+        window as unknown as {
+          __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<unknown> };
+        }
+      ).__TAURI_INTERNALS__;
+      const original = ipc.invoke;
+      ipc.invoke = (command, args) =>
+        command === "write_attachment"
+          ? Promise.resolve("/isolated-fixture/shot.png")
+          : original(command, args);
+    }, theme);
+    await expect(page.getByText("Sends when the current turn finishes")).toHaveCount(0);
+    await page.getByRole("button", { name: "Edit queued message", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Edit queued message" });
+    const field = dialog.getByRole("textbox", { name: "Queued message text" });
+    await field.evaluate((element) => {
+      const bytes = Uint8Array.from(
+        atob(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+        ),
+        (char) => char.charCodeAt(0),
+      );
+      const clipboardData = new DataTransfer();
+      clipboardData.items.add(new File([bytes], "shot.png", { type: "image/png" }));
+      element.dispatchEvent(
+        new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }),
+      );
+    });
+    const inline = dialog.locator("[data-composer-inline-input]");
+    await expect(inline.locator("[data-inline-reference]")).toBeVisible();
+    await expect(dialog.locator("textarea")).toBeHidden();
+    await page.screenshot({ path: `temp/verification/queue-edit/inline-${theme}.png` });
+
+    await dialog.getByRole("button", { name: "Add files or skills", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: /Upload file/ })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: /Skills/ })).toBeVisible();
+    await page.screenshot({ path: `temp/verification/queue-edit/add-menu-${theme}.png` });
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menuitem", { name: /Upload file/ })).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+
+    await inline.click();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.type(" /");
+    await expect(page.locator("[data-skill-picker]")).toBeVisible();
+    await page.screenshot({ path: `temp/verification/queue-edit/skills-${theme}.png` });
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-skill-picker]")).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(dialog.getByText("Discard your changes?")).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Discard", exact: true })).toBeVisible();
+    await page.screenshot({ path: `temp/verification/queue-edit/discard-${theme}.png` });
+  });
 }
 
 async function pastePlainText(field: Locator, text: string) {

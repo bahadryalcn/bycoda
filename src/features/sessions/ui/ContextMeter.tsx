@@ -32,9 +32,8 @@ function ringTone(ratio: number): "danger" | "warning" | "neutral" {
 /**
  * Context ring with a central speed bolt; completed response metrics live in its panel.
  *
- * Renders nothing until the harness reports both halves — Cursor's ACP stream
- * carries no usage at all. A completed speed or subagent reading can still be
- * inspected when the parent's capacity is unknown; no capacity is invented.
+ * Keep the ring available while usage or capacity is unknown. The panel shows
+ * whichever readings the harness has reported.
  */
 export function ContextMeter({
   usage,
@@ -79,8 +78,8 @@ export function ContextMeter({
     ? `${format.formatNumber(speed.tps, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} TPS`
     : null;
   const agents = subagentReadings(contextBlocks);
-  if ((!usage || ratio === null) && agents.size === 0 && !speed) {
-    return empty && !usage && !sessionUsage ? (
+  if (empty && !usage && !sessionUsage && agents.size === 0 && !speed) {
+    return (
       <Tooltip label={`0% · ${t("No context used yet")}`} asChild>
         <Text
           tone="disabled"
@@ -91,7 +90,7 @@ export function ContextMeter({
           <ContextSignal ratio={0} label={`0% · ${t("No context used yet")}`} />
         </Text>
       </Tooltip>
-    ) : null;
+    );
   }
 
   const detail = usage
@@ -236,7 +235,7 @@ export function ContextMeter({
         selected={open}
         onClick={() => (open ? closeActions() : setOpen(true))}
       >
-        <ContextSignal ratio={ratio ?? 0} working={working} tps={speed?.tps} />
+        <ContextSignal ratio={ratio} working={working} tps={speed?.tps} />
       </Button>
       {open ? (
         <Popover
@@ -269,7 +268,7 @@ function ContextSignal({
   working = false,
   tps,
 }: {
-  ratio: number;
+  ratio: number | null;
   label?: string;
   working?: boolean;
   tps?: number;
@@ -285,7 +284,7 @@ function ContextSignal({
         size="md"
         label={label}
         aria-hidden={label ? undefined : true}
-        value={ratio * 100}
+        value={ratio === null ? null : ratio * 100}
         warning={WARNING_PERCENT}
         danger={DANGER_PERCENT}
         className="context-signal"

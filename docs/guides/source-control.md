@@ -26,9 +26,10 @@ the only worktree selector. Its folder name, branch and full-path tooltip identi
 that target. When checkout discovery fails, the current panel remains available with local
 **Retry** and diagnostic details; a failed read does not establish an empty list.
 
-A folder that is not a Git repository shows no failure: the panel offers
-**Initialize Repository**, which runs `git init` there and is refused inside an
-existing repository. A project opened on an empty folder outside any repository,
+A folder without Git metadata shows **Initialize Repository** in place of Git
+actions, Stashes and Graph. The button runs `git init` there and is refused inside
+an existing repository. In an overview, use a child repository row to see that
+repository's Graph. A project opened on an empty folder outside any repository,
 including one created by the assistant, a crew or a remote machine, is
 initialized automatically.
 

@@ -7,3 +7,4 @@ export {
   resolveFileOpenRequest,
   subscribeProjectFiles,
 } from "../model/fileIndex";
+export { useFileRanking } from "../hooks/useFileRanking";

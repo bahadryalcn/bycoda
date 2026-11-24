@@ -1,6 +1,7 @@
 import type { TranscriptVirtualization } from "./transcriptVirtualization";
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { innerScrollerTakes, useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import {
   firstTurnBelow,
   isNearBottom,
@@ -159,8 +160,7 @@ export function useTranscriptFollow({
     [publishReading, retention, virtualization],
   );
 
-  // oxlint-disable-next-line bycoda/compiler-owns-memo -- syncPinned and the returned API list it as a dependency next to the hook's other baselined scroll callbacks
-  const hasReaderInput = useCallback(() => {
+  const hasReaderInput = useStableCallback(() => {
     const input = readerInput.current;
     const now = performance.now();
     if (input.held || input.until > now) return true;
@@ -173,7 +173,7 @@ export function useTranscriptFollow({
       now - input.motionAt < READER_MOTION_MAX_MS &&
       el.scrollTop <= input.upTop
     );
-  }, []);
+  });
 
   const syncPinned = useCallback(
     (el: HTMLElement) => {

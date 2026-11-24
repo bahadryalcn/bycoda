@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
 import type { Attachment, QueuedMessage } from "../model/session";
 import * as attachmentApi from "../model/attachments";
+import { withChatCitations } from "../model/chatCitation";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -60,6 +61,17 @@ async function typeInto(field: HTMLTextAreaElement, text: string) {
   });
 }
 
+async function chooseUpload() {
+  await act(async () =>
+    document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or skills"]')!.click(),
+  );
+  await act(async () =>
+    [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find((item) => item.textContent?.includes("Upload file"))!
+      .click(),
+  );
+}
+
 describe("QueuedMessageEditDialog", () => {
   it("saves the draft with just the targeted mention removed", async () => {
     const { field, button, onSave } = await open({
@@ -78,6 +90,29 @@ describe("QueuedMessageEditDialog", () => {
     expect(field.value).toBe("@notes:plan ");
     await act(async () => button("Save").click());
     expect(onSave).toHaveBeenCalledWith("@notes:plan ", []);
+  });
+  it("shows a queued quote as a chip and keeps it through Save", async () => {
+    const citation = {
+      version: 1 as const,
+      id: "c1",
+      sessionId: "s1",
+      blockId: "b1",
+      text: "quoted line",
+      sourceText: "quoted line",
+      occurrence: 0,
+      comment: "",
+    };
+    const { field, button, onSave } = await open({
+      message: {
+        id: "quoted",
+        text: withChatCitations("see [quote1]", [citation]),
+        attachments: [],
+      },
+    });
+    expect(field.value).toBe("see [quote1]");
+    await typeInto(field, "read [quote1]");
+    await act(async () => button("Save").click());
+    expect(onSave).toHaveBeenCalledWith(withChatCitations("read [quote1]", [citation]), []);
   });
   it("snaps selections around attached references", async () => {
     const { field } = await open();
@@ -111,9 +146,7 @@ describe("QueuedMessageEditDialog", () => {
     );
     const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     const { button } = await open();
-    await act(async () =>
-      document.body.querySelector<HTMLButtonElement>('[aria-label="Add files or images"]')!.click(),
-    );
+    await chooseUpload();
     expect(button("Save").getAttribute("aria-disabled") === "true").toBe(true);
     await act(async () => root.render(null));
     await act(async () =>
@@ -133,13 +166,8 @@ describe("QueuedMessageEditDialog", () => {
     const { button, onSave } = await open({
       message: { id: "empty", text: "Inspect", attachments: [] },
     });
-    await act(async () => {
-      const add = document.body.querySelector<HTMLButtonElement>(
-        '[aria-label="Add files or images"]',
-      )!;
-      add.click();
-      add.click();
-    });
+    await chooseUpload();
+    await chooseUpload();
     expect(button("Save").getAttribute("aria-disabled") === "true").toBe(true);
     await act(async () => {
       finishes[0]([{ ...message.attachments[0], id: "first", name: "one.png" }]);

@@ -3,12 +3,13 @@ import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, Minus, Square, X } from "../../shared/ui/icons";
-import { createContext, useContext, useState, useSyncExternalStore } from "react";
+import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Toast } from "../../shared/ui/ToastRegion";
 import { ErrorDetails, errorHeadline, fitsOneLine } from "../../shared/ui/ErrorDetails";
 import { setNativeFullscreen } from "../../platform/tauri/fullscreen";
 import { refreshWindowState, useNativeWindowState } from "../../platform/tauri/windowState";
 import { surfaceAttributes } from "../../shared/ui/Surface";
+import { WindowTitleBarAbove } from "../../shared/ui/PaneHeader";
 import {
   loadMinimizeToTray,
   subscribeMinimizeToTray,
@@ -23,6 +24,26 @@ export async function toggleWindowMaximize(): Promise<void> {
 
 // Detached workspaces own their controls in the persistent Working bar.
 export const WindowControlsVisible = createContext(true);
+
+/**
+ * The part of a window below its chrome row. The window buttons live above it (the title bar
+ * of a main window, the Working bar of a detached one), so headers inside draw none. Under a
+ * title bar that spans the window they also reserve no traffic-light space and repeat no
+ * Back/Forward or sidebar toggle.
+ */
+export function BelowWindowChrome({
+  titleBarAbove,
+  children,
+}: {
+  titleBarAbove: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <WindowControlsVisible.Provider value={false}>
+      <WindowTitleBarAbove.Provider value={titleBarAbove}>{children}</WindowTitleBarAbove.Provider>
+    </WindowControlsVisible.Provider>
+  );
+}
 
 export function WindowControls() {
   const visible = useContext(WindowControlsVisible);

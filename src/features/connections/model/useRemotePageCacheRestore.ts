@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import type { HostSession } from "./protocol";
 import { readRemotePageCache } from "./remotePageCache";
+import { localSessionPagePreview } from "./localSessionPagePreview";
+import type { HostSessionBinding } from "./sessionExecutionBinding";
 
 /**
  * Shows the disk copy of a conversation while the host has not answered yet.
@@ -14,6 +16,8 @@ import { readRemotePageCache } from "./remotePageCache";
 export function useRemotePageCacheRestore(input: {
   environmentId: string;
   sessionId: string | undefined;
+  shellId: string;
+  owner?: HostSessionBinding;
   /** A snapshot (live or cached) is already shown: the disk copy is older. */
   hasSnapshot: () => boolean;
   isDeleted: () => boolean;
@@ -23,10 +27,15 @@ export function useRemotePageCacheRestore(input: {
   const latest = useRef(input);
   latest.current = input;
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || latest.current.hasSnapshot()) return;
     let current = true;
-    void readRemotePageCache({ environmentId, sessionId }).then((cached) => {
+    const { shellId, owner } = latest.current;
+    const preview = localSessionPagePreview(shellId, owner);
+    const read = preview?.read ?? readRemotePageCache({ environmentId, sessionId });
+    void read.then((cached) => {
       if (!current || !cached || latest.current.hasSnapshot() || latest.current.isDeleted()) return;
+      if (preview && !preview.matchesOwner(latest.current.owner)) return;
+      if (latest.current.owner && cached.projectId !== latest.current.owner.projectId) return;
       latest.current.restore(cached as HostSession);
     });
     return () => {

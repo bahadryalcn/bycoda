@@ -1,25 +1,6 @@
+import { delegationToolKind } from "./bycodaToolCall";
 import type { Block } from "./session";
 import { isFailedStatus } from "./transcriptActivity";
-
-/**
- * An `agents.delegate` / `agents.consult` call that failed before a child session
- * existed (model unavailable, skill preparation, limits). Nothing in the Host names a
- * child, so the parent transcript's own tool block is all there is: it stands in as a
- * failed subagent card. The model's own retry is the only retry; the arguments are not
- * kept on the block, so nothing here can re-issue the call.
- */
-
-const ASK_TOOL = /(?:^|[:_.])agents[_.](delegate|consult)$/i;
-
-/** The call's own tool name, however the provider spells the Host tool. */
-function askKind(block: Block): "delegate" | "consult" | undefined {
-  if (block.role !== "tool") return undefined;
-  const name = [block.tool?.title, block.tool?.preview?.title, block.text].find(
-    (value) => value && ASK_TOOL.test(value.trim()),
-  );
-  const kind = name ? ASK_TOOL.exec(name.trim())?.[1]?.toLowerCase() : undefined;
-  return kind === "delegate" || kind === "consult" ? kind : undefined;
-}
 
 /** The error a failed call returned: its `error` field, else the whole text. */
 function errorText(detail: string, failed: boolean): string {
@@ -44,13 +25,16 @@ function errorText(detail: string, failed: boolean): string {
 }
 
 /**
- * The failed card for `block`, or undefined when it is not a settled, failed
- * delegate/consult call or it did start a child.
+ * An `agents.delegate` / `agents.consult` call that failed before a child session
+ * existed (model unavailable, skill preparation, limits). Nothing in the Host names a
+ * child, so the parent transcript's own tool block is all there is: it stands in as a
+ * failed subagent card. The model's own retry is the only retry; the arguments are not
+ * kept on the block, so nothing here can re-issue the call.
  */
 export function failedAskCard(block: Block): Block | undefined {
-  const kind = askKind(block);
+  const kind = delegationToolKind(block);
   const detail = block.tool?.detail?.trim();
-  if (!kind || !detail) return undefined;
+  if ((kind !== "delegate" && kind !== "consult") || !detail) return undefined;
   const status = block.tool?.status?.toLowerCase() ?? "";
   if (status === "running" || status === "pending" || status === "in_progress") return undefined;
   // A completed call is a failure only when its result is an error object.

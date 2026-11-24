@@ -20,7 +20,8 @@ const globalRoomFixture = desktopParams.has("global-room");
 if (
   desktopParams.has("work-model") ||
   desktopParams.has("redesign") ||
-  desktopParams.has("native-consent")
+  desktopParams.has("native-consent") ||
+  desktopParams.has("real-controls")
 ) {
   mockWindows("main");
   const consents = new Map<string, Record<string, unknown>>();

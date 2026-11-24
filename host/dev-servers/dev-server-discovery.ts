@@ -11,6 +11,7 @@ import { execFile } from "node:child_process";
 import { parseProcessJson } from "../parse-process-json.mjs";
 import { readFile, readdir, readlink } from "node:fs/promises";
 import { basename } from "node:path";
+import { powershellArgs, powershellEnvironment, powershellErrorText } from "../windows";
 import type {
   DevProcess,
   DevProcessIdentity,
@@ -68,10 +69,13 @@ const runCommand: DiscoveryCommand = (executable, args, options) =>
   new Promise((resolve, reject) => {
     execFile(executable, args, { ...options, encoding: "utf8" }, (error, stdout, stderr) => {
       if (error) {
+        const diagnostics =
+          executable === "powershell.exe" ? powershellErrorText(stderr) : stderr.trim();
+        const detail = error.killed
+          ? `timed out after ${options.timeout} ms`
+          : diagnostics.slice(-500) || String(error.code ?? error.signal ?? "unknown error");
         const failure = Object.assign(
-          new Error(
-            `Process discovery command failed: ${error.message.slice(0, 500)}${stderr ? `: ${stderr.slice(-500)}` : ""}`,
-          ),
+          new Error(`Process discovery command failed (${executable}): ${detail}`),
           { code: (error as NodeJS.ErrnoException).code, stdout, stderr },
         );
         reject(failure);
@@ -81,7 +85,7 @@ const runCommand: DiscoveryCommand = (executable, args, options) =>
 
 const psProcessProjection = `@{pid=[int]$p.ProcessId;parentPid=[int]$p.ParentProcessId;name=[string]$p.Name;command=[string]$p.CommandLine;startedAt=$birth}`;
 // Birth comes from the native process handle, retaining all FILETIME precision.
-const psBirth = `$birth='';try{$native=[System.Diagnostics.Process]::GetProcessById([int]$p.ProcessId);$ticks=$native.StartTime.ToUniversalTime().Ticks;if([Math]::Abs($ticks-$p.CreationDate.ToUniversalTime().Ticks) -le 10){$birth=$ticks.ToString()};$native.Dispose()}catch{}`;
+const psBirth = `$birth='';if($null -ne $native){try{$ticks=$native.StartTime.ToUniversalTime().Ticks;if([Math]::Abs($ticks-$p.CreationDate.ToUniversalTime().Ticks) -le 10){$birth=$ticks.ToString()}}catch{}finally{$native.Dispose()}}`;
 // Native-helper path: one CIM enumeration without per-process handle lookups. The
 // CIM creation ticks travel with each row so the bundled helper's birth can be
 // cross-checked in TypeScript, exactly as `psBirth` does inside PowerShell.
@@ -89,7 +93,20 @@ const psCreatedProjection = `@{pid=[int]$p.ProcessId;parentPid=[int]$p.ParentPro
 const windowsProcessRows = `$ErrorActionPreference='Stop';$rows=@(Get-CimInstance Win32_Process | ForEach-Object {$p=$_;${psCreatedProjection}});ConvertTo-Json -InputObject $rows -Compress -Depth 4`;
 // Legacy path (bundled helper unavailable): one shared snapshot serves the
 // listener and process scans, so a refresh spawns PowerShell and walks CIM once.
-const windowsSnapshotScript = `$ErrorActionPreference='Stop';$tcp=@(Get-NetTCPConnection -State Listen -ErrorAction Stop);$rows=@(Get-CimInstance Win32_Process | ForEach-Object {$p=$_;${psBirth};${psProcessProjection}});ConvertTo-Json -InputObject @{processes=$rows;listeners=@($tcp | ForEach-Object {@{pid=[int]$_.OwningProcess;address=[string]$_.LocalAddress;port=[int]$_.LocalPort}})} -Compress -Depth 5`;
+const windowsSnapshotScript = `
+$ErrorActionPreference='Stop'
+$tcp=@(Get-NetTCPConnection -State Listen -ErrorAction Stop)
+# GetProcessById in Windows PowerShell repeatedly walks the process table.
+$byId=@{}
+foreach($native in [System.Diagnostics.Process]::GetProcesses()){$byId[$native.Id]=$native}
+$rows=@(Get-CimInstance Win32_Process | ForEach-Object {
+  $p=$_
+  $native=$byId[[int]$p.ProcessId]
+  ${psBirth}
+  ${psProcessProjection}
+})
+ConvertTo-Json -InputObject @{processes=$rows;listeners=@($tcp | ForEach-Object {@{pid=[int]$_.OwningProcess;address=[string]$_.LocalAddress;port=[int]$_.LocalPort}})} -Compress -Depth 5
+`;
 const BIRTH_BATCH = 4_096;
 
 // Darwin proc_info syscall / PROC_PIDTBSDINFO. The native proc_bsdinfo ABI is
@@ -391,6 +408,7 @@ export class DevServerDiscovery implements ProcessDiscovery {
     if (this.windowsBirths) this.windowsBirthBatch = new WindowsBirthBatch(this.windowsBirths);
   }
   private run(executable: string, args: string[]): Promise<string> {
+    const env = { ...process.env, LC_ALL: "C.UTF-8", LANG: "C" };
     return new Promise((resolve, reject) => {
       const start = () => {
         clearTimeout(timer);
@@ -401,7 +419,7 @@ export class DevServerDiscovery implements ProcessDiscovery {
               windowsHide: true,
               timeout: this.commandTimeoutMs,
               maxBuffer: OUTPUT_LIMIT,
-              env: { ...process.env, LC_ALL: "C.UTF-8", LANG: "C" },
+              env: this.platform === "win32" ? powershellEnvironment(env) : env,
             }),
           )
           .then(resolve, reject)
@@ -423,13 +441,19 @@ export class DevServerDiscovery implements ProcessDiscovery {
     });
   }
   private powershell(script: string): Promise<string> {
-    return this.run("powershell.exe", [
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-EncodedCommand",
-      Buffer.from(script, "utf16le").toString("base64"),
-    ]);
+    return this.run(
+      "powershell.exe",
+      powershellArgs(`
+$ProgressPreference='SilentlyContinue'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+try {
+${script}
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}
+`),
+    );
   }
   invalidate(): void {
     this.cacheRevision++;
@@ -516,7 +540,7 @@ export class DevServerDiscovery implements ProcessDiscovery {
       const rows = jsonProcesses(
         parseProcessJson(
           await this.powershell(
-            `$ErrorActionPreference='Stop';$rows=@(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}' | ForEach-Object {$p=$_;${psBirth};${psProcessProjection}});ConvertTo-Json -InputObject $rows -Compress -Depth 4`,
+            `$ErrorActionPreference='Stop';$rows=@(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}' | ForEach-Object {$p=$_;$native=$null;try{$native=[System.Diagnostics.Process]::GetProcessById([int]$p.ProcessId)}catch{};${psBirth};${psProcessProjection}});ConvertTo-Json -InputObject $rows -Compress -Depth 4`,
           ),
         ),
       );

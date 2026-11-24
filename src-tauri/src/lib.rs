@@ -160,6 +160,7 @@ mod turn_probe;
 mod turn_steps;
 mod voice_overlay;
 mod webview_args;
+mod webview_recovery;
 mod window;
 mod window_fullscreen;
 mod window_glass_state;
@@ -459,6 +460,7 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(session_links::init())
         .plugin(native_window_lifecycle::init())
+        .plugin(webview_recovery::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())

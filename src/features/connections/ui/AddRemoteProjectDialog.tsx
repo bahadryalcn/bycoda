@@ -406,7 +406,7 @@ function AddRemoteProjectForm({
                 error: browseError,
                 updatedAt: verifiedAt,
               }}
-              onRefresh={() => void browse(browseError ? requestedPath.current : directory?.path)}
+              onRefresh={() => void browse(requestedPath.current)}
               disabled={opening || creating}
             />
           ) : null}

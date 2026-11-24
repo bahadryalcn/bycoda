@@ -18,7 +18,6 @@ type Props = {
   ariaLabel?: string;
   /** Guide spotlight target name (`data-usage-guide`). */
   guide?: string;
-  search?: boolean;
 };
 
 export function RailAction({
@@ -33,7 +32,6 @@ export function RailAction({
   command,
   ariaLabel,
   guide,
-  search = false,
 }: Props) {
   const currentShortcut = useKeybindingShortcut(command ?? "");
   const shortcut = command ? currentShortcut : fallbackShortcut;
@@ -51,7 +49,6 @@ export function RailAction({
       type="button"
       onClick={onClick}
       data-usage-guide={guide}
-      data-rail-search={search || undefined}
       onContextMenu={
         onOpenContextMenu
           ? (event) => {
@@ -96,7 +93,6 @@ export function RailAction({
               />
             ) : shortcut ? (
               <Text
-                data-rail-search-shortcut={search || undefined}
                 data-tooltip-shortcut=""
                 aria-hidden
                 size="caption"
@@ -116,7 +112,6 @@ export function RailAction({
         strokeWidth={1.75}
       />
       <Text
-        data-rail-search-label={search || undefined}
         size="caption"
         tone="inherit"
         weight="medium"
@@ -128,13 +123,4 @@ export function RailAction({
       </Text>
     </Button>
   );
-}
-
-export function RailSearch(
-  props: Pick<
-    Props,
-    "active" | "ariaLabel" | "command" | "icon" | "label" | "onClick" | "shortcut"
-  >,
-) {
-  return <RailAction {...props} search />;
 }

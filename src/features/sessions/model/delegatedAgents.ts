@@ -1,3 +1,4 @@
+import { subagentStepStrip } from "./subagentStepStrip";
 import {
   CREW_MEMBER_KEY,
   DELEGATION_PARENT_KEY,
@@ -235,6 +236,7 @@ function delegatedDockAgent(child: Session): DockAgent {
     model: subagentModelName(block),
     detailParts: subagentStatusParts(block, steps),
     detail: subagentStatusLine(block, steps),
+    stepStrip: subagentStepStrip(steps, status === "running" && !sessionNeedsInput(child)),
     ...(startedAt !== undefined ? { startedAt } : {}),
     ...(endedAt !== undefined ? { endedAt } : {}),
     ...(block.agentRun?.round ? { round: block.agentRun.round } : {}),

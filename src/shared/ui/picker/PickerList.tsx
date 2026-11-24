@@ -239,6 +239,14 @@ export function PickerList({
     if (!activeOptionId) return;
     // An unmounted windowed row is brought into the window first; the virtualizer scrolls to its offset.
     if (windowed) {
+      // Moving the window unmounts a focused row, and WebKit then resets the list's scroll.
+      const focused = root.current?.ownerDocument.activeElement;
+      if (
+        focused?.getAttribute("role") === "option" &&
+        focused.id !== activeOptionId &&
+        root.current?.contains(focused)
+      )
+        (list.inputRef?.current ?? root.current)?.focus({ preventScroll: true });
       if (activeEntry !== undefined) win.scrollToEntry(activeEntry);
       return;
     }
@@ -460,6 +468,8 @@ export function PickerList({
         aria-busy={loading || undefined}
         aria-activedescendant={listOwnsFocus ? list.activeOptionId : undefined}
         tabIndex={listOwnsFocus ? 0 : -1}
+        // Replacing the window must not shrink the list mid-commit: WebKit would clamp its scroll.
+        style={windowed ? { minBlockSize: win.totalSize - paddingStart } : undefined}
         onKeyDown={(event) => {
           if (!(event.target instanceof Element)) return;
           // Inline actions keep their own keyboard activation and navigation.

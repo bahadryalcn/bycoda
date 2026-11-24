@@ -3,7 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForegroundQueryPolling, useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { bridgeQueryEvents } from "../../../shared/lib/queryClient";
 import { foregroundPollsVisible } from "../../../shared/lib/foregroundPolling";
-import { getCachedRateLimits, loadRateLimits, subscribeRateLimits } from "./rateLimitsCache";
+import {
+  getCachedRateLimits,
+  loadPolledRateLimits,
+  loadRateLimits,
+  subscribeRateLimits,
+} from "./rateLimitsCache";
 import type { RateLimitProvider } from "./rateLimits";
 
 /** Claude reads a cheap endpoint; Codex starts a `codex app-server` process per read, so it is polled rarely.
@@ -37,7 +42,12 @@ export function useRateLimitQuery(
     enabled: enabled && visible,
     staleTime: POLL_MS[provider],
     queryFn: () =>
-      loadRateLimitsForQuery(provider, accountId, client.getQueryData(queryKey) !== undefined),
+      loadPolledRateLimits(
+        provider,
+        accountId,
+        client.getQueryData(queryKey) !== undefined,
+        foregroundPollsVisible,
+      ),
     refetchOnWindowFocus: false,
   });
   useForegroundQueryPolling(query.refetch, POLL_MS[provider], enabled);

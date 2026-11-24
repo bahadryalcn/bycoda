@@ -61,6 +61,7 @@ export function ModelPanel({
   accountListOpen,
   onAccountListOpen,
   onSelectAccount,
+  conversationSettings,
   settings,
   showProviderSettings = true,
   onDismiss,
@@ -78,6 +79,7 @@ export function ModelPanel({
   accountListOpen: boolean;
   onAccountListOpen: (open: boolean) => void;
   onSelectAccount: (accountId: string) => void;
+  conversationSettings?: ReactNode;
   /** Absent while an inherited choice has no model to configure. */
   settings?: ModelPanelSettings;
   showProviderSettings?: boolean;
@@ -205,6 +207,7 @@ export function ModelPanel({
           {settings ? (
             <ModelSettingsColumn
               {...settings}
+              conversationSettings={conversationSettings}
               onExplain={setExplained}
               onEditSubagents={() => setEditingSubagents(true)}
               editingSubagents={!!subagents}

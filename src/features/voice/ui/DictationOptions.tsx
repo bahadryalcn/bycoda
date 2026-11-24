@@ -35,6 +35,8 @@ export function DictationOptions({
         variant="ghost"
         motion="none"
         iconOnly
+        stretch
+        touchTarget="control"
         className={styles.options}
         label={t("Dictation language")}
         aria-haspopup="menu"

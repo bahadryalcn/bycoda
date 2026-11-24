@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { projectKey, projectName } from "../../../shared/lib/paths";
-import { Chatting } from "../../../shared/ui/icons";
+import { StandaloneChat } from "../../../shared/ui/icons";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal } from "../../../shared/ui/Modal";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
@@ -72,7 +72,7 @@ export function NewSessionProjectDialog({
     {
       value: NO_PROJECT_CWD,
       title: t("No project"),
-      icon: <Chatting className="icon-sm" />,
+      icon: <StandaloneChat className="icon-sm" />,
       disabled: busy,
     },
     ...projects.map(({ path }) => {

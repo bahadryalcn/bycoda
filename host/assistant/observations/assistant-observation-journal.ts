@@ -137,6 +137,8 @@ export class AssistantObservationJournal {
         }
       }
     });
+    // Callers await `ready`; a Host closing before the first caller must not crash the process.
+    this.ready.catch(() => undefined);
   }
   /** Domain owners call this around their canonical mutation; failure rolls back both writes. */
   async recordMutation<T>(input: AssistantObservation, mutate: () => Promise<T>): Promise<T> {

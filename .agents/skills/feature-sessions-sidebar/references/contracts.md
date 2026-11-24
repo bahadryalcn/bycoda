@@ -10,7 +10,7 @@ Read only the section needed for the change. Source owners remain in [the surfac
 
 - Keep pin/order/filter/search/paging persistence and sibling update behavior. A filtered subset is not the entire collection for bulk operations or counts.
 
-- Activity groups working sessions, waiting sessions, retries and input requests across projects. Ended turns leave Activity while Last Sessions retains the complete list. Route rows by session and project identity, including the remote machine.
+- Activity lists working, waiting, retrying, input, failed and unseen completed sessions across projects in turn-start order, with a badge per row and counts in the header. Last Sessions retains the complete list. Route rows by session and project identity, including the remote machine.
 
 - Preserve title drafts, focus, drag targets and native tree/menu semantics.
 

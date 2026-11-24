@@ -259,6 +259,8 @@ it("keeps the next transaction's state when an abandoned transaction resumes and
       throw new Error("late failure");
     });
     await expect(first).rejects.toThrow(/exceeded its deadline/);
+    // Only the abandoned holder is meant to expire; a slow runner must not expire the next one.
+    store.db.scopeDeadlineMs = 5_000;
     let during = false;
     await store.transaction(async () => {
       await store.db.exec("INSERT INTO epoch_probe VALUES ('b')");

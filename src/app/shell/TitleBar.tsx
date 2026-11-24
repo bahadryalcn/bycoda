@@ -4,7 +4,7 @@ import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
-import { WindowChromeInset } from "../../shared/ui/PaneHeader";
+import { WindowChromeInset, WindowTitleBarAbove } from "../../shared/ui/PaneHeader";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
@@ -67,7 +67,8 @@ import {
 } from "../model/windowTransferPopout";
 import { beginWindowTabDrag } from "../model/windowDragPreview";
 import { WindowControls } from "./WindowControls";
-import { APP_MENU_TOGGLE_EVENT } from "./MenuBar";
+import { toggleAppMenuAt } from "./MenuBar";
+import { TitleBarBrand, TitleBarSearch } from "./TitleBarLead";
 import { IS_MAC } from "../../platform/tauri/platform";
 import type { RecentProject } from "../../features/projects/model/recents";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../features/files/ui/ExplorerMenu";
@@ -160,7 +161,14 @@ type Props = {
   cwd: string;
   projectRailOpen?: boolean;
   sessionSidebarOpen?: boolean;
-  compactRail?: boolean;
+  /**
+   * The bar spans the whole window above the rail and the panes (every main window). It then
+   * leads with the window buttons' space, the sidebar toggle, the brand, Back/Forward and Search.
+   * A detached window keeps its own narrower bar.
+   */
+  spansWindow?: boolean;
+  searchActive?: boolean;
+  onSearch?: () => void;
   canGoBack?: boolean;
   canGoForward?: boolean;
   onGoBack?: () => void;
@@ -653,14 +661,7 @@ function AppMenuButton() {
         type="button"
         aria-haspopup="menu"
         data-tauri-drag-region="false"
-        onClick={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect();
-          window.dispatchEvent(
-            new CustomEvent(APP_MENU_TOGGLE_EVENT, {
-              detail: { x: rect.left, y: rect.bottom + 2 },
-            }),
-          );
-        }}
+        onClick={(event) => toggleAppMenuAt(event.currentTarget)}
       >
         <Menu className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
       </Button>
@@ -714,7 +715,10 @@ export function TabVisitNav({
   );
 }
 
-/** Back + rail toggle for overlay surfaces when the project rail is closed. */
+/**
+ * Back + rail toggle for overlay surfaces when the project rail is closed. Below a title bar
+ * that spans the window it renders nothing: that bar already holds both.
+ */
 export function OverlayNav({
   onBack,
   onToggleSidebar,
@@ -723,7 +727,9 @@ export function OverlayNav({
   onToggleSidebar?: () => void;
 }) {
   const t = useT();
+  const titleBarAbove = useContext(WindowTitleBarAbove);
   const navigation = useContext(ToolNavigationContext)?.history;
+  if (titleBarAbove) return null;
   if (navigation)
     return (
       <TabVisitNav
@@ -781,7 +787,9 @@ function TitleBarComponent({
   cwd,
   projectRailOpen = true,
   sessionSidebarOpen = true,
-  compactRail = false,
+  spansWindow = false,
+  searchActive = false,
+  onSearch,
   canGoBack = false,
   canGoForward = false,
   onGoBack,
@@ -1018,7 +1026,7 @@ function TitleBarComponent({
   const { tabOverflow, scrollTabsBy, activeTabRef } = useTabStripScroll({
     tabStripRef,
     activeId,
-    tabs,
+    tabCount: displayed.filter((entry) => !entry.opening).length,
     dragging: Boolean(sortable.draggingId),
   });
   const setActiveTabNode = (node: HTMLDivElement | null) => {
@@ -1200,36 +1208,45 @@ function TitleBarComponent({
     <header
       {...surfaceAttributes(
         { frame: "pane", edge: "bottom" },
-        `bycoda-titlebar flex h-9 shrink-0 select-none items-stretch${compactRail ? " body-glass" : ""}`,
+        `bycoda-titlebar flex h-9 shrink-0 select-none items-stretch${spansWindow ? " body-glass" : ""}`,
       )}
       // The row is one compact control plus 4px above and below, so it grows with
       // the density and UI-scale setting instead of clipping its controls at 36px.
       style={TITLEBAR_HEIGHT_STYLE}
       data-tauri-drag-region="deep"
     >
-      {!IS_MAC ? <AppMenuButton /> : null}
-      {compactRail ? (
+      {spansWindow ? (
+        // One fixed order on every platform and in every rail state. The toggle comes before
+        // the brand because the wordmark shows only while the rail is expanded: placed after
+        // it, the toggle would move under the pointer on every click.
         <div
-          data-compact-title-nav
-          // Native traffic lights occupy 64px plus 6px clearance.
-          style={
-            IS_MAC
-              ? ({ "--mac-traffic-lights-reserve": "calc(4rem + 0.375rem)" } as React.CSSProperties)
-              : undefined
-          }
-          className={`flex shrink-0 items-center ${IS_MAC ? "ps-(--mac-traffic-lights-reserve)" : "ps-1.5"}`}
+          data-title-lead
+          className={`flex shrink-0 items-center gap-1 pe-1 ${IS_MAC ? "" : "ps-1.5"}`}
         >
+          <WindowChromeInset />
+          <IconButton
+            label={t("Toggle sidebar")}
+            command="App: Toggle Sidebar"
+            active={projectRailOpen}
+            onClick={onToggleSidebar}
+          >
+            <PanelLeft className="icon-sm" strokeWidth={1.75} />
+          </IconButton>
+          <TitleBarBrand wordmark={projectRailOpen} />
           <TabVisitNav
             canGoBack={canGoBack}
             canGoForward={canGoForward}
             onGoBack={onGoBack}
             onGoForward={onGoForward}
           />
+          {onSearch ? <TitleBarSearch active={searchActive} onClick={onSearch} /> : null}
         </div>
+      ) : !IS_MAC ? (
+        <AppMenuButton />
       ) : null}
-      {/* Both the rail and the sidebar step aside without a project, so the
-          title bar takes over the traffic lights and the rail toggle. */}
-      {projectless && railClosed && !compactRail ? (
+      {/* A detached window has no rail: without a project its title bar takes over the
+          traffic lights and the rail toggle. */}
+      {projectless && railClosed && !spansWindow ? (
         <>
           <WindowChromeInset />
           <div className="flex shrink-0 items-center px-1.5">
@@ -1246,7 +1263,7 @@ function TitleBarComponent({
       ) : null}
       {!sessionSidebarOpen && !projectless && onToggleSessionSidebar ? (
         <>
-          <WindowChromeInset active={railClosed && !compactRail} />
+          <WindowChromeInset active={railClosed && !spansWindow} />
           <div className="flex shrink-0 items-center px-1.5">
             <IconButton
               label={t("Toggle Session Sidebar")}

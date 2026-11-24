@@ -15,13 +15,26 @@ import { isImagePath } from "../../files/public/filePreviewMetadata";
 import { mediaKind } from "../../files/public/mediaPreview";
 import { useNearViewport } from "./useNearViewport";
 import { localMediaFrameStyle } from "./localMediaFrame";
+import type { Attachment } from "../model/session";
 
 export function isLocalMediaPath(path: string): boolean {
   return (
     !/^[a-z][a-z0-9+.-]*:\/\//i.test(path) &&
     !/^[\\/]{2}/.test(path) &&
-    (isImagePath(path) || mediaKind(path) === "video")
+    (isImagePath(path) || mediaKind(path) !== null)
   );
+}
+
+/**
+ * A sent video or audio attachment that plays inline from its file on this computer.
+ * shortcut: an attachment read through another host's reader (remote history, uploaded
+ * queue files) or held only as pasted bytes stays a chip that opens the media viewer;
+ * stream those through the remote media gateway if inline playback is wanted there.
+ */
+export function inlineMediaAttachmentPath(attachment: Attachment): string | undefined {
+  const { path, missing, kind, hostEnvironmentId, loadPreview } = attachment;
+  if (!path || missing || kind === "image" || hostEnvironmentId || loadPreview) return undefined;
+  return mediaKind(path) && isLocalMediaPath(path) ? path : undefined;
 }
 
 /** Same ceiling as `readProjectImage`; a larger local image shows the fallback card instead. */
@@ -31,7 +44,7 @@ const LOAD_MARGIN = 400;
 const RELEASE_MARGIN = 2400;
 
 /**
- * Near-view sources only. Images and videos both get an exact native file grant
+ * Near-view sources only. Images, videos and audio all get an exact native file grant
  * after the existing file-access decision; images are size-gated natively and never
  * enter the renderer as bytes, so there is no Blob or base64 copy to release. An
  * image leaving the wide margin drops its source while the measured box keeps its size.
@@ -60,8 +73,13 @@ export function LocalMedia({
   // Intrinsic size reported on load; keyed by path so a new file starts at the placeholder.
   const [measured, setMeasured] = useState<{ path: string; width: number; height: number }>();
   const frame = measured?.path === path ? localMediaFrameStyle(measured) : undefined;
-  const video = mediaKind(path) === "video";
-  const player = useRef<HTMLVideoElement>(null);
+  const kind = mediaKind(path);
+  const video = kind === "video";
+  const audio = kind === "audio";
+  const player = useRef<HTMLMediaElement | null>(null);
+  const attachPlayer = (element: HTMLMediaElement | null) => {
+    player.current = element;
+  };
   const visible = useContext(MediaVisibilityContext);
   useLayoutEffect(() => {
     const element = player.current;
@@ -82,7 +100,7 @@ export function LocalMedia({
     // never publishes into a newer scope.
     if (!near || !isLocalMediaPath(path)) return;
     const controller = new AbortController();
-    const maxBytes = video ? undefined : LOCAL_IMAGE_MAX_BYTES;
+    const maxBytes = kind ? undefined : LOCAL_IMAGE_MAX_BYTES;
     void (async () => {
       try {
         // shortcut: the native size gate runs once at preparation; a file that grows
@@ -101,11 +119,11 @@ export function LocalMedia({
     return () => {
       controller.abort();
       // A released or hidden image drops its source so the browser frees the decoded
-      // bitmap; the measured box keeps the layout until it loads again. A video keeps
-      // its element, which pauses on its own when hidden.
-      if (!video) setSource(undefined);
+      // bitmap; the measured box keeps the layout until it loads again. A video or
+      // audio player keeps its element, which pauses on its own when hidden.
+      if (!kind) setSource(undefined);
     };
-  }, [near, path, video]);
+  }, [near, path, kind]);
 
   if (failed || !isLocalMediaPath(path)) return <>{fallback}</>;
   const image = url ? (
@@ -126,6 +144,32 @@ export function LocalMedia({
     />
   ) : null;
 
+  if (audio)
+    return (
+      <>
+        <span
+          ref={box}
+          data-local-media={path}
+          className="[margin-block:0.5rem] block min-h-[54px] w-96 max-w-full"
+        >
+          {url ? (
+            <audio
+              ref={attachPlayer}
+              src={url}
+              controls
+              preload="metadata"
+              aria-label={label}
+              onError={() => setFailedPath(path)}
+              onPlay={(event) => {
+                if (!visible || document.hidden) event.currentTarget.pause();
+              }}
+              className="block w-full"
+            />
+          ) : null}
+        </span>
+        {fallback}
+      </>
+    );
   return (
     <>
       <span
@@ -136,7 +180,7 @@ export function LocalMedia({
       >
         {url && video ? (
           <video
-            ref={player}
+            ref={attachPlayer}
             src={url}
             controls
             playsInline

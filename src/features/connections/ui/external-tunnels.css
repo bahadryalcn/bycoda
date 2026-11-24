@@ -1,11 +1,18 @@
 .external-tunnels-panel,
+.external-tunnel-controls {
+  display: grid;
+  gap: var(--ui-space-5);
+  min-inline-size: 0;
+}
+
 .external-tunnel-group,
-.external-tunnel-controls,
 .external-tunnel-credentials,
-.external-tunnel-form {
+.external-tunnel-form,
+.external-tunnel-details {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--ui-space-4);
+  gap: var(--ui-space-3);
+  min-inline-size: 0;
 }
 
 .external-tunnel-choices {
@@ -16,22 +23,22 @@
 }
 
 .external-tunnel-main {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 18rem;
+  display: grid;
   gap: var(--ui-space-1);
   min-inline-size: 0;
 }
 .external-tunnel-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--ui-space-2) var(--ui-space-3);
-  padding: var(--ui-space-2) var(--ui-space-3);
+  gap: var(--ui-space-3);
+  padding: var(--ui-space-3) var(--ui-space-4);
   min-inline-size: 0;
 }
-.external-tunnel-head,
+.external-tunnel-details {
+  grid-column: 2 / -1;
+}
+.external-tunnel-meta,
 .external-tunnel-actions,
 .external-tunnel-credentials form {
   display: flex;
@@ -40,10 +47,8 @@
   gap: var(--ui-space-2);
   min-inline-size: 0;
 }
-/* The head and the URL line truncate instead of wrapping. */
-.external-tunnel-head,
-.external-tunnel-main > .external-tunnel-actions {
-  flex-wrap: nowrap;
+.external-tunnel-credentials form {
+  align-items: end;
 }
 .external-tunnel-qr code {
   overflow-wrap: anywhere;
@@ -52,7 +57,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--ui-space-4);
+  gap: var(--ui-space-5);
   text-align: center;
 }
 .external-tunnel-qr svg {

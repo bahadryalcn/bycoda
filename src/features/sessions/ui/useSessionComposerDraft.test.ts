@@ -13,17 +13,41 @@ let current: Draft;
 let renders: number;
 const touched = new Set<string>();
 
-function mount() {
-  function Probe({ sessionId }: { sessionId: string }) {
+function mount(prepareHistory?: (id: string) => Promise<boolean>) {
+  function Probe({ sessionId, revision }: { sessionId: string; revision?: number }) {
     renders += 1;
-    current = useSessionComposerDraft(sessionId);
+    current = useSessionComposerDraft(sessionId, revision, prepareHistory);
     return createElement("output", null, `${current.present}:${current.initialDraft ?? ""}`);
   }
   return {
-    render: (sessionId: string) =>
-      act(async () => root.render(createElement(Probe, { sessionId }))),
+    render: (sessionId: string, revision?: number) =>
+      act(async () => root.render(createElement(Probe, { sessionId, revision }))),
   };
 }
+
+it("starts partial history preparation once on an edit, before send, including after switching sessions", async () => {
+  const prepare = vi.fn(async (_id: string) => true);
+  const view = mount(prepare);
+  seed("draft-tail", "saved");
+  await view.render("draft-tail", 1);
+  await act(async () => current.change("saved"));
+  expect(prepare).not.toHaveBeenCalled();
+  await act(async () => current.change(""));
+  await act(async () => current.change("new reply"));
+  await act(async () => current.change("new reply!"));
+  expect(prepare.mock.calls).toEqual([["draft-tail", "prefetch"]]);
+  await view.render("complete");
+  await act(async () => current.change("another reply"));
+  await view.render("other-tail", 1);
+  await act(async () => current.change("next"));
+  await view.render("other-tail", 2);
+  await act(async () => current.change("next revision"));
+  expect(prepare.mock.calls).toEqual([
+    ["draft-tail", "prefetch"],
+    ["other-tail", "prefetch"],
+    ["other-tail", "prefetch"],
+  ]);
+});
 
 function seed(sessionId: string, text: string) {
   touched.add(sessionId);

@@ -728,6 +728,8 @@ const handlers: Record<
   "mobile.pairing.cancel": handleDevicesRpc,
   "host.access.read": handleDevicesRpc,
   "devices.revokeOther": handleDevicesRpc,
+  "devices.setManagement": handleDevicesRpc,
+  "devices.applyRecovery": handleDevicesRpc,
   "devices.paired": handleDevicesRpc,
   "mobile.access.status": handleDevicesRpc,
   "mobile.access.enable": handleDevicesRpc,

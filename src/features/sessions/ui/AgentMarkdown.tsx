@@ -86,6 +86,7 @@ import { resolveInboxMediaUrl } from "../../inbox/model/inboxMedia";
 import { isNoteImagePath } from "../../notes";
 import { InboxMedia } from "../../inbox/ui/InboxMedia";
 import { isLocalMediaPath, LocalMedia } from "./LocalMedia";
+import { mediaKind } from "../../files/public/mediaPreview";
 import { DocumentImage, ImageAltText } from "./DocumentImage";
 import { resolveDocumentImage } from "../../../shared/lib/paths";
 import { rehypeHoldImageSources, rehypeRestoreImageSources } from "./documentImageSources";
@@ -366,6 +367,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const incomplete = useIsCodeFenceIncomplete();
   const block = Object.prototype.hasOwnProperty.call(props, "data-block");
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
+  const localMedia = useContext(LocalMediaContext);
   const resolveFile = useWorkspaceFileResolver();
   const text = block ? "" : textContent(children);
   const slashCommand = /^\/[\p{L}\p{N}_-]+$/u.test(text.trim());
@@ -399,7 +401,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
           ? candidate
           : undefined;
     const open = file && onOpenFile ? () => onOpenFile(file.path, file.navigation) : undefined;
-    return (
+    const span = (
       <span className="inline-flex max-w-full items-center align-baseline">
         <Code
           {...props}
@@ -436,6 +438,12 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
           {children}
         </Code>
       </span>
+    );
+    // A video or audio path written as code plays above its path, like a linked one.
+    return localMedia && file && mediaKind(file.path) && isLocalMediaPath(file.path) ? (
+      <LocalMedia key={file.path} path={file.path} label={fileName || text} fallback={span} />
+    ) : (
+      span
     );
   }
 
@@ -844,6 +852,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   documentPath,
   hardBreaks,
   renderProse,
+  isProseLine,
 }: {
   text: string;
   streaming?: boolean;
@@ -862,6 +871,8 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   hardBreaks?: boolean;
   /** Render application tokens in prose after Markdown parsing and sanitization. */
   renderProse?: (text: string) => ReactNode;
+  /** Retain lines with application tokens as prose during file auto-linking. */
+  isProseLine?: (line: string) => boolean;
 }) {
   const t = useT();
   const codePlugin = useCodeHighlightPlugin();
@@ -943,9 +954,9 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     () => [
       ...Object.values(defaultRemarkPlugins),
       remarkLocalSessionLinks,
-      [remarkWorkspaceFileLinks, { cwd }],
+      [remarkWorkspaceFileLinks, { cwd, isProseLine }],
     ],
-    [cwd],
+    [cwd, isProseLine],
   );
   const remoteMedia = !!allowRemoteMedia;
   const textMode = useSyncExternalStore(

@@ -305,6 +305,8 @@ export function createEnvironmentRuntime(
         "host.access.read",
         "devices.paired",
         "devices.revokeOther",
+        "devices.setManagement",
+        "devices.applyRecovery",
         "dev.servers.reviewed-impact",
         "inbox.attention",
         "inbox.providers.desktop",

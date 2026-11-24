@@ -17,7 +17,12 @@ import {
   type ComposerTurnOptions,
 } from "../model/session";
 import type { ParentAdmission } from "../data/parentInputClosure";
-import { getSessions, useSession, useSessionsSelector } from "../model/sessionsStore";
+import {
+  getSessions,
+  selectSessionById,
+  useSession,
+  useSessionsSelector,
+} from "../model/sessionsStore";
 import {
   DelegatedSessionRequests,
   useDelegatedMessageReceipts,
@@ -361,6 +366,7 @@ export function SessionSubagentSheet({
   cwd?: string;
   native: {
     block?: Block;
+    liveSessionId?: string;
     relay: SubagentRelay;
     blockedReason?: string;
     close: () => void;
@@ -379,7 +385,17 @@ export function SessionSubagentSheet({
 }) {
   const translate = useT();
   const child = useSession(delegated.childId);
-  const selected = !native.block && !!child && delegated.isOpen !== false;
+  // The pane skips running command output. An open details sheet follows its own block.
+  const currentBlock = useSessionsSelector((sessions) => {
+    if (!visible || !native.block || !native.liveSessionId) return native.block;
+    const blocks = selectSessionById(sessions, native.liveSessionId)?.blocks;
+    if (!blocks) return native.block;
+    for (let index = blocks.length - 1; index >= 0; index--) {
+      if (blocks[index].id === native.block.id) return blocks[index];
+    }
+    return native.block;
+  });
+  const selected = !currentBlock && !!child && delegated.isOpen !== false;
   // A child's Host owner connects only while its panel is open or a Stop needs it;
   // children otherwise leave no sessions, queues or notices in the parent.
   const stopping = new Set([...(delegated.stopping ?? []), ...(delegated.connecting ?? [])]);
@@ -429,13 +445,13 @@ export function SessionSubagentSheet({
   );
   const owner = useNestedDelegationOwner(delegated.childId);
 
-  if (native.block) {
-    const callId = native.block.agentRun?.workflow ? undefined : native.block.tool?.callId;
+  if (currentBlock) {
+    const callId = currentBlock.agentRun?.workflow ? undefined : currentBlock.tool?.callId;
     return (
       <>
         {owners}
         <SubagentSheet
-          block={native.block}
+          block={currentBlock}
           busy={busy}
           visible={visible}
           cwd={cwd}
@@ -453,7 +469,7 @@ export function SessionSubagentSheet({
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
           relay={
-            native.block.agentRun?.workflow
+            currentBlock.agentRun?.workflow
               ? undefined
               : { ...native.relay, blockedReason: native.blockedReason }
           }

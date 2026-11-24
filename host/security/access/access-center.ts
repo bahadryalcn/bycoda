@@ -9,7 +9,13 @@ import {
 export type HostAccessReport = {
   environmentId: string;
   sampledAt: number;
-  devices: { id: string; name: string; isCurrent: boolean }[];
+  devices: {
+    id: string;
+    name: string;
+    isCurrent: boolean;
+    canManageDevices?: boolean;
+    isLocalDesktop?: boolean;
+  }[];
   devicesTruncated: boolean;
   lan: { state: MobileAccessStatus["state"] };
   privateNetwork: { state: MobileAccessStatus["state"] };
@@ -128,7 +134,13 @@ export async function readHostAccess(
   return {
     environmentId,
     sampledAt: now(),
-    devices: devices.devices.map(({ id, name, isCurrent }) => ({ id, name, isCurrent })),
+    devices: devices.devices.map(({ id, name, isCurrent, canManageDevices, isLocalDesktop }) => ({
+      id,
+      name,
+      isCurrent,
+      ...(typeof canManageDevices === "boolean" ? { canManageDevices } : {}),
+      ...(typeof isLocalDesktop === "boolean" ? { isLocalDesktop } : {}),
+    })),
     devicesTruncated: devices.devicesTruncated,
     lan,
     privateNetwork,

@@ -140,5 +140,7 @@ export function DiffOverviewRuler({
     };
   }, [registry, scrollerRef]);
 
-  return <div ref={slotRef} className="pointer-events-none absolute inset-0" />;
+  // The track positions itself against the pane. Give its mount no hit box:
+  // a pointer-events:none ancestor also marks the track as an inactive editor.
+  return <div ref={slotRef} className="contents" />;
 }

@@ -7,6 +7,7 @@ import {
   sessionProviderAccountId,
   supportsProviderAccounts,
 } from "../../../features/providers/model/providerAccounts";
+import { exhaustedWindowResetAt } from "../../../features/providers/model/rateLimits";
 import { loadFreshRateLimits } from "../../../features/providers/model/rateLimitsCache";
 import { RESUME_PROMPT } from "../../../features/sessions/model/inFlight";
 import { modelDisplayName } from "../../../features/sessions/model/modelDisplayName";
@@ -147,7 +148,10 @@ async function runFailover(
           .map((account) => account.id)
           .filter((id) => id !== current),
         limited: isLimited,
-        readLimits: (accountId) => loadFreshRateLimits(harness, accountId, LIMITS_MAX_AGE_MS),
+        hasQuota: async (accountId) => {
+          const limits = await loadFreshRateLimits(harness, accountId, LIMITS_MAX_AGE_MS);
+          return limits.status === "ok" && exhaustedWindowResetAt(limits) == null;
+        },
       });
     }
   } else {

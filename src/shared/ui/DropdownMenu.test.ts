@@ -40,6 +40,66 @@ async function key(value: string, init?: KeyboardEventInit) {
 function focused() {
   return document.activeElement?.getAttribute("aria-label");
 }
+it("windows long flat menus while focusing and picking actions across the full list", async () => {
+  const actions: DropdownMenuItem[] = Array.from({ length: 1000 }, (_, index) => ({
+    kind: "item",
+    id: String(index),
+    label: index === 500 ? "Unique prompt" : `Prompt ${index}`,
+    checked: index === 700,
+    selectionRole: "radio",
+    disabled: index === 998,
+  }));
+  const pick = vi.fn();
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(320);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(280);
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.getAttribute("role") === "menu" ? 320 : 28;
+  });
+  try {
+    await act(async () =>
+      root.render(
+        createElement(DropdownMenu, {
+          anchor,
+          label: "Prompts",
+          items: actions,
+          windowed: true,
+          initialActiveId: "700",
+          onPick: pick,
+          onClose: vi.fn(),
+        }),
+      ),
+    );
+    const mounted = () => document.querySelectorAll('[role="menuitemradio"]').length;
+    expect(mounted()).toBeLessThan(64);
+    expect(focused()).toBe("Prompt 700");
+    expect(document.activeElement?.getAttribute("aria-checked")).toBe("true");
+    expect(document.activeElement?.getAttribute("aria-setsize")).toBe("1000");
+    const menu = document.querySelector<HTMLElement>('[role="menu"]')!;
+    await act(async () => {
+      menu.scrollTop = 280 * 28;
+      menu.dispatchEvent(new Event("scroll"));
+    });
+    expect(menu.querySelector('[data-menu-id="280"]')).not.toBeNull();
+    expect(focused()).toBe("Prompt 700");
+    await key("End");
+    expect(focused()).toBe("Prompt 999");
+    await key("ArrowUp");
+    expect(focused()).toBe("Prompt 997");
+    await key("Home");
+    expect(focused()).toBe("Prompt 0");
+    await key("u");
+    expect(focused()).toBe("Unique prompt");
+    expect(document.activeElement?.getAttribute("aria-posinset")).toBe("501");
+    expect(mounted()).toBeLessThan(64);
+    await act(async () => (document.activeElement as HTMLButtonElement).click());
+    expect(pick).toHaveBeenCalledExactlyOnceWith("500");
+    expect(document.activeElement).toBe(anchor);
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
 it("navigates enabled rows with wrap, Home/End and cyclic typeahead without activating them", async () => {
   const pick = vi.fn();
   await act(async () =>

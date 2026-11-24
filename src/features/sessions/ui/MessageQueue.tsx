@@ -108,6 +108,7 @@ export function MessageQueue({
   onDelete,
   canAttach,
   references,
+  suggestions,
   remote = false,
   busy = false,
   waitingOnSubagents = false,
@@ -703,19 +704,6 @@ export function MessageQueue({
                       {label}
                     </Text>
                   </OverflowTooltip>
-                  {busy &&
-                  !paused &&
-                  !restored &&
-                  !leaseHeld &&
-                  !reviewRow &&
-                  index === 0 &&
-                  !queueDelivery &&
-                  !pendingDelivery &&
-                  !waitingOnSubagents ? (
-                    <Text as="div" size="caption" tone="secondary">
-                      {t("Sends when the current turn finishes")}
-                    </Text>
-                  ) : null}
                   {attachmentGone ? (
                     <Text
                       size="inherit"
@@ -870,6 +858,7 @@ export function MessageQueue({
           message={editingMessage}
           canAttach={canAttach}
           references={references}
+          suggestions={suggestions}
           onSave={(text, attachments) => {
             if (!queueOwner.canMutate()) return;
             onEdit?.(editingMessage.id, text, attachments);

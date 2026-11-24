@@ -1,4 +1,5 @@
 import { pathKey } from "../../../shared/lib/paths";
+import { createStore } from "../../../shared/lib/store";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
 import {
   loadProjectGroupAssignments,
@@ -44,23 +45,27 @@ const PROJECT_ID_KEY = "bycoda.sync.localProjectIds.v3";
 const KNOWN_PATHS_KEY = "bycoda.sync.remoteProjectPaths.v2";
 const REMOTE_GROUPS_KEY = "bycoda.projectRemoteGroups";
 const HOST_ENVIRONMENT_KEY = "bycoda.sync.localHostEnvironmentId";
-const HOST_ENVIRONMENT_CHANGED = "bycoda:local-host-environment-changed";
 const RAIL_LAYOUT_ID = "rail";
+const hostEnvironmentChanges = createStore();
 
 /** Records which host serves this machine's filesystem: it names this
  * machine's folders in their project ids, and another desktop connected to
  * that host can open them remotely. The last known value is kept while the
  * local host is briefly unreachable. */
 export function setLocalHostEnvironmentId(environmentId: string): void {
+  let changed = false;
   try {
     if (localStorage.getItem(HOST_ENVIRONMENT_KEY) !== environmentId) {
       localStorage.setItem(HOST_ENVIRONMENT_KEY, environmentId);
-      if (typeof window !== "undefined") window.dispatchEvent(new Event(HOST_ENVIRONMENT_CHANGED));
+      changed = true;
     }
   } catch {
     // ignored; folders keep their machine-based ids until it can be stored
   }
+  if (changed) hostEnvironmentChanges.notify();
 }
+
+export const subscribeLocalHostEnvironment = hostEnvironmentChanges.subscribe;
 
 export function localHostEnvironmentId(): string | undefined {
   try {
@@ -68,13 +73,6 @@ export function localHostEnvironmentId(): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-/** Notifies when `setLocalHostEnvironmentId` stores a different host. */
-export function subscribeLocalHostEnvironment(onChange: () => void): () => void {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(HOST_ENVIRONMENT_CHANGED, onChange);
-  return () => window.removeEventListener(HOST_ENVIRONMENT_CHANGED, onChange);
 }
 
 function loadProjectIds(): Record<string, string> {
@@ -103,11 +101,11 @@ function saveProjectIds(ids: Record<string, string>): void {
  * machines stay two projects. A desktop without a host of its own names its
  * folders by its machine id until it has one. */
 export function projectIdForPath(path: string): string | undefined {
-  return projectIdFrom(path, localHostEnvironmentId(), localMachineId);
+  return projectIdOn(path, localHostEnvironmentId(), localMachineId);
 }
 
-/** `projectIdForPath` with the local host and machine ids passed in (see useProjectIdForPath). */
-export function projectIdFrom(
+/** `projectIdForPath` over identities the caller already holds, safe during render. */
+export function projectIdOn(
   path: string,
   environmentId: string | undefined,
   machineId: () => string,

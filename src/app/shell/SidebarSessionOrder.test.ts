@@ -101,7 +101,7 @@ it("updates matching title text without resolving the retained row's model again
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Search sessions"]')!.click(),
   );
-  const field = container.querySelector<HTMLInputElement>('input[placeholder="Search sessions…"]')!;
+  const field = container.querySelector<HTMLInputElement>('input[placeholder="Search…"]')!;
   async function type(query: string) {
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, query);

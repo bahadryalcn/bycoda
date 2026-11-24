@@ -1,5 +1,6 @@
 import { InfoTooltip } from "../../../shared/ui/InfoPopover";
-import { NotificationRequestCount } from "./NotificationRequestCount";
+import { NotificationBell } from "../../../shared/ui/NotificationBell";
+import { Portal } from "../../../shared/ui/Portal";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -15,7 +16,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { ToastCard, ToastSlot, useAutoDismiss } from "../../../shared/ui/ToastRegion";
 import { useT } from "../../../shared/i18n";
 import { useToday } from "../../../shared/ui/useToday";
-import { Bell, BellOff, CheckCheck, Settings } from "../../../shared/ui/icons";
+import { CheckCheck, Settings } from "../../../shared/ui/icons";
 import {
   Fragment,
   useEffect,
@@ -67,6 +68,7 @@ import { useRevokedLocalMachine } from "../../connections/public/localHostServic
 
 export type Notice = PendingApprovalNotice & { session: Session };
 type Props = {
+  triggerTarget?: HTMLElement | null;
   notices: Notice[];
   popupNotices?: Notice[];
   onFocusSession: (sessionId: string) => void;
@@ -134,6 +136,7 @@ function eligibleNoticeKeys(
 }
 
 export function ApprovalToasts({
+  triggerTarget,
   notices,
   popupNotices = notices,
   onFocusSession,
@@ -312,37 +315,26 @@ export function ApprovalToasts({
     })),
     ...(hasLocked ? [{ key: "locked", node: <LockedNotice /> }] : []),
   ];
+  const bell = (
+    <NotificationBell
+      label={t("Notifications")}
+      muted={!popupsEnabled}
+      count={badgeCount}
+      tone={count > 0 ? "warning" : "accent"}
+      countId={`${panelId}-count`}
+      ref={trigger}
+      aria-expanded={expanded}
+      aria-controls={expanded ? panelId : undefined}
+      onClick={() => {
+        setOptionsAnchor(null);
+        if (expanded) hidePanel();
+        else openPanel();
+      }}
+    />
+  );
   return (
     <>
-      <Button
-        iconOnly
-        label={t("Notifications")}
-        variant="ghost"
-        motion="none"
-        size="sm"
-        className="relative"
-        ref={trigger}
-        type="button"
-        aria-describedby={badgeCount > 0 ? `${panelId}-count` : undefined}
-        aria-expanded={expanded}
-        aria-controls={expanded ? panelId : undefined}
-        onClick={() => {
-          setOptionsAnchor(null);
-          if (expanded) hidePanel();
-          else openPanel();
-        }}
-      >
-        <span className="relative inline-flex shrink-0">
-          {popupsEnabled ? <Bell className="icon-sm" /> : <BellOff className="icon-sm" />}
-          {badgeCount > 0 ? (
-            <NotificationRequestCount
-              id={`${panelId}-count`}
-              count={badgeCount}
-              tone={count > 0 ? "warning" : "accent"}
-            />
-          ) : null}
-        </span>
-      </Button>
+      {triggerTarget ? <Portal target={triggerTarget}>{bell}</Portal> : bell}
       {expanded ? (
         <Sheet
           padding="none"

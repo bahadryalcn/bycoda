@@ -2569,6 +2569,58 @@ describe("claude subagents", () => {
     ]);
   });
 
+  it.each(["before", "after"] as const)(
+    "reports context capacity when the CLI replies %s the first usage",
+    async (order) => {
+      const { turn, events } = await startTurn("s1");
+      const request = parse().find(
+        (msg) => (msg.request as { subtype?: string } | undefined)?.subtype === "get_context_usage",
+      );
+      expect(request).toBeDefined();
+      const firstUsage = {
+        type: "stream_event",
+        event: {
+          type: "message_start",
+          message: { model: "claude-sonnet-5", usage: { cache_read_input_tokens: 426_000 } },
+        },
+      };
+      const capacity = {
+        type: "control_response",
+        response: {
+          subtype: "success",
+          request_id: request!.request_id,
+          response: {
+            model: "claude-sonnet-5",
+            totalTokens: 20_000,
+            maxTokens: 800_000,
+            rawMaxTokens: 1_000_000,
+          },
+        },
+      };
+      if (order === "before") emit(capacity);
+      emit(firstUsage);
+      if (order === "after") emit(capacity);
+      expect(events.filter((event) => event.type === "context")).toEqual(
+        order === "before"
+          ? [{ type: "context", used: 426_000, window: 1_000_000 }]
+          : [
+              { type: "context", used: 426_000 },
+              { type: "context", window: 1_000_000 },
+            ],
+      );
+      emit({
+        type: "result",
+        subtype: "success",
+        modelUsage: {
+          "claude-sonnet-5": { contextWindow: 200_000 },
+          "claude-opus-5-5": { contextWindow: 1_000_000 },
+        },
+      });
+      await turn;
+      expect(events.filter((event) => event.type === "context").at(-1)?.window).toBe(200_000);
+    },
+  );
+
   it("reports subagent context to its parent without touching the main context", async () => {
     const { events, turn } = await startTurn("s1");
     emit({

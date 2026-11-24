@@ -13,12 +13,12 @@ export { ComposerAction } from "./ComposerAction";
 import { MessageQueue } from "./MessageQueue";
 import { RemoteOriginMark } from "./RemoteOriginMark";
 import { ComposerHighlight } from "./ComposerHighlight";
+import { ComposerAddMenu } from "./ComposerAddMenu";
 import { ComposerInlineEditor } from "./ComposerInlineEditor";
 import { composerInputFocused } from "./composerInlineInput";
 import { mayHaveComposerMarkdown } from "./ComposerMarkdown";
 import { registerVoiceDraftReader } from "../../voice/model/voiceDraftContext";
 import { DeliveryProgressIndicator } from "./DeliveryProgressNotice";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
 import { hasForeignMachineAttachment } from "../../connections/public/sessionMachineTarget";
 import { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
@@ -72,10 +72,7 @@ import {
   AiIdea,
   CircleDashed,
   CursorMagicSelection,
-  FilePlus,
-  Plus,
   Share,
-  SlidersHorizontal,
   Undo2,
   X,
 } from "../../../shared/ui/icons";
@@ -208,7 +205,7 @@ import { McpServerPicker } from "./McpServerPicker";
 import { InboxMiniCard } from "../../inbox/ui/InboxMiniCard";
 import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { HandoffMiniCard } from "./HandoffMiniCard";
-import { ModelPicker } from "./ModelPicker";
+import { ModelControlPills, ModelPicker } from "./ModelPicker";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { Button } from "../../../shared/ui/Button";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
@@ -221,7 +218,9 @@ import { useTabGroupLogos } from "../../projects/public/useTabGroupLogos";
 import { useProjectBranchesState } from "../../source-control/public/useProjectBranches";
 import {
   keybindingPressed,
+  loadModelControls,
   loadNotesEnabled,
+  subscribeModelControls,
   subscribeNotesEnabled,
 } from "../../settings/public/settings";
 import { isNoteMentionPath, type NoteComposerCard } from "../../notes";
@@ -235,7 +234,13 @@ import { consumePlanCommand, PLAN_COMMAND } from "../model/plan";
 import { consumeOperatorCommand, OPERATOR_COMMAND } from "../model/operatorCommand";
 import { consumeOrchestratorCommand, ORCHESTRATOR_COMMAND } from "../model/orchestratorCommand";
 import { consumeDraftCommand, DRAFT_COMMAND } from "../model/draftCommand";
-import { leadingModeCommand, MODE_COMMAND_INDENT, ModeCommandPill } from "./modeCommands";
+import {
+  ComposerModePicker,
+  leadingModeCommand,
+  MODE_COMMAND_INDENT,
+  ModeCommandPill,
+} from "./modeCommands";
+import { observeResize } from "../../../shared/lib/observeResize";
 import { BTW_COMMAND, consumeBtwCommand, consumeBtwPrefix } from "../model/btw";
 import { isCompactCommand } from "../model/compact";
 import {
@@ -775,8 +780,8 @@ export const Composer = memo(function Composer({
   const boxRef = useRef<HTMLDivElement>(null);
   const subagentList = onOpenSubagent && subagents?.length ? subagents : undefined;
   const hasSubagents = !!subagentList;
-  const plusRef = useRef<HTMLButtonElement>(null);
-  const modeRef = useRef<HTMLButtonElement>(null);
+  const composerRoot = useRef<HTMLDivElement>(null);
+  const composerControls = useRef<HTMLDivElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
   // A remount (or a restart) starts from the attachments the draft was saved with.
   const [attachments, setAttachments] = useState<Attachment[]>(() =>
@@ -934,7 +939,26 @@ export const Composer = memo(function Composer({
     () => (sessionId ? takeComposerNotice(sessionId) : undefined) ?? null,
   );
   const [plusOpen, setPlusOpen] = useState(false);
+  const [narrowSettings, setNarrowSettings] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
+  // The model panel is portaled, so it needs the width decision from the composer container query.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- follows the container query through a ResizeObserver.
+  useLayoutEffect(() => {
+    const root = composerRoot.current;
+    const controls = composerControls.current;
+    if (!root || !controls) return;
+    let previous: boolean | undefined;
+    const sync = () => {
+      const narrow =
+        getComputedStyle(controls).getPropertyValue("--composer-settings-in-picker").trim() === "1";
+      if (narrow === previous) return;
+      previous = narrow;
+      setModeOpen(false);
+      setNarrowSettings(narrow);
+    };
+    sync();
+    return observeResize(root, sync);
+  }, []);
   const workMode = useComposerWorkMode(sessionId);
   const [planSelected, setPlanSelected] = workMode.plan;
   const [operatorSelected, setOperatorSelected] = workMode.operator;
@@ -1069,6 +1093,7 @@ export const Composer = memo(function Composer({
   // Workspace APIs route remote:// paths to their owning machine.
   const localCwd = executionCwd;
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
+  const extrasBeside = useSyncExternalStore(subscribeModelControls, loadModelControls) === "beside";
   const spelling = useComposerSpelling();
   const queueShortcut = useKeybindingShortcut(QUEUE_MESSAGE_COMMAND);
   const stopShortcut = useKeybindingShortcut(STOP_TURN_COMMAND);
@@ -3448,9 +3473,36 @@ export const Composer = memo(function Composer({
   const onPickerSettingsChange = useStableCallback((settings: Record<string, string>) =>
     mutateParentInput(parentChanged, () => onModelSettingsChange?.(settings)),
   );
+  const onPickerAccessChange = useStableCallback((mode: RuntimeMode) =>
+    mutateParentInput(parentChanged, () => onRuntimeModeChange(mode)),
+  );
   const onPickerClose = useStableCallback(() => ref.current?.focus());
+  const settingsInModelPicker = narrowSettings && !hideIdentityControls;
+  const selectComposerMode = (id: string) => {
+    if (!canMutateDraft()) return;
+    if (id === "plan" && planActive) clearLeadingMode(PLAN_COMMAND.name);
+    if (id === "operator" && operatorActive) clearLeadingMode(OPERATOR_COMMAND.name);
+    if (id === "orchestrator" && orchestrationActive) clearLeadingMode(ORCHESTRATOR_COMMAND.name);
+    if (id === "draft" && draftActive) clearLeadingMode(DRAFT_COMMAND.name);
+    setPlanSelected(id === "plan" && !planActive);
+    setOperatorSelected(id === "operator" && !operatorActive);
+    setOrchestrationSelected(id === "orchestrator" && !orchestrationActive);
+    setDraftSelected(id === "draft" && !draftActive);
+    if (!settingsInModelPicker) ref.current?.focus();
+  };
+  const modeControl =
+    !compact && modeChoices.length > 0 ? (
+      <ComposerModePicker
+        choices={modeChoices}
+        onPick={selectComposerMode}
+        open={modeOpen}
+        onOpenChange={setModeOpen}
+        settings={settingsInModelPicker}
+      />
+    ) : null;
   return (
     <div
+      ref={composerRoot}
       data-composer
       data-usage-guide="composer"
       data-usage-guide-active={hotkeys ? "true" : undefined}
@@ -3587,6 +3639,14 @@ export const Composer = memo(function Composer({
           mentions: mentionIndex.labels,
           mcpTags: selectedMcp,
           onOpenFile,
+        }}
+        suggestions={{
+          harness,
+          executionCwd,
+          sessionId,
+          remote,
+          remotePlan: !!remoteFeatures?.plan,
+          notesEnabled,
         }}
         status={queueStatus}
         canAttach={attachmentsSupported}
@@ -4089,6 +4149,7 @@ export const Composer = memo(function Composer({
           </div>
 
           <div
+            ref={composerControls}
             className="composer-controls flex items-center gap-1 px-2 pb-2"
             data-busy={busy || undefined}
           >
@@ -4115,6 +4176,10 @@ export const Composer = memo(function Composer({
                     closeOnPick={Boolean(usageLimit)}
                     accountId={providerAccountId}
                     accountChoices={Boolean(onSelectProviderAccount)}
+                    accessMode={settingsInModelPicker && harness !== "fx" ? runtimeMode : undefined}
+                    accessBusy={settingsInModelPicker && busy}
+                    onAccessModeChange={onPickerAccessChange}
+                    modeControl={settingsInModelPicker ? modeControl : undefined}
                     extrasDisabled={disabled || !onModelSettingsChange}
                     extrasDisabledReason={
                       disabled
@@ -4128,197 +4193,77 @@ export const Composer = memo(function Composer({
                     onClose={onPickerClose}
                   />
                 ) : null}
-                {!hideIdentityControls && !compact && harness !== "fx" ? (
+                {/* Chat settings "Extras summary"; the menu stays complete. */}
+                {extrasBeside &&
+                !hideIdentityControls &&
+                !compact &&
+                !disabled &&
+                onModelSettingsChange ? (
+                  <ModelControlPills
+                    harness={harness}
+                    model={model}
+                    values={modelSettings}
+                    omitEffort
+                    onSettingsChange={onPickerSettingsChange}
+                    onClose={onPickerClose}
+                  />
+                ) : null}
+                {!hideIdentityControls && !settingsInModelPicker && !compact && harness !== "fx" ? (
                   <AccessPicker
                     value={runtimeMode}
                     busy={busy}
                     iconOnly
                     unavailable={unavailableRuntimeModes(harness)}
-                    onChange={(...args) =>
-                      mutateParentInput(parentChanged, () => onRuntimeModeChange(...args))
-                    }
+                    onChange={onPickerAccessChange}
                     onClose={() => ref.current?.focus()}
                   />
                 ) : null}
-                {!compact && modeChoices.length > 0 ? (
-                  <div className="relative flex shrink-0">
-                    <Button
-                      ref={modeRef}
-                      size="sm"
-                      variant="ghost"
-                      iconOnly
-                      label={t("Mode")}
-                      selected={modeOpen}
-                      aria-haspopup="menu"
-                      aria-expanded={modeOpen}
-                      data-composer-mode-trigger
-                      onClick={() => setModeOpen((open) => !open)}
-                      onKeyDown={(event) => {
-                        if (event.key === "ArrowDown") {
-                          event.preventDefault();
-                          setModeOpen(true);
-                        }
-                      }}
-                    >
-                      <SlidersHorizontal className="icon-sm" />
-                    </Button>
-                    {modeOpen ? (
-                      <DropdownMenu
-                        anchor={modeRef}
-                        returnFocusRef={modeRef}
-                        label={t("Mode")}
-                        side="top"
-                        align="start"
-                        size="md"
-                        onClose={() => setModeOpen(false)}
-                        data-composer-mode-menu
-                        items={[
-                          {
-                            kind: "group",
-                            id: "mode",
-                            label: t("Mode"),
-                            items: modeChoices,
-                          },
-                        ]}
-                        onPick={(id) => {
-                          if (!canMutateDraft()) return;
-                          if (id === "plan") {
-                            setPlanSelected(!planActive);
-                            if (planActive) clearLeadingMode(PLAN_COMMAND.name);
-                            setOperatorSelected(false);
-                            setOrchestrationSelected(false);
-                            setDraftSelected(false);
-                          } else if (id === "operator") {
-                            setOperatorSelected(!operatorActive);
-                            if (operatorActive) clearLeadingMode(OPERATOR_COMMAND.name);
-                            setPlanSelected(false);
-                            setOrchestrationSelected(false);
-                            setDraftSelected(false);
-                          } else if (id === "orchestrator") {
-                            setOrchestrationSelected(!orchestrationActive);
-                            if (orchestrationActive) clearLeadingMode(ORCHESTRATOR_COMMAND.name);
-                            setPlanSelected(false);
-                            setOperatorSelected(false);
-                            setDraftSelected(false);
-                          } else if (id === "draft") {
-                            setDraftSelected(!draftActive);
-                            if (draftActive) clearLeadingMode(DRAFT_COMMAND.name);
-                            setPlanSelected(false);
-                            setOperatorSelected(false);
-                            setOrchestrationSelected(false);
-                          }
-                          ref.current?.focus();
-                        }}
-                      />
-                    ) : null}
-                  </div>
-                ) : null}
+                {settingsInModelPicker ? null : modeControl}
                 {hideTopBar || hideBranchPicker ? sessionDirectoryPicker : null}
               </div>
             </div>
             {/* Without the context row below, the tip sits with the trailing
                 actions instead of adding an extra row inside the writing surface. */}
             {hideTopBar || hideBranchPicker ? <ComposerTips active={focused && !disabled} /> : null}
-            <div className={compact ? "hidden" : "relative flex shrink-0"}>
-              <Button
-                ref={plusRef}
-                variant="ghost"
-                iconOnly
-                label={t("Add files or skills")}
-                data-usage-guide="composer-plus"
-                selected={plusOpen}
-                aria-haspopup="menu"
-                aria-expanded={plusOpen}
-                onClick={() => setPlusOpen((open) => !open)}
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowDown") {
-                    event.preventDefault();
-                    setPlusOpen(true);
-                  }
-                }}
-              >
-                <Plus className="icon-sm" />
-              </Button>
-              {plusOpen ? (
-                <DropdownMenu
-                  anchor={plusRef}
-                  returnFocusRef={plusRef}
-                  label={t("Add files or skills")}
-                  side="top"
-                  align="end"
-                  size="md"
-                  onClose={() => setPlusOpen(false)}
-                  data-composer-plus
-                  items={[
-                    {
-                      kind: "group",
-                      id: "add",
-                      label: t("Add to message"),
-                      items: [
-                        {
-                          kind: "item",
-                          id: "upload",
-                          label: t("Upload file"),
-                          icon: <FilePlus />,
-                          disabled: !attachmentsSupported,
-                          description: attachmentsSupported
-                            ? undefined
-                            : remote && !remoteFeatures?.attachments
-                              ? t("Update this machine’s host to attach files")
-                              : t("{p0} does not support attachments", {
-                                  p0: HARNESS_TITLE[harness],
-                                }),
-                        },
-                        ...(!remote
-                          ? [
-                              {
-                                kind: "item" as const,
-                                id: "skills",
-                                label: t("Skills"),
-                                icon: <CursorMagicSelection />,
-                                description:
-                                  harness === "codex"
-                                    ? t("Choose a skill or type $name")
-                                    : t("Choose a skill or type /name"),
-                              },
-                            ]
-                          : []),
-                      ],
-                    },
-                  ]}
-                  onPick={(id) => {
-                    if (!canMutateDraft()) return;
-                    if (id === "upload") {
-                      attachFromPicker();
-                      return;
-                    }
-                    if (id === "skills") {
-                      const el = ref.current;
-                      if (!el) return;
-                      const prefix = harness === "codex" ? "$" : "/";
-                      const lead = el.value && !/\s$/.test(el.value) ? " " : "";
-                      const start = el.value.length + lead.length;
-                      const next = el.value + lead + prefix;
-                      el.value = next;
-                      el.setSelectionRange(next.length, next.length);
-                      resizeComposer(el);
-                      setDraft(next);
-                      syncHasText(next);
-                      setSlash({
-                        start,
-                        end: next.length,
-                        query: "",
-                        ...(prefix === "$" ? { trigger: "$" as const } : {}),
-                      });
-                      setSkillActive(0);
-                      el.focus();
-                      return;
-                    }
-                    ref.current?.focus();
-                  }}
-                />
-              ) : null}
-            </div>
+            <ComposerAddMenu
+              open={plusOpen}
+              onOpenChange={setPlusOpen}
+              className={compact ? "hidden" : undefined}
+              usageGuide="composer-plus"
+              uploadUnavailable={
+                attachmentsSupported
+                  ? undefined
+                  : remote && !remoteFeatures?.attachments
+                    ? t("Update this machine’s host to attach files")
+                    : t("{p0} does not support attachments", { p0: HARNESS_TITLE[harness] })
+              }
+              skillPrefix={remote ? undefined : harness === "codex" ? "$" : "/"}
+              onUpload={() => {
+                if (canMutateDraft()) attachFromPicker();
+              }}
+              onSkills={() => {
+                if (!canMutateDraft()) return;
+                const el = ref.current;
+                if (!el) return;
+                const prefix = harness === "codex" ? "$" : "/";
+                const lead = el.value && !/\s$/.test(el.value) ? " " : "";
+                const start = el.value.length + lead.length;
+                const next = el.value + lead + prefix;
+                el.value = next;
+                el.setSelectionRange(next.length, next.length);
+                resizeComposer(el);
+                setDraft(next);
+                syncHasText(next);
+                setSlash({
+                  start,
+                  end: next.length,
+                  query: "",
+                  ...(prefix === "$" ? { trigger: "$" as const } : {}),
+                });
+                setSkillActive(0);
+                el.focus();
+              }}
+            />
             {!compact && operatorActive ? (
               <ModeCommandPill
                 name={OPERATOR_COMMAND.name}
@@ -4431,27 +4376,25 @@ export const Composer = memo(function Composer({
                 hasValue={hasValue && !worktreeRemoved}
                 allowBusySubmit={allowBusySubmit}
                 label={draftActive ? t("Save draft") : t("Send")}
-                busyLabel={
+                followUpAction={
                   draftActive
                     ? undefined
-                    : t(
-                        !steerSupported ||
-                          resolveFollowUpRoute({
-                            busy,
-                            worktreePreparing,
-                            intent: planActive
-                              ? "plan"
-                              : orchestrationActive
-                                ? "orchestrate"
-                                : "default",
-                            operatorCommand: operatorActive,
-                            backgroundTaskCount,
-                            backgroundOnly,
-                            requested: "steer",
-                          }) === "queue"
-                          ? "Queue message"
-                          : "Steer",
-                      )
+                    : !steerSupported ||
+                        resolveFollowUpRoute({
+                          busy,
+                          worktreePreparing,
+                          intent: planActive
+                            ? "plan"
+                            : orchestrationActive
+                              ? "orchestrate"
+                              : "default",
+                          operatorCommand: operatorActive,
+                          backgroundTaskCount,
+                          backgroundOnly,
+                          requested: "steer",
+                        }) === "queue"
+                      ? "queue"
+                      : "steer"
                 }
                 blockedReason={
                   sendHeldReason ??

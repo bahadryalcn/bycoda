@@ -7,6 +7,10 @@ import type { RemoteRailSession } from "../../../features/connections/model/remo
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
 import type { useLockSnapshot } from "../../../features/group-lock/hooks/useGroupLock";
 import {
+  isAutoContinueDue,
+  wasAutoContinueClaimed,
+} from "../../../features/sessions/model/autoContinue";
+import {
   eligibleRecoverySessions,
   recoveryEntryStatus,
   recoveryNeedsAttention,
@@ -28,9 +32,9 @@ type Stored = Session | null | "error";
 /**
  * Recovery is for interrupted work. Entries whose conversation is confirmed
  * Done or Idle are resolved here (references only: history and running work are
- * untouched, and resolved ids stay held from automatic continuation). Unknown,
- * unavailable and unverified entries are never resolved. After the first full
- * pass the dialog opens by itself only when something still needs attention.
+ * untouched). Unknown, unavailable and unverified entries are never resolved.
+ * After the first full pass the dialog opens by itself only when something
+ * still needs attention; a chat continuing on its own does not.
  */
 export function useRecoveryAutoResolve({
   enabled,
@@ -101,6 +105,11 @@ export function useRecoveryAutoResolve({
         : undefined;
       const status = recoveryEntryStatus({ remote, host, local, storedMissing: saved === null });
       const unreadable = !!local?.historyLoadError || saved === "error";
+      if (
+        isAutoContinueDue(stub.id) ||
+        (wasAutoContinueClaimed(stub.id) && (status === "interrupted" || status === "working"))
+      )
+        continue;
       if (!unreadable && !recoveryNeedsAttention(status)) {
         if (!attempted.current.has(stub.id)) resolved.push(stub.id);
       } else if (!(remote && !host?.fresh)) {

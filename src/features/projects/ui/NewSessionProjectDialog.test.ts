@@ -73,7 +73,10 @@ it("blocks duplicate picks while pending and keeps errors retryable", async () =
   expect(option.disabled).toBe(true);
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => reject(new Error("Project unavailable")));
-  expect(document.body.textContent).toContain("Project unavailable");
+  // The raw reason sits behind Details; the row leads with the summary.
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Could not create session.",
+  );
   expect(option.disabled).toBe(false);
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => option.click());

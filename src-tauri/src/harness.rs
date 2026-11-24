@@ -1754,6 +1754,11 @@ impl HarnessHost {
         }
     }
 
+    #[cfg(windows)]
+    pub(crate) fn has_live_children(&self) -> bool {
+        !self.lock_inner().children.is_empty()
+    }
+
     pub(crate) fn kill_all(&self) {
         let kids: Vec<Arc<LiveChild>> = {
             let mut inner = self.lock_inner();

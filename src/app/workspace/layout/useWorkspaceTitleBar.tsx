@@ -18,7 +18,9 @@ export interface WorkspaceTitleBarDeps {
   sidebarCwd: string;
   projectRailOpen: boolean;
   sessionSidebarOpen: boolean;
-  compactTitleBar: boolean;
+  spansWindow: boolean;
+  searchActive: boolean;
+  onSearch: TitleBarProps["onSearch"];
   tabVisitNav: ReturnType<typeof useTabVisitState>["tabVisitNav"];
   surfaceForward: ReturnType<typeof useRailNavigation>["surfaceForward"];
   onRailBack: TitleBarProps["onGoBack"];
@@ -60,7 +62,9 @@ export function useWorkspaceTitleBar({
   sidebarCwd,
   projectRailOpen,
   sessionSidebarOpen,
-  compactTitleBar,
+  spansWindow,
+  searchActive,
+  onSearch,
   tabVisitNav,
   surfaceForward,
   onRailBack,
@@ -113,7 +117,9 @@ export function useWorkspaceTitleBar({
       cwd={sidebarCwd}
       projectRailOpen={!detachedSessionWindow && projectRailOpen}
       sessionSidebarOpen={!detachedSessionWindow && sessionSidebarOpen}
-      compactRail={compactTitleBar}
+      spansWindow={spansWindow}
+      searchActive={searchActive}
+      onSearch={onSearch}
       canGoBack={tabVisitNav.canBack}
       canGoForward={surfaceForward.canForward || tabVisitNav.canForward}
       onGoBack={onRailBack}

@@ -46,7 +46,8 @@ export default defineConfig(async ({ mode }) => {
       },
     ],
     define: { __BYCODA_BUILD_IDENTITY__: JSON.stringify(buildIdentity) },
-    worker: { plugins: workerRuntimePlugins },
+    // Module workers load only the selected syntax grammar and themes on first use.
+    worker: { format: "es", plugins: workerRuntimePlugins },
     resolve: {
       alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
     },

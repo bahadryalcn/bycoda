@@ -9,7 +9,15 @@ import { formatShortcutWith, usePlatform } from "../../../shared/ui/shortcut";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Check, Gauge, Zap } from "../../../shared/ui/icons";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import {
   coerceModelPickerTab,
   getModelSnapshot,
@@ -41,7 +49,14 @@ import {
 } from "./modelStoreReaders";
 import { offeredDelegationSetting } from "../model/claudeAdvisor";
 import { delegationNextValue, isDelegationSetting } from "../model/crossDelegation";
-import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
+import {
+  HARNESSES,
+  HARNESS_TITLE,
+  unavailableRuntimeModes,
+  type HarnessId,
+  type RuntimeMode,
+} from "../model/session";
+import { AccessPicker } from "./AccessPicker";
 import { HarnessIcon } from "./HarnessIcon";
 import { ModelPanel } from "./ModelPanel";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
@@ -128,6 +143,11 @@ type Props = {
   inheritChoice?: { label: string; selected: boolean; onSelect: () => void };
   accountId?: string;
   accountChoices?: boolean;
+  /** Conversation-owned choices shown in Settings when the chat toolbar is narrow. */
+  accessMode?: RuntimeMode;
+  accessBusy?: boolean;
+  onAccessModeChange?: (mode: RuntimeMode) => void;
+  modeControl?: ReactNode;
   /**
    * Removes the Agents tab (advisor, subagents, subagent effort, image models) from the panel,
    * for callers that discard those changes, e.g. model-routing rows. Panel presentation only.
@@ -187,6 +207,10 @@ export function ModelPicker({
   inheritChoice,
   accountId,
   accountChoices = false,
+  accessMode,
+  accessBusy,
+  onAccessModeChange,
+  modeControl,
   hideAgentSettings = false,
   settingsScope,
   showExtras = false,
@@ -655,7 +679,15 @@ export function ModelPicker({
         return;
       }
       if (!openRef.current || event.key !== "Escape") return;
+      // An open Access or Mode menu owns Escape, even before its list takes focus a frame later.
+      if (document.querySelector("[data-access-picker], [data-composer-mode-menu]")) return;
       if (event.target instanceof Element) {
+        if (
+          event.target.closest(
+            '[data-access-picker], [data-access-picker-trigger][aria-expanded="true"], [data-composer-mode-menu], [data-composer-mode-trigger][aria-expanded="true"]',
+          )
+        )
+          return;
         const editor = document.querySelector("[data-model-subagent-editor]");
         const filterList = editor?.querySelector('[aria-haspopup="listbox"][aria-expanded="true"]');
         if (
@@ -1032,6 +1064,33 @@ export function ModelPicker({
           accountListOpen={accountListOpen}
           onAccountListOpen={setAccountListOpen}
           onSelectAccount={selectAccount}
+          conversationSettings={
+            (accessMode && onAccessModeChange) || modeControl ? (
+              <div className="flex flex-col gap-2.5">
+                {accessMode && onAccessModeChange ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <Text size="caption" tone="inherit" weight="medium">
+                      {t("Access")}
+                    </Text>
+                    <AccessPicker
+                      value={accessMode}
+                      busy={accessBusy}
+                      unavailable={unavailableRuntimeModes(harness)}
+                      onChange={onAccessModeChange}
+                    />
+                  </div>
+                ) : null}
+                {modeControl ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <Text size="caption" tone="inherit" weight="medium">
+                      {t("Mode")}
+                    </Text>
+                    {modeControl}
+                  </div>
+                ) : null}
+              </div>
+            ) : undefined
+          }
           settings={
             inheritSelected
               ? undefined
@@ -1110,17 +1169,26 @@ export function ModelControlPills({
   values,
   onSettingsChange,
   onClose,
-}: Pick<Props, "harness" | "model" | "values" | "onSettingsChange" | "onClose">) {
+  omitEffort = false,
+}: Pick<Props, "harness" | "model" | "values" | "onSettingsChange" | "onClose"> & {
+  /** The picker beside these pills already shows the current effort. */
+  omitEffort?: boolean;
+}) {
   useLocale();
   const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   void catalogVersion;
   const source = useModelSource();
   const current = source.resolve(harness, model);
   const offered = source.modelsFor(harness);
-  const pills = pillSettings(current).map((setting) =>
+  const offeredPills = pillSettings(current).map((setting) =>
     offeredDelegationSetting(setting, offered, settingValue(setting, values), current),
   );
-  const effort = pills.find((setting) => setting.kind === "select" && isEffortSetting(setting));
+  const isEffortPill = (setting: ModelSetting) =>
+    setting.kind === "select" && isEffortSetting(setting);
+  const pills = omitEffort
+    ? offeredPills.filter((setting) => !isEffortPill(setting))
+    : offeredPills;
+  const effort = pills.find(isEffortPill);
   const groupedSettings = effort
     ? pills.filter((setting) => setting.id === "fast" || setting.id === "serviceTier")
     : [];

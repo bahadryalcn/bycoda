@@ -84,8 +84,6 @@ it.each([false, true])("retires only the submitted owner note, newer edit: %s", 
       createElement(CrewWorkOwnerActions, {
         run: { id: "run", status: "active" } as CrewRunView,
         tools: { machineId: "host", tasksSupported: true, call } as CrewOwnerTools,
-        memberId: "lead",
-        onMemberChange: vi.fn(),
       }),
     ),
   );

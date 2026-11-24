@@ -263,16 +263,13 @@ function CodeTerminalPresentation({
           </OutputBlock>
         )}
       </Surface>
-      {state.error || actionFailure.visibleError || readFailure.visibleError ? (
-        <InlineError
-          details={state.error ?? actionFailure.visibleError ?? readFailure.visibleError}
-        >
-          {notStarted
-            ? t("Could not run the command.")
-            : state.error || actionFailure.visibleError
-              ? t("Could not confirm command status.")
-              : t("Could not read command output.")}
+      {state.error ? (
+        <InlineError details={state.error}>
+          {notStarted ? t("Could not run the command.") : t("Could not confirm command status.")}
         </InlineError>
+      ) : actionFailure.visibleError || readFailure.visibleError ? (
+        // Graced failures are already presented sentences ("busy right now"), so they lead.
+        <InlineError>{actionFailure.visibleError ?? readFailure.visibleError}</InlineError>
       ) : null}
       {reportError ? (
         <InlineError details={reportError}>

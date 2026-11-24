@@ -107,6 +107,7 @@ pub(crate) fn validate_configuration_review(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)] // Tauri command arguments are its IPC contract.
 #[tauri::command(async)]
 pub fn ssh_terminal_spawn(
     app: AppHandle,

@@ -170,6 +170,7 @@ const button = (text: string) =>
 
 it("browses a machine's folders and adds the chosen one as a project", async () => {
   await render();
+  expect(document.querySelector('button[aria-label="Refresh folders"]')).toBeNull();
   await act(async () => button("code").click());
   await act(async () => button("app").click());
   const path = document.body.querySelector<HTMLInputElement>(

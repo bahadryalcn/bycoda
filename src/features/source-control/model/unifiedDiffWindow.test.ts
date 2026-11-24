@@ -3,6 +3,7 @@ import { foldUnifiedLines, type UnifiedLine } from "./unifiedDiff";
 import {
   flattenVisibleRows,
   layoutRows,
+  retainedDiffRows,
   rowsHeight,
   UNIFIED_FOLD_PX,
   UNIFIED_LINE_PX,
@@ -45,6 +46,25 @@ describe("flattenVisibleRows", () => {
 });
 
 describe("windowRows", () => {
+  it("keeps distant interaction rows at their offsets without rendering the intervening rows", () => {
+    const layout = layoutRows(Array.from({ length: 1000 }, () => ({ height: 20 })));
+    expect(
+      retainedDiffRows(layout, [
+        { start: 900, end: 902 },
+        { start: 4, end: 5 },
+        { start: 900, end: 901 },
+        null,
+        { start: 1100, end: 1101 },
+      ]),
+    ).toEqual({
+      items: [
+        { index: 4, gap: 80 },
+        { index: 900, gap: 17900 },
+        { index: 901, gap: 0 },
+      ],
+      padBottom: 1960,
+    });
+  });
   it("keeps total height stable across a window", () => {
     const rows = Array.from({ length: 100 }, (_, index) => ({
       type: "line" as const,

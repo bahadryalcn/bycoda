@@ -313,6 +313,7 @@ function changedFilePaths(prev: GitDiffIndex, next: GitDiffIndex): string[] {
 function sameIndex(prev: GitDiffIndex | null, next: GitDiffIndex): boolean {
   if (!prev) return false;
   if (
+    prev.repository !== next.repository ||
     prev.branch !== next.branch ||
     prev.head !== next.head ||
     prev.additions !== next.additions ||

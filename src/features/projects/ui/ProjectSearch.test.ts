@@ -67,6 +67,65 @@ function enter() {
     input("Search").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
   );
 }
+it("shows the first rows before mounting all results, preserving the focused match", async () => {
+  const matches = Array.from({ length: 500 }, (_, i) => ({
+    path: "/repo/one.ts",
+    relative: "one.ts",
+    line: i + 1,
+    column: 1,
+    preview: `needle ${i}`,
+  }));
+  search.mockResolvedValueOnce({ matches, truncated: true });
+  render();
+  type("Search", "needle");
+  await act(async () => vi.advanceTimersByTime(201));
+  expect(host.textContent).toContain("500 results in 1 file");
+  const rows = () => host.querySelectorAll<HTMLButtonElement>("section li button");
+  expect(rows().length).toBeGreaterThan(0);
+  expect(rows().length).toBeLessThan(100);
+  const first = rows()[0];
+  first.focus();
+  for (let i = 0; i < 36 && rows().length < 500; i++) {
+    await act(async () => vi.advanceTimersByTime(40));
+  }
+  expect(rows()).toHaveLength(500);
+  expect(document.activeElement).toBe(first);
+  act(() => rows()[499].click());
+  expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(
+    "/repo/one.ts",
+    { line: 500, column: 1 },
+    { exact: true, pin: false },
+  );
+  const next = matches.map((match) => ({
+    ...match,
+    path: "/repo/two.ts",
+    relative: "two.ts",
+    preview: "second",
+  }));
+  search.mockResolvedValueOnce({ matches: next, truncated: true });
+  type("Search", "second");
+  expect(rows()).toHaveLength(0);
+  await act(async () => vi.advanceTimersByTime(201));
+  expect(rows().length).toBeGreaterThan(0);
+  expect(rows().length).toBeLessThan(100);
+  expect(host.textContent).not.toContain("one.ts");
+  const lastRendered = rows()[rows().length - 1];
+  lastRendered.focus();
+  act(() =>
+    lastRendered.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })),
+  );
+  expect(rows().length).toBeGreaterThan(48);
+  act(() =>
+    lastRendered.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
+  );
+  expect(rows()).toHaveLength(500);
+  act(() => rows()[0].click());
+  expect(onOpenFile).toHaveBeenLastCalledWith(
+    "/repo/two.ts",
+    { line: 1, column: 1 },
+    { exact: true, pin: false },
+  );
+});
 it("keeps option toggles inside the query frame and shares inline details controls", () => {
   render();
   expect(host.querySelector('[role="dialog"]')).toBeNull();

@@ -148,7 +148,6 @@ export function rollbackRecoveryRemoval(
 // All workspace writes (including quit) retain this journal.
 let journal: SessionRecovery | null = null;
 let initialized = false;
-let heldIds = new Set<string>();
 export function getSessionRecovery(): SessionRecovery | null {
   return journal;
 }
@@ -165,13 +164,6 @@ export function setSessionRecovery(value: SessionRecovery | null): void {
     inheritRemovalOwners(journal, value);
   journal = value;
   initialized = true;
-  heldIds = new Set([
-    ...(value?.workspace.sessions.map((session) => session.id) ?? []),
-    ...(value?.resolvedIds ?? []),
-  ]);
-}
-export function isRecoverySessionHeld(id: string): boolean {
-  return heldIds.has(id);
 }
 
 export function parseSessionRecovery(raw: unknown): SessionRecovery | null {

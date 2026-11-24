@@ -3,11 +3,19 @@ import {
   catalogModelFor,
   modelDisplayName,
   modelHarness,
+  modelNameBesideIcon,
   modelSearchText,
 } from "./modelDisplayName";
 import { resetHarnessModelOverlays } from "./models";
 
 afterEach(() => resetHarnessModelOverlays());
+
+it("drops only the provider word a Claude model's icon already shows", () => {
+  expect(modelNameBesideIcon("Claude Sonnet 5.5")).toBe("Sonnet 5.5");
+  expect(modelNameBesideIcon("Claude Fable 5.2")).toBe("Fable 5.2");
+  expect(modelNameBesideIcon("GPT-5.5")).toBe("GPT-5.5");
+  expect(modelNameBesideIcon("Claude Code Helper")).toBe("Claude Code Helper");
+});
 
 describe("modelDisplayName", () => {
   it("uses the catalog display name for ids and native ids", () => {

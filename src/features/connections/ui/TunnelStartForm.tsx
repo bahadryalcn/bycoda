@@ -2,13 +2,13 @@ import { useId, useState, type ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Field } from "../../../shared/ui/Field";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Switch } from "../../../shared/ui/Switch";
 import { TextField } from "../../../shared/ui/TextField";
 import { RefreshCw } from "../../../shared/ui/icons";
 import type { TunnelProvider, TunnelTarget } from "../../../integrations/external-tunnels";
@@ -33,10 +33,15 @@ export function useTunnelStart(session: TunnelSession, draft: TunnelDraft, onSta
   const canStart =
     ready &&
     (provider === "cloudflare" || (!!selected?.installed && selected.credential === "saved"));
-  const start = () => {
+  const start = (automatic: boolean) => {
     if (!canStart) return;
     void run("start", () =>
-      controller.start({ provider, target, ...(target === "dev-server" ? { localUrl } : {}) }),
+      controller.start({
+        provider,
+        target,
+        ...(target === "dev-server" ? { localUrl } : {}),
+        ...(automatic ? { automatic: true } : {}),
+      }),
     )
       .then((started) => {
         if (started) onStarted?.();
@@ -69,7 +74,7 @@ export function TunnelStartForm({
   draft: TunnelDraft;
   machineLabel: string;
   formId: string;
-  onStart: () => void;
+  onStart: (automatic: boolean) => void;
   submit?: ReactNode;
 }) {
   const id = useId();
@@ -107,19 +112,6 @@ export function TunnelStartForm({
           />
         </Field>
       </div>
-      {overview?.automaticHostAccess !== undefined &&
-      target === "host" &&
-      provider === "cloudflare" ? (
-        <Switch
-          label={t("Access from outside the network (Cloudflare Quick Tunnel)")}
-          description={t(
-            "Free temporary URL. Restarts automatically and updates your account when it changes.",
-          )}
-          checked={overview.automaticHostAccess === true}
-          disabled={!ready || state.pending}
-          onCheckedChange={(enabled) => void run("automatic", () => controller.automatic(enabled))}
-        />
-      ) : null}
       <div className="external-tunnel-actions">
         <Button
           type="button"
@@ -220,7 +212,7 @@ export function TunnelStartForm({
         className="external-tunnel-form"
         onSubmit={(event) => {
           event.preventDefault();
-          onStart();
+          onStart(new FormData(event.currentTarget).has("automatic"));
         }}
       >
         <TextField
@@ -248,6 +240,27 @@ export function TunnelStartForm({
             {t("Anyone with this URL can reach the dev server. Keep access controls enabled.")}
           </Alert>
         )}
+        {target === "host" && provider === "cloudflare" ? (
+          overview?.automaticHostAccess === true ? (
+            <Button
+              type="button"
+              className="self-start"
+              disabled={state.pending}
+              loading={state.pending && action === "stop-automatic"}
+              onClick={() => void run("stop-automatic", controller.stopAutomatic)}
+            >
+              {t("Stop automatic Host access")}
+            </Button>
+          ) : overview?.automaticHostAccess === false ? (
+            <Checkbox
+              name="automatic"
+              size="secondary"
+              label={t("Restart tunnel automatically")}
+              description={t("bycoda updates the link in your account when the URL changes.")}
+              disabled={!ready}
+            />
+          ) : null
+        ) : null}
         {submit}
       </form>
     </div>

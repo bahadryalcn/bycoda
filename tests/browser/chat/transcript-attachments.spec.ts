@@ -67,7 +67,10 @@ for (const theme of ["light", "dark"] as const) {
       await expect(dock.getByRole("button", { name: "Stop all", exact: true })).toBeVisible();
     }
     await page.screenshot({ path: info.outputPath(`working-followup-${theme}-1280.png`) });
-    await dock.getByRole("button", { name: "Stop all", exact: true }).click();
+    // Stop all asks for a second press before it stops the work.
+    const stopAll = dock.locator("[data-dock-stop-all]");
+    await stopAll.click();
+    await stopAll.click();
     await expect(dock).toHaveCount(0);
   });
 }

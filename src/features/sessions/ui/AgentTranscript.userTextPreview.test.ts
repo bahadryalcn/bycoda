@@ -86,6 +86,10 @@ it("renders the card and dialog as Markdown, skips hover, and copies the origina
   act(() => trigger.focus());
   expect(document.querySelector("[data-hover-card]")).toBeNull();
   act(() => trigger.click());
+  expect(container.textContent).toContain("END OF MESSAGE");
+  const expand = container.querySelector<HTMLButtonElement>('[aria-label="Expand"]')!;
+  expect(document.activeElement).toBe(expand);
+  act(() => expand.click());
   expect(document.querySelector('[role="dialog"] h1')?.textContent).toBe("Start");
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain("END OF MESSAGE");
   await navigator.clipboard.writeText("");
@@ -97,7 +101,7 @@ it("renders the card and dialog as Markdown, skips hover, and copies the origina
   expect(await navigator.clipboard.readText()).toBe(text);
   act(() => document.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click());
   expect(document.querySelector('[role="dialog"]')).toBeNull();
-  expect(document.activeElement).toBe(trigger);
+  expect(document.activeElement).toBe(expand);
   expect(trigger.getAttribute("aria-describedby")).toBeNull();
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Copy message"]')!.click(),
@@ -118,15 +122,13 @@ it("uses the save-note and edit message actions in the long text dialog", async 
       }),
     ),
   );
-  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Show full long text"]')!;
-  act(() => trigger.click());
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Expand"]')!.click());
   const dialog = document.querySelector('[role="dialog"]')!;
-  const toolbar = dialog.querySelector(".sticky.top-0")!;
-  expect(toolbar).not.toBeNull();
-  expect(toolbar.querySelector('[aria-label="Copy message"]')?.textContent).toBe("Copy message");
-  expect(toolbar.querySelector('[aria-label="Save as note"]')?.textContent).toBe("Save as note");
+  const copy = dialog.querySelector('[aria-label="Copy message"]')!;
+  expect(copy.textContent).toBe("Copy message");
+  expect(dialog.querySelector('[aria-label="Save as note"]')?.textContent).toBe("Save as note");
   expect(
-    toolbar.compareDocumentPosition(dialog.querySelector(".agent-markdown")!) &
+    dialog.querySelector(".agent-markdown")!.compareDocumentPosition(copy) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   await act(async () =>
@@ -135,9 +137,7 @@ it("uses the save-note and edit message actions in the long text dialog", async 
       .click(),
   );
   expect(onSaveNote).toHaveBeenCalledWith(text);
-  expect(toolbar.querySelector('[aria-label="Saved to Notes"]')?.textContent).toBe(
-    "Saved to Notes",
-  );
+  expect(dialog.querySelector('[aria-label="Saved to Notes"]')?.textContent).toBe("Saved to Notes");
   act(() =>
     document
       .querySelector<HTMLButtonElement>('[role="dialog"] [aria-label="Message actions"]')!
@@ -163,9 +163,8 @@ it("detects JSON in a message while keeping the surrounding instructions visible
   );
   expect(container.textContent).toContain("Review this:");
   expect(container.textContent).toContain("Keep the key.");
-  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Show full JSON"]')!;
-  expect(trigger).not.toBeNull();
-  act(() => trigger.click());
+  expect(container.querySelector('[aria-label="Show full JSON"]')).not.toBeNull();
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Expand"]')!.click());
   expect(document.querySelector('[role="dialog"] pre')?.textContent).toContain('{"a":1}');
   expect(document.querySelector('[role="dialog"] pre')?.textContent).not.toContain("```");
 });

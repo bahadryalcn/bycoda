@@ -10,7 +10,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Bot } from "../../../shared/ui/icons";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { groupDockAgents, type DockAgent } from "../model/activityDock";
-import { AgentStatusDot } from "./ActivityDock";
+import { AgentStatusDot } from "./AgentStatusDot";
 import { ModelLabel } from "./ModelLabel";
 import { formatElapsed } from "./useElapsedFrom";
 

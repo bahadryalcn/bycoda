@@ -16,10 +16,10 @@ import { Tooltip } from "../../shared/ui/Tooltip";
 import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
 import { WorkingIndicator } from "../../shared/ui/WorkingIndicator";
 import { Sash } from "../../shared/ui/Sash";
-import { WindowChromeInset } from "../../shared/ui/PaneHeader";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
 import { useFormat, useLocale, useT } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
+import { observeResize } from "../../shared/lib/observeResize";
 import {
   ProjectMultiSelect,
   useProjectMultiSelect,
@@ -41,7 +41,7 @@ import {
   Lock,
   LockOpen,
   MoreHorizontal,
-  MessageSquare,
+  StandaloneChat,
   Pin,
   PinOff,
   CircleAlert,
@@ -93,7 +93,6 @@ import {
   saveProjectRailWidth,
 } from "../../features/settings/model/appearance";
 import { basename } from "../../platform/tauri/fs";
-import { IS_MAC } from "../../platform/tauri/platform";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { DiffStat } from "../../shared/ui/DiffStat";
 import { pathKey, projectKey, projectName } from "../../shared/lib/paths";
@@ -131,22 +130,22 @@ import {
   updateProjectGroup,
   type ProjectGroup,
 } from "../../features/projects/model/projectGroups";
-import { isLiveActivityAgent, type LiveAgent } from "../../features/sessions/model/liveAgents";
+import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import {
   LiveAgentsPreview,
-  liveHeadline,
-  summarizeLiveAgents,
+  liveActivityCounts,
+  liveActivityStatus,
+  orderLiveActivity,
 } from "../../features/sessions/ui/LiveAgentsPreview";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { RailToolGroup } from "./RailToolGroup";
-import { RailBrand } from "./RailBrand";
 import {
   dismissRemoteProjects,
   type RemoteOnlyProject,
 } from "../../features/sync/model/syncProjects";
-import { useProjectIdForPath } from "../../features/sync/model/useProjectIdForPath";
+import { useProjectIdForPath } from "../../features/sync/hooks/useProjectIdForPath";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
 import {
   remoteOnlyProjectHint,
@@ -154,7 +153,6 @@ import {
   useRemoteOpenTargets,
 } from "../../features/sync/model/syncRemoteProjects";
 import { LastSessionsSection, type RecentSessionsSource } from "./LastSessionsSection";
-import { TabVisitNav } from "./TitleBar";
 import {
   openAssistantRoom,
   useAssistantRoomLabel,
@@ -230,6 +228,7 @@ const RAIL_COLLAPSE_MARGIN = 40;
 type Props = {
   onRenameProjectFolder?: (path: string, name: string) => Promise<void>;
   recoveryControl?: ReactNode;
+  notificationTriggerRef?: (element: HTMLSpanElement | null) => void;
   visible?: boolean;
   resizable?: boolean;
   /** Navigator embeds the same project/group ledger without application chrome. */
@@ -243,11 +242,6 @@ type Props = {
   recents: RecentProject[];
   inboxUnseen?: boolean;
   busyPaths?: Iterable<string>;
-  canGoBack?: boolean;
-  canGoForward?: boolean;
-  onGoBack?: () => void;
-  onGoForward?: () => void;
-  onSearch?: () => void;
   searchActive?: boolean;
   onOpenInbox?: () => void;
   inboxActive?: boolean;
@@ -262,7 +256,6 @@ type Props = {
   assistantActive?: boolean;
   onOpenServers?: () => void;
   serversActive?: boolean;
-  onTogglePanel?: () => void;
   /** Called when a drag ends far below the minimum width; omit to only clamp at the minimum. */
   onCollapse?: () => void;
   onSelectProject: (path: string) => void;
@@ -306,6 +299,7 @@ type Props = {
 export function ProjectRail({
   onRenameProjectFolder,
   recoveryControl,
+  notificationTriggerRef,
   visible = true,
   resizable = true,
   presentation = "panel",
@@ -314,11 +308,6 @@ export function ProjectRail({
   recents: allRecents,
   inboxUnseen = false,
   busyPaths,
-  canGoBack = false,
-  canGoForward = false,
-  onGoBack,
-  onGoForward,
-  onSearch,
   searchActive = false,
   onOpenInbox,
   inboxActive = false,
@@ -333,7 +322,6 @@ export function ProjectRail({
   assistantActive = false,
   onOpenServers,
   serversActive = false,
-  onTogglePanel,
   onCollapse,
   onSelectProject,
   onOpenNoProject,
@@ -376,6 +364,7 @@ export function ProjectRail({
   const assistantLabel = useAssistantRoomLabel();
   // Read once: the saved width is localStorage, which the compiler cannot see change.
   const [initialRailWidth] = useState(loadProjectRailWidth);
+  const [compactFooter, setCompactFooter] = useState(false);
   const commitRailWidth = (width: number) => saveProjectRailWidth(width);
   const resize = useDragResize({
     min: railMin,
@@ -826,15 +815,6 @@ export function ProjectRail({
     socialActive ||
     assistantActive ||
     serversActive;
-  const brand = (placement: "title" | "column", narrowOnly = false) => (
-    <RailBrand
-      placement={placement}
-      narrowOnly={narrowOnly}
-      showSearch={!settingsOpen}
-      searchActive={searchActive}
-      onSearch={onSearch}
-    />
-  );
   // A group is working when any project in it, its workspace root or a nested workspace is.
   const groupWorking = (groupId: string): boolean => {
     const entry = groupedProjectSections.grouped.find((item) => item.group.id === groupId);
@@ -927,32 +907,57 @@ export function ProjectRail({
   // Destructured: the compiler treats a direct `.setRef` read as a ref access during render.
   const groupsDrag = rail.drag("groups");
   const { setRef: setGroupsSectionRef } = groupsDrag;
+  const noProjectSelected = cwd === "~" && !lastSessionsOpen && !searchOrPageActive;
   const sectionNodes: Record<RailSectionId, ReactNode> = {
-    "last-sessions": recentSessions ? (
-      <div className="shrink-0 @max-[140px]/rail:hidden">
-        <LastSessionsSection
-          source={recentSessions}
-          onOpenLastSessions={onOpenLastSessions}
-          lastSessionsOpen={lastSessionsOpen}
-          projectKeys={railProjectKeys}
-          enabled={visible}
-          activeSessionId={activeSessionId}
-          searchActive={searchOrPageActive}
-          onOpenSession={
-            onSelectListedSession ??
-            ((id, _cwd, options) => (onPreviewSession ?? onSelectAgent)?.(id, options))
-          }
-          onOpenProject={onSelectProject}
-          drag={rail.drag("last-sessions")}
-          onShownChange={setLastSessionsShown}
-          groupLabels={groupLabels}
-          groupColors={groupColors}
-          groupCustomColors={groupCustomColors}
-          groupLogos={groupLogos}
-          groupMascots={groupMascots}
-        />
-      </div>
-    ) : null,
+    "last-sessions": (
+      <>
+        {recentSessions ? (
+          <div className="shrink-0 @max-[140px]/rail:hidden">
+            <LastSessionsSection
+              source={recentSessions}
+              onOpenLastSessions={onOpenLastSessions}
+              lastSessionsOpen={lastSessionsOpen}
+              projectKeys={railProjectKeys}
+              enabled={visible}
+              activeSessionId={activeSessionId}
+              searchActive={searchOrPageActive}
+              onOpenSession={
+                onSelectListedSession ??
+                ((id, _cwd, options) => (onPreviewSession ?? onSelectAgent)?.(id, options))
+              }
+              onOpenProject={onSelectProject}
+              drag={rail.drag("last-sessions")}
+              onShownChange={setLastSessionsShown}
+              groupLabels={groupLabels}
+              groupColors={groupColors}
+              groupCustomColors={groupCustomColors}
+              groupLogos={groupLogos}
+              groupMascots={groupMascots}
+            />
+          </div>
+        ) : null}
+        {onOpenNoProject && t("No project").toLocaleLowerCase().includes(filterQuery) ? (
+          <div className="shrink-0 pb-2">
+            <ListRow
+              aria-label={t("No project")}
+              selected={noProjectSelected}
+              aria-current={noProjectSelected ? "page" : undefined}
+              icon={<StandaloneChat className="icon-sm" />}
+              onClick={onOpenNoProject}
+            >
+              <Text
+                size="inherit"
+                tone={noProjectSelected ? "inherit" : "secondary"}
+                truncate
+                className="@max-[140px]/rail:hidden"
+              >
+                {t("No project")}
+              </Text>
+            </ListRow>
+          </div>
+        ) : null}
+      </>
+    ),
     pinned:
       pinnedProjects.length > 0 ? (
         <ProjectSection
@@ -1032,30 +1037,6 @@ export function ProjectRail({
           rail.toggleCollapsed("projects");
         }}
         items={groupedProjectSections.ungrouped}
-        leadingRow={
-          onOpenNoProject && t("No project").toLocaleLowerCase().includes(filterQuery) ? (
-            <ListRow
-              aria-label={t("No project")}
-              selected={cwd === "~" && !lastSessionsOpen && !searchOrPageActive}
-              aria-current={
-                cwd === "~" && !lastSessionsOpen && !searchOrPageActive ? "page" : undefined
-              }
-              icon={<MessageSquare className="icon-sm" />}
-              onClick={onOpenNoProject}
-            >
-              <Text
-                size="inherit"
-                tone={
-                  cwd === "~" && !lastSessionsOpen && !searchOrPageActive ? "inherit" : "secondary"
-                }
-                truncate
-                className="@max-[140px]/rail:hidden"
-              >
-                {t("No project")}
-              </Text>
-            </ListRow>
-          ) : undefined
-        }
         muteStatuses={muteStatuses}
         nameCollisions={nameCollisions}
         focusHint={!navigator}
@@ -1138,34 +1119,6 @@ export function ProjectRail({
           {t("Could not add projects to the group. Please try again.")}
         </InlineError>
       )}
-      {!navigator ? (
-        <div
-          className="@container/rail flex h-10 shrink-0 select-none items-center overflow-hidden"
-          data-tauri-drag-region="deep"
-        >
-          <WindowChromeInset />
-          {IS_MAC ? null : brand("title")}
-          {IS_MAC ? <div className="min-w-0 flex-1" /> : null}
-          {/* Icon-only, just the panel toggle fits; in settings nothing does. */}
-          <div
-            className={`me-1.5 shrink-0 @max-[140px]/rail:mx-auto ${
-              settingsOpen
-                ? "bycoda-rail-visit-nav--settings @max-[140px]/rail:hidden"
-                : "bycoda-rail-visit-nav"
-            }`}
-          >
-            <TabVisitNav
-              canGoBack={canGoBack}
-              canGoForward={canGoForward}
-              onGoBack={onGoBack}
-              onGoForward={onGoForward}
-              onTogglePanel={settingsOpen ? undefined : onTogglePanel}
-              panelActive={visible}
-            />
-          </div>
-        </div>
-      ) : null}
-
       {/* Tools, live summary and update notices can exceed a short window. Above the short-height query the
         ledger is the only scroll owner; below it this column scrolls without nested scrollbars. Settings
         stays outside this column so it remains visible at every height. The popup scrolls only its ledger. */}
@@ -1176,7 +1129,6 @@ export function ProjectRail({
             : "[container:rail/size] overflow-y-auto overflow-x-hidden overscroll-none"
         }`}
       >
-        {navigator ? null : IS_MAC ? brand("column") : brand("column", true)}
         {settingsOpen && !navigator ? (
           <Button
             variant="ghost"
@@ -1341,11 +1293,19 @@ export function ProjectRail({
       </div>
       {!navigator && !settingsOpen ? (
         <nav
+          ref={(element) =>
+            element && notificationTriggerRef
+              ? observeResize(element, ({ contentRect }) =>
+                  setCompactFooter(contentRect.width <= 140),
+                )
+              : undefined
+          }
           aria-label={t("Account")}
           className="bycoda-rail-tools bycoda-rail-tools--footer @container/rail shrink-0"
         >
           <div className="@max-[140px]/rail:hidden">
             <SidebarAccountFooter
+              notificationTriggerRef={compactFooter ? undefined : notificationTriggerRef}
               recoveryControl={recoveryControl}
               updateNotice={
                 <SidebarUpdateFooter
@@ -1369,6 +1329,7 @@ export function ProjectRail({
             />
             <SidebarAccountFooter
               compact
+              notificationTriggerRef={compactFooter ? notificationTriggerRef : undefined}
               recoveryControl={recoveryControl}
               onOpenSettings={onOpenSettings}
               onOpenAccountSettings={openAccountSettings}
@@ -1409,7 +1370,6 @@ function ProjectSection({
   collapsed = false,
   onToggleCollapsed,
   items,
-  leadingRow,
   muteStatuses,
   nameCollisions,
   focusHint,
@@ -1438,7 +1398,6 @@ function ProjectSection({
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   items: RecentProject[];
-  leadingRow?: ReactNode;
   muteStatuses: ReadonlyMap<string, string | null>;
   nameCollisions: ReadonlySet<string>;
   /** Rows show their full detail in the shared keyboard-focus hint (not inside the Projects flyout). */
@@ -1485,10 +1444,9 @@ function ProjectSection({
         data-reorder-fold-body
         className={`flex-col gap-0.5 ${collapsed ? "hidden" : "flex"}`}
       >
-        {items.length === 0 && emptyLabel && !leadingRow ? (
+        {items.length === 0 && emptyLabel ? (
           <EmptyState size="inline" context="list" description={emptyLabel} />
         ) : null}
-        {leadingRow}
         {items.map((item) => (
           <ProjectCard
             key={item.path}
@@ -2746,12 +2704,12 @@ function CompactLiveAgents({
   groupMascots: Record<string, string>;
 }) {
   const t = useT();
+  const format = useFormat();
   const [expanded, setExpanded] = useState(false);
   const listId = useId();
-  const activeAgents = agents.filter(isLiveActivityAgent);
-  if (activeAgents.length === 0) return null;
-  const summary = summarizeLiveAgents(activeAgents);
-  const { title: heading, count: headlineCount } = liveHeadline(summary, t);
+  const rows = orderLiveActivity(agents);
+  if (rows.length === 0) return null;
+  const counts = liveActivityCounts(rows, t, format.formatNumber);
   return (
     <section
       aria-label={t("Activity")}
@@ -2762,13 +2720,20 @@ function CompactLiveAgents({
         iconOnly
         label={t("Activity")}
         tooltip={t("Activity")}
-        tooltipDetails={[`${heading}, ${headlineCount}`]}
+        tooltipDetails={counts.map(({ label }) => label)}
         tooltipSide="right"
         expanded={expanded}
         aria-controls={listId}
         onClick={() => setExpanded((value) => !value)}
       >
-        {summary.attention > 0 ? (
+        {counts.some(
+          ({ state }) =>
+            state === "question" ||
+            state === "approval" ||
+            state === "input" ||
+            state === "retrying" ||
+            state === "failed",
+        ) ? (
           <CircleAlert aria-hidden className="icon-sm" tone="warning" strokeWidth={1.75} />
         ) : (
           <Clock aria-hidden className="icon-sm" strokeWidth={1.75} />
@@ -2779,18 +2744,12 @@ function CompactLiveAgents({
         hidden={!expanded}
         className="max-h-[min(14rem,30vh)] w-full overflow-y-auto overscroll-none"
       >
-        {activeAgents.map((agent) => {
+        {rows.map((agent) => {
           const seed = projectName(agent.cwd);
           const key = projectKey(agent.cwd);
           const project = resolveTabGroupLabel(key, groupLabels, seed);
           const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
-          const activity = agent.needsApproval
-            ? t(agent.inputKind === "question" ? "Question" : "Need approval")
-            : agent.issue === "retrying"
-              ? t("Retrying")
-              : agent.waiting
-                ? t("Waiting")
-                : agent.activity;
+          const { state, label: activity, tone } = liveActivityStatus(agent, t);
           const parts = [agent.title, project, activity].filter(Boolean);
           return (
             <Button
@@ -2816,12 +2775,12 @@ function CompactLiveAgents({
                 color={color}
                 name={resolveTabGroupMascot(key, groupMascots)}
                 className="size-3"
-                active={!agent.needsApproval && !agent.issue && !agent.waiting}
+                active={state === "working"}
               />
-              {agent.needsApproval ? (
+              {tone === "warning" || tone === "danger" || tone === "success" ? (
                 <StatusDot
                   label={activity}
-                  tone="warning"
+                  tone={tone}
                   aria-hidden
                   className="absolute right-1.5 top-1.5"
                 />

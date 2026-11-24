@@ -1,5 +1,46 @@
 import { expect, test } from "@playwright/test";
 
+test("Show all scrolls through large directories and keeps offscreen keyboard targets and edits", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/files/file-tree.html?large");
+  const row = (path: string) => page.locator(`[role=treeitem][title="/fixture/${path}"]`);
+  await row("bulk").click();
+  await page.getByRole("button", { name: /Show all/ }).click();
+  const first = row("bulk/item0000.ts");
+  const middle = row("bulk/item1500.ts");
+  for (const density of ["compact", "touch"]) {
+    await page.evaluate((value) => {
+      document.documentElement.dataset.controlDensity = value;
+    }, density);
+    await first.evaluate((entry) => {
+      const viewport = entry.closest<HTMLElement>(".overflow-y-auto")!;
+      const bounds = entry.getBoundingClientRect();
+      viewport.scrollTop +=
+        bounds.top - viewport.getBoundingClientRect().top + 1500 * bounds.height;
+    });
+    await expect(middle).toBeInViewport();
+    expect(await page.getByRole("treeitem").count()).toBeLessThan(400);
+  }
+  await middle.pressSequentially("item2999");
+  const last = row("bulk/item2999.ts");
+  await expect(last).toBeFocused();
+  await expect(last).toBeInViewport();
+  await expect(last).toHaveAttribute("aria-posinset", "3000");
+  await expect(last).toHaveAttribute("aria-setsize", "3000");
+  await last.press("Shift+F10");
+  await page.getByRole("menuitem", { name: /^Rename/ }).click();
+  const input = page.getByRole("textbox", { name: "File name" });
+  await input.fill("new-name.ts");
+  await first.evaluate((entry) => {
+    entry.closest<HTMLElement>(".overflow-y-auto")!.scrollTop = 0;
+  });
+  await expect(first).toBeInViewport();
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue("new-name.ts");
+  await input.press("Escape");
+});
+
 test("file tree preserves selection, inline rename, windowing and native external drop at both densities and themes", async ({
   page,
 }, info) => {

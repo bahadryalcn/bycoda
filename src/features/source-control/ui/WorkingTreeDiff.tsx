@@ -571,6 +571,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
         </InlineError>
       )}
       <UnifiedDiffView
+        deferFileChrome
         files={reviewModels}
         fileCount={focusKind ? entries.length : files.length}
         focusId={focusId}

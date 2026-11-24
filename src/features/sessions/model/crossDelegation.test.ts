@@ -252,9 +252,10 @@ describe("crossDelegationSettings", () => {
       harnesses: ["codex"],
       values: { [CROSS_SUBAGENTS_KEY]: saved },
     });
-    expect(subagents.options.at(-1)).toEqual({
+    expect(subagents.options.at(-1)).toMatchObject({
       value: encodeAdvisor(ref("codex", "codex:retired")),
       label: "Unavailable · Codex · Retired",
+      modelLabel: "Retired",
     });
   });
 
@@ -378,11 +379,37 @@ describe("crossDelegationSummary", () => {
       [CROSS_SUBAGENTS_KEY]:
         encodeSubagents([ref("codex", "codex:gpt-a"), ref("codex", "codex:gpt-b")]) ?? "",
     };
-    expect(crossDelegationSummary(subagents, values)).toBe("Codex · GPT A +1");
+    expect(crossDelegationSummary(subagents, values)).toBe("GPT A +1");
   });
 });
 
 describe("delegationShortLabel", () => {
+  it("shows only model and known account for saved subagents, including retired models", () => {
+    const available = { ...ref("claude", CLAUDE_OPUS.id), providerAccountId: "default" };
+    const retired = { ...ref("claude", "claude:sonnet-5-5"), providerAccountId: "default" };
+    const removed = { ...ref("claude", "claude:haiku-5-5"), providerAccountId: "removed" };
+    const values = { [CROSS_SUBAGENTS_KEY]: encodeSubagents([available, retired, removed])! };
+    const { subagents } = settingsFor({
+      accountChoices: true,
+      signedOutAccounts: new Set(["claude:default"]),
+      values,
+      source: {
+        modelsFor: (harness) =>
+          harness === "claude"
+            ? [{ ...CLAUDE_OPUS, name: "Claude Opus 5.5" }]
+            : source.modelsFor(harness),
+        accounts: { claude: [{ id: "default", label: "Personal" }] },
+      },
+    });
+    const label = (ref: DelegateModelRef) => {
+      const option = subagents.options.find((item) => item.value === encodeAdvisor(ref))!;
+      return delegationShortLabel(subagents, option.value, option.label);
+    };
+    expect(label(available)).toBe("Opus 5.5 · Personal");
+    expect(label(retired)).toBe("Sonnet 5.5 · Personal");
+    expect(label(removed)).toBe("Haiku 5.5");
+  });
+
   it("drops the provider prefix that the option's icon already shows", () => {
     const { advisor } = settingsFor({ harnesses: ["codex"] });
     const option = advisor.options.find((item) => item.label === "Codex · GPT B")!;

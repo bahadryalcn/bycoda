@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AgentTranscript } from "../../../src/features/sessions/ui/AgentTranscript";
+import { TranscriptSkillGroups } from "../../../src/features/sessions/ui/SkillTokenText";
 import { ActivityDock } from "../../../src/features/sessions/ui/ActivityDock";
+import { ComposerNoticeStack } from "../../../src/features/sessions/ui/ComposerNoticeStack";
 import { newSession, type Block } from "../../../src/features/sessions/model/session";
 import {
   appendSteerUser,
@@ -214,6 +216,7 @@ function Fixture() {
 
 function ChatLayoutFixture() {
   const backgroundWork = new URLSearchParams(location.search).has("background-work");
+  const dockInNotices = new URLSearchParams(location.search).has("dock-in-notices");
   const startedAt = Date.now() - 269_000;
   const layoutBlocks: Block[] = [
     {
@@ -268,6 +271,21 @@ function ChatLayoutFixture() {
       ? [{ id: "layout-answer", role: "assistant" as const, text: "Komutlar tamamlandı." }]
       : []),
   ];
+  const dock = (
+    <ActivityDock
+      sessionId="layout-session"
+      blocks={layoutBlocks}
+      busy
+      backgroundTasks={backgroundWork ? ["layout-command-9"] : undefined}
+      backgroundAgents={backgroundWork ? 0 : undefined}
+      perItemStop={backgroundWork}
+      onStopAgent={backgroundWork ? async () => {} : undefined}
+      onStopAll={backgroundWork ? async () => {} : undefined}
+      pendingQuestion={false}
+      atEnd
+      onOpenAgent={() => {}}
+    />
+  );
   return (
     <div
       className="flex h-dvh min-w-0 flex-col bg-background-base text-content"
@@ -286,19 +304,7 @@ function ChatLayoutFixture() {
         />
       </div>
       <div data-composer className="mx-auto w-full max-w-4xl px-4 py-2">
-        <ActivityDock
-          sessionId="layout-session"
-          blocks={layoutBlocks}
-          busy
-          backgroundTasks={backgroundWork ? ["layout-command-9"] : undefined}
-          backgroundAgents={backgroundWork ? 0 : undefined}
-          perItemStop={backgroundWork}
-          onStopAgent={backgroundWork ? async () => {} : undefined}
-          onStopAll={backgroundWork ? async () => {} : undefined}
-          pendingQuestion={false}
-          atEnd
-          onOpenAgent={() => {}}
-        />
+        {dockInNotices ? <ComposerNoticeStack>{dock}</ComposerNoticeStack> : dock}
       </div>
     </div>
   );
@@ -430,6 +436,48 @@ function TechnicalErrorsFixture() {
   );
 }
 
+function SkillGroupFixture() {
+  const members = [
+    "brag",
+    "brag-slim",
+    "product-launch-video",
+    "video-shotcraft",
+    "motion-graphics",
+  ];
+  const context = new URLSearchParams(location.search).has("longText")
+    ? "Reference material for the video. ".repeat(20)
+    : "";
+  return (
+    <TranscriptSkillGroups
+      value={[
+        {
+          kind: "template",
+          scope: "template",
+          source: "bycoda",
+          templateId: "skill-group:video",
+          groupId: "video",
+          name: "Video",
+          invocation: "group-video",
+          memberCount: members.length,
+          members,
+          description: "",
+          body: "",
+        },
+      ]}
+    >
+      <AgentTranscript
+        blocks={[
+          {
+            id: "skill-group",
+            role: "user",
+            text: `Create a short product video.\n\n${members.map((name) => `/${name}`).join(" ")} Use these skills.\n\n${context}`,
+          },
+        ]}
+      />
+    </TranscriptSkillGroups>
+  );
+}
+
 createRoot(host).render(
   new URLSearchParams(location.search).has("code-terminal") ? (
     <Suspense>
@@ -443,6 +491,8 @@ createRoot(host).render(
     <MessageBubblesFixture />
   ) : new URLSearchParams(location.search).has("chat-layout") ? (
     <ChatLayoutFixture />
+  ) : new URLSearchParams(location.search).has("skill-group") ? (
+    <SkillGroupFixture />
   ) : (
     <Fixture />
   ),

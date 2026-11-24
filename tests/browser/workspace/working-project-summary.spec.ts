@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 for (const light of [false, true]) {
   for (const width of [1280, 800]) {
-    test(`opens grouped Activity and selects conversations at ${width} ${light ? "light" : "dark"}`, async ({
+    test(`opens flat Activity and selects conversations at ${width} ${light ? "light" : "dark"}`, async ({
       page,
     }, testInfo) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -20,15 +20,17 @@ for (const light of [false, true]) {
         await expect(list).toBeHidden();
         await header.press("Enter");
         await expect(header).toHaveAttribute("aria-expanded", "true");
-        await expect(list.locator("[data-live-agents-group]")).toHaveCount(3);
-        await expect(
-          list.locator('[data-live-agent-card="failed"], [data-live-agent-card="done"]'),
-        ).toHaveCount(0);
-        for (const id of ["approval", "question", "retry", "x-1", "waiting"]) {
+        const rows = ["x-1", "failed", "approval", "question", "retry", "waiting", "done"];
+        expect(
+          await list
+            .locator(":scope > [data-live-agent-card]")
+            .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-live-agent-card"))),
+        ).toEqual(rows);
+        for (const id of rows) {
           await list.locator(`[data-live-agent-card="${id}"]`).click();
           await expect(page.locator("[data-selected]")).toHaveText(id);
         }
-        await list.locator('[data-live-agent-card="approval"]').scrollIntoViewIfNeeded();
+        if (surface === rail) await list.evaluate((element) => (element.scrollTop = 0));
       }
       await page.screenshot({
         path: testInfo.outputPath(`activity-${light ? "light" : "dark"}-${width}.png`),

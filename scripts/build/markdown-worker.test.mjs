@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
-import { runInNewContext } from "node:vm";
+import { once } from "node:events";
+import { Worker } from "node:worker_threads";
 import { build } from "vite";
 
 test(
@@ -33,23 +34,35 @@ test(
       artifact && artifact.type === "asset",
       "Worker must be emitted by the production config",
     );
-    const output = [];
-    const self = { postMessage: (message) => output.push(message) };
-    const context = { self, setTimeout, clearTimeout, console };
-    // Real worker bundle, deliberately no window/document/navigator or DOM shims.
-    runInNewContext(String(artifact.source), context, { timeout: 15000 });
-
-    for (const line of [
-      "Paragraph with **bold** and &amp; entities.\n\n",
-      "Türkçe içerik ve 漢字.\n\n",
-    ]) {
-      const text = line.repeat(Math.ceil((1024 * 1024) / Buffer.byteLength(line)));
-      assert.ok(Buffer.byteLength(text) >= 1024 * 1024);
-      self.onmessage({ data: { stream: "large-file", sequence: output.length + 1, text } });
-      const result = output.at(-1);
-      assert.equal(result.failed, undefined);
-      assert.ok(result.blocks.length > 1);
-      assert.equal(result.blocks.join(""), text);
+    // Execute the emitted ES module inside a worker realm with no DOM.
+    const moduleUrl = (source) =>
+      `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
+    const worker = new Worker(
+      new URL(
+        moduleUrl(`
+      import { parentPort } from "node:worker_threads";
+      globalThis.self = { postMessage: message => parentPort.postMessage(message) };
+      await import(${JSON.stringify(moduleUrl(artifact.source))});
+      parentPort.on("message", data => self.onmessage({ data }));
+    `),
+      ),
+    );
+    try {
+      for (const [index, line] of [
+        "Paragraph with **bold** and &amp; entities.\n\n",
+        "Türkçe içerik ve 漢字.\n\n",
+      ].entries()) {
+        const text = line.repeat(Math.ceil((1024 * 1024) / Buffer.byteLength(line)));
+        assert.ok(Buffer.byteLength(text) >= 1024 * 1024);
+        const response = once(worker, "message");
+        worker.postMessage({ stream: "large-file", sequence: index + 1, text });
+        const [result] = await response;
+        assert.equal(result.failed, undefined);
+        assert.ok(result.blocks.length > 1);
+        assert.equal(result.blocks.join(""), text);
+      }
+    } finally {
+      await worker.terminate();
     }
   },
 );

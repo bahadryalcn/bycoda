@@ -7,17 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.7.21]
-
-### Added
-
-- Copies of one repository on several machines share one project row. Add a project to another machine by cloning it over SSH or HTTPS, optionally with its ignored files.
-- Project terminals can run on the machine that hosts the project.
-- The device panel streams Android video with live touch input. Browser and device panels take control on their own while they are visible.
-- Long pasted text becomes a text attachment card in the message box.
-- Voice workflows, a usage report and dashboard intents. Assistant permission levels, desktop control and draft recovery have more options.
-- Cancel a pending MCP sign-in without losing saved credentials.
-
 ### Changed
 
 - The Tasks screens are simpler:
@@ -45,9 +34,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Voice animations keep running when the window loses focus.
 - Sessions without a project open and list correctly.
 - The new task form no longer shows a "Merge automatically" option that had no effect.
+
+## [0.7.22]
+
+### Added
+
+- Link a project across machines and open terminals on a paired SSH machine at the project's folder.
+- Pasting 8,000 or more characters into a chat saves the text as a **Pasted text** attachment instead of filling the draft.
+- Remote conversations open matching HTTP development links in your system browser through a private forward, labeled with the computer's saved name.
+- **Settings > Chat > Advanced conversation settings > At usage limit, continue on** chooses what a conversation does when its provider stops it at a usage limit.
+- Jira Inbox changes an issue's status from its detail and shares filters across the list, Kanban and backlog views.
+- MCP sign-in can be cancelled while the browser step is pending.
+
+### Improved
+
+- The queued message editor uses the same controls as the chat composer.
+- In narrow chat panes, Access and Mode move to the model panel's **Settings** tab, and Queue and Steer take priority over Stop while you have a draft.
+- Activity lists failed and unseen completed sessions with a count per state in its header.
+- Long messages expand in place; **Expand** opens them in a dialog with the same formatting.
+- Markdown previews zoom with Ctrl and the mouse wheel, and chat links open Markdown files in Preview.
+- Device and Browser panels obtain control automatically and stream live frames where the Host supports it.
+- Assistant access presets apply one permission level and show **Custom** whenever grants differ.
+- Remote sessions load faster, and workspace file navigation follows the project on each machine.
+
+### Fixed
+
+- Pressing End in a long model list scrolls to the last model in WebKit after the list was filtered or resized.
+- Escape right after opening the Access or Mode menu in the model panel closes only that menu.
+- A Host closing during startup no longer stops with an unhandled error.
+- Transcript activity labels show their separators and ellipses correctly.
+- WebView2 recovery on Windows relaunches the app when the browser process exits.
 
 ## [0.7.20]
 

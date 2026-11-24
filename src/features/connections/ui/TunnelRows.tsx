@@ -14,7 +14,7 @@ import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { Copy } from "../../../shared/ui/icons";
+import { Copy, Globe, Server } from "../../../shared/ui/icons";
 import type { ExternalTunnel } from "../../../integrations/external-tunnels";
 import { phonePairingApi } from "../model/phonePairingApi";
 import { usePhonePairing } from "../model/usePhonePairing";
@@ -155,78 +155,86 @@ function TunnelRow({
 }) {
   const { controller, state, action, run, ready } = session;
   const publicUrl = active && ready && tunnel.state === "ready" ? tunnel.publicUrl : undefined;
+  const isHost = tunnel.target === "host";
+  const TargetIcon = isHost ? Server : Globe;
+  const canCheckAgain = tunnel.state === "error" && !tunnel.canStop;
   return (
     <article className="external-tunnel-row">
+      <TargetIcon className="icon-md" aria-hidden />
       <div className="external-tunnel-main">
-        <div className="external-tunnel-head">
-          <Text weight="medium">
-            {tunnel.target === "host" ? t("bycoda host") : t("Dev server")}
-          </Text>
-          {tunnel.target === "dev-server" ? (
-            <Text as="span" size="caption" tone="secondary" truncate className="min-w-0">
-              <Code>{tunnel.localUrl}</Code>
-            </Text>
-          ) : null}
+        <Text weight="medium">{isHost ? t("bycoda host") : t("Dev server")}</Text>
+        <div className="external-tunnel-meta">
           <Text as="span" size="caption" tone="muted">
             {providerName(tunnel.provider)}
           </Text>
-          <StatusText tone={stateTone[tunnel.state]} role="status">
-            {t(stateCopy[tunnel.state])}
-          </StatusText>
+          {isHost ? null : (
+            <Text as="span" size="caption" tone="secondary" truncate className="min-w-0">
+              <Code>{tunnel.localUrl}</Code>
+            </Text>
+          )}
         </div>
-        {publicUrl ? (
-          <div className="external-tunnel-actions">
-            <OverflowTooltip label={publicUrl}>
-              <Text as="div" size="caption" truncate className="min-w-0 flex-1">
-                <Code>{publicUrl}</Code>
-              </Text>
-            </OverflowTooltip>
-            <InfoPopover label={t("Public URL")}>
-              {t("Public access has not been verified.")}
-            </InfoPopover>
-          </div>
-        ) : null}
-        {tunnel.issue ? (
-          tunnel.state === "error" ? (
-            <InlineError>{t(issueCopy[tunnel.issue])}</InlineError>
-          ) : (
-            <InlineMessage tone="warning">{t(issueCopy[tunnel.issue])}</InlineMessage>
-          )
-        ) : null}
       </div>
-      <div className="external-tunnel-actions">
-        {publicUrl ? (
-          <TunnelShareActions
-            key={`${tunnel.id}:${publicUrl}`}
-            tunnel={tunnel}
-            machine={machine}
-            publicUrl={publicUrl}
-          />
-        ) : null}
-        {tunnel.canStop ? (
-          <Button
-            stableWidth
-            type="button"
-            className="shrink-0"
-            disabled={state.pending || tunnel.state === "stopping"}
-            loading={state.pending && action === `stop:${tunnel.id}`}
-            onClick={() => void run(`stop:${tunnel.id}`, () => controller.stop(tunnel.id))}
-          >
-            {t("Stop tunnel")}
-          </Button>
-        ) : null}
-        {tunnel.state === "error" && !tunnel.canStop ? (
-          <Button
-            stableWidth
-            type="button"
-            className="shrink-0"
-            disabled={state.pending}
-            onClick={() => void controller.refresh(true)}
-          >
-            {t("Check again")}
-          </Button>
-        ) : null}
-      </div>
+      <StatusText tone={stateTone[tunnel.state]} role="status">
+        {t(stateCopy[tunnel.state])}
+      </StatusText>
+      {publicUrl || tunnel.issue || tunnel.canStop || canCheckAgain ? (
+        <div className="external-tunnel-details">
+          {publicUrl ? (
+            <div className="external-tunnel-actions">
+              <OverflowTooltip label={publicUrl}>
+                <Text as="div" size="caption" truncate className="min-w-0 flex-1">
+                  <Code>{publicUrl}</Code>
+                </Text>
+              </OverflowTooltip>
+              <InfoPopover label={t("Public URL")}>
+                {t("Public access has not been verified.")}
+              </InfoPopover>
+            </div>
+          ) : null}
+          {tunnel.issue ? (
+            tunnel.state === "error" ? (
+              <InlineError>{t(issueCopy[tunnel.issue])}</InlineError>
+            ) : (
+              <InlineMessage tone="warning">{t(issueCopy[tunnel.issue])}</InlineMessage>
+            )
+          ) : null}
+          {publicUrl || tunnel.canStop || canCheckAgain ? (
+            <div className="external-tunnel-actions">
+              {publicUrl ? (
+                <TunnelShareActions
+                  key={`${tunnel.id}:${publicUrl}`}
+                  tunnel={tunnel}
+                  machine={machine}
+                  publicUrl={publicUrl}
+                />
+              ) : null}
+              {tunnel.canStop ? (
+                <Button
+                  stableWidth
+                  type="button"
+                  className="shrink-0"
+                  disabled={state.pending || tunnel.state === "stopping"}
+                  loading={state.pending && action === `stop:${tunnel.id}`}
+                  onClick={() => void run(`stop:${tunnel.id}`, () => controller.stop(tunnel.id))}
+                >
+                  {t("Stop tunnel")}
+                </Button>
+              ) : null}
+              {canCheckAgain ? (
+                <Button
+                  stableWidth
+                  type="button"
+                  className="shrink-0"
+                  disabled={state.pending}
+                  onClick={() => void controller.refresh(true)}
+                >
+                  {t("Check again")}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }

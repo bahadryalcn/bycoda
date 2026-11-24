@@ -17,6 +17,7 @@ import {
   remoteSessionOwnershipKey,
 } from "../../model/sessionWindowOwnership";
 import { remoteSessionFor } from "../../../features/connections/model/connections";
+import { prefetchLocalSessionPage } from "../../../features/connections/model/localSessionPagePreview";
 import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
 import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
@@ -197,7 +198,7 @@ export function useSessionLoading({
   }, []);
 
   const onLoadSessionHistory = useCallback(
-    async (sessionId: string): Promise<number> => {
+    async (sessionId: string, findAll?: AbortSignal): Promise<number> => {
       const original = sessionsRef.current.find((session) => session.id === sessionId);
       const privacy = getGroupLockView();
       if (
@@ -207,30 +208,64 @@ export function useSessionLoading({
         isProjectLockedIn(privacy.lock, sessionWorkCwd(original))
       )
         return 0;
-      const page = await getEarlierStoredHistory(original);
-      if (!page || removingSessionIds.current.has(sessionId) || getGroupLockView() !== privacy)
-        return 0;
-      const current = sessionsRef.current.find((session) => session.id === sessionId);
-      if (!current || current.storedHistory !== original.storedHistory) return 0;
+      const pages: Session["blocks"][] = [];
+      let cursor = original.storedHistory;
+      let current: Session | undefined = original;
+      do {
+        if (findAll?.aborted) return 0;
+        const page = await getEarlierStoredHistory(
+          { ...original, storedHistory: cursor },
+          !!findAll,
+        );
+        current = sessionsRef.current.find((session) => session.id === sessionId);
+        if (
+          !page ||
+          !current ||
+          findAll?.aborted ||
+          removingSessionIds.current.has(sessionId) ||
+          getGroupLockView() !== privacy ||
+          current.storedHistory !== original.storedHistory ||
+          current.cwd !== original.cwd ||
+          sessionWorkCwd(current) !== sessionWorkCwd(original)
+        )
+          return 0;
+        pages.push(page.blocks);
+        cursor = page.cursor;
+      } while (findAll && cursor.before != null);
+      // Explicit Find reads one pinned revision, without publishing each older page
+      // to every session subscriber. Normal upward scrolling still reads a single page.
+      const older = pages.length === 1 ? pages[0] : pages.reverse().flat();
       setSessions((previous) =>
         previous.map((session) =>
           session === current
             ? {
                 ...session,
-                blocks: [...page.blocks, ...session.blocks],
-                storedHistory: page.cursor,
+                blocks: [...older, ...session.blocks],
+                storedHistory: cursor,
               }
             : session,
         ),
       );
-      return page.blocks.length;
+      return older.length;
     },
     [removingSessionIds, sessionsRef, setSessions],
   );
 
   const historyForExecution = useRef(new Map<string, Promise<boolean>>());
+  // Only the most recently edited tail is warmed. Closing or replacing that session can release
+  // the full transcript, even when the user never sends the draft.
+  const warmedHistory = useRef(
+    new WeakMap<
+      Session,
+      {
+        privacy: ReturnType<typeof getGroupLockView>;
+        epoch: number;
+        read: Promise<Session | null>;
+      }
+    >(),
+  );
   const ensureSessionHistoryForExecution = useCallback(
-    (sessionId: string): Promise<boolean> => {
+    (sessionId: string, mode?: "prefetch"): Promise<boolean> => {
       const pending = historyForExecution.current.get(sessionId);
       if (pending) return pending;
       const original = sessionsRef.current.find((session) => session.id === sessionId);
@@ -242,7 +277,28 @@ export function useSessionLoading({
       )
         return Promise.resolve(false);
       const epoch = sessionLoadEpochs.current.get(sessionId) ?? 0;
-      const loading = getSession(sessionId)
+      const cached = warmedHistory.current.get(original);
+      const warm = cached?.privacy === privacy && cached.epoch === epoch ? cached.read : undefined;
+      if (mode === "prefetch") {
+        if (original.busy || removingSessionIds.current.has(sessionId))
+          return Promise.resolve(false);
+        if (warm) return warm.then(Boolean);
+        const read = getSession(sessionId);
+        const cache = new WeakMap([[original, { privacy, epoch, read }]]);
+        warmedHistory.current = cache;
+        return read.then(
+          (session) => {
+            if (!session) cache.delete(original);
+            return !!session;
+          },
+          () => {
+            cache.delete(original);
+            return false;
+          },
+        );
+      }
+      warmedHistory.current.delete(original);
+      const loading = (warm ?? getSession(sessionId))
         .then((hydrated) => {
           const current = sessionsRef.current.find((session) => session.id === sessionId);
           if (
@@ -437,18 +493,37 @@ export function useSessionLoading({
 
   const onPrefetchHistorySession = useCallback(
     (sessionId: string) => {
-      if (
-        removingSessionIds.current.has(sessionId) ||
-        sessionsRef.current.some((session) => session.id === sessionId) ||
-        loadedSessionCache.current.has(sessionId) ||
-        sessionLoads.current.has(sessionId) ||
-        activeSessionPrefetch.current
-      ) {
+      if (removingSessionIds.current.has(sessionId)) return;
+      const privacy = getGroupLockView();
+      const epoch = sessionLoadEpochs.current.get(sessionId);
+      const warmOwnerPage = (session: Session) => {
+        if (
+          !session.hostBinding?.created ||
+          isProjectLockedIn(privacy.lock, session.cwd) ||
+          isProjectLockedIn(privacy.lock, sessionWorkCwd(session))
+        )
+          return;
+        prefetchLocalSessionPage(
+          sessionId,
+          session.hostBinding,
+          () =>
+            getGroupLockView() === privacy &&
+            !removingSessionIds.current.has(sessionId) &&
+            sessionLoadEpochs.current.get(sessionId) === epoch,
+        );
+      };
+      const resident =
+        sessionsRef.current.find((session) => session.id === sessionId) ??
+        loadedSessionCache.current.get(sessionId);
+      if (resident) {
+        warmOwnerPage(resident);
         return;
       }
+      if (sessionLoads.current.has(sessionId) || activeSessionPrefetch.current) return;
       const loading = loadStoredSession(sessionId);
       activeSessionPrefetch.current = loading;
       void loading.then((loaded) => {
+        if (loaded) warmOwnerPage(loaded);
         if (
           loaded &&
           !removingSessionIds.current.has(sessionId) &&

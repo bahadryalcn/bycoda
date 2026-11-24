@@ -3,6 +3,7 @@ import { t } from "../../../shared/i18n/core";
 import { describe, expect, it } from "vitest";
 import {
   clampUsedPercent,
+  errorRateLimits,
   exhaustedWindowResetAt,
   formatRateLimitWindowChipLabel,
   formatResetCountdown,
@@ -19,6 +20,24 @@ import {
   rateLimitWindowTooltip,
   rateLimitWindowTooltipWith,
 } from "./rateLimits";
+
+it("keeps the successful observation time when an action fails with usage still visible", () => {
+  const previous = {
+    ...idleRateLimits("claude"),
+    status: "error" as const,
+    renewalPending: true,
+    updatedAt: 1_000_000,
+    weekly: { usedPercent: 65, windowMinutes: 10_080, resetsAt: null },
+  };
+
+  const result = errorRateLimits("claude", "Could not use this reset", previous);
+  expect(result).toMatchObject({
+    status: "error",
+    updatedAt: previous.updatedAt,
+    weekly: previous.weekly,
+  });
+  expect(result.renewalPending).toBeUndefined();
+});
 
 describe("formatWindowLabel", () => {
   it("uses the compact 5h / wk labels", () => {

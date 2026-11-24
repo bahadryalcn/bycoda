@@ -1,7 +1,7 @@
 import { executionUserIndex } from "./executionTurn";
 import { harnessesForTurns } from "./secondOpinion";
 import { hasPendingApproval, type Block, type HarnessId } from "./session";
-import { streamingTextUpdate } from "./stableBlocks";
+import { streamingBlockUpdate } from "./stableBlocks";
 
 /**
  * When the live turn's clock started. A message sent while the agent is still
@@ -56,7 +56,7 @@ export class BlockScanCache {
   scan(blocks: Block[]): BlockScan {
     const last = this.last;
     if (last?.blocks === blocks) return last;
-    const index = last ? streamingTextUpdate(last.blocks, blocks) : undefined;
+    const index = last ? streamingBlockUpdate(last.blocks, blocks)?.index : undefined;
     // A streamed user block is rescanned: its identity feeds the user-based facts.
     if (last && index !== undefined && last.blocks[index]?.role !== "user") {
       this.last = { ...last, blocks };

@@ -1,12 +1,5 @@
 /* Hallmark · shape: app screen · genre: modern-minimal · theme: existing bycoda tokens · v2.0.0 */
 /* Pre-emit critique: hierarchy uses primary row titles and secondary previews; restrained status glyphs replace icon tiles. */
-.notification-trigger-count {
-  position: absolute;
-  inset-block-start: -10px;
-  inset-inline-end: -4px;
-  pointer-events: none;
-}
-
 /* The sheet frame, placement, header and entrance are the shared Sheet; this class
    only scopes the flat row anatomy below. */
 .notification-sheet-list {

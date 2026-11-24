@@ -354,40 +354,44 @@ export function rememberRemotePendingWorktree(shellId: string, path?: string) {
   window.dispatchEvent(new Event(REMOTE_PENDING_WORKTREE_CHANGE));
 }
 
+let lastBindingJson: string | null = null;
+let parsedBindings: Record<string, unknown> | null = null;
+
+function readRemoteTabBindings(): Record<string, unknown> | null {
+  const raw = remoteTabBindingsRaw();
+  if (raw === lastBindingJson) return parsedBindings;
+  lastBindingJson = raw;
+  parsedBindings = null;
+  if (raw === null) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (value && typeof value === "object" && !Array.isArray(value))
+      parsedBindings = value as Record<string, unknown>;
+  } catch {
+    // A malformed or missing binding table cannot prove a remote tab is unsent.
+  }
+  return parsedBindings;
+}
+
 /** False when the tab bindings are missing or unreadable (e.g. cleared storage):
  * then no remote tab can be proven unsent, since its binding may be lost. */
 export function remoteTabBindingsReadable(): boolean {
-  try {
-    const raw = localStorage.getItem(TAB_KEY);
-    if (raw === null) return false;
-    const value: unknown = JSON.parse(raw);
-    return !!value && typeof value === "object" && !Array.isArray(value);
-  } catch {
-    return false;
-  }
+  return readRemoteTabBindings() !== null;
 }
 
 /** The host session a tab in a remote project shows; none for a new session. */
 export function remoteSessionFor(shellId: string): string | undefined {
-  try {
-    const value = JSON.parse(localStorage.getItem(TAB_KEY) ?? "{}")[shellId];
-    return typeof value === "string" ? value : undefined;
-  } catch {
-    return undefined;
-  }
+  const value = readRemoteTabBindings()?.[shellId];
+  return typeof value === "string" ? value : undefined;
 }
 
 /** Another shell (tab) bound to this host session, if any. */
 export function remoteShellBoundTo(sessionId: string, exceptShellId?: string): string | undefined {
-  try {
-    const all: unknown = JSON.parse(localStorage.getItem(TAB_KEY) ?? "{}");
-    if (!all || typeof all !== "object") return undefined;
-    return Object.entries(all).find(
-      ([shellId, value]) => value === sessionId && shellId !== exceptShellId,
-    )?.[0];
-  } catch {
-    return undefined;
-  }
+  const all = readRemoteTabBindings();
+  if (!all) return undefined;
+  return Object.entries(all).find(
+    ([shellId, value]) => value === sessionId && shellId !== exceptShellId,
+  )?.[0];
 }
 
 /** Binds a shell to a host session, or unbinds it. A host session id is unique

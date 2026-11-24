@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { AdoptedSessionNotice } from "./AdoptedSessionNotice";
 import { newSession } from "../../sessions/model/session";
 import { ADOPTED_UNSYNCED_MESSAGE } from "../model/adoptedSessions";
@@ -44,6 +45,30 @@ it("leaves the pending message's status in its queue row", () => {
 it("does not leave a waiting notice after the mirrored host turn settles", () => {
   const session = newSession("codex", "/fake");
   expect(renderToString(createElement(AdoptedSessionNotice, { session }))).toBe("");
+});
+
+it("hides the automatic sync spinner as soon as the desktop turn starts", async () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const session = newSession("claude", "/fake");
+  vi.useFakeTimers();
+  try {
+    setAdoptedSyncing(new Set([session.id]));
+    await act(async () => {
+      root.render(createElement(AdoptedSessionNotice, { session }));
+    });
+    await act(async () => vi.advanceTimersByTime(LOADING_DELAY_MS));
+    expect(host.textContent).toContain("Syncing with the local Host");
+
+    await act(async () => {
+      root.render(createElement(AdoptedSessionNotice, { session: { ...session, busy: true } }));
+    });
+    expect(host.textContent).toBe("");
+  } finally {
+    await act(async () => root.unmount());
+    setAdoptedSyncing(new Set());
+    vi.useRealTimers();
+  }
 });
 
 const flagged = () => ({ ...newSession("codex", "/fake"), adoptedSyncConflict: true });

@@ -19,7 +19,6 @@ import { notifyGitChangedWith } from "../model/gitIndexStore";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { GitChangesPanel } from "./GitChangesPanel";
 import { GitPanelSections } from "./GitPanelSections";
-import { useProjectDiffStats } from "../hooks/useProjectDiffStats";
 import type { HarnessId } from "../../sessions";
 import type { RepositoryReviewRequest } from "../model/workspaceRepositories";
 import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
@@ -270,7 +269,6 @@ export function WorkspaceSourceControl({
   const showHeader = !checkouts && (!plain || !!error);
   // The overview shows Stashes and Graph once, below every repository row. They follow
   // the repository last used in the list until the user picks one in their selector.
-  const overview = !target && !plain;
   const [sectionsChoice, setSectionsChoice] = useRetainedState(`${stateKey}:sections`, "");
   const [lastUsed, setLastUsed] = useRetainedState(`${stateKey}:last-used`, "");
   const listed = (path: string) =>
@@ -278,7 +276,6 @@ export function WorkspaceSourceControl({
   const followed = listed(lastUsed) ?? repositories.find(own) ?? repositories[0] ?? "";
   const sectionsChosen = listed(sectionsChoice);
   const sectionsCwd = sectionsChosen ?? followed;
-  const sectionsStats = useProjectDiffStats(sectionsCwd, enabled && overview);
   const listRef = useRef<HTMLDivElement>(null);
   const targetTitle = target
     ? [name(target), target].join(" · ")
@@ -436,9 +433,9 @@ export function WorkspaceSourceControl({
             </div>
             {sectionsCwd ? (
               <GitPanelSections
+                key={sectionsCwd}
                 cwd={sectionsCwd}
                 enabled={enabled}
-                hasChanges={(sectionsStats?.files ?? 0) > 0}
                 selectedSha={own(sectionsCwd) ? selectedSha : undefined}
                 onOpenCommit={callbacks(sectionsCwd).onOpenCommit}
                 paneRef={listRef}

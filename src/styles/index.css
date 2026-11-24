@@ -986,7 +986,7 @@ html.theme-light {
     --markdown-code-actions-end: 96px;
     min-block-size: 44px;
   }
-  html .agent-markdown .markdown-code-shell:has(.markdown-code-run) {
+  html .agent-markdown .markdown-code-shell:has(> div > .markdown-code-run) {
     --markdown-code-actions-end: 140px;
   }
 }
@@ -3225,7 +3225,9 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   unicode-bidi: isolate;
 }
 
-.agent-markdown .markdown-code-shell:has(.markdown-code-run) {
+/* Controls are children of the shell's content wrapper. Keep these checks out
+   of the highlighted body, which can gain thousands of spans as a fence settles. */
+.agent-markdown .markdown-code-shell:has(> div > .markdown-code-run) {
   --markdown-code-actions-end: 96px;
 }
 
@@ -3329,7 +3331,7 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   cursor: pointer;
 }
 
-.agent-markdown .markdown-code-shell:has(.markdown-code-icon) .markdown-code-summary {
+.agent-markdown .markdown-code-shell:has(> div > .markdown-code-icon) .markdown-code-summary {
   left: 34px;
 }
 
@@ -3431,13 +3433,6 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   text-decoration: underline;
 }
 
-.agent-markdown
-  .markdown-code-shell:has(.markdown-code-path)
-  [data-streamdown="code-block-header"]
-  > span {
-  visibility: hidden;
-}
-
 .agent-markdown .markdown-code-fallback-label {
   position: absolute;
   z-index: 1;
@@ -3455,25 +3450,19 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   pointer-events: none;
 }
 
-/* highlightLanguageFor swaps text/plaintext/txt/untagged fences to the "js"
-   grammar so Shiki still colors them, but Streamdown's own header reuses
-   that same value as its visible label. Hide the vendor label here and show
-   the real fence language via .markdown-code-fallback-label instead. */
+/* A file path or fallback label precedes its code block and replaces
+   Streamdown's grammar name in the header. */
 .agent-markdown
-  .markdown-code-shell:has(.markdown-code-fallback-label)
+  :is(.markdown-code-path, .markdown-code-fallback-label)
+  ~ [data-streamdown="code-block"]
   [data-streamdown="code-block-header"]
   > span {
   visibility: hidden;
 }
 
 .agent-markdown
-  .markdown-code-shell:has(.markdown-code-fallback-label:empty)
-  [data-streamdown="code-block-header"] {
-  display: none;
-}
-
-.agent-markdown
-  .markdown-code-shell:has(.markdown-code-fallback-label:empty)
+  .markdown-code-fallback-label:empty
+  ~ [data-streamdown="code-block"]
   [data-streamdown="code-block-header"]
   + [data-streamdown="code-block-body"] {
   border-top: 0;
@@ -3532,19 +3521,13 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
   padding-left: 34px;
 }
 
-.agent-markdown [data-streamdown="code-block-header"]:has(span:empty) {
+.agent-markdown
+  [data-streamdown="code-block-header"]:is(:not([data-language]), [data-language=""]) {
   display: none;
 }
 
-.agent-markdown
-  .markdown-code-shell:has(.markdown-code-copy)
-  [data-streamdown="code-block-header"]:has(span:empty) {
-  display: flex;
-}
-
-.agent-markdown
-  .markdown-code-resizable[data-collapsed]:has(.markdown-code-toggle)
-  [data-streamdown="code-block-header"] {
+/* The shell's toggle stays accessible even when there is no language label. */
+.agent-markdown .markdown-code-resizable[data-collapsed] [data-streamdown="code-block-header"] {
   display: flex;
 }
 
@@ -3563,7 +3546,7 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 }
 
 .agent-markdown
-  [data-streamdown="code-block-header"]:has(span:empty)
+  [data-streamdown="code-block-header"]:is(:not([data-language]), [data-language=""])
   + [data-streamdown="code-block-body"] {
   border-top: 0;
 }
@@ -4679,107 +4662,6 @@ html.theme-light .btw-burst {
 @media (prefers-reduced-motion: reduce) {
   .btw-burst {
     display: none;
-  }
-}
-
-/* The selected project mascot turns banked resets into a tiny status scene. */
-.reset-mascot-scene {
-  position: absolute;
-  right: 8px;
-  bottom: 5px;
-  width: 68px;
-  height: 68px;
-  display: grid;
-  place-items: center;
-  isolation: isolate;
-  pointer-events: none;
-}
-
-.reset-mascot-glow {
-  position: absolute;
-  inset: 14px 8px 3px;
-  z-index: -1;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.14;
-  filter: blur(12px);
-}
-
-.reset-mascot-sprite {
-  width: 56px;
-  height: 56px;
-  overflow: visible;
-  filter: drop-shadow(0 5px 6px var(--palette-rgb_0_0_0_0_18));
-  transform-origin: 50% 100%;
-}
-
-.reset-mascot-scene[data-reset-mascot-mood="happy"] .reset-mascot-sprite {
-  animation: reset-mascot-happy-in var(--motion-duration-ambient) var(--motion-ease-emphasized) both;
-}
-
-.reset-mascot-spark {
-  position: absolute;
-  width: 5px;
-  height: 5px;
-  background: currentColor;
-  box-shadow: 0 0 8px currentColor;
-  transform: rotate(45deg);
-  animation: reset-mascot-spark-in var(--motion-duration-ambient) var(--motion-duration-slow)
-    var(--motion-ease-emphasized) both;
-}
-
-.reset-mascot-spark-a {
-  top: 8px;
-  right: 7px;
-}
-
-.reset-mascot-spark-b {
-  top: 19px;
-  left: 3px;
-  width: 3px;
-  height: 3px;
-  animation-delay: var(--motion-duration-slow);
-}
-
-@keyframes reset-mascot-happy-in {
-  0% {
-    opacity: 0;
-    transform: translateY(9px) scale(0.82);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-  50% {
-    transform: translateY(-10px) rotate(-3deg) scaleY(1.05);
-  }
-  68% {
-    transform: translateY(0) scaleX(1.08) scaleY(0.92);
-  }
-  84% {
-    transform: translateY(-4px) rotate(2deg);
-  }
-  100% {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes reset-mascot-spark-in {
-  from {
-    opacity: 0;
-    transform: rotate(45deg) scale(0);
-  }
-  to {
-    opacity: 0.7;
-    transform: rotate(45deg) scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .reset-mascot-sprite,
-  .reset-mascot-spark {
-    animation: none !important;
   }
 }
 

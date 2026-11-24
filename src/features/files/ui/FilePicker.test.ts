@@ -50,6 +50,7 @@ vi.mock("../../projects/model/recents", () => ({
 }));
 
 import { FilePicker, reloadActionHint } from "./FilePicker";
+import { peekProjectFiles } from "../model/fileIndex";
 import { Modal } from "../../../shared/ui/Modal";
 
 let container: HTMLDivElement;
@@ -158,6 +159,106 @@ function press(input: HTMLInputElement, key: string) {
     input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
   });
 }
+
+function largeIndexWorker() {
+  const files = Array.from({ length: 2400 }, (_, i) => ({
+    path: `/repo/doc-${i}`,
+    relative: `doc-${i}`,
+    name: `doc-${i}`,
+  }));
+  vi.mocked(peekProjectFiles).mockImplementation(() => files);
+  const post = vi.fn();
+  const terminate = vi.fn();
+  const workers: MockWorker[] = [];
+  class MockWorker {
+    onmessage?: (event: { data: unknown }) => void;
+    onerror?: () => void;
+    postMessage = post;
+    terminate = terminate;
+    constructor() {
+      workers.push(this);
+    }
+  }
+  vi.stubGlobal("Worker", MockWorker);
+  const current = () => workers[workers.length - 1]!;
+  const finish = (index: number) =>
+    act(() => current().onmessage?.({ data: [{ ...files[index], score: 1, positions: [] }] }));
+  return { post, terminate, files, finish, fail: () => act(() => current().onerror?.()) };
+}
+
+describe("large file index worker", () => {
+  afterEach(() => vi.mocked(peekProjectFiles).mockReset());
+
+  it("only sends the new project's listing when an open picker changes project", () => {
+    const { files, post } = largeIndexWorker();
+    const changed = files.map((file) => ({ ...file, path: "/other/" + file.name }));
+    vi.mocked(peekProjectFiles).mockImplementation((cwd) => (cwd === "/repo" ? files : changed));
+    const props = renderPicker("doc");
+    act(() =>
+      root.render(
+        createElement(FilePicker, { ...props, open: true, cwd: "/other", initialQuery: "doc" }),
+      ),
+    );
+    expect(post.mock.calls.map(([message]) => message.files)).toEqual([files, changed]);
+  });
+
+  it("coalesces typing and opens the latest query on fast Enter", () => {
+    const { files, finish, post } = largeIndexWorker();
+    const { onOpenFile } = renderPicker("doc");
+    const input = document.querySelector<HTMLInputElement>("[role=combobox]")!;
+    inputText(input, "doc-1");
+    inputText(input, "doc-12");
+    press(input, "Enter");
+    expect(onOpenFile).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledTimes(1);
+    finish(0);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post.mock.calls[1][0]).toMatchObject({ query: "doc-12" });
+    expect(post.mock.calls[1][0].files).toBeUndefined();
+    expect(onOpenFile).not.toHaveBeenCalled();
+    finish(12);
+    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(files[12].path, undefined, { exact: true });
+    expect(rankProjectFiles).not.toHaveBeenCalled();
+  });
+
+  it("cancels pending Enter after further typing and falls back after a worker error", () => {
+    const { fail, files } = largeIndexWorker();
+    const { onOpenFile } = renderPicker("doc");
+    const input = document.querySelector<HTMLInputElement>("[role=combobox]")!;
+    press(input, "Enter");
+    inputText(input, "App");
+    fail();
+    expect(onOpenFile).not.toHaveBeenCalled();
+    press(input, "Enter");
+    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(files[0].path, undefined, { exact: true });
+  });
+
+  it("waits for the first listing and never opens a file after switching to commands", async () => {
+    const { finish, files, terminate } = largeIndexWorker();
+    vi.mocked(peekProjectFiles).mockReturnValue(null);
+    let resolve!: (files: typeof projectFiles) => void;
+    loadProjectFiles.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const { onOpenFile } = renderPicker("doc-1");
+    const input = document.querySelector<HTMLInputElement>("[role=combobox]")!;
+    press(input, "Enter");
+    await act(async () => resolve(files));
+    expect(onOpenFile).not.toHaveBeenCalled();
+    finish(1);
+    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(files[1].path, undefined, { exact: true });
+    onOpenFile.mockClear();
+    inputText(input, "doc-2");
+    press(input, "Enter");
+    inputText(input, ">");
+    expect(terminate).toHaveBeenCalledOnce();
+    finish(2);
+    expect(onOpenFile).not.toHaveBeenCalled();
+  });
+});
 
 it("a closed picker ignores Escape, and once open only the topmost overlay cancels", () => {
   const onClose = vi.fn();

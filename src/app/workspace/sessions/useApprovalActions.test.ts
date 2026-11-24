@@ -170,6 +170,80 @@ it("keeps a remote result when the opener cannot acquire its session", async () 
   expect(dismiss).not.toHaveBeenCalled();
 });
 
+it("opens a Host summary using its project even if only a peer lists it", async () => {
+  const remote = vi.fn(async () => true);
+  const load = vi.fn(async () => null);
+  const value = request();
+  const fixture = await mount(value, {
+    liveAgents: [
+      {
+        id: "host-id",
+        cwd: "ssh:/repo",
+        title: "Running",
+        harness: "codex",
+        activity: "Working",
+        needsApproval: false,
+        done: false,
+        listedRemote: true,
+      },
+    ],
+    ensureOpenSession: load,
+    onSelectRemoteSession: remote,
+  });
+  expect(await fixture.actions.onOpenApprovalSession("host-id")).toBe(true);
+  expect(remote).toHaveBeenCalledWith("ssh:/repo", "host-id");
+  expect(load).not.toHaveBeenCalled();
+});
+
+it("does not steal focus when an earlier storage read finishes after another selection", async () => {
+  const value = request();
+  const older = request();
+  let finish!: (session: Session) => void;
+  const load = vi.fn(
+    () =>
+      new Promise<Session>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  let revision = 0;
+  const focus = vi.fn((id: string) => id === value.id);
+  const open = vi.fn(async () => true);
+  const fixture = await mount(value, {
+    ensureOpenSession: load,
+    focusOpenSession: focus,
+    onSelectHistorySession: open,
+    workspaceNavigation: {
+      cancel: () => {
+        revision++;
+      },
+      captureRequest: () => {
+        const started = revision;
+        return () => revision === started;
+      },
+    },
+  });
+  const pending = fixture.actions.onOpenApprovalSession(older.id);
+  expect(await fixture.actions.onOpenApprovalSession(value.id)).toBe(true);
+  finish(older);
+  expect(await pending).toBe(false);
+  expect(focus).toHaveBeenCalledExactlyOnceWith(value.id);
+  expect(open).not.toHaveBeenCalled();
+});
+
+it("reveals an already-mounted conversation on click without waiting for storage", async () => {
+  const value = request();
+  const closeSurfaces = vi.fn();
+  const focusOpenSession = vi.fn(() => true);
+  const ensureOpenSession = vi.fn(async () => value);
+  const fixture = await mount(value, { closeSurfaces, focusOpenSession, ensureOpenSession });
+
+  const opened = fixture.actions.onOpenApprovalSession(value.id);
+  expect(closeSurfaces).toHaveBeenCalledOnce();
+  expect(focusOpenSession).toHaveBeenCalledExactlyOnceWith(value.id);
+  expect(ensureOpenSession).not.toHaveBeenCalled();
+  expect(await opened).toBe(true);
+});
+
 it("does not open a conversation that no longer exists", async () => {
   const select = vi.fn(async (): Promise<unknown> => true);
   const fixture = await mount(request(), {
@@ -402,6 +476,7 @@ it("never opens a missing session from a stale cross-window focus request", asyn
   const focus = vi.fn(() => false);
   const open = vi.fn(async () => {});
   const inspected = vi.fn();
+  const closeSurfaces = vi.fn();
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -412,6 +487,7 @@ it("never opens a missing session from a stale cross-window focus request", asyn
       setInspectedWorkerId: inspected,
       focusOpenSession: focus,
       onSelectHistorySession: open,
+      closeSurfaces,
     });
     return null;
   }
@@ -420,6 +496,7 @@ it("never opens a missing session from a stale cross-window focus request", asyn
   expect(focus).toHaveBeenCalledWith(value.id);
   expect(open).not.toHaveBeenCalled();
   expect(inspected).not.toHaveBeenCalled();
+  expect(closeSurfaces).not.toHaveBeenCalled();
   await act(async () => root.unmount());
   container.remove();
 });
@@ -429,6 +506,7 @@ it("focuses an existing parent pane before inspecting its worker", async () => {
   const focus = vi.fn(() => true);
   const open = vi.fn(async () => {});
   const inspected = vi.fn();
+  const closeSurfaces = vi.fn();
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -439,6 +517,7 @@ it("focuses an existing parent pane before inspecting its worker", async () => {
       setInspectedWorkerId: inspected,
       focusOpenSession: focus,
       onSelectHistorySession: open,
+      closeSurfaces,
     });
     return null;
   }
@@ -446,6 +525,7 @@ it("focuses an existing parent pane before inspecting its worker", async () => {
   act(() => actions.onFocusOwnedApprovalSession(value.id));
   expect(focus).toHaveBeenCalledWith("parent");
   expect(inspected).toHaveBeenCalledWith(value.id);
+  expect(closeSurfaces).toHaveBeenCalledOnce();
   expect(open).not.toHaveBeenCalled();
   await act(async () => root.unmount());
   container.remove();

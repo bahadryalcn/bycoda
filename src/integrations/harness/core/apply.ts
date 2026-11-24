@@ -48,7 +48,11 @@ import {
   capStepOutput,
 } from "../../../features/sessions/model/agentOutput";
 import { MAX_TOOL_DETAIL_CHARS } from "./toolDetailLimits";
-import { registerStreamingTextUpdate } from "../../../features/sessions/model/stableBlocks";
+import {
+  onlyRunningToolOutputChanged,
+  registerStreamingBlockUpdate,
+  registerStreamingTextUpdate,
+} from "../../../features/sessions/model/stableBlocks";
 import { registerBlockChanges } from "../../../features/sessions/model/blockChanges";
 import { taskListText } from "../../../features/sessions/model/taskList";
 import { isReviewablePlan } from "../../../features/sessions/model/plan";
@@ -1314,12 +1318,15 @@ function upsertTool(
   const truncated = capped.detail
     ? capped.truncated || patch.detailTruncated === true
     : prev.tool?.outputTruncated === true;
-  const preview = fillPreview(
+  const mergedPreview = fillPreview(
     mergeToolPreview(patch.preview, prev.tool?.preview),
     detail,
     patch.kind ?? prev.tool?.kind,
     patch.title,
   );
+  const preview = samePreview(prev.tool?.preview, mergedPreview)
+    ? prev.tool?.preview
+    : mergedPreview;
   const label = finalToolLabel(
     session,
     patch.kind ?? prev.tool?.kind,
@@ -1345,7 +1352,7 @@ function upsertTool(
         prev.agentRun?.workflow?.phase === patch.workflow.phase)) &&
     (!prev.agentRun || prev.agentRun.name === agentName) &&
     !endsAgentRun(prev.agentRun, patch.streaming) &&
-    samePreview(prev.tool?.preview, preview)
+    prev.tool?.preview === preview
   ) {
     return session;
   }
@@ -1380,7 +1387,11 @@ function upsertTool(
       ...(prev.tool?.agentContext ? { agentContext: prev.tool.agentContext } : {}),
     },
   };
-  registerBlockChanges(session.blocks, blocks, [blocks[index]]);
+  if (onlyRunningToolOutputChanged(prev, blocks[index])) {
+    registerStreamingBlockUpdate(session.blocks, blocks, index, "tool-output");
+  } else {
+    registerBlockChanges(session.blocks, blocks, [blocks[index]]);
+  }
   return { ...session, blocks };
 }
 
@@ -1440,6 +1451,7 @@ function samePreview(a?: ToolPreview, b?: ToolPreview): boolean {
   if (!a || !b) return false;
   return (
     a.kind === b.kind &&
+    a.title === b.title &&
     a.path === b.path &&
     a.query === b.query &&
     a.fileName === b.fileName &&
@@ -1448,9 +1460,13 @@ function samePreview(a?: ToolPreview, b?: ToolPreview): boolean {
     a.contentOnly === b.contentOnly &&
     a.startLine === b.startLine &&
     a.output === b.output &&
-    a.inspection?.kind === b.inspection?.kind &&
-    a.inspection?.text === b.inspection?.text &&
-    a.inspection?.truncated === b.inspection?.truncated &&
+    (a.inspection === b.inspection ||
+      (!!a.inspection &&
+        !!b.inspection &&
+        a.inspection.kind === b.inspection.kind &&
+        a.inspection.text === b.inspection.text &&
+        a.inspection.truncated === b.inspection.truncated &&
+        Object.keys(a.inspection).length === Object.keys(b.inspection).length)) &&
     a.lines === b.lines
   );
 }

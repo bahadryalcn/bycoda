@@ -111,6 +111,8 @@ windows-sys = { version = "0.61", features = [
 tauri-winrt-notification = "0.8"
 # WinRT toast settings (Windows.UI.Notifications) to read the per-app block.
 windows = { version = "0.62", features = ["UI_Notifications"] }
+# WebView2 ProcessFailed handler; already in the tree through tauri-runtime-wry.
+webview2-com = "0.39"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"

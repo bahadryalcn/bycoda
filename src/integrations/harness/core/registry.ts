@@ -627,11 +627,20 @@ function scheduleIdlePark(harness: HarnessId, sessionId: string): void {
     sessionId,
     setTimeout(() => {
       idleParkTimers.delete(sessionId);
-      void queueSessionOperation(sessionId, () => stopHarnessSession(harness, sessionId)).catch(
+      void queueSessionOperation(sessionId, () => parkIdleSession(harness, sessionId)).catch(
         (error: unknown) => warnCleanup("idle park", error),
       );
     }, HARNESS_IDLE_PARK_MS),
   );
+}
+
+async function parkIdleSession(harness: HarnessId, sessionId: string): Promise<void> {
+  await stopHarnessSession(harness, sessionId);
+  if (harness !== "opencode") return;
+  // A parked conversation resumes by its provider session id, so it must not keep
+  // the shared service alive. The next turn acquires a new reference.
+  const capability = await nativeSessionClaims.get(sessionId);
+  if (capability) await releaseOwnedOpenCodeForCapability(capability);
 }
 
 async function releaseIdleHarness(

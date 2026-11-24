@@ -7,11 +7,17 @@ execution directory, conversations use their existing search scope, and projects
 come from the supplied recent-project list. Read the scope description before
 opening a result.
 
+Find in conversation reads earlier saved pages when you enter a search term.
+The match count appears once the search covers the conversation. Enter and
+Shift+Enter move between matching messages. Closing Find stops further page requests.
+
 All excludes archived conversations from both title and message results. Use the
 archive filter in Conversations to include them.
 
 Ctrl+P opens Go to File with the current project name above the search field and
-one close button. Its file index includes workspace packages, nested Git repositories
+one close button. If you press Enter while Go to File is still searching, it opens
+the first match for that query when ready. Typing again cancels the pending selection.
+Its file index includes workspace packages, nested Git repositories
 and initialized submodules inside the current directory. Each repository keeps its
 own ignore rules; ignored dependencies and files outside that directory are excluded.
 Results keep their paths relative to the current directory, so equal filenames in
@@ -27,6 +33,11 @@ opens the active destination. As asynchronous sources arrive, selection follows
 the result identity rather than its old position. Query/scope changes choose a
 new starting result deliberately. Selected rows expose their full identity so
 long names and paths can be checked before opening.
+
+If the app's interface process crashes on Windows, bycoda restarts by itself. When
+a restart would stop terminals, desktop agents or a Host owned by the app, it asks
+first and offers again later if you decline. Repeated crashes stop the automatic
+restart and offer to quit instead of looping.
 
 Only work that was interrupted enters recovery: a chat that was running when the
 app closed or crashed. Open chats that were idle or finished are not recovered
@@ -49,6 +60,11 @@ effect or is still running before repeating anything that changes state. The
 conversation shows it as one compact "restarted and resumed this turn" row
 instead of a chat message; select the row to read the prompt that was sent.
 Resuming after a usage limit shows as "Resumed this turn".
+
+With **Automatically continue interrupted turns** on, the next launch continues
+each turn that the transcript shows was cut off, once. A chat you leave
+interrupted after that launch keeps its **Continue** button and is not sent on a
+later launch.
 
 Deleting a conversation also prevents delayed saves and old startup layouts from
 bringing that conversation back. Confirmed deleted conversations are excluded from

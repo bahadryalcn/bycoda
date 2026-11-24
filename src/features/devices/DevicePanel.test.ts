@@ -199,7 +199,7 @@ it("requires a booted device for capture and prevents booting a physical device"
   expect(container.textContent).not.toContain("Boot the selected device");
   // The connection help sits behind its info button, not in the layout.
   expect(container.textContent).not.toContain("This phone is not available");
-  expect(container.querySelector('button[aria-label="How to connect"]')).not.toBeNull();
+  expect(container.querySelector('[aria-label="How to connect"]')).not.toBeNull();
   expect(container.textContent).toContain("Not ready");
   expect(button("Refresh devices")).toBeDefined();
   expect(api.boot).not.toHaveBeenCalled();

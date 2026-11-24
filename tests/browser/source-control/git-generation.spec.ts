@@ -149,9 +149,11 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
   await modelButton.click();
   await expect(panel).toBeVisible();
   await expect(panel).toHaveAttribute("data-model-panel");
-  const advisorField = panel.locator("[data-model-settings]").getByRole("button", {
-    name: /^Advisor\b/,
-  });
+  // Advisor offers Add while empty and an edit control once a model is picked.
+  const advisorGroup = panel
+    .locator("[data-model-settings]")
+    .getByRole("group", { name: "Advisor", exact: true });
+  const advisorField = advisorGroup.getByRole("button");
   // Advisor and Subagents open a picker in the settings column; options are named by model
   // alone because the provider heading carries the "Claude Code · " prefix.
   const delegate = async (name: "Advisor" | "Subagents", option: RegExp) => {
@@ -176,9 +178,10 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
     await expect(picker).toHaveCount(0);
   };
   await delegate("Advisor", /^Claude Opus 5\.5\b/);
-  await expect(advisorField).toContainText("Claude Opus 5.5");
+  await expect(advisorGroup).toContainText("Claude Opus 5.5");
   await expect(panel.locator("[data-model-settings]")).toHaveCSS("color-scheme", "dark");
-  await delegate("Subagents", /^Claude Haiku 4\.5\b/);
+  // Subagent rows name Claude models without the provider prefix their icon already shows.
+  await delegate("Subagents", /^Haiku 4\.5\b/);
   await choose("Subagent model policy", "Override all");
   await expect.poll(saved).toEqual({
     model: "claude:haiku-4.5",

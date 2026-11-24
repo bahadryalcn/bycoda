@@ -570,9 +570,8 @@ void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
           group
           onChange={() => {}}
         />
-      ) : new URLSearchParams(location.search).get("projectVisual") === "mascot" ? (
+      ) : new URLSearchParams(location.search).get("projectVisual") === "usage" ? (
         <UsageProviderChip
-          project="/fixture/project"
           now={1790000000000}
           onRefresh={async () => {}}
           limits={{
