@@ -41,7 +41,7 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
       <SwitchState state={to} />
       <StepNote step={to} />
       {switches > 1 ? (
-        <Text as="span" size="caption" tone="muted" className="shrink-0">
+        <Text as="span" size="caption" tone="muted" className="shrink-0 tabular-nums">
           {switches}
         </Text>
       ) : null}
@@ -50,7 +50,7 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
 
   return (
     <div
-      className={`@container/switch min-w-0 py-1 font-sans ${embedded ? "" : "px-4"}`}
+      className={`@container/switch min-w-0 pbs-1 pbe-2 font-sans ${embedded ? "" : "px-4"}`}
       data-model-switch
     >
       {switches > 1 ? (

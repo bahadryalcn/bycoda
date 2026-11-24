@@ -212,17 +212,16 @@ for (const theme of ["light", "dark"] as const) {
         const bounds = await row.evaluate((node) => {
           const row = node.getBoundingClientRect();
           const actions = node.querySelector(".user-message-actions")!.getBoundingClientRect();
-          const content = node
-            .querySelector(".user-message-hover-zone")!
-            .firstElementChild!.getBoundingClientRect();
+          const bubble = node.querySelector(".user-message-bubble")?.getBoundingClientRect();
           return {
             rowBottom: row.bottom,
-            actionTop: actions.top,
+            actionRight: actions.right,
             actionBottom: actions.bottom,
-            contentBottom: content.bottom,
+            bubbleLeft: bubble?.left ?? Number.POSITIVE_INFINITY,
           };
         });
-        expect(bounds.actionTop).toBeGreaterThanOrEqual(bounds.contentBottom);
+        // The actions sit beside the bubble, never over it or under the row.
+        expect(bounds.actionRight).toBeLessThanOrEqual(bounds.bubbleLeft + 1);
         expect(bounds.actionBottom).toBeLessThanOrEqual(bounds.rowBottom);
       }
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);

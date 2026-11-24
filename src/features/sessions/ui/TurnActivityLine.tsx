@@ -111,8 +111,8 @@ function TurnActivityRow({
       data-turn-activity={phase}
       as="div"
       size="body"
-      tone="secondary"
-      className="turn-activity-line flex min-w-0 items-center gap-1.5 px-4 py-1 font-sans"
+      tone="inherit"
+      className="turn-activity-line flex min-w-0 items-center gap-1.5 px-4 py-1 font-sans text-(--transcript-ink-chrome)"
     >
       <TurnActivityIcon phase={phase} />
       {/* The label carries the live signal (the shared sweep); the clock stays still. */}
@@ -130,7 +130,12 @@ function TurnActivityRow({
 function TurnActivityClock({ origin }: { origin?: number }) {
   const elapsed = formatElapsed(useElapsedFrom(origin, false));
   return (
-    <Text aria-hidden size="micro" tone="inherit" className="shrink-0 tabular-nums">
+    <Text
+      aria-hidden
+      size="micro"
+      tone="inherit"
+      className="shrink-0 tabular-nums text-(--transcript-ink-faint)"
+    >
       {elapsed}
     </Text>
   );

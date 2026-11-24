@@ -1,4 +1,5 @@
 import { Skeleton } from "../../../shared/ui/Skeleton";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
@@ -141,34 +142,52 @@ export function GeneratedImage({ image }: { image: GeneratedImageMeta }) {
       style={state.status === "loading" ? { minHeight: knownHeights.get(image.path) } : undefined}
     >
       {state.status === "loading" ? (
-        <Skeleton delay={false} className="h-32" />
+        // Same 16:9 frame as the finished image's card, so the page does not jump when it opens.
+        <div className="min-w-0 px-4 pt-3 pb-3">
+          <div
+            {...surfaceAttributes(
+              { frame: "card", radius: "card" },
+              "aspect-video w-[min(100%,32.5rem)] overflow-hidden",
+            )}
+            data-generated-image-placeholder
+          >
+            <Skeleton delay={false} className="h-full w-full" />
+          </div>
+        </div>
       ) : state.status === "error" ? (
         <InlineError>{t("Could not open generated image.")}</InlineError>
       ) : (
         <div className="min-w-0 px-4 pb-3 pt-3">
-          <Button
-            fullWidth
-            layout="media"
-            label={t("Open {p0} full screen", { p0: image.name })}
-            variant="item"
-            type="button"
-            onClick={() => setOpen(true)}
-            className="max-w-full"
+          <div
+            {...surfaceAttributes(
+              { frame: "card", radius: "card" },
+              "w-fit max-w-full overflow-hidden",
+            )}
           >
-            <img
-              src={state.url}
-              alt={alt}
-              loading="lazy"
-              decoding="async"
-              draggable={false}
-              className="mx-auto block h-auto w-auto max-h-[min(50dvh,480px)] max-w-full object-contain"
-            />
-          </Button>
+            <Button
+              fullWidth
+              layout="media"
+              label={t("Open {p0} full screen", { p0: image.name })}
+              variant="item"
+              type="button"
+              onClick={() => setOpen(true)}
+              className="max-w-full"
+            >
+              <img
+                src={state.url}
+                alt={alt}
+                loading="lazy"
+                decoding="async"
+                draggable={false}
+                className="mx-auto block h-auto w-auto max-h-[min(50dvh,480px)] max-w-full object-contain"
+              />
+            </Button>
+          </div>
           <Text
             as="div"
             size="micro"
-            tone="secondary"
-            className="mt-1 flex min-w-0 items-center gap-2"
+            tone="inherit"
+            className="mt-1.5 flex min-w-0 items-center gap-2 text-(--transcript-ink-faint)"
           >
             <Text size="inherit" tone="inherit" truncate>
               {image.name}

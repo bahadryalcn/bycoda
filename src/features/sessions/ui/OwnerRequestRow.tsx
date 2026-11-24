@@ -2,6 +2,7 @@ import { useFormat, useT } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
+import { NoticeGlyph } from "../../../shared/ui/Notice";
 import { Text } from "../../../shared/ui/Text";
 import type { OwnerRequestRow as Row } from "./useOwnerNotifications";
 import { usePresentationNow } from "./AgentClock";
@@ -33,25 +34,28 @@ export function OwnerRequestRow({ row, onOpen }: { row: Row; onOpen: (row: Row) 
         onClick={() => onOpen(row)}
         className="notification-request-body"
       >
-        <ClampText
-          as="span"
-          lines={2}
-          expandable={false}
-          size="secondary"
-          tone="neutral"
-          weight="medium"
-          leading="snug"
-          className="notification-request-title"
-        >
-          {row.title}
-        </ClampText>
+        <span className="flex min-w-0 items-start gap-2.5">
+          <NoticeGlyph tone="warning" size="box" />
+          <ClampText
+            as="span"
+            lines={2}
+            expandable={false}
+            size="secondary"
+            tone="neutral"
+            weight="medium"
+            leading="snug"
+            className="notification-request-title"
+          >
+            {row.title}
+          </ClampText>
+        </span>
       </Button>
       <Text
         as="div"
         size="caption"
         tone="secondary"
         leading="inherit"
-        className="notification-request-meta notification-request-footer px-3 pb-2"
+        className="notification-request-meta notification-request-footer ps-10 pe-3 pb-2"
       >
         <span className="notification-request-source">
           {t("{p0} left", {

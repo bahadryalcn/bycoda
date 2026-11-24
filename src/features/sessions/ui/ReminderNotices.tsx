@@ -1,6 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { useFormat, useT } from "../../../shared/i18n";
@@ -13,8 +10,9 @@ import {
   type SessionReminder,
 } from "../model/sessionReminders";
 import { ExplorerMenu } from "../../files/public/ExplorerMenu";
-import { Clock, X } from "../../../shared/ui/icons";
+import { Clock } from "../../../shared/ui/icons";
 import { sessionReminderPresets } from "./sessionReminderPresets";
+import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 
 export function ReminderNotices({
   reminders,
@@ -48,77 +46,55 @@ export function ReminderNotices({
 
   return (
     <ToastSlot order={-1}>
-      <Text
-        as="section"
-        size="inherit"
-        tone="neutral"
+      <section
         aria-label={t("Due reminders")}
-        {...surfaceAttributes(
-          { frame: "pane", variant: "floating" },
-          "relative flex w-[min(320px,calc(100vw-24px))] flex-col overflow-hidden rounded-(--ui-radius-popup) shadow-(--ui-elevation-floating)",
-        )}
+        className="relative flex max-h-[min(360px,60vh)] w-[min(360px,calc(100vw-24px))] flex-col gap-1.5 overflow-y-auto overscroll-none"
       >
         {error ? (
-          <div className="px-2 pt-1">
-            <InlineError retry={{ onRetry }}>{t("Couldn’t load reminders.")}</InlineError>
-          </div>
+          <TranscriptNotice
+            elevated
+            kind="error"
+            title={t("Couldn’t load reminders.")}
+            actions={<NoticeActionButton action={{ label: t("Try again"), onClick: onRetry }} />}
+          />
         ) : null}
-        <div className="flex max-h-[min(320px,50vh)] flex-col gap-1 overflow-y-auto overscroll-none p-1">
-          {reminders.map((reminder) => (
-            <article key={reminder.sessionId} className="flex items-center gap-1 px-1 py-0.5">
-              <Button
-                variant="item"
-                type="button"
-                className="min-w-0 flex-1 text-start"
-                onClick={() => onOpen(reminder)}
-              >
-                <Text
-                  as="span"
-                  size="secondary"
-                  tone="inherit"
-                  weight="medium"
-                  truncate
-                  className="block"
+        {reminders.map((reminder) => (
+          <TranscriptNotice
+            key={reminder.sessionId}
+            elevated
+            kind="info"
+            icon={<Clock className="icon-md" aria-hidden />}
+            title={sessionDisplayTitle(reminder.title, reminder.harness)}
+            detail={`${projectDisplayNameFrom(reminder.cwd, projectLabels)} · ${formatReminderTimeWith(reminder.dueAt, format.formatDate)}`}
+            onDismiss={() => onDismiss([reminder.sessionId], reminder.dueAt)}
+            actions={
+              <>
+                <NoticeActionButton
+                  action={{ label: t("Open"), onClick: () => onOpen(reminder) }}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={snooze?.reminder.sessionId === reminder.sessionId}
+                  onClick={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    setSnooze({
+                      reminder,
+                      x: rect.left,
+                      y: rect.bottom + 4,
+                      presets: sessionReminderPresets(t, format.formatDate),
+                    });
+                  }}
                 >
-                  {sessionDisplayTitle(reminder.title, reminder.harness)}
-                </Text>
-                <Text as="span" size="caption" tone="secondary" truncate className="block">
-                  {projectDisplayNameFrom(reminder.cwd, projectLabels)} ·{" "}
-                  {formatReminderTimeWith(reminder.dueAt, format.formatDate)}
-                </Text>
-              </Button>
-              <Button
-                variant="ghost"
-                type="button"
-                iconOnly
-                label={t("Snooze")}
-                aria-haspopup="menu"
-                aria-expanded={snooze?.reminder.sessionId === reminder.sessionId}
-                onClick={(event) => {
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  setSnooze({
-                    reminder,
-                    x: rect.left,
-                    y: rect.bottom + 4,
-                    presets: sessionReminderPresets(t, format.formatDate),
-                  });
-                }}
-              >
-                <Clock className="icon-sm" aria-hidden />
-              </Button>
-              <Button
-                variant="ghost"
-                type="button"
-                iconOnly
-                label={t("Dismiss")}
-                onClick={() => onDismiss([reminder.sessionId], reminder.dueAt)}
-              >
-                <X className="icon-sm" aria-hidden />
-              </Button>
-            </article>
-          ))}
-        </div>
-      </Text>
+                  {t("Snooze")}
+                </Button>
+              </>
+            }
+          />
+        ))}
+      </section>
       {snooze &&
       reminders.some(
         (reminder) =>

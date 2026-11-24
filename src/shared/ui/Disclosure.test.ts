@@ -188,3 +188,8 @@ it("collapsible={false} renders a static row without summary or chevron", async 
   expect(row?.textContent).toContain("Ran ls");
   expect(row?.querySelector("svg")).toBeNull();
 });
+
+it("keeps a static step's icon and label on one line like the collapsible row", () => {
+  const css = readFileSync(join(__dirname, "Disclosure.module.css"), "utf8");
+  expect(css).toMatch(/\.static\[data-variant="step"\] > \.label \{\s*display: flex;/);
+});

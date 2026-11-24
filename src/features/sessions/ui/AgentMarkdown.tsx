@@ -4,7 +4,6 @@ import { MarkdownSource as IncrementalMarkdownSource } from "./markdownSource";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Code } from "../../../shared/ui/Code";
-import { Surface } from "../../../shared/ui/Surface";
 import { FoldVertical, UnfoldVertical } from "../../../shared/ui/icons";
 import { Link } from "../../../shared/ui/Link";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -40,7 +39,6 @@ import {
 import { harden } from "rehype-harden";
 import {
   Block,
-  CodeBlock,
   Streamdown,
   defaultRehypePlugins,
   defaultComponents,
@@ -103,6 +101,10 @@ import { loadStreamingTextMode, subscribeStreamingTextMode } from "../../setting
 import { usePresentationVisible } from "./presentationVisibility";
 import { usePrefersReducedMotion } from "../../settings/public/decorativeMotion";
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
+import { FenceCard, fenceTree } from "./FenceCard";
+import { FenceViewToggle } from "./MarkdownModeToggle";
+import { JsonViewer } from "../../../shared/ui/JsonViewer";
+import { jsonOpenDepth, parseJsonTree } from "../../../shared/lib/jsonTree";
 import { CodeRunButton } from "./CodeExecutionContext";
 import { codeSourceFingerprint } from "./stableCodeDisclosureIdentity";
 import { useParsedMarkdown } from "./useParsedMarkdown";
@@ -455,6 +457,24 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const iconName = fence.fileName ?? (fence.language ? fileNameForLanguage(fence.language) : "");
   const lineNumbers = !/\bnoLineNumbers\b/.test(meta);
   const code = textContent(children);
+  // A complete, valid JSON object or array shows as a tree with a Raw toggle. A fence that is still
+  // streaming, invalid, a scalar or too large keeps the highlighted block below. Parsed once per settled text.
+  const json =
+    !incomplete && !fence.filePath && fence.language.toLowerCase() === "json"
+      ? parseJsonTree(code)
+      : null;
+  if (json?.ok) {
+    return (
+      <JsonFence
+        code={code}
+        data={json.data}
+        iconName={iconName}
+        className={className}
+        lineNumbers={lineNumbers}
+        startLine={fence.startLine}
+      />
+    );
+  }
   // highlightLanguageFor picks a grammar for plaintext fences (a detected one
   // for untagged fences), but Streamdown's CodeBlock reuses that same value
   // for the header label. Without this, an untagged fence would gain a header
@@ -1237,6 +1257,70 @@ export function MarkdownSourceHighlight({ text }: { text: string }) {
   );
 }
 
+function JsonFence({
+  code,
+  data,
+  iconName,
+  className,
+  lineNumbers,
+  startLine,
+}: {
+  code: string;
+  data: object;
+  iconName: string;
+  className?: string;
+  lineNumbers: boolean;
+  startLine?: number;
+}) {
+  const t = useT();
+  const [view, setView] = useState<"tree" | "raw">("tree");
+  const icon = iconName ? <FileTypeIcon name={iconName} isDir={false} /> : null;
+  const toggle = (
+    <FenceViewToggle
+      label={t("JSON view")}
+      value={view}
+      options={[
+        { value: "tree", label: t("Tree") },
+        { value: "raw", label: t("Raw") },
+      ]}
+      onChange={(next) => setView(next === "raw" ? "raw" : "tree")}
+    />
+  );
+  if (view === "raw") {
+    return (
+      <MarkdownCodeShell code={code} language="json">
+        {icon ? (
+          <span className="markdown-code-icon" aria-hidden="true">
+            {icon}
+          </span>
+        ) : null}
+        {toggle}
+        <CodeCopyButton code={code} />
+        <HighlightedCodeBlock
+          className={className}
+          code={code}
+          isIncomplete={false}
+          language="json"
+          lineNumbers={lineNumbers}
+          startLine={startLine}
+        />
+      </MarkdownCodeShell>
+    );
+  }
+  return (
+    <FenceCard language="json" icon={icon} toggle={toggle} actions={<CodeCopyButton code={code} />}>
+      <JsonViewer
+        data={data}
+        defaultExpandDepth={jsonOpenDepth(data)}
+        showPath={false}
+        maxHeight={360}
+        label={t("JSON tree")}
+        className={fenceTree}
+      />
+    </FenceCard>
+  );
+}
+
 let mermaidRenderSequence = 0;
 function nextMermaidRenderId() {
   return ++mermaidRenderSequence;
@@ -1257,6 +1341,8 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
     rendered && rendered.code === code && rendered.colorScheme === colorScheme ? rendered : null;
   const svg = current?.svg ?? null;
   const failed = current?.failed ?? false;
+  const t = useT();
+  const [view, setView] = useState<"diagram" | "source">("diagram");
 
   useEffect(() => {
     if (incomplete) return;
@@ -1280,14 +1366,34 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
     };
   }, [code, incomplete, colorScheme]);
 
-  if (incomplete || failed) {
+  const icon = <FileTypeIcon name="diagram.mmd" isDir={false} />;
+  // The diagram is drawn once the fence is complete; until then (and when it cannot be drawn) only the source shows.
+  const showSource = incomplete || failed || (!!svg && view === "source");
+  const toggle = (
+    <FenceViewToggle
+      label={t("Diagram view")}
+      value={view}
+      options={[
+        { value: "diagram", label: t("Diagram") },
+        { value: "source", label: t("Source") },
+      ]}
+      onChange={(next) => setView(next === "source" ? "source" : "diagram")}
+    />
+  );
+  if (showSource) {
     return (
       <MarkdownCodeShell code={code} language="mermaid">
         <span className="markdown-code-icon" aria-hidden="true">
-          <FileTypeIcon name="diagram.mmd" isDir={false} />
+          {icon}
         </span>
+        {svg && !incomplete && !failed ? toggle : null}
         <CodeCopyButton code={code} />
-        <CodeBlock code={code} isIncomplete={incomplete} language="mermaid" lineNumbers={false} />
+        <HighlightedCodeBlock
+          code={code}
+          isIncomplete={incomplete}
+          language="mermaid"
+          lineNumbers
+        />
       </MarkdownCodeShell>
     );
   }
@@ -1297,14 +1403,19 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
   }
 
   return (
-    <Surface variant="card" padding="md" className="overflow-x-auto">
+    <FenceCard
+      language="mermaid"
+      icon={icon}
+      toggle={toggle}
+      actions={<CodeCopyButton code={code} />}
+    >
       <div
-        className="mermaid-block"
+        className="mermaid-block overflow-x-auto p-3"
         data-streamdown="mermaid-block"
         dir="ltr"
         dangerouslySetInnerHTML={{ __html: svg }}
       />
-    </Surface>
+    </FenceCard>
   );
 }
 

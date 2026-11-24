@@ -9,7 +9,6 @@ import { SessionPanelTargetsContext, SessionPanelTargetHost } from "./SessionPan
 import { AssistantSessionControl } from "./AssistantSessionControl";
 import { useSessionLifecycleActions, type RemoteLifecycleTarget } from "./SessionLifecycleControl";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { Alert } from "../../../shared/ui/Alert";
 import { useLocale, useT } from "../../../shared/i18n";
 import { toast } from "../../../shared/ui/ToastRegion";
 import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
@@ -34,6 +33,7 @@ import { useTitleBarActionsSlot } from "../../../app/shell/TitleBarActionsSlot";
 import { Composer } from "./Composer";
 import { DeliveryProgressNotice } from "./DeliveryProgressNotice";
 import { RewoundHistoryDisclosure } from "./RewoundHistoryDisclosure";
+import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 import { useSavedDraftProjection } from "./useSavedDraftProjection";
 import {
   useParentInputClosure,
@@ -1873,30 +1873,33 @@ const LocalSessionPane = memo(function LocalSessionPane({
             />
           ) : null}
           {savedDraftProjection.failed ? (
-            <Alert
-              tone="warning"
-              action={{ label: t("Retry"), onClick: savedDraftProjection.retry }}
-            >
-              {t("Could not load session ownership. Your saved draft is still available.")}
-            </Alert>
+            <TranscriptNotice
+              className="mx-3 mt-2 shrink-0"
+              kind="warning"
+              title={t("Could not load session ownership. Your saved draft is still available.")}
+              actions={
+                <NoticeActionButton
+                  action={{ label: t("Retry"), onClick: savedDraftProjection.retry }}
+                />
+              }
+            />
           ) : null}
           {fileRevertNotice ? (
-            <Alert
-              tone={fileRevertNotice.skipped.length ? "warning" : "info"}
+            <TranscriptNotice
+              className="mx-3 mt-2 shrink-0"
+              kind={fileRevertNotice.skipped.length ? "warning" : "success"}
               onDismiss={dismissFileRevertNotice}
+              data-session-files-revert-result
+              title={t("Reverted files: {p0}", {
+                p0: fileRevertNotice.reverted.length,
+              })}
             >
               <Text
                 as="div"
-                size="body"
-                tone="inherit"
+                size="caption"
+                tone="secondary"
                 className="flex max-h-48 min-w-0 flex-col gap-2 overflow-auto"
-                data-session-files-revert-result
               >
-                <p>
-                  {t("Reverted files: {p0}", {
-                    p0: fileRevertNotice.reverted.length,
-                  })}
-                </p>
                 {fileRevertNotice.reverted.length ? (
                   <ul>
                     {fileRevertNotice.reverted.map((path) => (
@@ -1925,7 +1928,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   </>
                 ) : null}
               </Text>
-            </Alert>
+            </TranscriptNotice>
           ) : null}
           {session.rewindHistory?.length ? (
             <RewoundHistoryDisclosure

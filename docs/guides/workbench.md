@@ -282,7 +282,7 @@ reported model and provider below it, and step counts and elapsed time beside th
 opening chevron. Animated bars mark running work, a green check marks completed
 work, a red cross marks failure, and warning icons distinguish stopped and
 interrupted runs. Select a row to inspect the run. When available, the action
-to stop all work appears above the expanded list. Its tooltip explains whether it stops
+to stop all work appears above the expanded list. **Stop all** stays quiet until pressed; the first press asks for confirmation in the danger color. Its tooltip explains whether it stops
 background work only or interrupts the whole turn. Missing child-model metadata
 stays unspecified.
 

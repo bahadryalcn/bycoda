@@ -4,8 +4,11 @@
   margin-block-end: 0.5rem;
   min-inline-size: 0;
 }
+/* A quoted reply is a card inside the bubble: hairline frame, inset tint, accent rule on the quote. */
 .item {
   min-inline-size: 0;
+  padding-block: 0.125rem;
+  padding-inline: 0.5rem 0.25rem;
 }
 .row {
   display: flex;

@@ -119,6 +119,8 @@ show Preview and Source. Markdown files opened from chat start in Preview and
 reopen in the last selected mode during the app session. A chat link with a line
 number reveals that line when Source is selected.
 
+`.json` files open in a **Tree** view with search and expand-all and collapse-all, with **Raw** beside it. `.log` files open in a **Log** view that keeps terminal colors and line numbers, with **Raw** beside it. Opening a file at a line uses Raw.
+
 In a Markdown preview, hold Ctrl and scroll the mouse wheel to zoom between 50%
 and 200%, or use the minus and plus controls. Click
 the percentage to reset to 100%. Preview zoom stays in that open viewer across

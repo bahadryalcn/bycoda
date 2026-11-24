@@ -90,8 +90,8 @@ function tabHarnessFor(
   );
 }
 
-/** The panel rises from the pane bottom and leaves the pane top (clamped 18%) visible. */
-const BTW_SHEET_SIZE = "calc(100% - clamp(2.5rem, 18%, 12rem))";
+/** The panel rises from the pane bottom, at most 32rem tall, and leaves the pane top (clamped 18%) visible. */
+const BTW_SHEET_SIZE = "min(32rem, calc(100% - clamp(2.5rem, 18%, 12rem)))";
 const NO_MESSAGES: BtwMessage[] = [];
 const NO_BLOCKS: Block[] = [];
 

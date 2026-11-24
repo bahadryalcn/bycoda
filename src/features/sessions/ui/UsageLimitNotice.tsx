@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { InlineMessage } from "../../../shared/ui/InlineError";
 import { NoticeLink, type NoticeAction } from "../../../shared/ui/Notice";
-import { Text } from "../../../shared/ui/Text";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Gauge } from "../../../shared/ui/icons";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
@@ -10,6 +8,7 @@ import type { ProviderAccountProvider } from "../../providers/model/providerAcco
 import type { UsageLimit } from "../model/session";
 import { formatUsageLimitResetWith, usageLimitResetDelay } from "../model/usageLimit";
 import { ProviderAccountMenu } from "./ProviderAccountMenu";
+import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 
 export function UsageLimitNotice({
   limit,
@@ -78,6 +77,8 @@ export function UsageLimitNotice({
     ? { label: t("Switch model"), onClick: onSwitchModel }
     : undefined;
   const canChangeAutoResume = waiting && onResumeAtReset;
+  const primary = resume ?? (!ready ? switchModel : undefined);
+  const secondary = resume && !ready ? switchModel : undefined;
   const description = [
     resetText,
     !waiting && !onResume ? t("Send a message to continue.") : undefined,
@@ -86,23 +87,17 @@ export function UsageLimitNotice({
     .join(" ");
 
   return (
-    <InlineMessage
+    <TranscriptNotice
       data-usage-limit
-      tone={ready ? "info" : "warning"}
+      kind={ready ? "info" : "warning"}
       icon={ready ? undefined : <Gauge className="icon-md" aria-hidden />}
-      action={resume ?? (!ready ? switchModel : undefined)}
-      secondaryAction={resume && !ready ? switchModel : undefined}
+      title={ready ? t("Ready to continue") : t("Usage limit reached")}
+      detail={description || undefined}
+      onDismiss={onDismiss}
+      dismissLabel={t("Dismiss usage limit notice")}
       extra={
         <>
           {details}
-          {!ready && provider && onSwitchAccount ? (
-            <ProviderAccountMenu
-              variant="notice"
-              provider={provider}
-              accountId={accountId}
-              onSelect={onSwitchAccount}
-            />
-          ) : null}
           {canChangeAutoResume ? (
             <NoticeLink
               action={{
@@ -111,22 +106,22 @@ export function UsageLimitNotice({
               }}
             />
           ) : null}
-          {onDismiss ? (
-            <NoticeLink
-              action={{
-                label: t("Dismiss"),
-                ariaLabel: t("Dismiss usage limit notice"),
-                onClick: onDismiss,
-              }}
+        </>
+      }
+      actions={
+        <>
+          {primary ? <NoticeActionButton action={primary} /> : null}
+          {secondary ? <NoticeActionButton quiet action={secondary} /> : null}
+          {!ready && provider && onSwitchAccount ? (
+            <ProviderAccountMenu
+              variant="notice"
+              provider={provider}
+              accountId={accountId}
+              onSelect={onSwitchAccount}
             />
           ) : null}
         </>
       }
-    >
-      <Text as="span" size="caption" tone="primary" weight="medium">
-        {ready ? t("Ready to continue") : t("Usage limit reached")}
-      </Text>
-      {description ? <> {description}</> : null}
-    </InlineMessage>
+    />
   );
 }

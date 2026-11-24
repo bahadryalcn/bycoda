@@ -2,8 +2,9 @@ import { useContext } from "react";
 import { useT } from "../../../shared/i18n";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { Check, CircleX, Square } from "../../../shared/ui/icons";
+import { Bot, Check, CircleX, Square } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { delegationNoticeSections } from "../model/delegationNotice";
 import type { Block } from "../model/session";
 import { useDelegatedRunIds } from "../model/reactiveReads";
@@ -30,15 +31,17 @@ export function DelegationNoticeRow({ block }: { block: Block }) {
     <div
       data-outline-anchor={block.id}
       data-delegation-notice
-      className="flex min-w-0 flex-col gap-0.5 px-4 font-sans pbs-1 pbe-1.5"
+      className="flex min-w-0 flex-col gap-0.5 px-4 font-sans pbs-1 pbe-2"
     >
       {sections.map((section, index) => (
         <Disclosure
           key={`${section.runId}:${index}`}
           variant="step"
           chevron="end"
+          tone="secondary"
           summary={
             <span className="flex min-w-0 items-center gap-2">
+              <Bot className="icon-sm shrink-0" tone="muted" aria-hidden />
               <Text size="inherit" tone="inherit" truncate className="min-w-0">
                 {section.reason === "completion"
                   ? t("Result from {p0}", { p0: section.title })
@@ -63,7 +66,10 @@ export function DelegationNoticeRow({ block }: { block: Block }) {
             lines={8}
             size="caption"
             tone="secondary"
-            className="whitespace-pre-wrap [overflow-wrap:anywhere] ps-5"
+            {...surfaceAttributes(
+              { frame: "pane", edge: "left" },
+              "ms-1.5 ps-4 whitespace-pre-wrap [overflow-wrap:anywhere]",
+            )}
           >
             {section.body}
           </ClampText>

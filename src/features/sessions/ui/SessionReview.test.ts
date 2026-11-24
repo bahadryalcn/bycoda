@@ -190,7 +190,13 @@ it("keeps focus and progress on Keep until its operation settles", async () => {
   expect(document.activeElement).toBe(keep);
   expect(row()).not.toBeNull();
   await act(async () => resolve({ files: [] }));
-  expect(container.querySelector("[data-session-review]")).toBeNull();
+  // Nothing is left to review: the file rows go and a one-line receipt names the choice.
+  expect(row()).toBeNull();
+  expect(
+    container
+      .querySelector("[data-session-review-receipt]")
+      ?.getAttribute("data-session-review-receipt"),
+  ).toBe("kept");
 });
 
 it("automatically refreshes a recording checkpoint without presenting it as an error", async () => {

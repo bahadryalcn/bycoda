@@ -1,11 +1,11 @@
+import { createContext, useContext, type ComponentProps } from "react";
 import { useT } from "../../../shared/i18n";
 import { ErrorDetails, errorHeadline, fitsOneLine } from "../../../shared/ui/ErrorDetails";
-import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
-import { Text } from "../../../shared/ui/Text";
 import type { Block } from "../model/session";
 import { sessionErrorPresentation } from "../model/sessionErrorPresentation";
 import { isSessionErrorBlock } from "../model/sessionIssue";
 import { useFailedTurnRecovery } from "./RetryFailedTurn";
+import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 import { UsageLimitNotice } from "./UsageLimitNotice";
 
 export type UsageLimitRecovery = {
@@ -52,32 +52,27 @@ export function SessionErrorNotice({ text, errorId }: { text: string; errorId?: 
       );
     }
     return (
-      <InlineMessage tone="warning" extra={details}>
-        <Text as="span" size="caption" tone="primary" weight="medium">
-          {title}
-        </Text>
-        {message.summary ? (
-          <Text as="span" size="caption" tone="secondary">
-            {" "}
-            {errorHeadline(message.summary)}
-          </Text>
-        ) : null}
-      </InlineMessage>
+      <TranscriptNotice
+        kind="warning"
+        title={title}
+        detail={message.summary ? errorHeadline(message.summary) : undefined}
+        extra={details}
+      />
     );
   }
   return (
-    <InlineError
-      text={{ tone: "primary" }}
+    <TranscriptNotice
+      kind="error"
+      title={summary}
       extra={details}
-      retry={
-        recovery
-          ? { onRetry: recovery.retry, label: t("Retry"), pending: recovery.pending }
-          : undefined
+      actions={
+        recovery ? (
+          <NoticeActionButton
+            action={{ label: t("Retry"), onClick: recovery.retry, pending: recovery.pending }}
+          />
+        ) : undefined
       }
       data-retry-failed-turn={recovery ? "" : undefined}
-    >
-      {summary}
-    </InlineError>
+    />
   );
 }
-import { createContext, useContext, type ComponentProps } from "react";

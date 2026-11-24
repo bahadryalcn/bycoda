@@ -4,13 +4,27 @@ import { Text } from "../../../shared/ui/Text";
 type Tone = "added" | "removed" | "inherit";
 type Run = { from: number; to: number; tone: Tone };
 
-/** Keep the original line endings, joining neighboring lines with the same ink. */
-function diffRuns(text: string) {
+/**
+ * Keep the original line endings, joining neighboring lines with the same ink. The `--- a/…` and
+ * `+++ b/…` file headers before the first hunk keep the plain ink; inside a hunk a removed
+ * `-- comment` line is still a removal.
+ */
+export function diffRuns(text: string) {
   const runs: Run[] = [];
+  let header = true;
   for (let from = 0; from < text.length;) {
     const newline = text.indexOf("\n", from);
     const to = newline < 0 ? text.length : newline + 1;
-    const tone = text[from] === "+" ? "added" : text[from] === "-" ? "removed" : "inherit";
+    const hunk = text.startsWith("@@", from);
+    if (hunk || !/^(?:---|\+\+\+)(?: |\n|$)/.test(text.slice(from, from + 4))) header = false;
+    const tone =
+      header || hunk
+        ? "inherit"
+        : text[from] === "+"
+          ? "added"
+          : text[from] === "-"
+            ? "removed"
+            : "inherit";
     const previous = runs[runs.length - 1];
     if (previous?.tone === tone) previous.to = to;
     else runs.push({ from, to, tone });

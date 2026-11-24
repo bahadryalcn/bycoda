@@ -2775,7 +2775,7 @@ for (const theme of ["light", "dark"])
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
-    test(`queue card top corners ${theme} ${width}`, async ({ page }) => {
+    test(`queue card corners ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(
         "/tests/browser/chat/composer-extras.html?chat-layout&accounts&queue-state=active",
@@ -2795,7 +2795,8 @@ for (const theme of ["light", "dark"])
           s.borderBottomRightRadius,
         ];
       });
-      expect(corners).toEqual(["12px", "12px", "0px", "0px"]);
+      // The queue is its own rounded card above the composer, not a tab attached to it.
+      expect(corners).toEqual(["12px", "12px", "12px", "12px"]);
       await expect(card.locator("[data-queue-handle]")).toHaveCount(2);
       await page.screenshot({
         animations: "disabled",

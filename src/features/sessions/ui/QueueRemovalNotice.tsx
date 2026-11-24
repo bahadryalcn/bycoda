@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useT } from "../../../shared/i18n";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { NoticeActionButton } from "./TranscriptNotice";
 
 /** Keep each removal recoverable, including several quick removals and failed restores. */
 export function QueueRemovalNotice({
@@ -27,33 +29,41 @@ export function QueueRemovalNotice({
     return () => window.clearTimeout(timer);
   }, [pending, failed, focused, disabled, onDismiss, id]);
   return (
-    <InlineMessage
-      tone="neutral"
-      icon={null}
-      inset="row"
+    <Text
+      as="div"
+      role="status"
+      size="caption"
+      tone="secondary"
       data-queue-removal
+      {...surfaceAttributes(
+        { frame: "card", radius: "card" },
+        "flex min-h-9 items-center justify-between gap-2 ps-3 pe-1",
+      )}
       onFocusCapture={() => setFocused(true)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
       }}
-      action={{
-        label: t("Undo"),
-        pending,
-        disabled,
-        disabledReason,
-        onClick: () => {
-          setPending(true);
-          void onUndo()
-            .then((restored) => {
-              if (restored) onDismiss(id);
-              else setFailed(true);
-            })
-            .catch(() => setFailed(true))
-            .finally(() => setPending(false));
-        },
-      }}
     >
-      {t("Message removed")}
-    </InlineMessage>
+      <span className="min-w-0 break-words">{t("Message removed")}</span>
+      <NoticeActionButton
+        quiet
+        action={{
+          label: t("Undo"),
+          pending,
+          disabled,
+          disabledReason,
+          onClick: () => {
+            setPending(true);
+            void onUndo()
+              .then((restored) => {
+                if (restored) onDismiss(id);
+                else setFailed(true);
+              })
+              .catch(() => setFailed(true))
+              .finally(() => setPending(false));
+          },
+        }}
+      />
+    </Text>
   );
 }

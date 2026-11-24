@@ -1,5 +1,6 @@
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { Bot, Clock } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
 import type { SessionMessageAuthor as Author } from "../model/session";
 
@@ -34,8 +35,10 @@ export function SessionMessageAuthor({ author, onOpen }: { author?: Author; onOp
           message: t("Message"),
         }[author.reason]
       : undefined; // Task, automation and steward reasons are free Host strings, never shown raw.
+  const Icon = author.kind === "automation" ? Clock : Bot;
   const content = (
     <>
+      <Icon className="icon-xs shrink-0" aria-hidden />
       <span>{label}</span>
       {reason && <span> · {reason}</span>}
     </>
@@ -45,7 +48,12 @@ export function SessionMessageAuthor({ author, onOpen }: { author?: Author; onOp
       {content}
     </Button>
   ) : (
-    <Text as="span" size="micro" tone="secondary">
+    <Text
+      as="span"
+      size="caption"
+      tone="inherit"
+      className="mbe-1 inline-flex items-center gap-1.5 font-sans text-(--transcript-ink-faint)"
+    >
       {content}
     </Text>
   );

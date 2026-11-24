@@ -131,7 +131,11 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
       <Link
         href={link.url}
         data-user-link-preview
-        className="user-link-preview group mx-0.5"
+        unstyled
+        {...surfaceAttributes(
+          { variant: "card", radius: "pill" },
+          "group mx-0.5 inline-flex h-5.5 max-w-full items-center gap-1.5 ps-1.5 pe-2 align-[1px] text-(--transcript-ink-emphasis) no-underline",
+        )}
         onClick={open}
         onPointerEnter={(event) => {
           if (event.pointerType === "touch" || development || requested.current) return;
@@ -153,10 +157,7 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
           as="span"
           size="micro"
           weight="medium"
-          {...surfaceAttributes(
-            { radius: "sm", variant: "card" },
-            "me-1 inline-flex icon-md items-center justify-center overflow-hidden align-[-0.125em] uppercase",
-          )}
+          className="inline-flex icon-md shrink-0 items-center justify-center overflow-hidden uppercase"
         >
           {favicon ? (
             <img
@@ -175,7 +176,8 @@ function GenericLinkPreview({ link, cwd }: { link: UserLink; cwd?: string }) {
           size="inherit"
           tone="inherit"
           weight="medium"
-          {...linkContentAttributes("user-link-preview-title")}
+          truncate
+          {...linkContentAttributes("user-link-preview-title min-w-0 max-w-72")}
         >
           {title}
         </Text>

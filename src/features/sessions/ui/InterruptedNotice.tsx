@@ -1,10 +1,26 @@
 import { memo } from "react";
 import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { Alert } from "../../../shared/ui/Alert";
+import { Pause } from "../../../shared/ui/icons";
 import { claimAutoContinue } from "../model/autoContinue";
+import { executionUserIndex } from "../model/executionTurn";
 import { canAutoContinue } from "../model/inFlight";
 import type { Session } from "../model/session";
+import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
+
+/**
+ * The latest turn ended because the owner pressed Stop: its prompt carries the stopped mark and
+ * no later prompt, Continue or answer has started another turn since. Stop itself is not a
+ * failure, so the notice is quiet and Continue is the owner's call.
+ */
+export function isOwnerStoppedLatestTurn(session: Session): boolean {
+  if (session.busy || session.continuingElsewhere || session.worktreeRemoved) return false;
+  const blocks = session.blocks.filter((block) => !block.draft);
+  const owner = executionUserIndex(blocks);
+  if (owner < 0 || blocks[owner].turnOutcome !== "stopped") return false;
+  // A later prompt that is not a steer or answer started another turn.
+  return !blocks.slice(owner + 1).some((block) => block.role === "user" && !block.continuationOf);
+}
 
 /**
  * A turn that was cut off when Bycoda quit, and was not continued on its own:
@@ -29,33 +45,47 @@ export const InterruptedNotice = memo(function InterruptedNotice({
   // A pending automatic continuation is only intent. Recovery holds or window
   // transfers can prevent its dispatch, so keep manual recovery available until
   // a new turn actually starts.
+  const ownerStopped = isOwnerStoppedLatestTurn(session);
   if (
-    session.busy ||
-    session.continuingElsewhere ||
-    session.worktreeRemoved ||
-    !(interruptedTurn ?? canAutoContinue(session))
+    !ownerStopped &&
+    (session.busy ||
+      session.continuingElsewhere ||
+      session.worktreeRemoved ||
+      !(interruptedTurn ?? canAutoContinue(session)))
   )
     return null;
+  // Continue resumes the provider thread, so a stopped turn without one has nothing to resume.
+  const canContinue = !ownerStopped || !!session.providerSessionId;
   return (
-    <Alert
+    <TranscriptNotice
       data-interrupted-turn
-      actionsAlign="center"
-      tone="warning"
-      title={t("Interrupted")}
-      action={{
-        label: t("Continue"),
-        disabled: !!blockedReason,
-        disabledReason: blockedReason,
-        onClick: () => {
-          // Consume the pending automatic send before submitting manually.
-          claimAutoContinue(session.id);
-          onContinue();
-        },
-      }}
-    >
-      {message
-        ? t(message)
-        : t("This turn was cut off when {p0} quit.", { p0: PRODUCT_IDENTITY.displayName })}
-    </Alert>
+      kind="neutral"
+      icon={<Pause className="icon-md" aria-hidden />}
+      data-owner-stopped={ownerStopped ? "" : undefined}
+      title={ownerStopped ? t("You stopped this turn") : t("Interrupted")}
+      detail={
+        ownerStopped
+          ? t("Continue to pick up where it left off, or send a new message.")
+          : message
+            ? t(message)
+            : t("This turn was cut off when {p0} quit.", { p0: PRODUCT_IDENTITY.displayName })
+      }
+      actions={
+        canContinue ? (
+          <NoticeActionButton
+            action={{
+              label: t("Continue"),
+              disabled: !!blockedReason,
+              disabledReason: blockedReason,
+              onClick: () => {
+                // Consume the pending automatic send before submitting manually.
+                claimAutoContinue(session.id);
+                onContinue();
+              },
+            }}
+          />
+        ) : undefined
+      }
+    />
   );
 });

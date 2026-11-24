@@ -1,5 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useId, useRef } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -39,20 +40,24 @@ export function DeliveryReviewChoice({
     if (focusRequest > 0) first.current?.focus();
   }, [focusRequest]);
   return (
-    <div className="mt-1" data-delivery-review>
-      <div className="flex flex-wrap items-center gap-1">
-        {text ? (
-          <OverflowTooltip label={text}>
-            <Text
-              size="caption"
-              tone="inherit"
-              truncate
-              className="min-w-0 max-w-full flex-1 basis-40"
-            >
-              {text}
-            </Text>
-          </OverflowTooltip>
-        ) : null}
+    <div className="mt-1.5" data-delivery-review>
+      {text ? (
+        <OverflowTooltip label={text}>
+          <Text
+            as="div"
+            size="caption"
+            tone="secondary"
+            truncate
+            {...surfaceAttributes(
+              { frame: "card", radius: "control" },
+              "min-w-0 max-w-full px-2.5 py-1.5",
+            )}
+          >
+            {text}
+          </Text>
+        </OverflowTooltip>
+      ) : null}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <Button
           ref={first}
           size="sm"
@@ -82,8 +87,8 @@ export function DeliveryReviewChoice({
         id={warning}
         as="p"
         size="caption"
-        tone="inherit"
-        className={lateSettlement ? "mt-0.5" : "sr-only"}
+        tone={lateSettlement ? "warning" : "inherit"}
+        className={lateSettlement ? "mt-1.5" : "sr-only"}
         data-delivery-review-warning
       >
         {lateSettlement

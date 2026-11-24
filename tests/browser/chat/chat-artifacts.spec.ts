@@ -327,7 +327,8 @@ for (const layout of ["chat", "full"] as const) {
 
 test("a saved draft offers edit, remove and send on one row", async ({ page }, info) => {
   await page.goto("/tests/browser/chat/transcript.html?message-bubbles");
-  const draft = page.locator('[data-prompt-anchor="draft-user"] .user-message-bubble');
+  // The delivery row sits under the bubble, inside the same turn row.
+  const draft = page.locator('[data-prompt-anchor="draft-user"]');
   const actions = [
     draft.getByRole("button", { name: "Edit draft", exact: true }),
     draft.getByRole("button", { name: "Remove draft", exact: true }),
@@ -363,10 +364,14 @@ test("chat messages, attachment references and running work keep a readable hier
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/chat/transcript.html?chat-layout");
   const bubble = page.locator(".user-message-bubble");
+  // Attachments sit above the bubble, in the same turn row.
+  const turn = page.locator(".user-message-row").filter({
+    has: page.locator('[data-attachment-chip="image"]'),
+  });
   const group = page.locator(".transcript-activity-group").last();
   const dock = page.getByRole("region", { name: "Turn activity", exact: true });
   await expect(bubble).toBeVisible();
-  await expect(bubble.locator('[data-attachment-chip="image"]')).toHaveCount(7);
+  await expect(turn.locator('[data-attachment-chip="image"]')).toHaveCount(7);
   await expect(page.locator(".agent-transcript")).not.toContainText(/working for/i);
   for (const theme of ["dark", "light"]) {
     await page.evaluate(
@@ -377,13 +382,15 @@ test("chat messages, attachment references and running work keep a readable hier
       await page.setViewportSize({ width, height: 900 });
       await bubble.scrollIntoViewIfNeeded();
       expect(await bubble.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
-      const image = bubble.locator('[data-attachment-chip="image"] button').first();
+      const image = turn.locator('[data-attachment-chip="image"] button').first();
       expect((await image.boundingBox())!.width).toBeGreaterThanOrEqual(56);
-      const rail = bubble.getByRole("group", { name: "Attachments", exact: true });
+      const rail = turn.getByRole("group", { name: "Attachments", exact: true });
       const thumbnailTops = await rail
         .locator('[data-attachment-chip="image"]')
         .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
-      expect(new Set(thumbnailTops).size).toBe(1);
+      // The thumbnails wrap into rows instead of scrolling sideways; every card stays inside the rail.
+      expect(thumbnailTops.length).toBe(7);
+      expect(await rail.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
       const card = rail.locator('[data-attachment-chip="image"]').first();
       // Compact image cards contain only a thumbnail. File identity remains on
       // the preview action and tooltip; size sits beside the copied text token.
@@ -392,8 +399,8 @@ test("chat messages, attachment references and running work keep a readable hier
       await expect(page.getByRole("tooltip")).toContainText("image1 · screenshot-1.png");
       await page.mouse.move(0, 0);
       const cardBox = (await card.boundingBox())!;
-      expect(cardBox.width).toBe(88);
-      expect(cardBox.height).toBe(64);
+      expect(cardBox.width).toBe(78);
+      expect(cardBox.height).toBe(52);
       expect((await image.boundingBox())!.height).toBe(
         await card.evaluate((node) => node.clientHeight),
       );
@@ -410,7 +417,8 @@ test("chat messages, attachment references and running work keep a readable hier
         };
       });
       // clientHeight is integer-rounded while card rectangles can be fractional.
-      expect(Math.abs(railContent.height - railContent.tallestCard)).toBeLessThanOrEqual(1);
+      // Wrapped rows grow the rail; no card is ever clipped by it.
+      expect(railContent.height).toBeGreaterThanOrEqual(railContent.tallestCard - 1);
       const token = bubble.getByRole("button", {
         name: "Open [image1] (screenshot-1.png) full screen",
         exact: true,
@@ -467,7 +475,7 @@ test("chat messages, attachment references and running work keep a readable hier
       };
     }),
   ).toEqual({ inside: true, oneLine: true, ellipsis: true });
-  const lastImage = bubble.getByRole("button", {
+  const lastImage = turn.getByRole("button", {
     name: "Open screenshot-7.png full screen",
     exact: true,
   });
@@ -477,7 +485,7 @@ test("chat messages, attachment references and running work keep a readable hier
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(lastImage).toBeFocused();
-  await bubble
+  await turn
     .getByRole("button", { name: "Open screenshot-1.png full screen", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -572,8 +580,10 @@ test("chat code and command results remain compact until explicitly opened", asy
     true,
   );
   await page.screenshot({ path: info.outputPath("chat-code-details.png") });
-  await page.locator('summary[aria-label^="Hide output for"]').first().click();
-  await page.locator('summary[aria-label^="Hide output for"]').click();
+  // A failed command opens its own output; the reader closes it with the two they opened.
+  const openOutputs = page.locator('summary[aria-label^="Hide output for"]');
+  await expect(openOutputs).toHaveCount(3);
+  while ((await openOutputs.count()) > 0) await openOutputs.first().click();
   await expect(page.locator("[data-tool-inspection]")).toHaveCount(0);
   await expect
     .poll(() => page.locator(".zen-phase-live").evaluate((node) => node.clientHeight))

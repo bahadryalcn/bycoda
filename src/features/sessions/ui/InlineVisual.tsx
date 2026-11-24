@@ -1,6 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { InlineError } from "../../../shared/ui/InlineError";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { Surface } from "../../../shared/ui/Surface";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -9,7 +8,7 @@ import { HtmlPreview } from "../../files/public/HtmlPreview";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { Sheet } from "../../../shared/ui/Sheet";
-import { CodeBlock, Maximize2, PanelRight, X } from "../../../shared/ui/icons";
+import { CircleAlert, CodeBlock, Maximize2, PanelRight, X } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
 import { SCHEME_CHANGE_EVENT } from "../../settings/public/appearance";
 import {
@@ -43,7 +42,31 @@ export function InlineVisual({ snapshot }: { snapshot: InlineVisualValue }) {
   if (resolved.state === "ready") return <InlineVisualFrame valid={resolved.source} />;
   if (resolved.state === "error")
     return (
-      <InlineError retry={{ onRetry: resolved.retry }}>{t("Preview unavailable")}</InlineError>
+      // Same box as the loaded visual, so a retry that succeeds does not shift the transcript.
+      <Surface
+        as="section"
+        variant="card"
+        padding="none"
+        aria-label={snapshot.title}
+        style={{ "--inline-visual-height": `${snapshot.height}px` } as React.CSSProperties}
+        className="my-2 h-(--inline-visual-height) min-w-0 overflow-hidden font-sans"
+        data-inline-visual-error
+      >
+        <div className="flex h-full items-center gap-2 ps-3.5 pe-2">
+          <CircleAlert className="icon-sm shrink-0 text-(--ui-tone-danger-fg)" aria-hidden />
+          <Text
+            role="alert"
+            size="caption"
+            tone="inherit"
+            className="min-w-0 flex-1 text-(--transcript-ink-chrome)"
+          >
+            {t("Preview unavailable")}
+          </Text>
+          <Button variant="ghost" size="sm" type="button" onClick={resolved.retry}>
+            {t("Try again")}
+          </Button>
+        </div>
+      </Surface>
     );
   return (
     <Surface
@@ -104,7 +127,12 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
     <>
       {location !== "expanded" ? (
         <OverflowTooltip label={valid.title}>
-          <Text size="caption" tone="inherit" truncate className="min-w-0 flex-1">
+          <Text
+            size="caption"
+            tone="inherit"
+            truncate
+            className="min-w-0 flex-1 text-(--transcript-ink-chrome)"
+          >
             {valid.title}
           </Text>
         </OverflowTooltip>

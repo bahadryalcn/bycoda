@@ -41,8 +41,8 @@ export function SubagentRowContent({
   details: readonly (string | undefined)[];
   status: ReactNode;
   chevron?: ReactNode;
-  /** `dock` leaves the chevron and row actions to its host row. */
-  layout?: "transcript" | "dock";
+  /** `dock` leaves the chevron and row actions to its host row; `list` puts the state, bar and counts in columns. */
+  layout?: "transcript" | "dock" | "list";
 }) {
   const detail = details.filter(Boolean).join(" · ");
   const nameClass = "min-w-0 text-start font-sans";

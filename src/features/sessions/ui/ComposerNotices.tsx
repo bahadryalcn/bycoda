@@ -1,10 +1,10 @@
 import { useEffect, type ComponentProps, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { Alert } from "../../../shared/ui/Alert";
 import type { UsageLimit } from "../model/session";
 import { ComposerNoticeStack } from "./ComposerNoticeStack";
 import { recheckSessionFolderState } from "./recheckSessionFolderState";
+import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 import { UsageLimitNotice } from "./UsageLimitNotice";
 
 type ProviderAccountProvider = NonNullable<ComponentProps<typeof UsageLimitNotice>["provider"]>;
@@ -103,28 +103,27 @@ export function ComposerNotices({
         />
       ) : null}
       {pasteError ? (
-        <Alert tone="danger" extra={pasteErrorAction}>
-          {pasteError}
-        </Alert>
+        <TranscriptNotice kind="error" title={pasteError} actions={pasteErrorAction} />
       ) : null}
       {sessionFolderError ? (
-        <Alert
-          tone="danger"
-          action={
-            sessionFolderMutationBlocked
-              ? {
+        <TranscriptNotice
+          kind="error"
+          title={sessionFolderError}
+          actions={
+            sessionFolderMutationBlocked ? (
+              <NoticeActionButton
+                action={{
                   label: t("Check again"),
                   onClick: () => {
                     void recheckSessionFolderState()
                       .then(onSessionFolderRecovered)
                       .catch((error: unknown) => onSessionFolderRecovered(String(error)));
                   },
-                }
-              : undefined
+                }}
+              />
+            ) : undefined
           }
-        >
-          {sessionFolderError}
-        </Alert>
+        />
       ) : null}
     </ComposerNoticeStack>
   );

@@ -33,6 +33,7 @@ import { looksLikeProject } from "../../projects/public/recents";
 import { isProjectlessCwd } from "../model/recentSessions";
 import { invalidateProjectFiles } from "../../files/public/fileIndex";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
+import { Check, TriangleAlert } from "../../../shared/ui/icons";
 import { basename, notifyGitChanged, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { useChangedFileMenu } from "../../files/public/useChangedFileMenu";
@@ -93,6 +94,8 @@ function SessionReviewContent({
   const [recording, setRecording] = useState<RecordingPhase>("idle");
   const [refreshing, setRefreshing] = useState(false);
   const [statusStale, setStatusStale] = useState(false);
+  // What the owner chose once nothing is left to review; the card stays as a one-line receipt.
+  const [receipt, setReceipt] = useState<"kept" | "undone" | null>(null);
   const request = useRef(0);
   // Mirrors `recording` for async callbacks; the poll count survives phase changes within one wait.
   const recordingRef = useRef<RecordingPhase>("idle");
@@ -108,6 +111,7 @@ function SessionReviewContent({
   }, [files]);
   // A running turn owns the workspace: drop the previous result, and a short list cannot stay expanded.
   if (busy && files.length > 0) setFiles([]);
+  if (busy && receipt) setReceipt(null);
   if (expanded && files.length <= 3) setExpanded(false);
 
   /** `restart` is an explicit refresh: it starts a fresh bounded wait even after one stalled. */
@@ -259,7 +263,8 @@ function SessionReviewContent({
 
   // The card represents the result of a turn. Keep it out of the live turn,
   // then refresh and reveal it once the turn has settled.
-  if (!enabled || busy || (files.length === 0 && !error && recording === "idle")) return null;
+  if (!enabled || busy || (files.length === 0 && !error && !receipt && recording === "idle"))
+    return null;
   if (recording === "waiting") {
     return (
       <LoadingText delay={false} inset="row">
@@ -301,6 +306,25 @@ function SessionReviewContent({
             : t("Could not load the changes.")}
     </InlineError>
   ) : null;
+  if (files.length === 0 && receipt)
+    return (
+      <div className="pt-1 pb-2 font-sans" data-session-review-shell>
+        <Surface variant="card" padding="none" className="overflow-hidden" data-session-review>
+          {errorNotice}
+          <Text
+            as="div"
+            size="caption"
+            tone="inherit"
+            role="status"
+            className="flex items-center gap-2 px-3 py-2.5 text-(--transcript-ink-chrome)"
+            data-session-review-receipt={receipt}
+          >
+            <Check className="icon-sm shrink-0 text-(--ui-tone-success-fg)" aria-hidden />
+            {receipt === "kept" ? t("Changes kept") : t("Changes undone")}
+          </Text>
+        </Surface>
+      </div>
+    );
   if (files.length === 0) return errorNotice;
 
   const disabled = acting != null || statusStale;
@@ -329,7 +353,9 @@ function SessionReviewContent({
         notifyGitChanged();
         invalidateWatchedFiles(previous);
         invalidateProjectFiles(cwd);
-        if (generation === request.current) setFiles(status.files);
+        if (generation !== request.current) return;
+        setFiles(status.files);
+        if (status.files.length === 0) setReceipt(action === "keep" ? "kept" : "undone");
       })
       .catch((cause: unknown) => {
         console.warn("Session change review action failed", cause);
@@ -345,9 +371,9 @@ function SessionReviewContent({
     <div className="pt-1 pb-2 font-sans" data-session-review-shell>
       <Surface variant="card" padding="none" className="overflow-hidden" data-session-review>
         {errorNotice}
-        <div className="flex min-w-0 items-center gap-2.5 px-3 py-2.5">
-          <div className="min-w-0 flex-1">
-            <Text as="div" tone="inherit" weight="medium" truncate>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 py-2 ps-3 pe-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2 text-(--transcript-ink-emphasis)">
+            <Text as="div" size="body" tone="inherit" truncate className="min-w-0">
               {t(files.length === 1 ? "{p0} file changed" : "{p0} files changed", {
                 p0: files.length,
               })}
@@ -358,10 +384,10 @@ function SessionReviewContent({
               showZero
               size="micro"
               weight="medium"
-              className="flex font-sans"
+              className="flex shrink-0 font-sans"
             />
           </div>
-          <div className="flex shrink-0 items-center gap-0.5" data-session-review-actions>
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5" data-session-review-actions>
             <Button
               variant="ghost"
               type="button"
@@ -488,7 +514,12 @@ function FileRow({
         className="w-full min-w-0 text-left"
       >
         <FileTypeIcon name={name} isDir={false} size="md" />
-        <Text size="caption" tone="inherit" truncate className="min-w-0 flex-1 font-mono">
+        <Text
+          size="caption"
+          tone="inherit"
+          truncate
+          className="min-w-0 flex-1 font-mono text-(--transcript-ink-body)"
+        >
           {file.relative}
         </Text>
         <DiffCounts file={file} />
@@ -502,7 +533,13 @@ function DiffCounts({ file }: { file: CheckpointFile }) {
   const t = useT();
   if (!file.exact) {
     return (
-      <Text size="micro" tone="warning" weight="medium" className="shrink-0">
+      <Text
+        size="micro"
+        tone="warning"
+        weight="medium"
+        className="inline-flex shrink-0 items-center gap-1"
+      >
+        <TriangleAlert className="icon-xs" aria-hidden />
         {t("Mixed changes")}
       </Text>
     );

@@ -182,3 +182,152 @@
     flex: none;
   }
 }
+
+/* Up to three runs as cards. Each card spans the same six row tracks of the shared grid
+   through a subgrid, so titles, models, states, bars and actions line up across a row and
+   every card in it is as tall as the tallest. */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  grid-auto-rows: auto;
+  gap: var(--space-2);
+  margin-block: var(--space-1);
+}
+
+.card {
+  position: relative;
+  display: grid;
+  grid-row: span 6;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  align-items: start;
+  min-inline-size: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.card[data-subagent-lifecycle="failed"] {
+  /* ui-drift-ignore: surface-style -- A failed run tints the card frame; the Surface frame has no per-run tone. */
+  border-color: color-mix(in srgb, var(--ui-tone-danger-solid) 45%, transparent);
+}
+
+.cardTitle {
+  justify-self: stretch;
+  /* ui-drift-ignore: shared-internal-selector -- The card face Button spans the card; the card owns the inline padding. */
+  padding-inline: 0;
+  min-inline-size: 0;
+  margin-block-end: var(--space-1);
+  text-align: start;
+}
+
+.cardModel {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  gap: var(--space-1);
+  min-block-size: 1.25rem;
+  margin-block-end: var(--space-1);
+}
+
+.cardMark {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.cardMark > :first-child {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+/* Always present, so the tracks stay aligned; it only takes room on a card whose run failed. */
+.cardReason {
+  min-inline-size: 0;
+}
+
+.cardReason:not(:empty) {
+  margin-block-end: var(--space-1);
+}
+
+/* The open run's trail: one full-width area after the cards, whichever card owns it. */
+.cardTrail {
+  grid-column: 1 / -1;
+  order: 1;
+  min-inline-size: 0;
+}
+
+.cardState {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-block-end: var(--space-1);
+}
+
+.card > .progress {
+  align-self: end;
+}
+
+.cardFooter {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  margin-block-start: var(--space-2);
+}
+
+/* More than three: one aligned row each. The tracks are the same in every row, so the
+   states, bars and counts form columns without the rows sharing a grid. */
+.list {
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  container: subagent-list / inline-size;
+}
+
+.listHeader {
+  padding-block: var(--space-1);
+  padding-inline-start: var(--space-1);
+}
+
+.content[data-layout="list"] {
+  grid-template-columns:
+    1.5rem minmax(0, 1fr) 6.5rem minmax(3.5rem, 7rem)
+    11rem;
+  grid-template-areas: "mark identity state progress meta";
+}
+
+.statusParts {
+  display: contents;
+}
+
+.listState {
+  grid-area: state;
+  display: flex;
+  min-inline-size: 0;
+}
+
+.listProgress {
+  grid-area: progress;
+  min-inline-size: 0;
+}
+
+.listMeta {
+  grid-area: meta;
+  min-inline-size: 0;
+  text-align: end;
+}
+
+/* Below about 640px of pane the bar goes; the other columns keep their tracks, so they stay aligned. */
+@container subagent-list (inline-size < 40rem) {
+  .content[data-layout="list"] {
+    grid-template-columns: 1.5rem minmax(0, 1fr) 5.5rem minmax(6rem, 8.5rem);
+    grid-template-areas: "mark identity state meta";
+  }
+
+  .listProgress {
+    display: none;
+  }
+}

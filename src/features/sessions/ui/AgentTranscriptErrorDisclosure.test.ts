@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 describe("tool error disclosure", () => {
-  it("shows the error summary and keeps the raw output collapsed until its failed row is clicked", () => {
+  it("opens a failed command's output by itself and lets the reader close it", () => {
     const blocks: Block[] = [
       { id: "user", role: "user", text: "Start the app" },
       {
@@ -48,29 +48,23 @@ describe("tool error disclosure", () => {
 
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
 
+    // A failed command opens its output by itself; terminal control sequences stay stripped.
     const trigger = container.querySelector<HTMLElement>(
-      'summary[aria-label^="Show error details for"]',
+      'summary[aria-label^="Hide error details for"]',
     );
     expect(trigger).not.toBeNull();
-    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
-    expect(container.textContent).toContain("Error: listen EPERM");
-    expect(container.textContent).not.toContain("pwsh.exe");
-    expect(container.textContent).not.toContain("\u001b");
-    expect(container.textContent).not.toContain("Server.setupListenHandle");
-
-    const failedRow = trigger;
-    const message = Array.from(failedRow?.querySelectorAll("span") ?? []).find((element) =>
-      element.textContent?.includes("npm run dev"),
-    );
-    expect(message).not.toBeNull();
-
-    act(() => message?.click());
     expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.textContent).toContain("Error: listen EPERM");
     expect(container.textContent).toContain("Server.setupListenHandle");
+    expect(container.textContent).not.toContain("pwsh.exe");
+    expect(container.textContent).not.toContain("");
 
+    // The reader's toggle wins over the automatic opening.
     act(() => trigger?.click());
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
     expect(container.textContent).not.toContain("Server.setupListenHandle");
+    act(() => trigger?.click());
+    expect(trigger?.getAttribute("aria-expanded")).toBe("true");
   });
 });
 
@@ -154,11 +148,7 @@ describe("tool output inspection", () => {
       },
     ];
     act(() => root.render(createElement(AgentTranscript, { blocks, busy: true })));
-    act(() =>
-      container
-        .querySelector<HTMLElement>('summary[aria-label^="Show error details for"]')!
-        .click(),
-    );
+    // The failed row is already open.
     const sections = Array.from(container.querySelectorAll("[data-tool-inspection] section"));
     expect(sections[0].querySelector("h4")?.textContent).toBe("Error");
     expect(sections[0].textContent).toContain("Tests failed: assertion mismatch");

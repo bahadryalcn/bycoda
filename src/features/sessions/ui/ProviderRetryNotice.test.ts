@@ -31,9 +31,9 @@ it("names the provider and offers Stop without inventing a reconnect or resendin
       }),
     ),
   );
-  expect(host.querySelector('[role="status"]')?.textContent).toContain(
-    "Reconnecting to Codex · 2/5",
-  );
+  const notice = host.querySelector('[role="status"]');
+  expect(notice?.querySelector("strong")?.textContent).toBe("Reconnecting to Codex");
+  expect(notice?.textContent).toContain("2/5");
   const buttons = host.querySelectorAll("button");
   expect(buttons).toHaveLength(1);
   expect(buttons[0].textContent).toContain("Stop");

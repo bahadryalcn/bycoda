@@ -66,6 +66,9 @@ import {
 } from "../editor/editorDoc";
 
 import { FilePreviewSearch } from "./FilePreviewSearch";
+import { JsonFileView } from "./JsonFileView";
+import { LogFileView } from "./LogFileView";
+import { fileViewKind } from "./fileViews";
 import { InlineBlameToggle, useInlineBlameUnavailableReason } from "./InlineBlameToggle";
 import { useRemoteFolderBrowser } from "./useRemoteFolderBrowser";
 
@@ -204,6 +207,7 @@ export function FileEditor({
   const markdown = isMarkdownPath(path);
   const svg = isSvgPath(path);
   const html = /\.html?$/i.test(basename(path));
+  const viewKind = fileViewKind(path);
   const saveRequestRef = useRef<((parent?: EditorWorkTicket) => Promise<boolean>) | null>(null);
   const editorAdmissionRef = useRef<MountedEditorObserver | null>(null);
   const requestSave = useCallback(async () => {
@@ -289,13 +293,13 @@ export function FileEditor({
     if (
       !navigation ||
       keepMarkdownView ||
-      (!markdown && !svg && !html) ||
+      (!markdown && !svg && !html && !viewKind) ||
       sourceNavigationToken.current === navigation.token
     )
       return;
     sourceNavigationToken.current = navigation.token;
     setMode("source");
-  }, [keepMarkdownView, markdown, svg, html, navigation, setMode]);
+  }, [keepMarkdownView, markdown, svg, html, viewKind, navigation, setMode]);
   const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   const saveGeneration = useRef(0);
   const loadGeneration = useRef(0);
@@ -1368,7 +1372,7 @@ export function FileEditor({
       }
     />
   );
-  const hasMarkdownShell = Boolean(markdown || svg || html);
+  const hasMarkdownShell = Boolean(markdown || svg || html || viewKind);
   // One document/save/recovery/capture binding list for the plain file and the
   // Markdown/SVG/HTML Source pane; they differ only in the view arguments below.
   const sourceEditorKey = fileSourceEditorKey(documentId, reloadKey, editorRevision);
@@ -1506,6 +1510,15 @@ export function FileEditor({
       {hasMarkdownShell ? (
         <MarkdownViewShell
           zoomable={markdown}
+          labels={
+            viewKind
+              ? {
+                  group: t("File view"),
+                  preview: viewKind === "json" ? t("Tree") : t("Log"),
+                  source: t("Raw"),
+                }
+              : undefined
+          }
           mode={mode}
           onModeChange={setMode}
           leading={
@@ -1531,6 +1544,14 @@ export function FileEditor({
                   />
                 </FilePreviewSearch>
               </PreviewSelection>
+            ) : viewKind === "json" ? (
+              <JsonFileView
+                text={draft}
+                visible={shown && mode === "preview"}
+                onShowRaw={() => setMode("source")}
+              />
+            ) : viewKind === "log" ? (
+              <LogFileView text={draft} visible={shown && mode === "preview"} />
             ) : html ? (
               <HtmlPreview path={path} source={draft} active={active && mode === "preview"} />
             ) : (

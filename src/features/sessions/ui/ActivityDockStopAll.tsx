@@ -65,8 +65,9 @@ export function DockStopAll({
       <Button
         data-dock-stop-all=""
         className="shrink-0"
-        variant="secondary"
-        tone={armed ? "danger" : "warning"}
+        // At rest it is quiet dock chrome; only the armed confirmation and a failed stop take a tone.
+        variant={armed || failed ? "secondary" : "ghost"}
+        tone={armed || failed ? "danger" : "neutral"}
         type="button"
         // At rest the short text stands for the control's full name.
         label={text === t("Stop all") && text !== control.label ? control.label : undefined}

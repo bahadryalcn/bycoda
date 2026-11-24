@@ -136,7 +136,7 @@ export function AttachmentChip({ attachment, onRemove, draft, token, onInsertTok
       >
         <AttachmentIdentity attachment={attachment} size={pastedText ? 16 : undefined} />
       </span>
-      <Text as="span" tone="inherit" weight="medium" className={styles.name}>
+      <Text as="span" tone="inherit" weight="medium" truncate className={styles.name}>
         {loading ? t("Loading…") : displayName}
       </Text>
       <Text

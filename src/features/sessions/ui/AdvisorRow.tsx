@@ -3,6 +3,7 @@ import { useT } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { HarnessIcon } from "../../../shared/ui/identity/HarnessIcon";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { useAdvisorModelName } from "../model/reactiveReads";
@@ -53,12 +54,20 @@ export function AdvisorRow({
     <div data-advisor-row className="flex min-w-0 flex-col px-4 pbs-1 pbe-1.5">
       {advice ? (
         <Disclosure variant="plain" size="sm" textSize="caption" tone="secondary" summary={summary}>
-          <Text as="div" size="secondary" tone="primary" className="min-w-0 ps-5">
+          <Text
+            {...surfaceAttributes(
+              { frame: "pane", edge: "inline-start" },
+              "ms-2 min-w-0 ps-4 text-(--transcript-ink-body)",
+            )}
+            as="div"
+            size="secondary"
+            tone="inherit"
+          >
             <AgentMarkdown text={advice} revealOnMount={false} cwd={cwd} onOpenFile={onOpenFile} />
           </Text>
         </Disclosure>
       ) : (
-        <Text as="div" size="caption" tone="secondary">
+        <Text as="div" size="caption" tone="inherit" className="text-(--transcript-ink-chrome)">
           {summary}
         </Text>
       )}

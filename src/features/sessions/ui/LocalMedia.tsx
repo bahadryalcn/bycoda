@@ -13,6 +13,8 @@ import { MediaVisibilityContext } from "../../files/public/mediaVisibility";
 import { prepareLocalFile } from "../../../platform/tauri/fs";
 import { isImagePath } from "../../files/public/filePreviewMetadata";
 import { mediaKind } from "../../files/public/mediaPreview";
+import { InlineAudio } from "./InlineAudio";
+import { InlineVideo } from "./InlineVideo";
 import { useNearViewport } from "./useNearViewport";
 import { localMediaFrameStyle } from "./localMediaFrame";
 import type { Attachment } from "../model/session";
@@ -81,6 +83,9 @@ export function LocalMedia({
     player.current = element;
   };
   const visible = useContext(MediaVisibilityContext);
+  const pauseUnlessVisible = (element: HTMLMediaElement) => {
+    if (!visible || document.hidden) element.pause();
+  };
   useLayoutEffect(() => {
     const element = player.current;
     const pauseWhenHidden = () => {
@@ -150,20 +155,17 @@ export function LocalMedia({
         <span
           ref={box}
           data-local-media={path}
-          className="[margin-block:0.5rem] block min-h-[54px] w-96 max-w-full"
+          className="[margin-block:0.5rem] block min-h-[62px] w-[35rem] max-w-full"
         >
           {url ? (
-            <audio
-              ref={attachPlayer}
-              src={url}
-              controls
-              preload="metadata"
-              aria-label={label}
-              onError={() => setFailedPath(path)}
-              onPlay={(event) => {
-                if (!visible || document.hidden) event.currentTarget.pause();
-              }}
-              className="block w-full"
+            <InlineAudio
+              path={path}
+              url={url}
+              label={label}
+              playerRef={attachPlayer}
+              onFailed={() => setFailedPath(path)}
+              onPlay={pauseUnlessVisible}
+              onOpen={onOpen}
             />
           ) : null}
         </span>
@@ -179,25 +181,13 @@ export function LocalMedia({
         className={`[margin-block:0.5rem] grid max-w-full grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-clip rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)${frame ? "" : " aspect-video w-80"}`}
       >
         {url && video ? (
-          <video
-            ref={attachPlayer}
-            src={url}
-            controls
-            playsInline
-            preload="metadata"
-            aria-label={label}
-            onLoadedMetadata={(event) =>
-              setMeasured({
-                path,
-                width: event.currentTarget.videoWidth,
-                height: event.currentTarget.videoHeight,
-              })
-            }
-            onError={() => setFailedPath(path)}
-            onPlay={(event) => {
-              if (!visible || document.hidden) event.currentTarget.pause();
-            }}
-            className="block size-full object-contain"
+          <InlineVideo
+            url={url}
+            label={label}
+            playerRef={attachPlayer}
+            onFailed={() => setFailedPath(path)}
+            onPlay={pauseUnlessVisible}
+            onMetadata={(size) => setMeasured({ path, ...size })}
           />
         ) : onOpen && image ? (
           <Button

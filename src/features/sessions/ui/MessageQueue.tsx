@@ -380,8 +380,8 @@ export function MessageQueue({
     <Text as="div" size="inherit" tone="secondary" data-message-queue data-usage-guide="queue">
       <div
         {...surfaceAttributes(
-          { radius: "dock-top", variant: "floating", material: "glass" },
-          "relative z-0 px-2 py-1",
+          { radius: "popup", variant: "floating", material: "glass" },
+          "relative z-0 mb-2 px-2 pt-2 pb-1.5",
         )}
         data-message-queue-card
         ref={card}
@@ -549,7 +549,7 @@ export function MessageQueue({
             as="div"
             size="caption"
             tone="inherit"
-            className="flex min-h-7 items-center gap-2 px-1"
+            className="flex min-h-6 items-center gap-2 px-1.5 text-(--transcript-ink-chrome)"
             data-queue-summary
           >
             {messages.length > 0 ? <DeliveryProgressIndicator sessionId={sessionId} /> : null}
@@ -659,7 +659,7 @@ export function MessageQueue({
                 tone="inherit"
                 {...actionDragAttributes(
                   { appearance: "lifted" },
-                  "reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2",
+                  "reorder-item grid min-h-8 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 ps-1",
                 )}
               >
                 <Button

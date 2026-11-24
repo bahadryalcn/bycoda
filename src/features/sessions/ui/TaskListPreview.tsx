@@ -1,8 +1,7 @@
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { ClampText } from "../../../shared/ui/ClampText";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Surface } from "../../../shared/ui/Surface";
+import { Heading } from "../../../shared/ui/Heading";
 import { Text } from "../../../shared/ui/Text";
 import { Badge, StatusBadge } from "../../../shared/ui/Badge";
 import { useT } from "../../../shared/i18n";
@@ -18,55 +17,67 @@ type Props = {
 export function TaskListPreview({ items, explanation }: Props) {
   const t = useT();
   return (
-    <Surface as="section" variant="card" padding="none" className="mb-2 overflow-hidden">
-      <div
-        {...surfaceAttributes(
-          { frame: "pane", edge: "bottom" },
-          "flex items-start gap-2 px-2.5 py-2",
-        )}
-      >
-        <ListEnd className="mt-0.5 icon-md shrink-0" tone="secondary" strokeWidth={1.75} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-3">
-            <SectionLabel as="h3">{t("Tasks")}</SectionLabel>
-            <Badge variant="count" size="xs" className="shrink-0">
-              {taskListProgressLabel(items)}
-            </Badge>
-          </div>
-          {explanation ? (
-            <ClampText
-              as="p"
-              lines={2}
-              expandable={false}
-              size="caption"
-              className="mt-0.5 font-sans"
-            >
-              {explanation}
-            </ClampText>
-          ) : null}
+    <Surface
+      as="section"
+      variant="card"
+      padding="none"
+      className="mb-2 overflow-hidden font-sans"
+      data-task-list
+    >
+      <div className="px-3.5 pt-2.5 pb-2">
+        <div className="flex min-w-0 items-center gap-2.5 text-(--transcript-ink-emphasis)">
+          <ListEnd className="icon-md shrink-0 text-(--transcript-ink-chrome)" strokeWidth={1.75} />
+          <Heading size="section" tone="inherit" className="min-w-0 flex-1">
+            {t("Tasks")}
+          </Heading>
+          <Badge variant="count" size="xs" className="shrink-0">
+            {taskListProgressLabel(items)}
+          </Badge>
         </div>
-      </div>
-      <ol className="py-1">
-        {items.map((item, index) => (
-          <li
-            key={item.id ?? `${index}:${item.text}`}
-            className="flex min-w-0 items-start gap-2.5 px-2.5 py-1.5"
+        {explanation ? (
+          <ClampText
+            as="p"
+            lines={2}
+            expandable={false}
+            size="caption"
+            tone="inherit"
+            className="mt-1 font-sans text-(--transcript-ink-chrome)"
           >
-            <TaskState status={item.status} />
-            <Text
-              size="secondary"
-              tone="secondary"
-              className={`min-w-0 flex-1 font-sans ${
-                item.status === "completed" || item.status === "cancelled"
-                  ? "line-through decoration-content/25"
-                  : ""
-              }`}
+            {explanation}
+          </ClampText>
+        ) : null}
+        <ol className="mt-2 grid">
+          {items.map((item, index) => (
+            <li
+              key={item.id ?? `${index}:${item.text}`}
+              className="grid min-h-7 min-w-0 grid-cols-[1rem_minmax(0,1fr)_auto] items-start gap-2.5 py-1"
+              data-task-status={item.status}
             >
-              {item.text}
-            </Text>
-          </li>
-        ))}
-      </ol>
+              <span className="grid h-5 place-items-center">
+                <TaskState status={item.status} />
+              </span>
+              <Text
+                size="secondary"
+                tone="inherit"
+                className={`min-w-0 font-sans ${
+                  item.status === "in_progress"
+                    ? "text-(--transcript-ink-emphasis)"
+                    : item.status === "completed" || item.status === "cancelled"
+                      ? "text-(--transcript-ink-faint) line-through decoration-content/30"
+                      : "text-(--transcript-ink-body)"
+                }`}
+              >
+                {item.text}
+              </Text>
+              {item.status === "cancelled" ? (
+                <Badge tone="neutral" size="xs">
+                  {t("Cancelled")}
+                </Badge>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      </div>
     </Surface>
   );
 }
@@ -77,7 +88,7 @@ function TaskState({ status }: { status: TaskListItemStatus }) {
     return <StatusBadge status={status === "completed" ? "done" : "running"} iconOnly size="xs" />;
   }
   if (status === "cancelled") {
-    return <Badge tone="neutral" size="xs" label={t("Cancelled")} role="img" icon={<Minus />} />;
+    return <Minus aria-hidden className="icon-xs text-(--transcript-ink-faint)" strokeWidth={2} />;
   }
-  return <StatusDot tone="neutral" label={t("Pending")} className="mt-1" />;
+  return <StatusDot tone="neutral" label={t("Pending")} />;
 }

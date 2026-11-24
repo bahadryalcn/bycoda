@@ -35,9 +35,10 @@ import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { ToolDiffPreview } from "./ToolDiffPreview";
 import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { SubagentRow } from "./SubagentCards";
+import { SubagentRow, SubagentStack } from "./SubagentCards";
 import { SessionErrorNotice } from "./SessionErrorNotice";
 import { Button } from "../../../shared/ui/Button";
+import { DiffStat } from "../../../shared/ui/DiffStat";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
@@ -109,6 +110,17 @@ type ActivityPhasesProps = {
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 };
+
+/** Consecutive delegated runs of a trail are one group, so they lay out as cards or rows together. */
+function subagentGroups(steps: Block[]): Block[][] {
+  const groups: Block[][] = [];
+  for (const step of steps) {
+    const last = groups[groups.length - 1];
+    if (isSubagentBlock(step) && last && isSubagentBlock(last[0])) last.push(step);
+    else groups.push([step]);
+  }
+  return groups;
+}
 
 export const ActivityPhases = memo(function ActivityPhases({
   blocks,
@@ -374,7 +386,8 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
                   ) : null}
                   <TranscriptVirtualRows
                     listId={`steps:${phase.id}`}
-                    rows={phase.steps.map((block, index) => {
+                    rows={subagentGroups(phase.steps).map((group, index, groups) => {
+                      const block = group[0];
                       const arriving = active && !settled.current?.has(block.id);
                       const render = (virtual?: TranscriptVirtualElement) => (
                         <PhaseStep
@@ -382,23 +395,34 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
                           live={active}
                           turn={arriving ? turnFor(block.id) : undefined}
                         >
-                          <ActivityRow
-                            block={block}
-                            cwd={cwd}
-                            live={active}
-                            onApproval={onApproval}
-                            onOpenFile={onOpenFile}
-                            onOpenDiff={onOpenDiff}
-                          />
+                          {group.length > 1 ? (
+                            <SubagentStack
+                              blocks={group}
+                              cwd={cwd}
+                              live={active}
+                              embedded
+                              onOpenFile={onOpenFile}
+                              onOpenDiff={onOpenDiff}
+                            />
+                          ) : (
+                            <ActivityRow
+                              block={block}
+                              cwd={cwd}
+                              live={active}
+                              onApproval={onApproval}
+                              onOpenFile={onOpenFile}
+                              onOpenDiff={onOpenDiff}
+                            />
+                          )}
                         </PhaseStep>
                       );
                       return {
                         id: block.id,
-                        blockIds: [block.id],
+                        blockIds: group.map((member) => member.id),
                         pinned:
-                          needsApproval(block) ||
-                          (active && index === phase.steps.length - 1) ||
-                          !!block.streaming,
+                          group.some(needsApproval) ||
+                          (active && index === groups.length - 1) ||
+                          group.some((member) => !!member.streaming),
                         render: () => render(),
                         renderElement: render,
                       };
@@ -647,7 +671,14 @@ function ActivityInterjectionRow({ block }: { block: Block }) {
     <span className="min-w-0 flex-1 truncate font-sans text-ui-body">
       <span className="text-(--transcript-ink-chrome)">{chrome.label}</span>
       {chrome.severityText ? (
-        <span className={`text-ui-micro ${chrome.severityClass}`}> {chrome.severityText}</span>
+        <span
+          {...surfaceAttributes(
+            { tone: INTERJECTION_TONE[meta.severity ?? "nit"], radius: "pill" },
+            `ms-1.5 px-2 py-px text-ui-micro ${chrome.severityClass}`,
+          )}
+        >
+          {chrome.severityText}
+        </span>
       ) : null}
       {summary ? (
         <span className="text-(--transcript-ink-chrome)">
@@ -850,9 +881,10 @@ function ActivityToolRow({
   onOpenDiff?: (path: string) => void;
 }) {
   const t = useT();
-  const [errorOpen, setErrorOpen] = useRetainedDisclosure<boolean>(
+  // null = the reader has not toggled yet: a failed command then shows its output by itself.
+  const [override, setErrorOpen] = useRetainedDisclosure<boolean | null>(
     `ActivityToolRow:${block.id}`,
-    false,
+    null,
   );
   const appCall = bycodaToolCall(block);
   if (appCall) {
@@ -866,6 +898,7 @@ function ActivityToolRow({
   const command =
     block.tool?.preview?.kind === "shell" ||
     isExecuteTool(block.tool?.kind, block.text || block.tool?.title);
+  const errorOpen = override ?? (command && state === "rejected" && hasResult);
   const inspectionLabel =
     block.tool?.preview?.kind === "write" ? "Show changes for {p2}" : "Show output for {p2}";
   const summary = (
@@ -883,15 +916,25 @@ function ActivityToolRow({
     />
   );
 
+  const editCounts = editLineCounts(block.tool?.preview);
   const rowContent = (
     <span className="flex min-w-0 flex-1 items-center gap-1.5">
       {bare ? null : <ActivityToolIcon state={state} live={live} />}
       {summary}
       {pending ? null : <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />}
       {hasResult && block.tool?.preview?.kind === "write" && !errorDetail ? (
-        <span className="shrink-0 text-ui-micro text-(--transcript-ink-chrome)">
-          {t("Changes")}
-        </span>
+        editCounts ? (
+          <DiffStat
+            additions={editCounts.additions}
+            deletions={editCounts.deletions}
+            size="micro"
+            className="shrink-0"
+          />
+        ) : (
+          <span className="shrink-0 text-ui-micro text-(--transcript-ink-faint)">
+            {t("Changes")}
+          </span>
+        )
       ) : null}
     </span>
   );
@@ -933,7 +976,7 @@ function ActivityToolRow({
         />
       )}
       {pending ? <ApprovalControls block={block} onApproval={onApproval} /> : null}
-      {errorDetail ? (
+      {errorDetail && !errorOpen ? (
         <p
           className={`m-0 line-clamp-2 min-w-0 break-words text-ui-caption text-(--ui-tone-danger-fg) ${bare ? "" : "pl-5"}`}
         >
@@ -942,6 +985,18 @@ function ActivityToolRow({
       ) : null}
     </div>
   );
+}
+
+/** `+N −M` for an edit row: the preview's own counts, else counted from its changed lines. */
+function editLineCounts(
+  preview?: ToolPreview,
+): { additions: number; deletions: number } | undefined {
+  if (!preview) return undefined;
+  const additions =
+    preview.additions ?? preview.lines?.filter((line) => line.kind === "add").length ?? 0;
+  const deletions =
+    preview.deletions ?? preview.lines?.filter((line) => line.kind === "del").length ?? 0;
+  return additions > 0 || deletions > 0 ? { additions, deletions } : undefined;
 }
 
 /** First readable line of a failure; full output stays in the inspection panel. */
@@ -1289,9 +1344,20 @@ function ToolCallSummary({
         )
       ) : (
         <OverflowTooltip label={target}>
-          <span className={`flex min-w-0 flex-1 items-center gap-1.5 pl-1 ${targetTone}`}>
-            <span className="min-w-0 truncate">{target}</span>
-          </span>
+          {preview?.kind === "search" ? (
+            // The query sits in a quiet pill, so a search reads as a question asked, not a command run.
+            <span className="flex min-w-0 flex-1">
+              <span
+                className={`min-w-0 max-w-full truncate rounded-full border border-(--transcript-inset-border) px-2 font-sans text-ui-secondary ${targetTone}`}
+              >
+                {target}
+              </span>
+            </span>
+          ) : (
+            <span className={`flex min-w-0 flex-1 items-center gap-1.5 pl-1 ${targetTone}`}>
+              <span className="min-w-0 truncate">{target}</span>
+            </span>
+          )}
         </OverflowTooltip>
       )}
     </span>
@@ -1340,7 +1406,13 @@ function ConnectedApprovalControls({
     block.approval!.requestId,
   );
   return (
-    <Surface ref={cardRef} as="div" variant="card" padding="sm" className="mt-1.5 min-w-0">
+    <Surface
+      ref={cardRef}
+      as="div"
+      variant="card"
+      padding="sm"
+      className="mt-1.5 min-w-0 [--ui-card-border:color-mix(in_oklab,var(--ui-tone-warning-fg)_36%,var(--transcript-inset-border))] [--ui-card-surface:color-mix(in_oklab,var(--ui-tone-warning-fg)_5%,var(--transcript-card-fill))]"
+    >
       <ApprovalRequest
         title={approvalTitle(block, t)}
         context={[context.session.cwd, t("This request only")]}
@@ -1412,7 +1484,7 @@ export function HandoffDivider({ block }: { block: Block }) {
   return (
     <div className="px-4 py-5">
       <div className="flex items-center gap-3">
-        <div className="min-w-4 flex-1 border-t border-(--color-stroke)" />
+        <div className="min-w-4 flex-1 border-t border-(--transcript-inset-border)" />
         <div
           role={terminal ? "status" : "separator"}
           aria-label={
@@ -1422,11 +1494,12 @@ export function HandoffDivider({ block }: { block: Block }) {
                 ? `${t("Handoff")} · ${label}`
                 : t("Continued with {p0}", { p0: label })
           }
-          className={`flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-ui-caption text-(--transcript-ink-chrome)`}
+          className={`flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-ui-caption ${preparing ? "text-(--transcript-ink-faint)" : "text-(--transcript-ink-chrome)"}`}
         >
           {preparing ? (
             <>
-              <WorkingIndicator>{label}</WorkingIndicator>
+              <Spinner size="xs" className="shrink-0" />
+              <WorkingIndicator glyph={false}>{label}</WorkingIndicator>
             </>
           ) : terminal ? (
             <>
@@ -1478,6 +1551,13 @@ function interjectionChrome(
   return { label, severityText, severityClass };
 }
 
+/** Severity pills: the Surface tone behind the tone's own text colour. */
+const INTERJECTION_TONE = {
+  blocker: "danger",
+  concern: "warning",
+  nit: "neutral",
+} as const;
+
 /** The advisory body under an interjection, wherever the note is surfaced. */
 const INTERJECTION_BODY =
   "min-w-0 whitespace-pre-wrap break-words font-sans text-ui-secondary leading-5 text-(--transcript-ink-chrome)";
@@ -1492,23 +1572,29 @@ export function InterjectionDivider({ block }: { block: Block }) {
   if (!meta) return null;
   const { label, severityText, severityClass } = interjectionChrome(meta, t);
   return (
-    <div className="px-4 py-4">
-      <div className="flex items-center gap-3">
-        <div className="min-w-4 flex-1 border-t border-(--color-stroke)" />
-        <div
-          role="separator"
-          aria-label={t("Interjection: {p0}", { p0: label })}
-          className="flex items-center gap-2 px-1.5 font-sans text-ui-caption text-(--transcript-ink-chrome)"
-        >
+    <div className="px-4 py-2">
+      <div
+        role="separator"
+        aria-label={t("Interjection: {p0}", { p0: label })}
+        {...surfaceAttributes(
+          { variant: "card", frame: "card", radius: "card" },
+          "min-w-0 border-s-2 border-s-(--ui-tone-warning-fg) px-3 py-2.5",
+        )}
+      >
+        <div className="flex items-center gap-2 font-sans text-ui-caption text-(--transcript-ink-chrome)">
           <span>{label}</span>
           {severityText ? (
-            <span className={`text-ui-micro ${severityClass}`}>{severityText}</span>
+            <span
+              {...surfaceAttributes(
+                { tone: INTERJECTION_TONE[meta.severity ?? "nit"], radius: "pill" },
+                `px-2 py-px text-ui-micro ${severityClass}`,
+              )}
+            >
+              {severityText}
+            </span>
           ) : null}
         </div>
-        <div className="min-w-4 flex-1 border-t border-(--color-stroke)" />
-      </div>
-      {block.text ? (
-        <div className="mt-2">
+        {block.text ? (
           <Disclosure
             variant="step"
             chevron="end"
@@ -1520,19 +1606,21 @@ export function InterjectionDivider({ block }: { block: Block }) {
                 : `${label}: ${proseSummary(block.text)}`
             }
             summary={
-              <span className="min-w-0 flex-1 truncate font-sans text-ui-caption">
+              <span className="min-w-0 flex-1 truncate font-sans text-ui-body text-(--transcript-ink-body)">
                 {proseSummary(block.text)}
               </span>
             }
           >
             {expanded ? (
-              <div className="min-w-0 pb-2">
-                <pre className={INTERJECTION_BODY}>{block.text}</pre>
+              <div className="min-w-0 pb-1">
+                <pre className={`${INTERJECTION_BODY} text-(--transcript-ink-body)`}>
+                  {block.text}
+                </pre>
               </div>
             ) : null}
           </Disclosure>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }

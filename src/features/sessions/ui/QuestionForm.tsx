@@ -407,13 +407,16 @@ function QuestionFormContent({
       >
         {/* Without a separate heading the question itself sits beside the icon; the field
             legend still names the group for assistive technology. */}
-        <Text as="div" size="inherit" tone={title ? "secondary" : "neutral"}>
+        <Text as="div" size="inherit" tone="inherit" className="text-(--transcript-ink-emphasis)">
           <div className={styles.context} data-prompt={title ? undefined : ""}>
-            <MessageSquare className="icon-sm shrink-0" tone="secondary" aria-hidden />
+            <MessageSquare
+              className="icon-sm shrink-0 text-(--transcript-ink-chrome)"
+              aria-hidden
+            />
             {title ? (
               <Text
                 as="span"
-                size="caption"
+                size="body"
                 tone="inherit"
                 weight="medium"
                 leading="inherit"
@@ -436,9 +439,9 @@ function QuestionFormContent({
             )}
             {total > 1 ? (
               <LiveText
-                className={`${styles.progress} tabular-nums`}
+                className={`${styles.progress} tabular-nums text-(--transcript-ink-chrome)`}
                 size="caption"
-                tone="secondary"
+                tone="inherit"
                 leading="inherit"
                 text={`${index + 1} / ${total}`}
               />
@@ -515,12 +518,7 @@ function QuestionFormContent({
             />
           </div>
         </FieldGroup>
-        <div
-          {...surfaceAttributes(
-            { variant: docked ? "page" : "inset", frame: "pane", edge: "top" },
-            styles.footer,
-          )}
-        >
+        <div className={styles.footer}>
           <div className={styles.feedback}>
             {parentClosed && !checkpointNoticeOwned ? (
               <LiveText text={t("Preparing session checkpoint. Your draft is kept.")} />

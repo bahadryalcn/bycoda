@@ -1,12 +1,11 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { TranscriptNotice, type TranscriptNoticeKind } from "./TranscriptNotice";
 import { DeliveryReviewChoice, type DeliveryReviewOutcome } from "./DeliveryReviewChoice";
 import { useT } from "../../../shared/i18n";
-import { Alert, type AlertTone } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -74,8 +73,8 @@ export const deliveryIsPending = (stage?: DeliveryStage) =>
 
 /** A delivery stage, or a pause the host reported with no delivery operation. */
 type NoticeStage = DeliveryStage | "paused";
-const noticeTone = (stage: NoticeStage, noticeOnly?: boolean): AlertTone =>
-  stage === "accepted" ? "success" : stage === "rejected" && !noticeOnly ? "danger" : "warning";
+const noticeKind = (stage: NoticeStage, noticeOnly?: boolean): TranscriptNoticeKind =>
+  stage === "accepted" ? "success" : stage === "rejected" && !noticeOnly ? "error" : "warning";
 
 /** Which notice (if any) the session shows now, and whether the owner closed it. */
 function useDeliveryNoticeState(sessionId: string, messages: QueuedMessage[]) {
@@ -345,49 +344,33 @@ export function DeliveryProgressNotice({
       </div>
     );
   }
-  const hasChildren = !!body || (unknownRow && !clientState.queue.claim) || !!resolveError;
   return (
     // In-flow banner at the top of the pane body: the transcript (and its Find bar) sits below it,
     // so the notice never covers the conversation it asks the owner to check.
     <div className="flex shrink-0 justify-center px-2 py-1" data-delivery-notice-slot>
-      {/* The tone ground is translucent: an opaque surface keeps the transcript out of the text. */}
-      <div
-        {...surfaceAttributes(
-          { variant: "floating", radius: "control", elevation: "floating" },
-          "w-full max-w-md max-h-[min(40dvh,18rem)] overflow-y-auto overscroll-contain",
-        )}
+      {/* An opaque ground under the tone: the transcript never shows through the text. */}
+      <TranscriptNotice
+        key={key}
+        elevated
+        className="w-full max-w-2xl"
+        kind={noticeKind(stage, noticeOnly)}
+        title={title}
+        detail={body}
+        data-delivery-progress={stage}
+        onDismiss={() => dismissDeliveryNotice(key, focusRequest)}
+        extra={technical ? <ErrorDetails detail={technical} title={title} /> : undefined}
       >
-        <Alert
-          key={key}
-          open
-          className="w-full"
-          tone={noticeTone(stage, noticeOnly)}
-          title={title}
-          data-delivery-progress={stage}
-          onDismiss={() => dismissDeliveryNotice(key, focusRequest)}
-          extra={technical ? <ErrorDetails detail={technical} title={title} /> : undefined}
-        >
-          {hasChildren ? (
-            <>
-              {body ? (
-                <Text as="p" size="inherit" className="min-w-0 [overflow-wrap:anywhere]">
-                  {body}
-                </Text>
-              ) : null}
-              {unknownRow && !clientState.queue.claim ? (
-                <DeliveryReviewChoice
-                  text={unknownRow.text}
-                  working={working}
-                  lateSettlement={lateSettlement}
-                  focusRequest={focusRequest}
-                  onChoose={choose}
-                />
-              ) : null}
-              {resolveError ? <InlineError className="mt-1">{resolveError}</InlineError> : null}
-            </>
-          ) : null}
-        </Alert>
-      </div>
+        {unknownRow && !clientState.queue.claim ? (
+          <DeliveryReviewChoice
+            text={unknownRow.text}
+            working={working}
+            lateSettlement={lateSettlement}
+            focusRequest={focusRequest}
+            onChoose={choose}
+          />
+        ) : null}
+        {resolveError ? <InlineError className="mt-1">{resolveError}</InlineError> : null}
+      </TranscriptNotice>
     </div>
   );
 }

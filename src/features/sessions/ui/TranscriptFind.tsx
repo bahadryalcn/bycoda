@@ -235,69 +235,72 @@ export const TranscriptFind = memo(function TranscriptFind({
   return (
     <>
       {headerTrigger}
-      <div
-        className={`pointer-events-none absolute top-2 z-(--layer-pane-sheet) ${side === "left" ? "start-3" : "end-3"}`}
-      >
+      {/* The bar sits on the transcript column's edge (max-w-4xl, same end inset as the rows). */}
+      <div className="pointer-events-none absolute inset-x-3 top-2 z-(--layer-pane-sheet) flex justify-center">
         <div
-          role="search"
-          aria-label={t("Find in conversation")}
-          {...surfaceAttributes(
-            { variant: "floating", frame: "card", radius: "card", elevation: "floating" },
-            "pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 p-1",
-          )}
+          className={`flex w-full max-w-4xl ${side === "left" ? "justify-start" : "justify-end pe-4"}`}
         >
-          <PopoverSearchHeader
-            ref={input}
-            label={t("Find in conversation")}
-            value={query}
-            autoFocus={false}
-            divider={false}
-            autoCorrect="off"
-            autoCapitalize="off"
-            onValueChange={(value) => {
-              setQuery(value);
-              setActiveId(null);
-            }}
-            onSubmit={(event) => step("shiftKey" in event && event.shiftKey ? -1 : 1)}
-            className="w-44"
-            headerClassName="min-w-0 flex-1"
-            trailing={
-              <>
-                <Text
-                  role="status"
-                  size="micro"
-                  tone="secondary"
-                  className="min-w-[10ch] shrink-0 whitespace-nowrap text-end tabular-nums"
-                >
-                  {countLabel}
-                </Text>
-                {retry && (
-                  <FindButton label={t("Retry")} onClick={retry}>
-                    <RefreshCw className="icon-sm" strokeWidth={1.75} />
+          <div
+            role="search"
+            aria-label={t("Find in conversation")}
+            {...surfaceAttributes(
+              { variant: "floating", frame: "card", radius: "card", elevation: "floating" },
+              "pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 p-1",
+            )}
+          >
+            <PopoverSearchHeader
+              ref={input}
+              label={t("Find in conversation")}
+              value={query}
+              autoFocus={false}
+              divider={false}
+              autoCorrect="off"
+              autoCapitalize="off"
+              onValueChange={(value) => {
+                setQuery(value);
+                setActiveId(null);
+              }}
+              onSubmit={(event) => step("shiftKey" in event && event.shiftKey ? -1 : 1)}
+              className="w-44"
+              headerClassName="min-w-0 flex-1"
+              trailing={
+                <>
+                  <Text
+                    role="status"
+                    size="micro"
+                    tone="secondary"
+                    className="min-w-[10ch] shrink-0 whitespace-nowrap text-end tabular-nums"
+                  >
+                    {countLabel}
+                  </Text>
+                  {retry && (
+                    <FindButton label={t("Retry")} onClick={retry}>
+                      <RefreshCw className="icon-sm" strokeWidth={1.75} />
+                    </FindButton>
+                  )}
+                  <FindButton
+                    label={t("Previous match")}
+                    shortcut="Shift+Enter / Shift+F3"
+                    onClick={() => step(-1)}
+                    disabled={!matches.length}
+                  >
+                    <ChevronUp className="icon-sm" strokeWidth={1.75} />
                   </FindButton>
-                )}
-                <FindButton
-                  label={t("Previous match")}
-                  shortcut="Shift+Enter / Shift+F3"
-                  onClick={() => step(-1)}
-                  disabled={!matches.length}
-                >
-                  <ChevronUp className="icon-sm" strokeWidth={1.75} />
-                </FindButton>
-                <FindButton
-                  label={t("Next match")}
-                  shortcut="Enter / F3"
-                  onClick={() => step(1)}
-                  disabled={!matches.length}
-                >
-                  <ChevronDown className="icon-sm" strokeWidth={1.75} />
-                </FindButton>
-                <FindButton label={t("Close find")} shortcut="Esc" onClick={closeFind}>
-                  <X className="icon-sm" strokeWidth={1.75} />
-                </FindButton>
-              </>
-            }
-          />
+                  <FindButton
+                    label={t("Next match")}
+                    shortcut="Enter / F3"
+                    onClick={() => step(1)}
+                    disabled={!matches.length}
+                  >
+                    <ChevronDown className="icon-sm" strokeWidth={1.75} />
+                  </FindButton>
+                  <FindButton label={t("Close find")} shortcut="Esc" onClick={closeFind}>
+                    <X className="icon-sm" strokeWidth={1.75} />
+                  </FindButton>
+                </>
+              }
+            />
+          </div>
         </div>
       </div>
     </>

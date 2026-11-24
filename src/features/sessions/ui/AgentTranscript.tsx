@@ -1754,7 +1754,7 @@ function TurnDuration({
           <span className="flex min-w-0 items-center gap-1.5">
             {harness ? <HarnessIcon harness={harness} className="size-3.5 shrink-0" /> : null}
             <OverflowTooltip label={label}>
-              <span className="min-w-0 truncate">{label}</span>
+              <span className="min-w-0 truncate text-(--transcript-ink-faint)">{label}</span>
             </OverflowTooltip>
           </span>
         </span>
@@ -1762,7 +1762,10 @@ function TurnDuration({
       {completedAt != null ? (
         <span className="flex shrink-0 items-center gap-2.5">
           {labelHidden ? null : dot}
-          <Timestamp value={completedAt} className="shrink-0 text-(--transcript-ink-chrome)" />
+          <Timestamp
+            value={completedAt}
+            className="shrink-0 text-ui-secondary text-(--transcript-ink-faint)"
+          />
         </span>
       ) : null}
     </div>
@@ -2434,14 +2437,26 @@ function UserMessageBlock({
     return path ? [{ file, path, index }] : [];
   });
   const chipAttachments = attachmentFiles.length > mediaAttachments.length;
+  // Attachments sit above the bubble; the bubble itself exists only when something is written in it.
+  const hasBubble = Boolean(text || card || note || citations.length || block.ciContext);
+  const hasActions = Boolean(
+    text || block.attachments?.length || block.startedAt != null || onEdit || onRewind,
+  );
   const overflows = useClampOverflow(textRef, Boolean(text), expanded, text, compactText ? 1 : 0);
 
   const toggle = () => {
     if (overflows) setExpanded((value) => !value);
   };
 
+  // Time leads the hover actions beside the bubble (the labelled menu variant keeps it last).
   const renderMessageActions = (dismiss?: () => void, showLabels = false) => (
     <>
+      {block.startedAt != null && !showLabels ? (
+        <Timestamp
+          value={block.startedAt}
+          className="me-1 self-center whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--transcript-ink-faint)"
+        />
+      ) : null}
       {text || block.attachments?.length ? (
         <CopyTurnButton
           text={messageText}
@@ -2473,10 +2488,10 @@ function UserMessageBlock({
         </Button>
       ) : null}
       {onEdit ? <MessageEditMenu onEdit={onEdit} editing={editing} dismiss={dismiss} /> : null}
-      {block.startedAt != null ? (
+      {block.startedAt != null && showLabels ? (
         <Timestamp
           value={block.startedAt}
-          className={`${showLabels ? "ms-auto" : "ms-1"} whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--transcript-ink-chrome)`}
+          className="ms-auto whitespace-nowrap font-sans text-ui-caption tabular-nums text-(--transcript-ink-faint)"
         />
       ) : null}
     </>
@@ -2511,160 +2526,166 @@ function UserMessageBlock({
         }
       />
       {/* Give actions the pane width while the bubble keeps its content width. */}
-      <div className="user-message-hover-zone flex w-full min-w-0 max-w-full flex-col items-end overflow-visible">
-        <div
-          data-draft={block.draft ? "true" : undefined}
-          data-chat-message-surface={block.draft ? undefined : "user"}
-          data-follow-up-delivery={delivery}
-          data-bycoda={bycoda ? "true" : undefined}
-          className={`user-message-bubble relative min-w-0 font-sans text-(--transcript-ink-body) transition-[background-color] duration-200 ${pastedTextOnly ? "" : "px-(--message-bubble-inset-x) py-(--message-bubble-inset-y) [--message-bubble-inset-x:--spacing(3)] [--message-bubble-inset-y:--spacing(2)]"} ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
-        >
-          <ChatCitationList citations={citations} text={text} />
-          {block.turnOutcome === "stopped" ? (
-            <Badge tone="neutral" className="mb-1">
-              {t("Stopped by you")}
-            </Badge>
+      <div className="user-message-hover-zone flex w-full min-w-0 max-w-full flex-col items-end gap-1.5 overflow-visible">
+        {mediaAttachments.length ? (
+          <div className="flex w-[30rem] min-w-0 max-w-full flex-col items-end gap-1.5 font-sans">
+            {mediaAttachments.map(({ file, path, index }) => (
+              <LocalMedia
+                key={file.id}
+                path={path}
+                label={file.name}
+                fallback={<AttachmentChip attachment={file} token={referencedTokens[index]} />}
+              />
+            ))}
+          </div>
+        ) : null}
+        {chipAttachments ? (
+          <div
+            role="group"
+            aria-label={t("Attachments")}
+            className="user-message-attachments flex min-w-0 max-w-full flex-wrap justify-end gap-1.5 font-sans"
+          >
+            {attachmentFiles.map((file, index) =>
+              inlineMediaAttachmentPath(file) ? null : (
+                <AttachmentChip key={file.id} attachment={file} token={referencedTokens[index]} />
+              ),
+            )}
+          </div>
+        ) : null}
+        <div className="flex w-full min-w-0 items-end justify-end gap-1.5">
+          {hasActions ? (
+            <div className="user-message-actions flex shrink-0 items-center gap-0.5 pb-0.5 opacity-0 transition-opacity duration-150 group-focus-within/usermsg:opacity-100 group-hover/usermsg:opacity-100 motion-reduce:transition-none [@media(hover:none)]:opacity-100">
+              {renderMessageActions()}
+            </div>
           ) : null}
-          {mediaAttachments.length ? (
+          {hasBubble ? (
             <div
-              className={`flex w-[30rem] min-w-0 max-w-full flex-col items-start ${chipAttachments || text || card || note ? "mbe-2" : ""}`}
+              data-draft={block.draft ? "true" : undefined}
+              data-chat-message-surface={block.draft ? undefined : "user"}
+              data-follow-up-delivery={delivery}
+              data-bycoda={bycoda ? "true" : undefined}
+              className={`user-message-bubble relative min-w-0 font-sans text-(--transcript-ink-body) transition-[background-color] duration-200 ${pastedTextOnly ? "" : "px-(--message-bubble-inset-x) py-(--message-bubble-inset-y) [--message-bubble-inset-x:--spacing(3.5)] [--message-bubble-inset-y:--spacing(2.5)]"} ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
             >
-              {mediaAttachments.map(({ file, path, index }) => (
-                <LocalMedia
-                  key={file.id}
-                  path={path}
-                  label={file.name}
-                  fallback={<AttachmentChip attachment={file} token={referencedTokens[index]} />}
+              <ChatCitationList citations={citations} text={text} />
+
+              {note ? (
+                <div className={text || card ? "mb-2" : ""}>
+                  <NoteMiniCard card={note} embedded />
+                </div>
+              ) : null}
+              {card ? (
+                <div className={text ? "mb-1.5" : undefined}>
+                  <SecondOpinionCard card={card} />
+                </div>
+              ) : null}
+              {compactText ? (
+                <UserTextPreview
+                  markdown
+                  parts={previewParts}
+                  messageId={block.id}
+                  cwd={cwd}
+                  onOpenFile={onOpenFile}
+                  attachments={block.attachments}
+                  citations={citations}
+                  renderActions={renderMessageActions}
                 />
-              ))}
+              ) : messageLink ? (
+                <div
+                  ref={(element) => {
+                    textRef.current = element;
+                  }}
+                  className="user-message-with-link min-w-0 whitespace-pre-wrap break-words font-sans text-ui-body"
+                  data-selectable-agent-response={block.id}
+                >
+                  <UserMessageMarkdown
+                    text={messageLink.beforeText}
+                    cwd={cwd}
+                    onOpenFile={onOpenFile}
+                    attachments={block.attachments}
+                    citations={citations}
+                  />
+                  <UserLinkPreview link={messageLink.link} cwd={cwd} compact />
+                  <UserMessageMarkdown
+                    text={messageLink.afterText}
+                    cwd={cwd}
+                    onOpenFile={onOpenFile}
+                    attachments={block.attachments}
+                    citations={citations}
+                  />
+                </div>
+              ) : text ? (
+                <div
+                  data-selectable-agent-response={block.id}
+                  ref={(element) => {
+                    textRef.current = element;
+                  }}
+                  className={`min-w-0 ${expanded || questionAnswer ? "" : "line-clamp-4"}`}
+                >
+                  <UserMessageMarkdown
+                    text={text}
+                    cwd={cwd}
+                    onOpenFile={onOpenFile}
+                    attachments={block.attachments}
+                    citations={citations}
+                  />
+                </div>
+              ) : null}
+              {overflows && !compactText ? (
+                <Button
+                  motion="none"
+                  variant="ghost"
+                  type="button"
+                  aria-expanded={expanded}
+                  className="mt-1"
+                  onClick={toggle}
+                >
+                  {expanded ? t("Show less") : t("Show more")}
+                </Button>
+              ) : null}
+              {block.ciContext ? (
+                <Disclosure
+                  size="sm"
+                  summary={t("CI context")}
+                  open={ciOpen}
+                  onOpenChange={setCiOpen}
+                  className="mt-2 min-w-0 border-t border-(--ui-tone-neutral-border) pt-2"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <OutputBlock frame="filled" scroll className="mt-2 max-h-72">
+                    {block.ciContext}
+                  </OutputBlock>
+                </Disclosure>
+              ) : null}
+
+              {bycoda ? (
+                <BycodaSparkles blockId={block.id} startedAt={block.startedAt} />
+              ) : block.intent === "plan" ? (
+                <PlanStepsBurst blockId={block.id} startedAt={block.startedAt} />
+              ) : block.intent === "orchestrate" ? (
+                <OrchestratorConstellation blockId={block.id} startedAt={block.startedAt} />
+              ) : null}
             </div>
-          ) : null}
-          {chipAttachments ? (
-            <div
-              role="group"
-              aria-label={t("Attachments")}
-              className={`user-message-attachments flex min-w-0 max-w-full gap-2 overflow-x-auto ${text || card || note ? "mbe-2" : ""}`}
-            >
-              {attachmentFiles.map((file, index) =>
-                inlineMediaAttachmentPath(file) ? null : (
-                  <AttachmentChip key={file.id} attachment={file} token={referencedTokens[index]} />
-                ),
-              )}
-            </div>
-          ) : null}
-          {note ? (
-            <div className={text || card ? "mb-2" : ""}>
-              <NoteMiniCard card={note} embedded />
-            </div>
-          ) : null}
-          {card ? (
-            <div className={text ? "mb-1.5" : undefined}>
-              <SecondOpinionCard card={card} />
-            </div>
-          ) : null}
-          {compactText ? (
-            <UserTextPreview
-              markdown
-              parts={previewParts}
-              messageId={block.id}
-              cwd={cwd}
-              onOpenFile={onOpenFile}
-              attachments={block.attachments}
-              citations={citations}
-              renderActions={renderMessageActions}
-            />
-          ) : messageLink ? (
-            <div
-              ref={(element) => {
-                textRef.current = element;
-              }}
-              className="user-message-with-link min-w-0 whitespace-pre-wrap break-words font-sans text-ui-body"
-              data-selectable-agent-response={block.id}
-            >
-              <UserMessageMarkdown
-                text={messageLink.beforeText}
-                cwd={cwd}
-                onOpenFile={onOpenFile}
-                attachments={block.attachments}
-                citations={citations}
-              />
-              <UserLinkPreview link={messageLink.link} cwd={cwd} compact />
-              <UserMessageMarkdown
-                text={messageLink.afterText}
-                cwd={cwd}
-                onOpenFile={onOpenFile}
-                attachments={block.attachments}
-                citations={citations}
-              />
-            </div>
-          ) : text ? (
-            <div
-              data-selectable-agent-response={block.id}
-              ref={(element) => {
-                textRef.current = element;
-              }}
-              className={`min-w-0 ${expanded || questionAnswer ? "" : "line-clamp-4"}`}
-            >
-              <UserMessageMarkdown
-                text={text}
-                cwd={cwd}
-                onOpenFile={onOpenFile}
-                attachments={block.attachments}
-                citations={citations}
-              />
-            </div>
-          ) : null}
-          {overflows && !compactText ? (
-            <Button
-              motion="none"
-              variant="ghost"
-              type="button"
-              aria-expanded={expanded}
-              className="mt-1"
-              onClick={toggle}
-            >
-              {expanded ? t("Show less") : t("Show more")}
-            </Button>
-          ) : null}
-          {block.ciContext ? (
-            <Disclosure
-              size="sm"
-              summary={t("CI context")}
-              open={ciOpen}
-              onOpenChange={setCiOpen}
-              className="mt-2 min-w-0 border-t border-(--ui-tone-neutral-border) pt-2"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <OutputBlock frame="filled" scroll className="mt-2 max-h-72">
-                {block.ciContext}
-              </OutputBlock>
-            </Disclosure>
-          ) : null}
-          {block.draft ? (
-            <UserDraftFooter
-              block={block}
-              delivery={delivery}
-              deliveryLabel={deliveryLabel}
-              deliveryDescription={deliveryDescription}
-              deliveryActive={deliveryActive}
-              heldActionTitle={heldActionTitle}
-              onEditDraft={onEditDraft}
-              onRemoveDraft={onRemoveDraft}
-              onSendDraft={onSendDraft}
-            />
-          ) : null}
-          {bycoda ? (
-            <BycodaSparkles blockId={block.id} startedAt={block.startedAt} />
-          ) : block.intent === "plan" ? (
-            <PlanStepsBurst blockId={block.id} startedAt={block.startedAt} />
-          ) : block.intent === "orchestrate" ? (
-            <OrchestratorConstellation blockId={block.id} startedAt={block.startedAt} />
           ) : null}
         </div>
-        {text || block.attachments?.length || block.startedAt != null || onEdit || onRewind ? (
-          <div className="user-message-actions flex max-w-full flex-wrap items-center justify-end gap-1 px-3 pt-1">
-            {renderMessageActions()}
+        {block.turnOutcome === "stopped" ? (
+          <div className="flex justify-end">
+            <Badge tone="neutral" appearance="subtle" size="sm">
+              {t("Stopped by you")}
+            </Badge>
           </div>
+        ) : null}
+        {block.draft ? (
+          <UserDraftFooter
+            block={block}
+            delivery={delivery}
+            deliveryLabel={deliveryLabel}
+            deliveryDescription={deliveryDescription}
+            deliveryActive={deliveryActive}
+            heldActionTitle={heldActionTitle}
+            onEditDraft={onEditDraft}
+            onRemoveDraft={onRemoveDraft}
+            onSendDraft={onSendDraft}
+          />
         ) : null}
       </div>
     </div>

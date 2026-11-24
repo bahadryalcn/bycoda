@@ -39,11 +39,18 @@
   );
   --transcript-ink-chrome: color-mix(
     in srgb,
-    var(--transcript-ink-body) var(--appearance-transcript-chrome-ink, 76%),
+    var(--transcript-ink-body) var(--appearance-transcript-chrome-ink, 61%),
     var(--ui-tint-base)
   );
+  /* Machine work steps back further: command lines and faint metadata are shares of chrome. */
+  --transcript-ink-command: color-mix(
+    in srgb,
+    var(--transcript-ink-chrome) 85%,
+    var(--ui-tint-base)
+  );
+  --transcript-ink-faint: color-mix(in srgb, var(--transcript-ink-chrome) 63%, var(--ui-tint-base));
   --transcript-ink-chrome-active: var(--transcript-ink-body);
-  --transcript-tool-ink: var(--transcript-ink-chrome);
+  --transcript-tool-ink: var(--transcript-ink-command);
 
   /* Resolved per scope mode below; consumers read only these. */
   --transcript-reply-fill: var(--transcript-surface-fill);
@@ -51,9 +58,11 @@
   --transcript-reply-pad-block: var(--space-2);
   --transcript-column-fill: transparent;
   --transcript-card-fill: var(--transcript-inset-fill);
+  /* The user's bubble is a foreground tint over the pane (7.5% at the default 42% setting), so it
+     reads on any pane colour; the Appearance user-message opacity scales it. */
   --transcript-user-fill: color-mix(
-    in oklab,
-    var(--transcript-surface-color) var(--appearance-user-message-opacity, 42%),
+    in srgb,
+    var(--color-content) calc(var(--appearance-user-message-opacity, 42%) * 0.1786),
     transparent
   );
   /* Kept as the alias older consumers read (user bubble, tests). */

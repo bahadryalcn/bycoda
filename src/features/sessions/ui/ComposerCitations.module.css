@@ -11,7 +11,9 @@
   gap: 0.125rem;
   min-inline-size: 0;
   max-inline-size: 100%;
+  min-block-size: 1.875rem;
   padding: 0.125rem;
+  padding-inline-start: 0.25rem;
 }
 .source {
   min-inline-size: 0;

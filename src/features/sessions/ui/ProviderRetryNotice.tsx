@@ -1,9 +1,8 @@
-import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { InlineMessage } from "../../../shared/ui/InlineError";
 import { sessionRetryNotice } from "../model/sessionIssue";
+import { NoticeActionButton, TranscriptNotice } from "./TranscriptNotice";
 
 async function runRefresh(
   onRefresh: () => Promise<unknown>,
@@ -46,36 +45,39 @@ export function ProviderRetryNotice({
     return runRefresh(onRefresh, pending, setRefreshing, setRefreshFailed);
   };
   return (
-    <div className="flex flex-col gap-1">
-      <InlineMessage
-        tone="warning"
-        action={
-          onRefresh
-            ? {
-                label: refreshing ? t("Refreshing…") : t("Refresh status"),
-                pending: refreshing,
-                onClick: () => void refresh(),
-              }
-            : { label: t("Stop"), onClick: onStop }
-        }
-        secondaryAction={
-          onRefresh ? { label: t("Stop"), disabled: refreshing, onClick: onStop } : undefined
-        }
-      >
-        <span className="min-w-0 break-words">
-          <Text size="inherit" tone="neutral" weight="medium">
-            {t(notice.reconnecting ? "Reconnecting to {p0}" : "{p0} is retrying", { p0: provider })}
-          </Text>
-          {notice.detail ? <> · {notice.detail}</> : null}
-        </span>
-      </InlineMessage>
+    <TranscriptNotice
+      kind="retry"
+      title={t(notice.reconnecting ? "Reconnecting to {p0}" : "{p0} is retrying", { p0: provider })}
+      detail={notice.detail}
+      actions={
+        <>
+          <NoticeActionButton
+            action={
+              onRefresh
+                ? {
+                    label: refreshing ? t("Refreshing…") : t("Refresh status"),
+                    pending: refreshing,
+                    onClick: () => void refresh(),
+                  }
+                : { label: t("Stop"), onClick: onStop }
+            }
+          />
+          {onRefresh ? (
+            <NoticeActionButton
+              quiet
+              action={{ label: t("Stop"), disabled: refreshing, onClick: onStop }}
+            />
+          ) : null}
+        </>
+      }
+    >
       {refreshFailed ? (
-        <InlineError>
+        <InlineError className="mt-1">
           {t(
             "Could not refresh the conversation. Check the host connection and try Refresh status again.",
           )}
         </InlineError>
       ) : null}
-    </div>
+    </TranscriptNotice>
   );
 }

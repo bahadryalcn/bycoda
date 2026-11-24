@@ -62,9 +62,6 @@
     "src/features/sessions/ui/PromptOutline.tsx": {
       "transcript-reply-fill": 1
     },
-    "src/features/sessions/ui/ReminderNotices.tsx": {
-      "surface-style": 2
-    },
     "src/features/sessions/ui/SessionImportDialog.tsx": {
       "surface-style": 1
     },
@@ -75,7 +72,6 @@
       "surface-style": 1
     },
     "src/features/sessions/ui/chat-controls.css": {
-      "fixed-control-size": 1,
       "shared-internal-selector": 2
     },
     "src/features/sessions/ui/crewCharacters.ts": {

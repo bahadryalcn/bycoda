@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { TabStrip } from "../../../shared/ui/Tabs";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { CodeBlock, Eye, Minus, Plus } from "../../../shared/ui/icons";
@@ -53,25 +54,29 @@ export function useMarkdownMode(
 type ToggleProps = {
   mode: MarkdownViewMode;
   onChange: (mode: MarkdownViewMode) => void;
+  /** Names for non-Markdown documents (Tree/Raw, Log/Raw); default Preview/Source. */
+  labels?: ViewLabels;
 };
 
-export function MarkdownModeToggle({ mode, onChange }: ToggleProps) {
+export type ViewLabels = { group: string; preview: string; source: string };
+
+export function MarkdownModeToggle({ mode, onChange, labels }: ToggleProps) {
   const t = useT();
   return (
     <TabStrip
-      label={t("Markdown view")}
+      label={labels?.group ?? t("Markdown view")}
       className="shrink-0"
       value={mode}
       items={[
         {
           value: "preview",
-          label: t("Preview"),
+          label: labels?.preview ?? t("Preview"),
           icon: <Eye className="icon-sm" />,
           iconOnly: true,
         },
         {
           value: "source",
-          label: t("Source"),
+          label: labels?.source ?? t("Source"),
           icon: <CodeBlock className="icon-sm" />,
           iconOnly: true,
         },
@@ -92,6 +97,8 @@ type ShellProps = {
   leading?: ReactNode;
   /** Markdown preview content only; source editors own their existing code zoom. */
   zoomable?: boolean;
+  /** Names of the two views when the document is not Markdown. */
+  labels?: ViewLabels;
 };
 
 export function MarkdownViewShell({
@@ -102,6 +109,7 @@ export function MarkdownViewShell({
   actions,
   leading,
   zoomable = true,
+  labels,
 }: ShellProps) {
   useLocale();
   const t = useT();
@@ -177,7 +185,7 @@ export function MarkdownViewShell({
               ) : null}
             </>
           ) : null}
-          <MarkdownModeToggle mode={mode} onChange={onModeChange} />
+          <MarkdownModeToggle mode={mode} onChange={onModeChange} labels={labels} />
         </div>
       </div>
       <div
@@ -224,5 +232,32 @@ export function MarkdownViewPane({
     >
       {children}
     </div>
+  );
+}
+
+/**
+ * Two views of one fenced block (Tree/Raw, Diagram/Source). It sits in the code block's header, left of the
+ * copy button, and changes only how the same text is shown.
+ */
+export function FenceViewToggle({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <SegmentedControl
+      size="sm"
+      label={label}
+      className={styles.fenceToggle}
+      options={[...options]}
+      value={value}
+      onValueChange={onChange}
+    />
   );
 }

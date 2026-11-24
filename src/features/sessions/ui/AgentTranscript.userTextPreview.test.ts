@@ -165,8 +165,12 @@ it("detects JSON in a message while keeping the surrounding instructions visible
   expect(container.textContent).toContain("Keep the key.");
   expect(container.querySelector('[aria-label="Show full JSON"]')).not.toBeNull();
   act(() => container.querySelector<HTMLButtonElement>('[aria-label="Expand"]')!.click());
-  expect(document.querySelector('[role="dialog"] pre')?.textContent).toContain('{"a":1}');
-  expect(document.querySelector('[role="dialog"] pre')?.textContent).not.toContain("```");
+  // The dialog opens the JSON as a tree; Raw shows the exact text without the fence.
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.querySelector('[role="radiogroup"][aria-label="JSON view"]')).not.toBeNull();
+  act(() => dialog.querySelector<HTMLButtonElement>('[role="radio"][aria-label="Raw"]')!.click());
+  expect(dialog.textContent).toContain('{"a":1}');
+  expect(dialog.textContent).not.toContain("```");
 });
 
 it("renders Markdown and keeps attachment tokens interactive in ordinary messages", () => {

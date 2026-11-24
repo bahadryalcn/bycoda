@@ -32,7 +32,13 @@ it("defines --transcript-surface-* and --transcript-ink-* only in transcript-sur
 it("rolls ink from a body share so chrome can never exceed body", () => {
   expect(surface).toMatch(/--transcript-ink-emphasis:\s*var\(--color-content\)/);
   expect(surface).toMatch(
-    /--transcript-ink-chrome:\s*color-mix\(\s*in srgb,\s*var\(--transcript-ink-body\)\s*var\(--appearance-transcript-chrome-ink, 76%\),\s*var\(--ui-tint-base\)/,
+    /--transcript-ink-chrome:\s*color-mix\(\s*in srgb,\s*var\(--transcript-ink-body\)\s*var\(--appearance-transcript-chrome-ink, 61%\),\s*var\(--ui-tint-base\)/,
+  );
+  expect(surface).toMatch(
+    /--transcript-ink-command:\s*color-mix\(\s*in srgb,\s*var\(--transcript-ink-chrome\) \d+%/,
+  );
+  expect(surface).toMatch(
+    /--transcript-ink-faint:\s*color-mix\(\s*in srgb,\s*var\(--transcript-ink-chrome\) \d+%/,
   );
   expect(surface).toMatch(/--appearance-transcript-body-ink, 92%/);
   expect(surface).toMatch(/--appearance-contrast-scale, 1/);

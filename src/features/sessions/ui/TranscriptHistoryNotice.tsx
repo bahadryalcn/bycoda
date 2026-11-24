@@ -2,6 +2,9 @@ import { useT } from "../../../shared/i18n";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 
+/** A quiet centred line above the first turn, not a card: it is a state of the page, not an event. */
+const LINE = "justify-center [&>span:last-child]:flex-none";
+
 type TranscriptHistoryNoticeProps = {
   /** Nothing is on screen yet, so the first read is the one loading or failing, not an older page. */
   initial: boolean;
@@ -31,6 +34,7 @@ export function TranscriptHistoryNotice({
   if (loadFailed)
     return (
       <InlineError
+        className={LINE}
         inset="panel"
         retry={onRetryLoad ? { label: t("Retry"), onRetry: onRetryLoad } : undefined}
       >
@@ -42,6 +46,7 @@ export function TranscriptHistoryNotice({
   if (pageError)
     return (
       <InlineError
+        className={LINE}
         inset="panel"
         retry={onRetryPage ? { label: t("Retry"), onRetry: onRetryPage } : undefined}
       >
@@ -50,7 +55,7 @@ export function TranscriptHistoryNotice({
     );
   if (loading)
     return (
-      <LoadingText inset="panel">
+      <LoadingText className={LINE} inset="panel">
         {initial ? t("Loading conversation…") : t("Loading earlier messages…")}
       </LoadingText>
     );

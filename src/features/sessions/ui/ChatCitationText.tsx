@@ -93,7 +93,7 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
   const [unavailable, setUnavailable] = useState(false);
   const label = citation.comment.trim() || citation.text;
   return (
-    <div className={styles.item}>
+    <div {...surfaceAttributes({ variant: "card", radius: "card" }, styles.item)}>
       <div className={styles.row}>
         <Button
           variant="link"

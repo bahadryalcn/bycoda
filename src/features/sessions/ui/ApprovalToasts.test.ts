@@ -787,9 +787,7 @@ it("marks one row read from its hover action and keeps the others unread", async
   await act(async () => rowButton(first, "Mark read").click());
   expect(historyRows()[0].getAttribute("data-unread")).toBeNull();
   expect(historyRows()[1].getAttribute("data-unread")).toBe("true");
-  expect(button("Notifications").querySelector("[data-notification-count]")?.textContent).toBe(
-    "1",
-  );
+  expect(button("Notifications").querySelector("[data-notification-count]")?.textContent).toBe("1");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)[0].read).toBe(true);
 });
 
@@ -868,9 +866,7 @@ it("marks a row that arrived after the last look as new while the sheet is open"
   expect(row("Fresh").getAttribute("data-unread")).toBe("true");
   expect(row("Fresh").textContent).toContain("Unread");
   expect(row("Stale").getAttribute("data-unread")).toBeNull();
-  expect(button("Notifications").querySelector("[data-notification-count]")?.textContent).toBe(
-    "1",
-  );
+  expect(button("Notifications").querySelector("[data-notification-count]")?.textContent).toBe("1");
 });
 
 it("opens a history conversation from its row and reports an unavailable one", async () => {

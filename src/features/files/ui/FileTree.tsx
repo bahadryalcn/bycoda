@@ -1250,7 +1250,7 @@ function FileTreeInner({
                   <div
                     role="tree"
                     aria-multiselectable="true"
-                    aria-label={t("{p0} files", { p0: name })}
+                    aria-label={t("Files in {p0}", { p0: name })}
                     aria-busy={rootPending || rootRefreshing}
                     className={visibleConnectionFailure ? "opacity-60" : undefined}
                   >

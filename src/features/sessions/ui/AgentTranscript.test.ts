@@ -767,7 +767,8 @@ describe("AgentTranscript collapsed work", () => {
       },
     ]);
 
-    expect(markup).toContain("Show error details for npm test");
+    // A failed command opens its output by itself; the reader's later toggle still wins.
+    expect(markup).toContain("Hide error details for npm test");
   });
 
   it("counts a failed step on a folded subagent row, so it is not hidden", () => {

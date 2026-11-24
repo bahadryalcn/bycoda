@@ -54,12 +54,13 @@
   gap: var(--space-2);
   max-inline-size: 100%;
 }
+/* No divider or fill: the actions sit under the options like the preview's ask card. */
 .footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
+  padding: 0 var(--space-4) var(--space-3);
 }
 .feedback {
   flex: 1 1 14rem;
@@ -99,15 +100,56 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   display: grid;
-  gap: var(--space-1);
+  gap: var(--space-2);
   min-inline-size: 0;
-  padding: var(--space-1);
+  /* Room for the focus ring and the chosen outline inside the scroller. */
+  padding: 2px;
 }
 .option {
   display: flex;
   align-items: flex-start;
   min-inline-size: 0;
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  padding: var(--space-2) var(--space-3);
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  border: 1px solid var(--ui-card-border);
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  border-radius: var(--ui-radius-card);
   cursor: pointer;
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  transition:
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    background-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.option:has(input:checked) {
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  border-color: color-mix(in oklab, var(--ui-tone-accent-border) 80%, transparent);
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  background: var(--ui-tone-accent-subtle);
+}
+/* Single choice: the shared radio rows get the same bordered option; its sliding highlight
+   becomes the chosen outline, so the accent follows the selection. */
+.radio:global(.bycoda-arc) label {
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  border-color: var(--ui-card-border);
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  border-radius: var(--ui-radius-card);
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  padding: var(--space-2) var(--space-3);
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  background: transparent;
+}
+.radio:global(.bycoda-arc) label:has(input:checked) {
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  border-color: transparent;
+}
+.radio:global(.bycoda-arc) > div > span[aria-hidden]:first-child {
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  border-color: color-mix(in oklab, var(--ui-tone-accent-border) 80%, transparent);
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  border-radius: var(--ui-radius-card);
+  /* ui-drift-ignore: shared-internal-selector -- The option rows frame the shared Checkbox and RadioGroup labels; neither has an outlined-option prop. */
+  background: var(--ui-tone-accent-subtle);
 }
 .copy {
   min-inline-size: 0;

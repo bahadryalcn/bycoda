@@ -25,13 +25,15 @@ Markdown replies and document previews up to 131,072 characters parse without a 
 
 When Host delegation is unavailable for a turn, the conversation notice uses your app language. Automatic without an effort ceiling permits built-in subagents; otherwise subagents remain limited to your selected models and effort ceiling. Model-facing fallback guidance stays in English.
 
-Tool rows keep the conversation compact. Long command lines end in an ellipsis. Select the command row or its output chevron to inspect the saved command and result. Use **Changes** beside an edit to inspect its saved code or patch. Expanded text can be selected and copied. A failed call shows its error before any earlier output. The summary skips terminal control codes so startup sequences do not hide the error text.
+Tool rows keep the conversation compact. Long command lines end in an ellipsis. Select the command row or its output chevron to inspect the saved command and result. Use **Changes** beside an edit to inspect its saved code or patch. Expanded text can be selected and copied. A failed command opens its output by itself; close it to hide it again. Edit rows show the number of added and removed lines. In the command inspector, an edit's diff switches between **Unified** and **Split**; Split needs a wide enough inspector and diffs of up to 1,200 lines. A failed call shows its error before any earlier output. The summary skips terminal control codes so startup sequences do not hide the error text.
 
 Command details and Copy preserve retained output indentation, blank output and final line breaks. A log containing the failure message remains available alongside the error. If loading full output from a connected machine fails, its summary stays visible and **Retry** requests the same revision again.
 
 Repeated Stop clicks share one pending request per target. After its unconfirmed timeout, another attempt is allowed; an older attempt's late error cannot change the newer attempt's feedback. A Stop acknowledgement alone does not confirm that the command ended.
 
 Subagent rows show the latest status, elapsed time and step counts beside the name, before the disclosure arrow. Previous status labels and counter values are replaced immediately. Completed runs use the success color, failed runs use the danger color, interrupted or stopped runs use the warning color, and running agents use the accent color. Failed-step counts appear in red; a failed step does not mean the entire run failed.
+
+Two or three subagents show as cards in a row. Select a card's title to open that run's work below the cards. A failed card shows its reason and opens itself. One subagent keeps its own row, and more than three show as aligned rows under a counter of how many are done.
 
 In local chats, choose Operator from the Mode menu or type `/operator`.
 
@@ -41,6 +43,8 @@ on one row. Click the active mode icon in the composer to turn that mode off.
 
 In narrow chat panes, Queue and Steer take priority while you have a draft. Use your Stop
 shortcut to interrupt the turn while keeping the draft. Stop is visible again when the draft is empty.
+
+After you press Stop on a running turn, the conversation shows **You stopped this turn** with **Continue** when the session can resume.
 
 ## Composer mentions
 
@@ -247,9 +251,13 @@ A long filename wraps when the composer is narrow. Click a skill
 for its description, or a skill group to see its members. Skill icons replace the
 invocation prefix in the display. The draft keeps the original invocation.
 
-Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio use native playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.
+Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio open with their own playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.
 
 Video and audio files on this computer play inline in the conversation: an assistant reply that links, embeds or names one as a code path shows a player above it, and a video or audio file you attach shows a player above its card in your sent message. Attachments read from a connected machine keep their card and open in the media dialog.
+
+An inline audio file shows a compact card with play/pause, a waveform, the time, **Open** and **Download**. Click the waveform to seek, or focus it and use the arrow keys to move 5 seconds, Page Up and Page Down to move 50 seconds, and Home and End to jump to the start or end. An inline video has quiet controls of its own: play/pause, a seek bar, the time, mute and volume, and fullscreen. Only one player plays at a time; starting one pauses the other.
+
+A complete JSON code block in a reply opens as a tree with a **Tree** and **Raw** switch. JSON that is invalid, still arriving or very large stays raw. A Mermaid block has a **Diagram** and **Source** switch and draws the diagram once the block is complete.
 
 On desktop, use **Download** on a file attachment card to choose where to save a copy. The action also works with formats such as ZIP that the conversation does not preview. Attachment copies are limited to 20 MiB.
 

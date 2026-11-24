@@ -1837,10 +1837,12 @@ html.chat-background-layer-off .gradient-blur-background-strong {
 
 /* Added and removed lines in a tool's inline diff (ToolInspectionPanel). */
 ::highlight(bycoda-tool-diff-added) {
+  background-color: color-mix(in oklab, var(--color-diff-add-fg) 12%, transparent);
   color: var(--color-diff-add-fg);
 }
 
 ::highlight(bycoda-tool-diff-removed) {
+  background-color: color-mix(in oklab, var(--color-diff-del-fg) 12%, transparent);
   color: var(--color-diff-del-fg);
 }
 
@@ -1872,46 +1874,6 @@ html.chat-background-layer-off .gradient-blur-background-strong {
  */
 .transcript-turn-live {
   content-visibility: visible;
-}
-
-/* Touch layouts keep actions in flow. Desktop places them in the existing
- * turn gap so revealing the controls never shifts or over-spaces the chat. */
-.user-message-actions {
-  width: fit-content;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .user-message-hover-zone {
-    position: relative;
-    isolation: isolate;
-  }
-
-  .user-message-actions {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    z-index: 1;
-    opacity: var(--ui-rest-hint-opacity);
-    transition: opacity var(--motion-duration-fast) ease;
-  }
-
-  /* Answer rows have no turn gap: reserve the action tray's real height so it
-   * cannot cover the next question, even when text or controls wrap. */
-  [data-question-answer] .user-message-actions {
-    position: static;
-    align-self: flex-end;
-  }
-
-  .user-message-row:hover .user-message-actions,
-  .user-message-row:focus-within .user-message-actions {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .user-message-actions {
-    transition: none;
-  }
 }
 
 /* Actions under a message that sits in a hover zone: shown with the zone's hover or keyboard
@@ -2471,17 +2433,6 @@ html.theme-light .orchestrator-constellation {
 html.has-user-accent .user-message-bubble[data-draft="true"] {
   background: color-mix(in srgb, var(--user-accent-color) 8%, transparent);
   border-color: color-mix(in srgb, var(--user-accent-color) 38%, transparent);
-}
-
-.user-link-preview {
-  display: inline;
-  white-space: normal;
-}
-
-.user-link-preview-title {
-  display: inline;
-  white-space: normal;
-  overflow-wrap: anywhere;
 }
 
 /*
@@ -3694,6 +3645,29 @@ html:not(.theme-light) .markdown-code-token {
   margin-top: 0.5rem;
 }
 
+/* Transcript rhythm: text to text 8px, text to a card and back 14px; other Markdown surfaces keep
+   the roomier default above. */
+:is([data-transcript-reply], .transcript-content) .agent-markdown > div:not(:empty) ~ div > p {
+  margin-top: 0.5rem;
+  text-wrap: pretty;
+}
+
+:is([data-transcript-reply], .transcript-content) .agent-markdown .markdown-code-shell {
+  margin-block: 14px;
+}
+
+:is([data-transcript-reply], .transcript-content) .agent-markdown li {
+  padding-block: 0;
+}
+
+:is([data-transcript-reply], .transcript-content) .agent-markdown li + li {
+  margin-top: 4px;
+}
+
+:is([data-transcript-reply], .transcript-content) .agent-markdown li::marker {
+  color: var(--transcript-ink-faint);
+}
+
 /* Emphasis colour comes from one custom property per Markdown root; contexts
    (reasoning, zen-fold prose) override the property, not the emphasis rules. */
 .agent-markdown {
@@ -4125,11 +4099,11 @@ html:not(.theme-light) .markdown-code-token {
 
 /*
  * Settled tool calls are chrome around the answer: their commands and paths
- * rest in the chrome ink and come up to the body ink (never emphasis, never bolder)
+ * rest in the command ink (46%, dimmer than chrome) and come up to the body ink (never emphasis, never bolder)
  * while the row is hovered or focused.
  */
 .transcript-tool-row {
-  --transcript-tool-ink: var(--transcript-ink-chrome);
+  --transcript-tool-ink: var(--transcript-ink-command);
 }
 
 .transcript-tool-row:hover,

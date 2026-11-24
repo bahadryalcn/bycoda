@@ -1,5 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
-import { createContext, useContext, useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -32,9 +33,14 @@ import { TranscriptVirtualRows } from "./TranscriptVirtualRows";
 import { useTranscriptRevealTarget } from "./transcriptVirtualization";
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
 import { useSubagentRunIdentity, type SubagentRunSession } from "./useSubagentRunIdentity";
+import { subagentGroupLayout, subagentGroupProgress } from "./subagentGroupLayout";
+import { SubagentCardFace } from "./SubagentCardFace";
+import styles from "./SubagentRow.module.css";
 
 /** The conversation whose transcript renders these rows; Crew member cards open and stop through it. */
 export const DelegatedRunOwner = createContext<string | undefined>(undefined);
+
+type SubagentVariant = "row" | "list" | "card";
 
 type DelegatedCard = {
   /** The child session, for its provider, account and effort. */
@@ -56,13 +62,15 @@ type DelegatedCard = {
 };
 
 /**
- * Every delegated run in the turn, one row each. The main transcript cycles —
- * work folds behind a line, messages stay visible — and a subagent you are
- * watching must not move while that happens, so these rows are never part of a
- * fold and hold their place from the moment the agents start.
+ * Every delegated run in the turn. Up to three show as cards in one row; more show as one
+ * aligned row each, under a counter of how many finished. The main transcript cycles — work
+ * folds behind a line, messages stay visible — and a subagent you are watching must not move
+ * while that happens, so these are never part of a fold and hold their place from the moment
+ * the agents start.
  *
- * A row is the provider, the run's name and detail, and what it is doing right
- * now. Click it and the agent's own trail opens underneath.
+ * A row is the provider, the run's name and detail, and what it is doing right now. Click it
+ * and the agent's own trail opens underneath; a card's trail opens in one full-width area under
+ * the cards, one at a time, so the cards keep equal heights. A lone run is just its row.
  */
 export function SubagentStack({
   blocks,
@@ -79,29 +87,75 @@ export function SubagentStack({
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 }) {
+  const t = useT();
   useLocale();
-  return (
-    <div className={`flex min-w-0 flex-col ${embedded ? "" : "px-4"}`}>
-      <TranscriptVirtualRows
-        listId={`agents:${blocks[0]?.id}`}
-        rows={blocks.map((block) => ({
-          id: block.id,
-          blockIds: [block.id],
-          pinned:
-            needsApproval(block) ||
-            !!block.streaming ||
-            ((live || !!delegatedChildIdOf(block.id)) && toolCallState(block) === "pending"),
-          render: () => (
+  const wrapper = `flex min-w-0 flex-col ${embedded ? "" : "px-4"}`;
+  const layout = subagentGroupLayout(blocks.length);
+  // shortcut: the open card is plain state, not retained across a released transcript; cards are never virtualized, upgrade if remounting loses the reader's pick.
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  if (layout === "cards") {
+    // A run that died is open on its reason until the reader picks another; one trail at a time.
+    const openId =
+      picked === undefined
+        ? (blocks.find((block) => toolCallState(block) === "rejected")?.id ?? null)
+        : picked;
+    return (
+      <div className={wrapper}>
+        <div className={styles.cards} data-subagent-cards={blocks.length}>
+          {blocks.map((block) => (
             <SubagentRow
+              key={block.id}
               block={block}
               cwd={cwd}
               live={live}
+              variant="card"
+              controlled={{
+                open: openId === block.id,
+                onOpenChange: (next) => setPicked(next ? block.id : null),
+              }}
               onOpenFile={onOpenFile}
               onOpenDiff={onOpenDiff}
             />
-          ),
-        }))}
-      />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  const progress = subagentGroupProgress(blocks.map((block) => blockLifecycle(block, live)));
+  return (
+    <div className={wrapper}>
+      <div
+        className={layout === "list" ? styles.list : "flex min-w-0 flex-col"}
+        data-subagent-list={layout === "list" ? blocks.length : undefined}
+      >
+        {layout === "list" ? (
+          <Text size="caption" tone="muted" className={`${styles.listHeader} tabular-nums`}>
+            {t("{p0}/{p1} done", { p0: progress.done, p1: progress.total })}
+            {progress.failed ? ` · ${t("{p0} failed", { p0: progress.failed })}` : ""}
+          </Text>
+        ) : null}
+        <TranscriptVirtualRows
+          listId={`agents:${blocks[0]?.id}`}
+          rows={blocks.map((block) => ({
+            id: block.id,
+            blockIds: [block.id],
+            pinned:
+              needsApproval(block) ||
+              !!block.streaming ||
+              ((live || !!delegatedChildIdOf(block.id)) && toolCallState(block) === "pending"),
+            render: () => (
+              <SubagentRow
+                block={block}
+                cwd={cwd}
+                live={live}
+                variant={layout}
+                onOpenFile={onOpenFile}
+                onOpenDiff={onOpenDiff}
+              />
+            ),
+          }))}
+        />
+      </div>
     </div>
   );
 }
@@ -117,12 +171,18 @@ export function SubagentRow({
   block,
   cwd,
   live = false,
+  variant = "row",
+  controlled,
   onOpenFile,
   onOpenDiff,
 }: {
   block: Block;
   cwd?: string;
   live?: boolean;
+  /** `card` and `list` come from the group's size; `row` is a lone run. */
+  variant?: SubagentVariant;
+  /** The group owns which card is open, so only one trail shows under the cards. */
+  controlled?: { open: boolean; onOpenChange: (open: boolean) => void };
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
 }) {
@@ -162,25 +222,31 @@ export function SubagentRow({
       : undefined;
   const [override, setOverride] = useRetainedDisclosure<boolean | null>(`agent:${block.id}`, null);
   const reveal = useTranscriptRevealTarget();
-  const open = reveal === block.id || (override ?? toolCallState(block) === "rejected");
+  const open =
+    reveal === block.id ||
+    (controlled ? controlled.open : (override ?? toolCallState(block) === "rejected"));
+  const setOpen = useStableCallback((next: boolean) =>
+    controlled ? controlled.onOpenChange(next) : setOverride(next),
+  );
   // The composer's activity dock opens a run from outside the transcript. The
   // row may only mount after the transcript reveals it, so check on mount too.
   useEffect(() => {
     const openIfAsked = () => {
-      if (consumeOpenSubagent(block.id)) setOverride(true);
+      if (consumeOpenSubagent(block.id)) setOpen(true);
     };
     openIfAsked();
     window.addEventListener(OPEN_SUBAGENT_EVENT, openIfAsked);
     return () => window.removeEventListener(OPEN_SUBAGENT_EVENT, openIfAsked);
-  }, [block.id, setOverride]);
+  }, [block.id, setOpen]);
   return (
     <SubagentPanel
       block={block}
       cwd={cwd}
       live={live || (!!delegated && running)}
       delegated={delegated}
+      variant={variant}
       open={open}
-      onToggle={() => setOverride(!open)}
+      onToggle={() => setOpen(!open)}
       onOpenFile={onOpenFile}
       onOpenDiff={onOpenDiff}
     />
@@ -198,6 +264,7 @@ function SubagentPanel({
   cwd,
   live = false,
   delegated,
+  variant,
   open,
   onToggle,
   onOpenFile,
@@ -206,6 +273,7 @@ function SubagentPanel({
   block: Block;
   cwd?: string;
   live?: boolean;
+  variant: SubagentVariant;
   /** Set for a Crew member's child session; the card then opens and stops that session. */
   delegated?: DelegatedCard;
   open: boolean;
@@ -264,9 +332,10 @@ function SubagentPanel({
           startedAt={block.agentRun?.startedAt}
           endedAt={block.agentRun?.endedAt}
           strip={strip}
+          layout={variant === "list" ? "list" : "row"}
         />
       }
-      layout="dock"
+      layout={variant === "list" ? "list" : "dock"}
     />
   );
 
@@ -317,6 +386,110 @@ function SubagentPanel({
     </>
   );
 
+  const trail = (
+    <div className="zen-phase-body" data-open={open}>
+      {open ? (
+        /*
+         * No scroll window of its own. Each phase inside already keeps the
+         * group the run is working in to a short pinned window; wrapping a
+         * second window around them nests one 17.5rem scroller inside
+         * another, and the inner one can never reach its own last row.
+         */
+        <div className="flex min-w-0 flex-col pb-1">
+          <ActivityPhases
+            blocks={stepBlocks}
+            cwd={cwd}
+            done={!active}
+            padded={false}
+            onOpenFile={onOpenFile}
+            onOpenDiff={onOpenDiff}
+          />
+          <SubagentReport
+            block={block}
+            cwd={cwd}
+            onOpenFile={onOpenFile}
+            heading="h4"
+            className="mt-2 ps-5"
+          />
+          {(variant !== "card" && delegated?.onRetry) || delegated?.resultReceived ? (
+            <div className="mt-2 flex min-w-0 flex-col items-start gap-1.5 ps-5">
+              {variant !== "card" && delegated.onRetry ? (
+                <SubagentRetryButton onRetry={delegated.onRetry} />
+              ) : null}
+              {delegated.resultReceived ? (
+                <Text
+                  size="caption"
+                  tone="muted"
+                  className="flex items-center gap-1"
+                  data-delegation-result-received
+                >
+                  <Check className="icon-xs" aria-hidden />
+                  {t("Result received by the main agent")}
+                </Text>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+
+  if (variant === "card") {
+    const hasTrail = steps.length > 0 || !!report;
+    return (
+      <>
+        <SubagentCardFace
+          name={name}
+          active={active}
+          failed={state === "rejected"}
+          lifecycle={blockLifecycle(block, live)}
+          harness={session?.runningModelTarget?.harness ?? session?.harness}
+          model={block.agentRun?.model}
+          account={account}
+          details={[
+            round && round > 1 ? t("Round {p0}", { p0: round }) : undefined,
+            model && modelNameBesideIcon(model),
+            account?.accountLabel,
+            effort,
+          ]}
+          status={
+            <SubagentRunStatus
+              status={blockLifecycle(block, live)}
+              needsInput={needsInput}
+              startedAt={block.agentRun?.startedAt}
+              endedAt={block.agentRun?.endedAt}
+              strip={strip}
+              layout="card"
+            />
+          }
+          description={description}
+          toggleLabel={
+            hasTrail
+              ? open
+                ? t("Hide {p0}'s work", { p0: name })
+                : t("Show {p0}'s work", { p0: name })
+              : undefined
+          }
+          open={open}
+          onToggle={onToggle}
+          reason={state === "rejected" ? report : undefined}
+          footer={
+            <>
+              {delegated?.onRetry ? <SubagentRetryButton onRetry={delegated.onRetry} /> : null}
+              {stopFailure}
+              <span className="ms-auto flex items-center">{actions}</span>
+            </>
+          }
+        />
+        {open && hasTrail ? (
+          <div className={styles.cardTrail} data-subagent-trail>
+            {trail}
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
   // A run can report its first step late (or never). Nothing opens under the row, so it has no
   // chevron and the row itself does nothing; its prompt and status stay in the panel button.
   if (steps.length === 0 && !report) {
@@ -349,49 +522,7 @@ function SubagentPanel({
         summary={rowContent()}
         summaryActions={actions}
       >
-        <div className="zen-phase-body" data-open={open}>
-          {open ? (
-            /*
-             * No scroll window of its own. Each phase inside already keeps the
-             * group the run is working in to a short pinned window; wrapping a
-             * second window around them nests one 17.5rem scroller inside
-             * another, and the inner one can never reach its own last row.
-             */
-            <div className="flex min-w-0 flex-col pb-1">
-              <ActivityPhases
-                blocks={stepBlocks}
-                cwd={cwd}
-                done={!active}
-                padded={false}
-                onOpenFile={onOpenFile}
-                onOpenDiff={onOpenDiff}
-              />
-              <SubagentReport
-                block={block}
-                cwd={cwd}
-                onOpenFile={onOpenFile}
-                heading="h4"
-                className="mt-2 ps-5"
-              />
-              {delegated?.onRetry || delegated?.resultReceived ? (
-                <div className="mt-2 flex min-w-0 flex-col items-start gap-1.5 ps-5">
-                  {delegated.onRetry ? <SubagentRetryButton onRetry={delegated.onRetry} /> : null}
-                  {delegated.resultReceived ? (
-                    <Text
-                      size="caption"
-                      tone="muted"
-                      className="flex items-center gap-1"
-                      data-delegation-result-received
-                    >
-                      <Check className="icon-xs" aria-hidden />
-                      {t("Result received by the main agent")}
-                    </Text>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+        {trail}
       </Disclosure>
       {stopFailure}
     </div>

@@ -5,6 +5,7 @@ import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { useT } from "../../../shared/i18n";
+import { Undo2 } from "../../../shared/ui/icons";
 import type { Session } from "../model/session";
 export function RewoundHistoryDisclosure({
   history,
@@ -19,10 +20,16 @@ export function RewoundHistoryDisclosure({
     <Disclosure
       data-rewind-history=""
       size="sm"
-      summary={summary}
+      summary={
+        <span className="flex min-w-0 items-center gap-2">
+          <Undo2 className="icon-sm shrink-0" aria-hidden />
+          {summary}
+        </span>
+      }
+      summaryLabel={summary}
       {...surfaceAttributes(
-        { frame: "pane", edge: "bottom" },
-        "mx-auto w-full max-w-4xl shrink-0 px-3 py-2",
+        { frame: "card", radius: "control" },
+        "mx-auto my-2 w-[calc(100%-1.5rem)] max-w-4xl shrink-0 px-3 py-1",
       )}
     >
       {truncated ? (

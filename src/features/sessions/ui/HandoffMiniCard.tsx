@@ -23,7 +23,11 @@ export function HandoffMiniCard({ card, onDismiss }: Props) {
 
   return (
     <div className="px-3 pt-2" data-handoff-card>
-      <Surface variant="card" padding="none" className="flex min-w-0 items-center gap-2 px-2 py-1">
+      <Surface
+        variant="card"
+        padding="none"
+        className="flex min-h-7.5 min-w-0 items-center gap-2 py-0.5 ps-2.5 pe-0.5"
+      >
         <Replace className="icon-sm shrink-0" tone="secondary" aria-label={t("Handoff")} />
         <Text size="secondary" tone="neutral" weight="medium" className="flex min-w-0">
           <HarnessRoute from={card.from} to={card.to} />

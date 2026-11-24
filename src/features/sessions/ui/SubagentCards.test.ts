@@ -7,8 +7,8 @@ import {
   DELEGATION_PARENT_KEY,
 } from "../../../shared/model/host-contracts/delegation";
 import { delegatedCardBlock } from "../model/delegatedCards";
-import { newSession, type Session } from "../model/session";
-import { DelegatedRunOwner, SubagentRow } from "./SubagentCards";
+import { newSession, type Block, type Session } from "../model/session";
+import { DelegatedRunOwner, SubagentRow, SubagentStack } from "./SubagentCards";
 
 const fake = vi.hoisted(() => ({
   open: vi.fn(),
@@ -116,4 +116,76 @@ it("shows a failed child's error with a Retry that sends the same task, and mark
   expect(fake.retry).toHaveBeenCalledWith("parent-1", "child-1");
   render(child(false));
   expect(container.querySelector("[data-subagent-retry]")).toBeNull();
+});
+
+function nativeRun(id: string, status: string): Block {
+  return {
+    id,
+    role: "tool",
+    text: `Task ${id}`,
+    tool: { callId: id, kind: "agent", title: `Task ${id}`, status },
+    agentRun: {
+      name: `Task ${id}`,
+      steps: [],
+      startedAt: 1,
+      endedAt: status === "completed" ? 2 : undefined,
+    },
+  } as Block;
+}
+
+function renderStack(statuses: string[]) {
+  act(() => {
+    root.render(
+      createElement(SubagentStack, {
+        blocks: statuses.map((status, index) => nativeRun(`r${index}`, status)),
+        live: true,
+      }),
+    );
+  });
+}
+
+it("lays up to three runs out as cards that open their own panel", () => {
+  renderStack(["in_progress", "completed", "failed"]);
+  expect(container.querySelectorAll("[data-subagent-card]")).toHaveLength(3);
+  expect(container.querySelector("[data-subagent-list]")).toBeNull();
+  expect(container.querySelector('[data-subagent-card] [role="progressbar"]')).not.toBeNull();
+});
+
+it("lays more than three runs out as rows under a finished counter", () => {
+  renderStack(["in_progress", "completed", "failed", "completed"]);
+  expect(container.querySelector("[data-subagent-card]")).toBeNull();
+  expect(container.querySelector("[data-subagent-list]")).not.toBeNull();
+  expect(container.textContent).toContain("2/4 done");
+  expect(container.textContent).toContain("1 failed");
+});
+
+it("opens one card's trail at a time under the grid, and a failed run opens itself on its reason", () => {
+  const withSteps = (id: string, status: string, detail?: string): Block =>
+    ({
+      ...nativeRun(id, status),
+      tool: { callId: id, kind: "agent", title: `Task ${id}`, status, detail },
+      agentRun: {
+        name: `Task ${id}`,
+        steps: [{ id: `${id}-s`, kind: "message", text: `Notes of ${id}` }],
+        startedAt: 1,
+      },
+    }) as Block;
+  act(() => {
+    root.render(
+      createElement(SubagentStack, {
+        blocks: [withSteps("a", "completed"), withSteps("b", "failed", "Provider fell over")],
+        live: false,
+      }),
+    );
+  });
+  const card = (name: string) =>
+    container.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`);
+  expect(container.querySelector("[data-subagent-reason]")?.textContent).toBe("");
+  expect(container.textContent).toContain("Provider fell over");
+  expect(card("Hide b's work")).not.toBeNull();
+  expect(container.querySelectorAll("[data-subagent-trail]")).toHaveLength(1);
+  act(() => card("Show a's work")?.click());
+  expect(container.querySelectorAll("[data-subagent-trail]")).toHaveLength(1);
+  expect(card("Hide a's work")).not.toBeNull();
+  expect(card("Show b's work")).not.toBeNull();
 });

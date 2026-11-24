@@ -1,0 +1,92 @@
+/* One notice anatomy for the transcript and the pane around it: a toned glyph column, a strong
+   short title, a quieter detail line, actions on the right (under the text when narrow). The
+   kind only changes border, fill and glyph; the copy stays neutral. */
+@layer components {
+  .notice {
+    --notice-ground: var(--ui-card-surface);
+    --notice-border: var(--ui-card-border);
+    --notice-tint: transparent;
+    /* The box queries its own width, so a notice in a narrow split pane wraps like a narrow window. */
+    container-type: inline-size;
+    min-inline-size: 0;
+  }
+  .box {
+    display: grid;
+    grid-template-columns: 1.125rem minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.25rem 0.625rem;
+    padding: 0.625rem 0.75rem;
+    /* ui-drift-ignore: surface-style -- Per-kind tinted frame; Surface has no warning or success frame. */
+    border: 1px solid var(--notice-border);
+    /* ui-drift-ignore: surface-style -- Card radius of the notice box. */
+    border-radius: var(--ui-radius-card);
+    /* ui-drift-ignore: surface-style -- Opaque or card ground of the notice box. */
+    background-color: var(--notice-ground);
+    /* ui-drift-ignore: surface-style -- Per-kind tint over the ground, weaker than the shared subtle fill. */
+    background-image: linear-gradient(var(--notice-tint), var(--notice-tint));
+  }
+  /* The dismiss control keeps the top-right corner when the actions wrap under the text. */
+  .box[data-dismissible] {
+    grid-template-columns: 1.125rem minmax(0, 1fr) auto auto;
+  }
+  .dismiss {
+    grid-column: -2;
+    grid-row: 1;
+    align-self: start;
+    margin-block: -0.25rem;
+    margin-inline-end: -0.375rem;
+  }
+  .elevated .box {
+    --notice-ground: var(--ui-surface-floating);
+    /* ui-drift-ignore: surface-style -- Floating shadow for a notice over scrolling content. */
+    box-shadow: var(--ui-elevation-floating);
+  }
+  .body {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+    /* The root is user-select: none; a failure must stay copyable into a bug report. */
+    user-select: text;
+  }
+  .extra {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ui-space-1) var(--ui-space-3);
+    margin-block-start: var(--ui-space-1);
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.375rem;
+    align-self: center;
+  }
+  /* Retried work is a quiet, provisional note: dashed and transparent, never a filled card. */
+  .retry .box {
+    /* ui-drift-ignore: surface-style -- A retried-work notice is dashed. */
+    border-style: dashed;
+    /* ui-drift-ignore: surface-style -- A retried-work notice is transparent. */
+    background-color: transparent;
+    /* ui-drift-ignore: surface-style -- A retried-work notice has no tint. */
+    background-image: none;
+  }
+  .error {
+    --notice-border: color-mix(in oklab, var(--ui-tone-danger-fg) 36%, var(--ui-card-border));
+    --notice-tint: color-mix(in oklab, var(--ui-tone-danger-fg) 6%, transparent);
+  }
+  .warning {
+    --notice-border: color-mix(in oklab, var(--ui-tone-warning-fg) 36%, var(--ui-card-border));
+    --notice-tint: color-mix(in oklab, var(--ui-tone-warning-fg) 7%, transparent);
+  }
+  .success {
+    --notice-border: color-mix(in oklab, var(--ui-tone-success-fg) 30%, var(--ui-card-border));
+    --notice-tint: color-mix(in oklab, var(--ui-tone-success-fg) 6%, transparent);
+  }
+  @container (max-width: 640px) {
+    .actions {
+      grid-column: 2 / 4;
+      grid-row: 2;
+      justify-content: flex-start;
+    }
+  }
+}

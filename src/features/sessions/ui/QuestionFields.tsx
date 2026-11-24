@@ -157,7 +157,6 @@ export function QuestionFields({
         <div className={styles.options}>
           {!question.multiSelect ? (
             <RadioGroup
-              variant="list"
               className={styles.radio}
               legendText={{ size: "body", tone: "neutral", weight: "medium", leading: "normal" }}
               label={question.prompt}

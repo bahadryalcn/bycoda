@@ -315,9 +315,6 @@
     "src-tauri/src/worktrees.rs": {
       "rust-rename-without-fsync": 1
     },
-    "src/app/App.tsx": {
-      "bycoda/effect-names-its-sync": 2
-    },
     "src/app/QueryProvider.tsx": {
       "bycoda/effect-names-its-sync": 1
     },
@@ -405,7 +402,7 @@
     },
     "src/app/shell/Sidebar.tsx": {
       "bycoda/compiler-owns-memo": 14,
-      "bycoda/effect-names-its-sync": 17,
+      "bycoda/effect-names-its-sync": 16,
       "jsx-a11y/no-noninteractive-element-interactions": 1,
       "oxlint/no-restricted-imports": 2
     },
@@ -454,10 +451,6 @@
     "src/app/shell/useSessionSelection.ts": {
       "bycoda/effect-names-its-sync": 1
     },
-    "src/app/shell/useTabStripScroll.ts": {
-      "bycoda/effect-names-its-sync": 3,
-      "bycoda/shared-resize-observer": 1
-    },
     "src/app/workspace/bridges/useAutomationLaunch.ts": {
       "oxlint/no-restricted-properties": 3
     },
@@ -498,9 +491,6 @@
       "bycoda/effect-names-its-sync": 3
     },
     "src/app/workspace/derived/useActiveWorkspaceContext.ts": {
-      "bycoda/effect-names-its-sync": 1
-    },
-    "src/app/workspace/derived/useSessionStatusSets.ts": {
       "bycoda/effect-names-its-sync": 1
     },
     "src/app/workspace/derived/useWorkspaceUsage.ts": {
@@ -1518,7 +1508,7 @@
       "jsx-a11y/no-noninteractive-tabindex": 3
     },
     "src/features/sessions/ui/AgentTranscript.tsx": {
-      "bycoda/compiler-owns-memo": 11,
+      "bycoda/compiler-owns-memo": 10,
       "bycoda/effect-names-its-sync": 7,
       "bycoda/shared-container-appearance": 1,
       "jsx-a11y/no-static-element-interactions": 1
@@ -1597,10 +1587,6 @@
     },
     "src/features/sessions/ui/HandoffMiniCard.tsx": {
       "bycoda/shared-container-appearance": 1
-    },
-    "src/features/sessions/ui/HighlightedCodeBlock.tsx": {
-      "bycoda/compiler-owns-memo": 3,
-      "bycoda/effect-names-its-sync": 1
     },
     "src/features/sessions/ui/InlineVisual.tsx": {
       "bycoda/effect-names-its-sync": 2

@@ -612,19 +612,23 @@ test("opens references from the real session composer in both themes and widths"
     }
   }
 });
-const expectedMessageFill = (node: Locator, opacity: number, opaque = false) =>
+// The user bubble is a foreground tint (opacity * 0.1786 of the content colour); the reply is the
+// surface colour at its own opacity.
+const expectedMessageFill = (node: Locator, opacity: number, opaque = false, user = false) =>
   node.evaluate(
-    (element, { opacity, opaque }) => {
+    (element, { opacity, opaque, user }) => {
       const sample = document.createElement("span");
       sample.style.background = opaque
         ? "var(--ui-chat-message-color)"
-        : `color-mix(in oklab, var(--ui-chat-message-color) ${opacity}%, transparent)`;
+        : user
+          ? `color-mix(in srgb, var(--color-content) ${opacity * 0.1786}%, transparent)`
+          : `color-mix(in oklab, var(--ui-chat-message-color) ${opacity}%, transparent)`;
       element.append(sample);
       const fill = getComputedStyle(sample).backgroundColor;
       sample.remove();
       return fill;
     },
-    { opacity, opaque },
+    { opacity, opaque, user },
   );
 
 for (const light of [true, false])
@@ -728,7 +732,7 @@ for (const light of [true, false])
           await expect(node).toHaveCSS("backdrop-filter", "none");
           await expect(node).toHaveCSS(
             "background-color",
-            await expectedMessageFill(node, opacity, mode === "forced-colors"),
+            await expectedMessageFill(node, opacity, mode === "forced-colors", node === message),
           );
         }
       }
@@ -796,7 +800,10 @@ test("saved chat message appearance reaches the real transcript", async ({ page 
   await expect(root).toHaveAttribute("data-chat-message-color", "neutral");
   await expect(root).toHaveAttribute("data-transcript-surface", "off");
   await expect(reply).toHaveCSS("backdrop-filter", "none");
-  await expect(message).toHaveCSS("background-color", await expectedMessageFill(message, 100));
+  await expect(message).toHaveCSS(
+    "background-color",
+    await expectedMessageFill(message, 100, false, true),
+  );
   await expect(reply).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
 });
 
