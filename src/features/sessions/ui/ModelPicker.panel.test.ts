@@ -232,6 +232,21 @@ describe("model panel", () => {
     expect(panel()).toBeNull();
     expect(document.activeElement).toBe(trigger());
   });
+  it("leaves Escape to an open Access menu that has not taken focus yet", async () => {
+    await render({ harness: "claude", model: "claude:opus-5" });
+    await openPanel();
+    const menu = document.createElement("div");
+    menu.setAttribute("data-access-picker", "");
+    document.body.append(menu);
+    try {
+      await key(window, "Escape");
+      expect(panel()).not.toBeNull();
+    } finally {
+      menu.remove();
+    }
+    await key(window, "Escape");
+    expect(panel()).toBeNull();
+  });
   it("toggles the full panel with the registered shortcut and returns focus", async () => {
     const binding = KEYBINDINGS.find((row) => row.command === "App: Switch Model")!;
     expect(KEYBINDINGS.filter((row) => row.keys === binding.keys)).toHaveLength(1);

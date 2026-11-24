@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Pressing End in a long model list scrolls to the last model in WebKit after the list was filtered or resized.
+- Escape right after opening the Access or Mode menu in the model panel closes only that menu.
 - A Host closing during startup no longer stops with an unhandled error.
 - Transcript activity labels show their separators and ellipses correctly.
 - WebView2 recovery on Windows relaunches the app when the browser process exits.

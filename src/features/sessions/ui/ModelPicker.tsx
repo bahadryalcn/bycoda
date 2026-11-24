@@ -692,6 +692,8 @@ export function ModelPicker({
         return;
       }
       if (!openRef.current || event.key !== "Escape") return;
+      // An open Access or Mode menu owns Escape, even before its list takes focus a frame later.
+      if (document.querySelector("[data-access-picker], [data-composer-mode-menu]")) return;
       if (event.target instanceof Element) {
         if (
           event.target.closest(
