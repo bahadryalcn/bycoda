@@ -9,7 +9,7 @@ import {
 } from "../../../shared/model/host-contracts/assistant";
 
 const mock = vi.hoisted(() => ({
-  environmentId: "room-fixture",
+  environmentId: "room-fixture" as string | null,
   automations: [] as any[],
   snapshot: null as AssistantSnapshot | null,
   request: vi.fn(),
@@ -150,6 +150,100 @@ async function render(props: Parameters<typeof AssistantView>[0] = {}) {
     ),
   );
 }
+it("reuses a cold project read only for its verified Host", async () => {
+  mock.environmentId = null;
+  await render();
+  const reads = () => mock.request.mock.calls.filter(([request]) => request.op === "projects.list");
+  expect(reads()).toHaveLength(1);
+  mock.environmentId = "room-fixture";
+  await render();
+  expect(reads()).toHaveLength(1);
+  mock.environmentId = "replacement-host";
+  await render();
+  expect(reads()).toHaveLength(2);
+});
+
+function memory(id: string, text: string): AssistantSnapshot["memory"][number] {
+  return {
+    id,
+    text,
+    kind: "fact",
+    active: true,
+    version: 1,
+    scope: "all",
+    source: "typed",
+    quote: "",
+    forbiddenTerms: [],
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+async function enterMemoryQuery(query: string) {
+  const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, query);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+it("keeps matching memory rows during typing and discards them on a Host change", async () => {
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementation((input) =>
+    input.op === "memory.search"
+      ? Promise.resolve({
+          entries: [memory("keep", "Shared agenda"), memory("remove", "Shared dates")],
+        })
+      : base(input),
+  );
+  await render({ initialTab: "memory" });
+  vi.useFakeTimers();
+  await enterMemoryQuery("shared");
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  const keep = container.querySelector("#assistant-memory-keep");
+  expect(keep).not.toBeNull();
+  expect(container.querySelector("#assistant-memory-remove")).not.toBeNull();
+  await enterMemoryQuery("SHARED A");
+  expect(container.querySelector("#assistant-memory-keep")).toBe(keep);
+  expect(container.querySelector("#assistant-memory-remove")).toBeNull();
+  mock.environmentId = "replacement-host";
+  await render({ initialTab: "memory" });
+  expect(container.querySelector("#assistant-memory-keep")).toBeNull();
+});
+
+it("rechecks the snapshot Host when cold discovery finishes on another computer", async () => {
+  mock.environmentId = null;
+  let discovered!: (result: { projects: never[] }) => void;
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementationOnce((input) =>
+    input.op === "projects.list"
+      ? new Promise((resolve) => {
+          discovered = resolve;
+        })
+      : base(input),
+  );
+  await render();
+  mock.environmentId = "other-host";
+  await render();
+  await act(async () => discovered({ projects: [] }));
+  expect(mock.request.mock.calls.filter(([input]) => input.op === "projects.list")).toHaveLength(2);
+});
+
+it("limits local memory previews when a broader query also matches the loaded snapshot", async () => {
+  mock.snapshot!.memory = Array.from({ length: 80 }, (_, i) => memory("local" + i, "Common local"));
+  const previous = Array.from({ length: 80 }, (_, i) => memory("remote" + i, "Common remote"));
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementation((input) =>
+    input.op === "memory.search" ? Promise.resolve({ entries: previous }) : base(input),
+  );
+  await render({ initialTab: "memory" });
+  vi.useFakeTimers();
+  await enterMemoryQuery("common remote");
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  await enterMemoryQuery("common");
+  expect(container.querySelectorAll("[id^=assistant-memory-]")).toHaveLength(100);
+});
+
 it("keeps background privacy qualification out of the Room layout", async () => {
   mock.roomPrivacy = { pending: true, error: null };
   await render();

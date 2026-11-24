@@ -654,6 +654,12 @@ Connect another computer using an SSH forward to the loopback port.`);
     configureChildBackend(backend);
     ensureGenericAcpRegistered();
     const release = await acquireHarnessBridge();
+    const { subscribeCodexQuotaObservations } =
+      await import("../src/integrations/harness/providers/codex/codexQuotaObservations");
+    const { observeCodexQuota } = await import("./usage/limits-report");
+    const unsubscribeQuota = subscribeCodexQuotaObservations((accountId, limits) =>
+      observeCodexQuota(store.environmentId, accountId, limits),
+    );
     boot?.phase("providers");
     const { discoverAvailableProviders } = await import("./providers/provider-discovery");
     const available = await discoverAvailableProviders((provider) => backend.resolve(provider));
@@ -818,6 +824,7 @@ Connect another computer using an SSH forward to the loopback port.`);
         await drain("provider backend", () => backend.close());
         unregisterProcessExecution?.();
         await drain("git workers", () => hostGitExec.close());
+        unsubscribeQuota();
         release();
         await drain("database", cleanup);
         // Native/provider handles can outlive close(). All work has now drained;

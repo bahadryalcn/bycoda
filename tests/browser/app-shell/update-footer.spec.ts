@@ -93,11 +93,16 @@ test.beforeEach(async ({ page }) => {
                 currentVersion,
                 version: availableVersion,
                 body: location.search.includes("long-notes")
-                  ? "### Fixes\n\n" +
-                    Array.from(
-                      { length: 12 },
-                      (_, index) => `- Fix ${index + 1} keeps workspace state after reconnecting.`,
-                    ).join("\n")
+                  ? [
+                      "- The model picker keeps its selection when the list changes size.",
+                      "- Escape closes the Access or Mode menu without closing the model panel.",
+                      "- The app recovers when the Host closes during startup.",
+                      "- Activity labels keep their separators and ellipses.",
+                      "- On Windows, the app relaunches if the WebView2 browser process exits.",
+                      "- Reconnecting restores the selected workspace and its open tabs.",
+                      "- Draft messages stay in the composer when switching conversations.",
+                      "- Keyboard focus returns to the sidebar after closing a dialog.",
+                    ].join("\n")
                   : "Fixture release notes",
                 rawJson: {},
               };
@@ -426,7 +431,10 @@ async function openUpdatePrompt(page: Page) {
 test("update dialog shows the start of the notes and a high-contrast download icon", async ({
   page,
 }) => {
-  const capture = "temp/verification/update-dialog";
+  await page.addInitScript((version) => {
+    localStorage.removeItem(`bycoda.githubStarPrompt.dismissed.${version}`);
+  }, appVersion);
+  const capture = "temp/verification/update-dialog-refined";
   mkdirSync(capture, { recursive: true });
   writeFileSync(
     `${capture}/README.md`,
@@ -440,12 +448,15 @@ test("update dialog shows the start of the notes and a high-contrast download ic
         (light) => document.documentElement.classList.toggle("theme-light", light),
         theme === "light",
       );
-      const { dialog } = await openUpdatePrompt(page);
+      const { dialog, github } = await openUpdatePrompt(page);
       await dialog.screenshot({ path: `${capture}/${theme}-${width}.png` });
       const install = dialog.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
       await expect(install).toBeInViewport();
+      await expect(github).toBeInViewport();
       await expect(
-        dialog.getByText("Fix 1 keeps workspace state after reconnecting.", { exact: true }),
+        dialog.getByText("The model picker keeps its selection when the list changes size.", {
+          exact: true,
+        }),
       ).toBeInViewport();
       const icon = install.locator("svg");
       await expect(icon).toBeVisible();

@@ -2,6 +2,7 @@ import type { ComposerReferenceContext } from "./ComposerHighlight";
 import { scanInlineReferences } from "./composerInlineScan";
 import type { Attachment } from "../model/session";
 import type { ScopedMentionKind } from "../model/composerMentionScopes";
+import type { ComposerCitation } from "../model/chatCitation";
 
 export type InlineReferenceKind =
   | "attachment"
@@ -11,6 +12,7 @@ export type InlineReferenceKind =
   | "skill"
   | "group"
   | "quote"
+  | "file-comment"
   | "mcp"
   | ScopedMentionKind;
 export type InlineReference = {
@@ -26,6 +28,7 @@ export type InlineReference = {
 export type InlineReferenceContext = ComposerReferenceContext & {
   attachments: Attachment[];
   citations: number;
+  citationSources?: readonly ComposerCitation[];
   modeEnd: number;
 };
 

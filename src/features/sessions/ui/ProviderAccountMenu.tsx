@@ -108,7 +108,7 @@ export function ProviderAccountMenu({
             const limits = local ? usage.usage[accountUsageKey(local)] : undefined;
             const status = local ? accountStatusWith(limits, usage.now, t, format) : undefined;
             const statusLabel =
-              status?.tone === "unknown"
+              status?.tone === "unknown" && !status.detail
                 ? limits && providerAccountSignedOut(limits)
                   ? t("Not signed in")
                   : t("Usage unavailable")

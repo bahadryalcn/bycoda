@@ -58,6 +58,17 @@ vi.mock("../../../shared/ui/Popover", async () => ({
 }));
 
 import { ModelPicker, preloadModelPicker } from "./ModelPicker";
+const settingsReads = vi.hoisted(() => vi.fn());
+vi.mock("./modelStoreReaders", async (original) => {
+  const actual = await original<typeof import("./modelStoreReaders")>();
+  return {
+    ...actual,
+    menuSettingsAtRevision(...args: Parameters<typeof actual.menuSettingsAtRevision>) {
+      settingsReads();
+      return actual.menuSettingsAtRevision(...args);
+    },
+  };
+});
 import { renameProviderAccount, saveProviderAccount } from "../../providers/model/providerAccounts";
 import { resetDisabledModels, resetHarnessModelOverlays, setHarnessModels } from "../model/models";
 import { KEYBINDINGS, saveKeybindingOverride } from "../../settings/model/settings";
@@ -112,6 +123,14 @@ async function openPanel() {
   await act(async () => trigger().click());
   return panel()!;
 }
+
+it("derives model settings only when their panel is open", async () => {
+  settingsReads.mockClear();
+  await render({ harness: "codex", model: "gpt-5" });
+  expect(settingsReads).not.toHaveBeenCalled();
+  await openPanel();
+  expect(settingsReads).toHaveBeenCalled();
+});
 
 async function click(element: Element) {
   await act(async () => (element as HTMLElement).click());

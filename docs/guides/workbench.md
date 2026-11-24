@@ -7,6 +7,11 @@ or Settings > Workspace for Autosave. Inbox opens with Ctrl+Shift+I (⌘⇧I on
 Mac) and Notes with Ctrl+Shift+L (⌘⇧L on Mac). The menu shows the active
 shortcuts from Settings > Keybindings.
 
+Select a conversation tab above Inbox to open it. Use the title-bar Back button
+to return to your Inbox selection and filters. The open conversation tabs follow
+the workspace project. The project picker next to **Send to agent** sets the
+agent's destination for the current item.
+
 After an app update, open What's new from the expanded sidebar footer. Hover or
 focus the icon to see the installed version, or use the adjacent close button to
 dismiss the notice.
@@ -167,7 +172,7 @@ Collapsed project navigation uses a 56px icon rail with a centered divider.
 Expanded sections share label and count columns; Last
 sessions keeps separate collapse and open actions. The workspace header emphasizes
 the current location and holds only the conversation tools, aligned to the right,
-and **New session** at the far right, with a label when the workspace
+and a filled **New session** button at the far right, with a label when the workspace
 pane is wide and an icon when space is limited. Click the main button to start in
 the current project. Click its arrow or right-click the main button to open the
 project picker directly. Choosing another project opens its **Sessions** list
@@ -223,6 +228,11 @@ projects are not scanned by local GitHub commands. Saved checkout filters still
 apply to their repository; clearing a selection also clears its old checkout aliases.
 Non-Git folders and folders without remotes do not block loading. Operational
 failures keep Retry and expandable details while available items remain visible.
+
+To link a conversation to a GitHub item, right-click its sidebar row and choose
+**Link GitHub issue or PR**. Search the conversation's repository by title or
+number and select a result, or paste a full GitHub URL. Choose **Link** to save.
+
 Searchable filters inside the Inbox filter menu open beside it. They prefer the
 right edge and flip left when space is limited; constrained windows keep the
 choices within the viewport. Escape closes the inner picker first.
@@ -424,6 +434,11 @@ Right-click and choose **Hidden windows** to open or close a specific one.
 Use **File > Quit** or **Quit Bycoda** in the tray to close the whole app,
 including hidden windows.
 
+When the WebView2 browser process exits on Windows, Bycoda tries to restore the
+interface in the existing windows. Local Host, terminal, and agent processes
+stay running during this recovery. If the interface cannot be restored, Bycoda
+asks before restarting when it detects work that the restart would interrupt.
+
 Reload asks for confirmation when this window has running local conversations or
 unsaved file changes. It interrupts this window's local conversations; work on a
 remote Host and work in other windows continue. Cancelling keeps the window open.
@@ -457,9 +472,12 @@ Click **Last sessions** in the project rail to open a combined workspace list. I
 shows conversations active during the last seven days, newest first by default, with
 each project's saved icon, color and background. The sliders menu groups conversations
 by project or state and sorts by newest or oldest activity. Select an active grouping
-again to return to the flat list. This view stays open when a conversation
-is selected. A refresh keeps the previous complete list visible until the new
-history has loaded; an error leaves that list available while retrying.
+again to return to the flat list. Right-click a conversation to pin or rename it,
+regenerate its title, copy identifiers, link a GitHub issue or PR, or schedule a
+reminder for a locally saved conversation. **Select** starts multi-selection across
+projects while keeping the current conversation open. A refresh keeps the previous
+complete list visible until the new history has loaded; an error leaves that list
+available while retrying.
 Explorer and Changes follow that conversation's real project and
 execution worktree. **New session** in Last sessions asks which project should own the
 new conversation. Search or choose a project, including the current one. Cancelling
@@ -504,6 +522,7 @@ Settle stays disabled in a new conversation until it has a submitted message; un
 In a project list, select several conversations and choose **Settle** from the
 right-click menu or the check mark on a selected row. The same action works in
 local and connected remote projects. It leaves already settled conversations in place.
+Pin, Unpin, Settle and Un-settle update the list immediately. If the Host rejects a change, the list returns to its confirmed state and shows the error.
 Conversations idle for three days settle on their own; change or turn this off
 in Settings → Session list → **Auto-settle after**. Pinned, archived, running and
 waiting conversations never settle automatically, and pinned, foldered or

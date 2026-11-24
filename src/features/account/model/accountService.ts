@@ -77,11 +77,14 @@ export function accountDeviceInfo() {
 }
 
 /** What diagnostic reports need to know about the account: whether it exists, the route, the e-mail to redact. */
-export function accountIdentity(): { available: boolean; signedIn: boolean; email: string | null } {
+export function accountIdentity() {
   const state = accountController().getState();
   return {
     available: state.phase !== "unavailable",
     signedIn: state.phase === "signed-in",
     email: state.phase === "signed-in" ? state.context.user.email : null,
+    accountId: state.phase === "signed-in" ? state.context.user.id : null,
   };
 }
+
+export const accountSharingDestination = async () => (await nativeInUse.status()).apiBaseUrl;

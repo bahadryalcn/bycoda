@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ToolPreview } from "../model/session";
 import { FilePreview } from "../../files/public/FilePreview";
 import { Popover } from "../../../shared/ui/Popover";
+import { TOOLTIP_DELAY_MS } from "../../../shared/ui/Tooltip";
 import { X } from "../../../shared/ui/icons";
 
 type Props = {
@@ -102,7 +103,7 @@ export function ToolDiffPreview({
           if (event.pointerType === "touch") return;
           hovered.current = true;
           clearTimer();
-          timer.current = setTimeout(() => setOpen(true), 300);
+          timer.current = setTimeout(() => setOpen(true), TOOLTIP_DELAY_MS);
         }}
         onPointerLeave={() => {
           hovered.current = false;

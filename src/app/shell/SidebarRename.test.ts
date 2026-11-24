@@ -5,8 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatSessionTitle } from "../../features/sessions/model/session";
 import { saveAutoTabGroupLabel } from "../../features/workspace/model/tabGroups";
 import { formatReminderTime } from "../../features/sessions/model/sessionReminders";
-import { HOVER_CARD_CLOSE_MS, HOVER_CARD_OPEN_MS } from "../../shared/ui/Tooltip";
+import { HOVER_CARD_CLOSE_MS, TOOLTIP_DELAY_MS } from "../../shared/ui/Tooltip";
 import { Sidebar } from "./Sidebar";
+import * as orgStore from "../../features/sessions/model/sessionOrganizationStore";
+import * as pinSagas from "../../features/sessions/model/sessionPinSaga";
+import * as pinReceipts from "../../features/sessions/data/sessionPinReceipts";
 import { setSessionDeletionStatus } from "../../features/sessions/model/sessionDeletionStatus";
 import { OPEN_CREWS_PAGE_EVENT } from "../../features/crews/model/crewsPage";
 import { loadSessionFolders } from "../../features/sessions/model/sessionFolders";
@@ -31,6 +34,12 @@ import type { HostProject } from "../../features/connections/model/protocol";
 import { describeActionFailure } from "../../features/connections/public/transientFailure";
 import { registerFailurePolicy } from "../../shared/ui/reportFailure";
 import { toast } from "../../shared/ui/ToastRegion";
+import { searchWorkItemMentions } from "../../features/inbox/model/workItemMentionSearch";
+
+vi.mock("../../features/inbox/model/workItemMentionSearch", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../features/inbox/model/workItemMentionSearch")>()),
+  searchWorkItemMentions: vi.fn(async () => []),
+}));
 vi.mock("../../features/sessions/hooks/useLocalLifecycleMachine", () => ({
   useLocalLifecycleMachine: vi.fn(() => undefined),
 }));
@@ -70,6 +79,99 @@ function card(): HTMLElement {
 function listRow(id: string) {
   return container.querySelector<HTMLElement>(`[data-session-card="${id}"]`)?.closest("li");
 }
+
+function useNativePinStore() {
+  vi.spyOn(orgStore, "NATIVE_SESSION_ORGANIZATION_ACTIVE", "get").mockReturnValue(true);
+  vi.spyOn(orgStore, "cachedSessionOrganization").mockReturnValue({ folders: {}, order: {} });
+  vi.spyOn(orgStore, "subscribeSessionOrganization").mockReturnValue(() => {});
+  vi.spyOn(orgStore, "unresolvedSessionOrganizationGestures").mockResolvedValue([]);
+  vi.spyOn(pinSagas, "listPinSagas").mockResolvedValue([]);
+  vi.spyOn(pinReceipts, "resolvePinTarget").mockImplementation(async (sessionId, cwd) => ({
+    kind: "native",
+    sessionId,
+    cwd,
+  }));
+}
+
+it("pins immediately with no saving notice and restores the row after a rejected write", async () => {
+  useNativePinStore();
+  let finishRead!: () => void;
+  vi.mocked(orgStore.unresolvedSessionOrganizationGestures).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishRead = () => resolve([]);
+      }),
+  );
+  let reject!: (error: Error) => void;
+  props.onPreparePin = () =>
+    new Promise((_, no) => {
+      reject = no;
+    });
+  props.onConfirmedPin = vi.fn();
+  props.onPinSession = vi.fn();
+  await act(async () => render());
+  const pin = () => card().querySelector<HTMLButtonElement>("[aria-pressed][data-action-inline]")!;
+  await act(async () => pin().click());
+  expect(document.body.textContent).not.toContain("Saving…");
+  expect(listRow("session-1")?.dataset.sessionSection).toBe("pinned");
+  expect(reject).toBeUndefined();
+  await act(async () => finishRead());
+  await act(async () => reject(new Error("Pin write rejected")));
+  expect(listRow("session-1")?.dataset.sessionSection).not.toBe("pinned");
+  expect(document.body.textContent).toContain("Pin write rejected");
+});
+
+it("shows a quick unpin while the first pin is being saved and commits both in order", async () => {
+  useNativePinStore();
+  let resume!: () => void;
+  props.onPreparePin = vi
+    .fn(async () => {})
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resume = resolve;
+        }),
+    );
+  props.onPinSession = vi.fn();
+  let saved = false;
+  const writes: boolean[] = [];
+  let prepared!: pinSagas.PinSaga;
+  vi.spyOn(pinReceipts, "pinState").mockImplementation(async () => ({
+    state: "current",
+    version: writes.length,
+    pinned: saved,
+  }));
+  vi.spyOn(pinSagas, "preparePinSaga").mockImplementation(async (saga) => {
+    prepared = saga;
+    return "applied";
+  });
+  vi.spyOn(pinSagas, "resumePinSaga").mockImplementation(async () => {
+    saved = prepared.steps[0].desiredPinned;
+    writes.push(saved);
+    return {
+      state: "applied",
+      saga: { ...prepared, steps: prepared.steps.map((step) => ({ ...step, state: "applied" })) },
+    };
+  });
+  props.onConfirmedPin = async (id, _cwd, pinned) => {
+    props.sessions = props.sessions.map((session) =>
+      session.id === id ? { ...session, pinned } : session,
+    );
+    render();
+  };
+  await act(async () => render());
+  const toggle = () =>
+    card().querySelector<HTMLButtonElement>("[aria-pressed][data-action-inline]")!.click();
+  await act(async () => toggle());
+  expect(listRow("session-1")?.dataset.sessionSection).toBe("pinned");
+  await act(async () => toggle());
+  expect(listRow("session-1")?.dataset.sessionSection).not.toBe("pinned");
+  expect(writes).toEqual([]);
+  await act(async () => resume());
+  expect(writes).toEqual([true, false]);
+  expect(listRow("session-1")?.dataset.sessionSection).not.toBe("pinned");
+  expect(document.body.textContent).not.toContain("Saving…");
+});
 
 /** A group header by its name; the name rides in the shared tooltip, not a native title. */
 function folderButton(name: string, scope: ParentNode = container): HTMLButtonElement {
@@ -1570,7 +1672,7 @@ describe("sidebar orchestration card", () => {
     // The card is the shared HoverCard: it opens after its rest delay on pointer enter.
     await act(async () => {
       trigger.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, HOVER_CARD_OPEN_MS + 100));
+      await new Promise((resolve) => setTimeout(resolve, TOOLTIP_DELAY_MS + 100));
     });
 
     const tooltip = document.querySelector<HTMLElement>("[data-hover-card]")!;
@@ -1718,9 +1820,7 @@ describe("sidebar session GitHub links", () => {
     )!;
     expect(link).toBeDefined();
     act(() => link.click());
-    return document.querySelector<HTMLInputElement>(
-      'input[aria-label="GitHub issue or pull request URL"]',
-    )!;
+    return document.querySelector<HTMLInputElement>('[role="dialog"] input[role="combobox"]')!;
   }
 
   it("manually links a session from its context menu", () => {
@@ -1740,6 +1840,51 @@ describe("sidebar session GitHub links", () => {
       url: "https://github.com/acme/widgets/issues/27",
     });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("searches the conversation project and links the selected GitHub pull request", async () => {
+    props.onSetSessionLinkedWorkItem = vi.fn();
+    vi.mocked(searchWorkItemMentions).mockResolvedValueOnce([
+      {
+        provider: "github",
+        kind: "pr",
+        repo: "acme/widgets",
+        number: 27,
+        title: "Build Docker images",
+        url: "https://github.com/acme/widgets/pull/27",
+        state: "open",
+        updatedAt: "",
+        labels: [],
+        assignees: [],
+        draft: false,
+      },
+    ]);
+    act(() => render());
+    const input = openLinkDialog();
+    typeTitle(input, "#27");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 320));
+    });
+    expect(searchWorkItemMentions).toHaveBeenCalledWith(
+      props.sessions[0]!.cwd,
+      ["github"],
+      "#27",
+      expect.any(AbortSignal),
+    );
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+      (row) => row.textContent?.includes("Build Docker images"),
+    )!;
+    act(() => option.click());
+    const submit = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Link",
+    )!;
+    act(() => submit.click());
+    expect(props.onSetSessionLinkedWorkItem).toHaveBeenCalledWith("session-1", {
+      kind: "pr",
+      repo: "acme/widgets",
+      number: 27,
+      url: "https://github.com/acme/widgets/pull/27",
+    });
   });
 
   it("keeps the dialog open when the URL is not a GitHub work item", () => {
@@ -1779,9 +1924,7 @@ describe("sidebar session GitHub links", () => {
     act(() => edit.click());
 
     expect(
-      document.querySelector<HTMLInputElement>(
-        'input[aria-label="GitHub issue or pull request URL"]',
-      )?.value,
+      document.querySelector<HTMLInputElement>('[role="dialog"] input[role="combobox"]')?.value,
     ).toBe("https://github.com/acme/widgets/pull/42");
     const remove = Array.from(document.querySelectorAll("button")).find(
       (button) => button.textContent === "Remove link",
@@ -2706,6 +2849,32 @@ it.each([
     expect(show).toHaveBeenCalledTimes(failure ? 1 : 0);
   }
   expect(update).toHaveBeenCalledTimes(1);
+  if (!failure) {
+    act(() =>
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+    );
+    const rename = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === "RenameF2",
+    );
+    await act(async () => rename!.click());
+    const input = row.querySelector<HTMLInputElement>("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Renamed on the owning Host",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    expect(update).toHaveBeenLastCalledWith("remote-session", {
+      projectId: "host-project",
+      authorityGeneration: 3,
+      title: "Renamed on the owning Host",
+    });
+    expect(props.onRenameSession).not.toHaveBeenCalled();
+  }
 });
 
 it("settles a Last sessions row on its remote Host and removes it from the active list", async () => {
@@ -2791,6 +2960,7 @@ it("settles and un-settles a remote project row through its Host", async () => {
     machinesLoaded: true,
     failed: false,
     dataState: { phase: "ready" },
+    confirmPin: vi.fn(),
     refresh: vi.fn(),
   });
   const client = lifecycleClient.sessionLifecycleClient(machine.id);
@@ -3297,7 +3467,7 @@ it.each(["standard", "compact", "detailed"] as const)(
         expect.arrayContaining(["Settle", "Archive", "Delete"]),
       );
       await act(async () => items.find((item) => item.textContent === "Settle")!.click());
-      expect(settle).toHaveBeenCalledWith("foreign-session");
+      expect(settle).toHaveBeenCalledWith("foreign-session", false);
       expect(container.querySelector('[data-session-card="foreign-session"]')).toBeNull();
       expect(props.onArchiveSession).not.toHaveBeenCalled();
       expect(props.onDeleteSession).not.toHaveBeenCalled();

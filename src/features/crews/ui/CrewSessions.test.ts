@@ -101,6 +101,35 @@ it("retains the last Crew work rows during a shared connection interruption", as
   expect(container.textContent).not.toContain("Not connected");
 });
 
+it("shows Crew work only while the project has unfinished runs", async () => {
+  const definition = { id: "definition", name: "Review team" };
+  const run = {
+    id: "run",
+    title: "Review connection recovery",
+    status: "active",
+    updatedAt: 1,
+    definition,
+    tasks: [],
+    messages: [],
+    assignments: [],
+  };
+  const stateWithRuns = (runs: (typeof run)[]) => ({
+    data: { definitions: [definition], runs } as unknown as NonNullable<CrewState["data"]>,
+  });
+  await render(stateWithRuns([]));
+  expect(container.querySelector("section")).toBeNull();
+
+  await render(stateWithRuns([run]));
+  expect(container.textContent).toContain("Manage");
+  expect(container.textContent).toContain(run.title);
+
+  await render(stateWithRuns([{ ...run, status: "paused" }]));
+  expect(container.textContent).toContain("Manage");
+
+  await render(stateWithRuns([{ ...run, status: "finished" }]));
+  expect(container.querySelector("section")).toBeNull();
+});
+
 it("keeps a service failure and its local retry even with an empty cached collection", async () => {
   const data = { definitions: [], runs: [] } as unknown as NonNullable<CrewState["data"]>;
   const refetch = await render({

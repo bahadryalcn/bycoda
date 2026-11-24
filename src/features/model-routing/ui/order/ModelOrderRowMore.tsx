@@ -68,13 +68,22 @@ export function ModelOrderRowMore({
           onDismiss={() => setOpen(false)}
           className="flex flex-col gap-3 p-3"
         >
-          {account.supported ? (
+          {account.supported && account.known && account.accounts.length > 0 ? (
             <Select
               label={t("Account")}
               value={account.id}
               options={[
                 ...(!account.account
-                  ? [{ value: account.id, label: t("Unavailable account"), disabled: true }]
+                  ? [
+                      {
+                        value: account.id,
+                        label:
+                          account.id === "default"
+                            ? t("Default account")
+                            : t("Unavailable account"),
+                        disabled: true,
+                      },
+                    ]
                   : []),
                 ...account.accounts.map((candidate) => ({
                   value: candidate.id,

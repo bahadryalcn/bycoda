@@ -96,9 +96,10 @@ export function useRailNavigation(d: RailNavigationDeps) {
   const notesEnabled = loadNotesEnabled();
   const valid = (visit: Visit) =>
     (!toolWindow || visit.view !== "workspace") &&
-    (toolWindow || openTabIds.has(visit.tabId)) &&
+    (toolWindow || visit.view === "inbox" || openTabIds.has(visit.tabId)) &&
     (visit.view !== "notes" || notesEnabled);
   const history = useRef({ back: [] as Visit[], current, forward: [] as Visit[] });
+  const selectedWorkspaceTab = useRef(false);
   const [navigation, setNavigation] = useState({ canBack: false, canForward: false });
   const updateNavigation = () => {
     const canBack = history.current.back.some(valid);
@@ -112,8 +113,11 @@ export function useRailNavigation(d: RailNavigationDeps) {
     const back = h.back.filter(valid);
     const forward = h.forward.filter(valid);
     const previous = back[back.length - 1];
+    const explicitTabVisit = selectedWorkspaceTab.current;
+    selectedWorkspaceTab.current = false;
     if (
       !sameVisit(h.current, current) &&
+      !explicitTabVisit &&
       h.current.view !== "workspace" &&
       previous &&
       sameVisit(previous, current) &&
@@ -168,11 +172,16 @@ export function useRailNavigation(d: RailNavigationDeps) {
   const step = (direction: "back" | "forward") => {
     const h = history.current;
     const entries = h[direction].filter(valid);
-    const next = entries.pop();
-    if (!next) {
+    const target = entries.pop();
+    if (!target) {
       updateNavigation();
       return;
     }
+    // Inbox can outlive the conversation that happened to be selected underneath it.
+    const next =
+      target.view === "inbox" && !toolWindow && !openTabIds.has(target.tabId)
+        ? { ...target, tabId: d.activeTabId }
+        : target;
     history.current =
       direction === "back"
         ? {
@@ -188,15 +197,22 @@ export function useRailNavigation(d: RailNavigationDeps) {
     restore(next, h.current);
     updateNavigation();
   };
+  const onShowWorkspace = () => {
+    if (d.toolWindow || view === "workspace") return;
+    restore({ view: "workspace", tabId: current.tabId, cwd: d.projectCwd }, current);
+  };
   return {
     navigation,
     surfaceForward: { canForward: navigation.canForward },
     onRailBack: () => step("back"),
     onRailForward: () => step("forward"),
     /** Closes every tool page and shows the current tab; the layout effect records the visit. */
-    onShowWorkspace: () => {
-      if (d.toolWindow || view === "workspace") return;
-      restore({ view: "workspace", tabId: current.tabId, cwd: d.projectCwd }, current);
+    onShowWorkspace,
+    onSelectWorkspaceTab: (id: string) => {
+      if (d.toolWindow || !openTabIds.has(id)) return;
+      selectedWorkspaceTab.current = view !== "workspace";
+      onShowWorkspace();
+      d.activateTab(id);
     },
   };
 }

@@ -269,6 +269,11 @@ function Fixture() {
           status="idle"
           pending={false}
           onSelectSession={setSelected}
+          onSetSessionLinkedWorkItem={
+            new URLSearchParams(location.search).has("linkGithub")
+              ? (_id, item) => setSelected(item?.url ?? "")
+              : undefined
+          }
           onOpenFile={async () => {}}
           tab={tab}
           onTabChange={setTab}

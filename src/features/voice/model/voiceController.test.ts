@@ -422,6 +422,19 @@ it("prefers the actual captured session for project desktop input and never foll
   expect(mock.call.mock.calls[0][0]).toEqual({ cwd: "/a", sessionId: "a", threadId: "thread" });
 });
 
+it("discovers both Room and focused-session tools from the captured project scope", async () => {
+  const f = setup();
+  f.ports.getScope = () => "project";
+  f.ports.getThreadId = () => "thread";
+  f.controller.captureTurn();
+  f.state.active = "b";
+  await f.controller.execute("app_tools_list", { category: "conversation:desktop" });
+  expect(mock.discover).toHaveBeenCalledExactlyOnceWith(
+    { cwd: "/a", sessionId: "a", threadId: "thread" },
+    { category: "conversation:desktop" },
+  );
+});
+
 it("uses an independent management session and preserves queued receipts", async () => {
   const { controller, source } = setup();
   const args = {

@@ -143,13 +143,22 @@ export function writeToolsDraftPart<K extends keyof ToolsDraftTransfer>(
   const id = key(scope);
   snapshots.set(id, { ...snapshots.get(id), [domain]: cloneDraftPart(domain, value) });
 }
-// The logs buffer is replaced immutably (mergeRuntimeLogs, clearRuntimeLogs), so the store keeps it
-// by reference instead of deep-cloning up to MAX_RETAINED_RUNTIME_LOGS entries on every write.
-// Reads and restores still clone the whole snapshot, so no other window shares the buffer.
 function cloneDraftPart<K extends keyof ToolsDraftTransfer>(
   domain: K,
   value: ToolsDraftTransfer[K],
 ): ToolsDraftTransfer[K] {
+  if (domain === "device" && value) {
+    const { annotations, ...rest } = value as NonNullable<ToolsDraftTransfer["device"]>;
+    const drafts = Object.entries(annotations).map(([id, { frame, ...annotation }]) => {
+      // DeviceFrame holds only strings. A fresh frame isolates edits while sharing its immutable bytes.
+      return [id, { ...structuredClone(annotation), frame: { ...frame } }] as const;
+    });
+    return {
+      ...structuredClone(rest),
+      annotations: Object.fromEntries(drafts),
+    } as ToolsDraftTransfer[K];
+  }
+  // The immutable logs buffer is shared on writes. Transfers still clone the whole snapshot.
   if (domain !== "logs" || !value) return structuredClone(value);
   const { buffer, ...rest } = value as NonNullable<ToolsDraftTransfer["logs"]>;
   return { ...structuredClone(rest), buffer } as ToolsDraftTransfer[K];

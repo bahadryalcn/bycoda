@@ -12,7 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { RotateCcw, ListFilter, X } from "../../../shared/ui/icons";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { errorText } from "../../../shared/lib/errors";
@@ -399,7 +399,7 @@ export function KeybindingShortcutEditor({
   );
 }
 
-function KeybindingSettingsRow({
+const KeybindingSettingsRow = memo(function KeybindingSettingsRow({
   row,
   override,
   modified,
@@ -472,7 +472,7 @@ function KeybindingSettingsRow({
       )}
     </Row>
   );
-}
+});
 
 /** Rows change with the overrides and with the Quick composer's own stored state. */
 function subscribeKeybindingRows(onChange: () => void) {
@@ -532,7 +532,11 @@ export function KeybindingsPage() {
     setStatus("all");
   };
 
-  const save = async (command: string, override: KeybindingOverride) => {
+  const refreshOverrides = useCallback(
+    () => setOverrides({ ...loadKeybindingOverrides() }),
+    [setOverrides],
+  );
+  const save = useCallback(async (command: string, override: KeybindingOverride) => {
     if (pendingSave.current) throw new Error(t("Saving…"));
     pendingSave.current = true;
     setSaving(true);
@@ -580,7 +584,7 @@ export function KeybindingsPage() {
       pendingSave.current = false;
       setSaving(false);
     }
-  };
+  }, []);
 
   return (
     <div className={styles.page}>
@@ -749,7 +753,7 @@ export function KeybindingsPage() {
                     modified={isModified(row.command)}
                     saving={saving}
                     onSave={save}
-                    onSaved={() => setOverrides({ ...loadKeybindingOverrides() })}
+                    onSaved={refreshOverrides}
                   />
                 ))}
               </Group>

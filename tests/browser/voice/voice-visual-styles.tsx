@@ -3,6 +3,18 @@ import { VoiceLauncher } from "../../../src/features/voice/ui/companion/VoiceLau
 import { VoiceToolActivityPanel } from "../../../src/features/voice/ui/VoiceToolActivityPanel";
 import { VoiceChatTranscript } from "../../../src/features/voice/ui/companion/VoiceChatTranscript";
 import { createRoot } from "react-dom/client";
+import {
+  setHarnessAvailability,
+  markHarnessAvailabilityProbed,
+} from "../../../src/integrations/harness/core/availabilityState";
+import { useVoiceAppBridge } from "../../../src/app/workspace/bridges/useVoiceAppBridge";
+import { acceptQuickLaunch } from "../../../src/app/model/quickLaunchSession";
+import { addSessionDraft } from "../../../src/app/workspace/sessions/useSessionDraftActions";
+import {
+  getSessions,
+  setSessions,
+  useLiveSessions,
+} from "../../../src/features/sessions/model/sessionsStore";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button } from "../../../src/shared/ui/Button";
@@ -34,6 +46,22 @@ import { leaf, splitPane } from "../../../src/features/workspace/model/layout";
 import { flushHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
 import "../../../src/styles/index.css";
 const params = new URLSearchParams(location.search);
+if (params.has("session-form")) {
+  markHarnessAvailabilityProbed();
+  setHarnessAvailability({
+    codex: true,
+    claude: false,
+    cursor: false,
+    grok: false,
+    opencode: false,
+    pi: false,
+    omp: false,
+    fx: false,
+    hermes: false,
+    antigravity: false,
+    acp: false,
+  });
+}
 const wakeQuickSettings = params.has("wake-quick-settings");
 const PaneTree = params.has("session-outlet")
   ? (await import("../../../src/features/workspace/ui/PaneTree")).PaneTree
@@ -242,7 +270,65 @@ const workspace =
         },
       }
     : undefined);
-function FixtureCompanion() {
+/** Actual desktop bridge and session store with an isolated tab host. */
+function SessionDraftFixture() {
+  const [selectedProject, setSelectedProject] = useState(session.cwd);
+  const sessions = useLiveSessions();
+  const [selectedTab, setSelectedTab] = useState("");
+  const bridge = useVoiceAppBridge({
+    projects: [{ path: session.cwd }, { path: "/fixture-next" }],
+    sessions,
+    projectPath: selectedProject,
+    activeId: session.id,
+    appendEmpty: () => {
+      throw new Error("Expected a draft launch");
+    },
+    launch: (launch, id) =>
+      acceptQuickLaunch(launch, id, {
+        getSessions,
+        updateSessions: setSessions,
+        setProjectCwd: setSelectedProject,
+        appendTab: () => {},
+        setRecents: () => {},
+        revealTab: setSelectedTab,
+        submit: () => {
+          throw new Error("Draft must not be submitted");
+        },
+        saveDraft: (target, text, attachments, requestId) => {
+          setSessions((all) =>
+            all.map((item) =>
+              item.id === target ? addSessionDraft(item, text, attachments, requestId) : item,
+            ),
+          );
+          return true;
+        },
+      }),
+  });
+  return (
+    <>
+      <FixtureCompanion draftWorkspace={bridge.workspace} />
+      <output data-fixture-selected-tab={selectedTab} data-fixture-project={selectedProject}>
+        {sessions
+          .filter((item) => item.cwd === selectedProject)
+          .flatMap((item) =>
+            item.blocks
+              .filter((block) => block.draft)
+              .map((block) => (
+                <span key={item.id} data-fixture-session={item.id}>
+                  {block.text}
+                </span>
+              )),
+          )}
+      </output>
+    </>
+  );
+}
+
+function FixtureCompanion({
+  draftWorkspace,
+}: {
+  draftWorkspace?: ReturnType<typeof useVoiceAppBridge>["workspace"];
+}) {
   const [next, setNext] = useState(false);
   const [outlet, setOutlet] = useState<VoiceWorkspaceOutlet>();
   const [outletLayout] = useState(() =>
@@ -378,7 +464,7 @@ function FixtureCompanion() {
         onStop={() => {
           fixtureVoice.stops++;
         }}
-        workspace={PaneTree ? sessionWorkspace : workspace}
+        workspace={draftWorkspace ?? (PaneTree ? sessionWorkspace : workspace)}
         onWorkspaceOutlet={PaneTree ? setOutlet : undefined}
         projects={
           global
@@ -472,6 +558,8 @@ createRoot(document.getElementById("root")!).render(
     </main>
   ) : params.has("setup-wizard") ? (
     <AssistantSetup voice onClose={() => {}} />
+  ) : params.has("session-form") ? (
+    <SessionDraftFixture />
   ) : (
     <FixtureCompanion />
   ),

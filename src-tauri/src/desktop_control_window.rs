@@ -8,10 +8,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::time::{Duration, Instant};
-use tauri::{
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
-};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
 
 pub const LABEL: &str = "desktop-control-indicator";
 const EVENT: &str = "desktop_control_indicator_state";
@@ -240,25 +237,21 @@ fn create(app: &AppHandle) -> Result<WebviewWindow, String> {
     if let Some(window) = app.get_webview_window(LABEL) {
         return Ok(window);
     }
-    let window = crate::webview_args::inherit_main_browser_args(
-        app,
-        WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("desktop-control.html".into())),
-    )
-    .title(&app.package_info().name)
-    .inner_size(640.0, 64.0)
-    .resizable(false)
-    .maximizable(false)
-    .minimizable(false)
-    .decorations(false)
-    .transparent(true)
-    .shadow(false)
-    .always_on_top(true)
-    .visible_on_all_workspaces(true)
-    .skip_taskbar(true)
-    .visible(false)
-    .focused(false)
-    .build()
-    .map_err(|error| error.to_string())?;
+    let window = crate::webview_args::new_app_window(app, LABEL, "desktop-control.html")
+        .title(&app.package_info().name)
+        .inner_size(640.0, 64.0)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .decorations(false)
+        .shadow(false)
+        .always_on_top(true)
+        .visible_on_all_workspaces(true)
+        .skip_taskbar(true)
+        .visible(false)
+        .focused(false)
+        .build()
+        .map_err(|error| error.to_string())?;
     // Closing a safety indicator cannot hide an active or uncertain operation.
     let owner = app.clone();
     window.on_window_event(move |event| {

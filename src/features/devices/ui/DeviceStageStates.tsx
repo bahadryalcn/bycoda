@@ -225,8 +225,9 @@ export function DeviceWaitingState({
   onSetup: (anchor: HTMLElement) => void;
   onSelect: (id: string, booted: boolean) => void;
 }) {
+  // With no observed devices, the header already shows the discovery progress.
   if (loadingDevices)
-    return (
+    return devices.length ? (
       <Text
         as="div"
         size="caption"
@@ -237,7 +238,7 @@ export function DeviceWaitingState({
       >
         <LoadingText>{t("Loading devices…")}</LoadingText>
       </Text>
-    );
+    ) : null;
   if (device && !device.booted)
     return (
       <Text

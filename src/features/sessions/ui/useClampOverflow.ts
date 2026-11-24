@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { observeResize } from "../../../shared/lib/observeResize";
 
 /**
@@ -20,13 +20,30 @@ export function useClampOverflow(
   layoutKey?: number,
 ): boolean {
   const [overflows, setOverflows] = useState(false);
+  const measured = useRef<{ element: HTMLElement; content?: string; layoutKey?: number } | null>(
+    null,
+  );
   useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || !enabled) return;
+    if (!el || !enabled || expanded) {
+      measured.current = null;
+      return;
+    }
     const measure = () => {
-      if (!expanded) setOverflows(el.scrollHeight > el.clientHeight + 1);
+      setOverflows(el.scrollHeight > el.clientHeight + 1);
     };
-    measure();
+    // React reconnects layout effects when a warm tab becomes visible. Keep its last
+    // result until the observer's first delivery checks the new layout.
+    const last = measured.current;
+    if (
+      last?.element !== el ||
+      last.content !== content ||
+      last.layoutKey !== layoutKey ||
+      typeof ResizeObserver === "undefined"
+    ) {
+      measure();
+      measured.current = { element: el, content, layoutKey };
+    }
     return observeResize(el, measure);
   }, [ref, enabled, expanded, content, layoutKey]);
   return enabled && overflows;

@@ -174,6 +174,49 @@ it("lists each computer's devices with this desktop marked and revoke only for o
   expect(api.enable).not.toHaveBeenCalled();
 });
 
+it("omits built-in desktop credentials and keeps access between computers visible", async () => {
+  const legacySync: PairedDevice = { ...desktop, name: "This computer (local sync)" };
+  devices.loadPairedDevices.mockImplementation(async (machine) => ({
+    state: "ready",
+    devices:
+      machine === local
+        ? [
+            legacySync,
+            { id: "mac-client", name: "Home Mac desktop", kind: "desktop", isCurrent: false },
+          ]
+        : [
+            { ...desktop, name: "Windows desktop" },
+            { ...legacySync, id: "legacy-mac", isCurrent: false },
+            {
+              ...desktop,
+              id: "local-mac",
+              name: "Built-in Mac desktop",
+              isCurrent: false,
+              isLocalDesktop: true,
+            },
+          ],
+    truncated: false,
+  }));
+
+  await render();
+
+  expect(container.textContent).not.toContain(legacySync.name);
+  expect(container.textContent).not.toContain("Built-in Mac desktop");
+  expect(container.textContent).toContain("Home Mac desktop");
+  expect(container.textContent).toContain("Windows desktop");
+  expect(container.textContent).toContain("Local sync");
+  expect(container.textContent?.match(/This desktop/g)).toHaveLength(1);
+  expect(buttons().filter((button) => button.textContent?.trim() === "Revoke")).toHaveLength(2);
+});
+
+it("uses quiet text for the last activity timestamp", async () => {
+  vi.spyOn(clock, "wallClockNow").mockReturnValue(phone.lastSeenAt!);
+  await render();
+  expect(container.querySelector('.settings-description[data-tone="muted"]')?.textContent).toBe(
+    "Active now",
+  );
+});
+
 it("handles a burst of refresh clicks with one inventory read and one read per Host, then accepts another refresh", async () => {
   const onRefresh = vi.fn();
   await render({ onRefresh });

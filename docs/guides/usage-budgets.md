@@ -54,6 +54,11 @@ Limits restored at launch are not switched. Conversations running through a Host
 the setting saved on that computer. Tasks, goals, crews, stewards, automations and
 Assistant work keep their own limit handling and never switch through this setting.
 
+The model picker, workspace footer and Usage & limits use the same account
+reading. If a refresh fails, the last measured percentage stays visible with its
+age. A new account or a reading that has passed its reset may be unavailable
+until the provider answers. Connected mobile clients use the same Host cache.
+
 Grok shows the signed-in Grok Build CLI's plan quota in this view and the workspace
 footer. The used/remaining preference applies to its provider-reported credit usage
 percentage; the quota window and reset come from its current billing period.

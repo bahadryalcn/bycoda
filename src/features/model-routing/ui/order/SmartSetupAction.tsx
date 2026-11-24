@@ -6,7 +6,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { Popover } from "../../../../shared/ui/Popover";
 import { Text } from "../../../../shared/ui/Text";
 import { toast } from "../../../../shared/ui/ToastRegion";
-import { LOCAL_MODEL_SOURCE, useModelSource } from "../../../sessions/public/modelSource";
+import { useModelSource } from "../../../sessions/public/modelSource";
 import type { OrderDraft } from "../../model/modelRoutingDraft";
 import { refreshLocalLiveCatalogFacts } from "../../model/liveCatalogFacts";
 import { applySmartSetup, rulePlan, setupCandidates } from "../../model/smartSetup";
@@ -44,7 +44,7 @@ export function SmartSetupAction({
   const names = {
     smartest: t("Smartest"),
     balanced: t("Balanced"),
-    fast: t("Fast"),
+    light: t("Low"),
     work: t("Work"),
     personal: t("Personal"),
   };
@@ -61,11 +61,12 @@ export function SmartSetupAction({
     return applied;
   }
   async function candidatesForSetup() {
+    if (source.id) return setupCandidates(source);
     const [, catalog] = await Promise.all([
       refreshLocalLiveCatalogFacts(3000),
       localSetupCatalog((machineId) => client.fetchQuery(setupCatalogQuery(machineId))),
     ]);
-    return setupCandidates(source.id ? LOCAL_MODEL_SOURCE : source, catalog);
+    return setupCandidates(source, catalog);
   }
   async function runRules() {
     const controller = new AbortController();
@@ -178,7 +179,7 @@ export function SmartSetupAction({
           </Button>
           <Text as="p" size="secondary" tone="secondary">
             {t(
-              "Adds models used by groups and the best fallback in each tier for every account. Strong models at a moderate price come first, then cheaper capable models and top-priced models. Groups set reasoning effort for their jobs, up to High. Also sets subagents and the advisor.",
+              "Sets model order, job groups and agent defaults in a draft. Uses standard speed. Review the draft before saving.",
             )}
           </Text>
           <Text as="p" size="caption" tone="secondary">

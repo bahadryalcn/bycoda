@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ServerSnippets } from "./ServerSnippets";
 import { loadSshSnippets, saveSshSnippet } from "../model/sshSnippets";
 import { copyText } from "../../../platform/tauri/clipboard";
+vi.mock("../model/sshSnippets", { spy: true });
 vi.mock("../../../platform/tauri/clipboard", () => ({
   copyText: vi.fn().mockResolvedValue(undefined),
 }));
@@ -118,4 +119,23 @@ it.each([
   );
   expect(container.querySelector("textarea")?.value).toBe(expected);
   expect(loadSshSnippets("a")).toEqual([]);
+});
+
+it("loads the saved list only when browsing, including after saving a terminal selection", async () => {
+  vi.mocked(loadSshSnippets).mockClear();
+  await act(async () =>
+    root.render(createElement(ServerSnippets, { serverId: "a", initialCommand: "pwd" })),
+  );
+  await act(async () => {
+    saveSshSnippet({ serverId: "b", command: "git status" });
+    container
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+  });
+  expect(container.textContent).toContain("Saved");
+  expect(loadSshSnippets).not.toHaveBeenCalled();
+
+  await act(async () => root.render(createElement(ServerSnippets, { serverId: "a" })));
+  expect(container.querySelector("ul")?.textContent).toContain("pwd");
+  expect(loadSshSnippets).toHaveBeenCalledExactlyOnceWith("a");
 });

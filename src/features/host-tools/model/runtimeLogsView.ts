@@ -57,6 +57,7 @@ export class RuntimeLogsView {
     ]);
     if (this.state && buffer === this.buffer && signature === this.signature) return this.state;
     const delta = signature === this.signature ? this.continuation(buffer) : undefined;
+    const groupsBeforeReset = delta ? undefined : this.groups;
     if (!delta) this.reset();
     this.signature = signature;
     this.buffer = buffer;
@@ -98,7 +99,12 @@ export class RuntimeLogsView {
           this.groups.delete(id);
           return [];
         }
-        const group = createRuntimeLogGroup(id, entries);
+        const previous = groupsBeforeReset?.get(id);
+        const group =
+          previous?.entries.length === entries.length &&
+          entries.every((entry, index) => entry === previous.entries[index])
+            ? previous
+            : createRuntimeLogGroup(id, entries);
         this.groups.set(id, group);
         return [group];
       });

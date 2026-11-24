@@ -183,6 +183,11 @@
 .panel[data-full-screen]:has(> .workDrawer:not([hidden])) {
   grid-template-columns: minmax(18rem, 1fr) clamp(18rem, 40vw, 32rem);
 }
+@media (width >= 42rem) {
+  .panel[data-full-screen]:has(> .workDrawer:not([hidden]) > .liveWorkspace[data-expanded]) {
+    grid-template-columns: 18rem minmax(0, 1fr);
+  }
+}
 .panel[data-full-screen]:has(> .chatDrawer:not([hidden])) {
   grid-template-columns: minmax(18rem, 1fr) clamp(16rem, 32vw, 28rem);
 }
@@ -257,6 +262,9 @@
   padding: clamp(var(--space-4), 2.5vw, var(--space-8));
 }
 @media (width < 42rem) {
+  .liveWorkspace .resultsSizeToggle {
+    display: none;
+  }
   .panel[data-full-screen]:has(> :is(.workDrawer, .chatDrawer):not([hidden])) {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -317,6 +325,13 @@
 .actions {
   padding: 8px 10px;
   min-width: 0;
+}
+.actions[data-scope-dock] {
+  display: grid;
+  gap: var(--space-2);
+}
+.actions[data-scope-dock] > :first-child {
+  justify-self: center;
 }
 .actions[hidden] {
   display: none;

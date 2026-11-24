@@ -786,7 +786,7 @@ function ChangedFiles({
   pending: string | null;
   setPending: (value: string | null) => void;
   /** Shows the index an action is about to produce, ahead of the reload. */
-  showOptimistic: (next: GitDiffIndex) => void;
+  showOptimistic: ReturnType<typeof useDiffIndex>["showOptimistic"];
   /** Filled with the handlers the header menu calls into. */
   actionsRef: RefObject<ChangesActions | null>;
   onOpenFile: (path: string, kind: GitFileDiffKind, pin?: boolean) => void;
@@ -1177,10 +1177,9 @@ function ChangedFiles({
         const text = message.trim() || (await gitHeadMessage(cwd));
         await gitCommit(cwd, text, amending, options?.signoff ?? false);
         committed = true;
-        // The commit is made: its files leave the list now, not after the push
-        // and the reload that follow.
+        // Update the list and its tab totals together once the commit succeeds.
         const committedIndex = index && applyCommit(index, stageAll, amending);
-        if (committedIndex) showOptimistic(committedIndex);
+        if (committedIndex) showOptimistic(committedIndex, { publishStats: true });
         clearDraft();
         if (push || createPr) {
           setPending("Pushing…");

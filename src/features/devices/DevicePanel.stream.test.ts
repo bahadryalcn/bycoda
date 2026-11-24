@@ -183,6 +183,46 @@ it("falls back to still captures when the Host cannot stream this device", async
   expect(vi.mocked(api.capture).mock.calls.length).toBeGreaterThan(captures);
 });
 
+it("refreshes fallback stills between slow captures without overlapping them", async () => {
+  let frames = 0;
+  let pending = 0;
+  const api = makeApi(undefined);
+  vi.mocked(api.capture).mockImplementation(async () => {
+    expect(++pending).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    pending--;
+    return { mime: "image/png", base64: "frame", capturedAt: String(++frames) };
+  });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await advance(2000);
+  expect(frames).toBe(6);
+});
+
+it("retains the last decoded picture while video reconnects and still capture is pending", async () => {
+  const { subscribe, subscriptions } = pushStream();
+  const api = { ...makeApi(undefined), subscribeStream: subscribe };
+  vi.mocked(api.capture).mockReturnValue(new Promise(() => {}));
+  using context = vi
+    .spyOn(HTMLCanvasElement.prototype, "getContext")
+    .mockReturnValue({ drawImage: vi.fn() } as unknown as CanvasRenderingContext2D);
+  using encode = vi
+    .spyOn(HTMLCanvasElement.prototype, "toDataURL")
+    .mockReturnValue("data:image/jpeg;base64,cGlj");
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await settle();
+  await act(async () =>
+    subscriptions[0]!.chunk(chunk({ cursor: 22, reset: true, base64: keyPicture })),
+  );
+  expect(encode).not.toHaveBeenCalled();
+  await act(async () => subscriptions[0]!.fail(transient()));
+  expect(context).toHaveBeenCalledWith("2d");
+  expect(encode).toHaveBeenCalledOnce();
+  expect(
+    container.querySelector(".device-panel-preview-control img")?.getAttribute("src"),
+  ).toContain("cGlj");
+  expect(container.querySelector(".device-panel-frame-state")).not.toBeNull();
+});
+
 it("shows and controls the video while the initial still capture is pending", async () => {
   const stream = vi
     .fn<NonNullable<DevicePanelApi["stream"]>>()
@@ -291,6 +331,28 @@ it("retries an established push subscription and fences callbacks from the old s
   expect(stream).not.toHaveBeenCalled();
 });
 
+it("decodes one key picture delivered in a burst of network fragments", async () => {
+  const { subscribe, subscriptions } = pushStream();
+  const api = { ...makeApi(undefined), subscribeStream: subscribe };
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await settle();
+  await act(async () => {
+    for (let i = 0; i < keyBytes.length; i += 2) {
+      const part = keyBytes.slice(i, i + 2);
+      subscriptions[0]!.chunk(
+        chunk({
+          cursor: i + part.length,
+          reset: i === 0,
+          boundary: i + part.length === keyBytes.length,
+          base64: btoa(String.fromCharCode(...part)),
+        }),
+      );
+    }
+  });
+  expect(FakeVideoDecoder.decoded).toEqual(["key"]);
+  expect(subscribe).toHaveBeenCalledOnce();
+});
+
 it.each(["gap", "backlog"])("opens a fresh push subscription after a %s", async (reason) => {
   const { subscribe, subscriptions } = pushStream();
   const api = { ...makeApi(undefined), subscribeStream: subscribe };
@@ -311,16 +373,19 @@ it.each(["gap", "backlog"])("opens a fresh push subscription after a %s", async 
   expect(subscriptions[0]!.close).toHaveBeenCalledOnce();
   expect(FakeVideoDecoder.decoded).toEqual(["key"]);
   expect(container.querySelector("canvas.device-panel-live")).toBeNull();
-  await advance(600);
+  await advance(0);
   expect(subscribe).toHaveBeenCalledTimes(2);
   await act(async () => subscriptions[1]!.chunk(key));
   expect(FakeVideoDecoder.decoded).toEqual(["key", "key"]);
 });
 
-it("uses cursor polling when push setup fails", async () => {
+it.each([
+  "Unsupported host method",
+  "RPC_WS_UNSUPPORTED: Host video subscriptions are unavailable.",
+])("uses cursor polling when push setup fails with %s", async (message) => {
   const subscribeStream = vi
     .fn<NonNullable<DevicePanelApi["subscribeStream"]>>()
-    .mockRejectedValue(new Error("Unsupported host method"));
+    .mockRejectedValue(new Error(message));
   const stream = vi
     .fn<NonNullable<DevicePanelApi["stream"]>>()
     .mockResolvedValueOnce(chunk({ cursor: 22, reset: true, base64: keyPicture }))

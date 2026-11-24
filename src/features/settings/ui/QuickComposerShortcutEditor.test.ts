@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { QuickComposerShortcutEditor, KeybindingsPage, ShortcutEditor } from "./ShortcutSettings";
 import { saveKeybindingOverride, loadKeybindingOverrides } from "../model/settings";
+import * as bindingLabel from "../model/keybindingLabel";
 
 vi.mock("../../../platform/tauri/platform", () => ({
   IS_MAC: true,
@@ -59,6 +60,33 @@ afterEach(async () => {
 async function render() {
   await act(async () => root.render(createElement(QuickComposerShortcutEditor)));
 }
+
+it("reuses the shortcut rows that still match when the filter changes", async () => {
+  const label = vi.spyOn(bindingLabel, "keybindingActionLabel");
+  try {
+    await act(async () => root.render(createElement(KeybindingsPage)));
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Filter keybindings"]')!;
+    const recorder = '[aria-label="Change Settings: General shortcut"]';
+    const original = container.querySelector(recorder);
+    expect(original).not.toBeNull();
+    expect(label).toHaveBeenCalledWith("Settings: General");
+    label.mockClear();
+    const filter = async (value: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          value,
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    await filter("settings");
+    expect(container.querySelector(recorder)).toBe(original);
+    expect(label).not.toHaveBeenCalledWith("Settings: General");
+    await filter("");
+  } finally {
+    label.mockRestore();
+  }
+});
 
 it.each([
   { key: "Delete", code: "Delete", keyCode: 229 },

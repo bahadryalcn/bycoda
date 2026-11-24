@@ -135,7 +135,7 @@ it("keeps the hover panel reachable across the portal gap and compacts once", as
   const card = () => document.querySelector<HTMLElement>("[data-hover-card]");
   await act(async () => {
     trigger.dispatchEvent(new Event("pointerover", { bubbles: true }));
-    vi.advanceTimersByTime(350);
+    vi.advanceTimersByTime(450);
   });
   expect(card()).not.toBeNull();
   await act(async () => {

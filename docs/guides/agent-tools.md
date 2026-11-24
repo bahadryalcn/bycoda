@@ -57,6 +57,9 @@ endpoint. Checks of an existing process never issue replacement grants.
 An installed Device Host starts only after **Connect devices**. Opening the panel
 reads its status. Failed status or discovery refreshes invalidate the previous
 readiness and activity observation; retained device drafts and frames stay intact.
+Background status, discovery and live screen failures are logged and retried.
+The panel shows a warning after three seconds of ordinary interruption.
+Errors from actions you trigger are shown right away.
 
 The device header holds the device picker, refresh and control state. Each device carries its platform
 icon (Android or iOS), green while the device is running; its version, kind and state
@@ -68,12 +71,15 @@ Mac even when the conversation belongs to a Windows project. The runtime status,
 platform checks, and setup and start or stop actions follow that selection. Without a
 selected device, the panel lists devices to open.
 
-Live view follows an Android device as video on Windows or macOS Hosts. The panel
-receives frames on its Host connection and can display the first decoded picture
+Live view streams Android devices on Windows or macOS Hosts and single-display iOS
+simulators on a Mac. Select the device's machine once. The panel uses that Host
+connection whether you are at that computer or connected remotely. It can display the first decoded picture
 while the still capture is pending. On a Host that supports live touch, Android
 tracks your pointer while you drag. Other Hosts send a swipe when you release.
-Older Hosts can use the previous video transport. iOS simulators and devices without
-working video use still captures about once per second. Pausing keeps the current picture.
+Older Hosts can use the previous video transport. Foldable iOS simulators and devices without
+working video request up to three stills per second, one capture at a time. During a transient
+video interruption, the panel shows the last available picture as **Last frame · Not live** until
+a fresh picture arrives. Pausing keeps the current picture.
 
 On a Mac with Xcode 27.1 or later, an available iPhone Duo simulator also exposes
 **Fold device**, **Half-open device** and **Unfold device** in **Device options**.
@@ -115,8 +121,8 @@ available while the original result is checked.
 
 ## Conversation tools
 
-The tool machine picker lists **This computer** once for local projects. For
-remote projects, it lists the project Host and **This computer** separately.
+The tool machine picker lists each computer once. For remote projects, the
+**Project host** label identifies the computer that holds the project.
 
 Before a turn disables native subagents, bycoda checks whether Conversation Tools can initialize for that session. If this bounded check fails, Automatic without an effort ceiling uses the provider's built-in subagents for that turn. Explicit model selections and effort ceilings remain enforced; bycoda tells the model and shows a non-blocking conversation status when delegation is unavailable. Off stays Off. A successful check cannot guarantee that a provider's later MCP connection will succeed. A provider reads its tools only when it starts, so one that started while the Host did not answer, or that outlived a Host restart, starts again before the next message once the Host answers; the conversation and its context continue. If that start does not restore the tools, bycoda waits ten minutes before trying again.
 
@@ -180,6 +186,14 @@ The desktop panel uses a binary frame stream when supported by the selected
 Host. It displays the most recent frame available and falls back to the
 regular frame request when the stream is unavailable.
 
+On Windows and macOS, entering a loopback address for this computer opens a
+direct local preview. Its keyboard, pointer, and scrolling go straight to the
+embedded browser. Use **Shared host browser** to open the current address in
+the Host when you need named viewports, element selection, recording, or a
+page the assistant can interact with. The shared browser opens its own page,
+with its own sign-in and form state. For a selected remote computer,
+`localhost` always refers to that computer.
+
 The assistant can record the conversation's browser as a short WebM video. Starting a
 recording needs the active control lease. After that, recording continues while the
 browser is open, even if the lease lapses or another controller takes over, and stops
@@ -195,10 +209,10 @@ conversation's tools. A conversation without open tools does not inherit another
 browser. Returning restores the selected tool, computer and drafts. Hidden panels
 pause preview polling without stopping the underlying server or device.
 
-The separate Conversation tools window follows the active conversation by default,
-including selection from the main session list. Its project and conversation
-selector opens other tool conversations; hover or keyboard focus shows details.
-Use the link/pin control to follow the main window or keep one conversation visible.
+The separate Conversation tools window follows the focused conversation. With one
+view, the header shows its project and conversation. With several, select another
+open tool view to inspect it. The next conversation selection or focus in the
+main window updates the tools window. Hover or focus the title for details.
 Return to conversation moves the view back after its destination is ready. Closing
 the tools window does not close the browser or discard the original conversation.
 

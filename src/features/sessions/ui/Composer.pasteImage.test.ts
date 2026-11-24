@@ -633,6 +633,35 @@ it("explains an all-oversized paste instead of attaching nothing silently", asyn
   expect(chipCount()).toBe(0);
 });
 
+it("reserves the final slot across overlapping pastes before reading or writing more blobs", async () => {
+  const field = render("keep draft");
+  clipboardPaths = Array.from({ length: MAX_ATTACHMENTS - 1 }, (_, i) => `/repo/seed-${i}.txt`);
+  paste(field);
+  await waitForAttachments(MAX_ATTACHMENTS - 1);
+  const pasteBlobs = (prefix: string) => {
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: {
+        getData: () => "",
+        items: [],
+        files: [1, 2].map((i) => new File(["ok"], prefix + i + ".txt")),
+      },
+    });
+    field.dispatchEvent(event);
+  };
+  act(() => {
+    pasteBlobs("first");
+    pasteBlobs("second");
+  });
+  await waitForAttachments(MAX_ATTACHMENTS);
+  await settle();
+  act(() => pasteBlobs("full"));
+  await waitForAlert();
+  await settle();
+  expect(invoke.mock.calls.filter(([cmd]) => cmd === "write_attachment")).toHaveLength(1);
+  expect(alert()).toContain("0 of 2");
+});
+
 it("reports why a clipboard image could not be attached", async () => {
   invoke.mockImplementation(async (command: string) => {
     if (command === "write_attachment") return "/attachments/image.png";

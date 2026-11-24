@@ -84,6 +84,92 @@ for (const theme of ["light", "dark"] as const) {
       await expect(options).toBeFocused();
       await expect(dialog).toBeVisible();
     });
+
+    test(`Models routing review: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?dialog=1&section=providers&workFixture=routing&providersFixture&theme=${theme}&lang=en`,
+      );
+      await page.getByTestId("open-settings").click();
+      const dialog = page.getByRole("dialog", { name: "Settings", exact: true });
+      const evidence = "temp/verification/models-settings";
+      mkdirSync(evidence, { recursive: true });
+      const capture = async (name: string) => {
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          width,
+        );
+        await page.screenshot({ path: `${evidence}/${name}-${theme}-${width}.png` });
+      };
+      const tab = (name: string) => dialog.getByRole("tab", { name, exact: true });
+      await tab("Background work").click();
+      await expect(tab("Jobs")).toHaveAttribute("aria-selected", "true");
+      await capture("jobs");
+      await tab("Models & order").click();
+      await expect(
+        dialog
+          .locator('[data-entry-id="r-sonnet"]')
+          .getByRole("button", { name: /sonnet.*personal/i }),
+      ).toBeVisible();
+      const work = dialog.getByRole("region", { name: "Work accounts", exact: true });
+      const rows = work.locator("[data-entry-id]");
+      await expect(rows.first()).toHaveAttribute("data-entry-id", "r-opus");
+      await capture("priority");
+      const selectAll = work.getByRole("checkbox", { name: "Select all models of Work accounts" });
+      await selectAll.check();
+      await expect(
+        work.getByRole("checkbox", { name: "Select model 1", exact: true }),
+      ).toBeChecked();
+      await selectAll.uncheck();
+      const first = rows.first().getByRole("button", { name: "Reorder model 1" });
+      await first.press("Alt+ArrowDown");
+      await expect(rows.first()).toHaveAttribute("data-entry-id", "r-haiku");
+      const modelRow = dialog.locator('[data-entry-id="r-opus"]');
+      await modelRow.getByRole("button", { name: /opus/i }).first().click();
+      const picker = page.getByRole("dialog", { name: "Model and settings" });
+      await picker.getByRole("button", { name: /Engineering workspace/i }).click();
+      const personal = picker.getByRole("radio", { name: /Personal/i });
+      await expect(personal).toBeVisible();
+      await expect(picker.getByRole("radio", { name: /Previous workspace/i })).toBeVisible();
+      await capture("accounts");
+      await personal.click();
+      await expect(modelRow.getByRole("button", { name: /opus.*personal/i })).toBeVisible();
+      await expect(picker).toHaveCount(0);
+      await tab("Groups").click();
+      const group = dialog.getByRole("group", { name: "Smartest", exact: true });
+      await expect(group.getByRole("button", { name: /^Smartest/ })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
+      const grips = group.getByRole("button", { name: /^Reorder in/ });
+      const from = (await grips.first().boundingBox())!;
+      const to = (await grips.last().boundingBox())!;
+      const initial = await grips.first().getAttribute("aria-label");
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(to.x + to.width / 2, to.y + to.height * 0.8, { steps: 8 });
+      await page.mouse.up();
+      await expect(grips.last()).toHaveAttribute("aria-label", initial!);
+      await capture("groups");
+      await tab("Agents").click();
+      await capture("agents");
+      await tab("Limits").click();
+      await expect(dialog.getByRole("region", { name: "Plan share by job" })).toBeVisible();
+      await expect(dialog.getByText("No usage in this window", { exact: true })).toBeVisible();
+      await expect(
+        dialog.getByRole("spinbutton", { name: "Daily cost (USD)", exact: true }),
+      ).toHaveValue("10");
+      await expect(dialog.getByText("This computer needs a Host update.")).toHaveCount(0);
+      await capture("limits");
+      await dialog.getByRole("region", { name: "Plan share by job" }).scrollIntoViewIfNeeded();
+      await capture("plan-share");
+      await tab("Jobs").click();
+      await expect(dialog.getByRole("button", { name: "Save changes" })).toBeEnabled();
+      await dialog.getByRole("button", { name: "Save changes" }).click();
+      await expect(dialog.getByRole("button", { name: "Saved", exact: true })).toBeDisabled();
+      await tab("Models & order").click();
+      await expect(modelRow.getByRole("button", { name: /opus.*personal/i })).toBeVisible();
+    });
   }
 }
 

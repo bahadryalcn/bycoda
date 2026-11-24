@@ -41,12 +41,14 @@ export function useSessionLifecycleActions({
   cwd,
   local,
   hasMessages,
+  running = false,
   remoteTarget,
 }: {
   sessionId: string;
   cwd: string;
   local: boolean;
   hasMessages: boolean;
+  running?: boolean;
   remoteTarget?: RemoteLifecycleTarget;
 }): SessionLifecycleActions {
   const t = useT();
@@ -56,7 +58,6 @@ export function useSessionLifecycleActions({
     remoteTarget ? JSON.stringify([remoteTarget.machineId]) : "",
   );
   const [dialog, setDialog] = useState<LinkDialog>();
-  const [busy, setBusy] = useState(false);
   const machineId = remoteTarget?.machineId ?? localMachineId;
   const remoteViews = remoteTarget && remote.lists.get(remoteTarget.machineId);
   const view = remoteTarget ? remoteViews?.get(remoteTarget.sessionId) : localView;
@@ -81,24 +82,27 @@ export function useSessionLifecycleActions({
       id: "settle",
       label,
       icon: <Icon aria-hidden className="icon-sm" strokeWidth={1.75} />,
-      disabled: busy || (!hasMessages && !settled),
+      disabled: !hasMessages && !settled,
       onSelect: () => {
-        if (
-          remoteTarget &&
-          (isProjectLocked(remoteTarget.projectKey) ||
-            !readMachineAvailability(remoteTarget.projectKey).available)
-        )
+        const checkOwner = () => {
+          if (isProjectLocked(remoteTarget?.projectKey ?? cwd))
+            throw new Error("Project is locked.");
+          if (remoteTarget && !readMachineAvailability(remoteTarget.projectKey).available)
+            throw new Error(t("Connect this project’s machine to load its sessions."));
+        };
+        try {
+          checkOwner();
+        } catch (cause) {
+          report(cause);
           return;
-        setBusy(true);
+        }
         (remoteTarget
-          ? remote.change(machineId, remoteTarget.sessionId, settled)
+          ? remote.change(machineId, remoteTarget.sessionId, settled, running, checkOwner)
           : (settled
-              ? sessionLifecycleClient(machineId).unsettle(sessionId)
-              : sessionLifecycleClient(machineId).settle(sessionId)
+              ? sessionLifecycleClient(machineId, true, checkOwner).unsettle(sessionId)
+              : sessionLifecycleClient(machineId, true, checkOwner).settle(sessionId, running)
             ).then(setSessionLifecycle)
-        )
-          .catch(report)
-          .finally(() => setBusy(false));
+        ).catch(report);
       },
     },
     link: remoteTarget

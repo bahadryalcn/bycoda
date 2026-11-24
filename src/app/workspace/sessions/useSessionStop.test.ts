@@ -13,12 +13,16 @@ const {
   notify,
   noteStop,
   cancelAdopted,
+  adoptedStopping,
+  showToast,
   remoteProject,
   orchestrationRun,
   orchestratorStop,
 } = vi.hoisted(() => ({
   cancel: vi.fn(),
   cancelAdopted: vi.fn(),
+  adoptedStopping: vi.fn(),
+  showToast: vi.fn(),
   notify: vi.fn(),
   noteStop: vi.fn(),
   remoteProject: vi.fn(),
@@ -27,6 +31,10 @@ const {
 }));
 vi.mock("../../../features/connections/model/adoptedSessionCommands", () => ({
   cancelAdoptedTurn: cancelAdopted,
+  isAdoptedTurnStopping: adoptedStopping,
+}));
+vi.mock("../../../shared/ui/ToastRegion", () => ({
+  toast: { dismiss: vi.fn(), show: showToast },
 }));
 vi.mock("../../../features/connections/model/useSharedLocalQueues", () => ({
   noteSharedLocalStop: noteStop,
@@ -58,6 +66,8 @@ beforeEach(() => {
   notify.mockReset();
   noteStop.mockReset();
   cancelAdopted.mockReset().mockResolvedValue(undefined);
+  adoptedStopping.mockReset().mockReturnValue(false);
+  showToast.mockClear();
   const session: Session = {
     ...newSession("claude", "/repo"),
     busy: true,
@@ -276,6 +286,33 @@ it("binds adopted Stop to the generation displayed when the owner clicks it", ()
   ];
   stop(id);
   expect(cancelAdopted).toHaveBeenCalledWith(id, "seen-host-run", 2);
+});
+
+it("keeps an adopted Stop failure out of the synchronized transcript", async () => {
+  deps.sessionsRef.current = [
+    { ...current(), busy: false, continuingElsewhere: true, adoptedRunId: "host-run" },
+  ];
+  cancelAdopted.mockRejectedValueOnce(new Error("Stop delivery could not be confirmed"));
+  await act(async () => stop(current().id));
+  expect(current().blocks).toEqual([]);
+  expect(showToast).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: expect.stringContaining("Stop delivery could not be confirmed"),
+    }),
+  );
+  expect(current().continuingElsewhere).toBe(true);
+  expect(current().queueStatus).toBe("paused");
+});
+
+it("ignores repeated Stop while the same adopted turn is being stopped", () => {
+  deps.sessionsRef.current = [
+    { ...current(), busy: false, continuingElsewhere: true, adoptedRunId: "host-run" },
+  ];
+  stop(current().id);
+  adoptedStopping.mockReturnValue(true);
+  stop(current().id);
+  expect(cancelAdopted).toHaveBeenCalledOnce();
+  expect(deps.turnGen.current.get(current().id)).toBe(2);
 });
 
 it.each(["success", "failure"])(

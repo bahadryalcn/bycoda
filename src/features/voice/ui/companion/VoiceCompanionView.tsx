@@ -14,9 +14,12 @@ import { LiveText } from "../../../../shared/ui/LiveText";
 import { motionAttributes } from "../../../../shared/ui/Motion";
 import { useOverlay } from "../../../../shared/ui/overlay";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
+import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import { OverflowTooltip, Tooltip } from "../../../../shared/ui/Tooltip";
 import {
+  Globe,
   Maximize2,
+  MessageMultiple,
   MessageSquare,
   Mic,
   MicOff,
@@ -163,6 +166,18 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
     styles.workDrawer,
   );
   const caption = p.chatTurns[p.chatTurns.length - 1]?.text ?? "";
+  const dockScope = p.workspace && !p.fullScreen && !chatShown;
+  const scope = p.workspace ? (
+    <SegmentedControl
+      label={t("Voice scope")}
+      value={p.globalScope ? "global" : "session"}
+      onValueChange={(value) => p.onScopeChange(value === "global")}
+      options={[
+        { value: "global", label: t("Global"), icon: <Globe className="icon-sm" /> },
+        { value: "session", label: t("Project"), icon: <MessageMultiple className="icon-sm" /> },
+      ]}
+    />
+  ) : null;
   return (
     <>
       <VoiceCallScene
@@ -355,11 +370,9 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               live={live}
               engine={p.engine}
               privacy={p.privacy}
-              workspace={p.workspace}
-              globalScope={p.globalScope}
+              scope={dockScope ? undefined : scope}
               stage={Boolean(p.fullScreen) || !chatShown}
               caption={caption}
-              onScopeChange={p.onScopeChange}
               onStopWork={p.onStopWork}
             />
             {p.sessionPicker}
@@ -440,11 +453,13 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
             </div>
           )}
           <div
+            data-scope-dock={dockScope || undefined}
             {...surfaceAttributes(
               { frame: !p.fullScreen && chatShown ? "pane" : "none", edge: "block-start" },
               styles.actions,
             )}
           >
+            {dockScope ? scope : null}
             <VoiceCompanionControls
               status={p.status}
               startDisabled={p.startDisabled}

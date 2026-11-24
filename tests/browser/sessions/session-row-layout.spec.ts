@@ -815,6 +815,23 @@ for (const light of [false, true]) {
         "stroke",
         await create.evaluate((button) => getComputedStyle(button).color),
       );
+      const expectTrailing = async () => {
+        const headerBounds = (await header.boundingBox())!;
+        const disclosureBounds = (await choose.boundingBox())!;
+        const endGap =
+          headerBounds.x + headerBounds.width - disclosureBounds.x - disclosureBounds.width;
+        expect(endGap).toBeGreaterThanOrEqual(0);
+        expect(endGap).toBeLessThanOrEqual(8);
+      };
+      await expectTrailing();
+      await expect(create).toHaveAttribute("data-button-hierarchy", "primary");
+      await expect(choose).toHaveAttribute("data-button-hierarchy", "primary");
+      await expect(create).toHaveAttribute("data-button-tone", "neutral");
+      await expect(choose).toHaveAttribute("data-button-tone", "neutral");
+      await expect(create).not.toHaveCSS("border-start-start-radius", "0px");
+      await expect(choose).not.toHaveCSS("border-start-end-radius", "0px");
+      await choose.blur();
+      await page.mouse.move(0, 0);
       await header.screenshot({ path: path.join(evidence, `${label}-workspace-header.png`) });
       await choose.focus();
       await choose.press("Enter");
@@ -832,6 +849,11 @@ for (const light of [false, true]) {
       await expect(page.getByRole("status", { name: "Selected Git checkout" })).toHaveText(
         "/fixture/demo-repo",
       );
+      await page.getByRole("tab", { name: "Explorer", exact: true }).click();
+      await expect(header.locator("[data-session-tools]")).toHaveCount(0);
+      await expectTrailing();
+      await page.mouse.move(0, 0);
+      await header.screenshot({ path: path.join(evidence, `${label}-explorer-header.png`) });
     });
   }
 }
@@ -1092,6 +1114,49 @@ for (const light of [false, true]) {
 }
 
 const settleEvidence = path.resolve("temp/verification/2026-11-08-session-settle");
+test("local Settle moves the row with the Host reply held and restores it on refusal", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/sessions/session-row-layout.html?local-bulk-settle");
+  const row = page.locator('[data-session-card="row-multi"]');
+  await row.locator("[data-session-select]").hover();
+  const button = row.getByRole("button", { name: /^Settle / });
+  await expect(button).toBeVisible();
+  await page.evaluate(() => {
+    const host = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke: (
+            command: string,
+            args?: { method?: string },
+            options?: unknown,
+          ) => Promise<unknown>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    const invoke = host.invoke.bind(host);
+    host.invoke = (command, args, options) => {
+      if (command !== "remote_request" || args?.method !== "sessions.lifecycle.settle")
+        return invoke(command, args, options);
+      document.documentElement.dataset.settlePending = "true";
+      return new Promise((_, reject) => {
+        document.addEventListener(
+          "refuse-settle-in-fixture",
+          () => reject(new Error("Host refused")),
+          { once: true },
+        );
+      });
+    };
+  });
+  await button.click();
+  await expect(page.locator("html")).toHaveAttribute("data-settle-pending", "true");
+  await expect(row).toHaveCount(0);
+  await expect(page.locator("[data-settled-sessions]")).toBeVisible();
+  await expect(page.getByText("Saving…", { exact: true })).toHaveCount(0);
+  await page.evaluate(() => document.dispatchEvent(new Event("refuse-settle-in-fixture")));
+  await expect(row).toBeVisible();
+  await expect(page.locator("[data-settled-sessions]")).toHaveCount(0);
+});
 test("bulk Settle includes all 258 selected remote conversations", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(
@@ -1310,6 +1375,17 @@ for (const theme of ["light", "dark"]) {
       await page.keyboard.press("Escape");
       await open.click({ button: "right" });
       await expect(menu.getByRole("menuitem", { name: "Archive" })).toBeVisible();
+      for (const label of [
+        /^Pin$/,
+        /^Rename/,
+        /^Regenerate title$/,
+        /^Copy$/,
+        /^Link GitHub issue or PR/,
+        /^Remind me$/,
+        /^Select$/,
+      ]) {
+        await expect(menu.getByRole("menuitem", { name: label })).toBeVisible({ timeout: 3000 });
+      }
       await page.screenshot({
         path: `temp/verification/last-sessions-actions/${theme}-${width}-menu.png`,
         animations: "disabled",
@@ -1318,6 +1394,58 @@ for (const theme of ["light", "dark"]) {
       await open.click();
       await expect(page.getByRole("status", { name: "Selected session" })).toHaveText("row-demo");
       await expect(page.getByRole("status", { name: "Pin operations" })).toHaveText("0");
+      if (theme === "dark" && width === 1280) {
+        const otherRow = page.locator('[data-session-card="row-multi"]');
+        // Return to the other project while keeping the global list open.
+        await otherRow.locator("[data-session-select]").click();
+        expect(await page.getByRole("status", { name: "Selected session" }).textContent()).toBe(
+          "row-multi",
+        );
+        const openMenu = () => open.click({ button: "right" });
+        const item = (name: string | RegExp) => menu.getByRole("menuitem", { name });
+        await openMenu();
+        await item(/^Pin$/).click();
+        await expect(page.getByRole("status", { name: "Pin operations" })).toHaveText("1");
+        await openMenu();
+        await expect(item(/^Unpin$/)).toBeVisible();
+        await item(/^Rename/).click();
+        const title = row.getByRole("textbox", { name: "Name" });
+        await title.fill("Renamed from Last sessions");
+        await title.press("Enter");
+        await expect(row).toContainText("Renamed from Last sessions");
+        await openMenu();
+        await item(/^Regenerate title$/).click();
+        await expect(row).toContainText("Restore Draft Editing in Recovered Sessions");
+        await openMenu();
+        await item(/^Copy$/).click();
+        await expect(page.getByRole("menuitem", { name: "Copy session link" })).toBeVisible();
+        await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+        await page.getByRole("menuitem", { name: /^Bycoda session ID$/i }).click();
+        await expect
+          .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+          .toBe("row-demo");
+        await openMenu();
+        await item(/^Link GitHub issue or PR/).click();
+        const dialog = page.getByRole("dialog", { name: "Link GitHub issue or PR" });
+        await dialog.getByRole("combobox").fill("https://github.com/example/demo/issues/42");
+        await dialog.getByRole("button", { name: "Link", exact: true }).click();
+        await expect(row).toContainText("#42");
+        await openMenu();
+        await item(/^Remind me$/).click();
+        await page.getByRole("menuitem", { name: /^In 1 hour/ }).click();
+        await expect(page.getByRole("status", { name: "Reminder target" })).toHaveText("row-demo");
+        await openMenu();
+        await item(/^Select$/).click();
+        await expect(row).toHaveAttribute("data-session-selected", "true");
+        await otherRow.locator("[data-session-select]").click();
+        await expect(page.getByRole("toolbar", { name: "Selected sessions" })).toContainText(
+          "2 selected",
+        );
+        await expect(page.getByRole("status", { name: "Selected session" })).toHaveText(
+          "row-multi",
+        );
+        await page.getByRole("button", { name: "Clear", exact: true }).click();
+      }
       await open.click({ button: "right" });
       await menu.getByRole("menuitem", { name: "Settle", exact: true }).click();
       await expect(row).toHaveCount(0);

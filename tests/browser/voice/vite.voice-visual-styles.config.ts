@@ -43,6 +43,7 @@ export default defineConfig({
     emptyOutDir: false,
     rolldownOptions: {
       input: [
+        "tests/browser/voice/presented-catalog.html",
         "tests/browser/voice/voice-visual-styles.html",
         "tests/browser/voice/voice-overlay.html",
         "tests/browser/voice/voice-native-menu.html",

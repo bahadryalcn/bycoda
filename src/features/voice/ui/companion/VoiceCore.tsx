@@ -54,7 +54,7 @@ function spectrum(state: VoiceVisualState, input: number, time: number, index: n
 /**
  * The companion's voice core: the assistant's avatar inside rings that show who has the floor.
  * The spectrum follows the measured microphone level while you speak and moves while the
- * assistant replies; arcs turn faster while it thinks and stop when voice is off or muted.
+ * assistant replies; arcs turn faster while it thinks and stop when the call is inactive.
  * Decorative only; the status text beside it is authoritative.
  */
 export function VoiceCore({
@@ -119,7 +119,8 @@ export function VoiceCore({
       frame = undefined;
       const calm = prefersReducedMotion() || !motion;
       const hearing = state === "listening" || state === "user" || state === "assistant";
-      const turning = hearing || state === "thinking" || state === "connecting";
+      const turning =
+        hearing || state === "thinking" || state === "connecting" || state === "connected";
       paint(1300);
       if (!windowVisible || document.hidden || !visible) return;
       // Reduced motion keeps the input meter, without time-based decoration.

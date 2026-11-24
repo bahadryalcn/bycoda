@@ -1,6 +1,10 @@
 import { errorText } from "../../../shared/lib/errors";
 import { presentRemoteError } from "../../connections/public/remoteFailure";
 import {
+  isAdoptedTurnStopping,
+  subscribeAdoptedStopping,
+} from "../../connections/public/adoptedStopping";
+import {
   expandSkillGroupTokens,
   isSkillGroupPickerItem,
   skillGroupInsertion,
@@ -11,7 +15,6 @@ import { ComposerAction } from "./ComposerAction";
 import { Text } from "../../../shared/ui/Text";
 export { ComposerAction } from "./ComposerAction";
 import { MessageQueue } from "./MessageQueue";
-import { RemoteOriginMark } from "./RemoteOriginMark";
 import { ComposerHighlight } from "./ComposerHighlight";
 import { ComposerAddMenu } from "./ComposerAddMenu";
 import { ComposerInlineEditor } from "./ComposerInlineEditor";
@@ -49,7 +52,11 @@ import {
 import { TranscriptSelectionMenu } from "./TranscriptSelectionMenu";
 import { ComposerCitations } from "./ComposerCitations";
 import { chatCitationTokens, removeCitationFromText } from "../model/citationTokens";
-import { extractChatCitations, withChatCitations, type ChatCitation } from "../model/chatCitation";
+import {
+  extractChatCitations,
+  withChatCitations,
+  type ComposerCitation,
+} from "../model/chatCitation";
 import { TranslationResultDialog } from "./TranslationResultDialog";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { useT } from "../../../shared/i18n";
@@ -500,8 +507,6 @@ type Props = {
    */
   editingLastTurn?: boolean;
   onEditingLastTurnChange?: (editing: boolean) => void;
-  /** Shown in the workspace row when the conversation was started from another device. */
-  remoteOrigin?: "running" | "idle";
   /** Pane-level notices rendered first in the one notice stack above the card. */
   notices?: ReactNode;
   children?: ReactNode;
@@ -687,7 +692,6 @@ export const Composer = memo(function Composer({
   onRecalledMessageApplied,
   editingLastTurn,
   onEditingLastTurnChange,
-  remoteOrigin,
   notices,
   children,
 }: Props) {
@@ -710,7 +714,7 @@ export const Composer = memo(function Composer({
     };
   });
   const [citations, setCitationsState] = useState(initial.citations);
-  const citationsRef = useRef<ChatCitation[]>(citations);
+  const citationsRef = useRef<ComposerCitation[]>(citations);
   const draftTextRef = useRef(initial.text);
   const mountedClosureRef = useRef<ReturnType<typeof useMountedComposerClosure> | null>(null);
   const attachmentApplyDepth = useRef(0);
@@ -815,11 +819,17 @@ export const Composer = memo(function Composer({
     }
     previousBusyRef.current = busy;
   }, [busy]);
-  const stopping = useSyncExternalStore(
+  const harnessStopping = useSyncExternalStore(
     subscribeHarnessStopping,
     () => (sessionId ? isHarnessTurnStopping(sessionId) : false),
     () => false,
   );
+  const adoptedStopping = useSyncExternalStore(
+    subscribeAdoptedStopping,
+    () => (sessionId ? isAdoptedTurnStopping(sessionId) : false),
+    () => false,
+  );
+  const stopping = harnessStopping || adoptedStopping;
   const stopPendingSend = () => {
     parentInputRef.current?.();
     // Retire submission intent without discarding a clipboard read or its result.
@@ -836,7 +846,7 @@ export const Composer = memo(function Composer({
   /** The text, caret and skill list the slash/dollar/mention parse last ran for. */
   const tokenSyncRef = useRef<TokenSyncSnapshot | null>(null);
   const escapeArmedRef = useRef<number | null>(null);
-  const replaceCitations = useCallback((next: ChatCitation[]) => {
+  const replaceCitations = useCallback((next: ComposerCitation[]) => {
     if (JSON.stringify(citationsRef.current) === JSON.stringify(next)) return;
     citationsRef.current = next;
     setCitationsState(next);
@@ -1422,6 +1432,7 @@ export const Composer = memo(function Composer({
   // detach it or leave it reading obsolete capabilities and callbacks.
   const attachmentSink = useAttachmentSink({ attachmentsSupported, remote, addAttachments });
   const { rememberAttachmentRead, readDroppedAttachments } = useComposerAttachmentReads({
+    attachmentsRef,
     parentInputRef,
     mountedClosure,
     sinkRef: attachmentSink,
@@ -1592,8 +1603,7 @@ export const Composer = memo(function Composer({
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || !enabled) return;
-    resizeComposer(el);
-    if (el.scrollHeight !== 0) return;
+    if (resizeComposer(el)) return;
     const frame = requestAnimationFrame(() => {
       if (ref.current === el) resizeComposer(el);
     });
@@ -3193,14 +3203,17 @@ export const Composer = memo(function Composer({
       }
       rememberAttachmentRead((accepted) => {
         const skips = collectSkippedAttachments();
-        return attachmentsFromFiles(message.files, { onSkipped: skips.onSkipped }).then((pasted) =>
+        return attachmentsFromFiles(message.files, {
+          onSkipped: skips.onSkipped,
+          capacity: accepted.capacity,
+        }).then((pasted) =>
           accepted.apply(() => {
             if (!accepted.isCurrent()) {
               pasted.forEach(revokeAttachment);
               return;
             }
             const canReplace = draftRevisionRef.current === revision;
-            addAttachments(pasted, skips.notice(), (attachments) => {
+            addAttachments(pasted, skips.notice(accepted.capacity), (attachments) => {
               if (
                 !captured ||
                 pasteEnd == null ||
@@ -3245,7 +3258,10 @@ export const Composer = memo(function Composer({
         paste.insert();
         rememberAttachmentRead(async (accepted) => {
           const skips = collectSkippedAttachments();
-          const incoming = await attachmentsFromFiles([paste.file], { onSkipped: skips.onSkipped });
+          const incoming = await attachmentsFromFiles([paste.file], {
+            onSkipped: skips.onSkipped,
+            capacity: accepted.capacity,
+          });
           accepted.apply(() => {
             const el = ref.current;
             const range = el && paste.range(el.value);
@@ -3253,7 +3269,7 @@ export const Composer = memo(function Composer({
               incoming.forEach(revokeAttachment);
               return;
             }
-            addAttachments(incoming, skips.notice(), (attachments) => {
+            addAttachments(incoming, skips.notice(accepted.capacity), (attachments) => {
               const index = attachments.findIndex((file) => file.id === incoming[0]?.id);
               if (index >= 0) {
                 const edit = replacePastedText(
@@ -3278,20 +3294,26 @@ export const Composer = memo(function Composer({
       // the generation, so a finished read cannot attach onto a draft that is gone.
       const captured = isFileReferenceText(text) ? captureDraft(e.currentTarget) : null;
       rememberAttachmentRead((accepted) =>
-        nativeClipboardAttachments(text)
+        nativeClipboardAttachments(text, accepted.capacity)
           .then(({ files: pasted, warning }) =>
             accepted.apply(() => {
               if (!accepted.isCurrent()) {
                 pasted.forEach(revokeAttachment);
                 return;
               }
-              if (pasted.length) {
+              if (
+                pasted.length ||
+                warning ||
+                accepted.capacity.notice() ||
+                accepted.capacity.matchedPendingPath
+              ) {
                 // WebKit can insert the URI after preventDefault. The chip
                 // replaces it, so the draft must not keep that text.
                 if (captured) dropPastedText(captured, text);
                 addAttachments(pasted);
               } else if (captured) insertRestoredText(captured, text);
-              if (warning) setPasteError(warning);
+              const notice = warning ?? accepted.capacity.notice();
+              if (notice) setPasteError(notice);
             }),
           )
           .catch((reason: unknown) => {
@@ -3309,13 +3331,16 @@ export const Composer = memo(function Composer({
     }
     rememberAttachmentRead((accepted) => {
       const skips = collectSkippedAttachments();
-      return attachmentsFromFiles(files, { onSkipped: skips.onSkipped }).then((pasted) =>
+      return attachmentsFromFiles(files, {
+        onSkipped: skips.onSkipped,
+        capacity: accepted.capacity,
+      }).then((pasted) =>
         accepted.apply(() => {
           if (!accepted.isCurrent()) {
             pasted.forEach(revokeAttachment);
             return;
           }
-          addAttachments(pasted, skips.notice());
+          addAttachments(pasted, skips.notice(accepted.capacity));
         }),
       );
     });
@@ -3326,13 +3351,13 @@ export const Composer = memo(function Composer({
     const selection = retainAttachmentPickerSelection();
     setPasteError(null);
     rememberAttachmentRead((accepted) =>
-      pickAttachments(selection).then((files) =>
+      pickAttachments(selection, accepted.capacity).then((files) =>
         accepted.apply(() => {
           if (!accepted.isCurrent() || !attachmentSink.current.attachmentsSupported) {
             files.forEach(revokeAttachment);
             return;
           }
-          attachmentSink.current.addAttachments(files);
+          attachmentSink.current.addAttachments(files, accepted.capacity.notice());
           ref.current?.focus();
         }),
       ),
@@ -3483,6 +3508,18 @@ export const Composer = memo(function Composer({
         settings={settingsInModelPicker}
       />
     ) : null;
+  const changeCitations = (next: ComposerCitation[], removed?: number) => {
+    if (!canMutateDraft()) return;
+    parentChanged();
+    const el = ref.current;
+    replaceCitations(next);
+    draftRevisionRef.current += 1;
+    const text = el ? removeCitationFromText(el.value, citations.length, removed ?? -1) : "";
+    if (el && text !== el.value)
+      applyTextareaEdit(el, text, Math.min(el.selectionStart, text.length));
+    else publishDraft(el?.value ?? draftTextRef.current);
+  };
+
   return (
     <div
       ref={composerRoot}
@@ -3921,20 +3958,8 @@ export const Composer = memo(function Composer({
           <ComposerCitations
             citations={citations}
             disabled={parentClosed || !!submission}
-            onChange={(next, removed) => {
-              if (!canMutateDraft()) return;
-              parentChanged();
-              const el = ref.current;
-              replaceCitations(next);
-              draftRevisionRef.current += 1;
-              // Removing a quote takes its `[quoteN]` token and renumbers the rest.
-              const text = el
-                ? removeCitationFromText(el.value, citations.length, removed ?? -1)
-                : "";
-              if (el && text !== el.value)
-                applyTextareaEdit(el, text, Math.min(el.selectionStart, text.length));
-              else publishDraft(el?.value ?? draftTextRef.current);
-            }}
+            onChange={changeCitations}
+            inlineText={inlineActive ? draft : undefined}
           />
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2">
@@ -4015,6 +4040,7 @@ export const Composer = memo(function Composer({
                     mcpTags={selectedMcp}
                     attachments={attachments}
                     citations={citations.length}
+                    citationSources={citations}
                     field={ref}
                     onOpenFile={onOpenFile}
                   />
@@ -4034,6 +4060,7 @@ export const Composer = memo(function Composer({
                 mcpTags: selectedMcp,
                 attachments,
                 citations: citations.length,
+                citationSources: citations,
                 modeEnd: leadingMode?.end ?? 0,
                 onOpenFile,
               }}
@@ -4045,6 +4072,7 @@ export const Composer = memo(function Composer({
               hasSubagents={hasSubagents}
               onInlineAttachments={setInlineAttachments}
               onRemoveAttachment={removeAttachment}
+              onChangeCitations={changeCitations}
             />
             {/* ui-drift-ignore: raw-native-control -- bespoke composer editor: overlay highlight, auto-resize, mention/skill keyboard */}
             <textarea
@@ -4550,7 +4578,6 @@ export const Composer = memo(function Composer({
                   {sessionDirectoryPicker}
                 </div>
               ) : null}
-              <RemoteOriginMark origin={remoteOrigin} labelled />
             </div>
             <ComposerTips active={focused && !disabled} />
             {draftWorkspace ? (

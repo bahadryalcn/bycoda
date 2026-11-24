@@ -78,8 +78,7 @@ interruptions and interruptions after newer work retain their warning.
 The dialog is one compact list. A File drafts tab appears only when there are
 file copies to show; with conversations alone there is no tab strip. The Needs attention / All filter appears only while it separates
 something, the search field only for a longer list, and the list menu only for
-more than one entry. The Help button beside the actions explains what Open all
-and Restore chat layout do.
+more than one entry.
 
 Opening a recovered entry adds or focuses a conversation tab; it does not restart
 agent work. Removal clears recovery references while preserving history and

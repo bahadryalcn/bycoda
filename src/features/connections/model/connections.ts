@@ -588,6 +588,13 @@ export function remoteRequest<T>(
         return send();
       }),
     );
+  // Every project list starts again when a connection returns, and one machine admits only so
+  // many requests at once: past that the rest are refused as overload instead of waiting.
+  if (method === "sessions.list" && machine && !fresh && !userInitiated)
+    return runColdRouteRead(machine.id, () => {
+      if (!current()) throw superseded();
+      return send();
+    });
   return send();
 }
 
@@ -1524,6 +1531,7 @@ export type RemoteProjectSessions = {
   failed: boolean;
   dataState: RemoteDataState;
   refresh: () => void;
+  confirmPin: (sessionId: string, pinned: boolean) => void;
 };
 
 /** Lists a remote project's host sessions, keeping the last list visible
@@ -1743,6 +1751,23 @@ export function useRemoteProjectSessions(
           ? { phase: "loading" }
           : dataState,
     refresh: machine ? refreshList : refreshMachines,
+    confirmPin: (sessionId, pinned) => {
+      setSessionList((current) => {
+        if (
+          current.project !== project ||
+          !current.sessions.some(
+            (session) => session.id === sessionId && !!session.pinned !== pinned,
+          )
+        )
+          return current;
+        return {
+          project,
+          sessions: current.sessions.map((session) =>
+            session.id === sessionId ? { ...session, pinned } : session,
+          ),
+        };
+      });
+    },
   };
 }
 

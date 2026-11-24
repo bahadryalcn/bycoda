@@ -41,7 +41,7 @@ const plan = { order: [0], pools: [], roles: {} };
 const names = {
   smartest: "Smartest",
   balanced: "Balanced",
-  fast: "Fast",
+  light: "Low",
   work: "Work",
   personal: "Personal",
 };

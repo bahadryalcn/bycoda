@@ -8,6 +8,7 @@ import {
   type MobilePairingStatus,
   type MobilePairingRedemption as MobilePairingCredential,
 } from "../../src/integrations/mobile-pairing";
+import { isoTimestamp } from "../../src/shared/lib/time/timestamps";
 import { hostProof, matchesHostProof } from "./host-proof";
 
 export type {
@@ -30,6 +31,7 @@ const INVALID_TICKET = "Mobile pairing ticket is invalid or expired. Create a ne
 export type MobilePairingStore = {
   environmentId: string;
   hasDeviceHash: (hash: string) => boolean | Promise<boolean>;
+  canIssuePairing: (hash: string) => boolean | Promise<boolean>;
   deviceProofKeys?: () => Promise<string[]>;
   proofOrigins?: () => Promise<string[]>;
   issueDevice: (
@@ -104,6 +106,9 @@ export class MobilePairing {
   ): Promise<MobilePairingCreated> {
     await this.prune();
     const issuerHash = await this.owner(issuerToken);
+    if (!(await this.store.canIssuePairing(issuerHash))) {
+      throw new MobilePairingError("Device management permission required.", 403);
+    }
     if (this.closed) throw new MobilePairingError(INVALID_TICKET);
     const name = deviceName(input.name, "My phone");
     this.creationRate(issuerHash);
@@ -124,6 +129,8 @@ export class MobilePairing {
     const ticket = randomBytes(32).toString("base64url");
     const ticketHash = hash(ticket);
     const expiresAt = this.now() + MOBILE_PAIRING_TTL_MS;
+    const expiresAtIso = isoTimestamp(expiresAt);
+    if (!expiresAtIso) throw new MobilePairingError(INVALID_TICKET);
     const expiryTimer = setTimeout(() => this.remove(id), MOBILE_PAIRING_TTL_MS);
     expiryTimer.unref();
     const entry: Pairing = {
@@ -141,7 +148,7 @@ export class MobilePairing {
     return {
       pairingId: id,
       ticket,
-      expiresAt: new Date(expiresAt).toISOString(),
+      expiresAt: expiresAtIso,
       environmentId: this.store.environmentId,
     };
   }
@@ -207,7 +214,7 @@ export class MobilePairing {
     if (
       !entry ||
       entry.state === "cancelled" ||
-      !(await this.store.hasDeviceHash(entry.issuerHash)) ||
+      !(await this.store.canIssuePairing(entry.issuerHash)) ||
       this.closed ||
       this.pairings.get(entry.id) !== entry ||
       entry.expiresAt <= this.now()

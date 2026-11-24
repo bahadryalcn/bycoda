@@ -234,14 +234,13 @@ export async function subscribeDeviceVideo(
 ): Promise<() => void> {
   const machine = await deviceToolMachine(cwd, target);
   const capabilities = await machineCapabilities(machine);
-  if (
-    !capabilities.includes("device.host") ||
-    !capabilities.includes("transport.ws.devices.video.v1")
-  )
-    throw new Error("DEVICE_STREAM_UNSUPPORTED: Host video subscriptions are unavailable.");
+  if (!capabilities.includes("device.host"))
+    throw new Error("DEVICE_STREAM_UNSUPPORTED: Device support is unavailable.");
+  if (!capabilities.includes("transport.ws.devices.video.v1"))
+    throw new Error("RPC_WS_UNSUPPORTED: Host video subscriptions are unavailable.");
   bindMachineEnvironment(machine.id, machine.environmentId);
   const route = acquireRemoteHostRuntime(machine.id);
-  if (!route) throw new Error("DEVICE_STREAM_UNSUPPORTED: Host video connection is unavailable.");
+  if (!route) throw new Error("RPC_WS_UNSUPPORTED: Host video connection is unavailable.");
   let release = () => {};
   let current = true;
   let started = false;

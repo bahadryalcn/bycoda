@@ -117,9 +117,16 @@ function MeasuredTranscriptRows({
     anchor,
   });
 
+  const needsMeasurement = virtualized || rows.length > TRANSCRIPT_VIRTUAL_THRESHOLD;
   useLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
+    // Ordinary lists use native layout. Take their geometry on the commit that
+    // crosses the threshold so the virtualizer starts with the measured row sizes.
+    if (!needsMeasurement) {
+      setScroll(closestScroll(element));
+      return;
+    }
     // A committed width clears every measured row size (`virtual.measure()` below), so a live
     // resize commits it once at the end instead of letting scrollHeight fall back to estimates
     // on each frame.
@@ -149,7 +156,7 @@ function MeasuredTranscriptRows({
       commitWidth.cancel();
       unwatch?.();
     };
-  }, [owner, scroll, virtualized]);
+  }, [owner, scroll, virtualized, needsMeasurement]);
   useLayoutEffect(() => {
     if (!scroll || !owner || !virtualized) return;
     const acquired = owner.acquire(scroll, owningTurn(root.current));
@@ -160,6 +167,7 @@ function MeasuredTranscriptRows({
     };
   }, [owner, scroll, virtualized]);
   useLayoutEffect(() => {
+    if (!virtualized) return;
     const selected = (synchronous = false) => {
       const next = root.current ? selectedVirtualRange(root.current, id, rows.length) : null;
       const update = () =>
@@ -179,8 +187,7 @@ function MeasuredTranscriptRows({
         range.startOffset === 0 &&
         range.endContainer === element &&
         range.endOffset === element.childNodes.length;
-      // Only virtualized lists hold hidden rows; a plain list renders every row already.
-      if (virtualized) selected(true);
+      selected(true);
       // Inserting rows at the old end boundary leaves native Range.endOffset
       // before those rows. Preserve Select All through synchronous materialization.
       if (wholeList && element && range && selection) {
@@ -189,7 +196,7 @@ function MeasuredTranscriptRows({
         selection.addRange(range);
       }
     };
-    if (virtualized) document.addEventListener("selectionchange", changed);
+    document.addEventListener("selectionchange", changed);
     document.addEventListener("copy", copying, true);
     return () => {
       document.removeEventListener("selectionchange", changed);

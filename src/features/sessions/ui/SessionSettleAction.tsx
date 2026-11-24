@@ -1,5 +1,4 @@
 import { presentRemoteError } from "../../connections/public/remoteFailure";
-import { useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { InlineAction } from "../../../shared/ui/ActionHost";
@@ -18,6 +17,7 @@ import {
 
 export function useSessionSettleCommand(
   session: Pick<SessionSummary, "id" | "lastActivityAt"> & { cwd?: string },
+  running = false,
 ) {
   const t = useT();
   const machineId = useLocalLifecycleMachine();
@@ -40,8 +40,10 @@ export function useSessionSettleCommand(
         });
         return;
       }
-      const client = sessionLifecycleClient(target);
-      const request = settled ? client.unsettle(session.id) : client.settle(session.id);
+      const client = sessionLifecycleClient(target, true, () => {
+        if (session.cwd && isProjectLocked(session.cwd)) throw new Error("Project is locked.");
+      });
+      const request = settled ? client.unsettle(session.id) : client.settle(session.id, running);
       await request.then(setSessionLifecycle).catch((cause: unknown) => {
         toast.show({
           tone: "danger",
@@ -63,11 +65,13 @@ export function useSessionSettleCommand(
 export function SessionSettleAction({
   session,
   title,
+  running,
 }: {
   session: Pick<SessionSummary, "id" | "cwd" | "lastActivityAt">;
   title: string;
+  running: boolean;
 }) {
-  const command = useSessionSettleCommand(session);
+  const command = useSessionSettleCommand(session, running);
   return command.available ? <SessionSettleButton command={command} title={title} /> : null;
 }
 
@@ -83,7 +87,6 @@ export function SessionSettleButton({
   command: SessionSettleCommand;
   title: string;
 }) {
-  const [busy, setBusy] = useState(false);
   const Icon = settled ? Undo2 : CheckCheck;
   return (
     <InlineAction
@@ -94,13 +97,7 @@ export function SessionSettleButton({
       type="button"
       data-no-drag
       data-tauri-drag-region="false"
-      loading={busy}
-      onClick={() => {
-        setBusy(true);
-        void run()
-          .finally(() => setBusy(false))
-          .catch(() => {});
-      }}
+      onClick={() => void run().catch(() => {})}
     >
       <Icon aria-hidden className="icon-xs shrink-0" strokeWidth={1.75} />
     </InlineAction>

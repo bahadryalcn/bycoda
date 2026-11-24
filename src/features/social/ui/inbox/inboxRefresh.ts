@@ -1,7 +1,41 @@
 import type { InfiniteData } from "@tanstack/react-query";
-import type { InboxItem, InboxUnifiedResult } from "./inboxTypes";
+import type { InboxItem, InboxTagReceipt, InboxUnifiedResult } from "./inboxTypes";
 
 export type InboxPages = InfiniteData<InboxUnifiedResult, string | undefined>;
+
+/** Mirrors matchesRow in host/social/inbox/inbox-unified.ts; callers normalize the query once. */
+export function matchesInboxText(item: InboxItem, needle: string): boolean {
+  return (
+    !needle ||
+    `${item.title} ${item.preview} ${item.tags.join(" ")}`.toLocaleLowerCase().includes(needle)
+  );
+}
+
+/** For lists whose membership does not depend on tags or status. An intervening edit has
+ * no comparable Host revision, so the caller must refetch instead of replaying this receipt. */
+export function updateInboxTags(
+  data: InboxPages,
+  original: InboxItem,
+  saved: InboxTagReceipt,
+): InboxPages | undefined {
+  let conflict = false;
+  const pages = data.pages.map((page) => {
+    if (!page.items.some((item) => item.threadId === saved.threadId)) return page;
+    const items = page.items.map((item) => {
+      if (item.threadId !== saved.threadId) return item;
+      if (
+        item.status !== original.status ||
+        item.tags.length !== original.tags.length ||
+        !item.tags.every((tag, index) => tag === original.tags[index])
+      )
+        conflict = true;
+      return { ...item, status: saved.status, tags: saved.tags };
+    });
+    return { ...page, items };
+  });
+  if (conflict) return undefined;
+  return pages.every((page, index) => page === data.pages[index]) ? data : { ...data, pages };
+}
 
 /** The Host lists newest first: `at` descending, then thread id descending. */
 function sortsBefore(a: InboxItem, b: InboxItem): boolean {

@@ -19,6 +19,7 @@ export interface WorktreeDeckTabsDeps {
   sessions: Session[];
   sidebarCwd: string;
   projectCwd: string;
+  inboxViewOpen: boolean;
   activeTabId: string;
   projectWorktree: ReturnType<typeof useWorktreeFocus>;
   tabWorkspace: ReturnType<typeof useWorkspacePins>["tabWorkspace"];
@@ -30,6 +31,7 @@ export function useWorktreeDeckTabs({
   sessions,
   sidebarCwd,
   projectCwd,
+  inboxViewOpen,
   activeTabId,
   projectWorktree,
   tabWorkspace,
@@ -63,7 +65,13 @@ export function useWorktreeDeckTabs({
     // A projectless session belongs to no project, so it stands on its own
     // rather than trailing the last project's tabs.
     const active = tabs.find((tab) => tab.id === activeTabId);
-    if (active && !isExternalFileWorkspaceTab(active) && !workspaceTabCwd(active, sessions)) {
+    const scopeToInboxProject = inboxViewOpen && projectCwd && projectCwd !== "~";
+    if (
+      !scopeToInboxProject &&
+      active &&
+      !isExternalFileWorkspaceTab(active) &&
+      !workspaceTabCwd(active, sessions)
+    ) {
       return [active];
     }
     // Each worktree keeps its own tabs; the others stay open, just hidden.
@@ -81,6 +89,7 @@ export function useWorktreeDeckTabs({
     tabs,
     sessions,
     projectCwd,
+    inboxViewOpen,
     projectWorktree?.path,
     tabWorkspace,
     workspaceNavigation.revision,

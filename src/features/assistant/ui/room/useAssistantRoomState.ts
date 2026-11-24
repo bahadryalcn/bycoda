@@ -46,6 +46,36 @@ import {
 } from "./assistantRoomHelpers";
 const actionError = (cause: unknown) => presentRemoteError(cause, { explicit: true });
 
+async function loadRoomProjects(expectedEnvironmentId?: string) {
+  const owner = await captureAssistantHostRead(expectedEnvironmentId);
+  return { environmentId: owner.environmentId, projects: await owner.projects() };
+}
+
+// Match the Host's SQLite lower() for memory text, including its ASCII-only case folding.
+function foldMemoryText(text: string) {
+  return text.replace(/[A-Z]+/g, (word) => word.toLowerCase());
+}
+
+const MEMORY_SEARCH_LIMIT = 100;
+
+function previewMemoryMatches(
+  query: string,
+  previous: AssistantMemory[] = [],
+  loaded: AssistantMemory[] = [],
+) {
+  const needle = foldMemoryText(query);
+  const matches = new Map<string, AssistantMemory>();
+  for (const entries of [previous, loaded]) {
+    for (const entry of entries) {
+      if (!matches.has(entry.id) && foldMemoryText(entry.text).includes(needle)) {
+        matches.set(entry.id, entry);
+        if (matches.size === MEMORY_SEARCH_LIMIT) return [...matches.values()];
+      }
+    }
+  }
+  return [...matches.values()];
+}
+
 export type AssistantRoomCore = ReturnType<typeof useAssistantRoomState>;
 
 // Group-lock values come from the shell, which owns those imports.
@@ -88,28 +118,41 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   const hostProjects = hostProjectRead?.projects ?? null;
   const [projectReadError, setProjectReadError] = useState("");
   const projectReadEpoch = useRef(0);
-  function fetchProjects() {
+  const projectEnvironmentId = props.environmentId ?? environmentId;
+  const initialProjectRead = useRef<ReturnType<typeof loadRoomProjects> | null>(null);
+  function fetchProjects(reuseInitial: boolean) {
     const epoch = ++projectReadEpoch.current;
-    return captureAssistantHostRead(props.environmentId ?? environmentId)
-      .then(async (owner) => ({ owner, result: await owner.projects() }))
-      .then(
-        ({ owner, result }) => {
-          if (epoch === projectReadEpoch.current) {
-            setHostProjectRead({ environmentId: owner.environmentId, projects: result });
-            setProjectReadError("");
-          }
-        },
-        (cause: unknown) => {
-          if (epoch === projectReadEpoch.current) setProjectReadError(errorText(cause));
-        },
-      );
+    const initial = reuseInitial && initialProjectRead.current;
+    const read =
+      initial && projectEnvironmentId
+        ? initial.then(
+            (result) =>
+              result.environmentId === projectEnvironmentId
+                ? result
+                : loadRoomProjects(projectEnvironmentId),
+            () => loadRoomProjects(projectEnvironmentId),
+          )
+        : loadRoomProjects(projectEnvironmentId);
+    initialProjectRead.current = environmentId ? null : read;
+    return read.then(
+      (result) => {
+        if (epoch === projectReadEpoch.current) {
+          setHostProjectRead(result);
+          setProjectReadError("");
+        }
+      },
+      (cause: unknown) => {
+        if (epoch === projectReadEpoch.current) setProjectReadError(errorText(cause));
+      },
+    );
   }
   function readProjects() {
     setProjectReadError("");
-    return fetchProjects();
+    return fetchProjects(false);
   }
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Bind the project inventory to the captured Host, including initial discovery before its snapshot.
   useEffect(() => {
-    fetchProjects().catch(() => undefined); // -- failures are reported by its own rejection handler
+    fetchProjects(true).catch(() => undefined); // -- failures are reported by its own rejection handler
     return () => {
       projectReadEpoch.current++;
     };
@@ -321,38 +364,53 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   const [memorySearch, setMemorySearch] = useState<{
     query: string;
     results: AssistantMemory[];
-    settled: boolean;
+    scopeKey: string;
+    source: AssistantMemory[] | undefined;
+    error?: string;
   } | null>(null);
+  const memorySource = snapshot?.memory;
+  const scopedSearch =
+    memorySearch?.scopeKey === privacy.key && memorySearch.source === memorySource
+      ? memorySearch
+      : null;
   const memorySearchActive = view === "Memory" && query.trim() !== "";
-  const memorySearchCurrent = memorySearch?.query === query ? memorySearch : null;
-  const memoryResults = memorySearchActive ? (memorySearchCurrent?.results ?? []) : null;
-  const memorySearching = memorySearchActive && !memorySearchCurrent?.settled;
+  const memorySearchCurrent = scopedSearch?.query === query ? scopedSearch : null;
+  const memoryResults = memorySearchActive
+    ? (memorySearchCurrent?.results ??
+      previewMemoryMatches(query, scopedSearch?.results, memorySource))
+    : null;
+  const memorySearching = memorySearchActive && !memorySearchCurrent;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Reconcile visible memory matches with the current Host's full search after typing settles.
   useEffect(() => {
     if (view !== "Memory" || !query.trim()) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      void assistantRequest({ op: "memory.search", query, limit: 100 })
+      void assistantRequest({ op: "memory.search", query, limit: MEMORY_SEARCH_LIMIT })
         .then((result) => {
-          if (!cancelled) setMemorySearch({ query, results: result.entries ?? [], settled: false });
+          if (!cancelled)
+            setMemorySearch({
+              query,
+              results: result.entries ?? [],
+              scopeKey: privacy.key,
+              source: memorySource,
+            });
         })
         .catch((cause) => {
-          const text = presentRemoteError(cause);
-          if (!cancelled && text) setError({ key: "memory.search", text });
-        })
-        .finally(() => {
           if (!cancelled)
-            setMemorySearch((current) =>
-              current?.query === query
-                ? { ...current, settled: true }
-                : { query, results: [], settled: true },
-            );
+            setMemorySearch({
+              query,
+              results: [],
+              scopeKey: privacy.key,
+              source: memorySource,
+              error: presentRemoteError(cause),
+            });
         });
     }, 300);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [view, query, snapshot?.memory]);
+  }, [view, query, memorySource, privacy.key]);
   const memoryEntries = memoryResults ?? snapshot?.memory ?? [];
   const [memoryEdit, setMemoryEdit] = useState<AssistantMemory | "new" | null>(null);
   const [noteEdit, setNoteEdit] = useState<AssistantNote | "new" | null>(null);
@@ -543,6 +601,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     visibleDraft,
     updateJobDraft,
     memoryResults,
+    memorySearchError: memorySearchActive ? memorySearchCurrent?.error : undefined,
     memorySearching,
     memoryEntries,
     memoryEdit,

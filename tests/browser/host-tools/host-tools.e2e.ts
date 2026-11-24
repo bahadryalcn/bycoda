@@ -623,6 +623,43 @@ for (const theme of ["light", "dark"]) {
     await expect(picker.getByRole("option", { name: "Fixture MacBook" })).toBeVisible();
     await page.screenshot({ path: `temp/verification/local-machine-picker/${theme}.png` });
   });
+
+  for (const width of [1280, 800]) {
+    test(`lists the remote project Host once in Devices at ${width}px in ${theme} mode`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`${fixture}?remote-machine-picker&theme=${theme}`);
+      await selectTool(page, "Devices");
+      const machine = page.getByRole("button", { name: /^Tool machine:/ });
+      await expect(machine).toHaveAccessibleName("Tool machine: Fixture MacBook");
+      await machine.click();
+      const picker = page.getByRole("listbox", { name: "Tool machine" });
+      const owner = picker.getByRole("option", { name: /Fixture MacBook/ });
+      const local = picker.getByRole("option", { name: "This computer" });
+      await expect(owner).toHaveCount(1);
+      await expect(owner).toContainText("Project host");
+      await expect(owner).toHaveAttribute("aria-selected", "true");
+      await local.click();
+      await machine.click();
+      await expect(local).toHaveAttribute("aria-selected", "true");
+      await page.screenshot({
+        path: `temp/verification/project-host-picker/${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Setup and access", exact: true }).click();
+      const setup = page.getByRole("dialog", { name: "Setup and access" });
+      await setup.getByRole("button", { name: /^Tool machine:/ }).click();
+      await expect(owner).toHaveCount(1);
+      await expect(owner).toContainText("Project host");
+      await expect(local).toHaveAttribute("aria-selected", "true");
+      await page.screenshot({
+        path: `temp/verification/project-host-picker/setup-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
 }
 
 test("switching from the project host clears the previous browser controls", async ({ page }) => {

@@ -37,7 +37,9 @@
   .workspaceHeader > [data-pane-header-heading] {
     margin-inline-end: var(--space-1);
   }
+}
 
+@container workspace-pane (inline-size < 350px) {
   .newSessionLabel {
     display: none;
   }

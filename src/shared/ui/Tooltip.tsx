@@ -23,10 +23,6 @@ import { needsOverflowTooltip } from "./tooltipVisibility";
 
 /** Time the pointer rests on a control before its tooltip opens. */
 export const TOOLTIP_DELAY_MS = 450;
-/** Moving between neighbouring controls inside this window opens the next hint at once. */
-export const TOOLTIP_WARM_MS = 250;
-/** Hover cards open a little sooner than hints: the pointer rests on an object, not a control. */
-export const HOVER_CARD_OPEN_MS = 300;
 /** Grace period that lets the pointer cross the gap from the trigger into a hover card. */
 export const HOVER_CARD_CLOSE_MS = 150;
 
@@ -39,87 +35,78 @@ export const detailTooltipFrame = {
   className: "pointer-events-none overflow-hidden p-2.5",
 } satisfies Partial<ComponentProps<typeof Popover>>;
 
-/** Last close per hint family, for the warm handoff between neighbouring triggers. */
-const lastClosedAt: Record<string, number> = {};
-
 export type HoverIntentOptions = {
-  /** Hint family that shares one warm handoff window (`tooltip`, `hover-card`). */
-  group?: string;
   /** Rest time before opening from a pointer. Default {@link TOOLTIP_DELAY_MS}. */
   openDelay?: number;
   /** Delay before a pointer leave closes. Default 0 (close at once). */
   closeDelay?: number;
-  /** Inside this window after another hint of the group closed, opening is immediate. */
-  warmMs?: number;
 };
 
 /**
- * Shared hover-intent timing for tooltips and hover cards: one pending timer, a delayed open,
- * an optional delayed close and a warm handoff, so moving along a toolbar opens the next hint
- * at once. Mounts nothing; `anchor` is set only while open.
+ * Shared hover timing. Each target needs a full dwell, with an optional grace period on leave.
+ * Mounts nothing. `anchor` is set only while open.
  */
-export function useHoverIntent({
-  group = "tooltip",
+export function useHoverIntent<T = HTMLElement>({
   openDelay = TOOLTIP_DELAY_MS,
   closeDelay = 0,
-  warmMs = TOOLTIP_WARM_MS,
 }: HoverIntentOptions = {}) {
-  const timer = useRef<{ id: number; kind: "open" | "close" } | null>(null);
-  const opened = useRef<HTMLElement | null>(null);
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const timer = useRef<
+    { id: number; kind: "open"; target: T } | { id: number; kind: "close" } | null
+  >(null);
+  const opened = useRef<T | null>(null);
+  const [anchor, setAnchor] = useState<T | null>(null);
 
   const cancel = () => {
     if (!timer.current) return;
     window.clearTimeout(timer.current.id);
     timer.current = null;
   };
-  // Named `handle*`: these only run from pointer events and timers, never during render.
-  const handleClose = () => {
+  const close = () => {
     cancel();
-    if (opened.current) {
-      opened.current = null;
-      lastClosedAt[group] = performance.now();
-    }
+    opened.current = null;
     setAnchor(null);
   };
+  // Dispose of pending hover work with its owner.
   useEffect(() => cancel, []);
 
-  const show = (element: HTMLElement) => {
+  const show = (target: T) => {
     cancel();
-    opened.current = element;
-    setAnchor(element);
+    opened.current = target;
+    setAnchor(target);
   };
-  const handleWarm = () => performance.now() - (lastClosedAt[group] ?? -Infinity) < warmMs;
-  /** Opens after the rest delay (or at once when warm or `delay` is 0). */
-  const scheduleOpen = (element: HTMLElement, delay = handleWarm() ? 0 : openDelay) => {
-    if (timer.current?.kind === "close") cancel();
-    if (opened.current === element) return;
-    if (timer.current?.kind === "open") return;
-    if (delay <= 0) {
-      show(element);
+  /** Opens after a full dwell. Keyboard focus can open immediately with a delay of 0. */
+  const scheduleOpen = (target: T, delay = openDelay) => {
+    if (opened.current === target) {
+      cancel();
       return;
     }
+    if (delay <= 0) {
+      show(target);
+      return;
+    }
+    if (timer.current?.kind === "open" && timer.current.target === target) return;
+    close();
     const id = window.setTimeout(() => {
       timer.current = null;
-      show(element);
+      show(target);
     }, delay);
-    timer.current = { id, kind: "open" };
+    timer.current = { id, kind: "open", target };
   };
   /** Closes after the close delay; a pointer coming back (or into a card) cancels it. */
   const scheduleClose = (delay = closeDelay) => {
-    if (!opened.current || delay <= 0) {
-      handleClose();
+    if (opened.current === null || delay <= 0) {
+      close();
       return;
     }
     if (timer.current?.kind === "close") return;
     cancel();
     const id = window.setTimeout(() => {
       timer.current = null;
-      handleClose();
+      close();
     }, delay);
     timer.current = { id, kind: "close" };
   };
-  return { anchor, scheduleOpen, scheduleClose, close: handleClose, cancel };
+  return { anchor, scheduleOpen, scheduleClose, close, cancel };
 }
 
 /** A `display: contents` wrapper has no box; the control inside is the anchor. */
@@ -219,7 +206,7 @@ function TooltipBody({
  * `label` through this hook; pass `title=""` to a Button that a `Tooltip` wraps so it does not
  * add a second hint.
  *
- * Pointer hover opens after `delay` (450 ms; at once within 250 ms of another hint closing);
+ * Pointer hover opens after a fresh `delay` on each control (450 ms by default);
  * keyboard focus (`:focus-visible`, unless the last input was a pointer) opens at once; leave, press, blur and Escape close. Touch
  * never opens it. Disabled anchors still open on hover (pointer events reach disabled controls;
  * nothing here relies on mouse events or on the anchor's own click handling); keyboard users

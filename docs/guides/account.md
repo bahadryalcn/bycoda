@@ -134,7 +134,13 @@ Shows, one row per category, what bycoda stores about your account (profile, dev
 route hints if you turned on phone connect, active-time days, notification items, support
 requests) and how long it is kept, and never your sessions, prompts, code or file names.
 **Request export** prepares a JSON copy of your account in the background; when it is ready,
-**Save file** downloads it. Statistics and diagnostic logs below are choices of this computer.
+**Save file** downloads it. Data sharing choices apply to this computer.
+
+In **Settings → Privacy**, choose **Do not send**, **Ask every time** or **Send every time** for each sharing category. Active time starts in **Ask every time**. Choosing **Do not send** keeps new active-time records on the local Host. Previous uploads remain in the account.
+
+Previously enabled anonymous statistics and token totals ask for approval until you explicitly choose **Send every time**.
+
+A small notice in the lower-left corner opens the destination and the files or request data before they are sent. **Send every time** gives you a short review window. Opening the details pauses automatic sending, and you can cancel the pending transfer. After a successful upload, the receipt opens the same data and the destination. Close it to dismiss that receipt. **Data sharing receipts** controls the receipts independently of permission.
 
 **Share anonymous usage statistics** is off by default and needs no account. bycoda asks
 once: in the first-run setup, or for existing installations in a small notice that never
@@ -143,7 +149,7 @@ and statistics stay off). When on, bycoda sends at most once a day a random inst
 app version, operating system, release channel and date, and nothing else. Without an account
 the same switch is in Settings → Privacy. Turning it off stops sending immediately.
 
-**Share anonymous token totals** has its own switch in Settings → Privacy and Account →
+**Share anonymous token totals** has its own control in Settings → Privacy and Account →
 Privacy & data. It starts off. When enabled, desktop sends completed UTC days of measured
 Bycoda turn usage since you enabled it, with a random installation ID. The service receives
 only dates, token totals, estimated API-equivalent USD and counts of priced and unpriced
@@ -153,19 +159,15 @@ seven days after an outage.
 
 ### Diagnostic logs
 
-**Share diagnostic logs** (Account → Privacy and data, and Settings → Privacy) has three
-choices: **Off**, **Ask me** (also what you get until you choose) and **Send automatically**.
+**Share diagnostic logs** defaults to **Ask every time**. Bycoda uses error logs only to understand problems and improve the app.
 Logs are the app, Host and interface logs of this computer. They are redacted here before
 they leave it (secrets, tokens, e-mail addresses and your user name are removed) and again on
 the server, never include your conversations, prompts or code, and are kept 90 days.
 
-- After bycoda closed unexpectedly, **Ask me** shows a notice with **Send**, **Always send**
-  (switches to automatic) and **Don't send**. **Send automatically** uploads the crash report
-  silently and **Off** discards it.
-  Notice answers use the full card width below the message and wrap on narrow windows.
+- After an unexpected close, the notice opens the exact redacted log and report details. **Do not send** discards the pending report.
 - In automatic mode bycoda also sends a report at most once every seven days.
 - Logs of connected remote computers (their bycoda Host) are included, redacted the same way.
-- **Send logs now** uploads a report once, with an optional note, whatever the choice is.
+- **Send logs now** prepares a report for one transfer, with an optional note that is redacted before upload.
 - Signed in, reports are linked to your account; as a guest they carry no user, device or
   install id. Without the account platform nothing can be sent.
 

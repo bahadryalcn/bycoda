@@ -14,6 +14,7 @@ export type {
 /** Local rendering capability, negotiated separately from the legacy status payload. */
 export type DeviceHostStatus = HostDeviceStatus & { touchProtocol?: 1 };
 export interface DevicePanelApi {
+  touchAvailable?: () => Promise<boolean>;
   /** The machine behind this API, so a failed load reruns when it answers again. */
   environmentId?: string;
   status: () => Promise<DeviceHostStatus>;

@@ -1,4 +1,5 @@
 import { errorText } from "../../../shared/lib/errors";
+import type { AttachmentReadCapacity } from "./attachmentReadCapacity";
 import { FOLDER_MIME, normalizeImageMime, isVisionImage } from "./attachmentPrompt";
 export {
   ATTACHMENT_ONLY_PROMPT,
@@ -286,13 +287,17 @@ export function retainAttachmentPickerSelection() {
 
 export async function pickAttachments(
   selection?: ReturnType<typeof retainAttachmentPickerSelection>,
+  capacity?: AttachmentReadCapacity,
 ): Promise<Attachment[]> {
   const paths = selection ? await selection.read() : await pickFilePaths();
   if (!paths?.length) return [];
-  return attachmentsFromPaths([...paths]);
+  return attachmentsFromPaths([...paths], capacity);
 }
 
-export async function attachmentsFromPaths(paths: string[]): Promise<Attachment[]> {
+export async function attachmentsFromPaths(
+  paths: string[],
+  capacity?: AttachmentReadCapacity,
+): Promise<Attachment[]> {
   const unique = [...new Set(paths.filter((path) => path.trim()))];
   if (unique.length === 0) return [];
   const infos = await invoke<PathInfo[]>("inspect_paths", { paths: unique });
@@ -301,8 +306,11 @@ export async function attachmentsFromPaths(paths: string[]): Promise<Attachment[
   for (const info of infos) {
     // Sequential, and each read sees what the selection already holds, so a folder of large
     // screenshots never reads more than the total budget before the draft merge.
-    const file = await attachmentFromPath(info, MAX_TOTAL_EMBED_BYTES - embedded);
-    if (!file) continue;
+    if (skipName(info.name)) continue;
+    const slot = capacity?.reserve(info.path);
+    if (slot === null) continue;
+    const embed = !capacity || slot !== undefined;
+    const file = await attachmentFromPath(info, embed ? MAX_TOTAL_EMBED_BYTES - embedded : 0);
     embedded += inlineBytes(file);
     out.push(file);
   }
@@ -313,6 +321,7 @@ export async function attachmentsFromFiles(
   files: File[],
   options?: {
     persistBlobs?: boolean;
+    capacity?: AttachmentReadCapacity;
     /** Called once with the blobs left out; path files are never embedded, so never skipped. */
     onSkipped?: (skipped: SkippedAttachment[]) => void;
   },
@@ -327,22 +336,29 @@ export async function attachmentsFromFiles(
     else blobs.push(file);
   }
   if (pathFiles.length) {
-    out.push(...(await attachmentsFromPaths(pathFiles)));
+    out.push(...(await attachmentsFromPaths(pathFiles, options?.capacity)));
   }
   let embedded = out.reduce((sum, file) => sum + inlineBytes(file), 0);
   for (const file of blobs) {
+    if (skipName(file.name) || file.size < 0) continue;
     // Checked before any preview URL or read, so an oversized blob costs nothing.
     if (file.size > MAX_EMBED_BYTES) {
-      if (!skipName(file.name)) skipped.push({ name: blobName(file), reason: "too-large" });
+      skipped.push({ name: blobName(file), reason: "too-large" });
       continue;
     }
     // A saved blob past the total budget keeps its path and drops its bytes; one that
     // cannot be saved (`persistBlobs: false`) has only its bytes, so it stays inline.
+    const slot = options?.capacity?.reserve();
+    if (slot === null) continue;
     const embed = options?.persistBlobs === false || embedded + file.size <= MAX_TOTAL_EMBED_BYTES;
     const item = await attachmentFromBlob(file, options?.persistBlobs !== false, embed);
-    if (item && item !== "unreadable") embedded += inlineBytes(item);
-    if (item === "unreadable") skipped.push({ name: blobName(file), reason: "unreadable" });
-    else if (item) out.push(item);
+    if (item === "unreadable") {
+      if (slot !== undefined) options?.capacity?.release(slot);
+      skipped.push({ name: blobName(file), reason: "unreadable" });
+    } else {
+      embedded += inlineBytes(item);
+      out.push(item);
+    }
   }
   if (skipped.length) options?.onSkipped?.(skipped);
   return out;
@@ -382,8 +398,7 @@ export async function prepareAttachments(files: Attachment[]): Promise<Attachmen
 async function attachmentFromPath(
   info: PathInfo,
   embedRoom = MAX_TOTAL_EMBED_BYTES,
-): Promise<Attachment | null> {
-  if (skipName(info.name)) return null;
+): Promise<Attachment> {
   // A folder's name says nothing about its contents, and a harness handed a
   // resource_link for a directory has nothing to open.
   const mimeType = info.isDir ? FOLDER_MIME : mimeFromName(info.name);
@@ -419,8 +434,7 @@ async function attachmentFromBlob(
   file: File,
   persist = true,
   embed = true,
-): Promise<Attachment | "unreadable" | null> {
-  if (skipName(file.name) || file.size < 0) return null;
+): Promise<Attachment | "unreadable"> {
   const mimeType = mimeFromFile(file);
   const kind = kindFromMime(mimeType);
   const name = blobName(file);

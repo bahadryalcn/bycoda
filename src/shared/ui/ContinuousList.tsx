@@ -90,6 +90,8 @@ export type ContinuousListProps<T> = CollectionFooterProps & {
    */
   stateKey: string;
   estimateSize?: number;
+  /** Render a finite window above this many items. Lower it for lists with expensive rows. */
+  windowThreshold?: number;
   /** Reserve scrollbar space without changing the virtualizer's scroll owner. Unset keeps its gutter. */
   gutter?: ScrollAreaProps["gutter"];
   className?: string;
@@ -119,6 +121,7 @@ function ContinuousListWindow<T>({
   renderItem,
   stateKey,
   estimateSize = 64,
+  windowThreshold = COLLECTION_WINDOW_THRESHOLD,
   gutter,
   className,
   rowAppearance,
@@ -136,7 +139,7 @@ function ContinuousListWindow<T>({
   // Focus is read only by rangeExtractor, so it lives in a ref: a focus move must not re-render every row.
   const focusedKey = useRef<string | null>(null);
   const requiredIndex = items.findIndex((item) => itemKey(item) === requiredKey);
-  const virtual = items.length > COLLECTION_WINDOW_THRESHOLD;
+  const virtual = items.length > windowThreshold;
   const virtualizer = useCollectionVirtualizer({
     count: items.length,
     enabled: virtual,

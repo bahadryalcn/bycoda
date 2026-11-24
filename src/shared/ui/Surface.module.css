@@ -19,10 +19,7 @@
 }
 /* Adjacent rows keep one shared hairline, including mixed semantic/interactive owners. */
 .surface[data-surface-focus-ring="inset"]:focus-visible,
-.appearance[data-surface-focus-ring="inset"]:focus-visible {
-  outline: 2px solid var(--ui-focus-ring-color);
-  outline-offset: -2px;
-}
+.appearance[data-surface-focus-ring="inset"]:focus-visible,
 .surface[data-surface-focus-ring="preview-inset"]:focus-visible,
 .appearance[data-surface-focus-ring="preview-inset"]:focus-visible {
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);

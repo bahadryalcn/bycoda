@@ -1,6 +1,6 @@
 # Privacy policy
 
-Last updated: 9 November 2026
+Last updated: 25 November 2026
 
 ## Scope and contact
 
@@ -12,11 +12,11 @@ For privacy questions or requests, email [info@bycoda.codes](mailto:info@bycoda.
 
 ## What bycoda collects, and what it does not
 
-You can use bycoda without a bycoda account. Without an account, the application does not send your projects, conversations, credentials or usage history to the maintainer, and it includes no advertising, behavioral tracking or automatic crash-report uploads. The only thing it can send without an account is the optional anonymous statistics signal described below, which is off by default.
+You can use bycoda desktop without a bycoda account. Mobile workspace access requires an account. The application includes no advertising or behavioral tracking. Optional anonymous statistics start off, and diagnostic reports require approval by default. The data-sharing notice shows the destination and lets you inspect the contents before sending.
 
-If you create a bycoda account, the maintainer does receive and store the limited account data described in the sections below: your account profile, your devices, how many minutes per day each device was active, and your notification settings.
+If you create a bycoda account, the maintainer receives and stores the account profile, device and notification settings described below. Daily active minutes are shared only according to the active-time sharing permission on each computer.
 
-Never collected, with or without an account: session content, prompts, model responses, code, file contents, file paths, project names, repository names, what is shown on your screen, credentials, or the contents of your email and chat messages. We do not sell your data, use it for advertising, or use your content to train models.
+Routine account and statistics requests exclude session content, prompts, model responses, code, file contents, paths, project names, repository names, screen content, workspace credentials and email or chat content. Diagnostic and support uploads have separate controls described below. We do not sell your data, use it for advertising, or use your content to train models.
 
 This does not mean the application stores no data or never uses the network. Data is processed on your devices and, when a connected feature runs, by the providers and hosts you use.
 
@@ -40,6 +40,10 @@ You can sign in with Google, GitHub or a one-time code sent to your email addres
 ## Your devices
 
 For each device where you sign in, we store a device name, operating system and version, application version, release channel, a push token if you enable push notifications, when the device was first registered and when it was last seen. You can see this list in the app and in the account portal and sign a device out remotely.
+
+If you enable account-based computer discovery, bycoda Cloud stores the computer name, Host identifier, connection addresses and any LAN public key. Account-based pairing writes the requesting and target device IDs, public keys, request state and an encrypted, short-lived pairing ticket. The ticket is removed from the request on delivery. Undelivered requests become eligible for cleanup five minutes after expiration. The durable Host credential stays with the paired device and the Host stores its hash.
+
+If you enable computer access management from your account, bycoda Cloud stores the last synchronized paired-device list, management permissions, timestamps and pending access changes. A pending change clears after the computer confirms it. Turning off account management removes that computer's synchronized access record.
 
 ## Active time
 
@@ -66,6 +70,18 @@ To keep the service secure and accountable, we record important account events a
 ## Optional anonymous statistics
 
 Anonymous statistics are optional and off by default, with or without an account. The app asks you once (during first-run setup, or once in the app if you were never asked) and only sends anything if you choose to share; you can change your choice in Settings at any time. When on, the app sends at most one small signal per day containing a random installation identifier, the application version, the operating system, the release channel and the date. The identifier is not derived from your hardware, name or email and is not linked to any account. Turning the setting off stops the signal.
+
+## Optional token and cost statistics
+
+This separate desktop setting starts off. When enabled, bycoda can send daily totals for measured tokens, estimated API-equivalent cost and turn counts, starting from when you enabled sharing. The request includes a random installation identifier and no provider account identifier, model name or conversation content. Cloud stores a salted hash of the installation identifier and keeps the daily records for up to 400 days under its retention policy. Turning the setting off stops future uploads.
+
+## Diagnostic reports
+
+Diagnostic uploads ask for approval by default. In Privacy settings you can disable uploads or allow automatic reports after crashes and periodically. The report preview shows the destination and data, including redacted app logs and available Host logs. Cloud keeps uploaded reports for 90 days under its retention policy. Support feedback may include a report you choose to attach.
+
+## Policy updates
+
+Material changes to this policy and the terms of use are dated in the public repository. Bycoda displays the revision, a change summary and links to the documents. The app checks the public update file on GitHub without a bycoda account or device identifier. GitHub receives normal connection metadata. Dismissing the notice is recorded on that installation and does not change sharing permissions.
 
 ## Website statistics
 

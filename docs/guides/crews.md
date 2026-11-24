@@ -322,8 +322,12 @@ tasks and conversations remain available.
 
 ## Crew work and conversations
 
-Open **Crew work** from the rail. The management dialog has a crew
-selector, **Ongoing** and **Finished** views, a search over the loaded work and a
+Open **Crew work** from the rail. In the Sessions sidebar, **Crew work** and
+**Manage** appear while the project has ongoing or paused crew work. Visit the
+**Work** tab on the Crews page for finished work.
+
+The management dialog has a crew selector, **Ongoing** and **Finished** views,
+a search over the loaded work and a
 selectable work list with update times. The search and selection survive refreshes;
 switching crews clears the search. Each item shows a live or paused state only when it says something, and,
 separately, whether it needs you (**Needs decision**, **Needs review** or

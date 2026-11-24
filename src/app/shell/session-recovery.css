@@ -99,7 +99,7 @@
 .recovery-list {
   flex: 0 1 auto;
   min-block-size: 0;
-  scrollbar-gutter: stable;
+  padding-inline-end: var(--ui-scrollbar-size);
 }
 
 .recovery-row > .bycoda-arc {

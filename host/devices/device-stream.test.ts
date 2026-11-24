@@ -213,6 +213,44 @@ describe("DeviceStreams", () => {
     await f.streams.stopAll();
   });
 
+  it.each(["subscription", "poll"])(
+    "serves a Mac simulator through %s until its last viewer stops",
+    async (mode) => {
+      let send!: Parameters<NonNullable<DeviceStreamPorts["iosVideo"]>>[2];
+      let source!: AbortSignal;
+      const iosVideo: DeviceStreamPorts["iosVideo"] = (_id, signal, publish) => {
+        source = signal;
+        send = publish;
+        return new Promise((resolve) =>
+          signal.addEventListener("abort", () => resolve(), { once: true }),
+        );
+      };
+      const f = fixture({ platform: () => "darwin", iosVideo });
+      f.state.platform = "ios";
+      const push = mode === "subscription" ? { signal: new AbortController().signal } : undefined;
+      const first = f.streams.read("sim-1", undefined, undefined, push);
+      await settle();
+      const display = { width: 390, height: 844 };
+      const key = Buffer.concat([SPS, PPS, idr(1)]);
+      send(key, display);
+      const chunk = await first;
+      expect(chunk).toMatchObject({
+        ...display,
+        reset: true,
+        base64: key.toString("base64"),
+        ...(push ? { boundary: true } : {}),
+      });
+      send(frame(2), display);
+      expect(await f.streams.read("sim-1", chunk.cursor, undefined, push)).toMatchObject({
+        reset: false,
+        base64: frame(2).toString("base64"),
+      });
+      expect(f.children).toHaveLength(0);
+      await f.streams.stopAll();
+      expect(source.aborted).toBe(true);
+    },
+  );
+
   it("continues by cursor and answers an idle second with an empty chunk", async () => {
     const f = fixture();
     const opening = f.streams.read("emulator-5554", undefined);

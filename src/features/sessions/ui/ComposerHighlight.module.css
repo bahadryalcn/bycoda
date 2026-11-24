@@ -8,56 +8,6 @@
   -webkit-box-decoration-break: clone;
 }
 
-/* Characters kept only for their width; the textarea underneath still holds them. */
-.hidden {
-  color: transparent;
-}
-
-.linkLabelled {
-  position: relative;
-  color: var(--ui-tone-info-fg);
-}
-
-.linkFace {
-  position: absolute;
-  inset-block-start: 50%;
-  inset-inline-start: 1px;
-  max-inline-size: calc(100% - 2px);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35em;
-  padding: 2px 0.35em;
-  border-radius: var(--ui-radius-inset);
-  background: var(--ui-tone-info-subtle);
-  font-size: 0.85em;
-  line-height: 1.25;
-  text-indent: 0;
-  white-space: nowrap;
-  transform: translateY(-50%);
-}
-
-.linkFace > :not(.linkName) {
-  display: inline-flex;
-  flex: none;
-  inline-size: 0.9em;
-  block-size: 0.9em;
-}
-
-.linkFace svg {
-  inline-size: 100%;
-  block-size: 100%;
-}
-
-.linkName {
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.linkName::before {
-  content: attr(data-link-label);
-}
-
 .referenceLayer {
   position: absolute;
   z-index: 1;
@@ -83,8 +33,8 @@
 }
 
 .referenceLayer .referenceHit:focus-visible {
-  outline: 2px solid var(--ui-focus-ring-color);
-  outline-offset: -2px;
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 
 /* Keep glyph advances and the line box aligned with the native textarea. */

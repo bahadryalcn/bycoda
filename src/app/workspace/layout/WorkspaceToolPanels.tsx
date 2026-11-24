@@ -587,7 +587,7 @@ function WorkspaceToolPanelsComponent({
             pullRequestsOnly={pullRequestsOnly}
             onPullRequestsOnlyChange={setPullRequestsOnly}
             onOpenProject={pickProject}
-            cwd={sidebarCwd}
+            cwd={projectCwd || sidebarCwd}
             recents={visibleRecents}
             besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
             compactRail={compactRailActive}

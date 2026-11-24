@@ -367,3 +367,47 @@ it("matches the worker's database fingerprint without a sync stat on the event l
   expect(after).not.toBe(before);
   expect(after).toBe(desktop.fingerprint());
 });
+
+it("reopens the database after bounded waits for SQLite IOERR_TRUNCATE", () => {
+  const { path, cwd } = fixture();
+  let attempts = 0;
+  const pause = vi.fn();
+  const desktop = new DesktopSessions(
+    () => [path],
+    "win32",
+    undefined,
+    undefined,
+    (file, options) => {
+      if (++attempts < 3) throw Object.assign(new Error("disk I/O error"), { errcode: 1546 });
+      return new DatabaseSync(file, options);
+    },
+    pause,
+  );
+  try {
+    expect(desktop.readMetadataList(cwd, "P", ["codex"]).sessions.map((s) => s.id)).toContain(
+      "visible",
+    );
+    expect(pause.mock.calls).toEqual([[50], [100]]);
+  } finally {
+    desktop.close();
+  }
+});
+
+it.each([
+  { code: 1546, attempts: 5, waits: [50, 100, 200, 400] },
+  { code: 10, attempts: 2, waits: [] },
+])("bounds physical read retries for SQLite error $code", ({ code, attempts, waits }) => {
+  const { path, cwd } = fixture();
+  const open = vi.fn(() => {
+    throw Object.assign(new Error("read failed"), { errcode: code });
+  });
+  const pause = vi.fn();
+  const desktop = new DesktopSessions(() => [path], "win32", undefined, undefined, open, pause);
+  try {
+    expect(() => desktop.readMetadataList(cwd, "P", ["codex"])).toThrow();
+    expect(open).toHaveBeenCalledTimes(attempts);
+    expect(pause.mock.calls.map(([delay]) => delay)).toEqual(waits);
+  } finally {
+    desktop.close();
+  }
+});

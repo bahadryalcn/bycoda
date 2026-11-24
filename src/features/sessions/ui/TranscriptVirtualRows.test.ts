@@ -132,6 +132,14 @@ function scroll(element: HTMLElement, offset: number) {
 }
 const mounted = () => host.querySelectorAll("[data-transcript-virtual-owner]").length;
 
+it("leaves short lists in normal layout without virtual width reads", () => {
+  const measure = vi.mocked(HTMLElement.prototype.getBoundingClientRect);
+  mount(rows(2));
+  const list = host.querySelector("[data-transcript-virtual-list]")!;
+  expect(measure.mock.contexts).not.toContain(list);
+  expect(mounted()).toBe(2);
+});
+
 it("mounts viewport rows from ten thousand records and synchronously reveals an exact distant block", () => {
   const element = mount(rows(10_000));
   expect(mounted()).toBeLessThan(50);
@@ -530,17 +538,19 @@ it("retains remote-output loading and failure across row culling without retryin
   expect(load).toHaveBeenLastCalledWith("a-0", 7);
 });
 
-it("registers selectionchange tracking only for virtualized lists, keeping copy handling everywhere", () => {
+it("registers selection tracking and copy materialization only for virtualized lists", () => {
   const add = vi.spyOn(document, "addEventListener");
   mount(rows(5));
   const plain = add.mock.calls.map(([type]) => type);
   expect(plain).not.toContain("selectionchange");
-  expect(plain).toContain("copy");
+  expect(plain).not.toContain("copy");
   add.mockClear();
   act(() => root.unmount());
   root = createRoot(host);
   mount(rows(1000));
-  expect(add.mock.calls.map(([type]) => type)).toContain("selectionchange");
+  expect(add.mock.calls.map(([type]) => type)).toEqual(
+    expect.arrayContaining(["selectionchange", "copy"]),
+  );
 });
 
 function resizeHarness() {

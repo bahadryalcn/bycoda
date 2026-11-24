@@ -412,7 +412,9 @@ export function PhonePairingFlow({
                 ? t(
                     "This machine returned an invalid pairing response. Check its host and try again.",
                   )
-                : t("This machine could not be reached. Reconnect it and try again.")}
+                : state.error === "management-required"
+                  ? t("This desktop cannot manage devices on {p0}.", { p0: state.machine.name })
+                  : t("This machine could not be reached. Reconnect it and try again.")}
           </Alert>
           <Button stableWidth type="button" className="shrink-0" onClick={onRefresh}>
             {t("Check again")}

@@ -1,5 +1,6 @@
 import { AnnouncementNotices, FeedbackDialog, StatsConsentNotice } from "../../../features/account";
 import { CrashReportNotice } from "../../../features/diagnostics";
+import { DataSharingNotices } from "../../../features/data-sharing";
 import { PhoneAccountConnect } from "../../../features/connections/ui/PhoneAccountConnect";
 import { ContributePrompt } from "../../../features/projects/ui/ContributePrompt";
 import { HarnessUpdateNotice } from "../../../features/providers/ui/HarnessUpdateNotice";
@@ -7,6 +8,7 @@ import { ReminderNotices } from "../../../features/sessions/ui/ReminderNotices";
 import type { useSessionReminders } from "../../../features/notifications/hooks/useSessionReminders";
 import type { SettingsAnchor } from "../../../features/settings/ui/SettingsView";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
+import { PolicyUpdateNotice } from "../../../features/settings/ui/PolicyUpdateNotice";
 import { ToastRegion } from "../../../shared/ui/ToastRegion";
 import { logToastAnnouncement } from "../../../features/notifications/model/notificationLog";
 import { WindowTransferNotice } from "../windows/WindowTransferNotice";
@@ -31,7 +33,9 @@ export function WorkspaceNotices({ sessionReminders, openSettings }: WorkspaceNo
       />
       <StatsConsentNotice />
       <CrashReportNotice />
+      <DataSharingNotices />
       <AnnouncementNotices />
+      <PolicyUpdateNotice />
       <FeedbackDialog />
       <PhoneAccountConnect />
       <ContributePrompt />

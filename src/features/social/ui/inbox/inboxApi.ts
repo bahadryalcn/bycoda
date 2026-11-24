@@ -6,6 +6,7 @@ import type {
   InboxReplyOptions,
   InboxSettings,
   InboxStatus,
+  InboxTagReceipt,
   InboxUnifiedResult,
   PersonTimeline,
 } from "./inboxTypes";
@@ -63,10 +64,10 @@ export function inboxApi(client: SocialClient) {
       call<unknown>("inbox.setStatus", { threadId, status }, newRequestId()),
     /** Adds one tag against the Host's stored status and tags; sends no status or tag list. */
     addTag: (threadId: string, tag: string) =>
-      call<unknown>("inbox.setStatus", { threadId, addTags: [tag] }, newRequestId()),
+      call<InboxTagReceipt>("inbox.setStatus", { threadId, addTags: [tag] }, newRequestId()),
     /** Removes one tag against the Host's stored status and tags; sends no status or tag list. */
     removeTag: (threadId: string, tag: string) =>
-      call<unknown>("inbox.setStatus", { threadId, removeTags: [tag] }, newRequestId()),
+      call<InboxTagReceipt>("inbox.setStatus", { threadId, removeTags: [tag] }, newRequestId()),
     suggest: (threadId: string, factIds: string[]) =>
       call<{ text: string; factIds: string[] }>("replies.suggest", { threadId, factIds }),
     setAutoRefresh: (autoRefresh: boolean) =>

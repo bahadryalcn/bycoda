@@ -28897,7 +28897,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
-              "simple": { "const": true, "type": "boolean" },
+              "simple": { "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -29357,7 +29357,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
-              "simple": { "const": true, "type": "boolean" },
+              "simple": { "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -29972,7 +29972,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
-              "simple": { "const": true, "type": "boolean" },
+              "simple": { "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -30460,7 +30460,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
-              "simple": { "const": true, "type": "boolean" },
+              "simple": { "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -30926,7 +30926,7 @@
             "plan": {
               "additionalProperties": false,
               "properties": {
-                "simple": { "const": true, "type": "boolean" },
+                "simple": { "type": "boolean" },
                 "tasks": {
                   "items": {
                     "additionalProperties": false,
@@ -31392,7 +31392,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
-              "simple": { "const": true, "type": "boolean" },
+              "simple": { "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -31876,7 +31876,7 @@
           "plan": {
             "additionalProperties": false,
             "properties": {
-              "simple": { "const": true, "type": "boolean" },
+              "simple": { "type": "boolean" },
               "tasks": {
                 "items": {
                   "additionalProperties": false,
@@ -81286,5 +81286,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "cc5d4b91ab971663d5915347a36e4292acabfe45c2868a7b7a7e6aad3ab65e54"
+  "schemaHash": "bc6d256dae0c24cdfb63fab864cb5291f26959c19944d7f54fa544946e3f9489"
 }

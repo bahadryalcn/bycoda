@@ -129,7 +129,7 @@ describe("isolated Antigravity text requests", () => {
     expect(
       await runAntigravityTextPrompt({
         cwd: "/project",
-        model: "gemini-3.8-flash-low",
+        model: "antigravity:gemini-3.8-flash-low",
         modelSettings: { model: "wrong-model" },
         prompt: "hello",
       }),
@@ -169,7 +169,7 @@ describe("isolated Antigravity text requests", () => {
     expect(
       await runAntigravityTextPrompt({
         cwd: "/user/project",
-        model: "gemini-3.8-flash-low",
+        model: "antigravity:gemini-3.8-flash-low",
         prompt: "Translate hello",
       }),
     ).toBe("你好");

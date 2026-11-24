@@ -22,6 +22,7 @@ import {
 } from "../model/attachments";
 import { attachmentDropVerdict, type AttachmentDropBlock } from "../model/attachmentDrop";
 import type { Attachment } from "../model/session";
+import type { AttachmentReadCapacity } from "../model/attachmentReadCapacity";
 import { hasFiles } from "./composerTextareaEdit";
 import type { AttachmentSink } from "./useComposerAttachments";
 
@@ -70,7 +71,10 @@ type Options = {
   attachmentsRef?: RefObject<readonly unknown[]>;
   persistBlobs?: boolean;
   readDroppedAttachments: (
-    read: (onSkipped: (skipped: SkippedAttachment[]) => void) => Promise<Attachment[]>,
+    read: (
+      onSkipped: (skipped: SkippedAttachment[]) => void,
+      capacity?: AttachmentReadCapacity,
+    ) => Promise<Attachment[]>,
   ) => void;
   setPasteError: Dispatch<SetStateAction<string | null>>;
 };
@@ -159,10 +163,8 @@ export function useComposerFileDrop({
       if (Date.now() - nativeDropAt < 250) return;
       const files = filesFromClipboard(data);
       if (files.length === 0) return;
-      readDroppedAttachments((onSkipped) =>
-        persistBlobs === undefined
-          ? attachmentsFromFiles(files, { onSkipped })
-          : attachmentsFromFiles(files, { persistBlobs, onSkipped }),
+      readDroppedAttachments((onSkipped, capacity) =>
+        attachmentsFromFiles(files, { persistBlobs, onSkipped, capacity }),
       );
     };
 
@@ -184,7 +186,9 @@ export function useComposerFileDrop({
       }
       hide();
       if (!over || blockedBy(true)) return;
-      readDroppedAttachments(() => attachmentsFromPaths(detail.paths ?? [detail.path]));
+      readDroppedAttachments((_onSkipped, capacity) =>
+        attachmentsFromPaths(detail.paths ?? [detail.path], capacity),
+      );
     };
 
     // Escape and losing the window end the gesture without a drop or a leave.
@@ -228,7 +232,7 @@ export function useComposerFileDrop({
       }
       nativeDropAt = Date.now();
       const paths = event.paths;
-      readDroppedAttachments(() => attachmentsFromPaths(paths));
+      readDroppedAttachments((_onSkipped, capacity) => attachmentsFromPaths(paths, capacity));
     });
 
     return () => {

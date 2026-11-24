@@ -67,6 +67,14 @@ export async function handleVoiceTools(
     | "voiceBrowserOwner"
   >,
 ) {
+  if (request.input.method === "voice.tools.call")
+    request.voiceToolLog = {
+      action: null,
+      requestId: null,
+      startedAt: monotonicNow(),
+      outcome: "response",
+      stage: "native-owner-check",
+    };
   // Voice is an owner-started desktop surface, never an escalation route
   // for a provider, social peer or browser-origin request.
   if (
@@ -108,17 +116,16 @@ export async function handleVoiceTools(
     request.response.end(JSON.stringify({ result: { tools } }));
     return true;
   }
+  const log = request.voiceToolLog!;
+  log.stage = "validate-call";
   const call = parseVoiceToolCall(request.params);
-  request.voiceToolLog = {
-    action: call.action,
-    requestId: call.requestId ?? null,
-    startedAt: monotonicNow(),
-    outcome: "response",
-  };
+  log.action = call.action;
+  log.requestId = call.requestId ?? null;
   console.info("Voice tool started", {
-    action: request.voiceToolLog.action,
-    requestId: request.voiceToolLog.requestId,
+    action: log.action,
+    requestId: log.requestId,
   });
+  log.stage = "causal-context";
   if (call.causalContextId) {
     request.voiceDisclosure = new HostVoiceToolDisclosure(
       {
@@ -136,6 +143,7 @@ export async function handleVoiceTools(
       void request.voiceDisclosure?.fail().catch(() => undefined);
     });
   }
+  log.stage = "dispatch";
   if (
     !call.projectId &&
     (call.family === "social" ||
@@ -571,13 +579,13 @@ export async function handleVoiceTools(
       family: call.family,
       action: call.action,
     });
-    request.voiceToolLog.stage = "room-operation";
+    log.stage = "room-operation";
     const output = await dependencies.assistantPorts.roomManagement!(qualifiedCall, {
       environmentId: dependencies.engine.store.environmentId,
       deviceHash: request.tokenHash,
       authorized,
     });
-    request.voiceToolLog.stage = "project-result-disclosure";
+    log.stage = "project-result-disclosure";
     request.voiceDisclosure?.bindProjectProofs(output.contributorProjects ?? []);
     await dependencies.withRoomProjectScope(qualifiedCall, authorized, async () => {
       if (
@@ -585,7 +593,7 @@ export async function handleVoiceTools(
         (await dependencies.engine.store.project(call.projectId!)).cwd !== output.source.projectCwd
       )
         throw new Error("Voice project identity changed before disclosure.");
-      request.voiceToolLog!.stage = "writing-result";
+      log.stage = "writing-result";
       await request.endResult(output.value, async () => {
         if (!(await authorized())) throw new Error("Native owner authority revoked.");
       });

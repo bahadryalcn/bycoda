@@ -27,7 +27,7 @@ import {
   usageIntentFor,
   usageIntentForRequest,
 } from "../../../features/usage/public/usageReport";
-import { requestAppUi, type AppUiInput } from "../../model/appUiControl";
+import { requestAppUi, type AppUiInput, type AppUiRequestContext } from "../../model/appUiControl";
 
 const SEARCH_OWNER = "voice-workspace-search";
 
@@ -71,20 +71,33 @@ const toHit = (hit: AppSearchHit): VoiceInspectSearchHit | null => {
 export function createVoiceInspectPorts(latest: Latest): VoiceWorkspaceInspectDeps {
   const visible = (path: string) =>
     latest().projects.some((item) => sameProjectPath(item.path, path));
-  // Reuses the `ui.workspace.open` navigator with the calling window's active conversation.
-  const navigate: NonNullable<VoiceWorkspaceInspectDeps["navigate"]> = async (view, section) => {
+  // Reuses the `ui.workspace.*` navigator. An active conversation supplies its own window context;
+  // with none, the window's visible project does (no session identity); with no unlocked project
+  // either, the projectless global Room reaches only the global views and never a locked project.
+  const scope = (): AppUiRequestContext => {
     const current = latest();
     const source = current.sessions.find((entry) => entry.id === current.activeId);
-    if (!source || !visible(source.cwd))
-      throw new Error("Open a conversation in an unlocked project to navigate.");
-    await requestAppUi(
-      { cwd: source.cwd, sessionId: source.id, title: source.title },
-      "ui.workspace.open",
-      { view, ...(section ? { section } : {}) } as AppUiInput,
-    );
+    if (source) {
+      if (!visible(source.cwd))
+        throw new Error("Open a conversation in an unlocked project to navigate.");
+      return { cwd: source.cwd, sessionId: source.id, title: source.title };
+    }
+    if (!visible(current.projectPath)) return { global: true, title: "Voice navigation" };
+    return { cwd: current.projectPath, window: true, title: "Voice navigation" };
   };
+  const navigate: NonNullable<VoiceWorkspaceInspectDeps["navigate"]> = (view, section) =>
+    requestAppUi(scope(), "ui.workspace.open", {
+      view,
+      ...(section ? { section } : {}),
+    } as AppUiInput);
+  const close: NonNullable<VoiceWorkspaceInspectDeps["close"]> = (view) =>
+    requestAppUi(scope(), "ui.workspace.close", { view } as AppUiInput);
+  const status: NonNullable<VoiceWorkspaceInspectDeps["status"]> = () =>
+    requestAppUi(scope(), "ui.workspace.status", {});
   return {
     navigate,
+    close,
+    status,
     usage: {
       read: (request) => readUsageReport(request),
       // Settings opens through the workspace opener, so no conversation is borrowed; filters follow confirmation.

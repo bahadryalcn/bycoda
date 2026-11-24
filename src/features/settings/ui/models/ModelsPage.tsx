@@ -60,6 +60,7 @@ import {
   retainedTransactionValue,
 } from "../../../model-routing/public/settings";
 import { useModelRoutingHost } from "./modelRoutingHost";
+import { HostModelSource } from "../../../connections/public/HostModelSource";
 import {
   SettingsHostFailure,
   SettingsHostNotice,
@@ -267,10 +268,18 @@ export function ModelsPage({
             ) : pickedRouting.pending ? (
               <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
             ) : pickedRouting.data ? (
-              <ModelOrderSettings
-                machineId={pickedRouting.data.machineId}
-                supported={pickedRouting.data.supported}
-              />
+              <HostModelSource
+                machine={scope.selected}
+                local={scope.entry?.isLocal}
+                cwd=""
+                model=""
+                values={{}}
+              >
+                <ModelOrderSettings
+                  machineId={pickedRouting.data.machineId}
+                  supported={pickedRouting.data.supported}
+                />
+              </HostModelSource>
             ) : null}
           </div>
         </div>

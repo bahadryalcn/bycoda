@@ -7,7 +7,7 @@ import { ArrowDownCircle, ArrowRight, Download, RefreshCw } from "../../shared/u
 import { InlineError } from "../../shared/ui/InlineError";
 import { Spinner } from "../../shared/ui/Spinner";
 import { StatusDot } from "../../shared/ui/StatusDot";
-import { Surface } from "../../shared/ui/Surface";
+import { Divider } from "../../shared/ui/Divider";
 import { useEffect, useRef, useState } from "react";
 import { claimStartupUpdatePrompt, installAppUpdate, useAppUpdater } from "../model/useAppUpdater";
 import { type UpdaterSnapshot } from "../model/updater";
@@ -161,10 +161,13 @@ export function SidebarUpdateFooter({
           size="sm"
           onClose={closePrompt}
           footer={
-            <ModalActions>
-              <Button variant="ghost" onClick={canSnooze ? onLaterPrompt : closePrompt}>
-                {canSnooze ? t("Remind me tomorrow") : t("Close")}
-              </Button>
+            <ModalActions
+              start={
+                <Button variant="ghost" onClick={canSnooze ? onLaterPrompt : closePrompt}>
+                  {canSnooze ? t("Remind me tomorrow") : t("Close")}
+                </Button>
+              }
+            >
               {snapshot.availableVersion ? (
                 <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} compact />
               ) : null}
@@ -172,37 +175,36 @@ export function SidebarUpdateFooter({
           }
         >
           <div className="flex min-w-0 flex-col gap-3">
-            {snapshot.availableVersion ? (
-              <Surface
-                variant="inset"
-                tone="accent"
-                padding="md"
-                className="flex flex-wrap items-center gap-3"
-              >
-                <Text size="secondary" tone="secondary" wrap="anywhere">
-                  v{snapshot.currentVersion}
-                </Text>
-                <ArrowRight className="icon-sm shrink-0 rtl:rotate-180" />
-                <Text as="strong" size="heading" tone="primary" weight="medium" wrap="anywhere">
-                  v{snapshot.availableVersion}
-                </Text>
-              </Surface>
-            ) : null}
-            {snapshot.error ? <InlineError>{snapshot.error}</InlineError> : null}
-            {notes ? (
-              <Disclosure
-                summary={t("Release notes")}
-                defaultOpen
-                variant="row"
-                chevron="end"
-                weight="medium"
-              >
-                <AgentMarkdown className="whats-new-md" text={notes} streaming={false} />
-              </Disclosure>
-            ) : null}
-            <div className="max-w-full self-start empty:hidden">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 empty:hidden">
+              {snapshot.availableVersion ? (
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Text size="secondary" tone="secondary" wrap="anywhere">
+                    v{snapshot.currentVersion}
+                  </Text>
+                  <ArrowRight className="icon-sm shrink-0 rtl:rotate-180" />
+                  <Text as="strong" size="heading" tone="primary" weight="medium" wrap="anywhere">
+                    v{snapshot.availableVersion}
+                  </Text>
+                </div>
+              ) : null}
               <GithubStarPrompt oncePerVersion version={snapshot.currentVersion} />
             </div>
+            {snapshot.error ? <InlineError>{snapshot.error}</InlineError> : null}
+            {notes ? (
+              <>
+                <Divider decorative />
+                <Disclosure
+                  summary={t("Release notes")}
+                  defaultOpen
+                  chevron="end"
+                  weight="medium"
+                  tone="primary"
+                  interactionTone="accent"
+                >
+                  <AgentMarkdown className="whats-new-md" text={notes} streaming={false} />
+                </Disclosure>
+              </>
+            ) : null}
           </div>
         </Modal>
       ) : null}
@@ -256,6 +258,7 @@ export function SidebarUpdate({
       onClick={onClick}
       disabled={busy}
       variant="primary"
+      size={compact ? "lg" : undefined}
       fullWidth={!compact}
       motion="none"
       label={label}
@@ -264,23 +267,25 @@ export function SidebarUpdate({
       tooltip={label}
       tooltipWhen="overflow"
     >
-      <span className="flex min-w-0 flex-1 items-center gap-3">
-        <Text
-          size="caption"
-          tone="inherit"
-          weight="medium"
-          leading="tight"
-          truncate
-          className="block"
-        >
-          {label}
-        </Text>
-        {!compact ? (
+      {compact ? (
+        label
+      ) : (
+        <span className="flex min-w-0 flex-1 items-center gap-3">
+          <Text
+            size="caption"
+            tone="inherit"
+            weight="medium"
+            leading="tight"
+            truncate
+            className="block"
+          >
+            {label}
+          </Text>
           <Text as="span" size="micro" tone="inherit" className="ms-auto block shrink-0">
             v{snapshot.currentVersion}
           </Text>
-        ) : null}
-      </span>
+        </span>
+      )}
     </Button>
   );
 }

@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
-import { GlobalSessionListWindow } from "./GlobalSessionListWindow";
+import { GlobalSessionListWindow, groupGlobalSessions } from "./GlobalSessionListWindow";
 
 const makeSessions = (): SessionSummary[] =>
   Array.from({ length: 1000 }, (_, index) => ({
@@ -28,10 +28,9 @@ function Window({ sessions }: { sessions: SessionSummary[] }) {
       className: "overflow-y-auto",
     },
     createElement(GlobalSessionListWindow, {
-      sessions,
+      groups: groupGlobalSessions(sessions, { groupBy: "none", sort: "newest" }, () => "idle"),
       scrollRef: scrollRef as RefObject<HTMLDivElement | null>,
       view: { groupBy: "none", sort: "newest" },
-      stateOf: () => "idle" as const,
       isActive: (session) => session.cwd === "/workspace/two" && session.id === "session-250",
       renderSession: (session, active) =>
         createElement(

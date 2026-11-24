@@ -13,7 +13,7 @@ import { CodeExecutionDisabled } from "./CodeExecutionContext";
 import type { Attachment } from "../model/session";
 import { AttachmentTokenText } from "./AttachmentTokenText";
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
-import type { ChatCitation } from "../model/chatCitation";
+import type { ComposerCitation } from "../model/chatCitation";
 import { skillGroupRuns } from "../../skills/public/skillGroups";
 import { TranscriptSkillGroups } from "./SkillTokenText";
 
@@ -28,7 +28,7 @@ export function UserMessageMarkdown({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   attachments?: Attachment[];
-  citations?: readonly ChatCitation[];
+  citations?: readonly ComposerCitation[];
 }) {
   const groups = useContext(TranscriptSkillGroups);
   const isProseLine = (line: string) =>
@@ -55,7 +55,7 @@ type TextContentProps = {
   cwd?: string;
   onOpenFile?: (path: string) => void;
   attachments?: Attachment[];
-  citations?: readonly ChatCitation[];
+  citations?: readonly ComposerCitation[];
   markdown: boolean;
 };
 
@@ -213,7 +213,7 @@ export const UserTextPreview = memo(function UserTextPreview({
   cwd?: string;
   onOpenFile?: (path: string) => void;
   attachments?: Attachment[];
-  citations?: readonly ChatCitation[];
+  citations?: readonly ComposerCitation[];
   renderActions: (dismiss: () => void, showLabels?: boolean) => ReactNode;
   markdown?: boolean;
 }) {

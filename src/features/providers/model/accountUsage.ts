@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
+  accountUsageSummary,
   clampUsedPercent,
   exhaustedWindowResetAt,
   formatResetCountdownWith,
   formatResetDuration,
   type ProviderRateLimits,
+  updatedLabel,
 } from "./rateLimits";
 import { getAllRateLimits, loadRateLimits, subscribeRateLimits } from "./rateLimitsCache";
 import {
@@ -71,10 +73,19 @@ export function accountStatusWith(
     return { tone: "checking", label: "Checking…", detail: null };
   }
   if (limits?.status === "error" || limits?.status === "unavailable") {
+    const { usedPercent } = accountUsageSummary(limits, now);
+    if (usedPercent !== null) {
+      return {
+        tone: "unknown",
+        label: translate("Refresh failed. {p0}", { p0: updatedLabel(limits, now, translate) }),
+        detail: translate("{p0}% left", { p0: 100 - usedPercent }),
+      };
+    }
     return {
       tone: "unknown",
-      label:
-        limits.error || (limits.status === "unavailable" ? "Not signed in" : "Usage unavailable"),
+      label: providerAccountSignedOut(limits)
+        ? "Not signed in"
+        : limits.error || "Usage unavailable",
       detail: null,
     };
   }

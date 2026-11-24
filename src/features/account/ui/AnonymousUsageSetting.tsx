@@ -1,15 +1,12 @@
 import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Row, Toggle } from "../../../shared/ui/settings";
-import {
-  isAnonymousUsageEnabled,
-  setAnonymousUsageEnabled,
-  subscribeAnonymousUsage,
-} from "../model/anonymousUsage";
+import { Row } from "../../../shared/ui/settings";
+import { SharingModeSelect } from "../../data-sharing";
+import { getTokensMode, setTokensMode, subscribeTokensMode } from "../model/anonymousUsage";
 
 export function AnonymousUsageSetting() {
   useLocale();
-  const enabled = useSyncExternalStore(subscribeAnonymousUsage, isAnonymousUsageEnabled);
+  const mode = useSyncExternalStore(subscribeTokensMode, getTokensMode);
   const label = t("Share anonymous token totals");
   return (
     <Row
@@ -20,7 +17,7 @@ export function AnonymousUsageSetting() {
         "Send daily desktop token totals and estimated API cost with a random installation ID.",
       )}
     >
-      <Toggle label={label} on={enabled} onChange={setAnonymousUsageEnabled} />
+      <SharingModeSelect label={label} value={mode} change={setTokensMode} />
     </Row>
   );
 }

@@ -30,6 +30,7 @@ import {
 import {
   loadSessionSidebarFilters,
   saveSessionSidebarFilters,
+  subscribeSessionSidebarFilters,
 } from "../../sessions/public/sessionFilters";
 
 import { Group, Row, Toggle, SettingsFeedback } from "../../../shared/ui/settings";
@@ -39,35 +40,13 @@ import "./ArchiveSettings.css";
 export { formatArchiveDate as formatDate } from "../../../shared/i18n/format";
 export { projectDisplayName as archivedProjectLabel } from "../../projects/public/projectNames";
 
-/** The stored lists can change in another window; a focused window re-reads them too. */
-function subscribeWindowStorage(onChange: () => void) {
-  window.addEventListener("storage", onChange);
-  window.addEventListener("focus", onChange);
-  return () => {
-    window.removeEventListener("storage", onChange);
-    window.removeEventListener("focus", onChange);
-  };
-}
-
-function subscribeArchivedProjectsRead(onChange: () => void) {
-  const unsubscribe = subscribeArchivedProjects(onChange);
-  const stopWindow = subscribeWindowStorage(onChange);
-  return () => {
-    unsubscribe();
-    stopWindow();
-  };
-}
-
 /** Archived projects plus whether the stored list could be read at all. */
 export function useArchivedProjectsRead(): {
   items: ArchivedProject[];
   unavailable: boolean;
   retry: () => void;
 } {
-  const [read, setRead] = useStoredPreferenceState(
-    readArchivedProjects,
-    subscribeArchivedProjectsRead,
-  );
+  const [read, setRead] = useStoredPreferenceState(readArchivedProjects, subscribeArchivedProjects);
   const lock = useLockSnapshot();
   const retry = useCallback(() => setRead(readArchivedProjects()), [setRead]);
   // An archived project can still sit in a locked group.
@@ -98,7 +77,7 @@ export function ArchivePage({
   useLocale();
   const [filters, setFilters] = useStoredPreferenceState(
     loadSessionSidebarFilters,
-    subscribeWindowStorage,
+    subscribeSessionSidebarFilters,
   );
   const [deleting, setDeleting] = useState<ArchivedProject | null>(null);
   const [projectQuery, setProjectQuery] = useState("");

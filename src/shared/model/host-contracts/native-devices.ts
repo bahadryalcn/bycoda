@@ -43,6 +43,9 @@ export const DeviceFrameSchema = z.strictObject({
   base64: z.string(),
   capturedAt: z.string(),
 });
+/** Minimum pause after a fallback capture, also the Host cache lifetime. */
+export const DEVICE_STILL_MIN_GAP_MS = 100;
+
 /**
  * Raw byte cap of one `devices.stream` response. A response of exactly this many
  * bytes was cut by the cap and may end inside a frame.

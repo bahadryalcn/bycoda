@@ -1,7 +1,8 @@
 import { isSpace } from "../../../shared/lib/text";
 import { clamp } from "../../../shared/lib/numbers";
-import { fuzzyMatch } from "../../../shared/lib/fuzzy";
+import { fuzzyMatch, prepareFuzzyQuery, type PreparedFuzzyQuery } from "../../../shared/lib/fuzzy";
 import { isSkillInvocationPosition } from "./skillTokens";
+import { isSkillGroupPickerItem } from "./skillGroupPickerItem";
 import type { Skill } from "./skills";
 
 // Keep picker helpers independent of skill discovery for the floating composer.
@@ -17,57 +18,72 @@ const MAX_PICKER = 50;
 
 export function rankSkills(skills: Skill[], query: string, limit = MAX_PICKER): Skill[] {
   const needle = query.trim().toLowerCase();
-  // Order: groups hit by name/invocation, commands, other groups, templates. `limit`
-  // trims commands then templates only, so groups are never cut off.
-  const arrange = (ranked: Skill[], direct: Set<Skill> = new Set()) => {
-    const isGroup = (skill: Skill) => skill.kind === "template" && "groupId" in skill;
-    const commands = ranked.filter((skill) => skill.kind !== "template").slice(0, limit);
-    const templates = ranked
-      .filter((skill) => skill.kind === "template" && !isGroup(skill))
-      .slice(0, Math.max(0, limit - commands.length));
-    const groups = ranked.filter(isGroup);
-    return [
-      ...groups.filter((skill) => direct.has(skill)),
-      ...commands,
-      ...groups.filter((skill) => !direct.has(skill)),
-      ...templates,
-    ];
-  };
+  const compareNames = (a: Skill, b: Skill) => a.name.localeCompare(b.name);
+  let ranked: Skill[];
+
   if (!needle) {
-    return arrange(
-      [...skills].sort((a, b) => {
-        const rank = scopeRank(a) - scopeRank(b);
-        if (rank !== 0) return rank;
-        return a.name.localeCompare(b.name);
-      }),
-    );
+    ranked = [...skills].sort((a, b) => scopeRank(a) - scopeRank(b) || compareNames(a, b));
+    // Keep available groups together between commands and saved templates when browsing.
+    ranked = [
+      ...ranked.filter((skill) => skill.kind !== "template"),
+      ...ranked.filter(isSkillGroupPickerItem),
+      ...ranked.filter((skill) => skill.kind === "template" && !isSkillGroupPickerItem(skill)),
+    ];
+  } else {
+    const slug = needle.replace(/\s+/g, "-");
+    const fuzzyQuery = prepareFuzzyQuery(needle);
+    ranked = skills
+      .flatMap((skill) => {
+        const match = scoreSkill(skill, slug, fuzzyQuery);
+        return match ? [{ skill, ...match }] : [];
+      })
+      .sort((a, b) => a.tier - b.tier || b.score - a.score || compareNames(a.skill, b.skill))
+      .map(({ skill }) => skill);
   }
 
-  const scored: { skill: Skill; score: number }[] = [];
-  const direct = new Set<Skill>();
-  for (const skill of skills) {
-    const nameHit = fuzzyMatch(needle, skill.name);
-    const invocationHit = nameHit
-      ? null
-      : fuzzyMatch(
-          needle,
-          [skill.invocation, ...(skill.kind === "native" ? (skill.aliases ?? []) : [])].join(" "),
-        );
-    const descHit = nameHit || invocationHit ? null : fuzzyMatch(needle, skill.description);
-    const hit = nameHit ?? invocationHit ?? descHit;
-    if (!hit) continue;
-    const score = nameHit || invocationHit ? hit.score + 400 : hit.score;
-    scored.push({ skill, score });
-    if (nameHit || invocationHit) direct.add(skill);
-  }
-  scored.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.skill.name.localeCompare(b.skill.name);
+  // Groups remain available beyond the normal result limit.
+  let remaining = limit;
+  return ranked.filter((skill) => {
+    if (isSkillGroupPickerItem(skill)) return true;
+    if (remaining <= 0) return false;
+    remaining -= 1;
+    return true;
   });
-  return arrange(
-    scored.map((row) => row.skill),
-    direct,
+}
+
+function scoreSkill(skill: Skill, slug: string, fuzzyQuery: PreparedFuzzyQuery) {
+  const group = isSkillGroupPickerItem(skill) ? skill : null;
+  const names = [
+    skill.invocation,
+    skill.name,
+    ...(skill.kind === "native" ? (skill.aliases ?? []) : []),
+  ].map((name) => name.toLowerCase().replace(/\s+/g, "-"));
+  // A group can match its own title or command, or a single member's name.
+  // Scattered letters across a title or a list of members are too weak to suggest a group.
+  const direct = names.reduce((best, name) => {
+    if (name === slug) return Math.min(best, 0);
+    if (name.startsWith(slug)) return Math.min(best, 2);
+    if (name.includes(slug)) return Math.min(best, 4);
+    return best;
+  }, Infinity);
+  if (Number.isFinite(direct)) return { tier: direct + (group ? 1 : 0), score: 0 };
+
+  if (group) {
+    return group.members.some((member) => member.toLowerCase().includes(slug))
+      ? { tier: 7, score: 0 }
+      : null;
+  }
+
+  const score = names.reduce(
+    (best, name) => Math.max(best, fuzzyMatch(fuzzyQuery, name)?.score ?? -Infinity),
+    -Infinity,
   );
+  if (Number.isFinite(score)) return { tier: 6, score };
+
+  const description = skill.description.toLowerCase();
+  return fuzzyQuery.tokens.every((token) => description.includes(token))
+    ? { tier: 8, score: 0 }
+    : null;
 }
 
 function scopeRank(skill: Skill): number {

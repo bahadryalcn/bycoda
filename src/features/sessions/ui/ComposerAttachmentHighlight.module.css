@@ -4,6 +4,10 @@
   color: var(--token-ink);
 }
 
+.token[data-file-comment] {
+  --token-ink: var(--color-feature);
+}
+
 .token[data-full-attachment-label] :global([data-draft-token-label]) > :last-child {
   overflow: visible;
   text-overflow: clip;

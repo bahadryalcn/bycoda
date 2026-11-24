@@ -199,10 +199,14 @@ pub fn open_host_tools_window(
     let config = configure_host_tools_window(main, title, url);
     let creation = crate::native_window_lifecycle::admit_window(app, TOOLS_WINDOW_LABEL)?;
     crate::ssh_window_lifecycle::register(TOOLS_WINDOW_LABEL)?;
+    crate::webview_recovery::remember_config(&config);
     let window = WebviewWindowBuilder::from_config(app, &config)
         .map_err(|error| error.to_string())
         .and_then(|builder| builder.build().map_err(|error| error.to_string()))
-        .inspect_err(|_| crate::ssh_window_lifecycle::close(TOOLS_WINDOW_LABEL))?;
+        .inspect_err(|_| {
+            crate::webview_recovery::forget_config(TOOLS_WINDOW_LABEL);
+            crate::ssh_window_lifecycle::close(TOOLS_WINDOW_LABEL);
+        })?;
     creation.created(&window);
     let _ = ensure_window_reachable(&window);
     Ok(true)
@@ -540,6 +544,7 @@ fn build_session_window_with_url(
     };
 
     crate::ssh_window_lifecycle::register(&label)?;
+    crate::webview_recovery::remember_config(&config);
     let build = || {
         let builder =
             WebviewWindowBuilder::from_config(app, &config).map_err(|err| err.to_string())?;
@@ -554,6 +559,7 @@ fn build_session_window_with_url(
     #[cfg(not(target_os = "macos"))]
     let window = build();
     let window = window.inspect_err(|_| {
+        crate::webview_recovery::forget_config(&label);
         crate::ssh_window_lifecycle::close(&label);
         app.state::<crate::window_transfer::WindowTransferState>()
             .discard(&label);
@@ -1040,6 +1046,11 @@ fn present_quit_confirmation(
     in_flight: u32,
     host_activity: crate::host_lifecycle::Activity,
 ) {
+    #[cfg(windows)]
+    if crate::webview_recovery::is_rebuilding() {
+        clear_run(id);
+        return;
+    }
     if in_flight == 0 && host_activity.count() == 0 && !host_activity.unknown {
         start_commit(app, id);
         return;

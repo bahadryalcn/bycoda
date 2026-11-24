@@ -10,7 +10,7 @@ import { Button } from "../../../shared/ui/Button";
 import { ListRow } from "../../../shared/ui/ListRow";
 import { skillPickerDescription, skillScopeLabel } from "../model/skillPickerLabels";
 import { t, useLocale } from "../../../shared/i18n";
-import { Plus } from "../../../shared/ui/icons";
+import { File, Plus, SkillGroupIcon, SkillIcon, Terminal } from "../../../shared/ui/icons";
 import {
   Fragment,
   useEffect,
@@ -150,6 +150,7 @@ function SkillList({
     pointer.current.allow = false;
   }, [skills]);
 
+  // Keep the selected result visible when ranking changes without changing its index.
   useEffect(() => {
     if (fromPointer.current) {
       fromPointer.current = false;
@@ -157,7 +158,7 @@ function SkillList({
     }
     pointer.current.allow = false;
     activeRef.current?.scrollIntoView({ block: "nearest" });
-  }, [active]);
+  }, [active, skills]);
 
   const onListMouseMove = (e: ReactMouseEvent<HTMLDivElement>) => {
     if (e.clientX === pointer.current.x && e.clientY === pointer.current.y) {
@@ -192,16 +193,19 @@ function SkillList({
       className={`${compact ? "max-h-48" : "max-h-[min(240px,40vh)]"} overflow-y-auto overscroll-none px-1 py-1`}
     >
       {skills.map((skill, index) => {
+        const group = isSkillGroupPickerItem(skill) ? skill : null;
         const highlighted = index === active;
+        const description = group ? group.members.join(", ") : skillPickerDescription(skill);
+        const section = sectionOf(skill);
+        const showHeading =
+          !query.trim() && section !== (index > 0 ? sectionOf(skills[index - 1]) : "commands");
         return (
           <Fragment
             key={
-              isSkillGroupPickerItem(skill)
-                ? `group:${skill.groupId}`
-                : `${skill.kind}:${skill.source}:${skill.invocation}`
+              group ? `group:${group.groupId}` : `${skill.kind}:${skill.source}:${skill.invocation}`
             }
           >
-            {sectionOf(skill) !== (index > 0 ? sectionOf(skills[index - 1]) : "commands") ? (
+            {showHeading ? (
               <Text
                 as="p"
                 size="caption"
@@ -209,52 +213,68 @@ function SkillList({
                 weight="medium"
                 className="px-2 pb-0.5 pt-1.5"
               >
-                {SECTION_HEADINGS[sectionOf(skill)]()}
+                {SECTION_HEADINGS[section]()}
               </Text>
             ) : null}
             <ListRow
-              className={compact ? undefined : "flex-col items-start justify-center"}
-              data-has-description={compact ? undefined : ""}
+              data-has-description={!compact && description ? "" : undefined}
               ref={highlighted ? activeRef : undefined}
               id={listId ? skillOptionId(listId, index) : undefined}
               role="option"
-              aria-selected={highlighted}
               active={highlighted}
+              icon={
+                group ? (
+                  <SkillGroupIcon />
+                ) : skill.kind === "file" ||
+                  (skill.kind === "native" && skill.origin === "skill") ? (
+                  <SkillIcon />
+                ) : skill.kind === "template" ? (
+                  <File />
+                ) : (
+                  <Terminal />
+                )
+              }
               onMouseDown={(e) => e.preventDefault()}
               onMouseEnter={() => onRowEnter(index)}
               onClick={() => onPick(skill)}
             >
-              <span className="flex min-w-0 w-full items-baseline gap-2">
-                <Text size="secondary" tone="inherit" truncate>
-                  {prefix}
-                  {skill.invocation}
-                </Text>
-                <Text size="caption" tone="secondary" className="shrink-0">
-                  {isSkillGroupPickerItem(skill)
-                    ? t("{p0} skills", { p0: skill.memberCount })
-                    : skillScopeLabel(skill)}
-                </Text>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="flex min-w-0 items-baseline justify-between gap-2">
+                  <Text size="secondary" tone="inherit" weight="medium" truncate>
+                    {prefix}
+                    {skill.invocation}
+                  </Text>
+                  <Text size="caption" tone="secondary" className="shrink-0">
+                    {group ? t("{p0} skills", { p0: group.memberCount }) : skillScopeLabel(skill)}
+                  </Text>
+                </span>
+                {!compact && description ? (
+                  <ClampText
+                    as="span"
+                    lines={group ? 1 : 2}
+                    expandable={false}
+                    size="caption"
+                    tone="secondary"
+                  >
+                    {description}
+                  </ClampText>
+                ) : null}
+                {!compact &&
+                skill.kind === "native" &&
+                (skill.inputHint || skill.subcommands?.length) ? (
+                  <ClampText
+                    as="span"
+                    lines={2}
+                    expandable={false}
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                  >
+                    {skill.inputHint ||
+                      skill.subcommands?.map((sub) => sub.usage || sub.name).join(" · ")}
+                  </ClampText>
+                ) : null}
               </span>
-              {!compact && skill.description ? (
-                <ClampText as="span" lines={2} expandable={false} size="caption" tone="secondary">
-                  {skillPickerDescription(skill)}
-                </ClampText>
-              ) : null}
-              {!compact &&
-              skill.kind === "native" &&
-              (skill.inputHint || skill.subcommands?.length) ? (
-                <ClampText
-                  as="span"
-                  lines={2}
-                  expandable={false}
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                >
-                  {skill.inputHint ||
-                    skill.subcommands?.map((sub) => sub.usage || sub.name).join(" · ")}
-                </ClampText>
-              ) : null}
             </ListRow>
           </Fragment>
         );

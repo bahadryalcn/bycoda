@@ -110,8 +110,14 @@ it("shares the expanded voice core and conversation while preserving header keyb
       .dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })),
   );
   expect(calls.filter((call) => call.cmd === "voice_overlay_nudge")).toHaveLength(moves);
-  await show({ visualState: "muted", chatTurns: [] });
-  expect(host.querySelector('[data-state="muted"]')).not.toBeNull();
+  await show({
+    visualState: "connected",
+    statusText: "Connected · Microphone off",
+    muted: true,
+    chatTurns: [],
+  });
+  expect(host.querySelector('[data-state="connected"]')).not.toBeNull();
+  expect(host.textContent).toContain("Connected · Microphone off");
   expect(host.querySelectorAll('[role="listitem"]')).toHaveLength(0);
 });
 

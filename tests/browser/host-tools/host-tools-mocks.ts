@@ -63,6 +63,7 @@ export const fixtureControl = {
   scanFailure: false,
   scanDelayMs: 0,
   deviceCaptureFailure: false,
+  deviceListFailures: Number(new URLSearchParams(location.search).get("deviceListFailures")),
   deviceControlBusy: new URLSearchParams(location.search).get("deviceState") === "busy",
   deviceLeaseMs:
     new URLSearchParams(location.search).get("deviceState") === "expires" ? 1500 : 60_000,
@@ -94,7 +95,7 @@ let browser = {
   runtime: { installed: true, running: false },
 };
 let deviceStatus: DeviceHostStatus = {
-  running: false,
+  running: fixtureControl.deviceListFailures > 0,
   installed: true,
   agentInstalled: true,
   controlProtocol: 1,
@@ -481,6 +482,10 @@ export async function hostFeatureRequest<T>(
       result = deviceStatus;
       break;
     case "devices.list":
+      if (fixtureControl.deviceListFailures > 0) {
+        fixtureControl.deviceListFailures -= 1;
+        throw new Error("RPC_HOST_UNAVAILABLE: Fixture device connection closed");
+      }
       result = {
         devices: new URLSearchParams(location.search).has("devicesReady")
           ? [device, { ...device, id: "second-emulator", name: "Second Android emulator" }]

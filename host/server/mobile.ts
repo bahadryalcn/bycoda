@@ -33,6 +33,10 @@ export function createMobileRuntime(
       !!(await dependencies.engine.store.db
         .prepare("SELECT id FROM devices WHERE hash=?")
         .get(hash)),
+    canIssuePairing: async (hash) =>
+      !!(await dependencies.engine.store.db
+        .prepare("SELECT id FROM devices WHERE hash=? AND management>0")
+        .get(hash)),
     deviceProofKeys: async () =>
       (await dependencies.engine.store.db.prepare("SELECT hash FROM devices").all()).map((device) =>
         String(device.hash),

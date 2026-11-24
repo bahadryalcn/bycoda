@@ -1107,6 +1107,29 @@ pub fn local_host_bundle_status() -> Option<BundledHostStatus> {
     STATUS.lock().ok().and_then(|slot| slot.clone())
 }
 
+fn update_session_count(base: &Path) -> Option<u32> {
+    match probe_lifecycle_status(base) {
+        Ok((_, response)) => {
+            let activity: crate::host_lifecycle::Activity =
+                serde_json::from_value(response.get("activity")?.clone()).ok()?;
+            (!activity.unknown).then_some(activity.sessions)
+        }
+        Err(LifecycleProbeError::Stopped) => Some(0),
+        Err(LifecycleProbeError::Unconfirmed) => None,
+    }
+}
+
+/// A single authenticated local lifecycle read, including when the old Host is not paired.
+#[tauri::command]
+pub async fn local_host_update_activity() -> Result<Option<u32>, String> {
+    crate::harness::run_blocking("local_host_update_activity", || {
+        Ok(crate::local_host::host_data_dir()
+            .as_deref()
+            .and_then(update_session_count))
+    })
+    .await
+}
+
 /// Updates this computer's host now, from Settings → Machines. The caller
 /// has shown the owner that running sessions and shells are interrupted.
 #[tauri::command]
@@ -1281,11 +1304,13 @@ mod tests {
             probe_lifecycle_status(&base),
             Err(LifecycleProbeError::Stopped)
         );
+        assert_eq!(update_session_count(&base), Some(0));
         std::fs::write(base.join("running.json"), "{").unwrap();
         assert_eq!(
             probe_lifecycle_status(&base),
             Err(LifecycleProbeError::Unconfirmed)
         );
+        assert_eq!(update_session_count(&base), None);
         std::fs::remove_dir_all(base).unwrap();
     }
 

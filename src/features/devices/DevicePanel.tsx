@@ -12,6 +12,8 @@ import { DeviceFrameState } from "./ui/DeviceFrameState";
 import { DeviceOptionsMenu } from "./ui/DeviceOptionsMenu";
 import { DeviceInspector } from "./ui/DeviceInspector";
 import { presentRemoteError } from "../connections/public/remoteFailure";
+import { useGracedFailure } from "../connections/public/transientFailure";
+import { recordUiLog } from "../diagnostics/public/uiLog";
 import { useDeviceStatus } from "./hooks/useDeviceStatus";
 import { useDeviceLiveStream } from "./hooks/useDeviceLiveStream";
 import { kindLabel, platformVersionLabel, stateLabel } from "./model/deviceLabels";
@@ -29,6 +31,7 @@ import { TextareaField } from "../../shared/ui/TextareaField";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as technicalI18n from "../../shared/i18n/technical";
 import { DeviceNotices } from "./ui/DeviceNotices";
+import { DEVICE_STILL_MIN_GAP_MS } from "../../shared/model/host-contracts/native-devices";
 import { LoadingText } from "../../shared/ui/LoadingText";
 import { Button } from "../../shared/ui/Button";
 import { Disclosure } from "../../shared/ui/Disclosure";
@@ -182,13 +185,18 @@ function DevicePanelSurface({
   }
   const [connectionUnavailable, setConnectionUnavailable] = useState(false);
   const [discoveryUnavailable, setDiscoveryUnavailable] = useState(false);
+  const [listFailure, setListFailure] = useState<{ cause: unknown; disconnected: boolean }>();
+  const [listAttempt, setListAttempt] = useState(0);
+  const [liveCaptureFailure, setLiveCaptureFailure] = useState<{
+    deviceId: string;
+    cause: unknown;
+  }>();
   const [autoLive] = useState(() => toolPreferences.deviceAutoLive.load());
   // A panel restored from a retained draft (for example after moving the dock) keeps viewing that
   // device like a freshly opened one; a frozen annotation frame stays paused. An unbooted device
   // is corrected to paused when the device list loads.
   const [live, setLive] = useState(() => autoLive && !!saved?.selected && !saved.annotating);
-  // The surface starts by reading the Host status in the effect below.
-  const [busy, setBusy] = useState(true);
+  const [actionBusy, setBusy] = useState(false);
   const [operation, setOperation] = useState<DeviceOperation>();
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [error, setError] = useState<string | undefined>(saved?.error);
@@ -380,7 +388,29 @@ function DevicePanelSurface({
       mounted.current = false;
     };
   }, []);
-  const reload = useDeviceStatus(api, visible, setStatus, setError, setBusy, connectionUnavailable);
+  const deviceStatus = useDeviceStatus(
+    api,
+    visible,
+    setStatus,
+    connectionUnavailable || !!listFailure?.disconnected,
+  );
+  const busy = actionBusy || deviceStatus.loading;
+  const discoveryFailure = useGracedFailure({
+    error: visible && status?.running ? listFailure?.cause : undefined,
+    loading: visible && (loadingDevices || operation === "refresh"),
+    retry: () => setListAttempt((value) => value + 1),
+    defer: true,
+  });
+  const liveCaptureCause =
+    visible && live && liveCaptureFailure?.deviceId === selected
+      ? liveCaptureFailure.cause
+      : undefined;
+  const liveCaptureUnavailable = unavailableTransport(liveCaptureCause);
+  const captureFailure = useGracedFailure({
+    error: liveCaptureCause,
+    scope: selected,
+    defer: true,
+  });
   const execute = useCallback(
     async <T,>(
       name: DeviceOperation,
@@ -412,11 +442,12 @@ function DevicePanelSurface({
         if (current()) commit(value);
       } catch (cause) {
         if (current()) {
-          setError(
-            presentRemoteError(cause, { explicit: name !== "status" && name !== "capture" }),
-          );
+          setError(presentRemoteError(cause, { explicit: true }));
           if (name === "status") setStatus(undefined);
-          if (name === "refresh") setDiscoveryUnavailable(true);
+          if (name === "refresh") {
+            setDiscoveryUnavailable(true);
+            setListFailure({ cause, disconnected: true });
+          }
           if (/DEVICE_CONTROL_LEASE_INVALID/.test(String(cause))) {
             setControl(false);
             setControlLease(undefined);
@@ -439,7 +470,7 @@ function DevicePanelSurface({
             setInspection(undefined);
             setSelectedNode("");
           }
-          if (unavailableTransport(cause)) setConnectionUnavailable(true);
+          if (name !== "refresh" && unavailableTransport(cause)) setConnectionUnavailable(true);
         }
       } finally {
         finishPending();
@@ -454,16 +485,19 @@ function DevicePanelSurface({
     [scope, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue],
   );
   const capture = useCallback(
-    (deviceId: string) => {
+    (deviceId: string, background = false) => {
       const requestScope = scope;
       const operation = api.capture(deviceId).then(
         (value) => {
-          if (mounted.current && currentScope.current === requestScope)
+          if (mounted.current && currentScope.current === requestScope) {
             setConnectionUnavailable(false);
+            if (selectedRef.current === deviceId) setLiveCaptureFailure(undefined);
+          }
           return value;
         },
         (cause: unknown) => {
           if (
+            !background &&
             mounted.current &&
             currentScope.current === requestScope &&
             unavailableTransport(cause)
@@ -517,14 +551,29 @@ function DevicePanelSurface({
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const applyDevices = useCallback(
-    (value: Awaited<ReturnType<DevicePanelApi["list"]>>) => {
+    (value: Awaited<ReturnType<DevicePanelApi["list"]>>, background = false) => {
+      const warning = value.errors.length ? value.errors.join("\n") : undefined;
+      if (background && warning)
+        recordUiLog("warn", "devices.list", "Background discovery reported platform errors", {
+          count: value.errors.length,
+        });
+      setListFailure(background && warning ? { cause: warning, disconnected: false } : undefined);
       setDiscoveryUnavailable(value.errors.length > 0);
+      if (!background && !retainedOutcome.current) {
+        setErrorOperation("refresh");
+        setError(warning);
+      } else if (
+        background &&
+        !warning &&
+        !retainedOutcome.current &&
+        errorOperationRef.current === "refresh"
+      ) {
+        setError(undefined);
+      }
+      // Failed discovery cannot confirm that previously observed devices went away.
+      if (warning && !value.devices.length) return;
       setDevicesLoaded(true);
       setDevices(value.devices);
-      if (!retainedOutcome.current) {
-        setErrorOperation("refresh");
-        setError(value.errors.length ? value.errors.join("\n") : undefined);
-      }
       const current = value.devices.find((device) => device.id === selectedRef.current);
       if (!current) {
         if (selectedRef.current && transferScope && peekToolsDraftPart(transferScope, "device"))
@@ -543,12 +592,14 @@ function DevicePanelSurface({
     },
     [selectDevice, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue],
   );
+  // Refresh the observed device list after opening, recovery or a background read failure.
   useEffect(() => {
     if (!visible) return;
     // An unread/failed status is not a confirmed stop; keep the retained target and frame.
     if (!status) return;
     if (!status.running) {
       setLoadingDevices(false);
+      setListFailure(undefined);
       setDevicesLoaded(false);
       setLive(false);
       setSelected("");
@@ -563,13 +614,13 @@ function DevicePanelSurface({
       .then(
         (value) => {
           if (!active) return;
-          applyDevices(value);
+          applyDevices(value, true);
         },
         (cause: unknown) => {
           if (active) {
             setDiscoveryUnavailable(true);
-            setConnectionUnavailable(true);
-            setError(presentRemoteError(cause, { explicit: true }));
+            // Keep discovery failures independent of frame and action outcomes.
+            setListFailure({ cause, disconnected: true });
           }
         },
       )
@@ -579,15 +630,21 @@ function DevicePanelSurface({
     return () => {
       active = false;
     };
-  }, [api, status?.running, applyDevices, visible, reload]);
+  }, [api, status?.running, applyDevices, visible, deviceStatus.reload, listAttempt]);
   // Video when the Host can stream this device; the still captures below are the fallback.
   const liveStream = useDeviceLiveStream({
     stream: api.stream,
     subscribeStream: api.subscribeStream,
     deviceId: selected,
     enabled: visible && live && !!selected && !!status?.running,
+    onInterrupted: (deviceId, lastFrame) => {
+      if (selectedRef.current !== deviceId) return;
+      if (lastFrame) setFrame(lastFrame);
+      setFrameStale(true);
+    },
     onFrame: useCallback((deviceId: string) => {
       if (selectedRef.current !== deviceId) return;
+      setLiveCaptureFailure(undefined);
       setFrameStale(false);
       setActionCompleted(false);
       if (errorOperationRef.current === "capture") setError(undefined);
@@ -597,6 +654,7 @@ function DevicePanelSurface({
   const screenSize = liveStream.picture ?? imageSize;
   useEffect(() => {
     if (!visible || !live || !selected || !status?.running || streaming) return;
+    setLiveCaptureFailure(undefined);
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
@@ -610,7 +668,7 @@ function DevicePanelSurface({
         !queuedGestures.current
       ) {
         try {
-          const value = await capture(selected);
+          const value = await capture(selected, true);
           if (!cancelled) {
             setFrame(value);
             setFrameStale(false);
@@ -622,8 +680,8 @@ function DevicePanelSurface({
           }
         } catch (cause) {
           if (!cancelled) {
-            setErrorOperation("capture");
-            setError(presentRemoteError(cause));
+            // Capture retries already back off. Only their presentation needs a grace period.
+            setLiveCaptureFailure({ deviceId: selected, cause });
             setFrameStale(true);
             failures++;
           }
@@ -636,7 +694,7 @@ function DevicePanelSurface({
           },
           failures
             ? Math.min(8000, 1000 * 2 ** failures)
-            : Math.max(100, 1000 - (performance.now() - started)),
+            : Math.max(DEVICE_STILL_MIN_GAP_MS, 333 - (performance.now() - started)),
         );
     };
     void poll();
@@ -644,7 +702,7 @@ function DevicePanelSurface({
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [live, selected, capture, status?.running, visible, streaming, setErrorOperation]);
+  }, [live, selected, capture, status?.running, visible, streaming]);
   const action = (command: DeviceAction) =>
     void execute(
       command.type,
@@ -970,7 +1028,9 @@ function DevicePanelSurface({
     controlLease.deviceId === selected &&
     controlLease.expiresAt > Date.now() &&
     !!status?.agentInstalled &&
-    !connectionUnavailable;
+    !connectionUnavailable &&
+    !liveCaptureUnavailable &&
+    !listFailure?.disconnected;
   const canView = canViewDevice && !busy;
   const canControl = canControlDevice && !busy;
   const unavailable = (name: DeviceOperation, enabled = true) =>
@@ -985,11 +1045,27 @@ function DevicePanelSurface({
   const coordinatesValid =
     Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 && x <= 20000 && y <= 20000;
   const sdkAvailable = !!status?.platforms.some((item) => item.available);
-  const refreshDevices = () => void execute("refresh", api.list, applyDevices);
-  const discoveryError = errorOperation === "status" || errorOperation === "refresh";
+  const refreshDevices = () => void execute("refresh", api.list, (value) => applyDevices(value));
+  const refreshStatus = () => {
+    deviceStatus.clearFailure();
+    void execute("status", api.status, setStatus);
+  };
+  const shownError =
+    error ??
+    deviceStatus.visibleError ??
+    discoveryFailure.visibleError ??
+    captureFailure.visibleError;
+  const shownErrorOperation = error
+    ? errorOperation
+    : deviceStatus.visibleError
+      ? "status"
+      : discoveryFailure.visibleError
+        ? "refresh"
+        : "capture";
+  const discoveryError = shownErrorOperation === "status" || shownErrorOperation === "refresh";
   // A machine connection failure while loading devices is explained once by the central notice.
   const discoveryShownCentrally = useConnectionErrorShownCentrally(
-    discoveryError ? error : undefined,
+    discoveryError ? shownError : undefined,
   );
   const draft = annotations[selected];
   const updateDraft = (change: (value: AnnotationDraft) => AnnotationDraft) =>
@@ -1164,8 +1240,33 @@ function DevicePanelSurface({
       endY: Math.round(endY * height),
     });
   };
-  const captureFailed = !!error && errorOperation === "capture";
-  const liveTouchSupported = status?.touchProtocol === 1 && !!api.touch;
+  const explicitCaptureFailed = !!error && errorOperation === "capture";
+  const captureFailed = explicitCaptureFailed || !!liveCaptureCause;
+  const [touchHost, setTouchHost] = useState<DevicePanelApi>();
+  const probeTouch =
+    visible &&
+    status?.running &&
+    status.touchProtocol !== 1 &&
+    (status.platform === "win32" || status.platform === "darwin") &&
+    status.platforms.some((entry) => entry.platform === "android" && entry.available);
+  // Discover optional touch support independently of inventory and first-frame reads.
+  useEffect(() => {
+    let current = true;
+    setTouchHost(undefined);
+    if (probeTouch && api.touchAvailable) {
+      void api.touchAvailable().then(
+        (available) => {
+          if (current && available) setTouchHost(api);
+        },
+        () => {},
+      );
+    }
+    return () => {
+      current = false;
+    };
+  }, [api, probeTouch, deviceStatus.reload]);
+  const liveTouchSupported =
+    !!api.touch && (status?.touchProtocol === 1 || (probeTouch && touchHost === api));
   const hasInspection = !!inspection;
   // A live touch belongs to one target, lease and fresh, controllable screen. Leaving any of them
   // (switch, hide, permission or lease loss, stale frame, annotation, inspection, resize) or
@@ -1210,9 +1311,13 @@ function DevicePanelSurface({
       },
     );
   const shownFrame = annotating ? draft?.frame : frame;
-  const toolbarReason = connectionUnavailable
-    ? t("The device connection is unavailable. Refresh devices to reconnect.")
-    : undefined;
+  const toolbarReason =
+    connectionUnavailable ||
+    (liveCaptureUnavailable && captureFailure.visibleError) ||
+    (listFailure?.disconnected &&
+      (discoveryFailure.visibleError || (error && errorOperation === "refresh")))
+      ? t("The device connection is unavailable. Refresh devices to reconnect.")
+      : undefined;
   const controlReason =
     toolbarReason ??
     (annotating
@@ -1258,9 +1363,9 @@ function DevicePanelSurface({
     <section
       className="host-tool-panel device-panel bycoda-arc"
       aria-label={t("Devices")}
-      aria-busy={busy || loadingDevices}
+      aria-busy={busy || loadingDevices || discoveryFailure.pending}
     >
-      {error && !discoveryShownCentrally && (
+      {shownError && !discoveryShownCentrally && (
         <Disclosure
           {...surfaceAttributes(
             { frame: "danger", edge: "bottom", tone: "danger" },
@@ -1269,31 +1374,31 @@ function DevicePanelSurface({
           role="alert"
           size="sm"
           summary={
-            readableDeviceError(error) ??
+            readableDeviceError(shownError) ??
             (discoveryError
               ? t("Could not load devices")
               : actionCompleted
                 ? t("Action completed; screen unavailable")
-                : captureFailed
+                : shownErrorOperation === "capture"
                   ? t("Device screen unavailable")
                   : t("Device action failed"))
           }
         >
           <OutputBlock size="micro" tone="primary" leading="inherit">
-            {error}
+            {shownError}
           </OutputBlock>
         </Disclosure>
       )}
-      {!status && !error && (
+      {!status && !shownError && (
         <LoadingText size="caption" leading="inherit" className="px-4 py-5">
           {t("Checking device support…")}
         </LoadingText>
       )}
-      {!status && ((error && !discoveryShownCentrally) || operation === "status") && (
+      {!status && ((shownError && !discoveryShownCentrally) || operation === "status") && (
         <Button
           loading={operation === "status"}
           disabled={unavailable("status")}
-          onClick={() => void execute("status", api.status, setStatus)}
+          onClick={refreshStatus}
         >
           {t("Retry")}
         </Button>
@@ -1324,7 +1429,8 @@ function DevicePanelSurface({
             selected={selected}
             hostLabel={hostLabel}
             disabled={busy || loadingDevices}
-            loading={loadingDevices}
+            loading={loadingDevices || discoveryFailure.pending}
+            discoveryFailed={discoveryUnavailable}
             refreshing={operation === "refresh" || loadingDevices}
             refreshDisabled={unavailable("refresh", !loadingDevices)}
             onSelect={selectDevice}
@@ -1674,8 +1780,8 @@ function DevicePanelSurface({
                     devices={devices}
                     device={device}
                     selected={selected}
-                    loadingDevices={loadingDevices}
-                    error={!!error}
+                    loadingDevices={loadingDevices || discoveryFailure.pending}
+                    error={!!shownError}
                     live={live}
                     facts={(item) =>
                       `${platformVersionLabel(item)}, ${kindLabel(item)}, ${stateLabel(item)}`
@@ -1921,9 +2027,9 @@ function DevicePanelSurface({
                 streaming={streaming}
                 visible={visible}
                 annotating={annotating}
-                frameStale={frameStale}
-                captureFailed={captureFailed}
-                connectionUnavailable={connectionUnavailable}
+                frameStale={frameStale && !captureFailure.pending}
+                captureFailed={explicitCaptureFailed || !!captureFailure.visibleError}
+                connectionUnavailable={!!toolbarReason}
               />
             )}
             {annotating && draft && (
@@ -2360,11 +2466,11 @@ function DevicePanelSurface({
                   ? devices.length
                   : undefined
               }
-              showLastError={!error}
+              showLastError={!shownError}
               refresh={{
                 loading: operation === "status",
                 disabled: unavailable("status", !loadingDevices),
-                onClick: () => void execute("status", api.status, setStatus),
+                onClick: refreshStatus,
               }}
               setup={{
                 loading: operation === "setup",

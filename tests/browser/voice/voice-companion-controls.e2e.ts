@@ -61,6 +61,7 @@ for (const theme of ["light", "dark"])
       await page.getByRole("menuitemcheckbox", { name: "Mute speaker", exact: true }).click();
       expect(await page.evaluate(() => (window as any).fixtureVoice.speakerMuted)).toBe(true);
       await panel.getByRole("button", { name: "Mute microphone", exact: true }).click();
+      await expect(panel).toHaveAttribute("data-voice-state", "connected");
       await more.click();
       await expect(finish).toBeDisabled();
       await page.keyboard.press("Escape");

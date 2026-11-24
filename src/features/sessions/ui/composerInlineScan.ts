@@ -8,6 +8,7 @@ import { attachmentPresentation, formatAttachmentSize } from "../model/attachmen
 import { cachedUserLinkRanges, type UserLink } from "../model/linkPreview";
 import { mcpTagParts } from "../model/mcpPicker";
 import { splitCitationTokens } from "../model/citationTokens";
+import { fileCommentLabel } from "../model/chatCitation";
 import { scopedMentionRanges } from "../model/composerMentionScopes";
 import type { InlineReference, InlineReferenceContext } from "./composerInlineReferences";
 
@@ -208,12 +209,13 @@ function scanLines(
   for (const part of splitCitationTokens(slice, citations, NO_CODE)) {
     if ("token" in part) {
       const end = start + part.token.length;
+      const citation = context.citationSources?.[part.index];
       found[QUOTE]!.push({
         start,
         end,
-        kind: "quote",
-        value: part.token,
-        label: part.token.slice(1, -1),
+        kind: citation?.file ? "file-comment" : "quote",
+        value: citation?.file ? citation.id : part.token,
+        label: citation?.file ? fileCommentLabel(citation.file) : part.token.slice(1, -1),
       });
       start = end;
     } else start += part.text.length;

@@ -1,4 +1,5 @@
 import type { UnifiedLine } from "./unifiedDiff";
+import { serializeChatCitation } from "../../sessions/public/quoteDraft";
 
 export type DiffCommentTarget = {
   path: string;
@@ -30,6 +31,25 @@ export function writeDiffCommentDraft(target: DiffCommentTarget, comment: string
 export function formatDiffComment(target: DiffCommentTarget, comment: string): string {
   const body = comment.replace(/\r\n?/g, "\n").trim();
   if (!body) return "";
+
+  const { path, line } = target;
+  if (line.kind !== "hunk") {
+    try {
+      return serializeChatCitation({
+        version: 1,
+        id: crypto.randomUUID(),
+        file: {
+          path,
+          line: line.kind === "del" ? line.oldNumber : line.newNumber,
+          kind: line.kind,
+        },
+        text: line.text,
+        comment: body,
+      });
+    } catch {
+      // Oversized snapshots still reach the draft as readable text.
+    }
+  }
 
   const marker = target.line.kind === "add" ? "+" : target.line.kind === "del" ? "-" : " ";
   const deleted = target.line.kind === "del" ? " (deleted line)" : "";

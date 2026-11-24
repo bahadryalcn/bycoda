@@ -8,6 +8,10 @@ import { setLanguagePreference, t } from "../../../shared/i18n";
 import { ToastRegion, type ToastAnnouncement } from "../../../shared/ui/ToastRegion";
 import { SessionPane, type SessionPaneProps } from "../../sessions/ui/SessionPane";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import {
+  saveProviderAccount,
+  setDefaultProviderAccount,
+} from "../../providers/model/providerAccounts";
 import { PaneTree } from "../../workspace/ui/PaneTree";
 import { leaf } from "../../workspace/model/layout";
 import { TitleBar } from "../../../app/shell/TitleBar";
@@ -2796,6 +2800,43 @@ function offerRemoteAccounts(includeDefault = true) {
     },
   };
 }
+
+it.each([false, true])(
+  "uses the remote Host account catalog for a new composer (projectless: %s)",
+  async (projectless) => {
+    saveProviderAccount({
+      id: "local-only",
+      provider: "codex",
+      label: "Windows account",
+    });
+    setDefaultProviderAccount("codex", "local-only");
+    offerRemoteAccounts();
+    const session = { ...shell(), providerAccountId: "local-only" };
+    await render(
+      projectless
+        ? { ...session, cwd: "~", remoteExecutionEnvironmentId: machine.environmentId }
+        : session,
+    );
+    const picker = container.querySelector<HTMLButtonElement>(
+      "[data-composer-model-controls] button[aria-haspopup]",
+    )!;
+    await act(async () => picker.click());
+    await vi.waitFor(() => {
+      const accounts = container.ownerDocument.querySelector(
+        '[role="radiogroup"][aria-label="Account"]',
+      );
+      expect(accounts?.textContent).toContain("Remote work");
+      expect(accounts?.textContent).not.toContain("Windows account");
+      expect(picker.getAttribute("aria-label")).not.toContain("Unavailable Host account");
+    });
+    const account = [
+      ...container.ownerDocument.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+    ].find((button) => button.textContent?.includes("Remote work"))!;
+    await act(async () => account.click());
+    expect(picker.getAttribute("aria-label")).toContain("Remote work");
+    expect(commands).toHaveLength(0);
+  },
+);
 
 it.each([true, false])(
   "shows only named remote accounts in the composer when the Host includes its CLI profile: %s",

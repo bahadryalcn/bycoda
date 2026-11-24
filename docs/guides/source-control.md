@@ -138,8 +138,9 @@ list instead, only when you choose it; provider error text is not shown.
 
 While there are changes, the main button is **Commit**: it commits what is staged,
 or every change when nothing is staged (amending never adds unstaged files). It
-never pushes. After a successful regular commit, a tracked branch shows the
-updated outgoing commit count while Git refreshes the full status.
+never pushes. After a successful commit, the file list and Changes tab totals update
+together while Git refreshes the full status. A regular commit on a tracked branch
+also updates the outgoing commit count.
 **Commit & Push** and **Commit, Push & Create PR** are in its menu.
 Pending outgoing or incoming commits keep their own **Push**, **Pull**, **Sync
 Changes** or **Publish Branch** button beside it. With nothing to commit, that sync,
@@ -165,6 +166,10 @@ hidden zero-width surfaces retain their previous mode. Editor constraints can st
 prevent a saved split choice from being rendered. A failed preference save keeps the
 persisted selection and offers local retry. Diff consumers listen for changes from
 other windows without creating another preference store.
+
+Use **Add to chat** on a file or diff line comment to insert an inline reference
+such as `build.mjs L20`. Select it in the draft to view or edit the comment.
+Sent references open the saved comment, file path and source line.
 
 ## GitHub CLI
 

@@ -494,6 +494,7 @@ const handlers: Record<
   "sync.push": handleSessionsRpc,
   "usage.sessions.read": handleSessionsRpc,
   "usage.limits.read": handleUsageRpc,
+  "usage.quota.read": handleUsageRpc,
   "usage.cost.read": handleUsageRpc,
   "usage.planShare.read": handleUsageRpc,
   "pullRequests.link": handlePullRequestsRpc,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   clearRuntimeLogs,
   createRuntimeLogsBuffer,
@@ -115,6 +115,19 @@ describe("runtime log view buffer", () => {
     expect(
       mergeRuntimeLogs(restarted, snapshot([entry(1), entry(2), entry(3)])).entries,
     ).toHaveLength(3);
+  });
+
+  it("serializes details only when the other searchable fields do not match", () => {
+    const toJSON = vi.fn(() => ({ requestId: "nested-value" }));
+    const rows = [
+      entry(1, { stack: "at loadProfile", location: { file: "profiles.ts" }, details: { toJSON } }),
+    ];
+    for (const search of ["FETCH ACCOUNT", "loadprofile", "profiles.ts"]) {
+      expect(filterRuntimeLogs(rows, { search })).toHaveLength(1);
+    }
+    expect(toJSON).not.toHaveBeenCalled();
+    expect(filterRuntimeLogs(rows, { search: "nested-value" })).toHaveLength(1);
+    expect(toJSON).toHaveBeenCalledTimes(1);
   });
 
   it("filters nested values, stack frames and levels without advancing the stored cursor", () => {

@@ -103,7 +103,7 @@ export const voiceTools = [
   {
     name: "app_tools_list",
     description:
-      "Discover available bycoda tools and their exact schemas and authority requirements. Search for crews, projects, notes, tasks, goals, automations, social, logs, browser, devices or workspace actions before using them. Pass projectPath to list a specific project's tools from Global scope. Results marked requiresProject must be called with an explicit visible projectPath.",
+      "Discover available bycoda tools and their exact schemas and authority requirements. Use category conversation:desktop for real computer use. Search for crews, projects, notes, tasks, goals, automations, social, logs, browser, devices or workspace actions before using them. Pass projectPath to list a specific project's tools from Global scope. Results marked requiresProject must be called with an explicit visible projectPath.",
     properties: {
       projectPath: { type: "string", maxLength: 4096 },
       sessionId: { type: "string", maxLength: 300 },

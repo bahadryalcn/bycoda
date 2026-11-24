@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ComponentProps } from "react";
+import { Tooltip } from "./Tooltip";
 import styles from "./arc/context-menu/context-menu.module.css";
 export const menuRowClassName = styles.item;
 export type MenuRowProps = ComponentProps<"button"> & {
@@ -18,6 +19,7 @@ export function MenuRow({
   className,
   ref,
   branchWidth = 228,
+  title,
   ...props
 }: ComponentProps<"button"> & { destructive?: boolean; branchWidth?: number }) {
   const row = useRef<HTMLButtonElement>(null);
@@ -43,7 +45,7 @@ export function MenuRow({
       window.removeEventListener("resize", update);
     };
   }, [hasBranch, branchWidth]);
-  return (
+  const button = (
     <button
       {...props}
       ref={(element) => {
@@ -54,5 +56,12 @@ export function MenuRow({
       data-branch-side={hasBranch ? branchSide : undefined}
       className={`bycoda-arc ${styles.item} ${destructive ? styles.destructive : ""} ${className ?? ""}`}
     />
+  );
+  return title ? (
+    <Tooltip asChild label={title}>
+      {button}
+    </Tooltip>
+  ) : (
+    button
   );
 }

@@ -41,7 +41,7 @@ vi.mock("../../sessions/public/models", () => ({
 const names: SetupPoolNames = {
   smartest: "Smartest",
   balanced: "Balanced",
-  fast: "Fast",
+  light: "Low",
   work: "Work",
   personal: "Personal",
 };
@@ -69,6 +69,24 @@ const candidate = (
 
 const setup = (base: ReturnType<typeof draft>, list: SetupCandidate[], poolNames = names) =>
   applySmartSetup(base, list, rulePlan(list, poolNames));
+
+it("turns off accelerated settings in new and reused model rows", () => {
+  const codex = candidate("worker", 4, 2);
+  codex.target.modelSettings.serviceTier = "fast";
+  const claude = candidate("reviewer", 5, 3);
+  claude.target.harness = "claude";
+  claude.target.modelSettings.fast = "true";
+  const base = draft();
+  base.routing.entries.push({ ...claude.target, id: "existing", unknownLimit: "use" });
+  const next = setup(base, [codex, claude]);
+  expect(next.routing.entries.find((entry) => entry.id === "existing")?.modelSettings.fast).toBe(
+    "false",
+  );
+  expect(
+    next.routing.entries.find((entry) => entry.harness === "codex")?.modelSettings.serviceTier,
+  ).toBe("default");
+  expect(base.routing.entries[0].modelSettings.fast).toBe("true");
+});
 
 function source(): ModelSource {
   return {
@@ -155,7 +173,7 @@ it("adds missing models, orders strong moderately priced models first and create
   expect(next.routing.pools.map((p) => [p.name, p.entryIds.length])).toEqual([
     ["Smartest", 2],
     ["Balanced", 3],
-    ["Fast", 1],
+    ["Low", 1],
   ]);
   expect(prepareOrderSave(next).routing.entries).toHaveLength(4);
 });
@@ -251,8 +269,8 @@ it("binds every role to a tier pool and replaces earlier fixed bindings", () => 
   };
   expect(poolName("task.worker")).toBe("Balanced");
   expect(poolName("task.reviewer")).toBe("Smartest");
-  expect(poolName("text.title")).toBe("Fast");
-  expect(poolName("voice.reply")).toBe("Fast");
+  expect(poolName("text.title")).toBe("Low");
+  expect(poolName("voice.reply")).toBe("Low");
   expect(() => prepareOrderSave(next)).not.toThrow();
 });
 
@@ -278,7 +296,7 @@ it("keeps existing ids, limits and unknown entries, refills same-named pools; is
   expect(second.routing.entries.map((e) => e.model)).toEqual(["opus", "mini", "old"]);
   expect(second.routing.entries[0].unknownLimit).toBe("skip");
   expect(second.percentages[id]).toBe("60");
-  expect(second.routing.pools.map((p) => p.name)).toEqual(["smartest", "Balanced", "Mine", "Fast"]);
+  expect(second.routing.pools.map((p) => p.name)).toEqual(["smartest", "Balanced", "Mine", "Low"]);
   expect(second.routing.pools[0].id).toBe(poolId);
   expect(second.routing.pools[2].entryIds).toEqual(["legacy"]);
   expect(setup(second, candidates)).toEqual(second);
@@ -406,12 +424,12 @@ it("moves each job to a pool that suits it when a plan binds it wrongly", () => 
   });
 });
 
-it("binds light jobs to the fast pool and heavy jobs to the smartest in the rule plan", () => {
+it("binds light jobs to the low-effort pool and heavy jobs to the smartest in the rule plan", () => {
   const list = [candidate("frontier", 5, 4), candidate("worker", 4, 2), candidate("cheap", 2, 1)];
   const { roles } = rulePlan(list, names);
   for (const [role, need] of Object.entries(ROLE_NEED))
     expect(roles[role as keyof typeof roles]).toEqual({
-      pool: need === "light" ? "Fast" : need === "heavy" ? "Smartest" : "Balanced",
+      pool: need === "light" ? "Low" : need === "heavy" ? "Smartest" : "Balanced",
     });
 });
 
@@ -432,7 +450,7 @@ it("runs light pools at low, the order at medium and heavy pools at high, never 
   ]);
   expect(pool("Smartest")).toMatchObject({ effort: "high", entryIds: [strong!.id] });
   expect(pool("Balanced").effort).toBe("medium");
-  expect(pool("Fast")).toMatchObject({ effort: "low", entryIds: [mini!.id] });
+  expect(pool("Low")).toMatchObject({ effort: "low", entryIds: [mini!.id] });
   expect(next.routing.entries.some((e) => e.modelSettings.effort === "xhigh")).toBe(false);
   expect(setup(next, list).routing.entries).toHaveLength(next.routing.entries.length);
 });

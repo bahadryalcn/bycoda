@@ -454,7 +454,8 @@ sessions or both. Learned facts have separate provenance and cannot promote
 themselves into owner rules. Forbidden terms can be excluded from assistant
 text outputs. Review remembered facts and remove outdated information in
 **Memory**. Its search and **Add memory** action sit above grouped Rules, About me
-and Learned entries. Each entry keeps its scope, source and date beside the text;
+and Learned entries. Matching entries stay visible as you type while the Host searches
+the full memory collection. Each entry keeps its scope, source and date beside the text;
 enable, edit and delete controls stay with that entry. In the editor, write the
 memory first, then select its kind and scope and optional forbidden words. Deleting
 requires confirmation; **Undo** restores the deleted entry.

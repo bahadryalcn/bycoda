@@ -122,6 +122,9 @@ function mount(toolWindow = false, mouse = false) {
     showWorkspace() {
       act(() => navigation.onShowWorkspace());
     },
+    selectWorkspaceTab(id: string) {
+      act(() => navigation.onSelectWorkspaceTab(id));
+    },
     /** An App commit that changes none of the navigation inputs; returns tab lookups it caused. */
     unrelatedCommit() {
       const before = tabLookups.mock.calls.length;
@@ -299,6 +302,30 @@ it("shows the workspace directly instead of stepping back to an older surface", 
   // The tool page stays one step back, like any other navigation.
   w.back();
   expect(w.state.inboxViewOpen).toBe(true);
+});
+
+it("opens the already selected conversation from Inbox and returns with Back", () => {
+  const w = mount();
+  w.go({ inboxViewOpen: true });
+  w.selectWorkspaceTab("a");
+  expect(w.state).toMatchObject({ inboxViewOpen: false, activeTabId: "a" });
+  w.back();
+  expect(w.state).toMatchObject({ inboxViewOpen: true, projectCwd: "/a" });
+  w.forward();
+  expect(w.state).toMatchObject({ inboxViewOpen: false, activeTabId: "a" });
+});
+
+it("returns to Inbox after selecting a different tab and closing the original tab", () => {
+  const w = mount();
+  w.go({ inboxViewOpen: true });
+  w.selectWorkspaceTab("b");
+  expect(w.state).toMatchObject({ inboxViewOpen: false, activeTabId: "b" });
+  w.close("a");
+  w.back();
+  expect(w.state).toMatchObject({ inboxViewOpen: true, activeTabId: "b", projectCwd: "/a" });
+  expect(w.activate.mock.calls).toEqual([["b"]]);
+  w.forward();
+  expect(w.state).toMatchObject({ inboxViewOpen: false, activeTabId: "b" });
 });
 
 it("leaves a tools window on its tool when asked for the workspace", () => {

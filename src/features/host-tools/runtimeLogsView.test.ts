@@ -60,6 +60,23 @@ const variants = (cursor: number): Partial<RuntimeLogEntry> => {
 };
 
 describe("runtime logs view", () => {
+  it("keeps matching rows across search edits and replaces rows whose contents changed", () => {
+    const view = new RuntimeLogsView();
+    const entries = [entry(1), entry(2), entry(3, { level: "info", message: "Ready" })];
+    const buffer = mergeRuntimeLogs(createRuntimeLogsBuffer(), page(entries));
+    const first = view.update(buffer, {}, true);
+    const filtered = view.update(buffer, { search: "fetch" }, true);
+    expect(filtered.groups).toHaveLength(1);
+    expect(filtered.groups[0]).toBe(first.groups[0]);
+    expect(view.update(buffer, { search: "fetch account" }, true).groups[0]).toBe(first.groups[0]);
+
+    const replacement = { ...buffer, entries: [entries[0], { ...entries[1], timestamp: 0 }] };
+    const changed = view.update(replacement, { search: "fetch account" }, true).groups[0];
+    expect(changed).not.toBe(first.groups[0]);
+    expect(changed.entry).toBe(entries[0]);
+    expect(changed.firstTimestamp).toBe(0);
+  });
+
   it.each([
     ["all", {}, true],
     ["ungrouped", {}, false],

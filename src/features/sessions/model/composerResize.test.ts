@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   COMPOSER_MAX_HEIGHT,
   composerMaxHeight,
@@ -11,6 +11,19 @@ function field(scrollHeight: number, height = "") {
 }
 
 describe("resizeComposer", () => {
+  it("restores the intrinsic empty field without a layout read on tab activation", () => {
+    const measure = vi.fn(() => 180);
+    const el = {
+      value: "",
+      style: { height: "180px" },
+      get scrollHeight() {
+        return measure();
+      },
+    };
+    resizeComposer(el);
+    expect(el.style.height).toBe("");
+    expect(measure).not.toHaveBeenCalled();
+  });
   it("keeps a capped append stable but remeasures deletion and width changes", () => {
     let reads = 0;
     const el = {

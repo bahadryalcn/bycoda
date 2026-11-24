@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Check } from "../icons";
-import { OverflowTooltip } from "../Tooltip";
+import { OverflowTooltip, Tooltip } from "../Tooltip";
 import choice from "../arc/combobox/combobox.module.css";
 import styles from "./picker.module.css";
 
@@ -61,9 +61,9 @@ export function PickerChoice({
         </span>
       </OverflowTooltip>
       {meta != null ? (
-        <span className={styles.meta} title={typeof meta === "string" ? meta : undefined}>
-          {meta}
-        </span>
+        <Tooltip label={typeof meta === "string" ? meta : undefined} asChild>
+          <span className={styles.meta}>{meta}</span>
+        </Tooltip>
       ) : null}
       {trailing != null ? <span className={styles.trailing}>{trailing}</span> : null}
     </>

@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { newSession } from "../../../features/sessions/model/session";
+import { summaryFromSession } from "../../../features/sessions/data/sessionHistory";
 import type { SessionRenameDeps } from "./useSessionRename";
 import { useSessionTitleRegeneration } from "./useSessionTitleRegeneration";
 import { TitleRegenerationConflictError } from "../../../features/sessions/model/regenerateSessionTitle";
@@ -46,6 +47,7 @@ beforeEach(async () => {
       deps.sessionsRef.current =
         typeof update === "function" ? update(deps.sessionsRef.current) : update;
     },
+    setHistory: vi.fn(),
     loadedSessionCache: { current: new Map([[session.id, session]]) },
     lastPersisted: { current: new Map([[session.id, "old"]]) },
     invalidateLoadedSession: vi.fn(),
@@ -77,6 +79,19 @@ it("publishes persisted title while preserving concurrent execution state", asyn
   });
   expect(deps.loadedSessionCache.current.has("s")).toBe(false);
   expect(deps.refreshHistory).toHaveBeenCalledWith("/repo");
+});
+
+it("updates a Last sessions title without superseding the open project's history load", async () => {
+  const target = { ...session, cwd: "/other-project" };
+  deps.sessionsRef.current = [];
+  mocks.read.mockResolvedValueOnce(target);
+  await action.onRegenerateHistorySessionTitle(session.id, target.cwd);
+  const update = vi.mocked(deps.setHistory!).mock.calls[0][0];
+  const source = [summaryFromSession(target), summaryFromSession(session)];
+  const rows = typeof update === "function" ? update(source) : update;
+  expect(rows[0].title).toBe("Generated");
+  expect(rows[1]).toBe(source[1]);
+  expect(deps.refreshHistory).not.toHaveBeenCalled();
 });
 
 it("retains operation identity after an uncertain response and leaves title unchanged", async () => {

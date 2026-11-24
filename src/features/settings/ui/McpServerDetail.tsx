@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
@@ -122,6 +122,39 @@ export function McpServerDetail({
   const manageServer = hub.manageServer;
   const credentialRequest = hub.projectCredentials;
   const credentialConfigured = hubEntry?.projectCredentialsConfigured === true;
+  const profileName =
+    !stale &&
+    !credentialConfigured &&
+    !hubEntry?.credentialsConfigured &&
+    hubEntry?.oauth === "signed-in"
+      ? hubEntry.name
+      : undefined;
+  const profileScope = JSON.stringify([
+    remote?.machineId,
+    remote?.environmentId,
+    remote?.projectId,
+    !globalOnly && cwd,
+    profileName,
+    hubEntry?.oauthInherited,
+  ]);
+  const [profile, setProfile] = useState<{ scope: string; label?: string }>();
+  const readProfile = useEffectEvent((name: string) => hub.accountProfile?.(name));
+  // Reason: fetch the selected OAuth account only while its details are open.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- loads the visible account and discards replies after scope changes
+  useEffect(() => {
+    if (!profileName) {
+      setProfile(undefined);
+      return;
+    }
+    let active = true;
+    const settle = (label?: string) => {
+      if (active) setProfile({ scope: profileScope, label });
+    };
+    void Promise.resolve(readProfile(profileName)).then(settle, () => settle());
+    return () => {
+      active = false;
+    };
+  }, [profileName, profileScope]);
   // Close button, Escape and backdrop all reach `onClose`; Remove can end the entry the draft belongs to.
   const leave = useLeaveGuard();
 
@@ -227,6 +260,12 @@ export function McpServerDetail({
                 <Row
                   label={t("bycoda sign-in")}
                   info={t("bycoda keeps this login so every session can use the server.")}
+                  descriptionVisible
+                  description={
+                    profileName && profile?.scope === profileScope
+                      ? (profile.label ?? t("Account information unavailable"))
+                      : undefined
+                  }
                 >
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <Badge
@@ -388,6 +427,10 @@ export function McpServerDetail({
                   <Row
                     label={t("{p0} sign-in", { p0: MCP_PROVIDER_LABELS[server.provider] })}
                     info={t("Signs in through the provider's own CLI, for use outside bycoda.")}
+                    descriptionVisible
+                    description={
+                      server.auth === "signed_in" ? t("Account information unavailable") : undefined
+                    }
                   >
                     <Button
                       size="sm"
@@ -396,7 +439,7 @@ export function McpServerDetail({
                       disabled={configLocked}
                       onClick={() => void actions.providerSignIn(server)}
                     >
-                      {t("Sign in")}
+                      {server.auth === "signed_in" ? t("Sign in again") : t("Sign in")}
                     </Button>
                   </Row>
                 ) : null}

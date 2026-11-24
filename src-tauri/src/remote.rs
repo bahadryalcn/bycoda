@@ -18,6 +18,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 pub(crate) mod account_pairing;
 pub(crate) mod account_routes;
 pub(crate) mod browser_frames;
+mod credential_store;
 pub(crate) mod host_proof;
 pub(crate) mod protocol;
 pub(crate) mod response_limit;
@@ -414,7 +415,9 @@ pub(crate) fn read_store_values(path: &Path) -> Result<Vec<Value>, String> {
 }
 
 fn read_uncached(path: &Path) -> Result<Vec<StoredMachine>, String> {
-    let machines: Vec<StoredMachine> = read_store_values(path)?
+    let mut records = read_store_values(path)?;
+    credential_store::open(path, &mut records)?;
+    let machines: Vec<StoredMachine> = records
         .into_iter()
         .filter(|record| record.get("kind").and_then(Value::as_str) != Some("ssh"))
         .map(|record| {
@@ -454,9 +457,30 @@ fn write(path: &Path, machines: &[StoredMachine]) -> Result<(), String> {
 }
 
 pub(crate) fn write_store_values(path: &Path, records: &[Value]) -> Result<(), String> {
+    write_protected_store(path, Some(records))
+}
+
+fn write_protected_store(path: &Path, records: Option<&[Value]>) -> Result<(), String> {
     let parent = path.parent().ok_or("Missing connection directory")?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let lock = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(parent.join("remote-machines.lock"))
+        .map_err(|e| e.to_string())?;
+    lock.lock().map_err(|e| e.to_string())?;
     let before = read_store_values(path)?;
+    if records.is_none() && !credential_store::has_legacy_tokens(&before) {
+        return Ok(());
+    }
+    let mut protected = records.unwrap_or(&before).to_vec();
+    credential_store::seal(
+        path,
+        &mut protected,
+        !credential_store::has_sealed_tokens(&before),
+    )?;
+    let records = protected.as_slice();
     let prepared = match crate::assistant_server_observation::prepare(path, &before, records) {
         Ok(()) => true,
         Err(_) => {
@@ -1366,7 +1390,12 @@ pub fn remote_machines(
         .store
         .lock()
         .map_err(|_| "Connection store is locked")?;
-    Ok(read_shared(&store_path(&app)?)?
+    let path = store_path(&app)?;
+    let records = read_store_values(&path)?;
+    if credential_store::has_legacy_tokens(&records) {
+        write_protected_store(&path, None)?;
+    }
+    Ok(read_shared(&path)?
         .iter()
         .map(StoredMachine::public)
         .collect())

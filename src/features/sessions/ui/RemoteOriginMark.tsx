@@ -1,7 +1,8 @@
+import type { ReactNode } from "react";
 import { Text } from "../../../shared/ui/Text";
 import { isUserConversation } from "../../../shared/model/host-contracts/delegation";
 import { useT } from "../../../shared/i18n";
-import { MonitorSmartphone } from "../../../shared/ui/icons";
+import { Laptop, MonitorSmartphone } from "../../../shared/ui/icons";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import type { Session } from "../model/session";
@@ -19,34 +20,45 @@ export function remoteOrigin(session: Session): "running" | "idle" | undefined {
 }
 
 /**
- * Marks a conversation started from another device, so its requests are not mistaken for
- * local ones. A passive mark (no action); the tooltip adds what the icon cannot say.
- * @use Composer workspace row (`labelled`, beside the checkout and branch).
+ * Shows where a remotely started conversation runs now, with its origin on hover and focus.
+ * @use Composer workspace row in the machine slot.
  */
 export function RemoteOriginMark({
   origin,
-  labelled = false,
+  children,
 }: {
-  origin: "running" | "idle" | undefined;
-  labelled?: boolean;
+  origin: "running" | "idle";
+  children?: ReactNode;
 }) {
   const t = useT();
-  if (!origin) return null;
   const running = origin === "running";
-  const label = t(STARTED);
+  const location = t("This computer");
+  const details = [t(STARTED), location];
+  if (running) details.push(t(RUNNING));
   return (
-    <Tooltip label={label} details={running ? [t(RUNNING)] : undefined} asChild>
+    <Tooltip
+      label={
+        <span className="inline-flex items-center gap-1.5">
+          <MonitorSmartphone className="icon-sm shrink-0" aria-hidden />
+          {t("Connection history")}
+        </span>
+      }
+      details={details}
+      asChild
+    >
       <Text
-        role="img"
-        aria-label={running ? `${label}. ${t(RUNNING)}` : label}
+        as="div"
+        tabIndex={children ? undefined : 0}
         data-no-drag
-        size="caption"
-        tone="muted"
-        className="inline-flex shrink-0 items-center gap-1"
+        className="inline-flex min-w-0 items-center gap-1.5"
       >
-        <MonitorSmartphone aria-hidden className="icon-sm" strokeWidth={1.75} />
-        {labelled ? <span aria-hidden>{t("Remote connection")}</span> : null}
-        {running ? <WorkingIndicator size="xs" /> : null}
+        {children ?? (
+          <>
+            <Laptop className="icon-xs" aria-hidden />
+            {location}
+          </>
+        )}
+        {running ? <WorkingIndicator size="xs" label={t(RUNNING)} /> : null}
       </Text>
     </Tooltip>
   );

@@ -2380,14 +2380,14 @@ test("model picker aligns account rows and keeps quota readable in both themes a
       for (const count of [2, 3]) {
         await page.setViewportSize({ width, height: 850 });
         await page.goto(
-          `/tests/browser/chat/composer-extras.html?chat-layout&accounts=${count}&account-usage&theme=${theme}`,
+          `/tests/browser/chat/composer-extras.html?chat-layout&accounts=${count}&account-usage&stale-usage&theme=${theme}`,
         );
         await page.locator("[data-composer-model-controls] button[aria-haspopup]").first().click();
         const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
         if (count === 3) {
           const trigger = panel.locator("[data-model-account-menu]");
           const account = trigger.getByText("personal", { exact: true });
-          const quota = trigger.getByText("8% used", { exact: true });
+          const quota = trigger.getByText("92% remaining", { exact: true });
           await expect(quota).toBeVisible();
           const accountBox = (await account.boundingBox())!;
           const quotaBox = (await quota.boundingBox())!;
@@ -2404,8 +2404,10 @@ test("model picker aligns account rows and keeps quota readable in both themes a
         const rows = panel.locator("[data-model-account-list]").getByRole("radio");
         await expect(rows).toHaveCount(count);
         await expect(rows.first()).toBeChecked();
-        await expect(rows.first()).toContainText("8% used");
-        await expect(rows.nth(1)).toContainText("35% used");
+        await expect(rows.first()).toContainText("92% remaining");
+        await expect(rows.nth(1)).toContainText("47% remaining");
+        await expect(rows.nth(1).getByRole("meter")).toHaveAttribute("aria-valuenow", "47");
+        await expect(rows.nth(1)).toContainText("Refresh failed. Updated 24m ago");
         await expect(rows.last()).toBeInViewport();
         const first = (await rows.first().boundingBox())!;
         const last = (await rows.last().boundingBox())!;
@@ -2428,7 +2430,7 @@ test("model picker aligns account rows and keeps quota readable in both themes a
           await expect(rows.nth(1)).toBeChecked();
           await expect(rows.nth(1)).toBeFocused();
         } else {
-          await expect(rows.last()).toContainText("100% used");
+          await expect(rows.last()).toContainText("0% remaining");
         }
       }
     }

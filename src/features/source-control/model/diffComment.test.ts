@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { extractChatCitations } from "../../sessions/model/chatCitation";
 import {
   diffCommentLocation,
   formatDiffComment,
@@ -45,32 +46,45 @@ describe("diff comments", () => {
     };
 
     expect(diffCommentLocation(target)).toBe("src/auth.ts:42");
-    expect(formatDiffComment(target, " Please handle a missing cookie. ")).toBe(
-      [
-        "Diff comment on `src/auth.ts:42`:",
-        "",
-        "> +const token = readCookie();",
-        "",
-        "Please handle a missing cookie.",
-      ].join("\n"),
-    );
+    expect(
+      extractChatCitations(formatDiffComment(target, " Please handle a missing cookie. ")),
+    ).toMatchObject({
+      text: "",
+      citations: [
+        {
+          file: { path: "src/auth.ts", line: 42, kind: "add" },
+          text: "const token = readCookie();",
+          comment: "Please handle a missing cookie.",
+        },
+      ],
+    });
   });
 
-  it("uses the old line number and labels deleted lines", () => {
+  it("keeps deleted line information and blank source text", () => {
     expect(
-      formatDiffComment(
-        {
-          path: "src/old.ts",
-          line: {
-            kind: "del",
-            text: "legacy();",
-            oldNumber: 8,
-            newNumber: null,
+      extractChatCitations(
+        formatDiffComment(
+          {
+            path: "src/old.ts",
+            line: {
+              kind: "del",
+              text: "  ",
+              oldNumber: 8,
+              newNumber: null,
+            },
           },
-        },
-        "Keep this behavior.",
+          "Keep this behavior.",
+        ),
       ),
-    ).toContain("`src/old.ts:8` (deleted line)");
+    ).toMatchObject({
+      citations: [
+        {
+          file: { path: "src/old.ts", line: 8, kind: "del" },
+          text: "  ",
+          comment: "Keep this behavior.",
+        },
+      ],
+    });
   });
 
   it("ignores an empty comment", () => {

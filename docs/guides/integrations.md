@@ -47,6 +47,9 @@ Jira issue details include the issue's full attachment collection, including fil
 mentioned only by filename in the description. Azure DevOps work item details include
 attached-file relations. GitLab upload links resolve against the current project.
 
+An Inbox row preview opens after the pointer stays on the row for 450 ms. Keyboard
+focus opens the preview immediately.
+
 In Jira Inbox, select the current status in an issue’s detail to change it from the
 list or board. The available actions follow the issue’s Jira workflow.
 

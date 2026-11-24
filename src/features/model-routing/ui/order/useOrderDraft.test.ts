@@ -37,13 +37,13 @@ let editor: ReturnType<typeof useOrderDraft>;
 
 function Harness() {
   const settings = useOrderSettings(machine.id);
-  if (!settings.routing.state || !settings.limits.data) return null;
+  if (!settings.routing.state || settings.limits.isPending) return null;
   return createElement(DraftHarness, { settings });
 }
 function DraftHarness({ settings }: { settings: ReturnType<typeof useOrderSettings> }) {
   editor = useOrderDraft(
     settings,
-    { routing: settings.routing.state!, limits: settings.limits.data!.state },
+    { routing: settings.routing.state!, limits: settings.limits.data?.state },
     machine.id,
   );
   return null;
@@ -101,6 +101,32 @@ afterEach(async () => {
   await act(() => root.unmount());
   container.remove();
   client.clear();
+});
+
+it("lets routing save while the work limits read is unavailable", async () => {
+  vi.mocked(listMachineLimits).mockRejectedValue(new Error("Limits unavailable"));
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "45" }));
+  await act(async () => {
+    expect(await editor.save()).toBe(true);
+  });
+  expect(hostState.defaultMaxRunMinutes).toBe(45);
+  expect(saveMachineLimits).not.toHaveBeenCalled();
+});
+
+it("merges the first successful work limits read into an existing routing draft", async () => {
+  vi.mocked(listMachineLimits).mockRejectedValue(new Error("Limits unavailable"));
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "45" }));
+  await act(async () => {
+    client.setQueryData(["model-routing-limits", machine.id], {
+      machine,
+      state: { ...hostLimits, dailyAgentMinutes: 75 },
+    });
+  });
+  await vi.waitFor(() => expect(editor.draft.limits.dailyAgentMinutes).toBe("75"));
+  expect(editor.draft.maxRunMinutes).toBe("45");
+  expect(editor.conflict).toBe(false);
 });
 
 it("saves routing with captured version and work limits through their client", async () => {

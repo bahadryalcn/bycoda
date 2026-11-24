@@ -85,8 +85,10 @@ and releases the microphone and local engines without stopping coding work.
 Use the assistant button at the bottom of the sidebar, beside Settings, to set up
 voice and later open the companion. After setup it shows the assistant's avatar
 and name (the narrow rail shows the avatar alone). The avatar has no dot while
-voice is off; the dot pulses green while the assistant listens or speaks, turns
-yellow while connecting, red on an error and grey while the microphone is paused. When
+voice is off. The dot pulses green during a connected call, turns yellow while
+connecting, red on an error and grey in standby. Muting the microphone keeps the
+call connected. The microphone button stays selected while muted, and the call
+still shows when the assistant is preparing or playing a reply. When
 no sidebar is visible the button floats at the bottom right of the window. For a new
 assistant, set its name and language or use **Set up with AI** to draft its profile
 from a description. Review the proposed profile before applying it. An existing
@@ -311,13 +313,16 @@ The expanded companion centers a particle orb, connection status, scope and roun
 call controls. The orb scales down in a shorter panel. Blue light and particles
 respond to the microphone. While waiting for a reply, the particles orbit against
 violet and pink light. During playback they move in waves over teal light. The
-scene settles when the call stops or the microphone is muted. Reduced motion shows
+scene settles when the call stops and moves slowly while connected with the microphone muted.
+Reduced motion shows
 a still frame for each state. Hover or focus the engine name to see where audio
 goes. **Conversation** opens the transcript and moves the status into a smaller row.
 
 Drag any edge or corner of the expanded companion to resize it. The opposite
 edge stays in place, and the panel stays inside the window. Size and position
-are saved on this device. Double-click an edge to return to automatic sizing.
+are saved on this device. In the windowed call view, **Global** and **Project**
+stay with the call controls while the conversation scrolls. Double-click an
+edge to return to automatic sizing.
 
 Choose **Settings → Voice assistant → Companion → Visual style** to select
 **bycoda mark** (default), **Wave**, **Dots** or **Orb**. Each option has a live
@@ -408,16 +413,33 @@ change the view while the microphone stays connected. Asking to see a visual
 result can open full screen.
 
 **Live results** opens when the current voice turn has something to show. The assistant
-can present a short answer, a comparison or a chart. Recognized work outcomes can also
-appear as cards, such as test counts or a build result. Select **Live results** to hide
+can compose a view from the app's own components: layouts and tabs, text, tables, charts,
+status and progress, timelines, usage meters and JSON trees, links that open in your browser (https only, with the address shown),
+text you can copy, form fields and choices (text, numbers, dates, date-times and periods,
+suggestions, lists, selections, switches), and buttons that act on what you entered. Edit a field and press the
+button and the action uses your values; what you typed is kept when the assistant updates
+the view. Ask for “a draft I can copy” and the panel shows the text exactly as written
+with a **Copy** button and reports whether copying succeeded. A button can run a tool
+available in the current call. Bycoda checks the target, locks and approvals when you press it.
+Background reads show their result in the panel. Ask a follow-up such as
+“make it shorter” and the assistant updates the same view in place. A presented view
+stays through follow-up turns until it is replaced or the call ends. The assistant
+says it is on screen only once the panel actually shows it. Recognized work outcomes can
+also appear as cards, such as test counts or a build result. On wide screens, use **Maximize panel**
+beside the Live results heading to give results more room. **Restore panel layout** returns to the
+previous width. On narrow screens the panel already fills the width. Select **Live results** to hide
 or reopen the panel. Escape closes the open panel first, then exits full screen.
 **Full screen** in the expanded floating window returns to the app.
 
-Ask to open a session or one of its Conversation Tools by name. In full screen,
-it opens beside the call. In Window or Mini, it opens in the workspace. The
-session keeps its draft and running work when you close the right panel.
-Ask for the project workspace or Arif's right panel explicitly to choose where
-it opens.
+“Open a session and write this there” opens a regular coding session in the
+project workspace and leaves the text as a draft. If asked which project, say
+its name to continue the same request. Ask to send the prompt or start the
+work to submit it. Ask for Arif’s right panel to see a session beside the call.
+Closing the panel preserves its draft and running work. Conversation Tools can
+open beside the call or in the project workspace.
+
+Ask for token or cost usage to see a report. Ask to open the Usage page to go
+to its settings screen.
 
 Assign **Voice: Push to Talk** in Keyboard shortcuts. It has no default binding.
 While voice is connected and the microphone is paused, hold the shortcut to
@@ -829,14 +851,19 @@ only when several servers fit. A slow start returns a pending operation ID. The
 assistant can follow it with `devServers.operation.status` using the same project
 and original arguments, including after a voice reconnect.
 
-The companion can also move around the window and read a few summaries. "Open
-settings" or "ayarları aç" switches to a view or settings section; it only
-navigates and never changes a setting or sends anything. "Search" or "ara" returns
-at most 20 matching conversations, messages and projects, never from locked
-projects. "Today" or "bugün" reads the Today summary, at most 30 items, and says
-when it is partial. "MCP" lists the project's MCP servers with their enabled state
-and status, never commands, environment values, headers or tokens. These need an
-open conversation in an unlocked project and a visible desktop window.
+The companion can also move around the window. "Open settings" or "ayarları aç"
+opens Settings, or one of its sections such as "voice settings"; "close settings"
+returns to the conversation. The same applies to Servers, Crews, Notes, Inbox,
+Automations, Tasks, Social, Search, Assistant and Conversation tools. Closing a view
+that is not on screen changes nothing. Navigation only: it never changes a setting,
+sends anything or opens a locked project. Settings, Search, Inbox and Assistant also
+work with no conversation or unlocked project open. The other views need an unlocked
+project in this window. In a detached conversation window, Servers and Crews are
+unavailable. "Search" or "ara" returns at most 20 matching conversations, messages
+and projects, never from locked projects. "Today" or "bugün" reads the Today summary,
+at most 30 items, and says when it is partial. "MCP" lists the project's MCP servers
+with their enabled state and status, never commands, environment values, headers or
+tokens; it needs an unlocked project in view.
 
 Supported project tools use the verified assistant thread without creating a coding
 session. Working-copy operations still require an actual selected session.
@@ -930,8 +957,10 @@ it, the app joins **Approved apps** in the settings and the assistant continues;
 it there to be asked again. **Ask every time** (the default) also shows the native
 approval dialog for every action, launch and clipboard use, whether you are present or
 away. **Auto** asks once for each new app, then launches and acts on it without a
-dialog; it still asks for the clipboard and physical input. **Full access** asks
-nothing and covers every app, even while you are away. Each action approval names
+dialog. Clipboard and physical input still require approval. **Full access**
+covers every app, even while you are away. For a clear spoken request, the
+assistant uses the effective permission directly and verifies the result in the
+target app. Native approval dialogs, when required, name
 the exact app, window, element, action and text, and identifies the real coding
 session or assistant thread; no artificial coding session is created for global voice.
 In every mode a locked or unknown desktop, a disabled helper and a Stop block input.

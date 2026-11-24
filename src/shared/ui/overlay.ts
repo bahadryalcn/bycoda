@@ -157,6 +157,17 @@ function restoreFocusFor(entry: Entry) {
 export function hasActiveOverlay() {
   return entries.some((entry) => !entry.passive);
 }
+const overlayListeners = new Set<() => void>();
+/** Native surfaces below the web UI must hide while an interactive overlay owns the window. */
+export function subscribeActiveOverlay(listener: () => void): () => void {
+  overlayListeners.add(listener);
+  return () => {
+    overlayListeners.delete(listener);
+  };
+}
+function notifyOverlayListeners() {
+  for (const listener of overlayListeners) listener();
+}
 /**
  * Whether a window-level Escape listener may act on this key. Escape that cancels an IME
  * candidate, was already consumed by a control, or belongs to an open overlay is not theirs.
@@ -472,6 +483,7 @@ export function useOverlay(
     // Child layout effects run first: insert ancestors before their descendants.
     const child = entries.findIndex((item) => descendant(item, id));
     entries.splice(child < 0 ? entries.length : child, 0, entry);
+    if (!entry.passive) notifyOverlayListeners();
     registered.current = entry;
     if (entries.length === 1) {
       window.addEventListener("keydown", onKey, true);
@@ -492,6 +504,7 @@ export function useOverlay(
       // Passive entries (tooltips) above this one do not own focus, so they must not block restoring it.
       const wasTop = !entries.slice(entries.indexOf(entry) + 1).some((item) => !item.passive);
       entries.splice(entries.indexOf(entry), 1);
+      if (!entry.passive) notifyOverlayListeners();
       syncInert();
       if (!entries.length) {
         window.removeEventListener("keydown", onKey, true);
@@ -508,7 +521,10 @@ export function useOverlay(
     if (!entry) return;
     entry.escape = hasEscape ? () => close?.() : undefined;
     entry.initialFocusSelector = initialFocusSelector;
-    entry.passive = passive;
+    if (entry.passive !== passive) {
+      entry.passive = passive;
+      notifyOverlayListeners();
+    }
     entry.keepEscape = hasKeep ? (event) => keep?.(event) ?? false : undefined;
   }, [hasEscape, initialFocusSelector, passive, hasKeep, restoreFocus]);
   return id;

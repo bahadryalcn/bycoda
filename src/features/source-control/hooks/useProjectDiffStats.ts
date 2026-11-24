@@ -1,6 +1,11 @@
 import { useCallback, useSyncExternalStore } from "react";
 import { createStore } from "../../../shared/lib/store";
-import { gitDiffStats, subscribeGitChanged, type GitDiffStats } from "../../../platform/tauri/fs";
+import {
+  gitDiffStats,
+  subscribeGitChanged,
+  type GitDiffIndex,
+  type GitDiffStats,
+} from "../../../platform/tauri/fs";
 import { currentGitChangeHint, peekFullGitIndex } from "../model/gitIndexStore";
 import {
   readMachineAvailability,
@@ -145,15 +150,7 @@ function shouldRead(entry: Entry) {
   }
   const cached = peekFullGitIndex(entry.cwd);
   if (!force && cached && Date.now() - cached.at < interval(entry)) {
-    applyProjectDiffStats(
-      entry.cwd,
-      {
-        files: cached.value.files.length + (cached.value.conflicts?.length ?? 0),
-        additions: cached.value.additions,
-        deletions: cached.value.deletions,
-      },
-      cached.at,
-    );
+    applyProjectIndexStats(entry.cwd, cached.value, cached.at);
     return false;
   }
   return true;
@@ -180,7 +177,19 @@ async function read(entry: Entry) {
   }
 }
 
-/** Push stats from a fuller git index (diff pane) so the title-bar badge cannot lag behind. */
+/** Publish the file and line totals of the index shown in the Changes panel. */
+export function applyProjectIndexStats(cwd: string, index: GitDiffIndex, readAt?: number) {
+  applyProjectDiffStats(
+    cwd,
+    {
+      files: index.files.length + (index.conflicts?.length ?? 0),
+      additions: index.additions,
+      deletions: index.deletions,
+    },
+    readAt,
+  );
+}
+
 export function applyProjectDiffStats(cwd: string, stats: GitDiffStats, readAt = Date.now()) {
   if (!cwd || cwd === "~") return;
   const entry = entryFor(cwd);
@@ -199,17 +208,8 @@ function start(entry: Entry) {
   entry.onGitChanged = () => {
     const hint = currentGitChangeHint();
     const cached = hint?.observed ? peekFullGitIndex(entry.cwd) : null;
-    if (cached) {
-      applyProjectDiffStats(
-        entry.cwd,
-        {
-          files: cached.value.files.length + (cached.value.conflicts?.length ?? 0),
-          additions: cached.value.additions,
-          deletions: cached.value.deletions,
-        },
-        cached.at,
-      );
-    } else requestLoad(entry, true, hint?.refresh);
+    if (cached) applyProjectIndexStats(entry.cwd, cached.value, cached.at);
+    else requestLoad(entry, true, hint?.refresh);
   };
   window.addEventListener("focus", entry.onResume);
   document.addEventListener("visibilitychange", entry.onResume);

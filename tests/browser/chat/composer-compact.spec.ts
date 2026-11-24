@@ -40,6 +40,74 @@ const scroller = (page: Page) => page.locator(".agent-transcript");
 const reading = (page: Page) => page.locator("[data-composer][data-composer-reading]");
 const field = (page: Page) => page.locator("[data-composer] textarea");
 
+test("the composer shows the current computer and remote origin in order on hover", async ({
+  page,
+}) => {
+  for (const width of [1280, 800]) {
+    for (const light of [false, true]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ "remote-origin": "", turns: "2" }, light));
+      const location = page
+        .locator("[data-composer-workspace]")
+        .getByText("This computer", { exact: true });
+      const history = page.getByRole("tooltip");
+      await expect(location).toBeVisible();
+      await expect(location.locator(".lucide-monitor-smartphone")).toHaveCount(0);
+      await expect(page.getByText("Remote connection", { exact: true })).toHaveCount(0);
+      await expect(history).toHaveCount(0);
+      await location.hover();
+      await expect(history).toHaveText(
+        /Connection history.*Started from a remote connection.*This computer/s,
+      );
+      await expect(
+        history
+          .getByText("Connection history", { exact: true })
+          .locator(":scope > .lucide-monitor-smartphone:first-child"),
+      ).toBeVisible();
+      await capture(page, `session-location-${width}-${light ? "light" : "dark"}`);
+      await page.mouse.move(0, 0);
+      await expect(history).toHaveCount(0);
+      await location.focus();
+      await expect(history).toBeVisible();
+    }
+  }
+});
+
+test("the session composer places text immediately after a pasted link", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Clipboard permissions are required");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(url());
+  const address =
+    "http://localhost:3000/dashboard/user/user-authorization-operations?view=permissions";
+  const draft = `${address} üzerinden`;
+  await field(page).focus();
+  await page.evaluate((text) => navigator.clipboard.writeText(text), draft);
+  await page.keyboard.press("ControlOrMeta+v");
+  const editor = page.locator("[data-composer-inline-input]");
+  const link = editor.getByRole("link", { name: address });
+  await expect(link).toBeVisible();
+  const gap = await link.evaluate((chip) => {
+    const walker = document.createTreeWalker(chip.parentElement!, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const start = node.textContent!.indexOf("üzerinden");
+      if (start === -1) continue;
+      const word = document.createRange();
+      word.setStart(node, start);
+      word.setEnd(node, node.textContent!.length);
+      return word.getBoundingClientRect().left - chip.getBoundingClientRect().right;
+    }
+    throw new Error("Missing text after the link");
+  });
+  expect(gap).toBeGreaterThanOrEqual(0);
+  expect(gap).toBeLessThan(8);
+  await expect(field(page)).toHaveValue(draft);
+});
+
 for (const light of [false, true]) {
   test(`access stays in the model panel and narrow controls share one row (${light ? "light" : "dark"})`, async ({
     page,
@@ -558,7 +626,15 @@ test("skill panels match the composer and keep their actions visible", async ({ 
       const create = page.getByRole("button", { name: "New skill", exact: true });
       await expect(list).toBeVisible();
       await expect(create).toBeVisible();
+      await list.getByRole("option").last().scrollIntoViewIfNeeded();
+      await expect(create).toBeInViewport({ ratio: 1 });
+      await page.keyboard.type("ui-u");
       await capture(page, `skill-picker-${light ? "light" : "dark"}-${width}`);
+      const options = list.getByRole("option");
+      await expect(options).toHaveCount(2);
+      await expect(options.first()).toContainText("/ui-ux-pro-max");
+      await expect(options.first()).toHaveAttribute("aria-selected", "true");
+      await expect(options.nth(1)).toContainText("/group-interface-design");
       await expect(create).toHaveAttribute("data-button-variant", "secondary");
       const panel = list.locator("xpath=ancestor::*[@data-popover-side][last()]");
       await checkMaterial(panel);
@@ -573,8 +649,14 @@ test("skill panels match the composer and keep their actions visible", async ({ 
           );
         })
         .toBeLessThanOrEqual(1);
-      await list.getByRole("option").last().scrollIntoViewIfNeeded();
-      await expect(create).toBeInViewport({ ratio: 1 });
+      await expect(options.first()).toBeInViewport({ ratio: 1 });
+      await page.keyboard.press("ArrowDown");
+      await expect(options.nth(1)).toHaveAttribute("aria-selected", "true");
+      await page.keyboard.press("ArrowUp");
+      await page.keyboard.press("Enter");
+      await expect(editor.getByRole("button", { name: "ui-ux-pro-max", exact: true })).toHaveCount(
+        2,
+      );
     }
   }
 });

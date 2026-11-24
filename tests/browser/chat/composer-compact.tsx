@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createSkillGroup } from "../../../src/features/skills/model/skillGroups";
+import { createSkillGroup, listSkillGroups } from "../../../src/features/skills/model/skillGroups";
 import { SessionPane, type SessionPaneProps } from "../../../src/features/sessions/ui/SessionPane";
 import { setNotesPanelOpen } from "../../../src/features/notes/notesPanel";
 import { ContextMeter } from "../../../src/features/sessions/ui/ContextMeter";
@@ -66,11 +66,25 @@ const modelSource = {
 const params = new URLSearchParams(location.search);
 if (params.has("dictation")) saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true });
 const exampleSkills = ["frontend-design", "ui-ux-pro-max", "unslop"];
-if (params.has("inlineExamples")) {
+const fixtureGroups = listSkillGroups();
+if (
+  params.has("inlineExamples") &&
+  !fixtureGroups.some((group) => group.invocation === "group-interface-design")
+) {
   createSkillGroup({
     name: "Design and polish interfaces",
     invocation: "group-interface-design",
     skillNames: exampleSkills,
+  });
+}
+if (
+  params.get("inlineExamples") === "skill-panels" &&
+  !fixtureGroups.some((group) => group.invocation === "group-skills-and-agent-setup")
+) {
+  createSkillGroup({
+    name: "Skills and agent setup",
+    invocation: "group-skills-and-agent-setup",
+    skillNames: ["frontend-design", "unslop"],
   });
 }
 const sessionId = "composer-reading-fixture";
@@ -110,6 +124,7 @@ const initial: Session = {
   ...newSession(params.has("goal") ? "codex" : "claude", "/fixture", modelId),
   id: sessionId,
   title: "Composer reading mode",
+  ...(params.has("remote-origin") ? { adoptedBase: { count: 0, chain: "fixture" } } : {}),
   ...(params.has("goal")
     ? {
         busy: true,
@@ -298,6 +313,7 @@ function Fixture() {
     onWorkspaceModeChange: noop,
     onWorktreeBaseChange: noop,
     onModelChange: (_id, harness, model) => setSession((value) => ({ ...value, harness, model })),
+    ...(params.has("remote-origin") ? { onSessionMachineChange: () => {} } : {}),
     onModelSettingsChange: noop,
     onRuntimeModeChange: (_id, runtimeMode) => setSession((value) => ({ ...value, runtimeMode })),
     onSubmit: () => {

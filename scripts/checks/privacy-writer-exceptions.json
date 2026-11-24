@@ -208,7 +208,7 @@
       "file": "src/features/projects/model/recents.ts",
       "owner": "saveArchived",
       "writer": "localStorage.setItem",
-      "expression": "localStorage.setItem(ARCHIVED_KEY, JSON.stringify(next))",
+      "expression": "localStorage.setItem(ARCHIVED_KEY, raw)",
       "count": 1
     },
     {

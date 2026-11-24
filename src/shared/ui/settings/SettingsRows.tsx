@@ -514,6 +514,7 @@ export function Row({
   controlId,
   stacked = false,
   descriptionVisible = false,
+  descriptionTone = "secondary",
   info,
   dependsOn,
   disabled = false,
@@ -534,6 +535,8 @@ export function Row({
   stacked?: boolean;
   /** Show `description` as a muted subline (default `false`: in a tooltip). */
   descriptionVisible?: boolean;
+  /** Use `muted` for metadata such as a timestamp. */
+  descriptionTone?: "secondary" | "muted";
   /** Longer explanation for an information popover beside the label. */
   info?: ReactNode;
   /** Dependent sub-row: indented; `false` (the parent is off) disables it. Omit for a normal row. */
@@ -624,7 +627,7 @@ export function Row({
             <Text
               as="p"
               size="caption"
-              tone="secondary"
+              tone={descriptionTone}
               leading="normal"
               className="settings-description settings-help-text"
             >

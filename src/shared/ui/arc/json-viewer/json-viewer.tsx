@@ -1,5 +1,5 @@
 "use client";
-import { OverflowTooltip } from "../../Tooltip";
+import { OverflowTooltip, Tooltip } from "../../Tooltip";
 import { debounce } from "es-toolkit";
 import { SearchInput, SearchInputGroup } from "../../SearchInput";
 
@@ -938,22 +938,26 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                         >
                           {branch ? <ChevronRight /> : null}
                         </span>
-                        <span
-                          className={typeof row.name === "number" ? styles.index : styles.key}
-                          title={
+                        <Tooltip
+                          asChild
+                          label={
                             typeof row.name === "string" && row.name.length > 24
                               ? row.name
                               : undefined
                           }
                         >
-                          {row.name === null ? (
-                            rootName
-                          ) : typeof row.name === "number" ? (
-                            row.name
-                          ) : (
-                            <Highlight text={row.name} needle={mark} current={isCurrentMatch} />
-                          )}
-                        </span>
+                          <span
+                            className={typeof row.name === "number" ? styles.index : styles.key}
+                          >
+                            {row.name === null ? (
+                              rootName
+                            ) : typeof row.name === "number" ? (
+                              row.name
+                            ) : (
+                              <Highlight text={row.name} needle={mark} current={isCurrentMatch} />
+                            )}
+                          </span>
+                        </Tooltip>
                         <span className={styles.colon} aria-hidden="true">
                           {row.name === null && branch ? "" : ":"}
                         </span>
@@ -972,33 +976,34 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                             <span className={styles.countLabel}>{countLabel(row, t)}</span>
                           </span>
                         ) : (
-                          <span
-                            className={styles.value}
-                            data-type={row.type}
-                            title={
+                          <Tooltip
+                            asChild
+                            label={
                               row.type === "string" && (row.value as string).length > 40
                                 ? (row.value as string)
                                 : undefined
                             }
                           >
-                            {row.type === "string" ? (
-                              <>
-                                &quot;
+                            <span className={styles.value} data-type={row.type}>
+                              {row.type === "string" ? (
+                                <>
+                                  &quot;
+                                  <Highlight
+                                    text={row.value as string}
+                                    needle={mark}
+                                    current={isCurrentMatch}
+                                  />
+                                  &quot;
+                                </>
+                              ) : (
                                 <Highlight
-                                  text={row.value as string}
+                                  text={primitiveText(row.value, row.type)}
                                   needle={mark}
                                   current={isCurrentMatch}
                                 />
-                                &quot;
-                              </>
-                            ) : (
-                              <Highlight
-                                text={primitiveText(row.value, row.type)}
-                                needle={mark}
-                                current={isCurrentMatch}
-                              />
-                            )}
-                          </span>
+                              )}
+                            </span>
+                          </Tooltip>
                         )}
                         {copyable ? (
                           <span className={styles.actions}>

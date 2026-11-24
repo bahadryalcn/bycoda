@@ -45,6 +45,10 @@ The Content calendar (Week and Month) asks the Host for the posts scheduled in t
 
 AI planning preserves text entered after a request started. Conflicting plan operations cannot overlap. Activity refreshes while Command is active and provides continuation and retry for older records. A navigation prompt can populate an empty request or be explicitly added to an existing one. Generated reports identify their actual period when the Day/Week selection changes.
 
+## Inbox search
+
+The inbox filters loaded conversations as you type, then searches the selected account scope on the Host when you pause. If the selected conversation still matches, its history and reply draft stay in place. Adding or removing a tag updates the conversation after the Host confirms the change.
+
 ## Reply uncertainty
 
 An unconfirmed reply is not shown as definitely unsent. **Retry same reply** checks or resumes the original operation with its original identity rather than creating another reply. The draft and unresolved operation survive conversation switches and component remounts within the current app session. They are not a new disk-persistence guarantee across app reloads. Jobs that require review remain visible as requiring review.

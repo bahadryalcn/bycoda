@@ -1,4 +1,4 @@
-import { OverflowTooltip } from "./Tooltip";
+import { OverflowTooltip, Tooltip } from "./Tooltip";
 import { useT } from "../i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -313,13 +313,14 @@ function ImageLightboxContent({
                 <MediaToolbarButton label={t("Zoom out")} onClick={() => imageZoom.zoom(1 / 1.5)}>
                   <Minus className="icon-sm" aria-hidden />
                 </MediaToolbarButton>
-                <span
-                  aria-live="polite"
-                  title={t("Zoom level")}
-                  className="text-ui-caption text-on-solid min-w-[3.25rem] text-center tabular-nums"
-                >
-                  {Math.round(imageZoom.value.scale * 100)}%
-                </span>
+                <Tooltip label={t("Zoom level")} asChild>
+                  <span
+                    aria-live="polite"
+                    className="text-ui-caption text-on-solid min-w-[3.25rem] text-center tabular-nums"
+                  >
+                    {Math.round(imageZoom.value.scale * 100)}%
+                  </span>
+                </Tooltip>
                 <MediaToolbarButton label={t("Zoom in")} onClick={() => imageZoom.zoom(1.5)}>
                   <Plus className="icon-sm" aria-hidden />
                 </MediaToolbarButton>

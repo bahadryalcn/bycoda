@@ -97,7 +97,10 @@ it("never holds or replays a write behind discovery", async () => {
     command: "write_text_file",
     args: { path: "/srv/a", content: "x" },
   });
-  const read = remoteRequest(machine.id, "workspace.run", { command: "read_text_file", args: {} });
+  const read = remoteRequest(machine.id, "workspace.run", {
+    command: "read_text_file",
+    args: {},
+  });
   try {
     await vi.waitFor(() =>
       expect(requestsOf().map((r) => r.params?.command ?? r.method)).toEqual([
@@ -134,9 +137,10 @@ it("drops a held read when its machine is replaced while discovery runs", async 
     if (command !== "remote_request") return;
     return (args as { method: string }).method === "environment.describe" ? discovery.promise : [];
   });
-  const held = remoteRequest(machine.id, "workspace.run", { command: "list_dir", args: {} }).catch(
-    (error: unknown) => error,
-  );
+  const held = remoteRequest(machine.id, "workspace.run", {
+    command: "list_dir",
+    args: {},
+  }).catch((error: unknown) => error);
   await vi.waitFor(() =>
     expect(requestsOf().map((r) => r.method)).toEqual(["environment.describe"]),
   );
@@ -319,4 +323,44 @@ it("fails an explicit receipt-checked command at once while startup reads wait i
   await vi.advanceTimersByTimeAsync(60_000);
   expect(String(await restore)).toBe(connecting);
   expect(requestsOf().some((r) => r.method === "commands.dispatch")).toBe(false);
+});
+
+it("starts a reconnect's burst of project lists in bounded waves on any machine", async () => {
+  counter += 1;
+  const machine = {
+    id: `warm-${counter}`,
+    name: "This computer",
+    environmentId: `warm-env-${counter}`,
+    endpoint: "",
+  };
+  adoptRemoteMachineInventory([machine]);
+  const open: Array<() => void> = [];
+  let running = 0;
+  let peak = 0;
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command !== "remote_request") return;
+    running += 1;
+    peak = Math.max(peak, running);
+    await new Promise<void>((resolve) => open.push(resolve));
+    running -= 1;
+    return [];
+  });
+  const lists = Array.from({ length: 24 }, (_, index) =>
+    remoteRequest(machine.id, "sessions.list", { projectId: `p${index}` }),
+  );
+  await vi.waitFor(() => expect(running).toBe(COLD_ROUTE_READS_PER_MACHINE));
+  // Each finished read frees a place for the next waiting one, in arrival order.
+  while (open.length) {
+    open.shift()!();
+    await vi.waitFor(() => expect(running).toBeLessThanOrEqual(COLD_ROUTE_READS_PER_MACHINE));
+    await Promise.resolve();
+  }
+  await Promise.all(lists);
+  expect(peak).toBe(COLD_ROUTE_READS_PER_MACHINE);
+  expect(requestsOf().filter((r) => r.method === "sessions.list")).toHaveLength(24);
+  // A read the user asked for never waits behind the burst.
+  const direct = remoteRequest(machine.id, "sessions.list", { projectId: "mine" }, false, true);
+  await vi.waitFor(() => expect(running).toBe(1));
+  open.shift()!();
+  await direct;
 });

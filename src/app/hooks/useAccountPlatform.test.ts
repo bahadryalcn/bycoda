@@ -22,6 +22,8 @@ vi.mock("../../features/account", () => ({
   reportAccountFailure: () => undefined,
   startAccount: () => Promise.resolve(),
   useAnonymousStats: () => undefined,
+  accountSharingDestination: async () => null,
+  useAccountState: () => ({ phase: "signed-out" }),
 }));
 vi.mock("../../features/diagnostics", () => ({ useDiagnostics: () => undefined }));
 vi.mock("../../features/activity", () => ({

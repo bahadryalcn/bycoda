@@ -1,7 +1,7 @@
 import { beforeEach, expect, it } from "vitest";
 import { windowReading } from "./limits-pace";
 import { parseClaudeUsage, parseCodexLimits, resetTimestamp } from "./limits-parse";
-import { clearLimitsCache, readUsageLimits } from "./limits-report";
+import { clearLimitsCache, readDesktopQuota, readUsageLimits } from "./limits-report";
 
 const NOW = Date.parse("2026-11-09T12:00:00Z");
 const week = 10_080;
@@ -86,6 +86,53 @@ it("normalises reset timestamps", () => {
 });
 
 beforeEach(clearLimitsCache);
+
+it("joins scoped reads, retains the timestamp on 429 and skips unrelated accounts", async () => {
+  let now = NOW;
+  const calls: string[] = [];
+  const deps = {
+    environmentId: "env",
+    now: () => now,
+    accounts: async () => ({
+      claude: [
+        { id: "work", label: "Work", color: "#111" },
+        { id: "personal", label: "Personal", color: "#222" },
+      ],
+    }),
+    fetchAccount: async (_provider: string, id: string) => {
+      calls.push(id);
+      if (calls.length > 1) {
+        return { status: "error" as const, error: "429", retryAfterMs: 600_000 };
+      }
+      return {
+        status: "ok" as const,
+        limits: parseClaudeUsage({ seven_day: { utilization: 53 } }),
+      };
+    },
+  };
+  const target = { provider: "claude" as const, accountId: "work" };
+  const [first, concurrent] = await Promise.all([
+    readUsageLimits(deps, target),
+    readUsageLimits(deps, target),
+  ]);
+  expect(calls).toEqual(["work"]);
+  expect(first).toEqual(concurrent);
+  expect((await readDesktopQuota(deps, target, "read")).weekly?.usedPercent).toBe(53);
+  expect(calls).toEqual(["work"]);
+  now += 180_000;
+  const failed = await readUsageLimits(deps, target);
+  expect(failed.providers[0].accounts[0]).toMatchObject({ status: "error", observedAt: NOW });
+  expect(failed.providers[0].cards[0].best.leftPercent).toBe(47);
+  expect(await readDesktopQuota(deps, target, "refresh")).toMatchObject({
+    status: "error",
+    updatedAt: NOW,
+    weekly: { usedPercent: 53 },
+    retryAt: now + 600_000,
+  });
+  now += 180_000;
+  await readUsageLimits(deps, target);
+  expect(calls).toEqual(["work", "work"]);
+});
 
 it("groups accounts into one card per window, best headroom first, and survives a failing account", async () => {
   const report = await readUsageLimits({

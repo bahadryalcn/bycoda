@@ -471,12 +471,15 @@ function AgentTranscriptComponent({
   const anchorAdjusted = useStableCallback((element: HTMLElement) => {
     if (element === scroller.current) follow.rememberScroll(element);
   });
-  // The virtualization owner outlives renders and calls back when anchoring moves the scroller.
+  // At the latest message the follow hook alone positions the transcript.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- registers the anchoring callback with the external virtualization owner and unregisters it on unmount
   useLayoutEffect(() => {
-    virtualization.setAdjusted(anchorAdjusted);
+    virtualization.setAdjusted(
+      anchorAdjusted,
+      (element) => element !== scroller.current || !follow.stickToBottom.current,
+    );
     return () => virtualization.setAdjusted(undefined);
-  }, [virtualization, anchorAdjusted]);
+  }, [virtualization, anchorAdjusted, scroller, follow.stickToBottom]);
   const prepareReveal = (blockId: string, forSearch = false) => {
     if (!pagingRevealBlock(blockId, forSearch)) return false;
     virtualization.reveal(blockId);

@@ -3,11 +3,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import styles from "../../../shared/ui/DraftToken.module.css";
 import { ChevronDown, SkillGroupIcon, SkillIcon } from "../../../shared/ui/icons";
-import {
-  HOVER_CARD_CLOSE_MS,
-  HOVER_CARD_OPEN_MS,
-  useHoverIntent,
-} from "../../../shared/ui/Tooltip";
+import { HOVER_CARD_CLOSE_MS, useHoverIntent } from "../../../shared/ui/Tooltip";
 import { skillTextParts } from "../../skills/model/skills";
 import {
   cachedSkillPolicy,
@@ -73,8 +69,6 @@ export function SkillTokenText({ text }: { text: string }) {
 
 function SkillGroupToken({ group }: { group: { name: string; members: readonly string[] } }) {
   const intent = useHoverIntent({
-    group: "hover-card",
-    openDelay: HOVER_CARD_OPEN_MS,
     closeDelay: HOVER_CARD_CLOSE_MS,
   });
   const [pinned, setPinned] = useState<HTMLButtonElement | null>(null);

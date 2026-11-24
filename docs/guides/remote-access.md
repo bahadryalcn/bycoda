@@ -5,7 +5,12 @@
 Open **Settings → Connections → Devices** and find the computer whose access
 you want to manage. **Manage devices** lets another paired device grant or remove
 device management and revoke access on that computer. New pairings start with
-standard access. The computer's own local desktop retains management access.
+standard access. Creating a pairing ticket and using it require the issuer to
+have management access. The computer's own local desktop retains management access.
+
+The list focuses on paired access. A Host's built-in desktop credential is hidden.
+Older remote local sync credentials may appear as **Local sync** when their Host
+still lists them as ordinary pairings.
 
 For recovery, enable **Manage this computer from my account** on each computer
 you want to manage, while signed in to your bycoda account. Then sign in at
@@ -16,8 +21,10 @@ and takes effect when bycoda is open and signed in there.
 
 ## Work from both computers
 
-Before installing an update, the confirmation lists machines with running sessions
-and shows which of those machines restarts. Desktop activity appears immediately,
+Before an app update, the confirmation lists machines with running sessions
+and shows which machine restarts. A Host update checks only the selected Host.
+On this computer, the app reads the running session count directly from the local Host.
+Desktop activity appears immediately,
 and each Host's count appears as its check completes. Alternate routes to one
 environment count once. If the selected Host's activity cannot be checked, its
 update confirmation warns that work could be interrupted. Counts refresh while
@@ -111,6 +118,9 @@ opens a dialog: **Found** combines computers signed in to your account, Tailscal
 devices, SSH config aliases and known hosts, each with its sources and online state,
 with a search by name or address. The same computer found by several sources is one
 row: an account computer joins the SSH entry on its Tailscale or home-network address.
+Saved computers are hidden from **Found**. If a saved SSH computer changes its address,
+discovery can also recognize it when both addresses have the same public host key in
+your SSH known hosts file.
 Choose **Add** to connect one. A machine with an
 SSH address is set up as in the SSH section below, without a form; for an account
 computer, setup stops if that address answers as a different computer. Its progress and
@@ -492,6 +502,10 @@ Remote projects show a server icon in the project rail. Hover or focus the proje
 The new session screen shows the saved machine name and the folder path on that machine. If the name is unavailable, it shows **Remote computer** beside the path.
 While a remote turn runs, the composer shows its working status and offers **Stop**.
 
+When you open a session started from a remote connection on the computer that runs it,
+the composer shows **This computer**. Hover or focus that label to see where the session
+started, followed by its current location.
+
 The composer's model picker lists models for the providers installed on the host. Model, provider-specific settings, and permission changes apply to the host session directly, and the next turn uses them; a change made during a running turn is applied when that turn finishes. If the host cannot load its model list, or no longer lists the session's model, the session's saved settings remain visible. The normal workspace and branch pickers use the host checkout through the shared file and Git commands. Choose an existing host worktree or create one from a branch before the first message; the session then runs in that working copy. Once the conversation starts, its worktree is fixed, as in a local session. Start a new session to use another worktree. The branch picker can search local and remote branches, create a local branch, and switch the current working copy when it is clean and the project's sessions are idle. Machine connection state appears on its project rail dot.
 
 The **Explorer** sidebar and Go to File use the normal file views for host folders and files. Opening a text file uses the normal editor tabs. Saving writes back to the host; remote reads and edits are limited to 1 MiB text files. File creation, rename, deletion, and project search use the same controls as local projects. The **Changes** sidebar and Git history graph use the normal Git views, including file diffs, staging, discarding, commits, pushing, and pull request creation through `gh` on the host. Remote pull requests use the host's commit list and diff summary for their title and body. An ordinary folder outside Git shows an empty Changes state. Git changes are refreshed every few seconds. Generated commit messages are not available remotely yet.
@@ -534,7 +548,7 @@ state; cancellation releases it after accepted storage work finishes. This check
 does not move an existing conversation to another computer or enable a new
 execution default. Installed multi-device migration still requires acceptance.
 
-HTTPS endpoints can also be entered if you operate a reverse proxy to the loopback host. Plain HTTP is accepted only for loopback endpoints. Native desktop HTTP carries the saved credential; it is not exposed to the renderer or browser storage. The native connection store is `remote-machines.json` in the desktop app's data directory, with mode 0600 on Unix. This initial implementation does not use the OS keychain.
+HTTPS endpoints can also be entered if you operate a reverse proxy to the loopback host. Plain HTTP is accepted only for loopback endpoints. Native desktop HTTP carries the saved credential. The native connection store is `remote-machines.json` in the desktop app's data directory, with mode 0600 on Unix. Device credentials in this file are encrypted with a key held by the operating system's credential store. Existing plaintext entries migrate when the desktop loads its saved connections. Backups made before migration can still contain the original keys.
 
 ## Keep this computer reachable when bycoda is closed
 

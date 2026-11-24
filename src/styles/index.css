@@ -3285,6 +3285,7 @@ header[data-tauri-drag-region] [data-tab-draggable="true"] [data-no-drag] * {
 }
 
 .agent-markdown .markdown-code-copy:focus-visible {
+  outline-width: var(--ui-focus-width);
   outline-color: var(--ui-focus-ring-color);
   background: var(--ui-fill-muted);
   color: var(--color-content);

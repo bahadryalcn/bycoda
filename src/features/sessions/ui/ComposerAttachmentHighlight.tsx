@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { useLocale } from "../../../shared/i18n";
-import { BlockQuote, File } from "../../../shared/ui/icons";
+import { BlockQuote, File, MessageSquare } from "../../../shared/ui/icons";
 import { DraftToken } from "../../../shared/ui/DraftToken";
 import { AttachmentIdentity } from "./AttachmentIdentity";
 import type { Attachment } from "../model/session";
@@ -11,6 +11,7 @@ import {
 } from "../model/attachmentTokens";
 import { attachmentPresentation, formatAttachmentSize } from "../model/attachmentPresentation";
 import { splitCitationTokens } from "../model/citationTokens";
+import { fileCommentLabel, type ComposerCitation } from "../model/chatCitation";
 import styles from "./ComposerAttachmentHighlight.module.css";
 
 /**
@@ -21,29 +22,36 @@ export function ComposerAttachmentHighlight({
   text,
   attachments,
   citations = 0,
+  citationSources,
   renderText,
 }: {
   text: string;
   attachments: Attachment[];
   /** Number of draft citations whose `[quoteN]` tokens are painted as pills. */
   citations?: number;
+  citationSources?: readonly ComposerCitation[];
   renderText: (text: string) => ReactNode;
 }) {
   useLocale();
   const renderPlain = (plain: string) =>
-    splitCitationTokens(plain, citations).map((part, index) =>
-      "token" in part ? (
-        <DraftToken
-          key={index}
-          prefix="["
-          icon={<BlockQuote />}
-          label={tokenLabel(part.token)}
-          className={styles.token}
-          data-composer-citation-token=""
-        >
-          {part.token.slice(1)}
-        </DraftToken>
-      ) : (
+    splitCitationTokens(plain, citations).map((part, index) => {
+      if ("token" in part) {
+        const file = citationSources?.[part.index]?.file;
+        return (
+          <DraftToken
+            key={index}
+            prefix="["
+            icon={file ? <MessageSquare /> : <BlockQuote />}
+            label={file ? fileCommentLabel(file) : tokenLabel(part.token)}
+            className={styles.token}
+            data-composer-citation-token=""
+            data-file-comment={file ? "" : undefined}
+          >
+            {part.token.slice(1)}
+          </DraftToken>
+        );
+      }
+      return (
         <Fragment key={index}>
           {part.text.includes("; ref=")
             ? splitNamedAttachmentReferences(part.text).map((reference, position) =>
@@ -65,8 +73,8 @@ export function ComposerAttachmentHighlight({
               )
             : renderText(part.text)}
         </Fragment>
-      ),
-    );
+      );
+    });
   return splitAttachmentTokens(text, attachments).map((part, index) => {
     if (!("token" in part)) return <Fragment key={index}>{renderPlain(part.text)}</Fragment>;
     const presentation = attachmentPresentation(part.attachment);

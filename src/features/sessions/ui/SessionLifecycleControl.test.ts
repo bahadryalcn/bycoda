@@ -93,7 +93,7 @@ it("blocks settling an empty session and enables it when a message arrives", asy
     await render(true);
     expect(button().disabled).toBe(false);
     await act(async () => button().click());
-    expect(state.settle).toHaveBeenCalledExactlyOnceWith("session");
+    expect(state.settle).toHaveBeenCalledExactlyOnceWith("session", false);
     for (const lifecycle of ["settled", "settling"] as const) {
       state.view.state = lifecycle;
       await render(false);
@@ -157,6 +157,8 @@ it.each([
         "office",
         "host-session",
         scenario.undo,
+        false,
+        expect.any(Function),
       );
     else expect(state.remoteChange).not.toHaveBeenCalled();
   } finally {

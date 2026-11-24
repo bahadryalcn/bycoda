@@ -5,6 +5,7 @@ import { CLIENT_DEADLINE_MS, type HubPeek, type McpHub } from "./hub";
 import type { InventoryDefinition } from "./inventory";
 import { expandPlaceholders } from "./inventory-sources";
 import type { OAuthServerRef } from "./oauth/manager";
+import { safeUrl } from "./oauth/net";
 
 export const MAX_LIST_SERVERS = 100;
 export const MAX_DESCRIBE_TOOLS = 60;
@@ -19,6 +20,8 @@ const DISCOVERY_DEADLINE_MS = 30_000;
 const MAX_HTTP_BYTES = 4 * 1024 * 1024;
 const MAX_HTTP_CACHE_ENTRIES = 500;
 const SUMMARY_GRAPHEMES = 120;
+const PROFILE_DEADLINE_MS = 6_000;
+const MAX_PROFILE_TOOL_PAGES = 32;
 
 export type ExternalMcpContext = {
   sessionId: string;
@@ -105,6 +108,7 @@ export type ExternalMcpToolsOptions = {
 
 type Tool = {
   name: string;
+  _meta?: unknown;
   description?: string;
   inputSchema?: unknown;
   annotations?: Record<string, unknown>;
@@ -133,6 +137,29 @@ const summaryOf = (peek: HubPeek | undefined, name: string): string => {
   return truncateGraphemes(line || peek?.serverInfo?.name || name, SUMMARY_GRAPHEMES);
 };
 
+function profileLabel(result: Record<string, unknown>, bearer: string): string | undefined {
+  if (result.isError === true) return undefined;
+  let profile = result.structuredContent;
+  if (profile === undefined && Array.isArray(result.content) && result.content.length === 1) {
+    const [part] = result.content;
+    if (isRecord(part) && part.type === "text" && typeof part.text === "string") {
+      if (part.text.length <= 4096) profile = JSON.parse(part.text) as unknown;
+    }
+  }
+  if (!isRecord(profile) || typeof profile.id !== "string" || !profile.id.trim()) return undefined;
+  const secret = bearer.replace(/^Bearer /i, "");
+  return [profile.email, profile.name, profile.nickname]
+    .find(
+      (label): label is string =>
+        typeof label === "string" &&
+        label.trim().length > 0 &&
+        label.length <= 320 &&
+        !/[\p{Cc}\p{Cf}]/u.test(label) &&
+        !label.includes(secret),
+    )
+    ?.trim();
+}
+
 /** On-demand listing, description and calls of hub-inventory MCP servers for conversation tools. */
 export class HubExternalMcpTools implements ExternalMcpTools {
   private readonly receipts = new Map<
@@ -143,6 +170,52 @@ export class HubExternalMcpTools implements ExternalMcpTools {
   private readonly authRequired = new Set<string>();
 
   constructor(private readonly options: ExternalMcpToolsOptions) {}
+
+  /** Settings uses the authenticated connection's declared profile tool. */
+  async accountProfile(def: InventoryDefinition, cwd?: string): Promise<string | undefined> {
+    try {
+      if (def.kind !== "http" || !def.url) return undefined;
+      const url = safeUrl(def.url);
+      const ref = this.oauthRef(def, cwd);
+      const auth = await this.options.httpAuth?.(ref);
+      if (!auth?.Authorization) return undefined;
+      const rpc = await this.httpRpc(
+        { ...def, url: url.href, headers: undefined },
+        cwd,
+        PROFILE_DEADLINE_MS,
+        undefined,
+        { auth, signal: AbortSignal.timeout(PROFILE_DEADLINE_MS) },
+      );
+      const cursors = new Set<string>();
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_PROFILE_TOOL_PAGES; page++) {
+        const listing = await rpc("tools/list", cursor ? { cursor } : {});
+        const tools = asTools(listing.tools).filter(
+          (tool) => isRecord(tool._meta) && tool._meta["openai/profile"] === true,
+        );
+        if (tools.length > 0) {
+          const [tool] = tools;
+          if (
+            tools.length !== 1 ||
+            tool.annotations?.readOnlyHint === false ||
+            tool.annotations?.destructiveHint === true ||
+            tool.annotations?.consequentialHint === true
+          )
+            return undefined;
+          const result = await rpc("tools/call", { name: tool.name, arguments: {} });
+          const current = await this.options.httpAuth?.(ref);
+          if (current?.Authorization !== auth.Authorization) return undefined;
+          return profileLabel(result, auth.Authorization);
+        }
+        cursor = typeof listing.nextCursor === "string" ? listing.nextCursor : undefined;
+        if (!cursor || cursors.has(cursor)) return undefined;
+        cursors.add(cursor);
+      }
+    } catch {
+      // Profile availability is independent of the sign-in state.
+    }
+    return undefined;
+  }
 
   async list(ctx: ExternalMcpContext, input: { query?: string }) {
     const { defs, cwd } = await this.visible(ctx);
@@ -413,9 +486,13 @@ export class HubExternalMcpTools implements ExternalMcpTools {
     cwd: string | undefined,
     deadlineMs: number,
     credential: ProjectCredential,
+    profile?: { auth: Record<string, string>; signal: AbortSignal },
   ): Promise<Rpc> {
     const doFetch = this.options.fetch ?? fetch;
-    const auth = credential?.values ?? (await this.options.httpAuth?.(this.oauthRef(def, cwd)));
+    const auth =
+      profile?.auth ??
+      credential?.values ??
+      (await this.options.httpAuth?.(this.oauthRef(def, cwd)));
     if (!auth && (await this.options.hub.oauthProjectScoped?.(def, cwd)))
       throw new Error(`${def.name} requires project sign-in.`);
     const base = new Headers({
@@ -444,7 +521,7 @@ export class HubExternalMcpTools implements ExternalMcpTools {
       const response = await doFetch(def.url!, {
         method: "POST",
         redirect: "error",
-        signal: controller.signal,
+        signal: profile?.signal ?? controller.signal,
         headers,
         body: JSON.stringify(body),
       });

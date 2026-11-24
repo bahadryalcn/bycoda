@@ -108,12 +108,22 @@ export function ModelRoleRow({
           role={role}
           choice={choice}
           revision={version}
+          compact
         />
       )
     ) : null;
   return (
     <Row
-      label={t(label)}
+      label={
+        preview ? (
+          <div className="flex min-w-0 flex-col gap-1">
+            <span>{t(label)}</span>
+            {preview}
+          </div>
+        ) : (
+          t(label)
+        )
+      }
       disabled={disabled}
       stacked={choice?.kind === "fixed"}
       feedback={
@@ -123,13 +133,11 @@ export function ModelRoleRow({
               "No fallback: if this model is unavailable or out of quota, the job stops instead of moving to another model.",
             )}
           </InlineMessage>
-        ) : (
-          preview
-        )
+        ) : null
       }
     >
-      <div className="flex w-full flex-wrap items-center gap-2">
-        <div className="w-56 max-w-full shrink-0">
+      <div className="flex min-w-0 w-full flex-wrap items-center gap-2">
+        <div className="w-48 max-w-full shrink-0">
           <Select
             label={t("Model for {p0}", { p0: t(label) })}
             hideLabel
@@ -147,13 +155,15 @@ export function ModelRoleRow({
           />
         </div>
         {choice?.kind === "fixed" ? (
-          <div className="min-w-56 flex-1">
+          <div className="min-w-0 flex-1 basis-52">
             <ModelPicker
               harness={choice.target.harness}
               model={choice.target.model}
               values={choice.target.modelSettings}
               presentation="field"
               hideAgentSettings
+              accountChoices
+              accountId={choice.target.providerAccountId}
               showExtras
               extrasDisabled={disabled}
               onChange={(harness, model, providerAccountId) => {

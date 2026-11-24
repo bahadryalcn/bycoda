@@ -60,7 +60,15 @@ export function paintCallOrb(
   const transcribing = state === "transcribing";
   const replying = state === "assistant";
   const still = state === "off" || state === "muted" || state === "error";
-  const spin = reconnecting ? -0.47 : orbiting ? 0.25 : state === "listening" ? 0.35 : 0.54;
+  const spin = reconnecting
+    ? -0.47
+    : orbiting
+      ? 0.25
+      : state === "connected"
+        ? 0.14
+        : state === "listening"
+          ? 0.35
+          : 0.54;
   const rotation = time * spin;
   const oscillation = replying ? 0.02 * Math.sin(time * 4.8) : 0;
   const radius = size * (0.425 + input * 0.045 + oscillation);

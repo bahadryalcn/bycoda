@@ -209,6 +209,8 @@ remain compatible; legacy aliases normalize at the public adapter boundary.
 Hover and keyboard hints, shortcut key caps and disabled reasons all go through the shared
 Tooltip (`tooltip`, `shortcut`, `tooltipDetails`, `disabledReason`); a native `title=` on an
 action is drift, and optional rich previews use useHoverCard.
+Each pointer target requires a fresh 450 ms dwell. Keyboard focus opens ordinary
+tooltips immediately.
 Do not repeat a fully visible label in a hint. Remove plain duplicate hints;
 use `tooltipWhen="overflow"` on Button, `when="overflow"` on Tooltip/useTooltip,
 or `OverflowTooltip` for text that may be clipped or hidden in an icon-only mode.
@@ -542,7 +544,7 @@ readable text on every surface.
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Hover and press      | Transient feedback uses shared surface or tone hover/pressed roles; it does not represent a saved choice.                                                                                                                                                                                       |
 | Selected and checked | Use selection roles for selected content and the control's on/mixed semantics for membership. Checkbox, switch, radio and segmented controls retain their distinct native or ARIA state.                                                                                                        |
-| Keyboard focus       | One contract (see "Global tokens"): fields turn the border to `--ui-field-border-focus` and add the 2px accent `--ui-focus-ring`; other controls use the shared outline. Independent of hover and selection. Preserve visible focus in forced-colors mode.                                      |
+| Keyboard focus       | One contract (see "Global tokens"): fields turn the border to `--ui-field-border-focus` and add the 1px inset `--ui-focus-ring`; other controls use the shared outline. Independent of hover and selection. Preserve visible focus in forced-colors mode.                                      |
 | Disabled and pending | One disabled model (see "Global tokens"); disabled roles communicate unavailable actions; pending retains the operation's label and state and prevents duplicate submission where appropriate. Do not treat either as selection.                                                                |
 | Accent               | Opt into the accent tone for intended actions; neutral primary actions remain neutral. Message and composer selection styling are separate consumers. Changing the accent must not recolor status, diff or running meaning.                                                                     |
 | Text selection       | General document, composer, editor, PDF and terminal selections have different owners. Preserve the composer's transparent text/highlight layer and the PDF text layer when changing shared selection roles; verify actual rendered selection rather than assuming all consumers use one token. |
@@ -807,7 +809,7 @@ keep a muted field ground so they remain findable without a focus frame.
 
 **Focus:** `html[data-input-modality]` is `pointer` or `keyboard` (set on pointerdown /
 keydown). Pointer: no focus visuals anywhere; fields show only the caret. Keyboard:
-2px inset neutral cue >= 3:1 on its host. Forced-colors keeps the system outline.
+1px inset neutral cue >= 3:1 on its host. Forced-colors keeps the 2px system outline.
 Selected state uses `--ui-selected-ring`, never the focus token.
 
 **Motion:** two durations: `--motion-duration-fast` 120ms (feedback, hover, press) and

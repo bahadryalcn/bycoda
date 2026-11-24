@@ -864,7 +864,7 @@ function SearchableSelectMenu({
             aria-activedescendant={searchable ? undefined : activeId}
             tabIndex={searchable ? undefined : 0}
             onKeyDown={searchable ? undefined : onSearchKeyDown}
-            className={`${popupListClassName} min-h-0 flex-1 overflow-y-auto overscroll-none focus-visible:outline-2 focus-visible:outline-accent`}
+            className={`${popupListClassName} min-h-0 flex-1 overflow-y-auto overscroll-none`}
             renderOption={(option, index, entryIndex, measure) => (
               <OptionRow
                 key={option.value}

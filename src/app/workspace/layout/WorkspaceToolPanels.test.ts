@@ -34,7 +34,8 @@ vi.mock("../surfaces/lazySurfaces", () => {
       if (assistantFailure.failing) throw new Error("Assistant chunk failed");
       return view();
     },
-    InboxView: view,
+    InboxView: ({ cwd }: { cwd: string }) =>
+      createElement("div", { "data-inbox-project": cwd }, view()),
     NotesView: view,
     SocialView: view,
     TasksView: view,
@@ -74,7 +75,7 @@ it.each([false, true])(
         ...setters,
         projectCwd: "/repo",
         socialPanelCwd: "/repo/social",
-        sidebarCwd: "/repo",
+        sidebarCwd: "/previous-repo",
         visibleRecents: [],
         notesEnabled: true,
         toolWindow: detached ? { active: "inbox", cwd: "/repo", grouped: true } : null,
@@ -90,6 +91,9 @@ it.each([false, true])(
     const tabs = () => [...rootNode.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
     try {
       await act(async () => root.render(createElement(Workspace)));
+      expect(
+        rootNode.querySelector("[data-inbox-project]")?.getAttribute("data-inbox-project"),
+      ).toBe("/repo");
       for (const label of [
         "Notes",
         "Tasks",

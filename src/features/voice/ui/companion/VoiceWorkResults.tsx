@@ -52,97 +52,124 @@ function ResultSection({
   );
 }
 
+/** The result views are shared with the presented answer, which draws the observed result itself. */
+export function TestResultBody(props: {
+  status: VoiceLiveResultStatus;
+  passed: number;
+  failed: number;
+  skipped: number;
+}) {
+  const t = useT();
+  const title = t("Test run");
+  return (
+    <ResultSection title={title} value={props.status}>
+      {props.passed + props.failed + props.skipped > 0 ? (
+        <StatRow label={title}>
+          <StatTile label={t("Passed")} value={formatNumber(props.passed)} />
+          <StatTile label={t("Failed")} value={formatNumber(props.failed)} />
+          {props.skipped > 0 ? (
+            <StatTile label={t("Skipped")} value={formatNumber(props.skipped)} />
+          ) : null}
+        </StatRow>
+      ) : null}
+    </ResultSection>
+  );
+}
+
 const TestResult = defineComponent({
   name: "TestResult",
   description: "Latest test run with its reported counts.",
   props: z.object({ status, passed: count, failed: count, skipped: count }),
-  component: function TestResultView({ props }) {
-    const t = useT();
-    const title = t("Test run");
-    return (
-      <ResultSection title={title} value={props.status}>
-        {props.passed + props.failed + props.skipped > 0 ? (
-          <StatRow label={title}>
-            <StatTile label={t("Passed")} value={formatNumber(props.passed)} />
-            <StatTile label={t("Failed")} value={formatNumber(props.failed)} />
-            {props.skipped > 0 ? (
-              <StatTile label={t("Skipped")} value={formatNumber(props.skipped)} />
-            ) : null}
-          </StatRow>
-        ) : null}
-      </ResultSection>
-    );
-  },
+  component: ({ props }) => <TestResultBody {...props} />,
 });
+
+export function CheckResultBody(props: {
+  kind: "build" | "checks";
+  status: VoiceLiveResultStatus;
+}) {
+  const t = useT();
+  return (
+    <ResultSection title={t(props.kind === "build" ? "Build" : "Checks")} value={props.status} />
+  );
+}
 
 const CheckResult = defineComponent({
   name: "CheckResult",
   description: "Latest build or check outcome.",
   props: z.object({ kind: z.enum(["build", "checks"]), status }),
-  component: function CheckResultView({ props }) {
-    const t = useT();
-    return (
-      <ResultSection title={t(props.kind === "build" ? "Build" : "Checks")} value={props.status} />
-    );
-  },
+  component: ({ props }) => <CheckResultBody {...props} />,
 });
+
+export function ChangeResultBody(props: { files: number; additions: number; deletions: number }) {
+  const t = useT();
+  return (
+    <ResultSection title={t("Changes")} value="done">
+      <Text as="div" className="flex min-w-0 flex-wrap items-baseline gap-x-3">
+        <span>
+          {t("Files")} · {formatNumber(props.files)}
+        </span>
+        <DiffStat additions={props.additions} deletions={props.deletions} />
+      </Text>
+    </ResultSection>
+  );
+}
 
 const ChangeResult = defineComponent({
   name: "ChangeResult",
   description: "Size of the latest reported Git change.",
   props: z.object({ files: count, additions: count, deletions: count }),
-  component: function ChangeResultView({ props }) {
-    const t = useT();
-    return (
-      <ResultSection title={t("Changes")} value="done">
-        <Text as="div" className="flex min-w-0 flex-wrap items-baseline gap-x-3">
-          <span>
-            {t("Files")} · {formatNumber(props.files)}
-          </span>
-          <DiffStat additions={props.additions} deletions={props.deletions} />
-        </Text>
-      </ResultSection>
-    );
-  },
+  component: ({ props }) => <ChangeResultBody {...props} />,
 });
+
+export function FailedCommandsBody(props: { count: number }) {
+  const t = useT();
+  return (
+    <ResultSection title={t("Commands")} value="failed">
+      <Text tone="secondary">
+        {t("Failed")} · {formatNumber(props.count)}
+      </Text>
+    </ResultSection>
+  );
+}
 
 const FailedCommands = defineComponent({
   name: "FailedCommands",
   description: "Number of unrecognized commands still failed in this turn.",
   props: z.object({ count }),
-  component: function FailedCommandsView({ props }) {
-    const t = useT();
-    return (
-      <ResultSection title={t("Commands")} value="failed">
-        <Text tone="secondary">
-          {t("Failed")} · {formatNumber(props.count)}
-        </Text>
-      </ResultSection>
-    );
-  },
+  component: ({ props }) => <FailedCommandsBody {...props} />,
 });
+
+export function VoiceActionsBody({
+  status: value,
+  actions,
+}: {
+  status: VoiceLiveResultStatus;
+  actions: readonly VoiceLiveAction[];
+}) {
+  const t = useT();
+  return (
+    <ResultSection title={t("Voice actions")} value={value}>
+      <ul className="grid min-w-0 gap-1">
+        {actions.map((action) => (
+          <li key={action.id} className="flex min-w-0 items-center justify-between gap-2">
+            <Text as="span" truncate>
+              {voiceActionLabel(action.name)}
+            </Text>
+            <ResultStatus value={action.status} />
+          </li>
+        ))}
+      </ul>
+    </ResultSection>
+  );
+}
 
 const VoiceActions = defineComponent({
   name: "VoiceActions",
   description: "Settled voice tool calls, newest first.",
   props: z.object({ status }),
   component: function VoiceActionsView({ props }) {
-    const t = useT();
     const actions = useContext(ActionsContext);
-    return (
-      <ResultSection title={t("Voice actions")} value={props.status}>
-        <ul className="grid min-w-0 gap-1">
-          {actions.map((action) => (
-            <li key={action.id} className="flex min-w-0 items-center justify-between gap-2">
-              <Text as="span" truncate>
-                {voiceActionLabel(action.name)}
-              </Text>
-              <ResultStatus value={action.status} />
-            </li>
-          ))}
-        </ul>
-      </ResultSection>
-    );
+    return <VoiceActionsBody status={props.status} actions={actions} />;
   },
 });
 

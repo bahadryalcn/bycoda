@@ -16,7 +16,7 @@ export type SyncDeps = {
   /** The signed-in account with its registered device; `null` when signed out. */
   identity: () => SyncIdentity | null;
   listDays: (range: { from: string; to: string }) => Promise<ActivityDay[]>;
-  upload: (days: ActivityDay[]) => Promise<void>;
+  upload: (days: ActivityDay[]) => Promise<void | boolean>;
   /** Called with every upload failure, for example to route `device_revoked` to the account. */
   onError?: (error: unknown) => void;
   now?: () => number;
@@ -25,7 +25,14 @@ export type SyncDeps = {
   random?: () => number;
 };
 
-export type SyncResult = "signed-out" | "sent" | "nothing-to-send" | "failed" | "stopped" | "busy";
+export type SyncResult =
+  | "signed-out"
+  | "sent"
+  | "nothing-to-send"
+  | "failed"
+  | "stopped"
+  | "busy"
+  | "declined";
 
 const keyOf = (identity: SyncIdentity) => `${identity.userId}:${identity.deviceId}`;
 
@@ -71,7 +78,7 @@ export function createActivitySyncer(deps: SyncDeps) {
           return "nothing-to-send";
         }
         for (const batch of chunkDays(pending)) {
-          await deps.upload(batch);
+          if ((await deps.upload(batch)) === false) return "declined";
           for (const day of batch) watermark[day.date] = fingerprint(day.minutes);
           writeWatermark(identity.userId, identity.deviceId, watermark, today, deps.storage);
         }

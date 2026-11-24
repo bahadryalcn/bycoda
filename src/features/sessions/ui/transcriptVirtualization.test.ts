@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { TranscriptVirtualization } from "./transcriptVirtualization";
 
 const ROW = 20;
@@ -62,6 +62,7 @@ function layout(specs: Spec[], options: { agent?: boolean; scrollTop: number }) 
   const owner = new TranscriptVirtualization();
   const scroll = document.createElement("div");
   if (options.agent) scroll.className = "agent-transcript";
+  else scroll.style.overflowY = "auto";
   const other = document.createElement("div");
   Object.defineProperty(scroll, "clientHeight", { value: VIEWPORT });
   const rect = (top: number, height: number) =>
@@ -87,6 +88,131 @@ function layout(specs: Spec[], options: { agent?: boolean; scrollTop: number }) 
 const flat = (count: number, height: number): Spec[] =>
   Array.from({ length: count }, (_, i) => ({ id: `r${i}`, top: i * height, height }));
 const idOf = (node: HTMLElement | null) => node?.dataset.transcriptVirtualBlockId ?? null;
+
+it("does not undo a scroll that the browser has not delivered an event for yet", () => {
+  const position = { scrollTop: 130 };
+  const { owner, scroll } = layout(flat(10, 60), position);
+  Object.defineProperty(scroll, "scrollTop", {
+    get: () => position.scrollTop,
+    set: (value: number) => {
+      position.scrollTop = value;
+    },
+  });
+  vi.useFakeTimers();
+  const anchor = owner.acquire(scroll, null);
+  try {
+    anchor.changed();
+    position.scrollTop = 128;
+    vi.advanceTimersToNextFrame();
+    expect(scroll.scrollTop).toBe(128);
+  } finally {
+    anchor.release();
+    scroll.remove();
+    vi.useRealTimers();
+  }
+});
+
+it("applies a layout shift once even when the browser rounds the scroll offset", () => {
+  const position = { scrollTop: 130 };
+  const rows = flat(10, 60);
+  const { owner, scroll } = layout(rows, position);
+  Object.defineProperty(scroll, "scrollTop", {
+    get: () => position.scrollTop,
+    set: (value: number) => {
+      position.scrollTop = Math.floor(value);
+    },
+  });
+  const adjusted = vi.fn();
+  owner.setAdjusted(adjusted);
+  vi.useFakeTimers();
+  const anchor = owner.acquire(scroll, null);
+  try {
+    rows[2].top += 1.75;
+    anchor.changed();
+    vi.advanceTimersToNextFrame();
+    expect(scroll.scrollTop).toBe(131);
+    expect(adjusted).toHaveBeenCalledOnce();
+
+    anchor.changed();
+    vi.advanceTimersToNextFrame();
+    expect(scroll.scrollTop).toBe(131);
+    expect(adjusted).toHaveBeenCalledOnce();
+  } finally {
+    anchor.release();
+    scroll.remove();
+    vi.useRealTimers();
+  }
+});
+
+it("leaves the scroller to bottom-follow and resumes anchoring after the reader leaves", () => {
+  const position = { scrollTop: 130 };
+  const rows = flat(10, 60);
+  const { owner, scroll } = layout(rows, position);
+  Object.defineProperty(scroll, "scrollTop", {
+    get: () => position.scrollTop,
+    set: (value: number) => {
+      position.scrollTop = value;
+    },
+  });
+  let following = true;
+  const adjusted = vi.fn();
+  owner.setAdjusted(adjusted, () => !following);
+  vi.useFakeTimers();
+  const anchor = owner.acquire(scroll, null);
+  try {
+    rows[2].top -= 1;
+    anchor.changed();
+    vi.advanceTimersToNextFrame();
+    expect(scroll.scrollTop).toBe(130);
+    expect(adjusted).not.toHaveBeenCalled();
+
+    following = false;
+    rows[2].top += 5;
+    anchor.changed();
+    vi.advanceTimersToNextFrame();
+    expect(scroll.scrollTop).toBe(135);
+    expect(adjusted).toHaveBeenCalledWith(scroll);
+  } finally {
+    anchor.release();
+    scroll.remove();
+    vi.useRealTimers();
+  }
+});
+
+it("does not move the transcript when a phase gains its own scroller", () => {
+  const position = { scrollTop: 130, agent: true };
+  const rows = flat(10, 60);
+  const { owner, scroll } = layout(rows, position);
+  Object.defineProperty(scroll, "scrollTop", {
+    get: () => position.scrollTop,
+    set: (value: number) => {
+      position.scrollTop = value;
+    },
+  });
+  const row = scroll.querySelector('[data-transcript-virtual-block-id="r2"]')!;
+  const phase = document.createElement("div");
+  row.before(phase);
+  phase.append(row);
+  const adjusted = vi.fn();
+  owner.setAdjusted(adjusted);
+  vi.useFakeTimers();
+  const anchor = owner.acquire(scroll, null);
+  try {
+    // The list remains mounted with its old owner as the live phase starts scrolling.
+    phase.style.overflowY = "auto";
+    for (let frame = 0; frame < 3; frame++) {
+      rows[2].top -= 4;
+      anchor.changed();
+      vi.advanceTimersToNextFrame();
+    }
+    expect(scroll.scrollTop).toBe(130);
+    expect(adjusted).not.toHaveBeenCalled();
+  } finally {
+    anchor.release();
+    scroll.remove();
+    vi.useRealTimers();
+  }
+});
 
 it("picks the same anchor for rows above, inside and below the viewport", () => {
   const rows = flat(10, 60); // row i spans [60i, 60i+60)

@@ -154,6 +154,7 @@ export function readPhonePairingStatus(value: unknown): PhonePairingStatus {
 export function phonePairingError(error: unknown): PhonePairingError {
   if (error instanceof InvalidPhonePairingResponse) return "invalid-response";
   const message = String(error);
+  if (message.includes("Device management permission required")) return "management-required";
   if (/unknown method|not supported|unsupported method|method not found/i.test(message)) {
     return "host-update";
   }

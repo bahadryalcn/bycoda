@@ -230,7 +230,7 @@ describe("external link page metadata", () => {
     await act(async () => root.render(createElement(UserLinkPreview, { link: pageLink })));
 
     act(() => chip().dispatchEvent(new Event("pointerover", { bubbles: true })));
-    await act(async () => vi.advanceTimersByTime(299));
+    await act(async () => vi.advanceTimersByTime(449));
     expect(fetchLinkPreviewMetadata).not.toHaveBeenCalled();
 
     await act(async () => vi.advanceTimersByTime(1));
@@ -322,7 +322,7 @@ describe("GitHub work item link preview", () => {
     const chip = container.querySelector<HTMLAnchorElement>('[data-github-work-item-chip="pr"]')!;
 
     act(() => chip.dispatchEvent(new Event("pointerover", { bubbles: true })));
-    act(() => vi.advanceTimersByTime(299));
+    act(() => vi.advanceTimersByTime(449));
     expect(document.querySelector("[data-hover-card]")).toBeNull();
 
     await act(async () => {

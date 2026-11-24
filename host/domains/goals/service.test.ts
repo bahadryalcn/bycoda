@@ -153,6 +153,27 @@ describe("paired goal domain", () => {
     expect(dto.GoalsListResultSchema.parse(listed)[0].plan).toEqual(plan);
   });
 
+  it("returns stored full-scope plans, which the planner marks simple false", async () => {
+    const f = await fixture();
+    const plan = {
+      simple: false,
+      tasks: [
+        {
+          key: "first",
+          project: f.project.cwd,
+          projectId: f.project.id,
+          title: "First",
+          prompt: "Retain instructions",
+          dependsOn: [],
+        },
+      ],
+    };
+    await f.seed({ status: "done", plan });
+
+    const listed = await f.service.list({}, f.context);
+    expect(dto.GoalsListResultSchema.parse(listed)[0].plan).toEqual(plan);
+  });
+
   it("preserves approval gates and child ownership with the real transaction", async () => {
     const f = await fixture();
     const current = await f.seed({

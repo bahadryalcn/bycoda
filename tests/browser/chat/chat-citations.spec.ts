@@ -3,6 +3,50 @@ import { mkdir } from "node:fs/promises";
 
 const captures = "temp/verification/chat-citations";
 
+test("file comments stay compact and retain details through draft and send", async ({ page }) => {
+  const directory = "temp/verification/file-comments";
+  await mkdir(directory, { recursive: true });
+  for (const theme of ["dark", "light"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 700 });
+      await page.goto(`/tests/browser/chat/chat-citations.html?theme=${theme}&fileComment`, {
+        waitUntil: "domcontentloaded",
+      });
+      await page.getByRole("button", { name: "Comment on line 149" }).click();
+      const original = page.getByRole("textbox", { name: "Comment", exact: true });
+      await original.fill("Keep the original behavior.");
+      await page.getByRole("button", { name: "Add to chat", exact: true }).click();
+
+      const composer = page.getByTestId("composer-pane");
+      const pill = composer.getByRole("button", { name: "claudeText.ts L149", exact: true });
+      await expect(pill).toHaveText("claudeText.ts L149");
+      await expect(composer.getByRole("group", { name: "Quoted reply" })).toHaveCount(0);
+      await composer.screenshot({ path: `${directory}/draft-${theme}-${width}.png` });
+      await page.evaluate(() => window.__chatCitationFixture.remount());
+      await pill.click();
+      const details = page.getByRole("dialog", { name: "Edit citation comment" });
+      await expect(details.getByText("G:/Working Copy/src/claudeText.ts")).toBeVisible();
+      await expect(details.getByText("await startTurn();")).toBeVisible();
+      await expect(details.getByRole("textbox")).toHaveValue("Keep the original behavior.");
+      await details.getByRole("textbox").fill("Keep the original behavior on retry.");
+      await page.getByText("Isolated component fixture").click();
+      await expect(details.getByRole("textbox")).toHaveValue(
+        "Keep the original behavior on retry.",
+      );
+      await details.getByRole("button", { name: "Save comment" }).click();
+
+      await composer.getByRole("button", { name: "Send", exact: true }).click();
+      const transcript = page.getByTestId("transcript-pane");
+      const sent = transcript.getByRole("button", { name: "claudeText.ts L149", exact: true });
+      await expect(sent).toHaveCount(1);
+      await sent.screenshot({ path: `${directory}/sent-${theme}-${width}.png` });
+      await sent.click();
+      const sentDetails = page.getByRole("dialog", { name: "claudeText.ts L149" });
+      await expect(sentDetails.getByText("Keep the original behavior on retry.")).toBeVisible();
+    }
+  }
+});
+
 test("interrupted recovery keeps Continue on the right above a distinct composer surface", async ({
   page,
 }) => {
