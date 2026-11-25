@@ -20,7 +20,8 @@ vi.mock("../../../platform/tauri/fs", () => ({
     diffPatch: "+change",
   })),
 }));
-vi.mock("../../../features/providers/model/providerAccounts", () => ({
+vi.mock("../../../features/providers/model/providerAccounts", async (original) => ({
+  ...(await original<typeof import("../../../features/providers/model/providerAccounts")>()),
   defaultProviderAccountId: (provider: string) => `${provider}-account`,
 }));
 import { runHarnessTextPrompt, generateHarnessCommitMessage } from "./registry";

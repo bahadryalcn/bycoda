@@ -1572,6 +1572,10 @@ export async function runHarnessTextPrompt(
     // Pure local preflight only. No adapter allocation or provider request has begun.
     input = providerInput({ ...request });
     assertHarnessModel(input.harness, input);
+    // ACP text helpers take the provider's own model ID, not the catalog ID.
+    const model = input.model?.trim();
+    if (model && (input.harness === "cursor" || input.harness === "antigravity"))
+      input = { ...input, model: nativeModelId(model) || undefined };
     adapter = requireHarness(input.harness);
     if (!adapter.live) throw new Error(`${input.harness} is not connected yet`);
     if (!adapter.runTextPrompt)

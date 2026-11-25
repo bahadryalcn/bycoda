@@ -85,7 +85,12 @@ log = "0.4"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-tauri = { version = "2", features = ["macos-private-api", "protocol-asset", "tray-icon", "unstable"] }
+tauri = { version = "2", features = [
+  "macos-private-api",
+  "protocol-asset",
+  "tray-icon",
+  "unstable",
+] }
 portable-pty = { version = "0.9", path = "../vendor/portable-pty" }
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",

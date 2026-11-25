@@ -4099,13 +4099,12 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
   };
   await render(session);
   expect(
-    container.querySelector(
-      '[role="img"][aria-label*="This conversation is running in the background"]',
+    Array.from(container.querySelectorAll('[role="status"]')).some((node) =>
+      node.textContent?.includes("This conversation is running in the background"),
     ),
-  ).not.toBeNull();
+  ).toBe(true);
   // Sending is not refused: the message waits in the shared queue instead.
   expect(container.querySelector('button[aria-label^="Send."]')).toBeNull();
-  expect(document.body.textContent).not.toContain("running in the background");
   expect(
     Array.from(container.querySelectorAll('[role="status"]'))
       .map((node) => node.textContent)

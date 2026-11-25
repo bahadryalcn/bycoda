@@ -221,6 +221,7 @@ function SkillList({
               ref={highlighted ? activeRef : undefined}
               id={listId ? skillOptionId(listId, index) : undefined}
               role="option"
+              aria-selected={highlighted}
               active={highlighted}
               icon={
                 group ? (

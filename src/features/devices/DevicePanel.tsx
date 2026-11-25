@@ -1249,7 +1249,7 @@ function DevicePanelSurface({
     status.touchProtocol !== 1 &&
     (status.platform === "win32" || status.platform === "darwin") &&
     status.platforms.some((entry) => entry.platform === "android" && entry.available);
-  // Discover optional touch support independently of inventory and first-frame reads.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- probes the Host for optional touch support, independent of inventory and first-frame reads
   useEffect(() => {
     let current = true;
     setTouchHost(undefined);

@@ -4470,8 +4470,8 @@ describe("remote host API", () => {
     await s.store.revokeDevice(s.first.id);
     for (const method of methods) expect((await s.call(method, params)).status).toBe(401);
     expect(
-      (await s.call("mobile.pairing.create", { name: "Other desktop phone" }, s.second.token))
-        .value.error,
+      (await s.call("mobile.pairing.create", { name: "Other desktop phone" }, s.second.token)).value
+        .error,
     ).toContain("Device management permission required");
   });
 

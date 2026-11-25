@@ -6,7 +6,7 @@ import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import { searchWorkItemMentions } from "../../inbox/model/workItemMentionSearch";
+import { searchWorkItemMentions } from "../../inbox/public/workItemMentions";
 import type { LinkedWorkItem } from "../model/session";
 import { linkedWorkItemFromInboxItem, parseGithubWorkItemUrl } from "../model/sessionWorkItem";
 
@@ -45,7 +45,7 @@ export function LinkSessionWorkItemDialog({
   const currentResult = result?.query === query ? result : undefined;
   const options = currentResult?.options ?? [];
 
-  // Keep suggestions scoped to the current project and query, and retire pending reads on close.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- debounced Host search scoped to the project and query; aborts pending reads on change or close
   useEffect(() => {
     if (!cwd || cwd === "~" || isUrl) return;
     const controller = new AbortController();
