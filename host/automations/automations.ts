@@ -41,6 +41,7 @@ import {
 } from "../sessions/sessionRuns";
 import type { HostStore } from "../store";
 import { previewTaskFinalization, writerWorkspaceMode } from "../tasks/task-workspace-runtime";
+import { branchWorkRule, sharedCheckoutRule } from "../tasks/prompt-rules";
 import type {
   ExecutionActivityReservations,
   WorkspaceRegistry,
@@ -908,9 +909,11 @@ export class HostAutomations {
           modelSettings: automation.modelSettings,
           runtimeMode: automation.runtimeMode,
           title: automation.name,
-          prompt: workspace
-            ? `Work only in ${workspace.path} on ${workspace.branchRef}. Commit scoped changes on this branch and leave a clean tree. Integration, push and PR publication require separate owner approval.\n\n${automation.prompt}`
-            : `Work directly in ${cwd}, the current checkout shared with other sessions. Preserve their work and leave your changes uncommitted for owner review. Do not create a worktree, switch branches, stage, commit, merge, push or create PRs.\n\n${automation.prompt}`,
+          prompt: `${
+            workspace
+              ? branchWorkRule(workspace.path, workspace.branchRef)
+              : sharedCheckoutRule(cwd)
+          }\n\n${automation.prompt}`,
           ...(workspace
             ? { worktreeCwd: workspace.path, workspaceId: workspace.id }
             : { workspaceMode: "current" as const }),

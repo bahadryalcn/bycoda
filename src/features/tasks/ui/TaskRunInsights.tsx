@@ -33,26 +33,12 @@ function Stat({ label, value }: { label: string; value: string }) {
 export function TaskRunInsights({ task, onSaveEvaluation }: Props) {
   useLocale();
   const usage = task.budgetUsage;
-  const completeHistory = usage?.historyComplete !== false;
   return (
     <>
-      {!completeHistory ? (
-        <Text as="p" size="micro" tone="warning">
-          {t(
-            "Earlier runs are missing from the usage history. Recorded readings are lower bounds.",
-          )}
-        </Text>
-      ) : null}
       <Disclosure className="min-w-0" variant="row" size="sm" summary={t("Run quality and usage")}>
         <DescriptionList columns="auto" size="sm">
-          <Stat
-            label={t("Total agent minutes")}
-            value={number(completeHistory ? (usage?.agentMinutes ?? null) : null)}
-          />
-          <Stat
-            label={t("Agent runs")}
-            value={number(completeHistory ? (usage?.attempts ?? null) : null, 0)}
-          />
+          <Stat label={t("Total agent minutes")} value={number(usage?.agentMinutes ?? null)} />
+          <Stat label={t("Agent runs")} value={number(usage?.attempts ?? null, 0)} />
           <Stat label={t("Reported tokens")} value={number(usage?.tokens ?? null, 0)} />
           <Stat
             label={t("Reported cost (USD)")}

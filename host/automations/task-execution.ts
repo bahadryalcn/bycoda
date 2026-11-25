@@ -1,5 +1,6 @@
 import { getSessionWork, assertTaskWorkRetired } from "../work/session-adapter";
 import type { HostStore } from "../store";
+import { createWork } from "../tasks/work-request";
 import type { HostTasks } from "../tasks/service";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import { STOPPED_BY_USER } from "../sessions/sessionRuns";
@@ -29,25 +30,32 @@ export async function createAutomationTask(
     if (mapping) throw new Error("Automation Task link exists without its occurrence receipt.");
     const taskId = `automation-${run.id}`;
     if (await tasks.get(taskId)) throw new Error("Automation Task identity is already occupied.");
-    await tasks.save({
-      id: taskId,
-      source: "automation",
-      automationId: automation.id,
-      automationRunId: run.id,
-      expectedAbsent: true,
-      projectId: automation.projectId,
-      title: automation.name,
-      prompt: automation.prompt,
-      harness: automation.harness,
-      providerAccountId: automation.providerAccountId,
-      model: automation.model,
-      modelSettings: automation.modelSettings,
-      runtimeMode: automation.runtimeMode,
-      maxRunMinutes: run.maxRunMinutes ?? automation.maxRunMinutes,
-      isolate: automation.isolate,
-      review: false,
-      autoMerge: false,
-    });
+    await createWork(
+      { store, tasks },
+      {
+        id: taskId,
+        projectId: automation.projectId,
+        request: automation.prompt,
+        title: automation.name,
+        source: { kind: "automation", automationRunId: run.id },
+        execution: {
+          harness: automation.harness,
+          providerAccountId: automation.providerAccountId,
+          model: automation.model,
+          modelSettings: automation.modelSettings,
+          runtimeMode: automation.runtimeMode,
+        },
+        options: {
+          source: "automation",
+          automationId: automation.id,
+          maxRunMinutes: run.maxRunMinutes ?? automation.maxRunMinutes,
+          isolate: automation.isolate,
+          review: false,
+          status: "queued",
+        },
+      },
+      { requestId: run.id },
+    );
     await store.db
       .prepare("INSERT INTO automation_tasks(run_id,automation_id,task_id) VALUES(?,?,?)")
       .run(run.id, automation.id, taskId);

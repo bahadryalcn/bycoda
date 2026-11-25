@@ -106,7 +106,7 @@ describe("paired goal domain", () => {
     expect(dto.HostGoalSchema.safeParse(created).success).toBe(true);
     const listed = await f.service.list({}, f.context);
     expect(dto.GoalsListResultSchema.safeParse(listed).success).toBe(true);
-    expect(listed[0].budgetUsage).toMatchObject({ attempts: 0, historyComplete: true });
+    expect(listed[0].budgetUsage).toMatchObject({ attempts: 0 });
     expect(f.provider.send).not.toHaveBeenCalled();
   });
 

@@ -10,7 +10,8 @@ import {
 import { bindSessionWork } from "../work/session-adapter";
 import { parseHostSteward } from "./routing-input";
 import { assertExpectedConfiguration } from "../configurationConflict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createWork } from "../tasks/work-request";
 import { nextAutomationRunAt } from "../../src/features/automations/model/automationSchedule";
 import {
   MAX_DECLINED,
@@ -178,7 +179,7 @@ export class HostStewards {
       completed: async (id, sessionId) => {
         const steward = await this.find(id);
         if (!steward) throw new Error("Project scan source is missing.");
-        const proposed = await this.propose(steward, await this.reply(sessionId));
+        const proposed = await this.propose(steward, await this.reply(sessionId), sessionId);
         await this.write({ ...steward, lastProposed: proposed, lastSessionId: sessionId });
       },
     };
@@ -924,7 +925,11 @@ export class HostStewards {
     let proposed: number;
     let failure: string | undefined;
     try {
-      proposed = await this.propose(steward, await this.reply(run.sessionId ?? ""));
+      proposed = await this.propose(
+        steward,
+        await this.reply(run.sessionId ?? ""),
+        run.runId ?? run.sessionId ?? steward.id,
+      );
     } catch (error) {
       proposed = 0;
       failure = errorMessage(error);
@@ -952,7 +957,11 @@ export class HostStewards {
   }
 
   /** Creates tasks for the reply's proposals that are new; returns how many. */
-  private async propose(steward: HostSteward, reply: string): Promise<number> {
+  private async propose(
+    steward: HostSteward,
+    reply: string,
+    runId: string = randomUUID(),
+  ): Promise<number> {
     const latest = (await this.find(steward.id)) ?? steward;
     const proposals = parseStewardProposals(reply, latest.maxProposals);
     const known = new Set(latest.declined);
@@ -963,27 +972,35 @@ export class HostStewards {
       const title = normalizeStewardTitle(proposal.title);
       if (!title || known.has(title)) continue;
       known.add(title);
-      await this.tasks.save({
-        id: randomUUID(),
-        title: proposal.title,
-        prompt: proposal.description,
-        projectId: latest.projectId,
-        harness: latest.harness,
-        providerAccountId: latest.providerAccountId,
-        modelChoice: routingRun(latest).modelChoice,
-        model: latest.model,
-        modelSettings: latest.modelSettings,
-        runtimeMode: latest.runtimeMode,
-        maxRunMinutes: 0,
-        ...(latest.isolate !== undefined ? { isolate: latest.isolate } : {}),
-        review: true,
-        // Persistent preferences cannot authorize a new delivery.
-        ...(latest.deliveryApprovalRequired ? { deliveryApprovalRequired: true } : {}),
-        source: "steward",
-        stewardId: latest.id,
-        // A proposal without a description cannot be started by an agent.
-        status: latest.autoStart && proposal.description ? "queued" : "todo",
-      });
+      const requestId = `${runId}:${title}`;
+      await createWork(
+        { store: this.store, tasks: this.tasks },
+        {
+          id: `steward-${createHash("sha256").update(requestId).digest("hex").slice(0, 32)}`,
+          projectId: latest.projectId,
+          request: proposal.description,
+          title: proposal.title,
+          source: { kind: "steward" },
+          execution: {
+            harness: latest.harness,
+            providerAccountId: latest.providerAccountId,
+            modelChoice: routingRun(latest).modelChoice,
+            model: latest.model,
+            modelSettings: latest.modelSettings,
+            runtimeMode: latest.runtimeMode,
+          },
+          options: {
+            ...(latest.isolate !== undefined ? { isolate: latest.isolate } : {}),
+            // Persistent preferences cannot authorize a new delivery.
+            ...(latest.deliveryApprovalRequired ? { deliveryApprovalRequired: true } : {}),
+            source: "steward",
+            stewardId: latest.id,
+            // A proposal without a description cannot be started by an agent.
+            status: latest.autoStart && proposal.description ? "queued" : "todo",
+          },
+        },
+        { requestId },
+      );
       created += 1;
     }
     return created;

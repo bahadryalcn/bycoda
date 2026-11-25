@@ -91,34 +91,6 @@ it("does not carry an unsaved acceptance decision into a new result", async () =
   expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
 });
 
-it("labels incomplete old run history as lower bounds instead of showing total usage", async () => {
-  await act(async () =>
-    root.render(
-      createElement(TaskRunInsights, {
-        task: task({
-          budgetUsage: {
-            historyComplete: false,
-            agentMinutes: 0,
-            attempts: 0,
-            completedRuns: 0,
-            runningRuns: 0,
-            reportedTokens: 0,
-            tokens: null,
-            tokensComplete: false,
-            unknownTokenRuns: 0,
-            reportedCostUsd: null,
-            estimatedCostUsd: null,
-            measuredAt: 1,
-          },
-        }),
-        onSaveEvaluation: vi.fn(async () => {}),
-      }),
-    ),
-  );
-  expect(container.textContent).toContain("Recorded readings are lower bounds");
-  expect(container.querySelector("dd")?.textContent).toBe("Unknown");
-});
-
 it("saves explicit owner review data without modifying task state", async () => {
   const save = vi.fn(async () => {});
   const source = task();

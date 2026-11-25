@@ -1087,7 +1087,7 @@ export class HostCrews {
             request: prompt,
             instructions: agent.instructions,
             tools: ask.CREW_TOOL_INSTRUCTIONS,
-            scope: `Crew runId=${run.id}. Your exclusive write scopes: ${files.join(", ")}. Read outside them as needed, but request expanded scope before editing other files. For missing resources use crews.request; inspect crews.get for member/task IDs. ${run.definition.policy.allowSubagents ? "Report native subagent usage and follow project limits." : "Do not spawn subagents."} Preserve other sessions' work. Do not stage, commit, merge or push.`,
+            scope: `Crew runId=${run.id}. Your exclusive write scopes: ${files.join(", ")}. Read outside them as needed, but request expanded scope before editing other files. For missing resources use crews.request; inspect crews.get for member/task IDs. ${run.definition.policy.allowSubagents ? "Report native subagent usage and follow project limits." : "Do not spawn subagents."}`,
           }),
           harness: selected.candidate.harness,
           providerAccountId: selected.candidate.providerAccountId,

@@ -35,7 +35,6 @@ import {
   readTaskNotes,
   recheckTaskReview,
   finishTaskWithFindings,
-  continueTaskRuntime,
   recordTaskEvaluation,
   resolveTaskNote,
   retargetTask,
@@ -598,8 +597,6 @@ function TasksContent({
             },
       onRecheckReview: () => void actOnTask(task, () => recheckTaskReview(task)),
       onFinishWithFindings: () => void actOnTask(task, () => finishTaskWithFindings(task)),
-      onContinueRuntime: (minutes: number) =>
-        void actOnTask(task, () => continueTaskRuntime(task, minutes)),
       onMove: (to: TaskStatus) => onMove(task, to),
       onReviewWorkspace: async () => {
         const workspaceId = taskWorkspaceState(task).workspaceId;

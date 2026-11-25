@@ -94,7 +94,6 @@ it("roundtrips complete lifecycle metadata, nullable accounting and named string
     },
     evaluation: { accepted: false, reviewMinutes: 1.25, corrections: 2, recordedAt: 1 },
     budgetUsage: {
-      historyComplete: false,
       agentMinutes: 1.5,
       attempts: 1,
       completedRuns: 0,

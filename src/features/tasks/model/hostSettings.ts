@@ -102,7 +102,6 @@ export const DEFAULT_HOST_SETTINGS: HostSettings = {
 /** The settings with how much of today's time is used. */
 export type HostSettingsState = HostSettings & {
   usedMinutes: number;
-  usageUncertain?: boolean;
   /** Today's time is used up, so no new work starts until tomorrow. */
   limitReached: boolean;
 };
@@ -156,7 +155,6 @@ export function parseHostSettingsState(value: unknown): HostSettingsState | null
     return {
       ...settings,
       usedMinutes: v.usedMinutes,
-      ...(v.usageUncertain === true ? { usageUncertain: true } : {}),
       limitReached: v.limitReached === true,
     };
   } catch {

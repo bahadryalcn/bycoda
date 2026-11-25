@@ -7,7 +7,7 @@ import type { SendTurnInput } from "../../src/integrations/harness/core/types";
 import type { HostProvider } from "../providers/providers";
 import { HostEngine } from "../engine";
 import { HostStore } from "../store";
-import { finishedRunProgress } from "../execution/run-duration";
+import { finishedRunElapsed } from "../execution/run-duration";
 import { HostTasks } from "../tasks/tasks";
 import { HostStewards, PREVIOUS_RUN_SKIP, openLimitSkip } from "./stewards";
 import { writerWorkspaces } from "../workspaces/writer-workspaces.test-support";
@@ -715,10 +715,8 @@ describe("steward work limits and merging", () => {
       await vi.waitFor(
         async () => {
           expect(
-            await finishedRunProgress(store, session.session.id, session.runId!),
-          ).toMatchObject({
-            uncertain: false,
-          });
+            await finishedRunElapsed(store, session.session.id, session.runId!),
+          ).not.toBeNull();
         },
         { timeout: 20000 },
       );

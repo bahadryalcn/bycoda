@@ -9,7 +9,7 @@ afterEach(async () => {
 });
 
 describe("calendar day agent budget", () => {
-  it("holds new work on an unobserved legacy run without changing legacy usage", async () => {
+  it("counts a run first seen without a checkpoint from zero and never holds new work", async () => {
     const store = new HostStore(":memory:");
     stores.push(store);
     let now = new Date(2026, 9, 17, 12).getTime();
@@ -18,43 +18,18 @@ describe("calendar day agent budget", () => {
     await store.db.prepare("INSERT INTO agent_usage VALUES (?,?)").run(localDay(now), 120_000);
     await limits.recordRun({ sessionId: "legacy", runId: "run" }, now);
     await limits.save({ dailyAgentMinutes: 10 });
-    expect(await limits.state()).toMatchObject({
-      usedMinutes: 2,
-      usageUncertain: true,
-      limitReached: true,
-    });
+    expect(await limits.state()).toMatchObject({ usedMinutes: 2, limitReached: false });
     forgetRunSamples(store, "legacy", "run");
     await limits.recordRun({ sessionId: "legacy", runId: "run" }, now);
-    expect(await limits.state()).toMatchObject({
-      usedMinutes: 2,
-      usageUncertain: true,
-      limitReached: true,
-    });
+    expect(await limits.state()).toMatchObject({ usedMinutes: 2, limitReached: false });
+    await limits.save({ dailyAgentMinutes: 2 });
+    expect(await limits.reached()).toBe(true);
     await limits.save({ dailyAgentMinutes: 0 });
     expect(await limits.reached()).toBe(false);
     now = new Date(2026, 9, 18, 0, 0, 1).getTime();
     expect(await limits.state()).toMatchObject({ usedMinutes: 0, limitReached: false });
   });
-  it("bounds an unverified run by its wall-clock span when the task ledger knows its start", async () => {
-    const store = new HostStore(":memory:");
-    stores.push(store);
-    const now = new Date(2026, 9, 17, 12).getTime();
-    const limits = new HostLimits(store, () => now);
-    await limits.ready;
-    await store.db.exec(
-      "CREATE TABLE task_run_budget_ledger (session_id TEXT NOT NULL,run_id TEXT NOT NULL,value TEXT NOT NULL)",
-    );
-    await store.db
-      .prepare("INSERT INTO task_run_budget_ledger VALUES (?,?,?)")
-      .run("session", "run", JSON.stringify({ startedAt: now - 10 * 60_000 }));
-    await limits.recordRun({ sessionId: "session", runId: "run" }, now);
-    await limits.save({ dailyAgentMinutes: 60 });
-    expect(await limits.state()).toMatchObject({ usageUncertain: true, limitReached: false });
-    expect(await limits.reached()).toBe(false);
-    await limits.save({ dailyAgentMinutes: 5 });
-    expect(await limits.reached()).toBe(true);
-  });
-  it("keeps legacy usage and counts confirmed intervals once across midnight, gaps and restart", async () => {
+  it("keeps legacy usage and counts only accrued intervals once across midnight, gaps and restart", async () => {
     const store = new HostStore(":memory:");
     stores.push(store);
     let now = new Date(2026, 9, 17, 23, 59, 30).getTime();
@@ -72,7 +47,7 @@ describe("calendar day agent budget", () => {
     await confirmedRunElapsed(store, "session", "run", now, 3_660_000);
     expect(await limits.usedMinutes()).toBe(1.5);
     await limits.save({ dailyAgentMinutes: 10 });
-    expect(await limits.state()).toMatchObject({ usageUncertain: true, limitReached: true });
+    expect(await limits.state()).toMatchObject({ usedMinutes: 1.5, limitReached: false });
     forgetRunSamples(store, "session", "run");
     await confirmedRunElapsed(store, "session", "run", now, 0);
     now += 30_000;

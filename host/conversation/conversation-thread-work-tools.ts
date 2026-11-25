@@ -11,6 +11,8 @@ import type { HostGoals } from "../goals/goals";
 import type { HostAutomations } from "../automations/automations";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import { normalizeConversationTaskConfiguration } from "./conversation-task-tools";
+import { createWork, type WorkExecution } from "../tasks/work-request";
+import type { WorkOrigin } from "../../src/features/tasks/model/hostTasks";
 import type { DelegatedRoomPrincipal } from "../assistant/room/assistant-room-delegation";
 import {
   assertPoolExecution,
@@ -112,7 +114,16 @@ export class ConversationThreadWorkTools {
     private readonly store: HostStore,
     private readonly tasks: Pick<
       HostTasks,
-      "list" | "save" | "startTask" | "move" | "delete" | "transfer" | "recheckReview" | "reorder"
+      | "ready"
+      | "list"
+      | "get"
+      | "save"
+      | "startTask"
+      | "move"
+      | "delete"
+      | "transfer"
+      | "recheckReview"
+      | "reorder"
     >,
     private readonly goals: Pick<
       HostGoals,
@@ -189,7 +200,10 @@ export class ConversationThreadWorkTools {
     const execution =
       action === "tasks.create" ? await this.resolveExecution(input.execution) : undefined;
     if (!(await authorized())) throw new Error("Delegated Room authority revoked.");
-    const result = await this.execute(action, input, principal.projectId, id, current, execution);
+    const result = await this.execute(action, input, principal.projectId, id, current, execution, {
+      kind: "room",
+      sessionId: principal.threadId,
+    });
     if (!(await authorized())) throw new Error("Delegated Room authority revoked.");
     return result ?? { status: "completed", action, targetId: id };
   }
@@ -356,7 +370,10 @@ export class ConversationThreadWorkTools {
       const execution = creating ? await this.resolveExecution(input.execution) : undefined;
       if (execution && execution.poolRowId !== reviewedExecution?.poolRowId)
         throw new Error("The assistant's model pool changed during approval. Review again.");
-      return this.execute(action, input, principal.projectId, id, current, execution);
+      return this.execute(action, input, principal.projectId, id, current, execution, {
+        kind: "voice",
+        sessionId: principal.threadId,
+      });
     });
     await check();
     await this.track(action, principal, id, current, input);
@@ -385,26 +402,34 @@ export class ConversationThreadWorkTools {
     projectId: string,
     id: string,
     current: unknown,
-    execution?: PoolExecution,
+    execution: PoolExecution | undefined,
+    origin: WorkOrigin,
   ): Promise<unknown> {
     const exec = execution ? executionFields(execution) : {};
     if (action.startsWith("tasks.")) {
       const task = current as Awaited<ReturnType<HostTasks["list"]>>[number] | undefined;
       if (action === "tasks.create")
-        return this.tasks.save({
-          ...normalizeConversationTaskConfiguration(input, id, projectId, await this.tasks.list()),
-          ...exec,
-          expectedAbsent: true,
-          id,
-          projectId,
-          title: input.title,
-          prompt: input.prompt,
-          status: input.status === "queued" ? "queued" : "todo",
-          review: true,
-          autoMerge: false,
-          continueUntilDone: false,
-          maxRunMinutes: 0,
-        });
+        return createWork(
+          { store: this.store, tasks: this.tasks },
+          {
+            id,
+            projectId,
+            request: String(input.prompt),
+            title: String(input.title),
+            source: origin,
+            execution: exec as WorkExecution,
+            options: {
+              ...normalizeConversationTaskConfiguration(
+                input,
+                id,
+                projectId,
+                await this.tasks.list(),
+              ),
+              status: input.status === "queued" ? "queued" : "todo",
+            },
+          },
+          { requestId: id },
+        );
       if (action === "tasks.reorder") {
         await this.tasks.reorder((current as Task[]).map((item) => item.id));
         return { status: "completed", action, targetId: id };

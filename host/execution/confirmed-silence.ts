@@ -32,7 +32,7 @@ export function observeSupervisionClock(
     return ledger;
   }
   ledger.clock.sample(wall, monotonic, SAMPLE_GAP_MS);
-  if (ledger.clock.uncertainSample && wall > ledger.at) {
+  if (ledger.clock.skippedGap && wall > ledger.at) {
     const last = ledger.gaps.at(-1);
     if (last && last.to >= ledger.at) last.to = wall;
     else ledger.gaps.push({ from: ledger.at, to: wall });

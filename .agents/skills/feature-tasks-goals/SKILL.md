@@ -13,7 +13,7 @@ Model order, pools, role bindings and delegation defaults belong to [model routi
 
 - `src/features/tasks/ui/TasksView.tsx`
 - `src/features/tasks/model/taskClient.ts`
-- `host/tasks/service.ts` (`host/tasks/tasks.ts` preserves the public entry)
+- `host/tasks/service.ts` (`tasks.ts` is the public entry); create: `host/tasks/work-request.ts`
 
 ## Workflow
 
@@ -31,7 +31,7 @@ Model order, pools, role bindings and delegation defaults belong to [model routi
 - New-task creation keeps a stable receipt identity separate from edit mode. Reconcile an uncertain save before resending; optional metadata must not invalidate an accepted save. Start acknowledges persisted queue admission, not completion of the global scheduler pass.
 - Keep custom provider/model/reasoning values, drafts, budgets/concurrency and manual-start policy. Omitted reviewer configuration differs from explicit null.
 - Implementation completion, review PASS, acceptance, delivery/merge, installation and release are separate states with separate authority. Retain attempt history, artifact/handoff manifests, findings/rechecks, goal plan approval and sprint/steward recovery/reporting/daily-limit semantics.
-- Count confirmed monotonic run intervals by exact run identity and local calendar day. Preserve unknown intervals across recovery, bounded by wall-clock span: start under the limit, else the owner decides (`tasks.continueRuntime`). Never count unknown usage as zero or exhausted. Transcript durations do not prove active time; retain token and cost completeness independently.
+- Count observed monotonic run intervals by exact run identity and local calendar day. A gap (sleep, stall, restart) adds nothing and never blocks; only verified time at or above a limit exhausts it. Transcript durations do not prove active time; retain token and cost completeness independently.
 - Bound task history with a transactional sequence floor. A cursor below it reports a gap; reseed only the affected source scope and retain the report's incomplete-history boundary.
 - Owner UI approval binds reviewed identities; overlapping delivery must refuse without destroying unrelated dirty target work or source/recovery records.
 - Reviewed tool edits and execution admission recheck configuration inside the canonical writer. Create-only requests atomically reject an existing ID, including IDs outside the caller's visible project; never turn creation into upsert.

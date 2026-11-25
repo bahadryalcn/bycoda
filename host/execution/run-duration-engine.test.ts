@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 import { REMOTE_PROVIDERS } from "../../src/features/connections/model/protocol";
 import { HostEngine } from "../engine";
 import type { HostProvider } from "../providers/providers";
-import { confirmedRunProgress, finishedRunProgress } from "./run-duration";
+import { confirmedRunElapsed, finishedRunElapsed } from "./run-duration";
 import { HostStore } from "../store";
 
 it("admits the exact new run before dispatch and preserves its identity on receipt replay", async () => {
@@ -48,15 +48,13 @@ it("admits the exact new run before dispatch and preserves its identity on recei
         "SELECT elapsed, uncertain FROM run_duration_checkpoints WHERE session_id=? AND run_id=?",
       )
       .get(created.sessionId, receipt.runId);
-    expect(checkpoint).toMatchObject({ elapsed: 0, uncertain: 0 });
+    expect(checkpoint).toMatchObject({ elapsed: 0 });
     expect(
-      (await confirmedRunProgress(store, created.sessionId, receipt.runId!, Date.now())).uncertain,
-    ).toBe(false);
+      await confirmedRunElapsed(store, created.sessionId, receipt.runId!, Date.now()),
+    ).toBeLessThan(5_000);
     expect((await engine.command(command)).runId).toBe(receipt.runId);
     await engine.waitForRun(created.sessionId, receipt.runId);
-    expect(await finishedRunProgress(store, created.sessionId, receipt.runId!)).toMatchObject({
-      uncertain: false,
-    });
+    expect(await finishedRunElapsed(store, created.sessionId, receipt.runId!)).not.toBeNull();
   } finally {
     await engine.close();
     await store.close();
@@ -109,7 +107,7 @@ it("does not publish a finish checkpoint if the settled session save fails", asy
     // The run settles asynchronously after dispatch; slow Windows runners need
     // more than vi.waitFor's default one second to reach the settled save.
     await vi.waitFor(() => expect(refused).toBe(true), { timeout: 20_000, interval: 50 });
-    expect(await finishedRunProgress(store, created.sessionId, receipt.runId!)).toBeNull();
+    expect(await finishedRunElapsed(store, created.sessionId, receipt.runId!)).toBeNull();
   } finally {
     await engine.close().catch(() => {}); // The injected persistence failure is retained in cleanup.
     await store.close();

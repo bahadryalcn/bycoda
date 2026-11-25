@@ -7,4 +7,5 @@ export {
   type BoardTask,
   type TaskDraft,
 } from "../model/taskClient";
+export { createSessionTask } from "../model/sessionTask";
 export { TaskForm } from "../ui/TaskForm";

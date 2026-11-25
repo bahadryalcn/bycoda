@@ -28,7 +28,7 @@ export type DelegationCommand = {
   name: "subagents" | "task";
   /** The request after the command, without its optional subagent count. */
   request: string;
-  /** What the provider receives in place of the typed command. */
+  /** What the provider receives in place of the typed command; empty for `/task`, which no turn handles. */
   prompt: string;
 };
 
@@ -52,15 +52,6 @@ function subagentsPrompt(request: string, count?: number): string {
   ].join("\n\n");
 }
 
-function taskPrompt(request: string): string {
-  return [
-    "Create one bycoda task for the work below with Conversation Tools (tasks.create). Do not implement it in this turn.",
-    "Write its prompt as a self-contained spec: goal, relevant files, constraints and acceptance checks. Keep this project's default agent, model and workspace unless the request names others. Use /epic when the owner asks for a planned parent with subtasks.",
-    "Report the created task titles and ids. If Conversation Tools are unavailable, say so instead of doing the work.",
-    `Work:\n${request}`,
-  ].join("\n\n");
-}
-
 /** Expand a leading `/subagents [count]` or `/task`; `null` when neither leads. */
 export function consumeDelegationCommand(text: string): DelegationCommand | null {
   const match = text.match(/^\s*\/(subagents|task)(?=\s|$)\s*/i);
@@ -69,7 +60,8 @@ export function consumeDelegationCommand(text: string): DelegationCommand | null
   let rest = text.slice(match[0].length);
   if (name === "task") {
     const request = rest.trim();
-    return { name, request, prompt: request ? taskPrompt(request) : "" };
+    // The owner's words go to the task unchanged; no model turn rewrites them.
+    return { name, request, prompt: "" };
   }
   const counted = rest.match(/^(\d{1,2})(?=\s|$)\s*/);
   const count = counted ? Math.min(MAX_SUBAGENTS, Number(counted[1])) : undefined;

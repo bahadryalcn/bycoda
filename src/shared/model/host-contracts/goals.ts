@@ -12,11 +12,7 @@ export const GoalBudgetSchema = z.strictObject({
   warningPercent: z.number().optional(),
 });
 export const GoalBudgetUsageSchema = z.strictObject({
-  historyComplete: z.boolean(),
   agentMinutes: z.number(),
-  uncertainty: z
-    .strictObject({ extraMinutes: z.number(), unboundedRuns: SafeCounterSchema })
-    .optional(),
   attempts: SafeCounterSchema,
   completedRuns: SafeCounterSchema,
   runningRuns: SafeCounterSchema,

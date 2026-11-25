@@ -82,6 +82,25 @@ const inputFields = {
   continueUntilDone: z.boolean().optional(),
   goalId: z.string().optional(),
   source: z.enum(["manual", "goal", "steward", "automation"]).optional(),
+  request: z.string().optional(),
+  origin: z
+    .strictObject({
+      kind: z.enum([
+        "board",
+        "session",
+        "crew",
+        "room",
+        "voice",
+        "automation",
+        "steward",
+        "goal",
+        "mobile",
+      ]),
+      sessionId: z.string().optional(),
+      messageId: z.string().optional(),
+      automationRunId: z.string().optional(),
+    })
+    .optional(),
   stewardId: z.string().optional(),
   automationId: z.string().optional(),
   automationRunId: z.string().optional(),
@@ -186,13 +205,6 @@ const metadataFields = {
   evaluation: TaskEvaluationSchema.optional(),
   budgetUsage: TaskBudgetUsageSchema.optional(),
   budgetStop: z.string().optional(),
-  runtimeAccepted: z
-    .strictObject({
-      extraMinutes: z.number(),
-      unboundedRuns: SafeCounterSchema,
-      at: z.number(),
-    })
-    .optional(),
   preflight: TaskPreflightResultSchema.optional(),
   crewExecutionId: z.string().optional(),
   status: TaskStatusSchema.optional(),
@@ -366,10 +378,6 @@ export const TasksSaveParamsSchema = z.strictObject({ task: TaskPayloadSchema })
 export const TasksIdParamsSchema = z.strictObject({ taskId: z.string() });
 export const TasksFinishWithFindingsParamsSchema = TasksIdParamsSchema.extend({
   expectedUpdatedAt: z.number().finite(),
-});
-export const TasksContinueRuntimeParamsSchema = TasksIdParamsSchema.extend({
-  /** Minutes the owner adds on top of the verified runtime. */
-  minutes: z.number().finite().positive().max(52_560_000),
 });
 export const TasksMoveParamsSchema = TasksIdParamsSchema.extend({ to: TaskStatusSchema });
 export const TasksReorderParamsSchema = z.strictObject({

@@ -126,7 +126,6 @@ export function ModelOrderLimits({
               <UsageMeter
                 compact
                 showLegend={false}
-                unknown={usage.usageUncertain}
                 label={t("Agent time used today")}
                 segments={[
                   { id: "time", label: t("Agent time used today"), value: usage.usedMinutes },
@@ -147,15 +146,6 @@ export function ModelOrderLimits({
             </Text>
           </div>
         </Row>
-        {usage.usageUncertain ? (
-          <InlineError>
-            {usage.dailyAgentMinutes > 0
-              ? t(
-                  "Today's agent time is incomplete. New work waits until tomorrow while a daily limit is set.",
-                )
-              : t("Today's agent time is incomplete.")}
-          </InlineError>
-        ) : null}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,8rem),1fr))] items-end gap-3 px-4 py-3">
           <NumberField
             label={t("Max concurrent tasks")}

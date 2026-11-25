@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createWork } from "../tasks/work-request";
 import { agentToolAllowed } from "../delegation/tools";
 import { conversationLeaseOwner } from "../devices/lease-holder";
 import { assertAgentDevicesEnabled } from "../devices/device-agent-access";
@@ -37,7 +38,6 @@ import { isRuntimeReadConversationTool } from "../conversation/conversation-runt
 import { isStewardConversationTool } from "../conversation/conversation-steward-tools";
 import { isTaskQueueTool } from "../conversation/conversation-task-queue-tools";
 import {
-  CONVERSATION_TASK_EXECUTION_DEFAULTS,
   TASK_READ_TOOLS,
   callConversationTaskRead,
   normalizeConversationTaskConfiguration,
@@ -561,50 +561,37 @@ export async function dispatchConversationTools(
         );
         if (action === "tasks.create") {
           const own = (await dependencies.featureMeta(boundPrincipal.sessionId)).session;
-          const input = {
-            ...normalizeConversationTaskConfiguration(
-              args,
-              String(args.taskId),
-              projectId,
-              await dependencies.tasks.list(),
-            ),
-            id: String(args.taskId),
+          const configuration = normalizeConversationTaskConfiguration(
+            args,
+            String(args.taskId),
             projectId,
-            title: String(args.title),
-            prompt: String(args.prompt),
-            harness: own.harness,
-            providerAccountId: own.providerAccountId,
-            model: own.model,
-            modelSettings: own.modelSettings,
-            runtimeMode: own.runtimeMode,
-            maxRunMinutes: 0,
-            ...CONVERSATION_TASK_EXECUTION_DEFAULTS,
-            review: !args.crewDefinitionId,
-            autoMerge: false,
-            continueUntilDone: false,
-            ...(args.crewDefinitionId ? { crewDefinitionId: String(args.crewDefinitionId) } : {}),
-            status: args.status === "queued" ? "queued" : "todo",
-          };
-          const key = `task-create:${projectId}:${input.id}`;
-          const fingerprint = createHash("sha256")
-            .update(JSON.stringify([boundPrincipal.sessionId, input]))
-            .digest("hex");
-          request.result = await dependencies.engine.store.transaction(async () => {
-            const receipt = (await dependencies.engine.store.db
-              .prepare("SELECT value FROM metadata WHERE key=?")
-              .get(key)) as { value: string } | undefined;
-            const existing = await dependencies.tasks.get(input.id);
-            if (receipt || existing) {
-              if (receipt?.value !== fingerprint || !existing || existing.projectId !== projectId)
-                throw new Error("Task ID was reused or its task no longer exists.");
-              return existing;
-            }
-            const created = await dependencies.tasks.save(input);
-            await dependencies.engine.store.db
-              .prepare("INSERT INTO metadata(key,value) VALUES(?,?)")
-              .run(key, fingerprint);
-            return created;
-          });
+            await dependencies.tasks.list(),
+          );
+          request.result = await createWork(
+            { store: dependencies.engine.store, tasks: dependencies.tasks },
+            {
+              id: String(args.taskId),
+              projectId,
+              request: String(args.prompt),
+              title: String(args.title),
+              source: { kind: "session", sessionId: boundPrincipal.sessionId },
+              execution: {
+                harness: own.harness,
+                providerAccountId: own.providerAccountId,
+                model: own.model,
+                modelSettings: own.modelSettings,
+                runtimeMode: own.runtimeMode,
+              },
+              options: {
+                ...configuration,
+                ...(args.crewDefinitionId
+                  ? { crewDefinitionId: String(args.crewDefinitionId) }
+                  : {}),
+                status: args.status === "queued" ? "queued" : "todo",
+              },
+            },
+            { requestId: String(args.taskId) },
+          );
         } else if (action === "tasks.list") request.result = list;
         else {
           const task = list.find((task) => task.id === args.taskId);

@@ -26,6 +26,15 @@ Tasks opens on the current project's Host. Select All projects to include other 
 
 Local project options can appear while other sources are still loading. Sprint data appears as soon as its planning Host answers; source history synchronization can continue afterward. Actions that require current history still wait for that synchronization. Repeated refresh ticks do not accumulate an unlimited queue.
 
+## Creating tasks
+
+`/task <request>` in a chat creates a to-do task from your words exactly as typed;
+no model rewrites them. The first line becomes the title, the task uses the chat's
+agent and settings, and a notice in the transcript confirms it. If creation fails, the
+draft stays in the composer. Agents, voice and Room, automations and stewards create
+tasks through the same Host path, so a request delivered twice makes one task. The task
+keeps your original request and the chat it came from.
+
 ## Model selection
 
 Tasks, epics and stewards choose **Default**, **Any model** or **Fixed** for each model
@@ -86,7 +95,7 @@ If creating a task loses its reply, keep the draft and retry it. The draft retai
 
 A failed limits refresh means usage is unknown or last known, not zero. Existing Host budget enforcement remains active. Read the task's reason before retrying a blocked operation, and use the recorded task for recovery rather than creating duplicates.
 
-Daily agent time uses confirmed run intervals and the Host's local calendar day. If an interval cannot be measured, usage is marked incomplete. A run cannot have lasted longer than the wall-clock time between its start and its end, so limited work still starts while that upper bound stays under the limit. When the bound reaches the limit, or no bound exists, the task waits for your decision and shows the verified minutes, the most it can be and the limit; **Continue with more minutes** accepts the uncertainty and starts it again. This does not mean the limit was reached. Running work can still finish. Sprint reports mark history as incomplete when older task events are no longer available, and refresh the affected source from its current snapshot.
+Daily agent time and task runtime count only the time a run was actually observed working, per Host local calendar day. If the computer sleeps or the Host stalls, that time is not counted and the run simply continues afterwards: 10 minutes of work, an hour of sleep and 5 more minutes is 15 minutes. A gap never blocks a task or asks for your decision; only counted time reaching a limit does. Running work can still finish. Sprint reports mark history as incomplete when older task events are no longer available, and refresh the affected source from its current snapshot.
 
 Completion, review, delivery, installation and release are separate. Automatic delivery requires a current PASS review, no unresolved findings, a retained workspace plan and Native permission for its original Assistant Room/project. Denied, excluded and uncertain delivery retains the branch and owner-review fallback. A passing review alone never grants permission.
 

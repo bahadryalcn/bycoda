@@ -139,6 +139,8 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
         ? {
             reviewFailureCount: 0,
             blockedTakeover: undefined,
+            // An edited prompt is no longer the owner's original request.
+            request: undefined,
             awaitingOwnerRestart: true,
             // Zero records owner input; undefined lets legacy goal recovery run.
             repairAttempts: 0,

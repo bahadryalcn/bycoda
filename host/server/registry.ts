@@ -273,7 +273,6 @@ export function createRegistryRuntime(
       "tasks.retarget": dependencies.tasksService.retarget,
       "tasks.review.recheck": dependencies.tasksService.recheckReview,
       "tasks.finishWithFindings": dependencies.tasksService.finishWithFindings,
-      "tasks.continueRuntime": dependencies.tasksService.continueRuntime,
       "tasks.notes.read": dependencies.tasksService.readNotes,
       "tasks.notes.resolve": dependencies.tasksService.resolveNote,
       "tasks.delete": dependencies.tasksService.delete,

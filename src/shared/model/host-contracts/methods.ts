@@ -908,10 +908,6 @@ export const HOST_RPC_METHODS = Object.freeze({
   ),
   "tasks.retarget": taskOperation(tasksDto.TasksRetargetParamsSchema, tasksDto.HostTaskSchema),
   "tasks.review.recheck": taskOperation(tasksDto.TasksIdParamsSchema, tasksDto.HostTaskSchema),
-  "tasks.continueRuntime": taskOperation(
-    tasksDto.TasksContinueRuntimeParamsSchema,
-    tasksDto.HostTaskSchema,
-  ),
   "tasks.finishWithFindings": taskOperation(
     tasksDto.TasksFinishWithFindingsParamsSchema,
     tasksDto.HostTaskSchema,

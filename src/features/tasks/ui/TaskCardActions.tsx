@@ -14,8 +14,7 @@ import {
   taskRequiresInstructions,
   type TaskStatus,
 } from "../model/hostTasks";
-import { formatNumber, t, useLocale } from "../../../shared/i18n";
-import { canContinueTaskRuntime } from "../model/taskBudget";
+import { t, useLocale } from "../../../shared/i18n";
 import { type ReactNode, useState } from "react";
 import {
   Check,
@@ -67,8 +66,6 @@ export type TaskActionHandlers = {
   onOpenReview: (sessionId: string) => void;
   onRecheckReview: () => void;
   onFinishWithFindings?: () => void;
-  /** Accepts the unverified earlier runtime and adds this many minutes to the limit. */
-  onContinueRuntime?: (minutes: number) => void;
 };
 
 /** What the owner can do with a task, as the card and the detail panel both
@@ -92,7 +89,6 @@ export function TaskActions({
   openingReviewSession,
   onRecheckReview,
   onFinishWithFindings,
-  onContinueRuntime,
   compact = false,
 }: { task: BoardTask; compact?: boolean } & TaskActionHandlers) {
   useLocale();
@@ -212,14 +208,6 @@ export function TaskActions({
       label: t("Recheck review"),
       icon: <RefreshCw className="icon-xs" />,
       run: onRecheckReview,
-      disabled: busy,
-    });
-  if (task.continueRuntimeSupported && onContinueRuntime && canContinueTaskRuntime(task))
-    primary.push({
-      id: "continue-runtime",
-      label: t("Continue with {p0} more minutes", { p0: formatNumber(task.maxRunMinutes) }),
-      icon: <Play className="icon-xs" />,
-      run: () => onContinueRuntime(task.maxRunMinutes),
       disabled: busy,
     });
   if (task.finishWithFindingsSupported && onFinishWithFindings && canFinishTaskWithFindings(task))

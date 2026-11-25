@@ -16,7 +16,7 @@ import {
 } from "../../src/features/sessions/model/session";
 import type { HostEngine } from "../engine";
 import type { HostStore } from "../store";
-import { confirmedRunProgress } from "../execution/run-duration";
+import { confirmedRunElapsed } from "../execution/run-duration";
 import { isSessionNotFound } from "./session-authority";
 import { newRequestId } from "../../src/shared/lib/id/requestId";
 
@@ -73,7 +73,6 @@ export type SessionRunState =
       state: "running";
       needsInput: boolean;
       lastActivityAt?: number;
-      durationUncertain?: boolean;
     }
   /** Past its time limit: save `error`, then cancel the turn. */
   | { state: "overLimit"; error: string }
@@ -217,16 +216,13 @@ export async function sessionRunState(
     };
   }
   if (session.status === "running" && session.runId === run.runId) {
-    const progress =
+    const elapsed =
       run.sessionId && run.runId && maxRunMinutes > 0
-        ? await confirmedRunProgress(store, run.sessionId, run.runId, now)
-        : { elapsed: 0, uncertain: maxRunMinutes > 0 };
+        ? await confirmedRunElapsed(store, run.sessionId, run.runId, now)
+        : 0;
     const breach = run.error
       ? null
-      : runLimitBreach(
-          { maxRunMinutes, maxRunsPerDay: 0 },
-          { startedAt: 0, now: progress.elapsed },
-        );
+      : runLimitBreach({ maxRunMinutes, maxRunsPerDay: 0 }, { startedAt: 0, now: elapsed });
     const activity = session.runActivity;
     const lastActivityAt =
       activity &&
@@ -241,7 +237,6 @@ export async function sessionRunState(
       : {
           state: "running",
           needsInput: sessionNeedsInput(session.session),
-          ...(progress.uncertain ? { durationUncertain: true } : {}),
           ...(lastActivityAt === undefined ? {} : { lastActivityAt }),
         };
   }

@@ -7,7 +7,7 @@ import type { HostProvider } from "../providers/providers";
 import { HostEngine } from "../engine";
 import { HostStore } from "../store";
 import { HostTasks } from "./service";
-import { finishedRunProgress } from "../execution/run-duration";
+import { finishedRunElapsed } from "../execution/run-duration";
 import { taskPreflightResourceKey } from "../../src/features/tasks/model/taskPreflight";
 import * as time from "../../src/shared/lib/time/timestamps";
 if (process.platform === "win32") vi.setConfig({ testTimeout: 60000 });
@@ -91,7 +91,7 @@ async function setup() {
       },
     );
     await vi.waitFor(async () => {
-      expect(await finishedRunProgress(store, turn.input.sessionId, runId)).not.toBeNull();
+      expect(await finishedRunElapsed(store, turn.input.sessionId, runId)).not.toBeNull();
     });
     clock.now += 1;
     await tick();
@@ -350,7 +350,7 @@ describe("task harness preparation and aggregate budgets", () => {
     );
     const upgraded = new HostTasks(s.store, s.engine, () => s.clock.now);
     await upgraded.ready;
-    expect((await upgraded.budgets.read({ taskId: old.id })).historyComplete).toBe(false);
+    expect((await upgraded.budgets.read({ taskId: old.id })).tokensComplete).toBe(false);
     expect(
       (await upgraded.budgets.evaluate({ taskId: old.id }, { maxAttempts: 20 }, { starting: true }))
         .blocked,

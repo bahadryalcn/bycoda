@@ -5,12 +5,7 @@ import {
 } from "../../../shared/model/host-contracts/model-routing";
 import { NO_VERDICT } from "./taskRules";
 import type { TaskAcceptanceReport } from "./taskAcceptance";
-import {
-  parseTaskRunBudget,
-  type TaskRunBudget,
-  type TaskRunBudgetUsage,
-  type TaskRuntimeAcceptance,
-} from "./taskBudget";
+import { parseTaskRunBudget, type TaskRunBudget, type TaskRunBudgetUsage } from "./taskBudget";
 import {
   parseTaskPreflightRequirements,
   type TaskPreflightRequirement,
@@ -119,6 +114,25 @@ export type TaskReviewNote = {
 export const TASK_SOURCES = ["manual", "goal", "steward", "automation"] as const;
 export type TaskSource = (typeof TASK_SOURCES)[number];
 
+/** Where a request for work entered the app; stored on the task by `createWork`. */
+export const WORK_ORIGIN_KINDS = [
+  "board",
+  "session",
+  "crew",
+  "room",
+  "voice",
+  "automation",
+  "steward",
+  "goal",
+  "mobile",
+] as const;
+export type WorkOrigin = {
+  kind: (typeof WORK_ORIGIN_KINDS)[number];
+  sessionId?: string;
+  messageId?: string;
+  automationRunId?: string;
+};
+
 export type HostTaskInput = {
   budget?: TaskRunBudget;
   preflightRequirements?: TaskPreflightRequirement[];
@@ -173,6 +187,10 @@ export type HostTaskInput = {
   goalId?: string;
   /** Where the task came from. Absent counts as manual or planned by a goal. */
   source?: TaskSource;
+  /** The owner's words, unchanged; `prompt` adds any short context after them. */
+  request?: string;
+  /** The entry point and message that asked for this task. */
+  origin?: WorkOrigin;
   /** The steward that proposed this task. */
   stewardId?: string;
   automationId?: string;
@@ -243,8 +261,6 @@ export type HostTask = HostTaskInput & {
   };
   budgetUsage?: TaskRunBudgetUsage;
   budgetStop?: string;
-  /** The uncertain runtime the owner accepted when continuing; earlier uncertainty is not counted again. */
-  runtimeAccepted?: TaskRuntimeAcceptance;
   preflight?: TaskPreflightReport;
   /** Durable, host-owned identity of this task's current crew execution. */
   crewExecutionId?: string;
@@ -622,10 +638,31 @@ export function parseHostTask(input: unknown): HostTaskInput {
     ...(v.continueUntilDone === true ? { continueUntilDone: true } : {}),
     ...(typeof v.goalId === "string" ? { goalId: v.goalId } : {}),
     ...(typeof v.source === "string" ? { source: v.source as TaskSource } : {}),
+    ...(typeof v.request === "string" ? { request: v.request } : {}),
+    ...(v.origin === undefined ? {} : { origin: parseWorkOrigin(v.origin) }),
     ...(typeof v.stewardId === "string" ? { stewardId: v.stewardId } : {}),
     ...(typeof v.automationId === "string" ? { automationId: v.automationId } : {}),
     ...(typeof v.automationRunId === "string" ? { automationRunId: v.automationRunId } : {}),
     ...(Array.isArray(v.dependsOn) ? { dependsOn: [...new Set(v.dependsOn as string[])] } : {}),
+  };
+}
+
+function parseWorkOrigin(value: unknown): WorkOrigin {
+  const v = value as Record<string, unknown> | null;
+  if (!v || typeof v !== "object" || !WORK_ORIGIN_KINDS.some((kind) => kind === v.kind))
+    throw new Error("Invalid task origin");
+  const text = (key: string) => {
+    const field = v[key];
+    if (field === undefined) return {};
+    if (typeof field !== "string" || !field || field.length > 200)
+      throw new Error("Invalid task origin");
+    return { [key]: field };
+  };
+  return {
+    kind: v.kind as WorkOrigin["kind"],
+    ...text("sessionId"),
+    ...text("messageId"),
+    ...text("automationRunId"),
   };
 }
 

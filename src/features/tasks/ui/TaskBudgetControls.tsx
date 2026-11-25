@@ -113,13 +113,6 @@ export function TaskBudgetUsage({
           {stop}
         </Text>
       ) : null}
-      {usage?.historyComplete === false ? (
-        <Text as="p" size="micro" tone="warning">
-          {t(
-            "Earlier runs are missing from the usage history. Recorded readings are lower bounds.",
-          )}
-        </Text>
-      ) : null}
     </Text>
   );
 }

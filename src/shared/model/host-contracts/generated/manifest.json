@@ -16418,9 +16418,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -16449,24 +16446,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -16474,7 +16453,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -17016,6 +16994,38 @@
           "needsInput": {
             "type": "boolean"
           },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "board",
+                  "session",
+                  "crew",
+                  "room",
+                  "voice",
+                  "automation",
+                  "steward",
+                  "goal",
+                  "mobile"
+                ],
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
           "ownerNotices": {
             "items": {
               "additionalProperties": false,
@@ -17243,6 +17253,9 @@
               "message"
             ],
             "type": "object"
+          },
+          "request": {
+            "type": "string"
           },
           "retryFeedback": {
             "type": "string"
@@ -17480,28 +17493,6 @@
               "runId",
               "lastActivityAt",
               "detectedAt"
-            ],
-            "type": "object"
-          },
-          "runtimeAccepted": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "extraMinutes": {
-                "type": "number"
-              },
-              "unboundedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "extraMinutes",
-              "unboundedRuns",
-              "at"
             ],
             "type": "object"
           },
@@ -23298,9 +23289,6 @@
                     "estimatedCostUsd": {
                       "type": "null"
                     },
-                    "historyComplete": {
-                      "type": "boolean"
-                    },
                     "measuredAt": {
                       "maximum": 9007199254740991,
                       "minimum": 0,
@@ -23329,24 +23317,6 @@
                     "tokensComplete": {
                       "type": "boolean"
                     },
-                    "uncertainty": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "extraMinutes": {
-                          "type": "number"
-                        },
-                        "unboundedRuns": {
-                          "maximum": 9007199254740991,
-                          "minimum": 0,
-                          "type": "integer"
-                        }
-                      },
-                      "required": [
-                        "extraMinutes",
-                        "unboundedRuns"
-                      ],
-                      "type": "object"
-                    },
                     "unknownTokenRuns": {
                       "maximum": 9007199254740991,
                       "minimum": 0,
@@ -23354,7 +23324,6 @@
                     }
                   },
                   "required": [
-                    "historyComplete",
                     "agentMinutes",
                     "attempts",
                     "completedRuns",
@@ -23896,6 +23865,38 @@
                 "needsInput": {
                   "type": "boolean"
                 },
+                "origin": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "automationRunId": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "enum": [
+                        "board",
+                        "session",
+                        "crew",
+                        "room",
+                        "voice",
+                        "automation",
+                        "steward",
+                        "goal",
+                        "mobile"
+                      ],
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
                 "ownerNotices": {
                   "items": {
                     "additionalProperties": false,
@@ -24124,6 +24125,9 @@
                     "message"
                   ],
                   "type": "object"
+                },
+                "request": {
+                  "type": "string"
                 },
                 "review": {
                   "type": "boolean"
@@ -24360,28 +24364,6 @@
                     "runId",
                     "lastActivityAt",
                     "detectedAt"
-                  ],
-                  "type": "object"
-                },
-                "runtimeAccepted": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "at": {
-                      "type": "number"
-                    },
-                    "extraMinutes": {
-                      "type": "number"
-                    },
-                    "unboundedRuns": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "extraMinutes",
-                    "unboundedRuns",
-                    "at"
                   ],
                   "type": "object"
                 },
@@ -31055,9 +31037,6 @@
                           "estimatedCostUsd": {
                             "type": "null"
                           },
-                          "historyComplete": {
-                            "type": "boolean"
-                          },
                           "measuredAt": {
                             "maximum": 9007199254740991,
                             "minimum": 0,
@@ -31086,24 +31065,6 @@
                           "tokensComplete": {
                             "type": "boolean"
                           },
-                          "uncertainty": {
-                            "additionalProperties": false,
-                            "properties": {
-                              "extraMinutes": {
-                                "type": "number"
-                              },
-                              "unboundedRuns": {
-                                "maximum": 9007199254740991,
-                                "minimum": 0,
-                                "type": "integer"
-                              }
-                            },
-                            "required": [
-                              "extraMinutes",
-                              "unboundedRuns"
-                            ],
-                            "type": "object"
-                          },
                           "unknownTokenRuns": {
                             "maximum": 9007199254740991,
                             "minimum": 0,
@@ -31111,7 +31072,6 @@
                           }
                         },
                         "required": [
-                          "historyComplete",
                           "agentMinutes",
                           "attempts",
                           "completedRuns",
@@ -31653,6 +31613,38 @@
                       "needsInput": {
                         "type": "boolean"
                       },
+                      "origin": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "automationRunId": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "enum": [
+                              "board",
+                              "session",
+                              "crew",
+                              "room",
+                              "voice",
+                              "automation",
+                              "steward",
+                              "goal",
+                              "mobile"
+                            ],
+                            "type": "string"
+                          },
+                          "messageId": {
+                            "type": "string"
+                          },
+                          "sessionId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
                       "ownerNotices": {
                         "items": {
                           "additionalProperties": false,
@@ -31881,6 +31873,9 @@
                           "message"
                         ],
                         "type": "object"
+                      },
+                      "request": {
+                        "type": "string"
                       },
                       "review": {
                         "type": "boolean"
@@ -32117,28 +32112,6 @@
                           "runId",
                           "lastActivityAt",
                           "detectedAt"
-                        ],
-                        "type": "object"
-                      },
-                      "runtimeAccepted": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "at": {
-                            "type": "number"
-                          },
-                          "extraMinutes": {
-                            "type": "number"
-                          },
-                          "unboundedRuns": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "extraMinutes",
-                          "unboundedRuns",
-                          "at"
                         ],
                         "type": "object"
                       },
@@ -51720,9 +51693,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -51751,24 +51721,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -51776,7 +51728,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -52632,9 +52583,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -52663,24 +52611,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -52688,7 +52618,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -53811,9 +53740,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -53842,24 +53768,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -53867,7 +53775,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -54770,9 +54677,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -54801,24 +54705,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -54826,7 +54712,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -55676,9 +55561,6 @@
                 "estimatedCostUsd": {
                   "type": "null"
                 },
-                "historyComplete": {
-                  "type": "boolean"
-                },
                 "measuredAt": {
                   "maximum": 9007199254740991,
                   "minimum": 0,
@@ -55707,24 +55589,6 @@
                 "tokensComplete": {
                   "type": "boolean"
                 },
-                "uncertainty": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "extraMinutes": {
-                      "type": "number"
-                    },
-                    "unboundedRuns": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "extraMinutes",
-                    "unboundedRuns"
-                  ],
-                  "type": "object"
-                },
                 "unknownTokenRuns": {
                   "maximum": 9007199254740991,
                   "minimum": 0,
@@ -55732,7 +55596,6 @@
                 }
               },
               "required": [
-                "historyComplete",
                 "agentMinutes",
                 "attempts",
                 "completedRuns",
@@ -56593,9 +56456,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -56624,24 +56484,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -56649,7 +56491,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -57554,9 +57395,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -57585,24 +57423,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -57610,7 +57430,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -84513,9 +84332,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -84544,24 +84360,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -84569,7 +84367,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -85111,6 +84908,38 @@
           "needsInput": {
             "type": "boolean"
           },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "board",
+                  "session",
+                  "crew",
+                  "room",
+                  "voice",
+                  "automation",
+                  "steward",
+                  "goal",
+                  "mobile"
+                ],
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
           "ownerNotices": {
             "items": {
               "additionalProperties": false,
@@ -85338,6 +85167,9 @@
               "message"
             ],
             "type": "object"
+          },
+          "request": {
+            "type": "string"
           },
           "retryFeedback": {
             "type": "string"
@@ -85575,28 +85407,6 @@
               "runId",
               "lastActivityAt",
               "detectedAt"
-            ],
-            "type": "object"
-          },
-          "runtimeAccepted": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "extraMinutes": {
-                "type": "number"
-              },
-              "unboundedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "extraMinutes",
-              "unboundedRuns",
-              "at"
             ],
             "type": "object"
           },
@@ -86180,9 +85990,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -86211,24 +86018,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -86236,7 +86025,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -86778,6 +86566,38 @@
           "needsInput": {
             "type": "boolean"
           },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "board",
+                  "session",
+                  "crew",
+                  "room",
+                  "voice",
+                  "automation",
+                  "steward",
+                  "goal",
+                  "mobile"
+                ],
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
           "ownerNotices": {
             "items": {
               "additionalProperties": false,
@@ -87005,6 +86825,9 @@
               "message"
             ],
             "type": "object"
+          },
+          "request": {
+            "type": "string"
           },
           "retryFeedback": {
             "type": "string"
@@ -87242,28 +87065,6 @@
               "runId",
               "lastActivityAt",
               "detectedAt"
-            ],
-            "type": "object"
-          },
-          "runtimeAccepted": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "extraMinutes": {
-                "type": "number"
-              },
-              "unboundedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "extraMinutes",
-              "unboundedRuns",
-              "at"
             ],
             "type": "object"
           },
@@ -87691,9 +87492,6 @@
                 "estimatedCostUsd": {
                   "type": "null"
                 },
-                "historyComplete": {
-                  "type": "boolean"
-                },
                 "measuredAt": {
                   "maximum": 9007199254740991,
                   "minimum": 0,
@@ -87722,24 +87520,6 @@
                 "tokensComplete": {
                   "type": "boolean"
                 },
-                "uncertainty": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "extraMinutes": {
-                      "type": "number"
-                    },
-                    "unboundedRuns": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "extraMinutes",
-                    "unboundedRuns"
-                  ],
-                  "type": "object"
-                },
                 "unknownTokenRuns": {
                   "maximum": 9007199254740991,
                   "minimum": 0,
@@ -87747,7 +87527,6 @@
                 }
               },
               "required": [
-                "historyComplete",
                 "agentMinutes",
                 "attempts",
                 "completedRuns",
@@ -88289,6 +88068,38 @@
             "needsInput": {
               "type": "boolean"
             },
+            "origin": {
+              "additionalProperties": false,
+              "properties": {
+                "automationRunId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "board",
+                    "session",
+                    "crew",
+                    "room",
+                    "voice",
+                    "automation",
+                    "steward",
+                    "goal",
+                    "mobile"
+                  ],
+                  "type": "string"
+                },
+                "messageId": {
+                  "type": "string"
+                },
+                "sessionId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
             "ownerNotices": {
               "items": {
                 "additionalProperties": false,
@@ -88516,6 +88327,9 @@
                 "message"
               ],
               "type": "object"
+            },
+            "request": {
+              "type": "string"
             },
             "retryFeedback": {
               "type": "string"
@@ -88753,28 +88567,6 @@
                 "runId",
                 "lastActivityAt",
                 "detectedAt"
-              ],
-              "type": "object"
-            },
-            "runtimeAccepted": {
-              "additionalProperties": false,
-              "properties": {
-                "at": {
-                  "type": "number"
-                },
-                "extraMinutes": {
-                  "type": "number"
-                },
-                "unboundedRuns": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "extraMinutes",
-                "unboundedRuns",
-                "at"
               ],
               "type": "object"
             },
@@ -89219,9 +89011,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -89250,24 +89039,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -89275,7 +89046,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -89817,6 +89587,38 @@
           "needsInput": {
             "type": "boolean"
           },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "board",
+                  "session",
+                  "crew",
+                  "room",
+                  "voice",
+                  "automation",
+                  "steward",
+                  "goal",
+                  "mobile"
+                ],
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
           "ownerNotices": {
             "items": {
               "additionalProperties": false,
@@ -90044,6 +89846,9 @@
               "message"
             ],
             "type": "object"
+          },
+          "request": {
+            "type": "string"
           },
           "retryFeedback": {
             "type": "string"
@@ -90281,28 +90086,6 @@
               "runId",
               "lastActivityAt",
               "detectedAt"
-            ],
-            "type": "object"
-          },
-          "runtimeAccepted": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "extraMinutes": {
-                "type": "number"
-              },
-              "unboundedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "extraMinutes",
-              "unboundedRuns",
-              "at"
             ],
             "type": "object"
           },
@@ -90739,9 +90522,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -90770,24 +90550,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -90795,7 +90557,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -91337,6 +91098,38 @@
           "needsInput": {
             "type": "boolean"
           },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "board",
+                  "session",
+                  "crew",
+                  "room",
+                  "voice",
+                  "automation",
+                  "steward",
+                  "goal",
+                  "mobile"
+                ],
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
           "ownerNotices": {
             "items": {
               "additionalProperties": false,
@@ -91564,6 +91357,9 @@
               "message"
             ],
             "type": "object"
+          },
+          "request": {
+            "type": "string"
           },
           "retryFeedback": {
             "type": "string"
@@ -91801,28 +91597,6 @@
               "runId",
               "lastActivityAt",
               "detectedAt"
-            ],
-            "type": "object"
-          },
-          "runtimeAccepted": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "extraMinutes": {
-                "type": "number"
-              },
-              "unboundedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "extraMinutes",
-              "unboundedRuns",
-              "at"
             ],
             "type": "object"
           },
@@ -92260,9 +92034,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -92291,24 +92062,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -92316,7 +92069,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -92858,6 +92610,38 @@
           "needsInput": {
             "type": "boolean"
           },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "board",
+                  "session",
+                  "crew",
+                  "room",
+                  "voice",
+                  "automation",
+                  "steward",
+                  "goal",
+                  "mobile"
+                ],
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
           "ownerNotices": {
             "items": {
               "additionalProperties": false,
@@ -93085,6 +92869,9 @@
               "message"
             ],
             "type": "object"
+          },
+          "request": {
+            "type": "string"
           },
           "retryFeedback": {
             "type": "string"
@@ -93322,28 +93109,6 @@
               "runId",
               "lastActivityAt",
               "detectedAt"
-            ],
-            "type": "object"
-          },
-          "runtimeAccepted": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "extraMinutes": {
-                "type": "number"
-              },
-              "unboundedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "extraMinutes",
-              "unboundedRuns",
-              "at"
             ],
             "type": "object"
           },
@@ -93741,9 +93506,6 @@
                   "estimatedCostUsd": {
                     "type": "null"
                   },
-                  "historyComplete": {
-                    "type": "boolean"
-                  },
                   "measuredAt": {
                     "maximum": 9007199254740991,
                     "minimum": 0,
@@ -93772,24 +93534,6 @@
                   "tokensComplete": {
                     "type": "boolean"
                   },
-                  "uncertainty": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "extraMinutes": {
-                        "type": "number"
-                      },
-                      "unboundedRuns": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      }
-                    },
-                    "required": [
-                      "extraMinutes",
-                      "unboundedRuns"
-                    ],
-                    "type": "object"
-                  },
                   "unknownTokenRuns": {
                     "maximum": 9007199254740991,
                     "minimum": 0,
@@ -93797,7 +93541,6 @@
                   }
                 },
                 "required": [
-                  "historyComplete",
                   "agentMinutes",
                   "attempts",
                   "completedRuns",
@@ -94259,9 +94002,6 @@
                       "estimatedCostUsd": {
                         "type": "null"
                       },
-                      "historyComplete": {
-                        "type": "boolean"
-                      },
                       "measuredAt": {
                         "maximum": 9007199254740991,
                         "minimum": 0,
@@ -94290,24 +94030,6 @@
                       "tokensComplete": {
                         "type": "boolean"
                       },
-                      "uncertainty": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "extraMinutes": {
-                            "type": "number"
-                          },
-                          "unboundedRuns": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "extraMinutes",
-                          "unboundedRuns"
-                        ],
-                        "type": "object"
-                      },
                       "unknownTokenRuns": {
                         "maximum": 9007199254740991,
                         "minimum": 0,
@@ -94315,7 +94037,6 @@
                       }
                     },
                     "required": [
-                      "historyComplete",
                       "agentMinutes",
                       "attempts",
                       "completedRuns",
@@ -94856,6 +94577,38 @@
                   "needsInput": {
                     "type": "boolean"
                   },
+                  "origin": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "automationRunId": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "board",
+                          "session",
+                          "crew",
+                          "room",
+                          "voice",
+                          "automation",
+                          "steward",
+                          "goal",
+                          "mobile"
+                        ],
+                        "type": "string"
+                      },
+                      "messageId": {
+                        "type": "string"
+                      },
+                      "sessionId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "type": "object"
+                  },
                   "ownerNotices": {
                     "items": {
                       "additionalProperties": false,
@@ -95083,6 +94836,9 @@
                       "message"
                     ],
                     "type": "object"
+                  },
+                  "request": {
+                    "type": "string"
                   },
                   "retryFeedback": {
                     "type": "string"
@@ -95327,28 +95083,6 @@
                       "runId",
                       "lastActivityAt",
                       "detectedAt"
-                    ],
-                    "type": "object"
-                  },
-                  "runtimeAccepted": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "at": {
-                        "type": "number"
-                      },
-                      "extraMinutes": {
-                        "type": "number"
-                      },
-                      "unboundedRuns": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      }
-                    },
-                    "required": [
-                      "extraMinutes",
-                      "unboundedRuns",
-                      "at"
                     ],
                     "type": "object"
                   },
@@ -95807,6 +95541,38 @@
               "needsInput": {
                 "type": "boolean"
               },
+              "origin": {
+                "additionalProperties": false,
+                "properties": {
+                  "automationRunId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "board",
+                      "session",
+                      "crew",
+                      "room",
+                      "voice",
+                      "automation",
+                      "steward",
+                      "goal",
+                      "mobile"
+                    ],
+                    "type": "string"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
               "ownerNotices": {
                 "items": {
                   "additionalProperties": false,
@@ -96034,6 +95800,9 @@
                   "message"
                 ],
                 "type": "object"
+              },
+              "request": {
+                "type": "string"
               },
               "retryFeedback": {
                 "type": "string"
@@ -96278,28 +96047,6 @@
                   "runId",
                   "lastActivityAt",
                   "detectedAt"
-                ],
-                "type": "object"
-              },
-              "runtimeAccepted": {
-                "additionalProperties": false,
-                "properties": {
-                  "at": {
-                    "type": "number"
-                  },
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns",
-                  "at"
                 ],
                 "type": "object"
               },
@@ -96807,9 +96554,6 @@
                 "estimatedCostUsd": {
                   "type": "null"
                 },
-                "historyComplete": {
-                  "type": "boolean"
-                },
                 "measuredAt": {
                   "maximum": 9007199254740991,
                   "minimum": 0,
@@ -96838,24 +96582,6 @@
                 "tokensComplete": {
                   "type": "boolean"
                 },
-                "uncertainty": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "extraMinutes": {
-                      "type": "number"
-                    },
-                    "unboundedRuns": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "extraMinutes",
-                    "unboundedRuns"
-                  ],
-                  "type": "object"
-                },
                 "unknownTokenRuns": {
                   "maximum": 9007199254740991,
                   "minimum": 0,
@@ -96863,7 +96589,6 @@
                 }
               },
               "required": [
-                "historyComplete",
                 "agentMinutes",
                 "attempts",
                 "completedRuns",
@@ -97405,6 +97130,38 @@
             "needsInput": {
               "type": "boolean"
             },
+            "origin": {
+              "additionalProperties": false,
+              "properties": {
+                "automationRunId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "board",
+                    "session",
+                    "crew",
+                    "room",
+                    "voice",
+                    "automation",
+                    "steward",
+                    "goal",
+                    "mobile"
+                  ],
+                  "type": "string"
+                },
+                "messageId": {
+                  "type": "string"
+                },
+                "sessionId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
             "ownerNotices": {
               "items": {
                 "additionalProperties": false,
@@ -97632,6 +97389,9 @@
                 "message"
               ],
               "type": "object"
+            },
+            "request": {
+              "type": "string"
             },
             "retryFeedback": {
               "type": "string"
@@ -97869,28 +97629,6 @@
                 "runId",
                 "lastActivityAt",
                 "detectedAt"
-              ],
-              "type": "object"
-            },
-            "runtimeAccepted": {
-              "additionalProperties": false,
-              "properties": {
-                "at": {
-                  "type": "number"
-                },
-                "extraMinutes": {
-                  "type": "number"
-                },
-                "unboundedRuns": {
-                  "maximum": 9007199254740991,
-                  "minimum": 0,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "extraMinutes",
-                "unboundedRuns",
-                "at"
               ],
               "type": "object"
             },
@@ -98340,9 +98078,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -98371,24 +98106,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -98396,7 +98113,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -98938,6 +98654,38 @@
           "needsInput": {
             "type": "boolean"
           },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "board",
+                  "session",
+                  "crew",
+                  "room",
+                  "voice",
+                  "automation",
+                  "steward",
+                  "goal",
+                  "mobile"
+                ],
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
           "ownerNotices": {
             "items": {
               "additionalProperties": false,
@@ -99165,6 +98913,9 @@
               "message"
             ],
             "type": "object"
+          },
+          "request": {
+            "type": "string"
           },
           "retryFeedback": {
             "type": "string"
@@ -99402,28 +99153,6 @@
               "runId",
               "lastActivityAt",
               "detectedAt"
-            ],
-            "type": "object"
-          },
-          "runtimeAccepted": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "extraMinutes": {
-                "type": "number"
-              },
-              "unboundedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "extraMinutes",
-              "unboundedRuns",
-              "at"
             ],
             "type": "object"
           },
@@ -99853,9 +99582,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -99884,24 +99610,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -99909,7 +99617,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -100451,6 +100158,38 @@
           "needsInput": {
             "type": "boolean"
           },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "board",
+                  "session",
+                  "crew",
+                  "room",
+                  "voice",
+                  "automation",
+                  "steward",
+                  "goal",
+                  "mobile"
+                ],
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
           "ownerNotices": {
             "items": {
               "additionalProperties": false,
@@ -100678,6 +100417,9 @@
               "message"
             ],
             "type": "object"
+          },
+          "request": {
+            "type": "string"
           },
           "retryFeedback": {
             "type": "string"
@@ -100915,28 +100657,6 @@
               "runId",
               "lastActivityAt",
               "detectedAt"
-            ],
-            "type": "object"
-          },
-          "runtimeAccepted": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "extraMinutes": {
-                "type": "number"
-              },
-              "unboundedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "extraMinutes",
-              "unboundedRuns",
-              "at"
             ],
             "type": "object"
           },
@@ -101334,9 +101054,6 @@
                   "estimatedCostUsd": {
                     "type": "null"
                   },
-                  "historyComplete": {
-                    "type": "boolean"
-                  },
                   "measuredAt": {
                     "maximum": 9007199254740991,
                     "minimum": 0,
@@ -101365,24 +101082,6 @@
                   "tokensComplete": {
                     "type": "boolean"
                   },
-                  "uncertainty": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "extraMinutes": {
-                        "type": "number"
-                      },
-                      "unboundedRuns": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      }
-                    },
-                    "required": [
-                      "extraMinutes",
-                      "unboundedRuns"
-                    ],
-                    "type": "object"
-                  },
                   "unknownTokenRuns": {
                     "maximum": 9007199254740991,
                     "minimum": 0,
@@ -101390,7 +101089,6 @@
                   }
                 },
                 "required": [
-                  "historyComplete",
                   "agentMinutes",
                   "attempts",
                   "completedRuns",
@@ -101852,9 +101550,6 @@
                       "estimatedCostUsd": {
                         "type": "null"
                       },
-                      "historyComplete": {
-                        "type": "boolean"
-                      },
                       "measuredAt": {
                         "maximum": 9007199254740991,
                         "minimum": 0,
@@ -101883,24 +101578,6 @@
                       "tokensComplete": {
                         "type": "boolean"
                       },
-                      "uncertainty": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "extraMinutes": {
-                            "type": "number"
-                          },
-                          "unboundedRuns": {
-                            "maximum": 9007199254740991,
-                            "minimum": 0,
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "extraMinutes",
-                          "unboundedRuns"
-                        ],
-                        "type": "object"
-                      },
                       "unknownTokenRuns": {
                         "maximum": 9007199254740991,
                         "minimum": 0,
@@ -101908,7 +101585,6 @@
                       }
                     },
                     "required": [
-                      "historyComplete",
                       "agentMinutes",
                       "attempts",
                       "completedRuns",
@@ -102449,6 +102125,38 @@
                   "needsInput": {
                     "type": "boolean"
                   },
+                  "origin": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "automationRunId": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "board",
+                          "session",
+                          "crew",
+                          "room",
+                          "voice",
+                          "automation",
+                          "steward",
+                          "goal",
+                          "mobile"
+                        ],
+                        "type": "string"
+                      },
+                      "messageId": {
+                        "type": "string"
+                      },
+                      "sessionId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "type": "object"
+                  },
                   "ownerNotices": {
                     "items": {
                       "additionalProperties": false,
@@ -102676,6 +102384,9 @@
                       "message"
                     ],
                     "type": "object"
+                  },
+                  "request": {
+                    "type": "string"
                   },
                   "retryFeedback": {
                     "type": "string"
@@ -102920,28 +102631,6 @@
                       "runId",
                       "lastActivityAt",
                       "detectedAt"
-                    ],
-                    "type": "object"
-                  },
-                  "runtimeAccepted": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "at": {
-                        "type": "number"
-                      },
-                      "extraMinutes": {
-                        "type": "number"
-                      },
-                      "unboundedRuns": {
-                        "maximum": 9007199254740991,
-                        "minimum": 0,
-                        "type": "integer"
-                      }
-                    },
-                    "required": [
-                      "extraMinutes",
-                      "unboundedRuns",
-                      "at"
                     ],
                     "type": "object"
                   },
@@ -103400,6 +103089,38 @@
               "needsInput": {
                 "type": "boolean"
               },
+              "origin": {
+                "additionalProperties": false,
+                "properties": {
+                  "automationRunId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "board",
+                      "session",
+                      "crew",
+                      "room",
+                      "voice",
+                      "automation",
+                      "steward",
+                      "goal",
+                      "mobile"
+                    ],
+                    "type": "string"
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
               "ownerNotices": {
                 "items": {
                   "additionalProperties": false,
@@ -103627,6 +103348,9 @@
                   "message"
                 ],
                 "type": "object"
+              },
+              "request": {
+                "type": "string"
               },
               "retryFeedback": {
                 "type": "string"
@@ -103871,28 +103595,6 @@
                   "runId",
                   "lastActivityAt",
                   "detectedAt"
-                ],
-                "type": "object"
-              },
-              "runtimeAccepted": {
-                "additionalProperties": false,
-                "properties": {
-                  "at": {
-                    "type": "number"
-                  },
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns",
-                  "at"
                 ],
                 "type": "object"
               },
@@ -104298,9 +104000,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -104329,24 +104028,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -104354,7 +104035,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -104896,6 +104576,38 @@
           "needsInput": {
             "type": "boolean"
           },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "board",
+                  "session",
+                  "crew",
+                  "room",
+                  "voice",
+                  "automation",
+                  "steward",
+                  "goal",
+                  "mobile"
+                ],
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
           "ownerNotices": {
             "items": {
               "additionalProperties": false,
@@ -105123,6 +104835,9 @@
               "message"
             ],
             "type": "object"
+          },
+          "request": {
+            "type": "string"
           },
           "retryFeedback": {
             "type": "string"
@@ -105360,28 +105075,6 @@
               "runId",
               "lastActivityAt",
               "detectedAt"
-            ],
-            "type": "object"
-          },
-          "runtimeAccepted": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "extraMinutes": {
-                "type": "number"
-              },
-              "unboundedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "extraMinutes",
-              "unboundedRuns",
-              "at"
             ],
             "type": "object"
           },
@@ -105895,9 +105588,6 @@
               "estimatedCostUsd": {
                 "type": "null"
               },
-              "historyComplete": {
-                "type": "boolean"
-              },
               "measuredAt": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -105926,24 +105616,6 @@
               "tokensComplete": {
                 "type": "boolean"
               },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
               "unknownTokenRuns": {
                 "maximum": 9007199254740991,
                 "minimum": 0,
@@ -105951,7 +105623,6 @@
               }
             },
             "required": [
-              "historyComplete",
               "agentMinutes",
               "attempts",
               "completedRuns",
@@ -106493,6 +106164,38 @@
           "needsInput": {
             "type": "boolean"
           },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "automationRunId": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "board",
+                  "session",
+                  "crew",
+                  "room",
+                  "voice",
+                  "automation",
+                  "steward",
+                  "goal",
+                  "mobile"
+                ],
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "sessionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "type": "object"
+          },
           "ownerNotices": {
             "items": {
               "additionalProperties": false,
@@ -106720,6 +106423,9 @@
               "message"
             ],
             "type": "object"
+          },
+          "request": {
+            "type": "string"
           },
           "retryFeedback": {
             "type": "string"
@@ -106957,28 +106663,6 @@
               "runId",
               "lastActivityAt",
               "detectedAt"
-            ],
-            "type": "object"
-          },
-          "runtimeAccepted": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "extraMinutes": {
-                "type": "number"
-              },
-              "unboundedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "extraMinutes",
-              "unboundedRuns",
-              "at"
             ],
             "type": "object"
           },
@@ -108868,1525 +108552,6 @@
         "type": "object"
       },
       "retry": "safe-query",
-      "scope": "device"
-    },
-    "tasks.continueRuntime": {
-      "admissionTimeoutMs": 5000,
-      "cancellation": "wait-only",
-      "controlTypes": [],
-      "cost": "read",
-      "kind": "control",
-      "params": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
-        "properties": {
-          "minutes": {
-            "exclusiveMinimum": 0,
-            "maximum": 52560000,
-            "type": "number"
-          },
-          "taskId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "taskId",
-          "minutes"
-        ],
-        "type": "object"
-      },
-      "requiredCapability": "transport.ws.tasks.v2",
-      "responseTimeoutMs": 12000,
-      "result": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "additionalProperties": false,
-        "properties": {
-          "artifactDeliveryActivityId": {
-            "type": "string"
-          },
-          "artifactDeliveryPending": {
-            "type": "boolean"
-          },
-          "artifactHashes": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "artifactPaths": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "assistantFollowups": {
-            "additionalProperties": false,
-            "properties": {
-              "delivered": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "unconfirmed": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "delivered",
-              "unconfirmed"
-            ],
-            "type": "object"
-          },
-          "attemptHistory": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "at": {
-                  "type": "number"
-                },
-                "attempt": {
-                  "type": "number"
-                },
-                "findings": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "note": {
-                  "type": "string"
-                },
-                "reviewOnly": {
-                  "type": "boolean"
-                },
-                "reviewerSessionId": {
-                  "type": "string"
-                },
-                "verdict": {
-                  "enum": [
-                    "pass",
-                    "fail"
-                  ],
-                  "type": "string"
-                },
-                "workerSessionId": {
-                  "type": "string"
-                },
-                "workerSummary": {
-                  "type": "string"
-                },
-                "workspaceFingerprint": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "attempt",
-                "at",
-                "reviewerSessionId",
-                "workerSummary",
-                "verdict",
-                "note",
-                "findings"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "autoMerge": {
-            "type": "boolean"
-          },
-          "autoMerged": {
-            "type": "boolean"
-          },
-          "automationId": {
-            "type": "string"
-          },
-          "automationRunId": {
-            "type": "string"
-          },
-          "awaitingOwnerRestart": {
-            "type": "boolean"
-          },
-          "baseBranch": {
-            "type": "string"
-          },
-          "baseCommit": {
-            "type": "string"
-          },
-          "blockedTakeover": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "blocker": {
-                "type": "string"
-              },
-              "previousSessionId": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "at",
-              "blocker"
-            ],
-            "type": "object"
-          },
-          "branch": {
-            "type": "string"
-          },
-          "budget": {
-            "additionalProperties": false,
-            "properties": {
-              "maxAgentMinutes": {
-                "type": "number"
-              },
-              "maxAttempts": {
-                "type": "number"
-              },
-              "maxTokens": {
-                "type": "number"
-              },
-              "warningPercent": {
-                "type": "number"
-              }
-            },
-            "type": "object"
-          },
-          "budgetStop": {
-            "type": "string"
-          },
-          "budgetUsage": {
-            "additionalProperties": false,
-            "properties": {
-              "agentMinutes": {
-                "type": "number"
-              },
-              "attempts": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "completedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "estimatedCostUsd": {
-                "type": "null"
-              },
-              "historyComplete": {
-                "type": "boolean"
-              },
-              "measuredAt": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "reportedCostUsd": {
-                "type": [
-                  "number",
-                  "null"
-                ]
-              },
-              "reportedTokens": {
-                "type": "number"
-              },
-              "runningRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "tokens": {
-                "type": [
-                  "number",
-                  "null"
-                ]
-              },
-              "tokensComplete": {
-                "type": "boolean"
-              },
-              "uncertainty": {
-                "additionalProperties": false,
-                "properties": {
-                  "extraMinutes": {
-                    "type": "number"
-                  },
-                  "unboundedRuns": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "extraMinutes",
-                  "unboundedRuns"
-                ],
-                "type": "object"
-              },
-              "unknownTokenRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "historyComplete",
-              "agentMinutes",
-              "attempts",
-              "completedRuns",
-              "runningRuns",
-              "reportedTokens",
-              "tokens",
-              "tokensComplete",
-              "unknownTokenRuns",
-              "reportedCostUsd",
-              "estimatedCostUsd",
-              "measuredAt"
-            ],
-            "type": "object"
-          },
-          "checkFailureFingerprint": {
-            "type": "string"
-          },
-          "cleanupArchives": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "cleanupError": {
-            "type": "string"
-          },
-          "cleanupRetryAfter": {
-            "type": "number"
-          },
-          "completedAt": {
-            "type": "number"
-          },
-          "completedWithFindings": {
-            "type": "boolean"
-          },
-          "conflictParent": {
-            "additionalProperties": false,
-            "properties": {
-              "createdAt": {
-                "type": "number"
-              },
-              "id": {
-                "type": "string"
-              },
-              "sourceHead": {
-                "type": "string"
-              },
-              "targetBranch": {
-                "type": "string"
-              },
-              "targetDirectory": {
-                "type": "string"
-              },
-              "targetHead": {
-                "type": "string"
-              },
-              "workInvocationId": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "createdAt",
-              "sourceHead",
-              "targetHead",
-              "targetDirectory",
-              "targetBranch"
-            ],
-            "type": "object"
-          },
-          "conflictRecovery": {
-            "additionalProperties": false,
-            "properties": {
-              "childId": {
-                "type": "string"
-              },
-              "peer": {
-                "additionalProperties": false,
-                "properties": {
-                  "commandId": {
-                    "type": "string"
-                  },
-                  "createdAt": {
-                    "type": "number"
-                  },
-                  "runId": {
-                    "type": "string"
-                  },
-                  "sessionId": {
-                    "type": "string"
-                  },
-                  "taskId": {
-                    "type": "string"
-                  },
-                  "workInvocationId": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "taskId",
-                  "createdAt",
-                  "workInvocationId",
-                  "sessionId",
-                  "runId",
-                  "commandId"
-                ],
-                "type": "object"
-              },
-              "sourceHead": {
-                "type": "string"
-              },
-              "targetBranch": {
-                "type": "string"
-              },
-              "targetDirectory": {
-                "type": "string"
-              },
-              "targetHead": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "childId",
-              "sourceHead",
-              "targetHead",
-              "targetDirectory",
-              "targetBranch"
-            ],
-            "type": "object"
-          },
-          "continueUntilDone": {
-            "type": "boolean"
-          },
-          "createdAt": {
-            "type": "number"
-          },
-          "crewDefinitionId": {
-            "type": "string"
-          },
-          "crewExecutionId": {
-            "type": "string"
-          },
-          "crewReviewFingerprint": {
-            "type": "string"
-          },
-          "crewRunId": {
-            "type": "string"
-          },
-          "crewScopes": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "crewWorkWait": {
-            "additionalProperties": false,
-            "properties": {
-              "reason": {
-                "type": "string"
-              },
-              "unstarted": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "reason",
-              "unstarted"
-            ],
-            "type": "object"
-          },
-          "deliveredCommit": {
-            "type": "string"
-          },
-          "deliveryApprovalRequired": {
-            "type": "boolean"
-          },
-          "deliveryArtifacts": {
-            "additionalProperties": false,
-            "properties": {
-              "blockers": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "hashes": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              "paths": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "planToken": {
-                "type": "string"
-              },
-              "sourceFingerprint": {
-                "type": "string"
-              },
-              "sourceHead": {
-                "type": "string"
-              },
-              "targetDirectory": {
-                "type": "string"
-              },
-              "targetFingerprint": {
-                "type": "string"
-              },
-              "targetHashes": {
-                "additionalProperties": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
-              }
-            },
-            "required": [
-              "paths",
-              "hashes",
-              "sourceFingerprint",
-              "targetFingerprint",
-              "targetHashes",
-              "blockers",
-              "planToken",
-              "sourceHead",
-              "targetDirectory"
-            ],
-            "type": "object"
-          },
-          "deliveryCwd": {
-            "type": "string"
-          },
-          "deliveryNote": {
-            "type": "string"
-          },
-          "deliveryOperationId": {
-            "type": "string"
-          },
-          "deliveryRequested": {
-            "type": "boolean"
-          },
-          "deliveryState": {
-            "enum": [
-              "awaitingOwner",
-              "merged",
-              "published"
-            ],
-            "type": "string"
-          },
-          "dependencyArtifactsPrepared": {
-            "type": "boolean"
-          },
-          "dependsOn": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "diffStat": {
-            "type": "string"
-          },
-          "error": {
-            "type": "string"
-          },
-          "evaluation": {
-            "additionalProperties": false,
-            "properties": {
-              "accepted": {
-                "type": "boolean"
-              },
-              "corrections": {
-                "type": "number"
-              },
-              "recordedAt": {
-                "type": "number"
-              },
-              "reviewMinutes": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "accepted",
-              "reviewMinutes",
-              "corrections",
-              "recordedAt"
-            ],
-            "type": "object"
-          },
-          "finalization": {
-            "additionalProperties": false,
-            "properties": {
-              "branch": {
-                "type": "string"
-              },
-              "clean": {
-                "type": "boolean"
-              },
-              "diff": {
-                "type": "string"
-              },
-              "fingerprint": {
-                "type": "string"
-              },
-              "head": {
-                "type": "string"
-              },
-              "status": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "branch",
-              "head",
-              "status",
-              "diff",
-              "fingerprint",
-              "clean"
-            ],
-            "type": "object"
-          },
-          "goalId": {
-            "type": "string"
-          },
-          "harness": {
-            "enum": [
-              "codex",
-              "claude",
-              "cursor",
-              "grok",
-              "opencode",
-              "pi",
-              "omp",
-              "fx",
-              "hermes",
-              "antigravity",
-              "acp"
-            ],
-            "type": "string"
-          },
-          "historyRecovery": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "baseCommit": {
-                  "type": "string"
-                },
-                "branch": {
-                  "type": "string"
-                },
-                "head": {
-                  "type": "string"
-                },
-                "worktreeCwd": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "branch",
-                "baseCommit",
-                "head"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "id": {
-            "type": "string"
-          },
-          "inheritMaxRunMinutes": {
-            "const": true,
-            "type": "boolean"
-          },
-          "isolate": {
-            "type": "boolean"
-          },
-          "maxRunMinutes": {
-            "type": "number"
-          },
-          "mergeError": {
-            "type": "string"
-          },
-          "mergeRepair": {
-            "additionalProperties": false,
-            "properties": {
-              "attempts": {
-                "type": "number"
-              },
-              "baseHead": {
-                "type": "string"
-              },
-              "conflicts": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "prepared": {
-                "type": "boolean"
-              },
-              "replayCommit": {
-                "type": "string"
-              },
-              "replayStarted": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "baseHead",
-              "conflicts",
-              "attempts"
-            ],
-            "type": "object"
-          },
-          "mergeRetry": {
-            "additionalProperties": false,
-            "properties": {
-              "after": {
-                "type": "number"
-              },
-              "fingerprint": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "fingerprint",
-              "after"
-            ],
-            "type": "object"
-          },
-          "merged": {
-            "type": "boolean"
-          },
-          "mergedAt": {
-            "type": "number"
-          },
-          "model": {
-            "type": "string"
-          },
-          "modelChoice": {
-            "oneOf": [
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "kind": {
-                    "const": "default",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "kind"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "kind": {
-                    "const": "order",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "kind"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "kind": {
-                    "const": "pool",
-                    "type": "string"
-                  },
-                  "poolId": {
-                    "maxLength": 200,
-                    "minLength": 1,
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "poolId"
-                ],
-                "type": "object"
-              },
-              {
-                "additionalProperties": false,
-                "properties": {
-                  "kind": {
-                    "const": "fixed",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "kind"
-                ],
-                "type": "object"
-              }
-            ]
-          },
-          "modelRoutingWait": {
-            "additionalProperties": false,
-            "properties": {
-              "reason": {
-                "type": "string"
-              },
-              "retryAt": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "reason"
-            ],
-            "type": "object"
-          },
-          "modelSettings": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "needsInput": {
-            "type": "boolean"
-          },
-          "ownerNotices": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "at": {
-                  "type": "number"
-                },
-                "id": {
-                  "type": "string"
-                },
-                "kind": {
-                  "enum": [
-                    "remaining_finding",
-                    "external_check",
-                    "auto_continued",
-                    "info"
-                  ],
-                  "type": "string"
-                },
-                "message": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "kind",
-                "message",
-                "at"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "position": {
-            "type": "number"
-          },
-          "preflight": {
-            "additionalProperties": false,
-            "properties": {
-              "checkedAt": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "items": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "checkedAt": {
-                      "maximum": 9007199254740991,
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "detail": {
-                      "type": "string"
-                    },
-                    "key": {
-                      "type": "string"
-                    },
-                    "label": {
-                      "type": "string"
-                    },
-                    "required": {
-                      "type": "boolean"
-                    },
-                    "state": {
-                      "enum": [
-                        "ready",
-                        "blocked",
-                        "unknown"
-                      ],
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "key",
-                    "label",
-                    "state",
-                    "required"
-                  ],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "state": {
-                "enum": [
-                  "ready",
-                  "blocked",
-                  "unknown"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "checkedAt",
-              "state",
-              "items"
-            ],
-            "type": "object"
-          },
-          "preflightRequirements": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "kind": {
-                  "enum": [
-                    "source",
-                    "skill",
-                    "connection",
-                    "tool"
-                  ],
-                  "type": "string"
-                },
-                "required": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "kind",
-                "id"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "projectId": {
-            "type": "string"
-          },
-          "prompt": {
-            "type": "string"
-          },
-          "providerAccountId": {
-            "type": "string"
-          },
-          "repairAdvisor": {
-            "additionalProperties": false,
-            "properties": {
-              "error": {
-                "type": "string"
-              },
-              "feedback": {
-                "type": "string"
-              },
-              "findings": {
-                "type": "string"
-              },
-              "fingerprint": {
-                "type": "string"
-              },
-              "requestId": {
-                "type": "string"
-              },
-              "runtimeRetryNotice": {
-                "additionalProperties": false,
-                "properties": {
-                  "at": {
-                    "type": "number"
-                  },
-                  "id": {
-                    "type": "string"
-                  },
-                  "kind": {
-                    "enum": [
-                      "remaining_finding",
-                      "external_check",
-                      "auto_continued",
-                      "info"
-                    ],
-                    "type": "string"
-                  },
-                  "message": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "id",
-                  "message",
-                  "at"
-                ],
-                "type": "object"
-              },
-              "sessionId": {
-                "type": "string"
-              },
-              "takeover": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "requestId",
-              "sessionId",
-              "findings",
-              "feedback",
-              "error",
-              "fingerprint"
-            ],
-            "type": "object"
-          },
-          "repairAttempts": {
-            "type": "number"
-          },
-          "repairNote": {
-            "type": "string"
-          },
-          "repairStop": {
-            "additionalProperties": false,
-            "properties": {
-              "message": {
-                "type": "string"
-              },
-              "reason": {
-                "enum": [
-                  "external",
-                  "no_progress",
-                  "limit"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "reason",
-              "message"
-            ],
-            "type": "object"
-          },
-          "retryFeedback": {
-            "type": "string"
-          },
-          "review": {
-            "type": "boolean"
-          },
-          "reviewFailureCount": {
-            "type": "number"
-          },
-          "reviewNotes": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "category": {
-                  "enum": [
-                    "code",
-                    "external"
-                  ],
-                  "type": "string"
-                },
-                "createdAt": {
-                  "type": "number"
-                },
-                "details": {
-                  "type": "string"
-                },
-                "finding": {
-                  "type": "string"
-                },
-                "id": {
-                  "type": "string"
-                },
-                "kind": {
-                  "enum": [
-                    "finding",
-                    "suggestion"
-                  ],
-                  "type": "string"
-                },
-                "occurrences": {
-                  "type": "number"
-                },
-                "readAt": {
-                  "type": "number"
-                },
-                "resolvedAt": {
-                  "type": "number"
-                },
-                "sessionId": {
-                  "type": "string"
-                },
-                "sessionIds": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "suggestion": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "id",
-                "finding",
-                "kind",
-                "createdAt",
-                "updatedAt",
-                "occurrences"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "reviewOnly": {
-            "type": "boolean"
-          },
-          "reviewer": {
-            "additionalProperties": false,
-            "properties": {
-              "acceptanceRequired": {
-                "type": "boolean"
-              },
-              "error": {
-                "type": "string"
-              },
-              "recoveryPending": {
-                "type": "boolean"
-              },
-              "runId": {
-                "type": "string"
-              },
-              "sessionId": {
-                "type": "string"
-              },
-              "startedAt": {
-                "type": "number"
-              },
-              "verdictRepairAttempts": {
-                "type": "number"
-              },
-              "verdictRepairPending": {
-                "type": "boolean"
-              },
-              "workspaceFingerprint": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "startedAt"
-            ],
-            "type": "object"
-          },
-          "reviewerConfig": {
-            "additionalProperties": false,
-            "properties": {
-              "harness": {
-                "enum": [
-                  "codex",
-                  "claude",
-                  "cursor",
-                  "grok",
-                  "opencode",
-                  "pi",
-                  "omp",
-                  "fx",
-                  "hermes",
-                  "antigravity",
-                  "acp"
-                ],
-                "type": "string"
-              },
-              "instructions": {
-                "type": "string"
-              },
-              "model": {
-                "type": "string"
-              },
-              "modelSettings": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              "providerAccountId": {
-                "minLength": 1,
-                "type": "string"
-              }
-            },
-            "required": [
-              "harness",
-              "model",
-              "modelSettings",
-              "instructions"
-            ],
-            "type": "object"
-          },
-          "reviewerTarget": {
-            "additionalProperties": false,
-            "properties": {
-              "harness": {
-                "enum": [
-                  "codex",
-                  "claude",
-                  "cursor",
-                  "grok",
-                  "opencode",
-                  "pi",
-                  "omp",
-                  "fx",
-                  "hermes",
-                  "antigravity",
-                  "acp"
-                ],
-                "type": "string"
-              },
-              "model": {
-                "maxLength": 200,
-                "minLength": 1,
-                "type": "string"
-              },
-              "modelSettings": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
-              "providerAccountId": {
-                "maxLength": 200,
-                "minLength": 1,
-                "type": "string"
-              }
-            },
-            "required": [
-              "harness",
-              "model",
-              "modelSettings"
-            ],
-            "type": "object"
-          },
-          "runId": {
-            "type": "string"
-          },
-          "runStall": {
-            "additionalProperties": false,
-            "properties": {
-              "detectedAt": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "lastActivityAt": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "runId": {
-                "type": "string"
-              },
-              "sessionId": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "sessionId",
-              "runId",
-              "lastActivityAt",
-              "detectedAt"
-            ],
-            "type": "object"
-          },
-          "runtimeAccepted": {
-            "additionalProperties": false,
-            "properties": {
-              "at": {
-                "type": "number"
-              },
-              "extraMinutes": {
-                "type": "number"
-              },
-              "unboundedRuns": {
-                "maximum": 9007199254740991,
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "extraMinutes",
-              "unboundedRuns",
-              "at"
-            ],
-            "type": "object"
-          },
-          "runtimeLimitResolvedAt": {
-            "type": "number"
-          },
-          "runtimeMode": {
-            "enum": [
-              "supervised",
-              "auto-accept-edits",
-              "auto",
-              "full-access"
-            ],
-            "type": "string"
-          },
-          "sessionId": {
-            "type": "string"
-          },
-          "source": {
-            "enum": [
-              "manual",
-              "goal",
-              "steward",
-              "automation"
-            ],
-            "type": "string"
-          },
-          "startedAt": {
-            "type": "number"
-          },
-          "status": {
-            "enum": [
-              "todo",
-              "queued",
-              "running",
-              "verifying",
-              "review",
-              "done",
-              "blocked"
-            ],
-            "type": "string"
-          },
-          "stewardId": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "number"
-          },
-          "verification": {
-            "additionalProperties": false,
-            "properties": {
-              "acceptance": {
-                "additionalProperties": false,
-                "properties": {
-                  "checkedAt": {
-                    "maximum": 9007199254740991,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "criteria": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "criterion": {
-                          "type": "string"
-                        },
-                        "criterionIndex": {
-                          "maximum": 9007199254740991,
-                          "minimum": 0,
-                          "type": "integer"
-                        },
-                        "evidence": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "type": "array"
-                        },
-                        "note": {
-                          "type": "string"
-                        },
-                        "verdict": {
-                          "enum": [
-                            "verified",
-                            "failed",
-                            "unresolved"
-                          ],
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "criterionIndex",
-                        "criterion",
-                        "verdict",
-                        "evidence"
-                      ],
-                      "type": "object"
-                    },
-                    "type": "array"
-                  },
-                  "sessionId": {
-                    "type": "string"
-                  },
-                  "workspaceFingerprint": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "checkedAt",
-                  "sessionId",
-                  "criteria"
-                ],
-                "type": "object"
-              },
-              "command": {
-                "additionalProperties": false,
-                "properties": {
-                  "exitCode": {
-                    "type": [
-                      "number",
-                      "null"
-                    ]
-                  },
-                  "output": {
-                    "type": "string"
-                  },
-                  "timedOut": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "exitCode",
-                  "output",
-                  "timedOut"
-                ],
-                "type": "object"
-              },
-              "review": {
-                "additionalProperties": false,
-                "properties": {
-                  "note": {
-                    "type": "string"
-                  },
-                  "sessionId": {
-                    "type": "string"
-                  },
-                  "verdict": {
-                    "enum": [
-                      "pass",
-                      "fail"
-                    ],
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "verdict",
-                  "note",
-                  "sessionId"
-                ],
-                "type": "object"
-              }
-            },
-            "type": "object"
-          },
-          "verifyCommand": {
-            "type": "string"
-          },
-          "workInvocationId": {
-            "type": "string"
-          },
-          "workflowId": {
-            "type": "string"
-          },
-          "workflowVersion": {
-            "type": "number"
-          },
-          "workspace": {
-            "additionalProperties": false,
-            "properties": {
-              "baseBranch": {
-                "type": "string"
-              },
-              "branchName": {
-                "type": "string"
-              },
-              "checkoutCwd": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "workspaceActivityId": {
-            "type": "string"
-          },
-          "workspaceGenerationId": {
-            "type": "string"
-          },
-          "workspaceId": {
-            "type": "string"
-          },
-          "worktreeCwd": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "title",
-          "prompt",
-          "projectId",
-          "harness",
-          "model",
-          "runtimeMode",
-          "modelSettings",
-          "maxRunMinutes",
-          "status",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
-      "retry": "never",
       "scope": "device"
     }
   },
@@ -135482,9 +133647,6 @@
                         "estimatedCostUsd": {
                           "type": "null"
                         },
-                        "historyComplete": {
-                          "type": "boolean"
-                        },
                         "measuredAt": {
                           "maximum": 9007199254740991,
                           "minimum": 0,
@@ -135513,24 +133675,6 @@
                         "tokensComplete": {
                           "type": "boolean"
                         },
-                        "uncertainty": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "extraMinutes": {
-                              "type": "number"
-                            },
-                            "unboundedRuns": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "extraMinutes",
-                            "unboundedRuns"
-                          ],
-                          "type": "object"
-                        },
                         "unknownTokenRuns": {
                           "maximum": 9007199254740991,
                           "minimum": 0,
@@ -135538,7 +133682,6 @@
                         }
                       },
                       "required": [
-                        "historyComplete",
                         "agentMinutes",
                         "attempts",
                         "completedRuns",
@@ -136000,9 +134143,6 @@
                             "estimatedCostUsd": {
                               "type": "null"
                             },
-                            "historyComplete": {
-                              "type": "boolean"
-                            },
                             "measuredAt": {
                               "maximum": 9007199254740991,
                               "minimum": 0,
@@ -136031,24 +134171,6 @@
                             "tokensComplete": {
                               "type": "boolean"
                             },
-                            "uncertainty": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "extraMinutes": {
-                                  "type": "number"
-                                },
-                                "unboundedRuns": {
-                                  "maximum": 9007199254740991,
-                                  "minimum": 0,
-                                  "type": "integer"
-                                }
-                              },
-                              "required": [
-                                "extraMinutes",
-                                "unboundedRuns"
-                              ],
-                              "type": "object"
-                            },
                             "unknownTokenRuns": {
                               "maximum": 9007199254740991,
                               "minimum": 0,
@@ -136056,7 +134178,6 @@
                             }
                           },
                           "required": [
-                            "historyComplete",
                             "agentMinutes",
                             "attempts",
                             "completedRuns",
@@ -136597,6 +134718,38 @@
                         "needsInput": {
                           "type": "boolean"
                         },
+                        "origin": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "automationRunId": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "board",
+                                "session",
+                                "crew",
+                                "room",
+                                "voice",
+                                "automation",
+                                "steward",
+                                "goal",
+                                "mobile"
+                              ],
+                              "type": "string"
+                            },
+                            "messageId": {
+                              "type": "string"
+                            },
+                            "sessionId": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        },
                         "ownerNotices": {
                           "items": {
                             "additionalProperties": false,
@@ -136824,6 +134977,9 @@
                             "message"
                           ],
                           "type": "object"
+                        },
+                        "request": {
+                          "type": "string"
                         },
                         "retryFeedback": {
                           "type": "string"
@@ -137068,28 +135224,6 @@
                             "runId",
                             "lastActivityAt",
                             "detectedAt"
-                          ],
-                          "type": "object"
-                        },
-                        "runtimeAccepted": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "at": {
-                              "type": "number"
-                            },
-                            "extraMinutes": {
-                              "type": "number"
-                            },
-                            "unboundedRuns": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "extraMinutes",
-                            "unboundedRuns",
-                            "at"
                           ],
                           "type": "object"
                         },
@@ -137548,6 +135682,38 @@
                     "needsInput": {
                       "type": "boolean"
                     },
+                    "origin": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "automationRunId": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "enum": [
+                            "board",
+                            "session",
+                            "crew",
+                            "room",
+                            "voice",
+                            "automation",
+                            "steward",
+                            "goal",
+                            "mobile"
+                          ],
+                          "type": "string"
+                        },
+                        "messageId": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "type": "object"
+                    },
                     "ownerNotices": {
                       "items": {
                         "additionalProperties": false,
@@ -137775,6 +135941,9 @@
                         "message"
                       ],
                       "type": "object"
+                    },
+                    "request": {
+                      "type": "string"
                     },
                     "retryFeedback": {
                       "type": "string"
@@ -138019,28 +136188,6 @@
                         "runId",
                         "lastActivityAt",
                         "detectedAt"
-                      ],
-                      "type": "object"
-                    },
-                    "runtimeAccepted": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "at": {
-                          "type": "number"
-                        },
-                        "extraMinutes": {
-                          "type": "number"
-                        },
-                        "unboundedRuns": {
-                          "maximum": 9007199254740991,
-                          "minimum": 0,
-                          "type": "integer"
-                        }
-                      },
-                      "required": [
-                        "extraMinutes",
-                        "unboundedRuns",
-                        "at"
                       ],
                       "type": "object"
                     },
@@ -138505,48 +136652,6 @@
               "type": "string"
             },
             "method": {
-              "const": "tasks.continueRuntime",
-              "type": "string"
-            },
-            "params": {
-              "additionalProperties": false,
-              "properties": {
-                "minutes": {
-                  "exclusiveMinimum": 0,
-                  "maximum": 52560000,
-                  "type": "number"
-                },
-                "taskId": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "taskId",
-                "minutes"
-              ],
-              "type": "object"
-            }
-          },
-          "required": [
-            "jsonrpc",
-            "id",
-            "method",
-            "params"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
-              "type": "string"
-            },
-            "jsonrpc": {
-              "const": "2.0",
-              "type": "string"
-            },
-            "method": {
               "const": "tasks.finishWithFindings",
               "type": "string"
             },
@@ -138886,9 +136991,6 @@
                         "estimatedCostUsd": {
                           "type": "null"
                         },
-                        "historyComplete": {
-                          "type": "boolean"
-                        },
                         "measuredAt": {
                           "maximum": 9007199254740991,
                           "minimum": 0,
@@ -138917,24 +137019,6 @@
                         "tokensComplete": {
                           "type": "boolean"
                         },
-                        "uncertainty": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "extraMinutes": {
-                              "type": "number"
-                            },
-                            "unboundedRuns": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "extraMinutes",
-                            "unboundedRuns"
-                          ],
-                          "type": "object"
-                        },
                         "unknownTokenRuns": {
                           "maximum": 9007199254740991,
                           "minimum": 0,
@@ -138942,7 +137026,6 @@
                         }
                       },
                       "required": [
-                        "historyComplete",
                         "agentMinutes",
                         "attempts",
                         "completedRuns",
@@ -139404,9 +137487,6 @@
                             "estimatedCostUsd": {
                               "type": "null"
                             },
-                            "historyComplete": {
-                              "type": "boolean"
-                            },
                             "measuredAt": {
                               "maximum": 9007199254740991,
                               "minimum": 0,
@@ -139435,24 +137515,6 @@
                             "tokensComplete": {
                               "type": "boolean"
                             },
-                            "uncertainty": {
-                              "additionalProperties": false,
-                              "properties": {
-                                "extraMinutes": {
-                                  "type": "number"
-                                },
-                                "unboundedRuns": {
-                                  "maximum": 9007199254740991,
-                                  "minimum": 0,
-                                  "type": "integer"
-                                }
-                              },
-                              "required": [
-                                "extraMinutes",
-                                "unboundedRuns"
-                              ],
-                              "type": "object"
-                            },
                             "unknownTokenRuns": {
                               "maximum": 9007199254740991,
                               "minimum": 0,
@@ -139460,7 +137522,6 @@
                             }
                           },
                           "required": [
-                            "historyComplete",
                             "agentMinutes",
                             "attempts",
                             "completedRuns",
@@ -140001,6 +138062,38 @@
                         "needsInput": {
                           "type": "boolean"
                         },
+                        "origin": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "automationRunId": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "board",
+                                "session",
+                                "crew",
+                                "room",
+                                "voice",
+                                "automation",
+                                "steward",
+                                "goal",
+                                "mobile"
+                              ],
+                              "type": "string"
+                            },
+                            "messageId": {
+                              "type": "string"
+                            },
+                            "sessionId": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        },
                         "ownerNotices": {
                           "items": {
                             "additionalProperties": false,
@@ -140228,6 +138321,9 @@
                             "message"
                           ],
                           "type": "object"
+                        },
+                        "request": {
+                          "type": "string"
                         },
                         "retryFeedback": {
                           "type": "string"
@@ -140472,28 +138568,6 @@
                             "runId",
                             "lastActivityAt",
                             "detectedAt"
-                          ],
-                          "type": "object"
-                        },
-                        "runtimeAccepted": {
-                          "additionalProperties": false,
-                          "properties": {
-                            "at": {
-                              "type": "number"
-                            },
-                            "extraMinutes": {
-                              "type": "number"
-                            },
-                            "unboundedRuns": {
-                              "maximum": 9007199254740991,
-                              "minimum": 0,
-                              "type": "integer"
-                            }
-                          },
-                          "required": [
-                            "extraMinutes",
-                            "unboundedRuns",
-                            "at"
                           ],
                           "type": "object"
                         },
@@ -140952,6 +139026,38 @@
                     "needsInput": {
                       "type": "boolean"
                     },
+                    "origin": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "automationRunId": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "enum": [
+                            "board",
+                            "session",
+                            "crew",
+                            "room",
+                            "voice",
+                            "automation",
+                            "steward",
+                            "goal",
+                            "mobile"
+                          ],
+                          "type": "string"
+                        },
+                        "messageId": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "type": "object"
+                    },
                     "ownerNotices": {
                       "items": {
                         "additionalProperties": false,
@@ -141179,6 +139285,9 @@
                         "message"
                       ],
                       "type": "object"
+                    },
+                    "request": {
+                      "type": "string"
                     },
                     "retryFeedback": {
                       "type": "string"
@@ -141423,28 +139532,6 @@
                         "runId",
                         "lastActivityAt",
                         "detectedAt"
-                      ],
-                      "type": "object"
-                    },
-                    "runtimeAccepted": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "at": {
-                          "type": "number"
-                        },
-                        "extraMinutes": {
-                          "type": "number"
-                        },
-                        "unboundedRuns": {
-                          "maximum": 9007199254740991,
-                          "minimum": 0,
-                          "type": "integer"
-                        }
-                      },
-                      "required": [
-                        "extraMinutes",
-                        "unboundedRuns",
-                        "at"
                       ],
                       "type": "object"
                     },
@@ -150185,5 +148272,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "251e1c3987aad997d87e1bb26171058f862010e047330e4a34975521396ba08e"
+  "schemaHash": "edea6d13cbfdd49da2a8727dd77a45f35d7e89bb1c88153b7480128dc6d461f2"
 }

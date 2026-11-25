@@ -47,6 +47,7 @@ import {
   type HostTaskWireInput,
   type TaskColumn,
   type TaskStatus,
+  type WorkOrigin,
 } from "./hostTasks";
 
 /** A host task as this desktop shows it: on its machine, in its project. */
@@ -63,7 +64,6 @@ export type BoardTask = HostTask & {
   pendingRefresh?: boolean;
   reviewRecheckSupported?: boolean;
   finishWithFindingsSupported?: boolean;
-  continueRuntimeSupported?: boolean;
   blockedTakeoverSupported?: boolean;
   workspaceControlsSupported?: boolean;
 };
@@ -76,6 +76,10 @@ export type TaskDraft = {
   workflowVersion?: number;
   reviewerConfig?: HostTaskInput["reviewerConfig"];
   crewDefinitionId?: string;
+  /** The owner's words behind `prompt`, kept while the prompt still starts with them. */
+  request?: string;
+  /** The entry point that created this task. A create only. */
+  origin?: WorkOrigin;
   workspaceLocked?: boolean;
   workspace?: TaskWorkspace;
   id?: string;
@@ -208,7 +212,6 @@ export function hostTaskSnapshot(task: BoardTask): HostTask {
     reorderGuardSupported: _reorderGuardSupported,
     reviewRecheckSupported: _reviewRecheckSupported,
     finishWithFindingsSupported: _finishWithFindingsSupported,
-    continueRuntimeSupported: _continueRuntimeSupported,
     blockedTakeoverSupported: _blockedTakeoverSupported,
     workspaceControlsSupported: _workspaceControlsSupported,
     ...host
@@ -303,6 +306,10 @@ export function hostTaskFromDraft(
         ? { reviewerConfig: null }
         : {}),
     ...(draft.crewDefinitionId ? { crewDefinitionId: draft.crewDefinitionId } : {}),
+    ...(draft.request !== undefined && draft.prompt.startsWith(draft.request)
+      ? { request: draft.request }
+      : {}),
+    ...(draft.origin ? { origin: draft.origin } : {}),
     title: draft.title,
     prompt: draft.prompt,
     projectId,
@@ -504,7 +511,6 @@ export async function listBoardTaskResults(
               ...task,
               reviewRecheckSupported: capabilities.includes("tasks.review-recheck"),
               finishWithFindingsSupported: capabilities.includes("tasks.finish-with-findings"),
-              continueRuntimeSupported: capabilities.includes("tasks.continue-runtime"),
               blockedTakeoverSupported: capabilities.includes("tasks.blocked-takeover"),
               workspaceControlsSupported: capabilities.includes(HOST_TASK_WORKSPACES),
               evaluationSupported: capabilities.includes("tasks.evaluation"),
@@ -722,7 +728,6 @@ function updatedBoardTask(task: BoardTask, updated: HostTask): BoardTask {
     cwd: task.cwd,
     reviewRecheckSupported: task.reviewRecheckSupported,
     finishWithFindingsSupported: task.finishWithFindingsSupported,
-    continueRuntimeSupported: task.continueRuntimeSupported,
     blockedTakeoverSupported: task.blockedTakeoverSupported,
     workspaceControlsSupported: task.workspaceControlsSupported,
     evaluationSupported: task.evaluationSupported,
@@ -827,18 +832,6 @@ export async function finishTaskWithFindings(task: BoardTask): Promise<BoardTask
     true,
   );
   return updatedBoardTask(task, updated);
-}
-
-/** Accepts the unverified earlier runtime, adds minutes to the limit and starts the task again. */
-export async function continueTaskRuntime(task: BoardTask, minutes: number): Promise<BoardTask> {
-  const updated = await remoteRequest<HostTask>(
-    task.machineId,
-    "tasks.continueRuntime",
-    { taskId: task.id, minutes },
-    false,
-    true,
-  );
-  return await startTask(updatedBoardTask(task, updated));
 }
 
 export async function readTaskNotes(task: BoardTask, noteIds: string[]): Promise<BoardTask> {

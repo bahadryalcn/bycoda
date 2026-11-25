@@ -2,8 +2,11 @@ import { ObservedRunDuration } from "../../src/features/automations/model/automa
 import type { HostStore } from "../store";
 import { monotonicNow } from "../../src/shared/lib/time/timestamps";
 
-// Monotonic samples belong only to this process. Persist only confirmed elapsed
-// duration; a restart or an unobserved gap never becomes elapsed time.
+// Monotonic samples belong only to this process. A run's duration is the sum of the intervals
+// between consecutive close-enough samples; a gap (sleep, stall, restart) adds nothing and the
+// run keeps accruing from the next sample. A restarted Host continues from the persisted
+// checkpoint, and its first sample only sets the baseline. The `uncertain` columns are kept for
+// existing databases and always written 0.
 const stores = new WeakMap<HostStore, Map<string, ObservedRunDuration>>();
 
 export function localRunDay(time: number): string {
@@ -79,92 +82,26 @@ export async function confirmedRunElapsed(
   wall: number,
   monotonic = monotonicNow(),
 ): Promise<number> {
-  return (await confirmedRunProgress(store, sessionId, runId, wall, monotonic)).elapsed;
-}
-
-/** Finalize only at the owned execution lifecycle boundary, not a later poll. */
-export async function finishRunDuration(
-  store: HostStore,
-  sessionId: string,
-  runId: string,
-  wall?: number,
-  monotonic?: number,
-): Promise<void> {
-  await store.transaction(async () => {
-    await store.db.exec(
-      "CREATE TABLE IF NOT EXISTS run_duration_finished (session_id TEXT NOT NULL, run_id TEXT NOT NULL, elapsed REAL NOT NULL, uncertain INTEGER NOT NULL, PRIMARY KEY(session_id,run_id))",
-    );
-    const existing = await store.db
-      .prepare("SELECT 1 FROM run_duration_finished WHERE session_id=? AND run_id=?")
-      .get(sessionId, runId);
-    if (existing) return;
-    const progress = await confirmedRunProgress(
-      store,
-      sessionId,
-      runId,
-      wall ?? Date.now(),
-      monotonic ?? monotonicNow(),
-    );
-    await store.db
-      .prepare("INSERT INTO run_duration_finished VALUES (?,?,?,?)")
-      .run(sessionId, runId, progress.elapsed, progress.uncertain ? 1 : 0);
-    store.afterCommit(() => forgetRunSamples(store, sessionId, runId));
-  });
-}
-
-export async function finishedRunProgress(
-  store: HostStore,
-  sessionId: string,
-  runId: string,
-): Promise<{ elapsed: number; uncertain: boolean } | null> {
-  await store.db.exec(
-    "CREATE TABLE IF NOT EXISTS run_duration_finished (session_id TEXT NOT NULL, run_id TEXT NOT NULL, elapsed REAL NOT NULL, uncertain INTEGER NOT NULL, PRIMARY KEY(session_id,run_id))",
-  );
-  const row = await store.db
-    .prepare("SELECT elapsed, uncertain FROM run_duration_finished WHERE session_id=? AND run_id=?")
-    .get(sessionId, runId);
-  return row ? { elapsed: Number(row.elapsed), uncertain: Number(row.uncertain) !== 0 } : null;
-}
-
-export async function confirmedRunProgress(
-  store: HostStore,
-  sessionId: string,
-  runId: string,
-  wall: number,
-  monotonic = monotonicNow(),
-): Promise<{ elapsed: number; uncertain: boolean }> {
   return await store.transaction(async () => {
-    const finished = await finishedRunProgress(store, sessionId, runId);
-    if (finished) return finished;
+    const finished = await finishedRunElapsed(store, sessionId, runId);
+    if (finished !== null) return finished;
     await store.db.exec(
       "CREATE TABLE IF NOT EXISTS run_duration_checkpoints (session_id TEXT NOT NULL, run_id TEXT NOT NULL, elapsed REAL NOT NULL, uncertain INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(session_id,run_id))",
     );
     await store.db.exec(
       "CREATE TABLE IF NOT EXISTS run_duration_daily (session_id TEXT NOT NULL, run_id TEXT NOT NULL, day TEXT NOT NULL, ms REAL NOT NULL, PRIMARY KEY(session_id,run_id,day))",
     );
-    await store.db.exec(
-      "CREATE TABLE IF NOT EXISTS run_duration_daily_unknown (session_id TEXT NOT NULL, run_id TEXT NOT NULL, day TEXT NOT NULL, PRIMARY KEY(session_id,run_id,day))",
-    );
     let entries = stores.get(store);
     if (!entries) stores.set(store, (entries = new Map()));
     const key = JSON.stringify([sessionId, runId]);
-    let duration = entries.get(key)?.clone();
     const row = await store.db
-      .prepare(
-        "SELECT elapsed, uncertain FROM run_duration_checkpoints WHERE session_id=? AND run_id=?",
-      )
+      .prepare("SELECT elapsed FROM run_duration_checkpoints WHERE session_id=? AND run_id=?")
       .get(sessionId, runId);
-    let restarted = false;
-    if (!duration) {
-      restarted = true;
-      duration = new ObservedRunDuration(wall, monotonic, Number(row?.elapsed ?? 0), true);
-    }
-    if (Number(row?.uncertain ?? 0) !== 0) duration.markUncertain();
+    // No in-process sample (a Host restart): continue from the checkpoint, baseline is now.
+    const duration =
+      entries.get(key)?.clone() ??
+      new ObservedRunDuration(wall, monotonic, Number(row?.elapsed ?? 0));
     const elapsed = duration.sample(wall, monotonic, 90_000);
-    if (restarted || duration.uncertainSample)
-      await store.db
-        .prepare("INSERT OR IGNORE INTO run_duration_daily_unknown VALUES (?,?,?)")
-        .run(sessionId, runId, localRunDay(wall));
     const increment = Math.max(0, elapsed - Number(row?.elapsed ?? 0));
     if (increment > 0) {
       const add = store.db.prepare(
@@ -181,14 +118,76 @@ export async function confirmedRunProgress(
     }
     await store.db
       .prepare(
-        "INSERT INTO run_duration_checkpoints VALUES (?,?,?,?) ON CONFLICT(session_id,run_id) DO UPDATE SET elapsed=max(elapsed,excluded.elapsed), uncertain=max(uncertain,excluded.uncertain)",
+        "INSERT INTO run_duration_checkpoints VALUES (?,?,?,0) ON CONFLICT(session_id,run_id) DO UPDATE SET elapsed=max(elapsed,excluded.elapsed)",
       )
-      .run(sessionId, runId, elapsed, duration.uncertain ? 1 : 0);
-    const committedDuration = duration;
+      .run(sessionId, runId, elapsed);
     store.afterCommit(() => {
       if (!entries.has(key) && entries.size >= 4096) entries.delete(entries.keys().next().value!);
-      entries.set(key, committedDuration);
+      entries.set(key, duration);
     });
-    return { elapsed, uncertain: duration.uncertain };
+    return elapsed;
   });
+}
+
+/** The last persisted checkpoint of a run, without sampling; 0 when none exists. */
+export async function checkpointRunElapsed(
+  store: HostStore,
+  sessionId: string,
+  runId: string,
+): Promise<number> {
+  const exists = await store.db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='run_duration_checkpoints'")
+    .get();
+  if (!exists) return 0;
+  const row = await store.db
+    .prepare("SELECT elapsed FROM run_duration_checkpoints WHERE session_id=? AND run_id=?")
+    .get(sessionId, runId);
+  return Number(row?.elapsed ?? 0);
+}
+
+/** Finalize only at the owned execution lifecycle boundary, not a later poll. */
+export async function finishRunDuration(
+  store: HostStore,
+  sessionId: string,
+  runId: string,
+  wall?: number,
+  monotonic?: number,
+): Promise<void> {
+  await store.transaction(async () => {
+    await store.db.exec(
+      "CREATE TABLE IF NOT EXISTS run_duration_finished (session_id TEXT NOT NULL, run_id TEXT NOT NULL, elapsed REAL NOT NULL, uncertain INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(session_id,run_id))",
+    );
+    const existing = await store.db
+      .prepare("SELECT 1 FROM run_duration_finished WHERE session_id=? AND run_id=?")
+      .get(sessionId, runId);
+    if (existing) return;
+    const elapsed = await confirmedRunElapsed(
+      store,
+      sessionId,
+      runId,
+      wall ?? Date.now(),
+      monotonic ?? monotonicNow(),
+    );
+    await store.db
+      .prepare(
+        "INSERT INTO run_duration_finished (session_id,run_id,elapsed,uncertain) VALUES (?,?,?,0)",
+      )
+      .run(sessionId, runId, elapsed);
+    store.afterCommit(() => forgetRunSamples(store, sessionId, runId));
+  });
+}
+
+/** The closing elapsed time of a run, or null while the run has no close record. */
+export async function finishedRunElapsed(
+  store: HostStore,
+  sessionId: string,
+  runId: string,
+): Promise<number | null> {
+  await store.db.exec(
+    "CREATE TABLE IF NOT EXISTS run_duration_finished (session_id TEXT NOT NULL, run_id TEXT NOT NULL, elapsed REAL NOT NULL, uncertain INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(session_id,run_id))",
+  );
+  const row = await store.db
+    .prepare("SELECT elapsed FROM run_duration_finished WHERE session_id=? AND run_id=?")
+    .get(sessionId, runId);
+  return row ? Number(row.elapsed) : null;
 }

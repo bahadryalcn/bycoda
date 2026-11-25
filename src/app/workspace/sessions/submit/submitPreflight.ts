@@ -23,6 +23,8 @@ import { steerAppliesModelSettings } from "../../../../integrations/harness";
 import { saveRecentModelChoice } from "../../../../features/sessions/model/models";
 import { consumeDelegationCommand } from "../../../../features/sessions/model/delegationCommands";
 import { consumeWorkCommand } from "../../../../features/sessions/model/workCommands";
+import { createSessionTask } from "../../../../features/tasks/public/taskCreation";
+import { presentRemoteError } from "../../../../features/connections/public/remoteFailure";
 import { openAutomationProposal } from "../../../../features/automations/public/proposal";
 import {
   consumeOperatorCommand,
@@ -275,6 +277,25 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
           ? `Add a request after /${delegation.name}.`
           : undefined;
   if (delegationError) return refuse(delegationError);
+  if (delegation?.name === "task") {
+    if (attachments.length > 0)
+      return refuse("/task does not take attachments. Your draft and attachments were kept.");
+    // The owner's words become the task as typed; the transcript shows the outcome.
+    const request = delegation.request;
+    return {
+      settled: true,
+      value: createSessionTask(current, request).then(
+        (task) => {
+          showSubmitNotice(sessionId, `${t("Task created")}: ${task.title}`);
+          return true;
+        },
+        (error: unknown) => {
+          showSubmitNotice(sessionId, presentRemoteError(error, { explicit: true }), "error");
+          return false;
+        },
+      ),
+    };
+  }
   const promptText = operatorCommand.matched
     ? operatorCommand.text.trim() || "Explain what you can do in bycoda with the app CLI."
     : (delegation?.prompt ?? submittedText);

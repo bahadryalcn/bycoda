@@ -27,7 +27,6 @@ import * as repoint from "./repoint";
 import * as assistantRecovery from "./assistant-recovery";
 import * as taskActions from "./task-actions";
 import * as ownerCompletion from "./owner-completion";
-import { continueRuntime } from "./runtime-continue";
 import * as managedSession from "./managed-session";
 import * as assistantHolds from "./assistant-holds";
 import * as fingerprint from "./fingerprint";
@@ -480,11 +479,6 @@ export class HostTasks {
   /** Owner start requests retain scheduler limits and dependency gates. */
   startTask(id: string, reviewed?: HostTask): Promise<HostTask> {
     return taskActions.startTask(this.context, id, reviewed);
-  }
-
-  /** Owner accepts an unverified earlier interval and adds minutes to the runtime limit. */
-  continueRuntime(id: string, minutes: number): Promise<HostTask> {
-    return continueRuntime(this.context, id, minutes);
   }
 
   finishWithFindings(id: string, expectedUpdatedAt: number): Promise<HostTask> {

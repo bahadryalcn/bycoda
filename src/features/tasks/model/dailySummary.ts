@@ -26,7 +26,6 @@ export type SummaryUsage = {
   usedMinutes: number;
   /** Zero means no limit. */
   dailyAgentMinutes: number;
-  usageUncertain?: boolean;
 };
 
 export type DailySummary = {

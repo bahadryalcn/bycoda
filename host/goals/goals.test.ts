@@ -950,7 +950,7 @@ describe("integrated final goal acceptance", () => {
     );
     const reopened = new HostGoals(f.store, f.engine, f.tasks, () => f.clock.now);
     await reopened.ready;
-    expect((await f.tasks.budgets.read({ goalId: "goal" })).historyComplete).toBe(false);
+    expect((await f.tasks.budgets.read({ goalId: "goal" })).tokensComplete).toBe(false);
     await reopened.replan("goal");
     expect((await f.goal()).status).toBe("blocked");
     expect((await f.goal()).budgetStop).toMatch(/historical/i);

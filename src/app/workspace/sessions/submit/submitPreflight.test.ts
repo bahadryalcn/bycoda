@@ -5,10 +5,14 @@ import { resetSessionsStore } from "../../../../features/sessions/model/sessions
 import { prepareSubmitPreflight } from "./submitPreflight";
 import type { SubmitDeps } from "./submitTypes";
 import { openAutomationProposal } from "../../../../features/automations/public/proposal";
+import { createSessionTask } from "../../../../features/tasks/public/taskCreation";
 vi.mock("../../../../features/automations/public/proposal", () => ({
   openAutomationProposal: vi.fn(() => true),
 }));
 
+vi.mock("../../../../features/tasks/public/taskCreation", () => ({
+  createSessionTask: vi.fn(async (_session: unknown, request: string) => ({ title: request })),
+}));
 vi.mock("../../../../features/orchestration/model/orchestration", () => ({
   orchestrator: {
     submissionError: () => undefined,
@@ -64,6 +68,31 @@ it("opens an automation proposal without starting a provider turn or consuming t
     "every day at 09:00 review",
   );
   expect(session.blocks).toBe(original);
+});
+it("creates a /task task from the owner's exact words without a model turn", async () => {
+  const result = prepareSubmitPreflight(ctx, {
+    sessionId: session.id,
+    text: "/task Fix the login button label.",
+    attachments: [],
+    options: undefined,
+  });
+  expect(result.settled).toBe(true);
+  if (!result.settled) return;
+  expect(await result.value).toBe(true);
+  expect(createSessionTask).toHaveBeenCalledWith(
+    expect.objectContaining({ id: session.id }),
+    "Fix the login button label.",
+  );
+});
+it("keeps the draft when /task cannot create the task", async () => {
+  vi.mocked(createSessionTask).mockRejectedValueOnce(new Error("Host unreachable"));
+  const result = prepareSubmitPreflight(ctx, {
+    sessionId: session.id,
+    text: "/task Fix it",
+    attachments: [],
+    options: undefined,
+  });
+  expect(result.settled && (await result.value)).toBe(false);
 });
 it("never silently drops attachments or turns Plan-mode automation into a rewritten prompt", () => {
   for (const input of [

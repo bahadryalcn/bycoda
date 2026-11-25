@@ -147,13 +147,10 @@ export function taskMetricsComparisons(tasks: readonly TaskMetricsSource[]): Tas
     // A legacy completed task may predate ledger registration. An empty ledger is
     // not evidence that the historical agent work was free or instantaneous.
     const usage = task.budgetUsage && task.budgetUsage.attempts > 0 ? task.budgetUsage : undefined;
-    if (usage && nonnegative(usage.agentMinutes)) {
-      group.observedAgentMinutes += usage.agentMinutes;
-      if (usage.historyComplete === false) group.unknownTimeSamples++;
-    } else group.unknownTimeSamples++;
+    if (usage && nonnegative(usage.agentMinutes)) group.observedAgentMinutes += usage.agentMinutes;
+    else group.unknownTimeSamples++;
     if (
       usage &&
-      usage.historyComplete !== false &&
       usage.tokensComplete &&
       nonnegative(usage.tokens) &&
       Number.isSafeInteger(usage.tokens)
@@ -163,15 +160,9 @@ export function taskMetricsComparisons(tasks: readonly TaskMetricsSource[]): Tas
       group.unknownTokenSamples++;
       if (usage && nonnegative(usage.reportedTokens)) group.reportedTokens += usage.reportedTokens;
     }
-    if (usage && usage.historyComplete !== false && nonnegative(usage.reportedCostUsd))
-      group.observedCostUsd += usage.reportedCostUsd;
+    if (usage && nonnegative(usage.reportedCostUsd)) group.observedCostUsd += usage.reportedCostUsd;
     else group.unknownCostSamples++;
-    if (
-      usage &&
-      usage.historyComplete !== false &&
-      nonnegative(usage.attempts) &&
-      Number.isSafeInteger(usage.attempts)
-    )
+    if (usage && nonnegative(usage.attempts) && Number.isSafeInteger(usage.attempts))
       group.attempts = (group.attempts ?? 0) + usage.attempts;
     else group.unknownRunSamples++;
   }

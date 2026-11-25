@@ -284,11 +284,9 @@ export function LimitsPanel({
               </Text>
             </div>
             {limited ? (
-              // Incomplete usage is a lower bound, never a measured value.
               <UsageMeter
                 compact
                 showLegend={false}
-                unknown={entry.usageUncertain}
                 label={t("Agent time used today")}
                 segments={[
                   { id: "time", label: t("Agent time used today"), value: entry.usedMinutes },
@@ -303,15 +301,6 @@ export function LimitsPanel({
                 }
                 valueText={formatAgentMinutes(entry.usedMinutes)}
               />
-            ) : null}
-            {entry.usageUncertain ? (
-              <InlineError>
-                {limited
-                  ? t(
-                      "Today's agent time is incomplete. New work waits until tomorrow while a daily limit is set.",
-                    )
-                  : t("Today's agent time is incomplete.")}
-              </InlineError>
             ) : null}
             <SettingFrame>
               <SettingRow

@@ -2,7 +2,7 @@ import { mapAsync } from "../async-collections";
 import { AssistantTurnPolicyDeferredError } from "../assistant/core/assistant-turn-policy";
 import * as assistantTurnPolicy from "../assistant/core/assistant-turn-policy";
 import * as assistantTaskMetadata from "../assistant/work/assistant-task-metadata";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
@@ -2128,40 +2128,31 @@ describe("host tasks", () => {
       monotonic.mockRestore();
     }
   });
-  it("lets the owner continue a task whose unverified interval can reach its limit", async () => {
-    const { tasks, run, task, settled, clock, provider } = await setup();
+  it("counts only the working time around a sleep gap and keeps the task startable", async () => {
+    const { tasks, run, task, settled, clock } = await setup();
     const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
     try {
-      const started = await run({ maxRunMinutes: 30 });
-      for (let i = 0; i < 40; i++) {
+      const started = await run({ maxRunMinutes: 600 });
+      for (let i = 0; i < 20; i++) {
         clock.now += MINUTE / 2;
         await tasks.tick();
       }
-      // The Host stalls for 40 minutes: the interval is unverified but bounded by the wall clock.
-      clock.now += 40 * MINUTE;
+      // The machine sleeps for an hour: it adds nothing and is not an error.
+      clock.now += 60 * MINUTE;
+      for (let i = 0; i < 10; i++) {
+        clock.now += MINUTE / 2;
+        await tasks.tick();
+      }
       await tasks.move(started.id, "blocked");
       await settled(started.sessionId!);
       await tasks.tick();
-      expect(provider.cancel).toHaveBeenCalled();
+      const usage = await tasks.budgets.read({ taskId: started.id });
+      expect(usage.agentMinutes).toBeGreaterThanOrEqual(14.5);
+      expect(usage.agentMinutes).toBeLessThanOrEqual(15.5);
       await tasks.startTask(started.id);
       await tasks.tick();
-      expect(await task()).toMatchObject({
-        status: "blocked",
-        error: expect.stringContaining("at most"),
-      });
-      await expect(tasks.continueRuntime(started.id, 0)).rejects.toThrow("positive");
-      const continued = await tasks.continueRuntime(started.id, 30);
-      expect(continued).toMatchObject({
-        status: "blocked",
-        maxRunMinutes: 50,
-        awaitingOwnerRestart: true,
-        runtimeAccepted: { unboundedRuns: 0 },
-      });
-      expect(continued.runtimeAccepted!.extraMinutes).toBeGreaterThan(30);
-      expect((await task()).budgetStop).toBeUndefined();
-      await tasks.startTask(started.id);
-      await tasks.tick();
-      expect((await task()).status).toBe("running");
+      expect(await task()).toMatchObject({ status: "running" });
+      expect((await task()).error).toBeUndefined();
     } finally {
       monotonic.mockRestore();
     }
@@ -2227,8 +2218,15 @@ describe("host tasks", () => {
   });
   it("keeps recovered work queued when the daily agent limit is reached", async () => {
     const { tasks, run, task, clock, interrupt, turns } = await setup();
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
+    onTestFinished(() => monotonic.mockRestore());
     await tasks.limits.save({ dailyAgentMinutes: 1 });
     const started = await run();
+    // Two minutes of observed work use up the one minute allowance.
+    for (let i = 0; i < 4; i++) {
+      clock.now += MINUTE / 2;
+      await tasks.limits.usedMinutes();
+    }
     await interrupt(started.sessionId!);
     clock.now += 2 * MINUTE;
     await tasks.tick();
@@ -2253,8 +2251,15 @@ describe("host tasks", () => {
   });
   it("holds a retained interrupted reviewer for daily limits and never resumes a later owner stop", async () => {
     const { tasks, reviewing, task, interrupt, turns, clock, engine, settled } = await setup();
+    const monotonic = vi.spyOn(performance, "now").mockImplementation(() => clock.now);
+    onTestFinished(() => monotonic.mockRestore());
     const started = await reviewing({ continueUntilDone: true });
     await tasks.limits.save({ dailyAgentMinutes: 1 });
+    // Two minutes of observed reviewer work use up the one minute allowance.
+    for (let i = 0; i < 4; i++) {
+      clock.now += MINUTE / 2;
+      await tasks.limits.usedMinutes();
+    }
     await interrupt(started.reviewer!.sessionId!);
     clock.now += 2 * MINUTE;
     await tasks.tick();
@@ -4300,35 +4305,19 @@ describe("host work limits", () => {
     expect(statuses.filter((status) => status === "running")).toHaveLength(9);
     expect(statuses.filter((status) => status === "queued")).toHaveLength(1);
   });
-  it("holds new work when elapsed time is uncertain, lets running work finish, and resumes tomorrow", async () => {
-    const { tasks, input, run, task, turns, settled, clock, advance, addProject } = await setup();
+  it("counts only accrued time toward the daily limit, so a sleep gap never holds new work", async () => {
+    const { tasks, input, run, task, turns, clock, addProject } = await setup();
     await tasks.limits.save({ dailyAgentMinutes: 5 });
-    const first = await run({ id: "a", projectId: (await addProject("a")).id });
+    await run({ id: "a", projectId: (await addProject("a")).id });
     await tasks.save(input({ id: "b", projectId: (await addProject("b")).id }));
     clock.now += 1;
-    // A wall-clock jump without matching monotonic observations is uncertain.
+    // A wall-clock jump without matching monotonic observations is a gap: it adds nothing.
     clock.now += 5 * MINUTE;
     await tasks.tick();
-    expect(await tasks.limits.state()).toMatchObject({ limitReached: true, usageUncertain: true });
-    expect((await task("a")).status).toBe("running");
-    expect((await task("b")).status).toBe("queued");
-    expect(turns).toHaveLength(1);
-    // Finishing is allowed; the next task still waits.
-    turns[0].finish();
-    await settled(first.sessionId!);
-    await advance();
-    expect((await task("a")).status).toBe("done");
-    expect((await task("b")).status).toBe("queued");
-    expect(await tasks.limits.state()).toMatchObject({ limitReached: true, usageUncertain: true });
-    expect(turns).toHaveLength(1);
-    // A new local day starts a fresh total.
-    clock.now += 24 * 60 * MINUTE;
-    expect(await tasks.limits.state()).toMatchObject({
-      limitReached: false,
-      usedMinutes: 0,
-    });
-    await tasks.tick();
+    expect((await tasks.limits.state()).limitReached).toBe(false);
+    expect((await tasks.limits.state()).usedMinutes).toBeLessThan(1);
     await vi.waitFor(() => expect(turns).toHaveLength(2));
+    expect((await task("a")).status).toBe("running");
     expect((await task("b")).status).toBe("running");
   });
   it("resumes queued work today when the daily limit is raised", async () => {
@@ -4360,7 +4349,6 @@ describe("host work limits", () => {
     await settled(started.sessionId!);
     await advance();
     const used = await tasks.limits.usedMinutes();
-    expect((await tasks.limits.state()).usageUncertain).toBe(true);
     const restarted = new HostTasks(store, engine, () => clock.now);
     expect(await restarted.limits.settings()).toMatchObject({
       maxRunningTasks: 3,
@@ -4368,12 +4356,12 @@ describe("host work limits", () => {
     });
     expect(await restarted.limits.usedMinutes()).toBeCloseTo(used, 5);
   });
-  it("tracks reviewer runs and marks unobserved reviewer time uncertain", async () => {
+  it("tracks reviewer runs without charging an unobserved jump", async () => {
     const { tasks, reviewing, finish, clock } = await setup();
     const verifying = await reviewing();
     clock.now += 4 * MINUTE;
     await finish(verifying.reviewer!.sessionId!, "VERDICT: PASS");
-    expect((await tasks.limits.state()).usageUncertain).toBe(true);
+    expect((await tasks.limits.state()).usedMinutes).toBeLessThan(1);
   });
 });
 it("caches unchanged lists and filters projects before JSON parsing", async () => {
