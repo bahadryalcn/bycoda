@@ -162,6 +162,7 @@ export {
   canCompactHarnessContext,
   steerHarnessTurn,
   canSteerHarness,
+  isHarnessSteerReady,
   steerAppliesModelSettings,
   canRewindHarnessLastTurn,
   rewindHarnessLastTurn,

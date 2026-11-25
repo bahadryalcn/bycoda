@@ -1,26 +1,16 @@
 # Credits and acknowledgments
 
-## Original work and its contributors
+## Original work
 
-bycoda was originally built on an MIT-licensed open source project created by
-Nick, and has since been developed independently.
-
-Thank you to Nick, the original developers, and community contributors for the
-foundation, code, integrations, and open source work that made this project
-possible. Original contributions remain the work of their respective authors.
-
-The original `Copyright (c) 2026 Nick` notice and MIT license text are preserved
-in [LICENSE](LICENSE).
+bycoda started from an MIT-licensed open source project. Code that came from it, and changes imported from
+community pull requests, keep their authors. The original copyright notice and the MIT license text are kept in
+[LICENSE](LICENSE), as the license requires.
 
 ## bycoda
 
-[bahadryalcn](https://github.com/bahadryalcn) independently develops and maintains
-bycoda. Changes imported from the original project or community pull requests
-retain their authorship.
-
-This repository starts with a consolidated source snapshot. Earlier development
-history is not included; original authorship and license notices remain preserved.
-The maintained repository is [bahadryalcn/bycoda](https://github.com/bahadryalcn/bycoda).
+[bahadryalcn](https://github.com/bahadryalcn) develops and maintains bycoda at
+[bahadryalcn/bycoda](https://github.com/bahadryalcn/bycoda). The repository starts from a consolidated source
+snapshot, so earlier development history is not included.
 
 ## Dependencies and providers
 

@@ -12,7 +12,7 @@ struct Fixture(PathBuf);
 impl Fixture {
     fn new(script: &str) -> Self {
         let path = std::env::temp_dir().join(format!(
-            "bycoda-launcher-{}-{}-Nick's $PC 日本語 &",
+            "bycoda-launcher-{}-{}-bahadryalcn's $PC 日本語 &",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));

@@ -20,13 +20,19 @@ import {
   DeliveryUnknownError,
   type DeliverySettlement,
 } from "../../../../shared/lib/deliveryUnknown";
-const transport = vi.hoisted(() => ({ steer: vi.fn(), adopted: vi.fn(), pending: vi.fn() }));
+const transport = vi.hoisted(() => ({
+  steer: vi.fn(),
+  adopted: vi.fn(),
+  pending: vi.fn(),
+  ready: vi.fn(),
+}));
 vi.mock("../../../../features/connections/model/adoptedSessionCommands", () => ({
   sendAdoptedFollowUp: transport.adopted,
   adoptedFollowUpPending: transport.pending,
 }));
 vi.mock("../../../../integrations/harness", () => ({
   canSteerHarness: () => true,
+  isHarnessSteerReady: transport.ready,
   isLiveHarness: () => true,
   appendSteerUser: (session: { blocks: unknown[] }, text: string) => ({
     ...session,
@@ -49,6 +55,7 @@ beforeEach(() => {
   transport.steer.mockReset();
   transport.adopted.mockReset().mockResolvedValue(true);
   transport.pending.mockReset().mockReturnValue(false);
+  transport.ready.mockReset().mockReturnValue(true);
   resetSessionsStore([]);
   for (
     let progress = readDeliveryProgress("steer-test");
@@ -614,4 +621,41 @@ it("queues a repeated adopted Send so the first is not duplicated and the second
   expect(getSessions()[0].queuedMessages).toEqual([
     expect.objectContaining({ text: "second draft" }),
   ]);
+});
+
+it("queues a follow-up sent while the provider is still starting without showing it as sent", () => {
+  const earlier = { id: "earlier", text: "first", attachments: [] };
+  const session = {
+    ...newSession("claude", "/fake"),
+    id: "steer-test",
+    busy: true,
+    queuedMessages: [earlier],
+  };
+  resetSessionsStore([session]);
+  transport.ready.mockReturnValue(false);
+  const ctx = {
+    dismissNoticesForContinuedSession: vi.fn(),
+    enqueueHarnessEvent: vi.fn(),
+    flushHarnessEvents: vi.fn(),
+    refs: { turnGen: { current: new Map([[session.id, 1]]) } },
+  } as unknown as SubmitDeps;
+  const input = { sessionId: session.id, text: "second", attachments: [] } as SubmitInput;
+  const pre = {
+    storedCurrent: session,
+    current: session,
+    intent: "default",
+    submittedText: input.text,
+    harnessText: input.text,
+    operatorCommand: { matched: false },
+    initialWorkCwd: session.cwd,
+  } as unknown as SubmitPreflight;
+
+  expect(steerBusySubmit(ctx, input, pre)).toBe(true);
+
+  const queued = getSessions()[0];
+  expect(queued.queuedMessages?.map((row) => row.text)).toEqual(["first", "second"]);
+  expect(queued.blocks.some((block) => block.role === "user")).toBe(false);
+  expect(readDeliveryProgress(session.id)).toBeUndefined();
+  expect(transport.steer).not.toHaveBeenCalled();
+  expect(transport.ready).toHaveBeenCalledWith("claude", session.id);
 });
