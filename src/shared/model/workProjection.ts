@@ -98,6 +98,81 @@ export function projectGoal(
   }
 }
 
+/** A Room job as the projection reads it; the job's own status, never its goal's tasks. */
+export type JobProjectionInput = {
+  status:
+    | "queued"
+    | "planning"
+    | "running"
+    | "stalled"
+    | "waiting"
+    | "done"
+    | "failed"
+    | "paused"
+    | "cancelled";
+  error?: string;
+  summary?: string;
+};
+
+const failedStop = (text: string | undefined): TaskStopSummary => ({
+  code: "unrecorded",
+  title: t("Failed"),
+  reason: firstSentence(text),
+  tone: "danger",
+});
+
+/**
+ * Phase of an assistant job. `waiting` is the job asking the owner, `paused` an assistant hold;
+ * a stalled job still runs. Room cards, voice answers and the tracked-work reader read this.
+ */
+export function projectJob(job: JobProjectionInput): WorkProjection {
+  switch (job.status) {
+    case "queued":
+      return { phase: "pending" };
+    case "planning":
+    case "running":
+    case "stalled":
+      return { phase: "running" };
+    case "waiting":
+      return { phase: "input" };
+    case "paused":
+      return projectTask({ status: "queued", wait: { code: "assistant_hold", message: "" } });
+    case "done":
+      return { phase: "done" };
+    case "cancelled":
+      return { phase: "cancelled" };
+    case "failed":
+      return { phase: "stopped", stop: failedStop(job.error ?? job.summary) };
+  }
+}
+
+/** An automation occurrence as the projection reads it. */
+export type AutomationRunProjectionInput = {
+  status: "pending" | "running" | "succeeded" | "failed" | "skipped" | "cancelled";
+  needsInput?: boolean;
+  error?: string;
+};
+
+/**
+ * Phase of an occurrence that started no task (a skipped or legacy run, or one whose task is not
+ * linked yet). An occurrence with a task takes the task's projection instead.
+ */
+export function projectAutomationRun(run: AutomationRunProjectionInput): WorkProjection {
+  switch (run.status) {
+    case "pending":
+      return { phase: "pending" };
+    case "running":
+      return { phase: run.needsInput ? "input" : "running" };
+    case "succeeded":
+      return { phase: "done" };
+    case "skipped":
+    case "cancelled":
+      return { phase: "cancelled" };
+    case "failed":
+      return { phase: "stopped", stop: failedStop(run.error) };
+  }
+}
+
 /** The status an automation occurrence takes from the phase of the work it started. */
 export function automationRunStatusOf(
   phase: WorkPhase,

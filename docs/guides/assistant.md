@@ -318,6 +318,17 @@ then advances to a future occurrence instead of replaying every missed run.
 One-time runs keep their exact scheduled time. Repeated **Run** clicks for the same
 automation share one pending launch; other automations remain independent.
 
+A background automation can run **Steps** instead of one prompt: a recipe. Choose **Repeat this**
+on a finished task to start one from its request, project, who ran it, model and helpers, then
+add task steps and **decisions**. Steps run in order; each task step is an ordinary task that
+follows the recipe's **Run with**, model and helpers unless the step sets its own. A decision
+step pauses the run until you **Approve** or **Decline**; declining stops that run with its
+reason. Editing a recipe starts a new version, and a run in progress finishes on the version it
+started with. Each step's result is saved, so a step that finished is never repeated after a Host
+restart, and a step whose outcome cannot be read is not repeated either: the run stops and names
+the step. A recipe runs by hand or on a schedule; open a run in Automations to see its steps and
+open their tasks.
+
 Plan approval can be required always, only for big jobs, or never. Big jobs have
 four or more planned tasks or span multiple projects. The selected policy is
 saved with the goal and checked before its tasks are created.

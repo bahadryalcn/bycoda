@@ -8,6 +8,12 @@ import {
   assertUnstartedAutomationTaskRetired,
   stopAutomationTask,
 } from "./task-execution";
+import { advanceRecipe, decideRecipe, startRecipeInstance } from "./recipe-execution";
+import {
+  nextRecipeVersion,
+  recipeConfigOf,
+  recipeCursor,
+} from "../../src/features/automations/model/automationRecipe";
 import { hostModelRoutingService } from "../model-routing/runtime";
 import {
   bindSessionWork,
@@ -274,6 +280,21 @@ export class HostAutomations {
         if (!this.projectScan) throw new Error("Project scan service is unavailable.");
         await this.projectScan.update(input, previous.template.sourceStewardId);
       }
+      if (input.recipe) {
+        const config = recipeConfigOf(input);
+        input = {
+          ...input,
+          recipe: {
+            ...input.recipe,
+            version: nextRecipeVersion(
+              previous?.recipe
+                ? { recipe: previous.recipe, config: recipeConfigOf(previous) }
+                : undefined,
+              { recipe: input.recipe, config },
+            ),
+          },
+        };
+      }
       // A one-time arming survives pause/resume edits that keep the schedule; any schedule change drops it.
       const armed =
         previous && sameSchedule(previous, input) && sameTrigger(previous, input)
@@ -429,6 +450,41 @@ export class HostAutomations {
     const run = row ? (JSON.parse(String(row.value)) as HostAutomationRun) : undefined;
     if (!run || (run.status !== "running" && run.status !== "pending"))
       throw new Error("Automation run is not running.");
+    if (run.recipe) {
+      const tasks = this.tasks;
+      if (!tasks) throw new Error("Canonical Task service is unavailable.");
+      const active = run.recipe.results[recipeCursor(run.recipe)];
+      const task = active?.taskId ? await tasks.get(active.taskId) : undefined;
+      if (task && ["queued", "running", "verifying"].includes(task.status))
+        await stopAutomationTask(this.store, tasks, task);
+      const now = this.now();
+      const stopped = await this.store.transaction(async () => {
+        const row = await this.store.db
+          .prepare("SELECT value FROM automation_runs WHERE id=? AND automation_id=?")
+          .get(runId, automationId);
+        const latest = row ? (JSON.parse(String(row.value)) as HostAutomationRun) : undefined;
+        if (!latest?.recipe || latest.status !== "running") return latest ?? run;
+        const results = [...latest.recipe.results];
+        const at = recipeCursor(latest.recipe);
+        const open = results[at];
+        if (open) results[at] = { ...open, status: "cancelled", at: now };
+        return this.finish(
+          {
+            ...latest,
+            cancellationRequested: true,
+            recipe: {
+              ...latest.recipe,
+              results,
+              stop: { code: "owner_stopped", stepIndex: at, nextAction: "run_again" },
+            },
+          },
+          "cancelled",
+          undefined,
+          now,
+        );
+      });
+      return { requested: true, run: stopped };
+    }
     if (run.taskId) {
       if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
       const task = await this.tasks.get(run.taskId);
@@ -754,6 +810,19 @@ export class HostAutomations {
       if (skip) return await this.finish(run, "skipped", skip, now);
       if (this.closing)
         return await this.finish(run, "skipped", "Skipped: the host is stopping.", now);
+      if (automation.recipe) {
+        if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
+        const started = await this.retainOwnedRun(run, {
+          status: "running",
+          startedAt: now,
+          recipe: startRecipeInstance(automation.recipe, recipeConfigOf(automation)),
+        });
+        // A failed first advance is retried by the tick; the instance and its results are saved.
+        return await this.settleRecipe(started, now).catch((error) => {
+          console.error("Could not start the first recipe step:", errorMessage(error));
+          return started;
+        });
+      }
       if (!run.sessionId && !run.execution) {
         const routing = hostModelRoutingService(this.store);
         const resolution = await resolveModelChoice(routing, {
@@ -895,6 +964,10 @@ export class HostAutomations {
   }
   private async settle(run: HostAutomationRun, now: number): Promise<void> {
     const automation = await this.find(run.automationId);
+    if (run.recipe) {
+      await this.settleRecipe(run, now);
+      return;
+    }
     if (run.taskId) {
       await this.store.transaction(async () => {
         if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
@@ -1020,6 +1093,49 @@ export class HostAutomations {
       return;
     }
     await this.finish(run, outcome.status, outcome.error, now);
+  }
+  /** Advances a recipe occurrence from its saved row; a repeated tick or a restart finds the same results. */
+  private async settleRecipe(run: HostAutomationRun, now: number): Promise<HostAutomationRun> {
+    return this.store.transaction(async () => {
+      if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
+      const row = await this.store.db
+        .prepare("SELECT value FROM automation_runs WHERE id=? AND automation_id=?")
+        .get(run.id, run.automationId);
+      if (!row) return run;
+      const current = JSON.parse(String(row.value)) as HostAutomationRun;
+      if (!current.recipe || !["pending", "running"].includes(current.status)) return current;
+      const advance = await advanceRecipe({ store: this.store, tasks: this.tasks }, current, now);
+      return this.applyRecipe(advance, now);
+    });
+  }
+  private async applyRecipe(
+    advance: Awaited<ReturnType<typeof advanceRecipe>>,
+    now: number,
+  ): Promise<HostAutomationRun> {
+    if (advance.done) return this.finish(advance.run, advance.done.status, advance.done.error, now);
+    const written = await this.writeRun(advance.run);
+    const latest = await this.find(written.automationId);
+    if (latest && Boolean(latest.needsInput) !== Boolean(written.needsInput))
+      await this.write({ ...latest, needsInput: written.needsInput });
+    return written;
+  }
+  /** The owner's answer to the decision step an instance waits on. */
+  async decide(automationId: string, runId: string, approve: boolean): Promise<HostAutomationRun> {
+    await this.ready;
+    return this.store.transaction(async () => {
+      if (!this.tasks) throw new Error("Canonical Task service is unavailable.");
+      const row = await this.store.db
+        .prepare("SELECT value FROM automation_runs WHERE id=? AND automation_id=?")
+        .get(runId, automationId);
+      const run = row ? (JSON.parse(String(row.value)) as HostAutomationRun) : undefined;
+      if (!run?.recipe || run.status !== "running")
+        throw new Error("This run is not waiting for a decision.");
+      const now = this.now();
+      const decided = decideRecipe(run, approve, now);
+      if (decided.done) return this.applyRecipe(decided, now);
+      const deps = { store: this.store, tasks: this.tasks };
+      return this.applyRecipe(await advanceRecipe(deps, decided.run, now), now);
+    });
   }
   /** Compensate only a reservation this exact failed run already owns. The
    * autonomous tick retries failure; no provider signal or workspace mutation. */

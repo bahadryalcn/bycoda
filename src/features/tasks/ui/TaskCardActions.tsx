@@ -18,6 +18,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { type ReactNode, useState } from "react";
 import {
   Check,
+  CheckList,
   ChevronDown,
   ChevronUp,
   GitBranch,
@@ -67,6 +68,8 @@ export type TaskActionHandlers = {
   onOpenReview: (sessionId: string) => void;
   onRecheckReview: () => void;
   onFinishWithFindings?: () => void;
+  /** Turns a finished task into a recipe; absent where the machine or task cannot. */
+  onRepeat?: () => void;
 };
 
 /** What the owner can do with a task, as the card and the detail panel both
@@ -90,14 +93,14 @@ export function TaskActions({
   openingReviewSession,
   onRecheckReview,
   onFinishWithFindings,
+  onRepeat,
   compact = false,
 }: { task: BoardTask; compact?: boolean } & TaskActionHandlers) {
   useLocale();
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [reviewPending, setReviewPending] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
-  const can = (to: TaskStatus) =>
-    canMoveTask(task.status, to, task.crewRunId ?? workCrewId(task));
+  const can = (to: TaskStatus) => canMoveTask(task.status, to, task.crewRunId ?? workCrewId(task));
   type Action = {
     id: string;
     label: string;
@@ -217,6 +220,14 @@ export function TaskActions({
       label: t("Finish with findings"),
       icon: <Check className="icon-xs" />,
       run: onFinishWithFindings,
+      disabled: busy,
+    });
+  if (onRepeat && task.status === "done")
+    secondary.push({
+      id: "repeat",
+      label: t("Repeat this"),
+      icon: <CheckList className="icon-xs" />,
+      run: onRepeat,
       disabled: busy,
     });
   if (can("todo"))

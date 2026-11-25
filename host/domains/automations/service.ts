@@ -15,6 +15,7 @@ export interface HostAutomationsServicePorts {
     delete(id: string): Promise<void>;
     runs(id: string): Promise<dto.HostAutomationRun[]>;
     runNow(id: string): Promise<dto.HostAutomationRun>;
+    decide(id: string, runId: string, approve: boolean): Promise<dto.HostAutomationRun>;
   };
 }
 type Options = { legacy?: boolean };
@@ -81,6 +82,10 @@ export function createHostAutomationsService(ports: HostAutomationsServicePorts)
     runNow: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.AutomationsIdParamsSchema, p, c, o, true, (v) =>
         ports.automations.runNow(v.automationId),
+      ),
+    decide: (p: unknown, c: HostDomainContext, o: Options = {}) =>
+      execute(dto.AutomationsDecideParamsSchema, p, c, o, true, (v) =>
+        ports.automations.decide(v.automationId, v.runId, v.approve),
       ),
   };
 }

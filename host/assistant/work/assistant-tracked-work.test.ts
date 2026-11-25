@@ -8,6 +8,7 @@ import { observeSupervisionClock } from "../../execution/confirmed-silence";
 import { HostAssistant, type AssistantPorts } from "../service";
 import { describeVerification, NO_VERIFICATION } from "./assistant-goal-verification";
 import { assistantJobNotificationBody } from "./assistant-job-holds";
+import { storeTrackedWorkReader } from "./assistant-tracked-work-reader";
 import { MAX_TRACKED_WORK, TRACKED_TERMINAL_MS } from "./assistant-tracked-work";
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -70,7 +71,7 @@ async function setup(ports: AssistantPorts = {}, autonomy: "report" | "jobs" | "
     ).filter((notice) => notice.kind !== "briefing");
   return { store, service, put, notices };
 }
-const item = (id: string, kind: "goal" | "task" | "crew" = "goal") => ({
+const item = (id: string, kind: "goal" | "task" | "crew" | "job" | "automation" = "goal") => ({
   kind,
   id,
   projectId: "project",
@@ -120,6 +121,43 @@ describe("tracked direct work", () => {
     expect(await f.notices()).toMatchObject([
       { kind: "job.failed", title: "Task: Work t1", body: "Failed: Tests crashed" },
     ]);
+  });
+
+  it("reads a Room job and an automation occurrence without a task from the one projection", async () => {
+    const f = await setup();
+    await f.store.db.exec(
+      "CREATE TABLE IF NOT EXISTS automation_runs(id TEXT PRIMARY KEY,value TEXT NOT NULL)",
+    );
+    const job = (id: string, status: string, extra: Record<string, unknown> = {}) =>
+      f.store.db
+        .prepare("INSERT INTO assistant_jobs(id,value,version,updated_at) VALUES(?,?,1,1)")
+        .run(id, JSON.stringify({ id, status, sessionIds: [], ...extra }));
+    const run = (value: { id: string }) =>
+      f.store.db
+        .prepare("INSERT INTO automation_runs(id,value) VALUES(?,?)")
+        .run(value.id, JSON.stringify(value));
+    await job("j1", "failed", { error: "The model quota ran out. Retry later." });
+    await job("j2", "waiting");
+    await run({ id: "r1", status: "failed", error: "Host restarted." });
+    // An occurrence that started a task reads as that task.
+    await run({ id: "r2", status: "running", taskId: "t9" });
+    await f.put("tasks", { id: "t9", status: "review" });
+    const read = storeTrackedWorkReader(f.store);
+    const at = { now: 10, stallMs: 1000 };
+    expect(await read({ kind: "job", id: "j1" }, at)).toEqual({
+      state: "failed",
+      summary: "Failed: The model quota ran out.",
+    });
+    expect(await read({ kind: "job", id: "j2" }, at)).toEqual({
+      state: "waiting",
+      waitingReason: "owner",
+    });
+    expect(await read({ kind: "automation", id: "r1" }, at)).toMatchObject({
+      state: "failed",
+      summary: "Failed: Host restarted.",
+    });
+    expect(await read({ kind: "automation", id: "r2" }, at)).toMatchObject({ state: "done" });
+    expect(await read({ kind: "job", id: "missing" }, at)).toBeUndefined();
   });
 
   it("tells a blocked goal what stopped its task, as the task card does", async () => {

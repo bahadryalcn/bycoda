@@ -67,6 +67,8 @@ choose helper models and an effort cap. A task may narrow, but never widen, the 
 effort cap the settings allow, whichever model it runs on. The worker, its reviewer and a crew's
 coordinator and members follow the same helper policy.
 
+A finished task offers **Repeat this**, which saves its request and run choices as a recipe under Automations.
+
 ## Understanding progress
 
 - **Queued** means the request is saved. Start requests scheduler admission; it does not promise that a worker has launched. Dependencies, concurrency and budgets still apply.
@@ -93,7 +95,9 @@ Open **Goal** beside the current work above the message input to see the provide
 
 The task list shows each independent piece of work once. The tasks an epic planned open from the epic card (**Details > Tasks**), and a crew's assignments open from the crew task's detail (**Assignments**); both show the work, model, status and reported cost, and each opens its own detail. Searching still finds them, and choosing an epic in the epic filter lists its tasks. An assignment whose crew task is not on the board stays a row. A task an automation created is the one record of that occurrence; the automation's history links to it. The task detail's **Run with** line says whether one agent or a crew ran it and which helpers were allowed, and its tooltip gives the reason the Host chose that.
 
-The same phase (pending, running, needs you, review, done, stopped, cancelled) and the same reason come from one place for tasks, epics, automation occurrences and the assistant's tracked work, so the card, the Room and a spoken or written status answer agree. Chat, dictation, reminders and a single question to a crew member are separate and never enter the list.
+The task detail lists the **Helpers** (subagents and advisors) its worker and reviewer started, with their model and the state the Host recorded; a helper has no result or cost of its own to show. When a helper failed, the task's card carries a small warning icon whose tooltip gives the helper's error. A task an automation started has **Open automation**, and a crew task has **Open crew run**, which open that automation or that run on the Crews page. The crew link appears for tasks this computer ran.
+
+The same phase (pending, running, needs you, review, done, stopped, cancelled) and the same reason come from one place for tasks, epics, Room jobs, automation occurrences and the assistant's tracked work, so the card, the Room and a spoken or written status answer agree. Chat, dictation, reminders and a single question to a crew member are separate and never enter the list.
 
 ## Retry safely
 

@@ -373,6 +373,27 @@ export const TasksEventsParamsSchema = z.strictObject({
 });
 export const TasksSaveParamsSchema = z.strictObject({ task: TaskPayloadSchema });
 export const TasksIdParamsSchema = z.strictObject({ taskId: z.string() });
+/** One task's helper subagents or advisors, or (no `taskId`) every helper that failed. */
+export const TasksHelpersParamsSchema = z.strictObject({
+  taskId: z.string().optional(),
+  failedOnly: z.boolean().optional(),
+});
+/** A delegation record as the task shows it: what the Host stored, no result text or cost. */
+export const TaskHelperSchema = z.strictObject({
+  runId: z.string(),
+  taskId: z.string(),
+  kind: z.enum(["subagent", "advisor"]),
+  title: z.string(),
+  harness: z.string(),
+  model: z.string(),
+  childSessionId: z.string().optional(),
+  status: z.enum(["running", "succeeded", "failed", "cancelled"]),
+  startedAt: z.number(),
+  finishedAt: z.number().optional(),
+  error: z.string().optional(),
+});
+export type TaskHelper = z.infer<typeof TaskHelperSchema>;
+export const TasksHelpersResultSchema = z.array(TaskHelperSchema);
 export const TasksFinishWithFindingsParamsSchema = TasksIdParamsSchema.extend({
   expectedUpdatedAt: z.number().finite(),
 });

@@ -3,3 +3,4 @@ export type * as mentionsApi from "./public/mentions";
 export type * as handlesApi from "./public/handles";
 export type * as managedApi from "./public/managed";
 export type * as uiCrewTaskPickerApi from "./public/CrewTaskPicker";
+export type * as crewsPageApi from "./public/crewsPage";

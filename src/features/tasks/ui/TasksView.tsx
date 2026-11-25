@@ -86,8 +86,16 @@ import {
 } from "./useTaskBoardOperations";
 import { TaskBoardColumns } from "./TaskBoardColumns";
 import { TaskDetail } from "./TaskDetail";
+import { useHelperFailures } from "../model/taskHelpers";
+import {
+  taskAutomationTarget,
+  taskCrewRunTarget,
+  type AutomationOpenTarget,
+} from "../model/taskLinks";
+import { openCrewsPageAt } from "../../crews/public/crewsPage";
 import { TaskToolbar, projectScopeOptions } from "./TaskToolbar";
 import { TaskBoardStatusDialog, TaskDeliveryDialog, TaskMetricsDialog } from "./TasksViewDialogs";
+import { RepeatRecipeDialog } from "../../automations/public/RepeatRecipeDialog";
 import { TasksViewDraftDialog } from "./TasksViewDraftDialog";
 import { TasksViewEmpty } from "./TasksViewEmpty";
 import { useFilteredTasks } from "./TasksViewFilter";
@@ -108,6 +116,8 @@ import { StewardsSection, useTaskStewards } from "./TaskStewards";
 import { SummaryPanel, useDailySummaryPanel } from "./TaskSummaryPanel";
 
 type Props = {
+  /** Reveals the automation that started a task; the workspace owns the Automations view. */
+  onOpenAutomation?: (target: AutomationOpenTarget) => void;
   taskReveal?: import("../model/taskReveal").TaskRevealTarget & { token: number };
   goalReveal?: { machineId: string; goalId: string; token: number };
   besideRail?: boolean;
@@ -130,6 +140,7 @@ export function TasksView({
   onOpenBackgroundSession,
   goalReveal,
   taskReveal,
+  onOpenAutomation,
 }: Props) {
   "use memo";
   const t = useT();
@@ -164,6 +175,7 @@ export function TasksView({
         onOpenBackgroundSession={onOpenBackgroundSession}
         goalReveal={goalReveal}
         taskReveal={taskReveal}
+        onOpenAutomation={onOpenAutomation}
       />
     </Text>
   );
@@ -175,7 +187,11 @@ function TasksContent({
   onOpenBackgroundSession,
   goalReveal,
   taskReveal,
-}: Pick<Props, "cwd" | "recents" | "onOpenBackgroundSession" | "goalReveal" | "taskReveal">) {
+  onOpenAutomation,
+}: Pick<
+  Props,
+  "cwd" | "recents" | "onOpenBackgroundSession" | "goalReveal" | "taskReveal" | "onOpenAutomation"
+>) {
   useLocale();
   // Tasks for a project in a locked group are not shown.
   const viewStateKey = `tasks:${cwd ? projectKey(cwd) : "global"}`;
@@ -251,6 +267,7 @@ function TasksContent({
   const discoveredProjects = board.projects;
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [deliveryTask, setDeliveryTask] = useState<BoardTask | null>(null);
+  const [repeatTask, setRepeatTask] = useState<BoardTask | null>(null);
   const [workspaceReview, setWorkspaceReview] = useState<{
     workspace: ManagedWorkspace;
     cwd: string;
@@ -566,13 +583,20 @@ function TasksContent({
   };
 
   const boardIndexes = useBoardIndexes(storedTasks, tasks, visibleTasks);
+  const helperFailures = useHelperFailures(storedTasks);
   const taskContexts = useTaskContexts(
     storedTasks,
     boardIndexes.machineTasks,
     groupLabels,
     goalTitles,
+    helperFailures,
   );
   const taskContext = (task: BoardTask) => taskContexts.get(task.machineId + ":" + task.id)!;
+  // The detail lists helpers itself; the card flag is the board's.
+  const detailContext = (task: BoardTask) => {
+    const { helperFailure: _, ...context } = taskContext(task);
+    return context;
+  };
   const actionsFor = (task: BoardTask) => {
     const sessions = taskSessionIds(task);
     const peers =
@@ -626,6 +650,7 @@ function TasksContent({
       },
       onPauseMerge: () => void actOnTask(task, () => retargetTask(task, undefined, false)),
       onEdit: () => onEdit(task),
+      onRepeat: task.status === "done" && !task.stale ? () => setRepeatTask(task) : undefined,
       onDelete: () => onDelete(task),
       onDecline: () =>
         void act(
@@ -991,6 +1016,9 @@ function TasksContent({
           }}
         />
       ) : null}
+      {repeatTask ? (
+        <RepeatRecipeDialog task={repeatTask} onClose={() => setRepeatTask(null)} />
+      ) : null}
       {deliveryTask ? (
         <TaskDeliveryDialog
           task={deliveryTask}
@@ -1126,7 +1154,17 @@ function TasksContent({
             key={`${selected.machineId}:${selected.id}`}
             task={selected}
             now={now}
-            {...taskContext(selected)}
+            {...detailContext(selected)}
+            onOpenAutomation={
+              onOpenAutomation && taskAutomationTarget(selected, machines)
+                ? () => onOpenAutomation(taskAutomationTarget(selected, machines)!)
+                : undefined
+            }
+            onOpenCrewRun={
+              taskCrewRunTarget(selected, machines)
+                ? () => openCrewsPageAt(taskCrewRunTarget(selected, machines)!)
+                : undefined
+            }
             {...actionsFor(selected)}
             onClose={() => setSelectedKey(null)}
             onSaveDetails={(title, prompt) => onSaveDetails(selected, title, prompt)}

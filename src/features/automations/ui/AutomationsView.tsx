@@ -1,5 +1,10 @@
 import { AutomationTemplateCard } from "./AutomationTemplateCard";
 import { HostAutomationFields } from "./HostAutomationFields";
+import { RecipeRunSteps } from "./RecipeRunSteps";
+import { RecipeStepsEditor, recipeStepsValid } from "./RecipeStepsEditor";
+import { newRecipeStepId } from "../model/automationRecipe";
+import { decideHostAutomationRun } from "../model/hostAutomationClient";
+import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { AutomationFixedModel, AutomationModelChoice } from "./AutomationModelChoice";
 import { WorkExecutorFields } from "../../tasks/public/workExecutor";
 import { crewIncompatibility } from "../../../shared/model/host-contracts/work-executor";
@@ -1046,11 +1051,14 @@ function RunRow({
   run,
   draft,
   onOpenSession,
+  onDecide,
 }: {
   run: AutomationRun;
   onOpenTask?: (taskId: string) => void | Promise<void>;
   draft: AutomationDraft;
   onOpenSession: (sessionId: string) => void | Promise<void>;
+  /** Answers a recipe occurrence's decision step. */
+  onDecide?: (runId: string, approve: boolean) => Promise<void>;
 }) {
   useLocale();
   const trigger = runTriggerMeta(run, draft);
@@ -1064,7 +1072,7 @@ function RunRow({
           run.taskId && onOpenTask ? t("Open task") : sessionId ? t("Open session") : undefined
         }
         disabledReason={
-          sessionId || (run.taskId && onOpenTask)
+          sessionId || (run.taskId && onOpenTask) || run.recipe
             ? undefined
             : (run.error ?? t("This run has no session yet"))
         }
@@ -1102,10 +1110,18 @@ function RunRow({
           {formatAutomationRunDuration(run)}
         </Text>
       </Button>
-      {run.error && (run.status === "failed" || run.status === "skipped") ? (
+      {run.error && !run.recipe && (run.status === "failed" || run.status === "skipped") ? (
         <ClampText lines={2} size="micro" tone="danger" className="px-4 pb-2 break-words">
           {run.error}
         </ClampText>
+      ) : null}
+      {run.recipe ? (
+        <RecipeRunSteps
+          instance={run.recipe}
+          running={run.status === "running"}
+          onOpenTask={onOpenTask}
+          onDecide={onDecide ? (approve) => onDecide(run.id, approve) : undefined}
+        />
       ) : null}
     </li>
   );
@@ -1241,7 +1257,9 @@ function AutomationEditor({
   };
   const valid =
     draft.name.trim().length > 0 &&
-    draft.prompt.trim().length > 0 &&
+    (draft.workRecipe
+      ? recipeStepsValid(draft.workRecipe.steps)
+      : draft.prompt.trim().length > 0) &&
     (looksLikeProject(draft.cwd) ||
       (draft.runInBackground && !draft.cwd && !!draft.hostMachineId)) &&
     draft.model.length > 0;
@@ -1418,29 +1436,79 @@ function AutomationEditor({
                   as="h2"
                   className="px-1"
                   actions={
-                    <InfoTooltip className="shrink-0">
-                      {t("Skills, @file references, and built-in commands work here.")}
-                    </InfoTooltip>
+                    draft.workRecipe ? undefined : (
+                      <InfoTooltip className="shrink-0">
+                        {t("Skills, @file references, and built-in commands work here.")}
+                      </InfoTooltip>
+                    )
                   }
                 >
-                  {t("Instructions")}
+                  {draft.workRecipe ? t("Steps") : t("Instructions")}
                 </SectionLabel>
+                {draft.runInBackground && !draft.hostTemplate && !draft.hostTrigger ? (
+                  <div className="mt-2 px-1">
+                    <SegmentedControl
+                      label={t("Instructions")}
+                      value={draft.workRecipe ? "steps" : "prompt"}
+                      options={[
+                        { value: "prompt", label: t("One prompt"), disabled: saving },
+                        { value: "steps", label: t("Steps"), disabled: saving },
+                      ]}
+                      onValueChange={(next) =>
+                        update(
+                          "workRecipe",
+                          next === "steps"
+                            ? (draft.workRecipe ?? {
+                                version: 1,
+                                steps: [
+                                  {
+                                    id: newRecipeStepId(),
+                                    kind: "task",
+                                    title: draft.name.trim() || t("Step 1"),
+                                    request: draft.prompt,
+                                  },
+                                ],
+                              })
+                            : undefined,
+                        )
+                      }
+                    />
+                  </div>
+                ) : null}
                 <div className="mt-2">
-                  <InstructionsField
-                    value={draft.prompt}
-                    harness={draft.harness}
-                    cwd={draft.cwd}
-                    onChange={(prompt) => update("prompt", prompt)}
-                    toolbarLeading={
-                      <AutomationModelChoice
-                        draft={draft}
-                        onChange={onChange}
-                        routingHost={routingHost}
-                        extrasBeside={extrasBeside}
-                        hideModel={draft.runInBackground}
-                      />
-                    }
-                  />
+                  {draft.workRecipe ? (
+                    <RecipeStepsEditor
+                      steps={draft.workRecipe.steps}
+                      disabled={saving}
+                      defaults={{
+                        machine: routingHost.machineId ? { id: routingHost.machineId } : undefined,
+                        routingSupported: routingHost.supported,
+                        cwd: draft.cwd,
+                        harness: draft.harness,
+                        modelSettings: draft.modelSettings,
+                        modelChoice: draft.modelChoice,
+                      }}
+                      onChange={(steps) =>
+                        update("workRecipe", { version: draft.workRecipe!.version, steps })
+                      }
+                    />
+                  ) : (
+                    <InstructionsField
+                      value={draft.prompt}
+                      harness={draft.harness}
+                      cwd={draft.cwd}
+                      onChange={(prompt) => update("prompt", prompt)}
+                      toolbarLeading={
+                        <AutomationModelChoice
+                          draft={draft}
+                          onChange={onChange}
+                          routingHost={routingHost}
+                          extrasBeside={extrasBeside}
+                          hideModel={draft.runInBackground}
+                        />
+                      }
+                    />
+                  )}
                 </div>
               </section>
 
@@ -1710,6 +1778,19 @@ function AutomationEditor({
                         draft={draft}
                         onOpenSession={onOpenSession}
                         onOpenTask={onOpenTask}
+                        onDecide={
+                          draft.id && draft.hostMachineId
+                            ? async (runId, approve) => {
+                                await decideHostAutomationRun(
+                                  draft.hostMachineId!,
+                                  draft.id!,
+                                  runId,
+                                  approve,
+                                );
+                                onRefreshHistory();
+                              }
+                            : undefined
+                        }
                       />
                     ))}
                   </ul>

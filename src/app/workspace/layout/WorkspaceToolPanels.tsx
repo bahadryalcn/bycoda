@@ -642,6 +642,10 @@ function WorkspaceToolPanelsComponent({
             onClose={onLeaveAutomations}
             onToggleSidebar={toolWindow ? undefined : onToggleSidebar}
             onOpenBackgroundSession={onOpenBackgroundSession}
+            onOpenAutomation={(target) => {
+              setAutomationReveal({ ...target, token: Date.now() });
+              onSelectTool("automations");
+            }}
           />
         </NavigationBoundary>
       </ToolPanel>

@@ -11240,6 +11240,307 @@
               "minLength": 1,
               "type": "string"
             },
+            "recipe": {
+              "additionalProperties": false,
+              "properties": {
+                "steps": {
+                  "items": {
+                    "oneOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "executor": {
+                            "oneOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "agent",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "crewDefinitionId": {
+                                    "maxLength": 64,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "const": "crew",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "crewDefinitionId"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "auto",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "helpers": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "advisor": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "harness": {
+                                        "enum": [
+                                          "codex",
+                                          "claude",
+                                          "cursor",
+                                          "grok",
+                                          "opencode",
+                                          "pi",
+                                          "omp",
+                                          "fx",
+                                          "hermes",
+                                          "antigravity",
+                                          "acp"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "model": {
+                                        "maxLength": 200,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "providerAccountId": {
+                                        "maxLength": 64,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "harness",
+                                      "model"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "maxEffort": {
+                                "maxLength": 40,
+                                "type": "string"
+                              },
+                              "mode": {
+                                "enum": [
+                                  "settings",
+                                  "off",
+                                  "use"
+                                ],
+                                "type": "string"
+                              },
+                              "models": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "harness": {
+                                      "enum": [
+                                        "codex",
+                                        "claude",
+                                        "cursor",
+                                        "grok",
+                                        "opencode",
+                                        "pi",
+                                        "omp",
+                                        "fx",
+                                        "hermes",
+                                        "antigravity",
+                                        "acp"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "model": {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "providerAccountId": {
+                                      "maxLength": 64,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "harness",
+                                    "model"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 24,
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "type": "object"
+                          },
+                          "id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "task",
+                            "type": "string"
+                          },
+                          "modelChoice": {
+                            "oneOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "default",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "order",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "pool",
+                                    "type": "string"
+                                  },
+                                  "poolId": {
+                                    "maxLength": 200,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "poolId"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "fixed",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "request": {
+                            "maxLength": 32000,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "title": {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "request"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "decision",
+                            "type": "string"
+                          },
+                          "question": {
+                            "maxLength": 2000,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "title": {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "question"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "maxItems": 20,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "version": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "version",
+                "steps"
+              ],
+              "type": "object"
+            },
             "runtimeMode": {
               "enum": [
                 "supervised",
@@ -11728,6 +12029,668 @@
           "needsInput": {
             "type": "boolean"
           },
+          "recipe": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "additionalProperties": false,
+                "properties": {
+                  "executor": {
+                    "oneOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "agent",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "crewDefinitionId": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "crew",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "crewDefinitionId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "auto",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "harness": {
+                    "enum": [
+                      "codex",
+                      "claude",
+                      "cursor",
+                      "grok",
+                      "opencode",
+                      "pi",
+                      "omp",
+                      "fx",
+                      "hermes",
+                      "antigravity",
+                      "acp"
+                    ],
+                    "type": "string"
+                  },
+                  "helpers": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "advisor": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "harness": {
+                                "enum": [
+                                  "codex",
+                                  "claude",
+                                  "cursor",
+                                  "grok",
+                                  "opencode",
+                                  "pi",
+                                  "omp",
+                                  "fx",
+                                  "hermes",
+                                  "antigravity",
+                                  "acp"
+                                ],
+                                "type": "string"
+                              },
+                              "model": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "providerAccountId": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "harness",
+                              "model"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "maxEffort": {
+                        "maxLength": 40,
+                        "type": "string"
+                      },
+                      "mode": {
+                        "enum": [
+                          "settings",
+                          "off",
+                          "use"
+                        ],
+                        "type": "string"
+                      },
+                      "models": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "harness": {
+                              "enum": [
+                                "codex",
+                                "claude",
+                                "cursor",
+                                "grok",
+                                "opencode",
+                                "pi",
+                                "omp",
+                                "fx",
+                                "hermes",
+                                "antigravity",
+                                "acp"
+                              ],
+                              "type": "string"
+                            },
+                            "model": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "providerAccountId": {
+                              "maxLength": 64,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "harness",
+                            "model"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 24,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ],
+                    "type": "object"
+                  },
+                  "isolate": {
+                    "type": "boolean"
+                  },
+                  "maxRunMinutes": {
+                    "maximum": 10080,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "modelChoice": {
+                    "oneOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "default",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "order",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "pool",
+                            "type": "string"
+                          },
+                          "poolId": {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "poolId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "fixed",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "modelSettings": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "providerAccountId": {
+                    "type": "string"
+                  },
+                  "runtimeMode": {
+                    "enum": [
+                      "supervised",
+                      "auto-accept-edits",
+                      "auto",
+                      "full-access"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "projectId",
+                  "harness",
+                  "model",
+                  "modelSettings",
+                  "runtimeMode",
+                  "maxRunMinutes"
+                ],
+                "type": "object"
+              },
+              "results": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "enum": [
+                        "running",
+                        "awaiting",
+                        "succeeded",
+                        "failed",
+                        "declined",
+                        "cancelled"
+                      ],
+                      "type": "string"
+                    },
+                    "stepId": {
+                      "maxLength": 64,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "summary": {
+                      "maxLength": 400,
+                      "type": "string"
+                    },
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "stepId",
+                    "status",
+                    "at"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "steps": {
+                "items": {
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "executor": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "agent",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "crewDefinitionId": {
+                                  "maxLength": 64,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "crew",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "crewDefinitionId"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "auto",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "helpers": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "advisor": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "harness": {
+                                      "enum": [
+                                        "codex",
+                                        "claude",
+                                        "cursor",
+                                        "grok",
+                                        "opencode",
+                                        "pi",
+                                        "omp",
+                                        "fx",
+                                        "hermes",
+                                        "antigravity",
+                                        "acp"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "model": {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "providerAccountId": {
+                                      "maxLength": 64,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "harness",
+                                    "model"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "maxEffort": {
+                              "maxLength": 40,
+                              "type": "string"
+                            },
+                            "mode": {
+                              "enum": [
+                                "settings",
+                                "off",
+                                "use"
+                              ],
+                              "type": "string"
+                            },
+                            "models": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "harness": {
+                                    "enum": [
+                                      "codex",
+                                      "claude",
+                                      "cursor",
+                                      "grok",
+                                      "opencode",
+                                      "pi",
+                                      "omp",
+                                      "fx",
+                                      "hermes",
+                                      "antigravity",
+                                      "acp"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "maxLength": 200,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "providerAccountId": {
+                                    "maxLength": 64,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "harness",
+                                  "model"
+                                ],
+                                "type": "object"
+                              },
+                              "maxItems": 24,
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "mode"
+                          ],
+                          "type": "object"
+                        },
+                        "id": {
+                          "maxLength": 64,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "task",
+                          "type": "string"
+                        },
+                        "modelChoice": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "default",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "order",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "pool",
+                                  "type": "string"
+                                },
+                                "poolId": {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "poolId"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "fixed",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "request": {
+                          "maxLength": 32000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "title": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "title",
+                        "request"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "maxLength": 64,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "decision",
+                          "type": "string"
+                        },
+                        "question": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "title": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "title",
+                        "question"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              "stop": {
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "decision_declined",
+                      "step_stopped",
+                      "step_uncertain",
+                      "owner_stopped"
+                    ],
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "nextAction": {
+                    "enum": [
+                      "open_task",
+                      "run_again"
+                    ],
+                    "type": "string"
+                  },
+                  "stepIndex": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "code",
+                  "stepIndex",
+                  "nextAction"
+                ],
+                "type": "object"
+              },
+              "version": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "version",
+              "steps",
+              "config",
+              "results"
+            ],
+            "type": "object"
+          },
           "runId": {
             "type": "string"
           },
@@ -11896,6 +12859,668 @@
             },
             "needsInput": {
               "type": "boolean"
+            },
+            "recipe": {
+              "additionalProperties": false,
+              "properties": {
+                "config": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "executor": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "agent",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "crewDefinitionId": {
+                              "maxLength": 64,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "crew",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "crewDefinitionId"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "auto",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "harness": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "helpers": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "advisor": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "harness": {
+                                  "enum": [
+                                    "codex",
+                                    "claude",
+                                    "cursor",
+                                    "grok",
+                                    "opencode",
+                                    "pi",
+                                    "omp",
+                                    "fx",
+                                    "hermes",
+                                    "antigravity",
+                                    "acp"
+                                  ],
+                                  "type": "string"
+                                },
+                                "model": {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "providerAccountId": {
+                                  "maxLength": 64,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "harness",
+                                "model"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "maxEffort": {
+                          "maxLength": 40,
+                          "type": "string"
+                        },
+                        "mode": {
+                          "enum": [
+                            "settings",
+                            "off",
+                            "use"
+                          ],
+                          "type": "string"
+                        },
+                        "models": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "harness": {
+                                "enum": [
+                                  "codex",
+                                  "claude",
+                                  "cursor",
+                                  "grok",
+                                  "opencode",
+                                  "pi",
+                                  "omp",
+                                  "fx",
+                                  "hermes",
+                                  "antigravity",
+                                  "acp"
+                                ],
+                                "type": "string"
+                              },
+                              "model": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "providerAccountId": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "harness",
+                              "model"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 24,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "mode"
+                      ],
+                      "type": "object"
+                    },
+                    "isolate": {
+                      "type": "boolean"
+                    },
+                    "maxRunMinutes": {
+                      "maximum": 10080,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "modelChoice": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "default",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "order",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "pool",
+                              "type": "string"
+                            },
+                            "poolId": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "poolId"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": {
+                              "const": "fixed",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "modelSettings": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "providerAccountId": {
+                      "type": "string"
+                    },
+                    "runtimeMode": {
+                      "enum": [
+                        "supervised",
+                        "auto-accept-edits",
+                        "auto",
+                        "full-access"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "harness",
+                    "model",
+                    "modelSettings",
+                    "runtimeMode",
+                    "maxRunMinutes"
+                  ],
+                  "type": "object"
+                },
+                "results": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "status": {
+                        "enum": [
+                          "running",
+                          "awaiting",
+                          "succeeded",
+                          "failed",
+                          "declined",
+                          "cancelled"
+                        ],
+                        "type": "string"
+                      },
+                      "stepId": {
+                        "maxLength": 64,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "summary": {
+                        "maxLength": 400,
+                        "type": "string"
+                      },
+                      "taskId": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "stepId",
+                      "status",
+                      "at"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                "steps": {
+                  "items": {
+                    "oneOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "executor": {
+                            "oneOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "agent",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "crewDefinitionId": {
+                                    "maxLength": 64,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "const": "crew",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "crewDefinitionId"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "auto",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "helpers": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "advisor": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "harness": {
+                                        "enum": [
+                                          "codex",
+                                          "claude",
+                                          "cursor",
+                                          "grok",
+                                          "opencode",
+                                          "pi",
+                                          "omp",
+                                          "fx",
+                                          "hermes",
+                                          "antigravity",
+                                          "acp"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "model": {
+                                        "maxLength": 200,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "providerAccountId": {
+                                        "maxLength": 64,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "harness",
+                                      "model"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "maxEffort": {
+                                "maxLength": 40,
+                                "type": "string"
+                              },
+                              "mode": {
+                                "enum": [
+                                  "settings",
+                                  "off",
+                                  "use"
+                                ],
+                                "type": "string"
+                              },
+                              "models": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "harness": {
+                                      "enum": [
+                                        "codex",
+                                        "claude",
+                                        "cursor",
+                                        "grok",
+                                        "opencode",
+                                        "pi",
+                                        "omp",
+                                        "fx",
+                                        "hermes",
+                                        "antigravity",
+                                        "acp"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "model": {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "providerAccountId": {
+                                      "maxLength": 64,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "harness",
+                                    "model"
+                                  ],
+                                  "type": "object"
+                                },
+                                "maxItems": 24,
+                                "type": "array"
+                              }
+                            },
+                            "required": [
+                              "mode"
+                            ],
+                            "type": "object"
+                          },
+                          "id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "task",
+                            "type": "string"
+                          },
+                          "modelChoice": {
+                            "oneOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "default",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "order",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "pool",
+                                    "type": "string"
+                                  },
+                                  "poolId": {
+                                    "maxLength": 200,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "poolId"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "const": "fixed",
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "request": {
+                            "maxLength": 32000,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "title": {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "request"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "decision",
+                            "type": "string"
+                          },
+                          "question": {
+                            "maxLength": 2000,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "title": {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "title",
+                          "question"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "maxItems": 20,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "stop": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "decision_declined",
+                        "step_stopped",
+                        "step_uncertain",
+                        "owner_stopped"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "maxLength": 1000,
+                      "type": "string"
+                    },
+                    "nextAction": {
+                      "enum": [
+                        "open_task",
+                        "run_again"
+                      ],
+                      "type": "string"
+                    },
+                    "stepIndex": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "stepIndex",
+                    "nextAction"
+                  ],
+                  "type": "object"
+                },
+                "version": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "version",
+                "steps",
+                "config",
+                "results"
+              ],
+              "type": "object"
             },
             "runId": {
               "type": "string"
@@ -12389,6 +14014,307 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "recipe": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "steps": {
+                        "items": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "executor": {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "agent",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "crewDefinitionId": {
+                                          "maxLength": 64,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "kind": {
+                                          "const": "crew",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "crewDefinitionId"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "auto",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                "helpers": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "advisor": {
+                                      "anyOf": [
+                                        {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "harness": {
+                                              "enum": [
+                                                "codex",
+                                                "claude",
+                                                "cursor",
+                                                "grok",
+                                                "opencode",
+                                                "pi",
+                                                "omp",
+                                                "fx",
+                                                "hermes",
+                                                "antigravity",
+                                                "acp"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "maxLength": 200,
+                                              "minLength": 1,
+                                              "type": "string"
+                                            },
+                                            "providerAccountId": {
+                                              "maxLength": 64,
+                                              "minLength": 1,
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "harness",
+                                            "model"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "maxEffort": {
+                                      "maxLength": 40,
+                                      "type": "string"
+                                    },
+                                    "mode": {
+                                      "enum": [
+                                        "settings",
+                                        "off",
+                                        "use"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "models": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "harness": {
+                                            "enum": [
+                                              "codex",
+                                              "claude",
+                                              "cursor",
+                                              "grok",
+                                              "opencode",
+                                              "pi",
+                                              "omp",
+                                              "fx",
+                                              "hermes",
+                                              "antigravity",
+                                              "acp"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "model": {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "providerAccountId": {
+                                            "maxLength": 64,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "harness",
+                                          "model"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "maxItems": 24,
+                                      "type": "array"
+                                    }
+                                  },
+                                  "required": [
+                                    "mode"
+                                  ],
+                                  "type": "object"
+                                },
+                                "id": {
+                                  "maxLength": 64,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "task",
+                                  "type": "string"
+                                },
+                                "modelChoice": {
+                                  "oneOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "default",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "order",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "pool",
+                                          "type": "string"
+                                        },
+                                        "poolId": {
+                                          "maxLength": 200,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind",
+                                        "poolId"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "kind": {
+                                          "const": "fixed",
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "kind"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  ]
+                                },
+                                "request": {
+                                  "maxLength": 32000,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "kind",
+                                "title",
+                                "request"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "maxLength": 64,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "decision",
+                                  "type": "string"
+                                },
+                                "question": {
+                                  "maxLength": 2000,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "kind",
+                                "title",
+                                "question"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "maxItems": 20,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "version": {
+                        "maximum": 9007199254740991,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "steps"
+                    ],
+                    "type": "object"
+                  },
                   "runtimeMode": {
                     "enum": [
                       "supervised",
@@ -12824,6 +14750,307 @@
                 "maxLength": 200,
                 "minLength": 1,
                 "type": "string"
+              },
+              "recipe": {
+                "additionalProperties": false,
+                "properties": {
+                  "steps": {
+                    "items": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "executor": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "agent",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "crewDefinitionId": {
+                                      "maxLength": 64,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "kind": {
+                                      "const": "crew",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "crewDefinitionId"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "auto",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "helpers": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "advisor": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "harness": {
+                                          "enum": [
+                                            "codex",
+                                            "claude",
+                                            "cursor",
+                                            "grok",
+                                            "opencode",
+                                            "pi",
+                                            "omp",
+                                            "fx",
+                                            "hermes",
+                                            "antigravity",
+                                            "acp"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "model": {
+                                          "maxLength": 200,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        },
+                                        "providerAccountId": {
+                                          "maxLength": 64,
+                                          "minLength": 1,
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "harness",
+                                        "model"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "maxEffort": {
+                                  "maxLength": 40,
+                                  "type": "string"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "settings",
+                                    "off",
+                                    "use"
+                                  ],
+                                  "type": "string"
+                                },
+                                "models": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "harness": {
+                                        "enum": [
+                                          "codex",
+                                          "claude",
+                                          "cursor",
+                                          "grok",
+                                          "opencode",
+                                          "pi",
+                                          "omp",
+                                          "fx",
+                                          "hermes",
+                                          "antigravity",
+                                          "acp"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "model": {
+                                        "maxLength": 200,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "providerAccountId": {
+                                        "maxLength": 64,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "harness",
+                                      "model"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "maxItems": 24,
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "mode"
+                              ],
+                              "type": "object"
+                            },
+                            "id": {
+                              "maxLength": 64,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "task",
+                              "type": "string"
+                            },
+                            "modelChoice": {
+                              "oneOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "default",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "order",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "pool",
+                                      "type": "string"
+                                    },
+                                    "poolId": {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "poolId"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "kind": {
+                                      "const": "fixed",
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind"
+                                  ],
+                                  "type": "object"
+                                }
+                              ]
+                            },
+                            "request": {
+                              "maxLength": 32000,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "title": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "title",
+                            "request"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "maxLength": 64,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "kind": {
+                              "const": "decision",
+                              "type": "string"
+                            },
+                            "question": {
+                              "maxLength": 2000,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "title": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "title",
+                            "question"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "maxItems": 20,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "version": {
+                    "maximum": 9007199254740991,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "version",
+                  "steps"
+                ],
+                "type": "object"
               },
               "runtimeMode": {
                 "enum": [
@@ -13295,6 +15522,307 @@
             "maxLength": 200,
             "minLength": 1,
             "type": "string"
+          },
+          "recipe": {
+            "additionalProperties": false,
+            "properties": {
+              "steps": {
+                "items": {
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "executor": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "agent",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "crewDefinitionId": {
+                                  "maxLength": 64,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "crew",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "crewDefinitionId"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "auto",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "helpers": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "advisor": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "harness": {
+                                      "enum": [
+                                        "codex",
+                                        "claude",
+                                        "cursor",
+                                        "grok",
+                                        "opencode",
+                                        "pi",
+                                        "omp",
+                                        "fx",
+                                        "hermes",
+                                        "antigravity",
+                                        "acp"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "model": {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "providerAccountId": {
+                                      "maxLength": 64,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "harness",
+                                    "model"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "maxEffort": {
+                              "maxLength": 40,
+                              "type": "string"
+                            },
+                            "mode": {
+                              "enum": [
+                                "settings",
+                                "off",
+                                "use"
+                              ],
+                              "type": "string"
+                            },
+                            "models": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "harness": {
+                                    "enum": [
+                                      "codex",
+                                      "claude",
+                                      "cursor",
+                                      "grok",
+                                      "opencode",
+                                      "pi",
+                                      "omp",
+                                      "fx",
+                                      "hermes",
+                                      "antigravity",
+                                      "acp"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "maxLength": 200,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "providerAccountId": {
+                                    "maxLength": 64,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "harness",
+                                  "model"
+                                ],
+                                "type": "object"
+                              },
+                              "maxItems": 24,
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "mode"
+                          ],
+                          "type": "object"
+                        },
+                        "id": {
+                          "maxLength": 64,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "task",
+                          "type": "string"
+                        },
+                        "modelChoice": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "default",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "order",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "pool",
+                                  "type": "string"
+                                },
+                                "poolId": {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "poolId"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "fixed",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "request": {
+                          "maxLength": 32000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "title": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "title",
+                        "request"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "maxLength": 64,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "decision",
+                          "type": "string"
+                        },
+                        "question": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "title": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "title",
+                        "question"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              "version": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "version",
+              "steps"
+            ],
+            "type": "object"
           },
           "runtimeMode": {
             "enum": [
@@ -120591,6 +123119,931 @@
       },
       "retry": "safe-query",
       "scope": "device"
+    },
+    "automations.decide": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "approve": {
+            "type": "boolean"
+          },
+          "automationId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "automationId",
+          "runId",
+          "approve"
+        ],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.automations.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "activityId": {
+            "type": "string"
+          },
+          "automationId": {
+            "type": "string"
+          },
+          "cancellationRequested": {
+            "type": "boolean"
+          },
+          "cleanupPending": {
+            "type": "boolean"
+          },
+          "completedAt": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          },
+          "execution": {
+            "additionalProperties": false,
+            "properties": {
+              "harness": {
+                "enum": [
+                  "codex",
+                  "claude",
+                  "cursor",
+                  "grok",
+                  "opencode",
+                  "pi",
+                  "omp",
+                  "fx",
+                  "hermes",
+                  "antigravity",
+                  "acp"
+                ],
+                "type": "string"
+              },
+              "model": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "modelSettings": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "providerAccountId": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "harness",
+              "model",
+              "modelSettings"
+            ],
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "maxRunMinutes": {
+            "maximum": 10080,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "nativeRunId": {
+            "type": "string"
+          },
+          "nativeSessionId": {
+            "type": "string"
+          },
+          "needsInput": {
+            "type": "boolean"
+          },
+          "recipe": {
+            "additionalProperties": false,
+            "properties": {
+              "config": {
+                "additionalProperties": false,
+                "properties": {
+                  "executor": {
+                    "oneOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "agent",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "crewDefinitionId": {
+                            "maxLength": 64,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "kind": {
+                            "const": "crew",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "crewDefinitionId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "auto",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "harness": {
+                    "enum": [
+                      "codex",
+                      "claude",
+                      "cursor",
+                      "grok",
+                      "opencode",
+                      "pi",
+                      "omp",
+                      "fx",
+                      "hermes",
+                      "antigravity",
+                      "acp"
+                    ],
+                    "type": "string"
+                  },
+                  "helpers": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "advisor": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "harness": {
+                                "enum": [
+                                  "codex",
+                                  "claude",
+                                  "cursor",
+                                  "grok",
+                                  "opencode",
+                                  "pi",
+                                  "omp",
+                                  "fx",
+                                  "hermes",
+                                  "antigravity",
+                                  "acp"
+                                ],
+                                "type": "string"
+                              },
+                              "model": {
+                                "maxLength": 200,
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "providerAccountId": {
+                                "maxLength": 64,
+                                "minLength": 1,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "harness",
+                              "model"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "maxEffort": {
+                        "maxLength": 40,
+                        "type": "string"
+                      },
+                      "mode": {
+                        "enum": [
+                          "settings",
+                          "off",
+                          "use"
+                        ],
+                        "type": "string"
+                      },
+                      "models": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "harness": {
+                              "enum": [
+                                "codex",
+                                "claude",
+                                "cursor",
+                                "grok",
+                                "opencode",
+                                "pi",
+                                "omp",
+                                "fx",
+                                "hermes",
+                                "antigravity",
+                                "acp"
+                              ],
+                              "type": "string"
+                            },
+                            "model": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "providerAccountId": {
+                              "maxLength": 64,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "harness",
+                            "model"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 24,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ],
+                    "type": "object"
+                  },
+                  "isolate": {
+                    "type": "boolean"
+                  },
+                  "maxRunMinutes": {
+                    "maximum": 10080,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "modelChoice": {
+                    "oneOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "default",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "order",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "pool",
+                            "type": "string"
+                          },
+                          "poolId": {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "poolId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": {
+                            "const": "fixed",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "modelSettings": {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "projectId": {
+                    "type": "string"
+                  },
+                  "providerAccountId": {
+                    "type": "string"
+                  },
+                  "runtimeMode": {
+                    "enum": [
+                      "supervised",
+                      "auto-accept-edits",
+                      "auto",
+                      "full-access"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "projectId",
+                  "harness",
+                  "model",
+                  "modelSettings",
+                  "runtimeMode",
+                  "maxRunMinutes"
+                ],
+                "type": "object"
+              },
+              "results": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "status": {
+                      "enum": [
+                        "running",
+                        "awaiting",
+                        "succeeded",
+                        "failed",
+                        "declined",
+                        "cancelled"
+                      ],
+                      "type": "string"
+                    },
+                    "stepId": {
+                      "maxLength": 64,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "summary": {
+                      "maxLength": 400,
+                      "type": "string"
+                    },
+                    "taskId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "stepId",
+                    "status",
+                    "at"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "steps": {
+                "items": {
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "executor": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "agent",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "crewDefinitionId": {
+                                  "maxLength": 64,
+                                  "minLength": 1,
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "const": "crew",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "crewDefinitionId"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "auto",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "helpers": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "advisor": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "harness": {
+                                      "enum": [
+                                        "codex",
+                                        "claude",
+                                        "cursor",
+                                        "grok",
+                                        "opencode",
+                                        "pi",
+                                        "omp",
+                                        "fx",
+                                        "hermes",
+                                        "antigravity",
+                                        "acp"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "model": {
+                                      "maxLength": 200,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    },
+                                    "providerAccountId": {
+                                      "maxLength": 64,
+                                      "minLength": 1,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "harness",
+                                    "model"
+                                  ],
+                                  "type": "object"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "maxEffort": {
+                              "maxLength": 40,
+                              "type": "string"
+                            },
+                            "mode": {
+                              "enum": [
+                                "settings",
+                                "off",
+                                "use"
+                              ],
+                              "type": "string"
+                            },
+                            "models": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "harness": {
+                                    "enum": [
+                                      "codex",
+                                      "claude",
+                                      "cursor",
+                                      "grok",
+                                      "opencode",
+                                      "pi",
+                                      "omp",
+                                      "fx",
+                                      "hermes",
+                                      "antigravity",
+                                      "acp"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "model": {
+                                    "maxLength": 200,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "providerAccountId": {
+                                    "maxLength": 64,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "harness",
+                                  "model"
+                                ],
+                                "type": "object"
+                              },
+                              "maxItems": 24,
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "mode"
+                          ],
+                          "type": "object"
+                        },
+                        "id": {
+                          "maxLength": 64,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "task",
+                          "type": "string"
+                        },
+                        "modelChoice": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "default",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "order",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "pool",
+                                  "type": "string"
+                                },
+                                "poolId": {
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "poolId"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": {
+                                  "const": "fixed",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        "request": {
+                          "maxLength": 32000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "title": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "title",
+                        "request"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "maxLength": 64,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "kind": {
+                          "const": "decision",
+                          "type": "string"
+                        },
+                        "question": {
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "title": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "title",
+                        "question"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              "stop": {
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "decision_declined",
+                      "step_stopped",
+                      "step_uncertain",
+                      "owner_stopped"
+                    ],
+                    "type": "string"
+                  },
+                  "message": {
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "nextAction": {
+                    "enum": [
+                      "open_task",
+                      "run_again"
+                    ],
+                    "type": "string"
+                  },
+                  "stepIndex": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "code",
+                  "stepIndex",
+                  "nextAction"
+                ],
+                "type": "object"
+              },
+              "version": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "version",
+              "steps",
+              "config",
+              "results"
+            ],
+            "type": "object"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "scheduledFor": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "startedAt": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "succeeded",
+              "failed",
+              "skipped",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "scheduled",
+              "manual",
+              "event"
+            ],
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "automationId",
+          "trigger",
+          "scheduledFor",
+          "createdAt",
+          "status"
+        ],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "tasks.helpers": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "failedOnly": {
+            "type": "boolean"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.tasks.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "childSessionId": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            },
+            "finishedAt": {
+              "type": "number"
+            },
+            "harness": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "subagent",
+                "advisor"
+              ],
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "runId": {
+              "type": "string"
+            },
+            "startedAt": {
+              "type": "number"
+            },
+            "status": {
+              "enum": [
+                "running",
+                "succeeded",
+                "failed",
+                "cancelled"
+              ],
+              "type": "string"
+            },
+            "taskId": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "runId",
+            "taskId",
+            "kind",
+            "title",
+            "harness",
+            "model",
+            "status",
+            "startedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "retry": "safe-query",
+      "scope": "device"
     }
   },
   "retryPolicy": {
@@ -143012,6 +146465,307 @@
                           "minLength": 1,
                           "type": "string"
                         },
+                        "recipe": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "steps": {
+                              "items": {
+                                "oneOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "executor": {
+                                        "oneOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "kind": {
+                                                "const": "agent",
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "crewDefinitionId": {
+                                                "maxLength": 64,
+                                                "minLength": 1,
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "const": "crew",
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "crewDefinitionId"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "kind": {
+                                                "const": "auto",
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind"
+                                            ],
+                                            "type": "object"
+                                          }
+                                        ]
+                                      },
+                                      "helpers": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "advisor": {
+                                            "anyOf": [
+                                              {
+                                                "additionalProperties": false,
+                                                "properties": {
+                                                  "harness": {
+                                                    "enum": [
+                                                      "codex",
+                                                      "claude",
+                                                      "cursor",
+                                                      "grok",
+                                                      "opencode",
+                                                      "pi",
+                                                      "omp",
+                                                      "fx",
+                                                      "hermes",
+                                                      "antigravity",
+                                                      "acp"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "model": {
+                                                    "maxLength": 200,
+                                                    "minLength": 1,
+                                                    "type": "string"
+                                                  },
+                                                  "providerAccountId": {
+                                                    "maxLength": 64,
+                                                    "minLength": 1,
+                                                    "type": "string"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "harness",
+                                                  "model"
+                                                ],
+                                                "type": "object"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "maxEffort": {
+                                            "maxLength": 40,
+                                            "type": "string"
+                                          },
+                                          "mode": {
+                                            "enum": [
+                                              "settings",
+                                              "off",
+                                              "use"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "models": {
+                                            "items": {
+                                              "additionalProperties": false,
+                                              "properties": {
+                                                "harness": {
+                                                  "enum": [
+                                                    "codex",
+                                                    "claude",
+                                                    "cursor",
+                                                    "grok",
+                                                    "opencode",
+                                                    "pi",
+                                                    "omp",
+                                                    "fx",
+                                                    "hermes",
+                                                    "antigravity",
+                                                    "acp"
+                                                  ],
+                                                  "type": "string"
+                                                },
+                                                "model": {
+                                                  "maxLength": 200,
+                                                  "minLength": 1,
+                                                  "type": "string"
+                                                },
+                                                "providerAccountId": {
+                                                  "maxLength": 64,
+                                                  "minLength": 1,
+                                                  "type": "string"
+                                                }
+                                              },
+                                              "required": [
+                                                "harness",
+                                                "model"
+                                              ],
+                                              "type": "object"
+                                            },
+                                            "maxItems": 24,
+                                            "type": "array"
+                                          }
+                                        },
+                                        "required": [
+                                          "mode"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "id": {
+                                        "maxLength": 64,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "task",
+                                        "type": "string"
+                                      },
+                                      "modelChoice": {
+                                        "oneOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "kind": {
+                                                "const": "default",
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "kind": {
+                                                "const": "order",
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "kind": {
+                                                "const": "pool",
+                                                "type": "string"
+                                              },
+                                              "poolId": {
+                                                "maxLength": 200,
+                                                "minLength": 1,
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind",
+                                              "poolId"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "kind": {
+                                                "const": "fixed",
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind"
+                                            ],
+                                            "type": "object"
+                                          }
+                                        ]
+                                      },
+                                      "request": {
+                                        "maxLength": 32000,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "maxLength": 200,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "kind",
+                                      "title",
+                                      "request"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "id": {
+                                        "maxLength": 64,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "const": "decision",
+                                        "type": "string"
+                                      },
+                                      "question": {
+                                        "maxLength": 2000,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "maxLength": 200,
+                                        "minLength": 1,
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "kind",
+                                      "title",
+                                      "question"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              },
+                              "maxItems": 20,
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            "version": {
+                              "maximum": 9007199254740991,
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "version",
+                            "steps"
+                          ],
+                          "type": "object"
+                        },
                         "runtimeMode": {
                           "enum": [
                             "supervised",
@@ -143448,6 +147202,307 @@
                       "minLength": 1,
                       "type": "string"
                     },
+                    "recipe": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "steps": {
+                          "items": {
+                            "oneOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "executor": {
+                                    "oneOf": [
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "kind": {
+                                            "const": "agent",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "crewDefinitionId": {
+                                            "maxLength": 64,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          },
+                                          "kind": {
+                                            "const": "crew",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "crewDefinitionId"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "kind": {
+                                            "const": "auto",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    ]
+                                  },
+                                  "helpers": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "advisor": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "harness": {
+                                                "enum": [
+                                                  "codex",
+                                                  "claude",
+                                                  "cursor",
+                                                  "grok",
+                                                  "opencode",
+                                                  "pi",
+                                                  "omp",
+                                                  "fx",
+                                                  "hermes",
+                                                  "antigravity",
+                                                  "acp"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "model": {
+                                                "maxLength": 200,
+                                                "minLength": 1,
+                                                "type": "string"
+                                              },
+                                              "providerAccountId": {
+                                                "maxLength": 64,
+                                                "minLength": 1,
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "harness",
+                                              "model"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "maxEffort": {
+                                        "maxLength": 40,
+                                        "type": "string"
+                                      },
+                                      "mode": {
+                                        "enum": [
+                                          "settings",
+                                          "off",
+                                          "use"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "models": {
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "harness": {
+                                              "enum": [
+                                                "codex",
+                                                "claude",
+                                                "cursor",
+                                                "grok",
+                                                "opencode",
+                                                "pi",
+                                                "omp",
+                                                "fx",
+                                                "hermes",
+                                                "antigravity",
+                                                "acp"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "model": {
+                                              "maxLength": 200,
+                                              "minLength": 1,
+                                              "type": "string"
+                                            },
+                                            "providerAccountId": {
+                                              "maxLength": 64,
+                                              "minLength": 1,
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "harness",
+                                            "model"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "maxItems": 24,
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "mode"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "id": {
+                                    "maxLength": 64,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "const": "task",
+                                    "type": "string"
+                                  },
+                                  "modelChoice": {
+                                    "oneOf": [
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "kind": {
+                                            "const": "default",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "kind": {
+                                            "const": "order",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "kind": {
+                                            "const": "pool",
+                                            "type": "string"
+                                          },
+                                          "poolId": {
+                                            "maxLength": 200,
+                                            "minLength": 1,
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind",
+                                          "poolId"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "kind": {
+                                            "const": "fixed",
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "kind"
+                                        ],
+                                        "type": "object"
+                                      }
+                                    ]
+                                  },
+                                  "request": {
+                                    "maxLength": 32000,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "maxLength": 200,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "title",
+                                  "request"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "id": {
+                                    "maxLength": 64,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "const": "decision",
+                                    "type": "string"
+                                  },
+                                  "question": {
+                                    "maxLength": 2000,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  },
+                                  "title": {
+                                    "maxLength": 200,
+                                    "minLength": 1,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "title",
+                                  "question"
+                                ],
+                                "type": "object"
+                              }
+                            ]
+                          },
+                          "maxItems": 20,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        "version": {
+                          "maximum": 9007199254740991,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "steps"
+                      ],
+                      "type": "object"
+                    },
                     "runtimeMode": {
                       "enum": [
                         "supervised",
@@ -143664,6 +147719,50 @@
               },
               "required": [
                 "automationId"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": {
+              "const": "2.0",
+              "type": "string"
+            },
+            "method": {
+              "const": "automations.decide",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "approve": {
+                  "type": "boolean"
+                },
+                "automationId": {
+                  "type": "string"
+                },
+                "runId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "automationId",
+                "runId",
+                "approve"
               ],
               "type": "object"
             }
@@ -150311,6 +154410,42 @@
                 "noteId",
                 "resolved"
               ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": {
+              "const": "2.0",
+              "type": "string"
+            },
+            "method": {
+              "const": "tasks.helpers",
+              "type": "string"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "failedOnly": {
+                  "type": "boolean"
+                },
+                "taskId": {
+                  "type": "string"
+                }
+              },
               "type": "object"
             }
           },
@@ -162993,5 +167128,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "c1ccf05957743c1645f4a487c5b51df5f07c1026a182b601030e30fb73975323"
+  "schemaHash": "be05fe29cfc259ca25b3dbf43e16132ae0edcf099774d7d89c854b3c9b039311"
 }

@@ -10,6 +10,11 @@ import {
   type WorkHelpers,
 } from "../../../shared/model/host-contracts/work-executor";
 import {
+  RecipeSchema,
+  type Recipe,
+  type RecipeInstance,
+} from "../../../shared/model/host-contracts/automations";
+import {
   ModelRoutingItemChoiceSchema,
   type ModelRoutingItemChoice,
   type ModelRoutingTarget,
@@ -22,9 +27,12 @@ export const HOST_AUTOMATION_ROOM = "automations.room.v1";
 export const HOST_AUTOMATION_MIGRATION = "automations.host-migration";
 export const HOST_AUTOMATION_PROJECT_TASKS = "automations.project-tasks";
 export const HOST_AUTOMATION_PROJECT_SCAN = "automations.project-scan";
+export const HOST_AUTOMATION_RECIPES = "automations.recipes";
 
 export type HostAutomationInput = AutomationSchedule & {
   template?: { kind: "project-scan"; sourceStewardId: string };
+  /** Ordered steps each occurrence runs instead of one prompt; the Host numbers its versions. */
+  recipe?: Recipe;
   id: string;
   name: string;
   prompt: string;
@@ -91,6 +99,8 @@ export type HostAutomationRun = {
   nativeRunId?: string;
   nativeSessionId?: string;
   taskId?: string;
+  /** A recipe occurrence: the version it started on, its step results and why it stopped. */
+  recipe?: RecipeInstance;
   cancellationRequested?: boolean;
   sessionId?: string;
   /** The session turn this run started. */
@@ -116,11 +126,21 @@ export function parseHostAutomation(input: unknown): HostAutomationInput {
   if (typeof v.id !== "string" || !ID.test(v.id)) throw new Error("Invalid automation ID");
   if (typeof v.name !== "string" || !v.name.trim() || v.name.length > 200)
     throw new Error("Automation name is required and must be under 200 characters.");
+  let recipe: Recipe | undefined;
+  if (v.recipe !== undefined) {
+    recipe = RecipeSchema.parse(v.recipe);
+    if (new Set(recipe.steps.map((step) => step.id)).size !== recipe.steps.length)
+      throw new Error("Recipe steps need distinct IDs.");
+    if (!v.projectId || v.trigger !== undefined || v.template !== undefined)
+      throw new Error("A recipe runs in one project, on a schedule or by hand.");
+  }
+  // A recipe's steps hold the work; its prompt only names it for lists that show one.
+  const prompt = recipe && (typeof v.prompt !== "string" || !v.prompt.trim()) ? v.name : v.prompt;
   if (
-    typeof v.prompt !== "string" ||
-    !v.prompt.trim() ||
-    v.prompt.length > 256_000 ||
-    v.prompt.includes("\0")
+    typeof prompt !== "string" ||
+    !prompt.trim() ||
+    prompt.length > 256_000 ||
+    prompt.includes("\0")
   )
     throw new Error("Automation prompt is required.");
   if (
@@ -204,12 +224,13 @@ export function parseHostAutomation(input: unknown): HostAutomationInput {
   )
     throw new Error("Invalid automation template");
   return {
+    ...(recipe ? { recipe } : {}),
     ...(v.template ? { template: v.template as HostAutomationInput["template"] } : {}),
     ...(trigger ? { trigger } : {}),
     ...(typeof v.isolate === "boolean" ? { isolate: v.isolate } : {}),
     id: v.id,
     name: v.name.trim(),
-    prompt: v.prompt,
+    prompt,
     projectId: typeof v.projectId === "string" ? v.projectId : "",
     harness: v.harness,
     ...(v.providerAccountId === undefined

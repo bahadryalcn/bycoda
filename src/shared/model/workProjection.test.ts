@@ -3,7 +3,9 @@ import {
   automationRunStatusOf,
   goalProgress,
   goalStateFromTasks,
+  projectAutomationRun,
   projectGoal,
+  projectJob,
   projectTask,
 } from "./workProjection";
 import type { TaskStop, TaskWait } from "./host-contracts/task-stop";
@@ -164,5 +166,57 @@ describe("work projection", () => {
     const second = projectTask({ ...task });
     expect(second).toEqual(first);
     expect(first.stop?.action).toBe("Fix or remove the dependency");
+  });
+});
+
+describe("job and occurrence projections", () => {
+  it("maps every Room job status to one phase", () => {
+    const phase = (status: Parameters<typeof projectJob>[0]["status"]) =>
+      projectJob({ status }).phase;
+    expect(
+      (
+        [
+          "queued",
+          "planning",
+          "running",
+          "stalled",
+          "waiting",
+          "done",
+          "failed",
+          "paused",
+          "cancelled",
+        ] as const
+      ).map(phase),
+    ).toEqual([
+      "pending",
+      "running",
+      "running",
+      "running",
+      "input",
+      "done",
+      "stopped",
+      "pending",
+      "cancelled",
+    ]);
+  });
+
+  it("gives a failed job its reason and a held job its wait", () => {
+    expect(projectJob({ status: "failed", error: "Quota ran out. Retry." }).stop).toMatchObject({
+      reason: "Quota ran out.",
+      tone: "danger",
+    });
+    expect(projectJob({ status: "paused" }).wait?.code).toBe("assistant_hold");
+  });
+
+  it("projects an occurrence that started no task", () => {
+    expect(projectAutomationRun({ status: "pending" }).phase).toBe("pending");
+    expect(projectAutomationRun({ status: "running" }).phase).toBe("running");
+    expect(projectAutomationRun({ status: "running", needsInput: true }).phase).toBe("input");
+    expect(projectAutomationRun({ status: "succeeded" }).phase).toBe("done");
+    expect(projectAutomationRun({ status: "skipped" }).phase).toBe("cancelled");
+    expect(projectAutomationRun({ status: "failed", error: "Host restarted." })).toMatchObject({
+      phase: "stopped",
+      stop: { reason: "Host restarted." },
+    });
   });
 });

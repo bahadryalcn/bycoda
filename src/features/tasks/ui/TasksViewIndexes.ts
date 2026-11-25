@@ -51,6 +51,7 @@ export function useTaskContexts(
   machineTasks: ReadonlyMap<string, BoardTask[]>,
   groupLabels: Record<string, string>,
   goalTitles: ReadonlyMap<string, string>,
+  helperFailures: ReadonlyMap<string, string>,
 ) {
   return useMemo(
     () =>
@@ -59,6 +60,7 @@ export function useTaskContexts(
           task.machineId + ":" + task.id,
           {
             project: projectDisplayNameFrom(task.cwd, groupLabels),
+            helperFailure: helperFailures.get(task.machineId + ":" + task.id),
             goal: task.goalId ? goalTitles.get(goalKey(task.machineId, task.goalId)) : undefined,
             waitingFor:
               task.status === "queued"
@@ -69,6 +71,6 @@ export function useTaskContexts(
           },
         ]),
       ),
-    [storedTasks, machineTasks, groupLabels, goalTitles],
+    [storedTasks, machineTasks, groupLabels, goalTitles, helperFailures],
   );
 }

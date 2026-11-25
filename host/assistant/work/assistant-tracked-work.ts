@@ -17,7 +17,13 @@ export type { TrackedKind, TrackedWork } from "./assistant-tracked-work-reader";
 export const MAX_TRACKED_WORK = 200;
 export const TRACKED_TERMINAL_MS = 7 * 24 * 60 * 60 * 1000;
 const GONE_GRACE_MS = 5 * 60 * 1000;
-const LABEL: Record<TrackedKind, string> = { goal: "Goal", task: "Task", crew: "Crew" };
+const LABEL: Record<TrackedKind, string> = {
+  goal: "Goal",
+  task: "Task",
+  crew: "Crew",
+  job: "Job",
+  automation: "Automation",
+};
 const NOTIFIED = new Set(["done", "failed", "waiting", "stalled"]);
 const TERMINAL = new Set(["done", "failed", "cancelled", "gone"]);
 const prefix = "tracked:";

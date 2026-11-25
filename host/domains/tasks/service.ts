@@ -21,6 +21,8 @@ export interface HostTasksServicePorts<Task extends dto.TaskIdentity> {
     preflight(raw: unknown): Promise<dto.TaskPreflightResult>;
     recordEvaluation(id: string, raw: unknown, expectedUpdatedAt: unknown): Promise<Task>;
   };
+  /** Delegation records of a task (or every failed helper); a record has no result or cost. */
+  helpers(taskId: string | undefined, failedOnly: boolean): Promise<dto.TaskHelper[]>;
   /** Composition supplies existing authenticated workspace-owner authorization. */
   retarget(
     id: string,
@@ -114,6 +116,11 @@ export function createHostTasksService<Task extends dto.TaskIdentity>(
       }),
     preflight: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.TasksSaveParamsSchema, p, c, o, (params) => ports.tasks.preflight(params.task)),
+    helpers: (p: unknown, c: HostDomainContext, o: Options = {}) =>
+      execute(dto.TasksHelpersParamsSchema, p, c, o, (params) =>
+        // Legacy validation turns an absent `taskId` into "".
+        ports.helpers(params.taskId || undefined, params.failedOnly === true),
+      ),
     recordEvaluation: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.TasksEvaluationSaveParamsSchema, p, c, o, (params) =>
         ports.tasks.recordEvaluation(params.taskId, params.evaluation, params.expectedUpdatedAt),

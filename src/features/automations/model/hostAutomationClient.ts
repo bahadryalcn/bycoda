@@ -24,6 +24,7 @@ import {
   HOST_AUTOMATION_ROOM,
   HOST_AUTOMATION_PROJECT_TASKS,
   HOST_AUTOMATION_PROJECT_SCAN,
+  HOST_AUTOMATION_RECIPES,
   type HostAutomation,
   type HostAutomationInput,
   type HostAutomationRun,
@@ -159,6 +160,7 @@ export function automationFromHost(
     modelChoice: host.modelChoice,
     workExecutor: host.executor,
     workHelpers: host.helpers,
+    workRecipe: host.recipe,
     model: host.model,
     modelSettings: host.modelSettings,
     cwd,
@@ -232,6 +234,7 @@ export function hostAutomationFromDraft(
     ...(draft.workHelpers && draft.workHelpers.mode !== "settings"
       ? { helpers: draft.workHelpers }
       : {}),
+    ...(draft.workRecipe ? { recipe: draft.workRecipe } : {}),
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
@@ -344,6 +347,8 @@ export async function saveHostAutomation(
     throw new Error("Update this Host to use automation triggers.");
   if (draft.hostTemplate && !capabilities.includes(HOST_AUTOMATION_PROJECT_SCAN))
     throw new Error("Update this Host to use Project scan.");
+  if (draft.workRecipe && !capabilities.includes(HOST_AUTOMATION_RECIPES))
+    throw new Error("Update this Host to use recipes.");
   const project = draft.cwd ? await hostProjectFor(machine, draft.cwd) : undefined;
   const saved = await writeHostAutomation(machine.id, () =>
     remoteRequest<HostAutomation>(
@@ -414,5 +419,17 @@ export async function runHostAutomationNow(automation: Automation): Promise<void
   const machineId = automation.host.machineId;
   await writeHostAutomation(machineId, () =>
     remoteRequest(machineId, "automations.runNow", { automationId: automation.id }, false, true),
+  );
+}
+
+/** Answers the decision step a recipe occurrence waits on. */
+export async function decideHostAutomationRun(
+  machineId: string,
+  automationId: string,
+  runId: string,
+  approve: boolean,
+): Promise<void> {
+  await writeHostAutomation(machineId, () =>
+    remoteRequest(machineId, "automations.decide", { automationId, runId, approve }, false, true),
   );
 }

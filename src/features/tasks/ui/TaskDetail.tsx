@@ -21,12 +21,14 @@ import { canEditTask, type TaskStatus } from "../model/hostTasks";
 import { taskStatusLine } from "../model/taskStatusLine";
 import { taskResolvedLine } from "../model/taskResolvedLine";
 import { RelatedTaskList } from "./RelatedTaskList";
+import { TaskHelperList } from "./TaskHelperList";
+import { useTaskHelpers } from "../model/taskHelpers";
 import { TaskOutcomeSummary, TaskOwnerNotices } from "./TaskStatusLine";
 import { TaskStatusReason } from "./TaskStatusReason";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { type FormEvent, type ReactNode, useRef, useState } from "react";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
-import { Pencil, Sparkles, X } from "../../../shared/ui/icons";
+import { Bot, Clock, Pencil, Sparkles, X } from "../../../shared/ui/icons";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { RUNTIME_MODE_LABEL } from "../../sessions/public/session";
 import { TaskReviewNotes } from "./TaskReviewNotes";
@@ -74,6 +76,8 @@ export function TaskDetail({
   planning,
   assignments = [],
   onOpenTask,
+  onOpenAutomation,
+  onOpenCrewRun,
   ...actions
 }: {
   task: BoardTask;
@@ -88,8 +92,13 @@ export function TaskDetail({
   /** The assignments of this task's crew run; each opens its own detail. */
   assignments?: readonly BoardTask[];
   onOpenTask?: (task: BoardTask) => void;
+  /** Opens the automation that started this task; absent when it has none or cannot be opened. */
+  onOpenAutomation?: () => void;
+  /** Opens the crew run this task belongs to; absent when it has none. */
+  onOpenCrewRun?: () => void;
 } & TaskActionHandlers) {
   useLocale();
+  const helpers = useTaskHelpers(task);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [prompt, setPrompt] = useState(task.prompt);
@@ -332,6 +341,28 @@ export function TaskDetail({
               <SectionLabel as="h3">{t("Assignments")}</SectionLabel>
               <RelatedTaskList label={t("Assignments")} tasks={assignments} onOpen={onOpenTask} />
             </section>
+          ) : null}
+          {helpers.length > 0 ? (
+            <section className="task-detail-section">
+              <SectionLabel as="h3">{t("Helpers")}</SectionLabel>
+              <TaskHelperList helpers={helpers} />
+            </section>
+          ) : null}
+          {onOpenAutomation || onOpenCrewRun ? (
+            <div className="flex flex-wrap items-center gap-1">
+              {onOpenAutomation ? (
+                <Button variant="ghost" size="xs" type="button" onClick={onOpenAutomation}>
+                  <Clock className="icon-xs" />
+                  {t("Open automation")}
+                </Button>
+              ) : null}
+              {onOpenCrewRun ? (
+                <Button variant="ghost" size="xs" type="button" onClick={onOpenCrewRun}>
+                  <Bot className="icon-xs" />
+                  {t("Open crew run")}
+                </Button>
+              ) : null}
+            </div>
           ) : null}
           {goal ? (
             <Text
