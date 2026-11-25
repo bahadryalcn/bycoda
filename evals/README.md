@@ -16,12 +16,18 @@ they do not certify natural language meaning, acoustic interruption or a model's
 compliance. Prompt/source hashes in the report identify the code actually read.
 
 ```sh
+bun test ./evals --isolate --randomize --preload ./evals/bun-preload.mjs
 pnpm exec vitest run --config evals/vitest.config.ts
-pnpm exec tsc-rs --noEmit -p evals/tsconfig.json
+pnpm exec tsrs --noEmit -p evals/tsconfig.json
 node evals/run.mjs
 node evals/run.mjs --context-only
 node --test scripts/checks/context-metrics.test.mjs scripts/checks/repository-usage.test.mjs scripts/checks/quality-patterns.test.mjs
 ```
+
+Use Bun 1.4.5 for the isolated and randomized offline suite. The preload
+resolves the voice worklet asset to a URL, which lets the evals load the
+production decision code without executing the browser worklet. The Vitest
+command runs the same tests for comparison.
 
 `run.mjs` uses the installed Vite transform in memory with middleware mode and no listener. It prints JSON and closes its transform server. It does not build the app/Host or read provider configuration. Save reports below ignored `temp/verification/<id>/`, never alongside the maintained corpus. Package aliases and CI ownership are listed in [the quality reference](../docs/reference/quality.md).
 

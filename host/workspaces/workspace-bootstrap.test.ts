@@ -27,10 +27,10 @@ import { DevPortLeases } from "../dev-servers/dev-port-leases";
 const roots: string[] = [];
 const lock = "lockfileVersion: '9.0'\n";
 const fingerprint = createHash("sha256").update(lock).digest("hex");
-async function fixture() {
+async function fixture(packageManager = "pnpm@12.21.0") {
   const root = await mkdtemp(join(tmpdir(), "bycoda-bootstrap-"));
   roots.push(root);
-  await writeFile(join(root, "package.json"), JSON.stringify({ packageManager: "pnpm@12.21.0" }));
+  await writeFile(join(root, "package.json"), JSON.stringify({ packageManager }));
   await writeFile(join(root, "pnpm-lock.yaml"), lock);
   await mkdir(join(root, "src-tauri"));
   await writeFile(join(root, "src-tauri", "Cargo.lock"), "cargo lock");
@@ -68,7 +68,10 @@ it("deduplicates concurrent preparation by workspace and lock identity and uses 
 });
 
 it("runs the pinned package manager against a real isolated workspace with a frozen lockfile", async () => {
-  const root = await fixture();
+  const { packageManager } = JSON.parse(
+    await readFile(new URL("../../package.json", import.meta.url), "utf8"),
+  );
+  const root = await fixture(packageManager);
   const initialLock =
     "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\nimporters:\n  .: {}\n";
   await writeFile(join(root, "pnpm-lock.yaml"), initialLock);

@@ -4,24 +4,8 @@
  * check-host-contracts.mjs) read the same objects Vite+ runs with.
  */
 
-/** Formatter options. */
-export const fmt = {
-  printWidth: 100,
-  tabWidth: 2,
-  semi: true,
-  singleQuote: false,
-  endOfLine: "lf",
-  sortImports: false,
-  sortPackageJson: false,
-  sortTailwindcss: false,
-  ignorePatterns: [
-    "vendor/**",
-    "scripts/checks/ui-reviewed-baseline.json",
-    "src/styles/palette.css",
-    "docs/reference/ui-components.md",
-    "docs/reference/rules.md",
-  ],
-};
+/** Shared formatter options for Vite+, Bun, and generated contract files. */
+export { default as fmt } from "../../.oxfmtrc.json" with { type: "json" };
 
 /** Lint rules. A rule set to "error" is a code invariant; a rule set to "warn" is lint debt. */
 export const lint = {

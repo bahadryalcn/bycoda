@@ -10,7 +10,7 @@ prove that Tauri, an installed service or a paid provider was exercised.
 | Entry                                                                    | Scope and cost                                                                                                                                           | Exclusions                                                                                                                                   |
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm test -- <file>`                                                    | Root Vitest source tests under `src/` and `packages/`; existing DOM setup and test doubles apply.                                                        | Host suite, Rust, browser, mobile and installed app.                                                                                         |
-| `pnpm check:web`                                                         | Existing Host-boundary contracts, root source tests, normal tsc-rs checking and the test-file type ratchet. `:fast` explicitly uses fast mode.           | Browser/native acceptance. Do not also run the same source suite unchanged through another alias.                                            |
+| `pnpm check:web`                                                         | Existing Host-boundary contracts, root source tests, normal tsrs checking and the test-file type ratchet. `:fast` explicitly uses fast mode.             | Browser/native acceptance. Do not also run the same source suite unchanged through another alias.                                            |
 | `pnpm check`                                                             | Web/source checks plus the existing Rust check chain.                                                                                                    | An installer or release is not produced or accepted by this command.                                                                         |
 | `pnpm test:host -- <file>`                                               | Existing `pretest:host` runs `host:build` first, then Host Vitest. Tests launch temporary Git/Node/PowerShell processes; files remain serial per runner. | Installed Host/device/provider acceptance. Use the installed Vitest directly only when a current required Host prebuild is already verified. |
 | `node scripts/checks/test-inventory.mjs --check`                         | Source-only command/browser ownership and ignored Rust/manual inventory. `--json` includes current script definitions.                                   | Does not execute discovered tests, native helpers or mobile commands.                                                                        |
@@ -42,7 +42,7 @@ live/device acceptance. Structural parity protects a cross-layer contract but do
 not prove that a remote operation completed. Keep the category in reports even
 when a legacy filename contains `e2e`.
 
-`pnpm build` and `pnpm host:build` retain their normal tsc-rs contracts. Builds are
+`pnpm build` and `pnpm host:build` retain their normal tsrs contracts. Builds are
 not routine prerequisites for every source-only check. A release check uses its
 frozen source, actual artifacts/hashes and the separately required platform checks.
 Model quality evaluations remain a separate, explicitly budgeted provider activity;
@@ -265,7 +265,7 @@ non-artifact network requests. Existing dist always has unknown source inclusion
 `--build` explicitly creates a new production output through Vite, captures source
 identity before/after, and fails if that source changes during the build. Its
 receipt records the captured source fingerprint, dirty-state truth and built-file
-digest; normal tsc-rs is a separate CI prerequisite.
+digest; normal tsrs is a separate CI prerequisite.
 
 ```sh
 node scripts/checks/browser-built-boot.mjs --build --dist temp/build/<id>/dist --boundary native-unavailable --output temp/verification/<id>/web --receipt temp/verification/<id>/web.json

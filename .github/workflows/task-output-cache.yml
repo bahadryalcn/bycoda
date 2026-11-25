@@ -18,7 +18,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
-          node-version: "24"
+          node-version: "26.13.1"
       - id: identity
         name: Verify complete deterministic inputs before cache lookup
         run: node scripts/checks/task-cache.mjs key --task repository-inventory

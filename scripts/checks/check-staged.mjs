@@ -5,6 +5,7 @@ import { dirname, join, relative, resolve, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { checkUiDrift, formatRegressions, scopeOf } from "./check-ui-drift.mjs";
+import { lint as lintConfig } from "./lint-config.mjs";
 
 const defaultRoot = fileURLToPath(new URL("../../", import.meta.url));
 const supported = /\.(?:[cm]?[jt]sx?|jsonc?|ya?ml|md|css|html|toml)$/;
@@ -16,47 +17,38 @@ export function stagedBlobs(root = defaultRoot) {
     .toString("utf8")
     .split("\0")
     .filter(Boolean);
-  return paths
-    .filter((file) => supported.test(file) && !file.startsWith("vendor/"))
-    .map((file) => {
-      if (isAbsolute(file) || file.split(/[\\/]/).includes(".."))
-        throw new Error("Invalid staged path");
-      const entry = git("ls-files", "--stage", "-z", "--", file)
-        .toString("utf8")
-        .split("\0")
-        .filter(Boolean);
-      if (entry.length !== 1) throw new Error(`Unmerged/ambiguous staged file: ${file}`);
-      const match = /^100(?:644|755) ([a-f0-9]{40}) 0\t/.exec(entry[0]);
-      if (!match) throw new Error(`Only regular resolved files can be checked: ${file}`);
-      const bytes = git("cat-file", "blob", match[1]);
-      if (bytes.includes(0) || bytes.length > 2 * 1024 * 1024)
-        throw new Error(`Binary/oversized staged source needs separate review: ${file}`);
-      return { file, text: bytes.toString("utf8") };
-    });
+  return (
+    paths
+      // pnpm owns the generated lockfile and validates it with frozen install.
+      .filter(
+        (file) => supported.test(file) && !file.startsWith("vendor/") && file !== "pnpm-lock.yaml",
+      )
+      .map((file) => {
+        if (isAbsolute(file) || file.split(/[\\/]/).includes(".."))
+          throw new Error("Invalid staged path");
+        const entry = git("ls-files", "--stage", "-z", "--", file)
+          .toString("utf8")
+          .split("\0")
+          .filter(Boolean);
+        if (entry.length !== 1) throw new Error(`Unmerged/ambiguous staged file: ${file}`);
+        const match = /^100(?:644|755) ([a-f0-9]{40}) 0\t/.exec(entry[0]);
+        if (!match) throw new Error(`Only regular resolved files can be checked: ${file}`);
+        const bytes = git("cat-file", "blob", match[1]);
+        if (bytes.includes(0) || bytes.length > 2 * 1024 * 1024)
+          throw new Error(`Binary/oversized staged source needs separate review: ${file}`);
+        return { file, text: bytes.toString("utf8") };
+      })
+  );
 }
 export function checkStaged({ root = defaultRoot, runTool, checkDrift = checkUiDrift } = {}) {
   const blobs = stagedBlobs(root);
   if (!blobs.length) return { evidence: "staged-source-only", checked: [], success: true };
   const require = createRequire(join(root, "package.json"));
-  // Vite+ runs both tools with the `fmt` and `lint` blocks of vite.config.ts.
-  const vpCommand = { oxfmt: "fmt", oxlint: "lint" };
-  const tool = (name, binName) => {
-    const manifestPath = require.resolve(`${name}/package.json`);
-    const manifest = require(manifestPath);
-    const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin[binName];
-    return resolve(dirname(manifestPath), bin);
+  const tool = (resolver, name, binName) => {
+    const manifestPath = resolver.resolve(`${name}/package.json`);
+    const { bin } = resolver(manifestPath);
+    return resolve(dirname(manifestPath), typeof bin === "string" ? bin : bin[binName]);
   };
-  const execute =
-    runTool ??
-    ((name, args, input) =>
-      spawnSync(process.execPath, [tool("vite-plus", "vp"), vpCommand[name], ...args], {
-        cwd: root,
-        input,
-        encoding: "utf8",
-        windowsHide: true,
-        timeout: 30_000,
-        maxBuffer: 4 * 1024 * 1024,
-      }));
   const cache = join(root, "temp/build");
   mkdirSync(cache, { recursive: true });
   const snapshot = mkdtempSync(join(cache, "staged-check-"));
@@ -65,6 +57,33 @@ export function checkStaged({ root = defaultRoot, runTool, checkDrift = checkUiD
     throw new Error("Unsafe staged snapshot location");
   const checked = [];
   try {
+    let execute = runTool;
+    if (!execute) {
+      const vp = tool(require, "vite-plus", "vp");
+      const viteRequire = createRequire(require.resolve("vite-plus/package.json"));
+      const oxlint = tool(viteRequire, "oxlint", "oxlint");
+      // Lint from the snapshot root so temp/** does not hide the staged files
+      // and the configured path-specific rules match their repository paths.
+      writeFileSync(
+        join(snapshot, ".oxlintrc.json"),
+        JSON.stringify({
+          ...lintConfig,
+          jsPlugins: lintConfig.jsPlugins.map((plugin) => ({
+            ...plugin,
+            specifier: require.resolve(plugin.specifier),
+          })),
+        }),
+      );
+      execute = (name, args, input) =>
+        spawnSync(process.execPath, [...(name === "oxfmt" ? [vp, "fmt"] : [oxlint]), ...args], {
+          cwd: name === "oxfmt" ? root : snapshot,
+          input,
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 30_000,
+          maxBuffer: 4 * 1024 * 1024,
+        });
+    }
     for (const { file, text } of blobs) {
       const format = execute("oxfmt", ["--stdin-filepath", file], text);
       if (format.error || format.status !== 0)
@@ -86,11 +105,11 @@ export function checkStaged({ root = defaultRoot, runTool, checkDrift = checkUiD
           "--no-ignore",
           "--tsconfig",
           join(root, "tsconfig.json"),
-          copy,
+          file,
         ]);
         if (lint.error || lint.status !== 0)
           throw new Error(
-            `Staged lint failed: ${file}: ${lint.error?.message ?? lint.stderr ?? "lint error"}`,
+            `Staged lint failed: ${file}: ${lint.error?.message || lint.stderr || lint.stdout || "lint error"}`,
           );
       }
       checked.push(file);

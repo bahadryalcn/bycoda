@@ -193,7 +193,7 @@ or `temp/local/<id>/`, never in skills.
 
 # Commands and files
 
-TypeScript uses `tsc-rs`; `:fast` variants enable `--fast`. Desktop: `pnpm build`,
+TypeScript uses `tsrs`; `:fast` variants enable `--fast`. Desktop: `pnpm build`,
 `pnpm host:build`, `pnpm check:web`, `pnpm check:types:rust`, each with `:fast`. Mobile
 is a separate Expo repository under `mobile/` (`pnpm typecheck` there).
 

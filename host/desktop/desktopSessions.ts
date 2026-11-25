@@ -392,17 +392,30 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 export class DesktopSessions {
+  declare private readonly paths: () => string[];
+  declare private readonly platform: NodeJS.Platform;
+  /** The app's heartbeat: running state and live prompts. */
+  declare readonly live: DesktopLive;
+  declare private readonly idleMs: number;
+  declare private readonly openDatabase: HostNotesDatabaseFactory;
+  declare private readonly waitForTruncateRetry: ((ms: number) => void) | undefined;
+
   constructor(
-    private readonly paths: () => string[] = cachedDesktopDatabasePaths,
-    private readonly platform: NodeJS.Platform = process.platform,
-    /** The app's heartbeat: running state and live prompts. */
-    readonly live = new DesktopLive(),
-    private readonly idleMs = 5000,
-    private readonly openDatabase: HostNotesDatabaseFactory = (path, options) =>
-      new DatabaseSync(path, options),
+    paths: () => string[] = cachedDesktopDatabasePaths,
+    platform: NodeJS.Platform = process.platform,
+    live = new DesktopLive(),
+    idleMs = 5000,
+    openDatabase: HostNotesDatabaseFactory = (path, options) => new DatabaseSync(path, options),
     /** Only an isolated SQLite worker may wait between physical read attempts. */
-    private readonly waitForTruncateRetry?: (ms: number) => void,
-  ) {}
+    waitForTruncateRetry?: (ms: number) => void,
+  ) {
+    this.paths = paths;
+    this.platform = platform;
+    this.live = live;
+    this.idleMs = idleMs;
+    this.openDatabase = openDatabase;
+    this.waitForTruncateRetry = waitForTruncateRetry;
+  }
 
   private stamps = new Map<string, { at: number; rows: DesktopStampRow[] }>();
 
@@ -575,16 +588,23 @@ export class DesktopSessions {
 
   /** Releases every cached connection (host shutdown). */
   close(): void {
+    void this.closeAsync().catch((error) => {
+      console.warn("[bycoda] desktop session readers did not all close cleanly", error);
+    });
+  }
+  async closeAsync(): Promise<void> {
     this.metadataGeneration++;
-    void this.sessionReadProcesses.close().catch(() => undefined);
+    const readers = Promise.all([
+      this.sessionReadProcesses.close(),
+      this.metadataReader?.close(),
+      this.transcriptReader?.close(),
+      this.pointReader?.close(),
+    ]);
     this.metadataFlights.clear();
     this.metadataKeys.clear();
     this.listMetadataCache.clear();
-    void this.metadataReader?.close();
     this.metadataReader = undefined;
-    void this.transcriptReader?.close();
     this.transcriptReader = undefined;
-    void this.pointReader?.close();
     this.pointReader = undefined;
     this.stampFlights.clear();
     this.recordFlights.clear();
@@ -594,19 +614,12 @@ export class DesktopSessions {
     this.metadataCache.clear();
     this.listSnapshots.clear();
     for (const path of Array.from(this.handles.keys())) this.drop(path);
+    await readers;
   }
   /** Read workers release OS handles before replying; metadata stays cached. */
   releaseReadHandles(): void {
     for (const path of Array.from(this.handles.keys())) this.drop(path);
   }
-  async closeAsync(): Promise<void> {
-    const reader = this.metadataReader;
-    const transcripts = this.transcriptReader;
-    const points = this.pointReader;
-    this.close();
-    await Promise.all([reader?.close(), transcripts?.close(), points?.close()]);
-  }
-
   private rows(
     db: DatabaseSync,
     columns: Set<string>,

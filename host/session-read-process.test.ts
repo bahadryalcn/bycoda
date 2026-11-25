@@ -12,6 +12,16 @@ const request: SessionReadRequest = {
   projectId: "project",
 };
 afterEach(() => vi.useRealTimers());
+
+it("reads through the real source helper using Node's built-in type stripping", async () => {
+  const processes = new SessionReadProcesses();
+  try {
+    await expect(processes.read(request, new AbortController().signal)).resolves.toBeUndefined();
+  } finally {
+    await processes.close();
+  }
+});
+
 function fixture(options: { sendError?: Error } = {}) {
   const children: Array<
     EventEmitter & {

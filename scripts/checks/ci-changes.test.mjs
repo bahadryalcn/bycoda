@@ -178,7 +178,7 @@ test("changed Rust, application and browser files select the matching cheap CI g
   for (const [file, content] of Object.entries({
     ...Object.fromEntries(changed.map((file) => [file, "// fixture"])),
     "node_modules/vite-plus/package.json": JSON.stringify({ bin: { vp: "bin/vp" } }),
-    "node_modules/tsc-rs/package.json": JSON.stringify({ bin: { "tsc-rs": "./bin/tsc-rs" } }),
+    "node_modules/tsrs/package.json": JSON.stringify({ bin: { tsrs: "./bin/tsrs" } }),
     "node_modules/vitest/package.json": JSON.stringify({ bin: { vitest: "./vitest.mjs" } }),
   })) {
     mkdirSync(path.dirname(path.join(root, file)), { recursive: true });

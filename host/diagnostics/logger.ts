@@ -66,8 +66,10 @@ export class LogSink {
   /** The one flush that has been chained but not yet started; later calls join it. */
   private scheduled: Promise<void> | undefined;
   private timer: NodeJS.Timeout | undefined;
+  declare private readonly options: LogSinkOptions;
 
-  constructor(private readonly options: LogSinkOptions) {
+  constructor(options: LogSinkOptions) {
+    this.options = options;
     this.path = join(options.dir, "host.log");
     this.minLevel = options.minLevel ?? "info";
     this.maxBytes = options.maxBytes ?? 5 * 1024 * 1024;

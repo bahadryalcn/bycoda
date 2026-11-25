@@ -58,13 +58,21 @@ const cut = (text: string, length: number) => Array.from(text).slice(0, length).
 /** Uses the desktop's note table, including its shared content-order migration. */
 export class HostNotes {
   onDelete?: (note: HostNoteDeleted) => void;
+  declare private readonly paths: typeof desktopDatabasePaths;
+  declare private readonly now: typeof Date.now;
+  declare private readonly authorizeWrite: (() => boolean) | undefined;
+  declare private readonly openDatabase: HostNotesDatabaseFactory;
   constructor(
-    private readonly paths = desktopDatabasePaths,
-    private readonly now = Date.now,
-    private readonly authorizeWrite?: () => boolean,
-    private readonly openDatabase: HostNotesDatabaseFactory = (path, options) =>
-      new DatabaseSync(path, options),
-  ) {}
+    paths = desktopDatabasePaths,
+    now = Date.now,
+    authorizeWrite?: () => boolean,
+    openDatabase: HostNotesDatabaseFactory = (path, options) => new DatabaseSync(path, options),
+  ) {
+    this.paths = paths;
+    this.now = now;
+    this.authorizeWrite = authorizeWrite;
+    this.openDatabase = openDatabase;
+  }
   // Distinguishes a new host instance from an older instance with the same write count.
   private version = Date.now();
   get revision() {

@@ -18,9 +18,14 @@ $tokens=$null; $errors=$null
 $ast=[System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'scripts/setup/windows-runner.ps1'),[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Setup parse failed'}
 # Load only guards/compiler, never the setup entrypoint or provisioning commands.
-foreach($name in @('Test-NoReparse','Test-Protected','Get-EffectiveFileRights','Assert-SafeArchive','New-ProfileFreeShim','Invoke-CleanTool','New-SanitizedProcess')) {
+foreach($name in @('Test-NoReparse','Test-Protected','Get-EffectiveFileRights','Assert-SafeArchive','New-ProfileFreeShim','Invoke-CleanTool','Test-RunnerNodeVersion','New-SanitizedProcess')) {
   $definition=$ast.FindAll({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst]},$false)|Where-Object Name -eq $name
   Invoke-Expression $definition.Extent.Text
+}
+$version=(Get-Content -LiteralPath (Join-Path $PWD '.nvmrc') -Raw).Trim()
+if(-not(Test-RunnerNodeVersion @{exitCode=0;output="v$version"})){throw 'Runner rejected the repository Node pin'}
+foreach($probe in @(@{exitCode=0;output='v24.22.3'},@{exitCode=0;output='v26.13.1-rc.1'},@{exitCode=1;output="v$version"})){
+  if(Test-RunnerNodeVersion $probe){throw 'Runner accepted an invalid Node probe'}
 }
 $Control=$env:BYCODA_RUNNER_FIXTURE
 $WindowsRoot=[Environment]::GetFolderPath('Windows')

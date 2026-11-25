@@ -1,6 +1,6 @@
 /**
  * Test type ratchet: tsconfig.json and host/tsconfig.json exclude test files and vitest does not
- * type-check, so nothing else sees type errors in tests. This runs tsc-rs over
+ * type-check, so nothing else sees type errors in tests. This runs tsrs over
  * tsconfig.tests.json and host/tsconfig.tests.json and counts errors per file against
  * scripts/checks/test-types-baseline.json. A file may not exceed its baseline (absent = 0) and a
  * non-test file may not have any error. Counts may only fall.
@@ -77,7 +77,7 @@ export function topFolder(file) {
 }
 
 export function runProject(project, platform = process.platform, execute = spawnSync) {
-  const bin = path.join(root, "node_modules/.bin", platform === "win32" ? "tsc-rs.cmd" : "tsc-rs");
+  const bin = path.join(root, "node_modules/.bin", platform === "win32" ? "tsrs.cmd" : "tsrs");
   // One command string: passing args with shell:true is deprecated, and the .cmd shim needs a shell.
   const options = {
     cwd: root,
@@ -91,12 +91,12 @@ export function runProject(project, platform = process.platform, execute = spawn
     platform === "win32"
       ? execute(`"${bin}" ${args.join(" ")}`, { ...options, shell: true })
       : execute(bin, args, options);
-  if (result.error) throw new Error(`tsc-rs failed for ${project}: ${result.error.message}`);
+  if (result.error) throw new Error(`tsrs failed for ${project}: ${result.error.message}`);
   const diagnostics = parseDiagnostics(`${result.stdout}\n${result.stderr}`);
   // A failing exit with diagnostics is the normal "errors found" case; without any it is a crash.
   if (result.status !== 0 && diagnostics.length === 0) {
     throw new Error(
-      `tsc-rs exited ${result.status} for ${project} without diagnostics:\n${result.stderr}`,
+      `tsrs exited ${result.status} for ${project} without diagnostics:\n${result.stderr}`,
     );
   }
   return diagnostics;

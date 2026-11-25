@@ -120,8 +120,8 @@ export const preflightGates = [
   },
   {
     job: "web",
-    name: "Application types (tsc-rs --fast)",
-    command: bin("tsc-rs", "--noEmit", "--fast"),
+    name: "Application types (tsrs --fast)",
+    command: bin("tsrs", "--noEmit", "--fast"),
   },
   {
     job: "web",
@@ -130,8 +130,8 @@ export const preflightGates = [
   },
   {
     job: "host",
-    name: "Host types (tsc-rs --fast)",
-    command: bin("tsc-rs", "--noEmit", "--fast", "-p", "host/tsconfig.json"),
+    name: "Host types (tsrs --fast)",
+    command: bin("tsrs", "--noEmit", "--fast", "-p", "host/tsconfig.json"),
   },
   {
     job: "scripts",
@@ -141,7 +141,7 @@ export const preflightGates = [
   {
     job: "scripts",
     name: "Evaluation harness types",
-    command: bin("tsc-rs", "--noEmit", "-p", "evals/tsconfig.json"),
+    command: bin("tsrs", "--noEmit", "-p", "evals/tsconfig.json"),
   },
   {
     job: "scripts",
@@ -156,7 +156,7 @@ export const preflightGates = [
   {
     job: "browser",
     name: "Browser fixture types",
-    command: bin("tsc-rs", "--noEmit", "-p", "tests/browser/tsconfig.json"),
+    command: bin("tsrs", "--noEmit", "-p", "tests/browser/tsconfig.json"),
   },
 ];
 

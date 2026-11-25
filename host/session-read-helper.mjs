@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 process.once("disconnect", () => process.exit(0));
 
+// Node strips the source graph's types. The hook only resolves extensionless imports.
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier.startsWith(".") && context.parentURL) {

@@ -20,12 +20,14 @@ export class AwakeClock {
   private slept = 0;
   private lastSample: number;
   private timer: ReturnType<typeof setInterval> | undefined;
+  declare private readonly wall: () => number;
+  declare private readonly tickMs: number;
+  declare private readonly gapMs: number;
 
-  constructor(
-    private readonly wall: () => number = Date.now,
-    private readonly tickMs = AWAKE_TICK_MS,
-    private readonly gapMs = AWAKE_SUSPEND_GAP_MS,
-  ) {
+  constructor(wall: () => number = Date.now, tickMs = AWAKE_TICK_MS, gapMs = AWAKE_SUSPEND_GAP_MS) {
+    this.wall = wall;
+    this.tickMs = tickMs;
+    this.gapMs = gapMs;
     this.lastSample = wall();
   }
 

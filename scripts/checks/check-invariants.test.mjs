@@ -36,6 +36,7 @@ function fixtureRoot(t) {
   // Vite+ finds the `lint` block in the nearest vite.config.*; the fixture gets the same one.
   mkdirSync(join(root, dirname(lintConfigModule)), { recursive: true });
   cpSync(join(repoRoot, lintConfigModule), join(root, lintConfigModule));
+  cpSync(join(repoRoot, ".oxfmtrc.json"), join(root, ".oxfmtrc.json"));
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "fixture", private: true }));
   writeFileSync(
     join(root, "vite.config.mjs"),

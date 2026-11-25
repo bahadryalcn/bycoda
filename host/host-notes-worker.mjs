@@ -3,7 +3,7 @@ import { registerHooks } from "node:module";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-// Node source runs need extension resolution for the existing TS module graph.
+// Node strips the source graph's types. The hook only resolves extensionless imports.
 // esbuild resolves and embeds these modules in the packaged .mjs worker.
 registerHooks({
   resolve(specifier, context, nextResolve) {

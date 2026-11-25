@@ -40,6 +40,25 @@ it.each([
   },
 );
 
+it.each([false, true])(
+  "preserves adjacent supplementary-plane letters (regex: %s)",
+  async (regex) => {
+    const root = await project(true);
+    const path = join(root, "a.txt");
+    await writeFile(path, "𐐀foo foo foo𐐀\n");
+    const options = { query: "foo", replacement: "new", wholeWord: true, regex };
+    const preview = await replaceHostContent(root, { ...options, dryRun: true }, async () => {});
+    expect(preview.replacements).toBe(1);
+    const result = await replaceHostContent(
+      root,
+      { ...options, dryRun: false, revisions: preview.revisions },
+      async () => {},
+    );
+    expect(result).toMatchObject({ replacements: 1, failures: [] });
+    expect(await readFile(path, "utf8")).toBe("𐐀foo new foo𐐀\n");
+  },
+);
+
 it("replaces regex captures, respects filters, preserves UTF-8 BOM and skips binary files", async () => {
   const root = await project(true);
   for (const name of ["a.txt", "skip.txt", "a.md"])

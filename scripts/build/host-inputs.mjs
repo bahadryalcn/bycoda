@@ -58,8 +58,12 @@ export function hostBuildPlans(source) {
       if (
         !Array.isArray(plan.entryPoints) ||
         !plan.entryPoints.length ||
-        plan.entryPoints.some((entry) => typeof entry !== "string") ||
-        typeof plan.outfile !== "string"
+        plan.entryPoints.some(
+          (entry) =>
+            typeof entry !== "string" &&
+            (typeof entry?.in !== "string" || typeof entry?.out !== "string"),
+        ) ||
+        (typeof plan.outfile === "string") === (typeof plan.outdir === "string")
       )
         throw new Error("Host build entrypoints/output must be explicit");
       plans.push(plan);
@@ -89,10 +93,6 @@ export async function discoverHostInputs(root) {
   ]);
   const outputs = new Set();
   for (const plan of plans) {
-    const output = local(plan.outfile);
-    if (!output.startsWith("build/host/")) throw new Error("Unexpected Host build output");
-    outputs.add(output);
-    if (plan.sourcemap) outputs.add(`${output}.map`);
     const result = await build({
       ...plan,
       absWorkingDir: root,
@@ -100,6 +100,11 @@ export async function discoverHostInputs(root) {
       metafile: true,
       logLevel: "silent",
     });
+    for (const name of Object.keys(result.metafile.outputs)) {
+      const output = local(name);
+      if (!output.startsWith("build/host/")) throw new Error("Unexpected Host build output");
+      outputs.add(output);
+    }
     for (const name of Object.keys(result.metafile.inputs)) {
       const input = local(name);
       // Locked dependencies are represented by the updater's install-input key.
@@ -123,7 +128,13 @@ export async function discoverHostInputs(root) {
     schemaVersion: 1,
     inputs: [...inputs].sort(),
     outputs: [...outputs].sort(),
-    entryPoints: [...new Set(plans.flatMap((plan) => plan.entryPoints.map(local)))].sort(),
+    entryPoints: [
+      ...new Set(
+        plans.flatMap((plan) =>
+          plan.entryPoints.map((entry) => local(typeof entry === "string" ? entry : entry.in)),
+        ),
+      ),
+    ].sort(),
   };
 }
 

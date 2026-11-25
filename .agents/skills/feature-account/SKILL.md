@@ -41,7 +41,7 @@ The account is optional. The app works fully signed out and sign-in is never req
 ## Focused checks
 
 - `cargo test --lib -- account:: oauth_loopback messaging::oauth` in `src-tauri/`.
-- `pnpm exec vitest run src/features/account`, `pnpm exec tsc-rs --noEmit --fast`.
+- `pnpm exec vitest run src/features/account`, `pnpm exec tsrs --noEmit --fast`.
 - No backend: `VITE_BYCODA_ACCOUNT_MOCK=1`.
 
 ## References

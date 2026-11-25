@@ -44,4 +44,4 @@ Use for the application mark, wordmark lockups, favicons, startup mark, installe
 
 ## Focused checks
 
-Run focused voice tests and normal `tsc-rs` when source changes. Inspect generated image dimensions/alpha, ICO/ICNS headers and mobile archive asset identity.
+Run focused voice tests and normal `tsrs` when source changes. Inspect generated image dimensions/alpha, ICO/ICNS headers and mobile archive asset identity.

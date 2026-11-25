@@ -49,7 +49,11 @@ export class DesktopGroupLock {
   /** Grants changed or expired: directory views must be built again. */
   onChange?: () => void;
 
-  constructor(private readonly now: () => number = Date.now) {}
+  declare private readonly now: () => number;
+
+  constructor(now: () => number = Date.now) {
+    this.now = now;
+  }
 
   /** Whether a desktop window that can run these requests is beating now. */
   ready(): boolean {
