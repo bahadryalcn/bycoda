@@ -391,7 +391,7 @@ function answerScopedText(text: string) {
 it("selects a saved Cursor model using the ACP model ID", async () => {
   const result = runCursorTextPrompt({
     cwd: "/repo",
-    model: "cursor:composer-2.5",
+    model: "composer-2.5",
     modelSettings: { model: "unexpected-model" },
     prompt: "Generate helper text",
   });

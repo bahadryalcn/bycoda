@@ -10,7 +10,6 @@ import {
 } from "../../core/providerRetirement";
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { asRecord } from "../../../../shared/lib/records";
-import { nativeModelId } from "../../../../features/sessions/model/models";
 import { AcpClient } from "../../core/acp";
 import {
   captureChildProcess,
@@ -177,8 +176,7 @@ async function ensureLive(
   operationContext?: HarnessOperationContext,
   retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
 ): Promise<LiveText> {
-  const selected = requestedModel?.trim();
-  const model = selected ? nativeModelId(selected) || undefined : undefined;
+  const model = requestedModel?.trim() || undefined;
   const settingsKey = modelSettingsKey(modelSettings);
   const generation = stopGeneration;
   const current = live;

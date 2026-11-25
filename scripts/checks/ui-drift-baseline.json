@@ -95,9 +95,6 @@
     "src/shared/ui/ControlBehaviorMatrix.tsx": {
       "one-primary-per-view": 1
     },
-    "src/shared/ui/DateRangePicker.tsx": {
-      "component-orphan": 1
-    },
     "src/shared/ui/arc/activity-heatmap/activity-heatmap.module.css": {
       "motion-literal": 2,
       "radius-size": 3

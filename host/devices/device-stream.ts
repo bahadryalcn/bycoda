@@ -459,15 +459,16 @@ export class DeviceStreams {
       clearTimeout(deadline);
       controller.abort();
       recorder.simulator = undefined;
-      if (this.recorders.get(recorder.id) !== recorder) return;
-      recorder.buffer.endRun();
-      recorder.retryAt = monotonicNow() + this.timing.backoffMs;
-      if (!received && ++recorder.failures >= this.timing.maxFailures)
-        recorder.error = new Error(
-          "DEVICE_STREAM_UNSUPPORTED: " +
-            (recorder.diagnostic || "Simulator video did not provide a key frame."),
-        );
-      this.wake(recorder);
+      if (this.recorders.get(recorder.id) === recorder) {
+        recorder.buffer.endRun();
+        recorder.retryAt = monotonicNow() + this.timing.backoffMs;
+        if (!received && ++recorder.failures >= this.timing.maxFailures)
+          recorder.error = new Error(
+            "DEVICE_STREAM_UNSUPPORTED: " +
+              (recorder.diagnostic || "Simulator video did not provide a key frame."),
+          );
+        this.wake(recorder);
+      }
     }
   }
 

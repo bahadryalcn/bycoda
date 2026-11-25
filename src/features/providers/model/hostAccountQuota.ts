@@ -3,9 +3,9 @@ import {
   cachedRemoteCapabilities,
   loadRemoteCapabilities,
   remoteRequest,
-} from "../../connections/model/connections";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { RemoteMachine } from "../../connections/model/protocol";
+} from "../../connections/public/connections";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import type { RemoteMachine } from "../../connections/public/protocol";
 import type { ProviderRateLimits, QuotaSource } from "./rateLimits";
 
 const method = "usage.quota.read";
