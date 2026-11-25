@@ -70,7 +70,7 @@
 }
 
 .chat-pane-background :is(.composer-field, .composer-highlight) {
-  max-block-size: clamp(2.75rem, 28cqb, 10rem);
+  max-block-size: clamp(2.75rem, 28cqb, var(--composer-draft-max-height));
 }
 
 .chat-pane-background .bycoda-entry-workbench {

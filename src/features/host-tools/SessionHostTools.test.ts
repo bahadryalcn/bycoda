@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SessionHostTools } from "./SessionHostTools";
+import { toolPreferences } from "./model/toolPreferences";
 import {
   deviceTouchAvailable,
   hostFeatureRequest,
@@ -783,4 +784,34 @@ it("moves an explicit Browser request to the project Host and navigates it once"
   expect(
     vi.mocked(hostToolRequest).mock.calls.some((call) => String(call[2]).startsWith("browser.")),
   ).toBe(false);
+});
+
+it("follows Settings: Use devices removes the Devices tab and removed sources leave its picker", async () => {
+  localStorage.clear();
+  toolPreferences.devicesEnabled.save(false);
+  toolPreferences.deviceHiddenMachines.save(["mac"]);
+  try {
+    await toolAct(async () =>
+      root.render(
+        createElement(SessionHostTools, { cwd: "/devices-off", sessionId: "s", title: "Off" }),
+      ),
+    );
+    expect(toolTabs().map((tab) => tab.getAttribute("aria-label"))).not.toContain("Devices");
+    expect(toolChooser().textContent).toContain("Host browser");
+    expect(
+      [
+        ...vi.mocked(hostFeatureRequest).mock.calls,
+        ...vi.mocked(hostToolRequest).mock.calls,
+      ].some((call) => String(call[2]).startsWith("devices.")),
+    ).toBe(false);
+
+    await toolAct(() => toolPreferences.devicesEnabled.save(true));
+    await clickToolTab("Devices");
+    await openMachineOptions();
+    const options = document.querySelector('[role="listbox"][aria-label="Tool machine"]');
+    expect(options?.textContent).toContain("Linux server");
+    expect(options?.textContent).not.toContain("MacBook");
+  } finally {
+    localStorage.clear();
+  }
 });

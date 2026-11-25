@@ -49,18 +49,13 @@ export function invalidRequestMessage(method: unknown, error: unknown): string {
 }
 
 /** Host header check shared by every loopback upgrade route (`/ws`, `/ws-tunnel`). */
-export function hostHeaderAllowed(
-  request: IncomingMessage,
-  server: Server,
-  allowedHosts?: readonly string[] | (() => readonly string[]),
-): boolean {
+export function hostHeaderAllowed(request: IncomingMessage, server: Server): boolean {
   const address = server.address();
   if (!address || typeof address === "string") return false;
   const allowed = [
     `127.0.0.1:${address.port}`,
     `localhost:${address.port}`,
     `[::1]:${address.port}`,
-    ...((typeof allowedHosts === "function" ? allowedHosts() : allowedHosts) ?? []),
   ];
   const host = request.headers.host;
   if (typeof host !== "string") return false;
@@ -84,7 +79,11 @@ export function hostHeaderAllowed(
   }
 }
 
-export function rejectUpgrade(socket: Duplex, status: number): void {
+export function rejectUpgrade(
+  socket: Duplex,
+  status: number,
+  headers: Readonly<Record<string, string>> = {},
+): void {
   if (socket.destroyed) return;
   const phrase =
     status === 401
@@ -97,8 +96,12 @@ export function rejectUpgrade(socket: Duplex, status: number): void {
   // After "upgrade" the HTTP server no longer listens for socket errors. A client
   // that already dropped makes this write fail, and an unhandled "error" crashes the Host.
   socket.on("error", () => socket.destroy());
-  socket.end(`HTTP/1.1 ${status} ${phrase}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`, () =>
-    socket.destroy(),
+  const extra = Object.entries(headers)
+    .map(([name, value]) => `${name}: ${value}\r\n`)
+    .join("");
+  socket.end(
+    `HTTP/1.1 ${status} ${phrase}\r\n${extra}Connection: close\r\nContent-Length: 0\r\n\r\n`,
+    () => socket.destroy(),
   );
 }
 

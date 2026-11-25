@@ -18,6 +18,8 @@ it("validates stored values and saves", () => {
   expect(() => toolPreferences.browserViewport.save("invalid" as never)).toThrow();
   toolPreferences.browserViewport.save("phone");
   expect(browserDefaultViewport()).toEqual({ width: 390, height: 844 });
+  toolPreferences.browserViewport.save("4k");
+  expect(browserDefaultViewport()).toEqual({ width: 3840, height: 2160 });
 });
 
 it("reports failed writes even when the previous value matches", () => {

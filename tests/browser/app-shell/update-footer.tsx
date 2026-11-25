@@ -17,6 +17,7 @@ import { languageReady } from "../../../src/shared/i18n";
 import { Button } from "../../../src/shared/ui/Button";
 import { ButtonGroup } from "../../../src/shared/ui/ButtonGroup";
 import { ConfirmDialog } from "../../../src/shared/ui/ConfirmDialog";
+import { NotificationBell } from "../../../src/shared/ui/NotificationBell";
 import { UpdateImpactDetails } from "../../../src/features/connections/ui/UpdateImpact";
 import {
   Clock,
@@ -142,6 +143,7 @@ function UpdateImpactFixture() {
 function UpdateFixture() {
   const notices = useUpdateNotices({ installedUpdate: consumeInstalledUpdate() });
   const [clicks, setClicks] = useState(0);
+  const [wakeEnabled, setWakeEnabled] = useState(false);
   if (params.has("account")) {
     const compact = params.has("compact");
     return (
@@ -193,6 +195,16 @@ function UpdateFixture() {
           <nav className="bycoda-rail-tools bycoda-rail-tools--footer" aria-label="Account">
             <SidebarAccountFooter
               compact={compact}
+              recoveryControl={
+                params.has("installed-notice") ? (
+                  <NotificationBell
+                    label="Notifications"
+                    count={79}
+                    countId="fixture-notification-count"
+                    tone="accent"
+                  />
+                ) : undefined
+              }
               updateNotice={
                 params.has("installed-notice") ? (
                   <SidebarUpdateFooter
@@ -214,6 +226,19 @@ function UpdateFixture() {
           name={params.get("name") ?? "Arif"}
           avatar={undefined}
           state="off"
+          wakeControls={
+            params.has("installed-notice")
+              ? {
+                  enabled: wakeEnabled,
+                  indicator: null,
+                  setEnabled: (enabled) => {
+                    setWakeEnabled(enabled);
+                    return true;
+                  },
+                  onSetup: () => setClicks((value) => value + 1),
+                }
+              : undefined
+          }
           onOpen={() => setClicks((value) => value + 1)}
         />
         <output className="update-fixture-output" data-fixture-notes>

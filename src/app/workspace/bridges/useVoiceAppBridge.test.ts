@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { createVoiceToolSessionOwner, registerVoiceToolSessionSource } from "./useVoiceAppBridge";
@@ -7,7 +7,9 @@ import { useVoiceAppBridge } from "./useVoiceAppBridge";
 import { voiceRailProjects } from "./useVoiceAppBridge";
 import { NOTHING_LOCKED } from "../../../features/group-lock/model/lockState";
 import { pathKey } from "../../../shared/lib/paths";
-import type { Session } from "../../../features/sessions/model/session";
+import { setHarnessModeLimits, type Session } from "../../../features/sessions/model/session";
+import { setHarnessAvailability } from "../../../integrations/harness/core/availabilityState";
+import { HARNESSES } from "../../../features/sessions/model/session";
 import { saveTabGroupLabel } from "../../../features/workspace/model/tabGroups";
 import { projectKey } from "../../../shared/lib/paths";
 import {
@@ -15,6 +17,15 @@ import {
   resetSessionsStore,
   sessionsRef,
 } from "../../../features/sessions/model/sessionsStore";
+
+const assistantMock = vi.hoisted(() => ({
+  profile: undefined as undefined | { execution?: { runtimeMode: string } },
+}));
+vi.mock("../../../features/assistant/model/assistantClient", () => ({
+  latestAssistantSnapshot: () =>
+    assistantMock.profile ? { profile: assistantMock.profile } : null,
+  assistantRequest: vi.fn(async () => ({})),
+}));
 
 const session = (id: string, cwd = "/project") =>
   ({ id, cwd, harness: "codex", model: "test", title: "Voice", blocks: [] }) as Session;
@@ -217,5 +228,76 @@ describe("voice management source ownership", () => {
     visible = false;
     await expect(ensure("/project")).rejects.toThrow("locked");
     expect(create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sessions the voice assistant creates", () => {
+  async function createSubmitted(harness: Session["harness"]) {
+    setHarnessAvailability(
+      Object.fromEntries(HARNESSES.map((id) => [id, true])) as Parameters<
+        typeof setHarnessAvailability
+      >[0],
+    );
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    let out: unknown;
+    const launch = vi.fn(async () => {});
+    let bridge: ReturnType<typeof useVoiceAppBridge> | undefined;
+    function Probe() {
+      bridge = useVoiceAppBridge({
+        projects: [{ path: "/project", name: "Project" }],
+        sessions: [],
+        projectPath: "/project",
+        launch,
+        appendEmpty: vi.fn(),
+      });
+      return null;
+    }
+    const element = document.createElement("div"),
+      root = createRoot(element);
+    try {
+      await act(async () => root.render(createElement(Probe)));
+      out = await bridge!.workspace.execute("workspace.sessions.create", {
+        projectPath: "/project",
+        requestId: "r1",
+        prompt: "do it",
+        submit: true,
+        harness,
+      });
+    } finally {
+      await act(async () => root.unmount());
+    }
+    const call = launch.mock.calls[0] as unknown[] | undefined;
+    if (!call) throw new Error("no launch " + JSON.stringify(out));
+    return call[0] as { runtimeMode?: string };
+  }
+  afterEach(() => {
+    assistantMock.profile = undefined;
+    setHarnessModeLimits("codex", undefined);
+    setHarnessAvailability(
+      Object.fromEntries(HARNESSES.map((id) => [id, false])) as Parameters<
+        typeof setHarnessAvailability
+      >[0],
+    );
+  });
+
+  it("opens in full access when the assistant profile's worker is full access", async () => {
+    assistantMock.profile = { execution: { runtimeMode: "full-access" } };
+    expect(await createSubmitted("codex")).toMatchObject({ runtimeMode: "full-access" });
+  });
+
+  it("keeps the provider default for other profile modes or no profile", async () => {
+    assistantMock.profile = { execution: { runtimeMode: "supervised" } };
+    expect(await createSubmitted("codex")).toMatchObject({ runtimeMode: "supervised" });
+    assistantMock.profile = undefined;
+    expect(await createSubmitted("codex")).toMatchObject({ runtimeMode: "supervised" });
+  });
+
+  it("degrades exactly like other new sessions when the harness lacks full access", async () => {
+    assistantMock.profile = { execution: { runtimeMode: "full-access" } };
+    setHarnessModeLimits("codex", {
+      runtimeModes: { "full-access": "no" },
+      newSessionMode: "auto",
+    });
+    expect(await createSubmitted("codex")).toMatchObject({ runtimeMode: "auto" });
   });
 });

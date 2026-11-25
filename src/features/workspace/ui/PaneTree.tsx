@@ -6,6 +6,7 @@ import { Portal, useMovablePortalHost } from "../../../shared/ui/Portal";
 import { OverlayParent } from "../../../shared/ui/overlay";
 import { useT } from "../../../shared/i18n";
 import {
+  Activity,
   memo,
   useCallback,
   useContext,
@@ -62,7 +63,12 @@ import {
   type PaneEdge,
   type PaneTabDropPosition,
 } from "../model/layout";
-import { sameProjectPath, type RecentProject } from "../../projects/model/recents";
+import {
+  isRemoteProjectPath,
+  sameProjectPath,
+  type RecentProject,
+} from "../../projects/model/recents";
+import { useHostSessionBindingReader } from "../../connections/public/useHostSessionBinding";
 import type { TerminalMetaPatch } from "../../terminal/model/terminalTab";
 import {
   sessionWorkCwd,
@@ -100,6 +106,7 @@ import type { SessionOrganizationResult } from "../../sessions/model/sessionOrga
 import type { Worktree } from "../../source-control/model/worktrees";
 
 type Shared = {
+  previewSessionId?: string;
   sessionOutlet?: {
     sessionId: string;
     projectPath: string;
@@ -258,6 +265,7 @@ type PaneDrag = PaneDrop;
 const DRAG_THRESHOLD = 5;
 
 function PaneTreeComponent({
+  previewSessionId,
   sessionOutlet,
   visible,
   layout,
@@ -441,6 +449,14 @@ function PaneTreeComponent({
     samePaneSessions,
   );
   const sessionById = paneSessions.byId;
+  const preview =
+    visible && renderLeaves.length === 1 && renderLeaves[0].id === previewSessionId
+      ? sessionById.get(previewSessionId)
+      : undefined;
+  const previousPreview = usePreviousLocalPreview(preview);
+  const displayedLeaves = previousPreview
+    ? [...renderLeaves, { ...renderLeaves[0], id: previousPreview.id, hidden: true }]
+    : renderLeaves;
   useLayoutEffect(() => {
     heldSessions.current = paneSessions;
     dragContents.current = {
@@ -692,9 +708,10 @@ function PaneTreeComponent({
         className="relative h-full min-h-0 min-w-0"
         data-pane-maximized={maximum?.id}
       >
-        {renderLeaves.map((leaf) => {
+        {displayedLeaves.map((leaf) => {
           const editorPane = editorPanes.find((pane) => pane.id === leaf.id);
-          const session = sessionById.get(leaf.id);
+          const parked = previousPreview?.id === leaf.id;
+          const session = parked ? previousPreview : sessionById.get(leaf.id);
           const dragging = drop?.fromId === leaf.id;
           const groupSelected = leaves.find(
             (pane) => pane.id === leaf.id || pane.tabIds?.includes(leaf.id),
@@ -705,7 +722,9 @@ function PaneTreeComponent({
           return (
             <div
               key={leaf.id}
-              data-pane-leaf={leaf.id}
+              data-pane-leaf={parked ? undefined : leaf.id}
+              inert={parked || undefined}
+              aria-hidden={parked || undefined}
               data-pane-background={paneBackgroundPlacement(rect)}
               data-pane-id={hidden ? undefined : leaf.id}
               data-pane-active={focusedId === leaf.id ? "true" : undefined}
@@ -869,6 +888,8 @@ function PaneTreeComponent({
                     >
                       <SessionPanePlacement
                         session={session}
+                        parked={parked}
+                        preview={preview?.id === session.id}
                         outlet={
                           visible && !hidden && focusedId === session.id ? sessionOutlet : undefined
                         }
@@ -993,15 +1014,51 @@ function sameProps(a: Props, b: Props): boolean {
   return keys.length === Object.keys(b).length && keys.every((key) => Object.is(a[key], b[key]));
 }
 
+/** The browsing slot can restore one prior local pane's UI after its data leaves the store. */
+function usePreviousLocalPreview(session: Session | undefined) {
+  const binding = useHostSessionBindingReader();
+  let local: Session | undefined;
+  if (session && !session.remoteExecutionEnvironmentId && !isRemoteProjectPath(session.cwd)) {
+    try {
+      if (!binding(session)) local = session;
+    } catch {
+      // The pane's recovery boundary owns an invalid binding; discard its retained UI.
+    }
+  }
+  const [history, setHistory] = useState<{ current?: Session; previous?: Session }>({});
+  if (local !== history.current) {
+    let previous = history.current;
+    if (local && previous && local.id === previous.id) previous = history.previous;
+    if (!local || !previous || !sameProjectPath(local.cwd, previous.cwd)) previous = undefined;
+    setHistory({ current: local, previous });
+    return previous;
+  }
+  return history.previous;
+}
+
 function SessionPanePlacement({
   session,
   outlet,
+  parked,
+  preview,
   children,
 }: {
   session: Session;
+  parked: boolean;
+  preview: boolean;
   outlet: Shared["sessionOutlet"];
   children: ReactNode;
 }) {
+  // Reconnect an unchanged preview. A kept tab or a newer stored revision
+  // must initialize from its current draft, queue and editing permissions.
+  const [retention, setRetention] = useState<{ parked?: Session; generation: number }>({
+    generation: 0,
+  });
+  if (parked && !retention.parked) setRetention({ ...retention, parked: session });
+  if (!parked && retention.parked) {
+    const same = preview && retention.parked.blocks === session.blocks;
+    setRetention({ generation: retention.generation + (same ? 0 : 1) });
+  }
   const homeOverlay = useContext(OverlayParent);
   const destination =
     outlet?.sessionId === session.id && sameProjectPath(outlet.projectPath, session.cwd)
@@ -1026,7 +1083,9 @@ function SessionPanePlacement({
               data-workspace-session-id={session.id}
               data-session-project={session.cwd}
             >
-              {children}
+              <Activity key={retention.generation} mode={parked ? "hidden" : "visible"}>
+                {children}
+              </Activity>
             </div>
           </Portal>
         </OverlayParent.Provider>

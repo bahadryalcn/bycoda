@@ -211,8 +211,50 @@ if (generationFixture) {
 }
 const signedInAccount = new URLSearchParams(location.search).get("account") === "signedIn";
 if (signedInAccount) installSignedInAccountFixture();
+const browserProfileFixture = new URLSearchParams(location.search).has("browserProfiles");
+let browserProfileState = {
+  agentAccess: true,
+  claudeChrome: false,
+  autoShow: true,
+  recordingFps: 4,
+  defaultProfileId: null as string | null,
+  developmentProfileId: null as string | null,
+  profiles: [{ id: "work", name: "Work", agents: false }],
+};
 mockIPC(
   (command, args) => {
+    if (browserProfileFixture) {
+      const machine = {
+        id: "fixture-browser-local",
+        name: "This computer",
+        localHost: true,
+        endpoint: "http://127.0.0.1:9999",
+        environmentId: "fixture-browser-local",
+      };
+      if (command === "local_host_connect") return machine;
+      if (command === "remote_request" && args.machineId === machine.id) {
+        if (args.method === "environment.describe")
+          return { environmentId: machine.environmentId, capabilities: ["browser.profiles.v1"] };
+        if (args.method === "browser.profiles.list") return browserProfileState;
+        if (args.method === "browser.profiles.update") {
+          const input = args.params as { action: string; value: unknown };
+          if (input.action === "grant") {
+            const grant = input.value as { id: string; agents: boolean };
+            browserProfileState = {
+              ...browserProfileState,
+              profiles: browserProfileState.profiles.map((profile) =>
+                profile.id === grant.id ? { ...profile, agents: grant.agents } : profile,
+              ),
+            };
+          }
+          if (input.action === "default" || input.action === "development") {
+            const field = input.action === "default" ? "defaultProfileId" : "developmentProfileId";
+            browserProfileState = { ...browserProfileState, [field]: input.value as string | null };
+          }
+          return browserProfileState;
+        }
+      }
+    }
     if (remoteMcpFixture) {
       if (command === "remote_machines") return [localMcpMachine, remoteMcpMachine];
       if (command === "remote_request" && args.machineId === localMcpMachine.id) {

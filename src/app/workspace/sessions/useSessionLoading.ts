@@ -157,7 +157,7 @@ export function useSessionLoading({
 
   const loadStoredSession = useCallback((sessionId: string): Promise<Session | null> => {
     const cached = loadedSessionCache.current.get(sessionId);
-    if (cached && (!cached.historyLoading || cached.storedHistory)) {
+    if (cached && !cached.historyLoading) {
       // The cache owns closed sessions only. Transfer this reference into
       // live state instead of retaining a stale duplicate while it changes.
       loadedSessionCache.current.delete(sessionId);
@@ -176,6 +176,7 @@ export function useSessionLoading({
         epoch,
       ),
       deferHistory: true,
+      cachedPreview: cached?.storedHistory ? cached : undefined,
     })
       .then((loaded) => {
         if (

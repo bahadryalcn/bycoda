@@ -67,21 +67,16 @@ async function earlierJobProblem(
   deps: NarrationSourceDeps,
   activity: AssistantActivity,
 ): Promise<boolean> {
+  if (!activity.jobId) return false;
   const rows = await deps.store.db
     .prepare(
       "SELECT id,value FROM assistant_activity WHERE deleted_at IS NULL AND id<>? AND json_extract(value,'$.jobId')=? AND json_extract(value,'$.kind') IN ('job.problem','job.waiting') AND json_extract(value,'$.createdAt')<=? AND json_extract(value,'$.createdAt')>=? ORDER BY json_extract(value,'$.createdAt') LIMIT 50",
     )
-    .all(
-      activity.id,
-      activity.jobId,
-      activity.createdAt,
-      activity.createdAt - PROBLEM_DEDUPE_MS,
-    );
+    .all(activity.id, activity.jobId, activity.createdAt, activity.createdAt - PROBLEM_DEDUPE_MS);
   for (const row of rows) {
     const earlier = JSON.parse(String(row.value)) as AssistantActivity;
     if (earlier.createdAt === activity.createdAt && String(row.id) > activity.id) continue;
-    if (earlier.kind === "job.problem" || (await stoppedByError(deps, String(row.id))))
-      return true;
+    if (earlier.kind === "job.problem" || (await stoppedByError(deps, String(row.id)))) return true;
   }
   return false;
 }

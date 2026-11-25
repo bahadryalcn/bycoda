@@ -522,6 +522,7 @@ fn oversized_canonical_writes_select_http_before_dispatch_and_keep_body_identiti
         token: "paired-owner".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     let requests = [
         (
@@ -634,6 +635,7 @@ fn ws_capability_is_bound_to_authenticated_identity_and_native_route() {
         token: "native-token".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     assert!(!state.ws_enabled(&machine));
     state.observe_ws_capability(
@@ -666,6 +668,7 @@ fn old_http_host_without_ws_capability_stays_on_compatibility_transport() {
         token: "native-token".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     state.observe_ws_capability(
         &machine,
@@ -686,6 +689,7 @@ fn authenticated_subset_ws_capabilities_are_recognized_from_the_native_registry(
         token: "native-token".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     for capability in [
         "transport.ws.sessions.v2",
@@ -725,6 +729,7 @@ fn unknown_subset_discovery_keeps_http_without_opening_or_reconnecting_a_socket(
         token: "native-token".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     let state = super::RemoteConnections::default();
     for capabilities in [
@@ -1080,6 +1085,8 @@ fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
         "tunnels.start",
         "tunnels.stop",
         "tunnels.credential",
+        "tunnels.phones",
+        "devices.bindProofKey",
         "mobile.pairing.create",
         "mobile.pairing.status",
         "mobile.pairing.cancel",
@@ -1885,6 +1892,7 @@ fn native_workspace_rejects_identical_repair_and_saved_route_replacement() {
         token: "fixture-owner".into(),
         ssh: None,
         local_host: true,
+        proof_seed: None,
     };
     write(&path, std::slice::from_ref(&machine)).unwrap();
     let transport = NativeRecoverySelection {
@@ -1966,6 +1974,7 @@ fn only_automatic_loopback_links_count_as_local_sync() {
         token: "secret-token".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     let name = "This computer (local sync)";
     assert!(is_local_sync(&local("http://127.0.0.1:3774"), name));
@@ -2078,6 +2087,7 @@ fn saved(id: &str, target: &str) -> StoredMachine {
             host_key_alias: None,
             identity_file: None,
         }),
+        proof_seed: None,
     }
 }
 
@@ -2307,6 +2317,7 @@ fn public_machine_metadata_never_contains_the_token() {
         token: "secret".into(),
         ssh: None,
         local_host: false,
+        proof_seed: None,
     };
     let value = serde_json::to_string(&stored.public()).unwrap();
     assert!(!value.contains("secret"));
@@ -2402,6 +2413,7 @@ fn local_link_record(id: &str, environment_id: &str, token: &str) -> StoredMachi
         token: token.into(),
         ssh: None,
         local_host: true,
+        proof_seed: None,
     }
 }
 
@@ -2413,8 +2425,15 @@ fn a_repaired_local_pairing_replaces_the_token_and_keeps_the_machine_id() {
         saved("mac", "me@192.168.1.5"),
         local_link_record("local", "env-1", "old-token"),
     ];
-    let repaired =
-        apply_local_repair(&mut machines, "local", "env-1", "new-token", LOCAL_NAME).unwrap();
+    let repaired = apply_local_repair(
+        &mut machines,
+        "local",
+        "env-1",
+        "new-token",
+        None,
+        LOCAL_NAME,
+    )
+    .unwrap();
     assert_eq!(repaired.id, "local");
     assert_eq!(repaired.token, "new-token");
     assert_eq!(machines.len(), 2);
@@ -2427,8 +2446,15 @@ fn a_repaired_local_pairing_replaces_the_token_and_keeps_the_machine_id() {
 #[test]
 fn a_repair_that_reaches_another_host_replaces_the_record() {
     let mut machines = vec![local_link_record("local", "env-1", "old-token")];
-    let repaired =
-        apply_local_repair(&mut machines, "local", "env-2", "new-token", LOCAL_NAME).unwrap();
+    let repaired = apply_local_repair(
+        &mut machines,
+        "local",
+        "env-2",
+        "new-token",
+        None,
+        LOCAL_NAME,
+    )
+    .unwrap();
     assert_ne!(repaired.id, "local");
     assert_eq!(repaired.environment_id, "env-2");
     assert!(repaired.local_host);
@@ -2445,7 +2471,104 @@ fn non_local_and_ssh_machines_are_never_repaired() {
     let mut machines = vec![saved("mac", "me@127.0.0.1"), remote];
     let before = serde_json::to_value(&machines).unwrap();
     for id in ["mac", "remote", "missing"] {
-        assert!(apply_local_repair(&mut machines, id, "env-r", "new-token", LOCAL_NAME).is_err());
+        assert!(
+            apply_local_repair(&mut machines, id, "env-r", "new-token", None, LOCAL_NAME).is_err()
+        );
     }
     assert_eq!(serde_json::to_value(&machines).unwrap(), before);
+}
+
+fn http_reply(status: &str, headers: &str, body: &str) -> String {
+    format!(
+        "HTTP/1.1 {status}
+{headers}Content-Type: application/json
+Content-Length: {}
+
+{body}",
+        body.len()
+    )
+}
+
+/// One HTTP exchange: the raw request head is sent back to the test, then `reply` is written.
+fn serve_once(reply: String) -> (String, std::sync::mpsc::Receiver<String>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = vec![0u8; 8192];
+        let mut length = 0;
+        // The head is complete at the blank line; the body is not needed.
+        while !buffer[..length]
+            .windows(4)
+            .any(|window| window == b"\r\n\r\n")
+        {
+            let read = stream.read(&mut buffer[length..]).unwrap();
+            if read == 0 {
+                break;
+            }
+            length += read;
+        }
+        sent.send(String::from_utf8_lossy(&buffer[..length]).into_owned())
+            .unwrap();
+        stream.write_all(reply.as_bytes()).unwrap();
+    });
+    (endpoint, received)
+}
+
+#[test]
+fn a_credential_with_a_key_signs_its_http_request_for_that_machine() {
+    let (endpoint, received) = serve_once(http_reply("200 OK", "", "{\"result\":{}}"));
+    let token = "signed-http-fixture-token";
+    let _signing = super::device_proof::PendingProof::new(token, "env-signed", [7u8; 32]);
+    super::rpc(
+        &endpoint,
+        token,
+        Some("env-signed"),
+        "projects.list",
+        serde_json::json!({}),
+    )
+    .unwrap();
+    let head = received.recv().unwrap();
+    let proof = head
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("dpop: ")
+                .or_else(|| line.strip_prefix("DPoP: "))
+        })
+        .expect("the request carries a proof");
+    assert_eq!(proof.split('.').count(), 3);
+    use base64::Engine as _;
+    let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(proof.split('.').nth(1).unwrap())
+        .unwrap();
+    let claims: serde_json::Value = serde_json::from_slice(&claims).unwrap();
+    assert_eq!(claims["htm"], "POST");
+    assert_eq!(claims["htu"], "/rpc");
+    assert_eq!(claims["eid"], "env-signed");
+}
+
+#[test]
+fn an_unbound_credential_sends_no_proof_and_a_proof_refusal_asks_for_a_private_re_pair() {
+    let (endpoint, received) = serve_once(http_reply(
+        "401 Unauthorized",
+        "X-Bycoda-Auth-Stage: proof
+",
+        "{\"error\":\"Device proof is missing or invalid\",\"reason\":\"proof-required\"}",
+    ));
+    let error = super::rpc(
+        &endpoint,
+        "unbound-http-fixture-token",
+        Some("env-unbound"),
+        "environment.describe",
+        serde_json::json!({}),
+    )
+    .unwrap_err();
+    assert!(!received.recv().unwrap().to_lowercase().contains("dpop:"));
+    assert!(
+        error.contains("[RPC_AUTHORIZATION] [RPC_PROOF_REQUIRED]"),
+        "{error}"
+    );
+    assert!(error.contains("private connection"), "{error}");
 }

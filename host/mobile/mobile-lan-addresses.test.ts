@@ -22,7 +22,8 @@ vi.mock("node:os", async (original) => ({
   }),
 }));
 
-const { reachableAddresses, localMobileAddresses, MobileLanAccess } = await import("./mobile-lan");
+const { reachableAddresses, localMobileAddresses, tailnetMobileAddresses, MobileLanAccess } =
+  await import("./mobile-lan");
 // oxlint-disable-next-line no-restricted-imports -- reads the mocked adapters this file defines
 import { networkInterfaces } from "node:os";
 
@@ -40,6 +41,30 @@ describe("reachableAddresses", () => {
       "192.168.2.145",
       "100.97.82.0",
     ]);
+  });
+  it("offers the tailnet listener only this machine's Tailscale addresses", async () => {
+    expect(tailnetMobileAddresses()).toEqual(["100.97.82.0"]);
+    const access = new MobileLanAccess(
+      "missing-mobile-tailnet-fixture/state.json",
+      "pc",
+      () => 3776,
+      tailnetMobileAddresses,
+      undefined,
+      undefined,
+      "tailscale",
+    );
+    try {
+      expect(await access.status()).toMatchObject({
+        mode: "tailscale",
+        state: "setup-required",
+        addresses: ["100.97.82.0"],
+      });
+      // A home-network address is never bound by the tailnet listener.
+      expect(await access.enable("192.168.2.145")).toMatchObject({ mode: "tailscale" });
+      expect((await access.status()).endpoint).toBeUndefined();
+    } finally {
+      await access.close();
+    }
   });
   it("includes interface labels in status without binding a listener", async () => {
     const access = new MobileLanAccess(

@@ -323,6 +323,7 @@ function WorkspaceMainAreaComponent({
                       {isHibernated(tab) ? null : (
                         <PaneTree
                           {...sessionPaneProps}
+                          previewSessionId={tab.previewSessionId}
                           sessionOutlet={
                             voiceWorkspaceOutlet?.kind === "session"
                               ? voiceWorkspaceOutlet

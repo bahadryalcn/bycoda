@@ -125,14 +125,7 @@ async function fixture(
   overrides: Partial<
     Pick<
       HostWebSocketOptions,
-      | "authenticate"
-      | "dispatch"
-      | "limits"
-      | "allowedHosts"
-      | "retryUnknownHost"
-      | "methods"
-      | "bulk"
-      | "subscriptions"
+      "authenticate" | "dispatch" | "limits" | "methods" | "bulk" | "subscriptions"
     >
   > = {},
 ) {
@@ -307,21 +300,6 @@ describe("native WebSocket upgrade and negotiation", () => {
     const client = host.connect({ headers: { Host: "127.0.0.1:54321" } });
     await client.opened;
     expect(await client.hello()).toMatchObject({ result: { environmentId: ENVIRONMENT } });
-  });
-
-  it("asks an unknown Serve host to retry during discovery without authenticating it (#822)", async () => {
-    const name = "fixture.tailnet.ts.net";
-    let pending = true;
-    const host = await fixture({
-      allowedHosts: () => (pending ? [] : [name]),
-      retryUnknownHost: (candidate: string) => pending && candidate === name,
-    });
-    const connect = (Host: string) => host.connect({ headers: { Host } }).opened;
-    await expect(connect(name)).rejects.toThrow(/503/);
-    await expect(connect("other.example")).rejects.toThrow(/400/);
-    expect(host.authenticate).not.toHaveBeenCalled();
-    pending = false;
-    await expect(connect(name)).resolves.toBeUndefined();
   });
 
   it("requires hello before data and advertises only the routed read pilot", async () => {

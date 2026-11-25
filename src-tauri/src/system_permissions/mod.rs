@@ -6,7 +6,10 @@
 
 use serde::{Deserialize, Serialize};
 
-pub mod helper_window;
+#[cfg(target_os = "macos")]
+mod app_drag;
+#[cfg(any(target_os = "macos", test))]
+mod helper_window;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
@@ -14,10 +17,6 @@ pub(crate) mod macos;
 pub mod webview_permissions;
 #[cfg(target_os = "windows")]
 mod windows;
-
-/// Emitted to the main window and the helper with a full report on change.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-pub const CHANGED_EVENT: &str = "system-permissions-changed";
 
 /// Entry `detail`: the owner switched access on in the OS, but this process
 /// only gets it after a restart.
@@ -230,6 +229,60 @@ pub async fn system_permission_request(
     }
     #[allow(unreachable_code)]
     Ok(entry(id))
+}
+
+#[tauri::command(async)]
+pub async fn reveal_permission_app() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    return tauri::async_runtime::spawn_blocking(macos::reveal_app)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    #[cfg(not(target_os = "macos"))]
+    Err("Finder is unavailable on this system.".into())
+}
+
+#[tauri::command(async)]
+pub async fn show_permission_helper(
+    app: tauri::AppHandle,
+    id: PermissionId,
+) -> Result<Option<u32>, String> {
+    #[cfg(target_os = "macos")]
+    return helper_window::show(app, id);
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, id);
+        Ok(None)
+    }
+}
+
+#[tauri::command(async)]
+pub fn close_permission_helper(app: tauri::AppHandle, generation: u32) {
+    #[cfg(target_os = "macos")]
+    helper_window::close(&app, generation);
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, generation);
+}
+
+/// Only the active permission card can drag the running bundle.
+#[tauri::command]
+pub fn drag_permission_app(window: tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        if !helper_window::owns(&window) {
+            return Err("Only the permission card can drag the app bundle.".into());
+        }
+        let native =
+            crate::macos::ns_window(&window).ok_or("The permission card is unavailable.")?;
+        return app_drag::start(&native, &macos::running_app_bundle()?);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = window;
+        Err("App bundle dragging is only available on macOS.".into())
+    }
 }
 
 #[cfg(test)]

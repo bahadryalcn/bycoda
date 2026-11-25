@@ -15,7 +15,9 @@ const state = vi.hoisted(() => ({
   refresh: vi.fn(async () => {}),
   request: vi.fn(async () => {}),
   open: vi.fn(async () => {}),
-  close: vi.fn(async () => {}),
+  reveal: vi.fn(async () => {}),
+  showHelper: vi.fn(async (): Promise<number | null> => 1),
+  closeHelper: vi.fn(async () => {}),
   restart: vi.fn(async () => {}),
   platform: "windows",
 }));
@@ -31,11 +33,12 @@ vi.mock("../hooks/usePermissionStatus", () => ({
 vi.mock("../../../platform/tauri/privacySettings", () => ({ openPrivacySettings: state.open }));
 vi.mock("../../../platform/tauri/systemPermissions", () => ({
   requestSystemPermission: state.request,
-  closePermissionHelper: state.close,
-  showPermissionHelper: vi.fn(async () => {}),
+  revealPermissionApp: state.reveal,
+  showPermissionHelper: state.showHelper,
+  closePermissionHelper: state.closeHelper,
   restartToApplyPermission: state.restart,
 }));
-import { PermissionSetupSheet } from "./PermissionSetupSheet";
+import { PermissionSetupDialog } from "./PermissionSetupDialog";
 let root: Root;
 let host: HTMLDivElement;
 beforeEach(() => {
@@ -56,7 +59,7 @@ afterEach(async () => {
 });
 const render = () =>
   act(async () =>
-    root.render(createElement(PermissionSetupSheet, { id: "microphone", onClose: vi.fn() })),
+    root.render(createElement(PermissionSetupDialog, { id: "microphone", onClose: vi.fn() })),
   );
 const button = (label: string) =>
   [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === label)!;
@@ -110,7 +113,7 @@ it("renders each step as one instruction without label paragraphs", async () => 
   expect(button("Open settings")).toBeDefined();
 });
 
-it("opens OS settings only from explicit sheet action and cleans up helper", async () => {
+it("opens OS settings only from an explicit dialog action", async () => {
   state.loading = false;
   state.entry = { ...state.entry, state: "denied", canOpenSettings: true };
   await render();
@@ -120,12 +123,81 @@ it("opens OS settings only from explicit sheet action and cleans up helper", asy
   expect(state.request).not.toHaveBeenCalled();
 });
 
+it("deduplicates quick clicks and closes only the current card after reopening", async () => {
+  state.loading = false;
+  state.platform = "macos";
+  state.entry = {
+    id: "accessibility",
+    state: "not-determined",
+    canRequest: true,
+    canOpenSettings: true,
+  };
+  let finish!: () => void;
+  state.open.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () =>
+    root.render(createElement(PermissionSetupDialog, { id: "accessibility", onClose: vi.fn() })),
+  );
+  expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+  expect(button("Allow")).toBeUndefined();
+  const open = button("Open settings");
+  await act(async () => {
+    open.click();
+    open.click();
+  });
+  expect(state.open).toHaveBeenCalledExactlyOnceWith("accessibility");
+  await act(async () => finish());
+  expect(state.showHelper).toHaveBeenCalledExactlyOnceWith("accessibility");
+  state.showHelper.mockResolvedValueOnce(2);
+  await act(async () => button("Open settings").click());
+  expect(state.open).toHaveBeenCalledTimes(2);
+  expect(state.showHelper).toHaveBeenCalledTimes(2);
+  expect(state.request).not.toHaveBeenCalled();
+  expect(state.reveal).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Waiting for access");
+  expect(document.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => root.render(null));
+  expect(state.closeHelper).toHaveBeenCalledExactlyOnceWith(2);
+});
+
+it("keeps the Finder fallback available when Settings opens but the card fails", async () => {
+  state.loading = false;
+  state.platform = "macos";
+  state.entry = { ...state.entry, state: "denied", canOpenSettings: true };
+  state.showHelper.mockRejectedValueOnce(new Error("Window creation failed"));
+  await act(async () =>
+    root.render(createElement(PermissionSetupDialog, { id: "full-disk-access", onClose: vi.fn() })),
+  );
+  await act(async () => button("Open settings").click());
+  expect(document.body.textContent).toContain("Waiting for access");
+  expect(document.querySelector('[role="alert"]')).toBeNull();
+  expect(button("Reveal bycoda in Finder")).toBeDefined();
+});
+
+it("reveals the installed app on demand and keeps Finder failures separate", async () => {
+  state.loading = false;
+  state.platform = "macos";
+  state.entry = { ...state.entry, state: "denied", canOpenSettings: true };
+  state.reveal.mockRejectedValueOnce(new Error("Finder unavailable"));
+  await act(async () =>
+    root.render(createElement(PermissionSetupDialog, { id: "full-disk-access", onClose: vi.fn() })),
+  );
+  await act(async () => button("Reveal bycoda in Finder").click());
+  expect(state.reveal).toHaveBeenCalledOnce();
+  expect(state.open).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Could not reveal bycoda in Finder.");
+});
+
 it("offers a restart after macOS settings when Full Disk Access still reads as off", async () => {
   state.loading = false;
   state.platform = "macos";
   state.entry = { ...state.entry, state: "denied", canOpenSettings: true };
   await act(async () =>
-    root.render(createElement(PermissionSetupSheet, { id: "full-disk-access", onClose: vi.fn() })),
+    root.render(createElement(PermissionSetupDialog, { id: "full-disk-access", onClose: vi.fn() })),
   );
   expect(button("Restart now")).toBeUndefined();
   await act(async () => button("Open settings").click());

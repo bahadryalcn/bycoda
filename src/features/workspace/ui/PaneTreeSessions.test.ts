@@ -22,6 +22,13 @@ vi.mock("../../sessions/ui/SessionPane", async () => {
       useLayoutEffect(() => {
         if (pane.current) pane.current.dataset.connectedAtMount = String(pane.current.isConnected);
       }, []);
+      useLayoutEffect(() => {
+        const node = pane.current!;
+        node.dataset.listening = "true";
+        return () => {
+          node.dataset.listening = "false";
+        };
+      }, []);
       return createElement(
         "div",
         {
@@ -104,6 +111,65 @@ it("reads each pane's session from the store without a sessions prop", () => {
       node.getAttribute("data-title"),
     ),
   ).toEqual(["a", "b"]);
+});
+
+it("parks one local preview with its input and resumes only the freshly selected session", () => {
+  const show = (id: string, preview = true) =>
+    act(() =>
+      root.render(
+        createElement(PaneTree, {
+          visible: true,
+          previewSessionId: preview ? id : undefined,
+          layout: leaf(id),
+          editorPanes: [],
+          dirtyFileIds: new Set(),
+          fileErrorCounts: new Map(),
+          focusedId: id,
+          composerFocused: false,
+          recents: [],
+          onFocus: vi.fn(),
+          onClose: vi.fn(),
+        } as unknown as ComponentProps<typeof PaneTree>),
+      ),
+    );
+  const pane = (id: string) => container.querySelector<HTMLElement>(`[data-session="${id}"]`);
+  const saved = session("a");
+  update("a", saved);
+  show("a");
+  const input = pane("a")!.querySelector("input")!;
+  input.setSelectionRange(2, 5);
+  show("b");
+  // The detached preview leaves the live store after its idle timer.
+  act(() => setSessions((all) => all.filter((item) => item.id !== "a")));
+  expect(pane("a")?.dataset.listening).toBe("false");
+  expect(pane("b")?.dataset.listening).toBe("true");
+  act(() => setSessions((all) => [...all, { ...saved, title: "Current history" }]));
+  show("a");
+  expect(pane("a")?.querySelector("input")).toBe(input);
+  expect([input.selectionStart, input.selectionEnd]).toEqual([2, 5]);
+  expect(pane("a")?.dataset.title).toBe("Current history");
+  expect(pane("a")?.dataset.listening).toBe("true");
+  act(() => setSessions((all) => [...all, session("c")]));
+  show("c");
+  expect(pane("b")).toBeNull();
+  expect(pane("a")).not.toBeNull();
+  show("c", false);
+  expect(pane("a")).toBeNull();
+
+  // An external draft may make a revisited session open as a kept tab. It must
+  // read its new draft, even if the old preview's input still exists.
+  show("a");
+  const formerlyBlank = pane("a")?.querySelector("input");
+  show("b");
+  show("a", false);
+  expect(pane("a")?.querySelector("input")).not.toBe(formerlyBlank);
+
+  show("a");
+  const previousRevision = pane("a")?.querySelector("input");
+  show("b");
+  update("a", { blocks: [{ id: "new-turn", role: "user", text: "Newer revision" }] });
+  show("a");
+  expect(pane("a")?.querySelector("input")).not.toBe(previousRevision);
 });
 
 it("moves only the exact session to the outlet and keeps its existing content mounted", () => {

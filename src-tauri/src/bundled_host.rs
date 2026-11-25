@@ -944,7 +944,9 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
     let healthy = host_healthy(&base);
     let owner = owner_state(&base);
     let starting = !healthy && owner.starting();
-    let activity = if app_mode && !owner_approved && owner != OwnerState::Stopped {
+    // A live Host that reports no running work is upgraded without asking, in app and
+    // service mode alike; the installer below stops it only if it is still idle then.
+    let activity = if !owner_approved && owner != OwnerState::Stopped {
         let activity = crate::host_lifecycle::activity(&base);
         if activity.unknown {
             Err(())
@@ -1011,6 +1013,23 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
                     )),
                 ));
                 return Some(delay);
+            }
+            // Without the owner's confirmation a live service Host stops only if it is still
+            // idle; the Host decides that itself, so work started after the read is kept.
+            // Only a version upgrade replaces a live service Host unasked; repair keeps asking.
+            if !app_mode && !owner_approved && owner != OwnerState::Stopped {
+                let waiting = match (decision == Plan::Upgrade).then(|| stop_host_if_idle(&base)) {
+                    Some(IdleStop::Stopped) => None,
+                    Some(IdleStop::Busy) => Some(WAITING_FOR_SESSIONS),
+                    Some(IdleStop::Unconfirmed) | None => {
+                        Some("Could not check whether the host is busy.")
+                    }
+                };
+                if let Some(reason) = waiting {
+                    log::info!("bundled host: idle stop declined: {reason}");
+                    record(status("deferred", Some(reason.into())));
+                    return Some(deferred_retry(reason));
+                }
             }
             let upgrade = decision == Plan::Upgrade;
             let repair = decision == Plan::Repair;
@@ -1107,18 +1126,82 @@ pub fn local_host_bundle_status() -> Option<BundledHostStatus> {
     STATUS.lock().ok().and_then(|slot| slot.clone())
 }
 
+/// Running sessions for the update confirmation. The Host's own answer comes first; when
+/// it cannot give one (slow, refused, or no usable `activity`), its database still names
+/// the running work. The update dialog showed "could not be checked" for an idle Host.
 fn update_session_count(base: &Path) -> Option<u32> {
-    match probe_lifecycle_status(base) {
-        Ok((_, response)) => {
-            let activity: crate::host_lifecycle::Activity =
-                serde_json::from_value(response.get("activity")?.clone()).ok()?;
-            (!activity.unknown).then_some(activity.sessions)
+    let reason = match probe_lifecycle_status(base) {
+        Err(LifecycleProbeError::Stopped) => return Some(0),
+        Err(LifecycleProbeError::Unconfirmed) => "lifecycle probe unconfirmed",
+        Ok((_, response)) => match response
+            .get("activity")
+            .map(|value| serde_json::from_value::<crate::host_lifecycle::Activity>(value.clone()))
+        {
+            Some(Ok(activity)) if !activity.unknown => return Some(activity.sessions),
+            Some(Ok(_)) => "host reported unknown activity",
+            Some(Err(_)) => "host activity unreadable",
+            None => "host sent no activity",
+        },
+    };
+    match host_activity(base) {
+        Ok(activity) => {
+            log::info!("update activity: {reason}; read the host database instead");
+            Some(activity.sessions)
         }
-        Err(LifecycleProbeError::Stopped) => Some(0),
-        // A busy Host can miss the probe deadline; its database still names running work,
-        // as in the automatic update check.
-        Err(LifecycleProbeError::Unconfirmed) => host_activity(base).ok().map(|a| a.sessions),
+        Err(()) => {
+            log::warn!("update activity unknown: {reason}; host database unreadable");
+            None
+        }
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum IdleStop {
+    Stopped,
+    Busy,
+    Unconfirmed,
+}
+
+/// Longest wait for an idle Host to finish its graceful stop before the installer runs.
+const IDLE_STOP_WAIT: Duration = Duration::from_secs(30);
+
+/// Asks the live Host to stop only if it runs no session, shell or automation. The Host
+/// checks and stops in one step, so nothing started after an earlier read is cut off.
+/// Its lifecycle stop exits 0, which no service supervisor restarts.
+fn stop_host_if_idle(base: &Path) -> IdleStop {
+    let Some(state) = std::fs::read_to_string(base.join("running.json"))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    else {
+        return IdleStop::Unconfirmed;
+    };
+    let (Some(port), Some(secret)) = (
+        state["port"]
+            .as_u64()
+            .filter(|port| (1..=65535).contains(port)),
+        state["secret"].as_str(),
+    ) else {
+        return IdleStop::Unconfirmed;
+    };
+    match ureq::post(&format!("http://127.0.0.1:{port}/lifecycle"))
+        .timeout(Duration::from_secs(5))
+        .set("Authorization", &format!("Bearer {secret}"))
+        .set("Content-Type", "application/json")
+        .send_string(r#"{"action":"stop","ifIdle":true}"#)
+    {
+        Ok(_) => {}
+        Err(ureq::Error::Status(409, _)) => return IdleStop::Busy,
+        Err(error) => {
+            log::warn!("bundled host: idle stop unconfirmed: {error}");
+            return IdleStop::Unconfirmed;
+        }
+    }
+    let deadline = std::time::Instant::now() + IDLE_STOP_WAIT;
+    while !owner_verified_stopped(base) && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    // The Host accepted the stop; the installer's own service stop finishes a slow drain.
+    IdleStop::Stopped
 }
 
 /// A single authenticated local lifecycle read, including when the old Host is not paired.
@@ -1424,6 +1507,95 @@ mod tests {
             Plan::Upgrade
         );
         std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn idle_stop_keeps_a_busy_host_and_stops_only_an_idle_one() {
+        use std::io::{Read, Write};
+        // An idle Host asked for a second confirmation after "Install and restart".
+        let base = scratch("idle-stop");
+        assert_eq!(stop_host_if_idle(&base), IdleStop::Unconfirmed);
+        for (status, expected) in [
+            ("409 Conflict", IdleStop::Busy),
+            ("200 OK", IdleStop::Stopped),
+        ] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            std::fs::write(
+                base.join("running.json"),
+                format!(r#"{{"port":{port},"secret":"test"}}"#),
+            )
+            .unwrap();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0; 512];
+                while !request.ends_with(br#"{"action":"stop","ifIdle":true}"#) {
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                write!(
+                    stream,
+                    "HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                )
+                .unwrap();
+            });
+            assert_eq!(stop_host_if_idle(&base), expected);
+            server.join().unwrap();
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn update_activity_reads_the_database_when_the_host_answers_without_activity() {
+        use std::io::{Read, Write};
+        // An idle Host answered the probe, yet the update dialog said "could not be checked".
+        let base = scratch("update-activity");
+        let connection = rusqlite::Connection::open(base.join("host.db")).unwrap();
+        connection
+            .execute_batch(
+                "create table sessions (status text, shell_running integer);
+                 create table automation_runs (value text);
+                 insert into sessions values ('running', 0), ('running', 0), ('idle', 0);",
+            )
+            .unwrap();
+        for body in [r#"{"pid":1}"#, r#"{"pid":1,"activity":null}"#] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            std::fs::write(
+                base.join("running.json"),
+                format!(r#"{{"port":{port},"secret":"test"}}"#),
+            )
+            .unwrap();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0; 512];
+                while !request.ends_with(br#"{"action":"status"}"#) {
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .unwrap();
+            });
+            assert_eq!(update_session_count(&base), Some(2));
+            server.join().unwrap();
+        }
+        drop(connection);
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

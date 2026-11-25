@@ -9,9 +9,9 @@ import {
 } from "./permissionStatusStore";
 
 /**
- * Reads never prompt. Every consumer shares one report, one focus listener and
- * one native-change subscription, so a focus is a single native read.
- * Polling belongs only to a mounted setup sheet. `refresh` is an explicit
+ * Reads never prompt. Every consumer shares one report and one focus listener,
+ * so a focus is a single native read. Polling belongs to a mounted setup dialog.
+ * `refresh` is an explicit
  * recheck and always reads again.
  */
 export function usePermissionStatus(
@@ -22,9 +22,9 @@ export function usePermissionStatus(
     subscribePermissionStatus,
     getPermissionStatusSnapshot,
   );
-  // oxlint-disable-next-line bycoda/effect-names-its-sync -- registers this setup sheet with the shared store so it polls only while the sheet is mounted
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- registers the mounted dialog with the shared poll
   useEffect(() => {
-    // Only a mounted setup sheet may keep the one-second grant poll alive.
+    // Keep the one-second grant poll alive while a setup dialog is open.
     return setupOpen ? watchPermissionSetup() : undefined;
   }, [setupOpen]);
   return {

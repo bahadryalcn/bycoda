@@ -22,6 +22,8 @@ import { isLocalSyncMachine } from "../connections/model/localSync";
 import { parseRemotePath } from "../connections/model/remoteProjects";
 import type { RemoteMachine } from "../connections/model/protocol";
 import { lazySurface } from "../../shared/ui/lazySurface";
+import { useStoredPreferenceState } from "../../shared/hooks/useStoredPreferenceState";
+import { toolPreferences } from "./model/toolPreferences";
 import type { DeviceHostStatus, DevicePanelApi } from "../devices/types";
 import { attachDeviceToComposer } from "../devices/deviceComposer";
 import { attachDeviceImageAcrossWindows } from "../devices/deviceImageComposer";
@@ -136,8 +138,18 @@ function ConversationHostTools({
 }: ConversationTools) {
   useLocale();
   const panelId = useId();
-  const [tab, setTab] = useState<Tab>(onlyTab ?? initialTab ?? "devices");
-  const [visited, setVisited] = useState<Tab[]>([onlyTab ?? initialTab ?? "devices"]);
+  const [devicesEnabled] = useStoredPreferenceState(
+    toolPreferences.devicesEnabled.load,
+    toolPreferences.devicesEnabled.subscribe,
+  );
+  const [hiddenDeviceMachines] = useStoredPreferenceState(
+    toolPreferences.deviceHiddenMachines.load,
+    toolPreferences.deviceHiddenMachines.subscribe,
+  );
+  const [requestedTab, setTab] = useState<Tab>(onlyTab ?? initialTab ?? "devices");
+  // Settings > Devices > Use devices removes the tab; a request for it opens the browser.
+  const tab: Tab = requestedTab === "devices" && !devicesEnabled ? "browser" : requestedTab;
+  const [visited, setVisited] = useState<Tab[]>([tab]);
   if (!visited.includes(tab)) setVisited([...visited, tab]);
   const [presentationError, setPresentationError] = useState("");
   const [placementOpen, setPlacementOpen] = useState(false);
@@ -158,7 +170,9 @@ function ConversationHostTools({
     logs: Terminal,
     resources: Gauge,
   } as const;
-  const toolOrder = ["devices", "browser", "servers", "logs", "resources"] as const;
+  const toolOrder = (["devices", "browser", "servers", "logs", "resources"] as const).filter(
+    (id) => id !== "devices" || devicesEnabled,
+  );
   const hostScoped =
     tab === "devices" || tab === "browser" || tab === "logs" || tab === "resources";
   const conversationKey = JSON.stringify([cwd, sessionId]);
@@ -357,7 +371,15 @@ function ConversationHostTools({
           ? [{ value: localRoute ? targetValue : "local", label: t("This computer") }]
           : []),
         ...machines
-          .filter((machine) => machine !== projectMachine && !isLocalSyncMachine(machine))
+          .filter(
+            (machine) =>
+              machine !== projectMachine &&
+              !isLocalSyncMachine(machine) &&
+              // Removed Device sources stay out of the Devices picker unless already selected.
+              (tab !== "devices" ||
+                !hiddenDeviceMachines.includes(machine.id) ||
+                targetValue === `machine:${machine.id}`),
+          )
           .map((machine) => ({
             value: `machine:${machine.id}`,
             label: machine.name,
@@ -572,7 +594,7 @@ function ConversationHostTools({
           className={`host-tools-content host-tools-content-${tab}`}
           tabIndex={0}
         >
-          {visited.includes("devices") ? (
+          {devicesEnabled && visited.includes("devices") ? (
             <div className={tab === "devices" ? "contents" : "hidden"}>
               <DevicePanel
                 transferScope={transferScope}

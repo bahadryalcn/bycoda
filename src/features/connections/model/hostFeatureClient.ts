@@ -206,6 +206,8 @@ const PROJECT_BROWSER_METHODS = new Set([
   "browser.annotation.cancel",
 ]);
 const OWNER_HOST_METHOD_CAPABILITIES: Readonly<Record<string, string>> = {
+  "browser.profiles.list": "browser.profiles.v1",
+  "browser.profiles.update": "browser.profiles.v1",
   "assistant.request": "assistant.v1",
   "voice.tools.list": "voice.tools.v1",
   "voice.tools.call": "voice.tools.v1",

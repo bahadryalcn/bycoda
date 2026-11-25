@@ -1,3 +1,7 @@
+import {
+  BROWSER_VIEWPORT_MAX_WIDTH,
+  BROWSER_VIEWPORT_MAX_HEIGHT,
+} from "../../src/shared/lib/browserViewport";
 const id = { type: "string", minLength: 1, maxLength: 300 };
 const scope = { leaseId: id, navigationId: id };
 const selection = { ...scope, annotationId: id };
@@ -9,8 +13,8 @@ const object = (properties: Record<string, unknown>, required = Object.keys(prop
 });
 const point = {
   ...selection,
-  x: { type: "number", minimum: 0, maximum: 2559 },
-  y: { type: "number", minimum: 0, maximum: 2159 },
+  x: { type: "number", minimum: 0, maximum: BROWSER_VIEWPORT_MAX_WIDTH - 1 },
+  y: { type: "number", minimum: 0, maximum: BROWSER_VIEWPORT_MAX_HEIGHT - 1 },
 };
 
 /** Page reading (no vision needed) and element-targeted input via refs. */
@@ -29,8 +33,8 @@ export const BROWSER_PAGE_TOOLS = {
       navigationId: id,
       leaseId: id,
       kind: { enum: ["click", "scroll", "text", "key"] },
-      x: { type: "number", minimum: 0, maximum: 2559 },
-      y: { type: "number", minimum: -2000, maximum: 2159 },
+      x: { type: "number", minimum: 0, maximum: BROWSER_VIEWPORT_MAX_WIDTH - 1 },
+      y: { type: "number", minimum: -2000, maximum: BROWSER_VIEWPORT_MAX_HEIGHT - 1 },
       ref: { type: "string", minLength: 1, maxLength: 20, pattern: "^e[0-9]+$" },
       text: { type: "string", maxLength: 4096 },
       key: id,

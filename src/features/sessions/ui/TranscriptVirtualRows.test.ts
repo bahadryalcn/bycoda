@@ -140,6 +140,31 @@ it("leaves short lists in normal layout without virtual width reads", () => {
   expect(mounted()).toBe(2);
 });
 
+it("resolves a short list's nested scroll owner only when an anchor needs it", () => {
+  const styles = vi.spyOn(window, "getComputedStyle");
+  act(() =>
+    root.render(
+      createElement(
+        TranscriptVirtualizationContext.Provider,
+        { value: owner },
+        createElement(
+          "div",
+          { className: "agent-transcript" },
+          createElement(
+            "div",
+            { style: { overflowY: "auto" }, "data-inner-scroll": true },
+            createElement(TranscriptVirtualRows, { rows: rows(2), listId: "nested" }),
+          ),
+        ),
+      ),
+    ),
+  );
+  const inner = host.querySelector<HTMLElement>("[data-inner-scroll]")!;
+  expect(styles.mock.calls.some(([node]) => node === inner)).toBe(false);
+  expect(owner.firstVisibleRow(host.querySelector(".agent-transcript")!)).toBeNull();
+  expect(owner.firstVisibleRow(inner)?.dataset.transcriptVirtualBlockId).toBe("block-0");
+});
+
 it("mounts viewport rows from ten thousand records and synchronously reveals an exact distant block", () => {
   const element = mount(rows(10_000));
   expect(mounted()).toBeLessThan(50);

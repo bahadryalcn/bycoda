@@ -8,6 +8,7 @@ import {
   TUNNEL_PROVIDERS,
   TUNNEL_ISSUES,
   TunnelError,
+  tailscaleApprovalUrl,
   tunnelActive,
   tunnelLocalUrl,
   tunnelPublicUrl,
@@ -18,6 +19,7 @@ import {
 } from "../../src/integrations/external-tunnels";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { OsSocialCredentials, type SocialCredentialStore } from "../social/social-credentials";
+import { availableFunnelPort, readServeConfig } from "./tailscale-funnel";
 import { startTunnelGuardian, type OwnedTunnelProcess } from "./tunnel-process";
 import {
   probeTunnelOrigin,
@@ -32,7 +34,11 @@ type Dependencies = {
   executable: (provider: TunnelProvider) => Promise<string | undefined>;
   install: (signal: AbortSignal) => Promise<string>;
   probe: (url: string) => Promise<boolean>;
+  /** The Funnel port the user's Serve/Funnel configuration leaves free. */
+  funnelPort: (program: string) => Promise<number | undefined>;
   launch: (command: TunnelCommand, emit: (event: TunnelEvent) => void) => OwnedTunnelProcess;
+  /** Loopback ports a dev-server tunnel may never expose (the Host's own listener). */
+  reservedPorts: () => string[];
 };
 const MAX_RECORDS = 32;
 const MAX_ACTIVE = 4;
@@ -131,6 +137,7 @@ export class ExternalTunnels {
   private closing = false;
   private repair?: TunnelRepair;
   private automaticHostAccess = false;
+  private phonesOverPublic = false;
   private automaticTimer?: ReturnType<typeof setTimeout>;
   private automaticFailures = 0;
   private automaticNotBefore = 0;
@@ -148,6 +155,8 @@ export class ExternalTunnels {
       executable: tunnelExecutable,
       install: (signal) => installCloudflared(join(directory, "bin"), signal),
       probe: probeTunnelOrigin,
+      funnelPort: async (program) => availableFunnelPort(await readServeConfig(program)),
+      reservedPorts: () => [],
       launch: startTunnelGuardian,
       ...dependencies,
     };
@@ -195,6 +204,16 @@ export class ExternalTunnels {
         });
         if (setting.status === "corrupt") throw new Error("Invalid automatic tunnel setting");
         this.automaticHostAccess = setting.value ?? false;
+        // Never on by default; damaged or unreadable state counts as off until the owner sets it.
+        this.phonesOverPublic = await readStateFile(join(this.directory, "phones.json"), (text) => {
+          const value = JSON.parse(text);
+          if (value.environmentId !== this.environmentId || typeof value.enabled !== "boolean")
+            throw new Error("Invalid public phone setting");
+          return value.enabled as boolean;
+        }).then(
+          (phones) => phones.status === "ok" && phones.value === true,
+          () => false,
+        );
       } catch {
         throw new TunnelError("storage-unavailable");
       }
@@ -274,6 +293,44 @@ export class ExternalTunnels {
     // The owner acted: start over instead of waiting out an earlier backoff.
     this.resetAutomaticBackoff();
     this.scheduleAutomatic();
+  }
+
+  /** Whether phones may connect through public tunnels. Read at request time by the ingress. */
+  allowsPhonesOverPublic(): boolean {
+    return this.phonesOverPublic;
+  }
+
+  /** Owner-only. Writes first, so a failed write leaves the setting unchanged. */
+  setPhonesOverPublic(input: Record<string, unknown>): Promise<{ phonesOverPublic: boolean }> {
+    return this.serialized(async () => {
+      await this.initialize();
+      if (typeof input.enabled !== "boolean") throw new TunnelError("invalid-target");
+      try {
+        await writeFileAtomic(
+          join(this.directory, "phones.json"),
+          JSON.stringify({ environmentId: this.environmentId, enabled: input.enabled }),
+          { mode: 0o600 },
+        );
+      } catch {
+        throw new TunnelError("storage-unavailable");
+      }
+      this.phonesOverPublic = input.enabled;
+      return { phonesOverPublic: this.phonesOverPublic };
+    });
+  }
+
+  /** Live public Host addresses a phone may use; none unless the owner allowed it. */
+  publicPhoneUrls(): string[] {
+    if (!this.phonesOverPublic) return [];
+    return this.records
+      .filter(
+        (record) =>
+          record.target === "host" &&
+          record.state === "ready" &&
+          this.owned.has(record.id) &&
+          record.publicUrl?.startsWith("https://"),
+      )
+      .map((record) => record.publicUrl!);
   }
 
   /** Only a live, owned Host tunnel may be advertised. */
@@ -401,7 +458,7 @@ export class ExternalTunnels {
       const providers = await Promise.all(
         TUNNEL_PROVIDERS.map(async (provider) => {
           const installed = !!(await this.dependencies.executable(provider).catch(() => undefined));
-          if (provider === "cloudflare")
+          if (provider !== "ngrok")
             return { provider, installed, credential: "not-required" as const };
           try {
             const credential = await this.dependencies.credentials.get("ngrok");
@@ -417,6 +474,7 @@ export class ExternalTunnels {
       );
       return {
         automaticHostAccess: this.automaticHostAccess,
+        phonesOverPublic: this.phonesOverPublic,
         environmentId: this.environmentId,
         hostLocalUrl: tunnelLocalUrl(this.hostUrl()),
         providers,
@@ -497,6 +555,8 @@ export class ExternalTunnels {
       throw new TunnelError("invalid-target");
     const provider = input.provider as TunnelProvider;
     const target = input.target as TunnelStart["target"];
+    // Funnel publishes this Host only; a dev server is never put on the internet through it.
+    if (provider === "tailscale" && target !== "host") throw new TunnelError("invalid-target");
     if (input.automatic !== undefined) {
       if (input.automatic !== true || provider !== "cloudflare" || target !== "host")
         throw new TunnelError("invalid-target");
@@ -511,7 +571,10 @@ export class ExternalTunnels {
       throw new TunnelError("invalid-target");
     const hostPort = new URL(host).port || "80";
     const localPort = new URL(localUrl).port || (localUrl.startsWith("https:") ? "443" : "80");
-    if (target === "dev-server" && localPort === hostPort)
+    if (
+      target === "dev-server" &&
+      (localPort === hostPort || this.dependencies.reservedPorts().includes(localPort))
+    )
       throw new TunnelError("host-target-required");
     if (input.automatic === true) await this.setAutomatic(true);
     // A start still preparing its CLI counts: a second request joins it, never a second download.
@@ -571,23 +634,29 @@ export class ExternalTunnels {
     }
     if (!(await this.dependencies.probe(localUrl).catch(() => false)))
       return this.failRecord(record, "origin-unreachable");
+    let funnelPort: number | undefined;
+    if (provider === "tailscale") {
+      funnelPort = await this.dependencies.funnelPort(program).catch(() => undefined);
+      if (!funnelPort) return this.failRecord(record, "connection-failed");
+    }
     const config = join(this.directory, `${provider}.yml`);
     try {
       // Configs isolate global CLI settings and contain no credentials.
-      await writeFile(
-        config,
-        provider === "ngrok"
-          ? 'version: "3"\nagent:\n  web_addr: false\n  update_check: false\n'
-          : "{}\n",
-        { mode: 0o600 },
-      );
+      if (provider !== "tailscale")
+        await writeFile(
+          config,
+          provider === "ngrok"
+            ? 'version: "3"\nagent:\n  web_addr: false\n  update_check: false\n'
+            : "{}\n",
+          { mode: 0o600 },
+        );
       await this.persist();
     } catch {
       return this.failRecord(record, "storage-unavailable");
     }
     try {
       const child = this.dependencies.launch(
-        tunnelCommand(provider, program, localUrl, config, token),
+        tunnelCommand(provider, program, localUrl, config, token, funnelPort),
         (event) => {
           void this.serialized(() => this.event(record.id, event)).catch(() => {
             // Fail closed if recording state becomes impossible.
@@ -619,6 +688,11 @@ export class ExternalTunnels {
     } else if (event.type === "error" && record.state !== "stopping") {
       record.state = "error";
       record.issue ??= TUNNEL_ISSUES.includes(event.issue) ? event.issue : "process-error";
+      const approvalUrl =
+        record.issue === "approval-required" && typeof event.approvalUrl === "string"
+          ? tailscaleApprovalUrl(event.approvalUrl)
+          : undefined;
+      if (approvalUrl) record.approvalUrl = approvalUrl;
       delete record.publicUrl;
       // Do not await here: exit events also use the serialized control lane.
       void this.owned

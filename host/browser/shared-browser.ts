@@ -1,3 +1,9 @@
+import type { BrowserProfiles, BrowserProfileStorage } from "./browser-profiles";
+import { isBrowserDevelopmentAddress } from "../../src/shared/lib/browserProfile";
+import {
+  BROWSER_VIEWPORT_MAX_WIDTH,
+  BROWSER_VIEWPORT_MAX_HEIGHT,
+} from "../../src/shared/lib/browserViewport";
 import { createHash, randomUUID } from "node:crypto";
 import { inspectBrowserElement, type ElementInspection } from "./browser-annotation";
 import type { BrowserAnnotationCapture } from "../../src/shared/lib/browserAnnotation";
@@ -122,6 +128,7 @@ type Browser = {
   newContext(options: {
     viewport: { width: number; height: number };
     acceptDownloads: boolean;
+    storageState?: BrowserProfileStorage;
   }): Promise<{ newPage(): Promise<Page>; close?(): Promise<void> }>;
   close(): Promise<void>;
   on?(event: "disconnected", listener: () => void): unknown;
@@ -134,6 +141,7 @@ export type SharedBrowserOptions = {
   logLabel?: string;
   keepAlive?: boolean;
   onIdleClosed?: () => void;
+  profiles?: BrowserProfiles;
 };
 const fingerprint = (credential: string) => createHash("sha256").update(credential).digest("hex");
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
@@ -152,11 +160,11 @@ export function sharedBrowserViewport(width: unknown, height: unknown) {
     !Number.isInteger(width) ||
     !Number.isInteger(height) ||
     Number(width) < 240 ||
-    Number(width) > 2560 ||
+    Number(width) > BROWSER_VIEWPORT_MAX_WIDTH ||
     Number(height) < 240 ||
-    Number(height) > 2160
+    Number(height) > BROWSER_VIEWPORT_MAX_HEIGHT
   )
-    throw new Error("Browser viewport must be integer dimensions between 240x240 and 2560x2160.");
+    throw new Error("Browser viewport must be integer dimensions between 240x240 and 3840x2160.");
   return { width: Number(width), height: Number(height) };
 }
 
@@ -172,8 +180,8 @@ export function sharedBrowserUrl(input: unknown) {
   return url.href;
 }
 
-/** One host-owned ephemeral browser. No user profile, extension, download or
- * stored token is exposed. Viewing is shared; mutations require a short lease. */
+/** One host-owned browser context, optionally seeded from an owner-approved profile.
+ * Mutations require a short lease. */
 export class SharedBrowser {
   private browser?: Browser;
   private page?: Page;
@@ -207,6 +215,8 @@ export class SharedBrowser {
   private documentId = randomUUID();
   private hoverObjects?: { session: BrowserCdpSession; group: string };
   private pageGeneration = 0;
+  private profileId?: string;
+  private profileOverride = false;
   private captureGeneration = 0;
   private viewport = { ...DEFAULT_VIEWPORT };
   private logSource?: RuntimeLogSource;
@@ -261,6 +271,7 @@ export class SharedBrowser {
     params: Record<string, unknown>,
     credential: string,
     options: { takeover?: boolean; holderSessionId?: string } = {},
+    ownerProfileAccess = false,
   ) {
     if (method === "browser.claim" && typeof params.sessionId === "string")
       options = { ...options, holderSessionId: params.sessionId };
@@ -279,12 +290,33 @@ export class SharedBrowser {
         throw new Error("Claim browser control before using it.");
       if (!observe) this.requireLease(fingerprint(credential), params);
     }
-    const value = await this.dispatch(method, params, credential, options);
+    if (this.options.profiles && !ownerProfileAccess && method !== "browser.open") {
+      const sessionControl = [
+        "browser.status",
+        "browser.claim",
+        "browser.release",
+        "browser.close",
+      ].includes(method);
+      await this.options.profiles.resolve(
+        undefined,
+        false,
+        sessionControl ? undefined : this.profileId,
+      );
+    }
+    const value = await this.dispatch(method, params, credential, options, ownerProfileAccess);
     if (method === "browser.status" || method === "browser.claim" || method === "browser.release") {
-      return matches
-        ? value
+      const profiles = ownerProfileAccess
+        ? undefined
+        : await this.options.profiles?.agentProfiles();
+      const status = method === "browser.status" && profiles ? { ...value, profiles } : value;
+      const granted =
+        !this.profileId || !profiles || profiles.some(({ id }) => id === this.profileId);
+      return matches && granted
+        ? status
         : {
-            ...value,
+            ...status,
+            ...(!granted ? { open: false } : {}),
+            profileId: undefined,
             url: null,
             logSourceId: undefined,
             navigationId: undefined,
@@ -300,6 +332,7 @@ export class SharedBrowser {
     params: Record<string, unknown>,
     credential: string,
     options: { takeover?: boolean; holderSessionId?: string } = {},
+    ownerProfileAccess = true,
   ) {
     const receiptOwner = fingerprint(credential);
     let receiptKey: string | undefined;
@@ -370,15 +403,32 @@ export class SharedBrowser {
         const projectId = this.logContext(params.projectId);
         const sessionId = this.logContext(params.sessionId);
         const assistantThreadId = this.logContext(params.threadId);
+        const sameScope =
+          this.logSource?.projectId === projectId &&
+          this.logSource?.sessionId === sessionId &&
+          this.logSource?.assistantThreadId === assistantThreadId;
+        const samePurpose =
+          this.logSource?.url !== undefined &&
+          isBrowserDevelopmentAddress(this.logSource.url) === isBrowserDevelopmentAddress(url);
+        const keepOverride = !!this.page && sameScope && samePurpose && this.profileOverride;
+        const profile = await this.options.profiles?.resolve(
+          params.profile,
+          ownerProfileAccess,
+          keepOverride ? (this.profileId ?? "isolated") : undefined,
+          url,
+        );
+        const profileOverride =
+          params.profile !== undefined || (keepOverride && profile?.id === this.profileId);
+        if (params.profile !== undefined && !this.options.profiles)
+          throw new Error("Browser profiles are unavailable on this Host.");
         if (
           this.page &&
-          (this.logSource?.projectId !== projectId ||
-            this.logSource?.sessionId !== sessionId ||
-            this.logSource?.assistantThreadId !== assistantThreadId)
+          (!sameScope || this.profileId !== profile?.id || (!profile && !samePurpose))
         ) {
-          // A new context prevents old-document network/console events from being
-          // attributed to a different conversation while navigation is pending.
+          // A new context prevents old-document state and logs from crossing a conversation or profile.
+          const viewport = this.viewport;
           await this.disposePage();
+          if (sameScope) this.viewport = viewport;
         }
         this.documentId = randomUUID();
         this.invalidateSelection();
@@ -394,7 +444,9 @@ export class SharedBrowser {
           available: true,
         };
         try {
-          await this.ensurePage();
+          await this.ensurePage(profile?.storage);
+          this.profileId = profile?.id;
+          this.profileOverride = profileOverride;
         } catch (error) {
           this.options.runtimeLogs?.setSource({
             ...source,
@@ -531,6 +583,7 @@ export class SharedBrowser {
       leaseTtlMs: this.lease ? Math.max(0, this.lease.expiresAt - this.now()) : undefined,
       heldBy: this.holder(),
       viewport: { ...this.viewport },
+      ...(this.profileId ? { profileId: this.profileId } : {}),
       navigationId: this.navigationId,
       documentId: this.documentId,
       annotationId: this.annotation?.owner === owner ? this.annotation.id : undefined,
@@ -1012,7 +1065,7 @@ export class SharedBrowser {
     });
     return { ...this.status(owner), selection: annotation.selection };
   }
-  private async ensurePage() {
+  private async ensurePage(storageState?: BrowserProfileStorage) {
     if (this.page) return;
     const generation = this.pageGeneration;
     const { chromium } = await this.loader();
@@ -1022,6 +1075,7 @@ export class SharedBrowser {
       const context = await browser.newContext({
         viewport: { ...this.viewport },
         acceptDownloads: false,
+        ...(storageState ? { storageState } : {}),
       });
       const page = await context.newPage();
       if (generation !== this.pageGeneration) throw new Error("Browser was closed during startup");
@@ -1264,6 +1318,8 @@ export class SharedBrowser {
     this.idleTimer = undefined;
     const browser = this.browser;
     this.page = undefined;
+    this.profileId = undefined;
+    this.profileOverride = false;
     this.browser = undefined;
     this.viewport = { ...DEFAULT_VIEWPORT };
     this.documentId = randomUUID();
@@ -1294,6 +1350,9 @@ export class SessionBrowserRegistry {
   private readonly shared: SharedBrowser;
   private pool?: BrowserPool;
   private readonly pooledLoader: BrowserLoader;
+  get profiles() {
+    return this.options.profiles;
+  }
   constructor(
     private readonly loader: BrowserLoader,
     private readonly now = Date.now,
@@ -1477,7 +1536,7 @@ export class SessionBrowserRegistry {
     method: string,
     params: Record<string, unknown>,
     credential: string,
-    options: { takeover?: boolean } = {},
+    options?: { takeover?: boolean },
   ) {
     if (
       !params.threadId ||
@@ -1489,7 +1548,13 @@ export class SessionBrowserRegistry {
         "A real Room browser source is required; session annotations have a separate owner.",
       );
     const browser = this.browser(params, credential);
-    const result = await browser.dispatchForSession(method, params, credential, options);
+    const result = await browser.dispatchForSession(
+      method,
+      params,
+      credential,
+      options,
+      options !== undefined,
+    );
     if (method === "browser.close")
       this.browsers.delete(
         JSON.stringify([

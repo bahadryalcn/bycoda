@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deviceProofKeyFromSeed, signDeviceProof } from "../../src/integrations/device-proof";
 import { ClientRequest, createServer, type Server } from "node:http";
 import {
   createCipheriv,
@@ -76,6 +77,9 @@ function encryptedLanFetch(
       path: new URL(String(url)).pathname,
       time: Date.now() + clockOffsetMs,
       token: new Headers(init?.headers).get("Authorization")?.slice(7),
+      ...(new Headers(init?.headers).get("DPoP")
+        ? { proof: new Headers(init?.headers).get("DPoP") }
+        : {}),
       body: init?.body,
     });
     const data = Buffer.concat([
@@ -142,6 +146,7 @@ describe("encrypted mobile LAN access", () => {
       ticket: ticket.ticket,
       claimId: "c".repeat(43),
       deviceName: "My phone",
+      proofKey: deviceProofKeyFromSeed(new Uint8Array(32).fill(4)).publicJwk,
     };
     const redeemed = await encrypted(`${endpoint}/mobile/pairing/redeem`, {
       method: "POST",
@@ -176,6 +181,37 @@ describe("encrypted mobile LAN access", () => {
     expect((await fetch(`${restartedEndpoint}/mobile/lan`, captured)).status).toBe(403);
     expect(calls).toBe(1);
     await pairing.close();
+  });
+  it("forwards the client's device proof as the DPoP header and refuses a malformed one", async () => {
+    const seen: Array<string | undefined> = [];
+    const port = await listen(
+      createServer((request, response) => {
+        seen.push(request.headers.dpop as string | undefined);
+        response.end(JSON.stringify({ result: "ok" }));
+      }),
+    );
+    const identity = createLanIdentity();
+    const gateway = createLanGateway(identity, "pc", () => port);
+    const endpoint = `http://127.0.0.1:${await listen(gateway)}`;
+    const encrypted = encryptedLanFetch(fetch, "pc", identity.publicKey, random);
+    const proof = signDeviceProof({
+      seed: new Uint8Array(32).fill(4),
+      token: "b".repeat(43),
+      method: "POST",
+      path: "/rpc",
+      environmentId: "pc",
+    });
+    const call = (headers: Record<string, string>) =>
+      encrypted(`${endpoint}/rpc`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${"b".repeat(43)}`, ...headers },
+        body: JSON.stringify({ method: "projects.list" }),
+      });
+    expect((await call({ DPoP: proof })).status).toBe(200);
+    expect((await call({})).status).toBe(200);
+    expect(seen).toEqual([proof, undefined]);
+    await expect(call({ DPoP: "not a proof" })).rejects.toThrow(/Rejected/);
+    expect(seen).toHaveLength(2);
   });
   it.each(["projects.clone", "git.switch", "devices.setup", "workspace.run"])(
     "preserves the upstream deadline policy for %s",

@@ -180,7 +180,10 @@ import type { UserQuestionPrompt, UserQuestionReply } from "../model/userQuestio
 import { historyKey, type HistoryBrowse } from "../model/composerHistory";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
-import { capturePastedTextAttachment, replacePastedText } from "../model/pastedTextAttachment";
+import {
+  capturePastedTextAttachment,
+  insertPastedTextReference,
+} from "../model/pastedTextAttachment";
 import {
   createBlankSkill,
   dollarTokenAt,
@@ -3255,7 +3258,6 @@ export const Composer = memo(function Composer({
           : undefined;
       if (paste) {
         e.preventDefault();
-        paste.insert();
         rememberAttachmentRead(async (accepted) => {
           const skips = collectSkippedAttachments();
           const incoming = await attachmentsFromFiles([paste.file], {
@@ -3264,17 +3266,16 @@ export const Composer = memo(function Composer({
           });
           accepted.apply(() => {
             const el = ref.current;
-            const range = el && paste.range(el.value);
-            if (!accepted.isCurrent() || !el || !range) {
+            if (!accepted.isCurrent() || !el) {
               incoming.forEach(revokeAttachment);
               return;
             }
             addAttachments(incoming, skips.notice(accepted.capacity), (attachments) => {
               const index = attachments.findIndex((file) => file.id === incoming[0]?.id);
-              if (index >= 0) {
-                const edit = replacePastedText(
+              if (index >= 0 && el === paste.field) {
+                const edit = insertPastedTextReference(
                   el.value,
-                  range,
+                  paste.range(el.value),
                   attachmentDraftTokens(attachments)[index],
                 );
                 applyTextareaEdit(el, edit.text, edit.caret);

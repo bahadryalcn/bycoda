@@ -8,7 +8,6 @@ import { saveNotificationsEnabled } from "../../notifications/model/notification
 
 const permission = vi.hoisted(() => ({ value: "denied", windows: true }));
 vi.mock("../../../platform/tauri/systemPermissions", () => ({
-  listenSystemPermissionsChanged: () => () => {},
   systemPermissionsStatus: async () => {
     if (permission.value === "unavailable") throw new Error("Unavailable");
     return {

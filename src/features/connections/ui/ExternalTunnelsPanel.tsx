@@ -86,7 +86,7 @@ export function TunnelControls({
       className="external-tunnel-controls"
       aria-busy={state.pending || state.phase === "loading"}
     >
-      <TunnelRows machine={machine} session={session} active={active} />
+      <TunnelRows session={session} active={active} />
       <TunnelNotices session={session} retry={false} />
       <TunnelStartForm
         session={session}
@@ -151,7 +151,7 @@ function MachineSharing({
               {machineLabel(machine)}
             </SectionLabel>
           ) : null}
-          <TunnelRows machine={machine} session={session} />
+          <TunnelRows session={session} />
           <TunnelNotices session={session} issue={!sharing} />
         </div>
       ) : null}
@@ -261,6 +261,12 @@ export function ExternalTunnelsPanel({
       >
         {t("Shared links")}
       </SectionLabel>
+      {/* Not optional help: every shared link is reachable from the public internet. */}
+      <Alert tone="warning">
+        {t(
+          "Public internet: tunnels (Cloudflare, ngrok, Tailscale Funnel) share a dev server or this Host with other computers. Anyone on the internet can reach the address. Phones use a tunnel only when you allow it in Devices; Same Wi-Fi and Tailscale (private) stay private.",
+        )}
+      </Alert>
       {ordered.map((entry) => (
         <MachineSharing
           key={`${entry.id}:${entry.environmentId}`}

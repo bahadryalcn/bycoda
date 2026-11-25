@@ -1,6 +1,6 @@
 ---
 name: feature-permissions
-description: Use when changing OS permission status, setup guides and the macOS helper. Not for feature enable switches; see feature-settings.
+description: Use when changing OS permission status, setup dialogs and the macOS Finder handoff. Not for feature enable switches; see feature-settings.
 ---
 
 # System permissions
@@ -9,9 +9,9 @@ Owns OS permission presentation under `src/features/permissions/`, the typed pla
 
 ## Source starts
 
-- `src/features/permissions/index.ts`: public rows, setup sheet and status hook.
+- `src/features/permissions/index.ts`: public rows, setup dialog and status hook.
 - `src/platform/tauri/systemPermissions.ts`: native report and command contract.
-- `src-tauri/src/system_permissions/`: platform probes, explicit requests and helper window.
+- `src-tauri/src/system_permissions/`: platform probes, explicit requests, the macOS companion card and app reveal in Finder.
 
 ## Workflow
 
@@ -25,9 +25,11 @@ Owns OS permission presentation under `src/features/permissions/`, the typed pla
 - Opening a page only reads status. Only owner clicks can request access.
 - Unknown and failed reads never imply access. Clear stale grants after failures.
 - Helper permissions belong to its own process; app grants do not establish helper grants.
-- Every `usePermissionStatus` consumer shares one report store (`hooks/permissionStatusStore.ts`): one focus listener, one native-event subscription, focus reads join a current read, and only an explicit `refresh` always reads again.
+- Every `usePermissionStatus` consumer shares one report store (`hooks/permissionStatusStore.ts`): one focus listener, focus reads join a current read, and only an explicit `refresh` always reads again.
 - macOS Screen Recording and Full Disk Access reach a running app only after a restart. Entry `detail: "restart-required"` means the OS switch is on but this process lacks it; the UI offers a restart, never "allowed".
-- Poll only while a setup sheet is open. Native events use window-scoped listeners.
+- Poll only while a setup dialog is open.
+- The macOS card only docks outside System Settings. The setup dialog keeps a Finder action for windows with no room for the card.
+- Native drag starts only from the active card and carries the running app bundle. The webview supplies no file path. Click or a failed drag reveals the bundle in Finder.
 - A webview refusal after a native microphone grant needs capture retry, not an OS settings redirect.
 - Keep stable capture and elevated-target error codes intact.
 

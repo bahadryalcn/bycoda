@@ -1,3 +1,5 @@
+import { isBrowserDevelopmentAddress } from "../../../shared/lib/browserProfile";
+
 export type BrowserSearchEngine = "disabled" | "duckduckgo" | "google" | "bing" | "custom";
 export type BrowserSearchSettings = { engine: BrowserSearchEngine; template: string };
 const controls = /\p{Cc}/u;
@@ -64,11 +66,7 @@ export function isLocalBrowserAddress(address: string) {
   try {
     const url = new URL(address);
     return (
-      ["http:", "https:"].includes(url.protocol) &&
-      ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) &&
-      url.port !== "1420" &&
-      !url.username &&
-      !url.password
+      isBrowserDevelopmentAddress(url) && url.port !== "1420" && !url.username && !url.password
     );
   } catch {
     return false;

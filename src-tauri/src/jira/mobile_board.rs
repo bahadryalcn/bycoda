@@ -501,6 +501,32 @@ pub async fn jira_mobile_board_prepare(
     mutation: Mutation,
     deadline: u64,
 ) -> Result<Value, String> {
+    jira_board_prepare_reviewed(
+        app,
+        window,
+        cwd,
+        filters,
+        snapshot_id,
+        mutation,
+        deadline,
+        true,
+    )
+    .await
+}
+
+/// `ask` is false only for a Room whose native standing consent already admits the change;
+/// the webview command always asks.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn jira_board_prepare_reviewed(
+    app: AppHandle,
+    window: WebviewWindow,
+    cwd: String,
+    filters: Filters,
+    snapshot_id: String,
+    mutation: Mutation,
+    deadline: u64,
+    ask: bool,
+) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move|| {
         let error_account=require_config(&app).ok();
         let result=(|| -> Result<Value,String> {
@@ -532,7 +558,7 @@ pub async fn jira_mobile_board_prepare(
             }
         };
         deadline_valid(deadline,now()?)?;
-        let approved=crate::control::owner_approval::ask_window_checked(&app, &window, crate::control::owner_approval::Prompt { title: "bycoda — Inbox operation approval", message: &(format!("Approve this exact Jira board operation?\n\nProject: {cwd}\nSite: {}\nAccount: {}\nBoard: {}\nIssue: {key}\n{description}",snapshot.account.site,snapshot.account.email,snapshot.board_id)), confirm: "Approve this operation", cancel: "Cancel" }, || { deadline_valid(deadline,now()?)?; checked_snapshot(&app,&window,&cwd,&filters,&snapshot_id).map(|_| ()) });
+        let approved=!ask || crate::control::owner_approval::ask_window_checked(&app, &window, crate::control::owner_approval::Prompt { title: "bycoda — Inbox operation approval", message: &(format!("Approve this exact Jira board operation?\n\nProject: {cwd}\nSite: {}\nAccount: {}\nBoard: {}\nIssue: {key}\n{description}",snapshot.account.site,snapshot.account.email,snapshot.board_id)), confirm: "Approve this operation", cancel: "Cancel" }, || { deadline_valid(deadline,now()?)?; checked_snapshot(&app,&window,&cwd,&filters,&snapshot_id).map(|_| ()) });
         if !approved { return Err("Native owner declined the Jira operation".into()); }
         deadline_valid(deadline,now()?)?;
         checked_snapshot(&app,&window,&cwd,&filters,&snapshot_id)?;

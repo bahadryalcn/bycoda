@@ -1,4 +1,11 @@
 import { useState } from "react";
+import {
+  BROWSER_VIEWPORT_MAX_HEIGHT,
+  BROWSER_VIEWPORT_MAX_WIDTH,
+  BROWSER_VIEWPORT_MIN,
+  BROWSER_VIEWPORT_PRESETS,
+  validBrowserViewportDimension,
+} from "../../../shared/lib/browserViewport";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
 import { Select } from "../../../shared/ui/Select";
@@ -6,11 +13,10 @@ import { TextField } from "../../../shared/ui/TextField";
 import { RefreshCw } from "../../../shared/ui/icons";
 
 type Viewport = { width: number; height: number };
-const presets = [
-  { value: "1280x720", label: "Desktop", width: 1280, height: 720 },
-  { value: "768x1024", label: "Tablet", width: 768, height: 1024 },
-  { value: "390x844", label: "Phone", width: 390, height: 844 },
-];
+const presets = BROWSER_VIEWPORT_PRESETS.map((preset) => ({
+  ...preset,
+  value: `${preset.width}x${preset.height}`,
+}));
 
 /** Explicit page resizing; the owner keys this editor by Host dimensions to reset its draft. */
 export function BrowserViewportControls({
@@ -28,15 +34,12 @@ export function BrowserViewportControls({
   const [height, setHeight] = useState(String(viewport.height));
   const next = { width: Number(width), height: Number(height) };
   const valid =
-    Number.isInteger(next.width) &&
-    next.width >= 240 &&
-    next.width <= 2560 &&
-    Number.isInteger(next.height) &&
-    next.height >= 240 &&
-    next.height <= 2160;
+    validBrowserViewportDimension(next.width, BROWSER_VIEWPORT_MAX_WIDTH) &&
+    validBrowserViewportDimension(next.height, BROWSER_VIEWPORT_MAX_HEIGHT);
   const value = `${viewport.width}x${viewport.height}`;
   const changed = next.width !== viewport.width || next.height !== viewport.height;
-  const canRotate = viewport.height <= 2560 && viewport.width <= 2160;
+  const canRotate =
+    viewport.height <= BROWSER_VIEWPORT_MAX_WIDTH && viewport.width <= BROWSER_VIEWPORT_MAX_HEIGHT;
   return (
     <section className="host-browser-viewport-content" aria-label={t("Browser viewport")}>
       <Select
@@ -69,8 +72,8 @@ export function BrowserViewportControls({
           label={t("Width")}
           autoFocus
           type="number"
-          min={240}
-          max={2560}
+          min={BROWSER_VIEWPORT_MIN}
+          max={BROWSER_VIEWPORT_MAX_WIDTH}
           step={1}
           value={width}
           disabled={disabled}
@@ -79,8 +82,8 @@ export function BrowserViewportControls({
         <TextField
           label={t("Height")}
           type="number"
-          min={240}
-          max={2160}
+          min={BROWSER_VIEWPORT_MIN}
+          max={BROWSER_VIEWPORT_MAX_HEIGHT}
           step={1}
           value={height}
           disabled={disabled}
@@ -106,7 +109,7 @@ export function BrowserViewportControls({
           disabledReason={
             disabledReason ??
             (!valid
-              ? t("Width: 240–2560 px. Height: 240–2160 px.")
+              ? t("Viewport dimensions must fit the supported limits.")
               : t("Viewport already uses these dimensions."))
           }
           tooltip={t("Change page dimensions to test responsive layouts.")}

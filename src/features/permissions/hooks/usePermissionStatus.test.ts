@@ -4,15 +4,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 const native = vi.hoisted(() => ({
   read: vi.fn(),
-  listener: undefined as undefined | ((report: unknown) => void),
-  dispose: vi.fn(),
 }));
 vi.mock("../../../platform/tauri/systemPermissions", () => ({
   systemPermissionsStatus: native.read,
-  listenSystemPermissionsChanged: (listener: (report: unknown) => void) => {
-    native.listener = listener;
-    return native.dispose;
-  },
 }));
 vi.mock("../../../shared/i18n", () => ({ t: (s: string) => s }));
 import { usePermissionStatus } from "./usePermissionStatus";
@@ -29,7 +23,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it("reads on mount and focus, clears stale grants on error, accepts native changes and disposes", async () => {
+it("reads on mount and focus, clears stale grants on error and detaches on unmount", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   native.read.mockResolvedValue(report("granted"));
   const root = createRoot(document.createElement("div"));
@@ -44,13 +38,16 @@ it("reads on mount and focus, clears stale grants on error, accepts native chang
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(current.entries[0].state).toBe("unknown");
   expect(current.failed).toBe(true);
-  await act(async () => native.listener?.(report("denied")));
+  native.read.mockResolvedValue(report("denied"));
+  await act(async () => window.dispatchEvent(new Event("focus")));
   expect(current.entries[0].state).toBe("denied");
   act(() => root.unmount());
-  expect(native.dispose).toHaveBeenCalledOnce();
+  native.read.mockClear();
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(native.read).not.toHaveBeenCalled();
 });
 
-it("shares one report, one focus read and one native subscription across consumers", async () => {
+it("shares one report and one focus read across consumers", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const listen = vi.spyOn(window, "addEventListener");
   native.read.mockResolvedValue(report("granted"));
@@ -79,7 +76,6 @@ it("shares one report, one focus read and one native subscription across consume
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(seen.every((row) => row.failed && row.entries[0].state === "unknown")).toBe(true);
   act(() => root.unmount());
-  expect(native.dispose).toHaveBeenCalledOnce();
   listen.mockRestore();
 });
 
@@ -136,7 +132,7 @@ it("pauses the setup poll while the window is hidden and reads once when it show
     visibility.mockRestore();
   }
 });
-it("polls only during setup and ignores a late read after a newer event", async () => {
+it("polls only during setup and stops when the dialog closes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   native.read.mockResolvedValue(report("denied"));
@@ -150,17 +146,10 @@ it("polls only during setup and ignores a late read after a newer event", async 
   await act(async () => vi.advanceTimersByTime(2000));
   expect(native.read).toHaveBeenCalledTimes(1);
   await act(async () => root.render(createElement(Probe, { open: true })));
-  let resolve!: (value: unknown) => void;
-  native.read.mockImplementation(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      }),
-  );
+  native.read.mockResolvedValue(report("granted"));
   await act(async () => vi.advanceTimersByTime(1000));
-  await act(async () => native.listener?.(report("granted")));
-  await act(async () => resolve(report("denied")));
   expect(current.entries[0].state).toBe("granted");
-  act(() => root.unmount());
+  await act(async () => root.render(createElement(Probe, { open: false })));
   expect(vi.getTimerCount()).toBe(0);
+  act(() => root.unmount());
 });

@@ -55,6 +55,56 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("progressive stored history", () => {
+  it("reuses the resident tail only after checking its revision, metadata and queue", async () => {
+    const id = "reopen-native-preview";
+    let revision = 7;
+    let title = "Before";
+    let queued = false;
+    let exists = true;
+    const reads: number[] = [];
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "session_get_queue")
+        return (queued ? [{ id: "follow-up", text: "Next message" }] : []) as never;
+      if (command !== "session_get_page") return [] as never;
+      const stampOnly = (args as { before?: number }).before === 0;
+      reads.push(stampOnly ? 0 : 48);
+      if (!exists) return null as never;
+      return {
+        session: {
+          ...record(
+            id,
+            stampOnly ? [] : [{ id: "answer", role: "assistant", text: String(revision) }],
+          ),
+          title,
+          transcriptRevision: revision,
+        },
+        before: stampOnly ? undefined : 100,
+        totalBlocks: 101,
+        revision,
+      } as never;
+    });
+    const first = (await getSession(id, { deferHistory: true }))!;
+    title = "Renamed in another window";
+    queued = true;
+    const reopen = () => getSession(id, { deferHistory: true, cachedPreview: first });
+    const second = await reopen();
+    expect(second?.blocks).toBe(first.blocks);
+    expect(second).toMatchObject({
+      title,
+      queuedMessages: [{ id: "follow-up" }],
+      storedHistory: { before: 100, revision: 7 },
+    });
+    expect(shouldPersistSession(second!)).toBe(false);
+    expect(reads).toEqual([48, 0]);
+    revision++;
+    queued = false;
+    const changed = await reopen();
+    expect(changed?.blocks[0].text).toBe("8");
+    expect(changed?.queuedMessages).toBeUndefined();
+    exists = false;
+    await expect(reopen()).resolves.toBeNull();
+    expect(reads).toEqual([48, 0, 0, 48, 0]);
+  });
   it("starts the queue read with the first page and restores it once", async () => {
     const id = "parallel-tail-queue";
     const page = deferred<unknown>();
@@ -171,6 +221,7 @@ describe("progressive stored history", () => {
       id: `block-${index}`,
       role: index % 2 === 0 ? "user" : "assistant",
       text: `Message ${index}`,
+      ...(index === 16 ? { orchestrationLeadId: "parent" } : {}),
     }));
     vi.mocked(invoke).mockImplementation((command, args) => {
       if (command === "session_get_page") {
@@ -206,6 +257,9 @@ describe("progressive stored history", () => {
     expect([...page!.blocks, ...window!.blocks].map((block) => block.id)).toEqual(
       blocks.map((block) => block.id),
     );
+    const reopened = await getSession(id, { deferHistory: true, cachedPreview: window! });
+    expect(reopened?.orchestrationLeadId).toBe("parent");
+    expect(reopened?.blocks).toBe(window?.blocks);
   });
   it("recovers a raw plan revision after its proposal context arrives on an earlier page", async () => {
     const proposal: OrchestrationProposal = {

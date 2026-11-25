@@ -524,3 +524,51 @@ it("keeps an answered capture's result when its caller aborts afterwards", async
   });
   relay.close();
 });
+
+it("answers the session Full access query for task and inbox approvals only", async () => {
+  for (const approval of ["tasks.write.authorize", "inbox.write.authorize"]) {
+    const relay = new ConversationDesktopRelay("host");
+    await relay.take("native");
+    let mode = "full-access";
+    const pending = relay.call(
+      approval,
+      { operation: {}, fullAccess: false },
+      "/project",
+      principal,
+      () => true,
+      () => mode === "full-access",
+    );
+    const [request] = await relay.take("native");
+    const id = String(request.id);
+    expect(await relay.authorize(id, `${approval}.permission`, "native")).toEqual({
+      authorized: true,
+      fullAccess: true,
+    });
+    mode = "auto";
+    expect(await relay.authorize(id, `${approval}.permission`, "native")).toEqual({
+      authorized: true,
+      fullAccess: false,
+    });
+    // A query for another request's action never matches this one.
+    expect(await relay.authorize(id, permission, "native")).toEqual({ authorized: false });
+    await relay.finish(id, { approved: true }, undefined, "native");
+    await pending;
+    relay.close();
+  }
+  const relay = new ConversationDesktopRelay("host");
+  await relay.take("native");
+  const pending = relay.call(
+    "terminals.create",
+    {},
+    "/project",
+    principal,
+    () => true,
+    () => true,
+  );
+  void pending.catch(() => undefined);
+  const [request] = await relay.take("native");
+  expect(
+    await relay.authorize(String(request.id), "terminals.create.permission", "native"),
+  ).toEqual({ authorized: false });
+  relay.close();
+});

@@ -204,6 +204,32 @@ async function advance(milliseconds = 250) {
 }
 
 describe("orchestration worker detachment", () => {
+  it("retains an unchanged native preview after detachment without persisting partial history", async () => {
+    const id = "native-preview";
+    const block = { id: "last", role: "assistant", text: "Last reply" };
+    const before = mocks.invoke.getMockImplementation()!;
+    mocks.invoke.mockImplementation(async (command, args) => {
+      if (command === "session_get_queue") return [];
+      if (command === "session_get_page")
+        return {
+          session: { ...chat(id), blocks: [block], transcriptRevision: 7, createdAt: 1 },
+          before: 90,
+          totalBlocks: 91,
+          revision: 7,
+        };
+      return before(command, args);
+    });
+    const preview = (await getSession(id, { deferHistory: true }))!;
+    const edited = { ...preview, id: "unstamped", blocks: [...preview.blocks] };
+    const workspace = mountWorkspace({
+      sessions: [preview, edited, chat("other")],
+      tabs: [newTab("other")],
+    });
+    await advance();
+    expect(workspace.cache.get(id)).toBe(preview);
+    expect(workspace.cache.has(edited.id)).toBe(false);
+    expect(stored.size).toBe(0);
+  });
   it("retains delegated children of an idle worker retained by its open lead", async () => {
     const lead = chat("lead");
     const worker = chat("worker", { orchestrationLeadId: lead.id });

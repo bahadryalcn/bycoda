@@ -274,7 +274,10 @@ describe("QueuedMessageEditDialog", () => {
     Object.defineProperty(event, "clipboardData", {
       value: { getData: (type: string) => (type === "text/plain" ? "a".repeat(9000) : "") },
     });
-    await act(async () => field.dispatchEvent(event));
+    await act(async () => {
+      field.dispatchEvent(event);
+      expect(field.value).toBe("Before replace after");
+    });
     expect(event.defaultPrevented).toBe(true);
     expect(field.value).toMatch(/^Before \[.+\] after$/);
     await act(async () => button("Save").click());

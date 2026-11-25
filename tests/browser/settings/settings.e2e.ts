@@ -1,6 +1,45 @@
 import { test, expect, type Page } from "@playwright/test";
 
 for (const theme of ["dark", "light"])
+  for (const width of [1280, 800, 390]) {
+    test(`browser profiles and viewport presets ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=tools&theme=${theme}&lang=en&browserProfiles`,
+      );
+      const grant = page.getByRole("switch", { name: "Allow agents to use Work" });
+      await expect(grant).not.toBeChecked();
+      await grant.click();
+      await expect(grant).toBeChecked();
+      const profile = page
+        .locator('[data-setting-id="browser-default-profile"]')
+        .getByRole("button");
+      await profile.click();
+      await page.getByRole("option", { name: "Work", exact: true }).click();
+      await expect(profile).toContainText("Work");
+      const development = page.getByRole("button", { name: /^Development browser profile:/ });
+      await expect(development).toContainText("Isolated");
+      await development.focus();
+      await development.press("Enter");
+      await page.getByRole("option", { name: "Work", exact: true }).click();
+      await expect(development).toContainText("Work");
+      await profile.click();
+      await page.getByRole("option", { name: "Isolated", exact: true }).click();
+      await expect(profile).toContainText("Isolated");
+      await expect(development).toContainText("Work");
+      const viewport = page.getByRole("button", { name: /^Default viewport:/ });
+      await viewport.click();
+      for (const label of ["1K (1024 × 576)", "2K (2560 × 1440)", "4K (3840 × 2160)"])
+        await expect(page.getByRole("option", { name: label, exact: true })).toBeVisible();
+      await page.getByRole("option", { name: "4K (3840 × 2160)", exact: true }).click();
+      await expect(viewport).toContainText("4K (3840 × 2160)");
+      const directory = "temp/verification/browser-profiles";
+      mkdirSync(directory, { recursive: true });
+      await page.screenshot({ path: `${directory}/profile-routing-${theme}-${width}.png` });
+    });
+  }
+
+for (const theme of ["dark", "light"])
   for (const width of [1280, 800]) {
     test(`chat message appearance controls ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });

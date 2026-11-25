@@ -223,6 +223,7 @@ import {
   type VoiceJobReviewState,
 } from "../model/voiceJobs";
 import { captureAssistantHostRead } from "../../assistant/model/assistantHostRead";
+import { readStandingConsent } from "../../assistant/public/standingConsent";
 import { voiceAssistantControlChoice } from "../model/voiceAssistantControlChoice";
 import {
   assistantJobProjectIds,
@@ -458,6 +459,8 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
         controlProjects.current = new Map(projects.map((project) => [project.id, project.name]));
         return new Set(projects.map((project) => project.id));
       },
+      // Read fresh at each delete decision so a grant saved in settings applies without a restart.
+      fullAccess: async () => (await readStandingConsent()).fullAccess,
       confirm: async (target) => {
         const ids = target.projectIds ?? (target.projectId ? [target.projectId] : []),
           names = ids.map((id) => controlProjects.current.get(id));
@@ -2926,8 +2929,7 @@ export function VoiceCompanion(props: VoiceCompanionProps & { wakeControls?: Voi
       projectPath,
     });
     const request = carried || acceptedSpeech;
-    if (workConnection.current.epoch !== epoch)
-      workConnection.current = { epoch, at: Date.now() };
+    if (workConnection.current.epoch !== epoch) workConnection.current = { epoch, at: Date.now() };
     const connectedAt = workConnection.current.at;
     return toolActivity.current!.run(
       {

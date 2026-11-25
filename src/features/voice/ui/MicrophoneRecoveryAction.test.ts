@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-const native = vi.hoisted(() => ({ open: vi.fn(), close: vi.fn(), request: vi.fn() }));
+const native = vi.hoisted(() => ({ open: vi.fn(), request: vi.fn() }));
 vi.mock("../../../platform/tauri/privacySettings", () => ({ openPrivacySettings: native.open }));
 vi.mock("../../../platform/tauri/systemPermissions", () => ({
   systemPermissionsStatus: async () => ({
@@ -12,10 +12,7 @@ vi.mock("../../../platform/tauri/systemPermissions", () => ({
     elevated: false,
     entries: [{ id: "microphone", state: "denied", canRequest: false, canOpenSettings: true }],
   }),
-  listenSystemPermissionsChanged: () => () => {},
-  closePermissionHelper: async () => native.close(),
   requestSystemPermission: native.request,
-  showPermissionHelper: vi.fn(),
 }));
 vi.mock("../model/microphoneAccess", () => ({
   canOpenMicrophoneSettings: () => true,

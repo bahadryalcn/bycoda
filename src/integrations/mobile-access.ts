@@ -1,12 +1,6 @@
-export type MobileAccessState =
-  | "ready"
-  | "setup-required"
-  | "install-required"
-  | "sign-in-required"
-  | "offline"
-  | "approval-required"
-  | "permission-required"
-  | "unavailable";
+/** `setup-required`: an address is available and the owner can enable the listener.
+ * `unavailable`: no address (Tailscale not connected, no network) or a failed bind. */
+export type MobileAccessState = "ready" | "setup-required" | "unavailable";
 
 export type MobileAccessStatus = {
   state: MobileAccessState;
@@ -20,6 +14,5 @@ export type MobileAccessStatus = {
   reason?: string;
   /** Advisory network configuration hint; never blocks pairing or readiness. */
   networkHint?: string;
-  approvalUrl?: string;
   tls?: import("../shared/model/host-contracts").MobileTlsBootstrap;
 };

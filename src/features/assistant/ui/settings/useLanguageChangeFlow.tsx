@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
-import { loadVoiceSettings } from "../../../voice/model/voiceSettings";
+import { loadVoiceSettings } from "../../../voice/public/settings";
 import {
   languageChange,
   languageDisplayName,

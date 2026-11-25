@@ -9,6 +9,8 @@ export const issueCopy: Record<TunnelUiIssue, string> = {
     "The secure credential store is unavailable. Unlock it on this computer and try again.",
   "invalid-target": "Enter a loopback HTTP or HTTPS URL, or a port from 1 to 65535.",
   "host-target-required": "This is the bycoda host port. Select bycoda host access to share it.",
+  "approval-required":
+    "Tailscale Funnel is not enabled for this computer yet. Open the approval page, enable Funnel, then start the tunnel again.",
   "origin-unreachable":
     "The local service is not listening on this computer. Start it or check the URL and port.",
   "connection-failed":
@@ -38,4 +40,8 @@ export const stateCopy = {
 };
 
 export const providerName = (provider: TunnelProvider) =>
-  provider === "ngrok" ? "ngrok" : "Cloudflare";
+  provider === "ngrok"
+    ? "ngrok"
+    : provider === "tailscale"
+      ? "Tailscale Funnel (public)"
+      : "Cloudflare";

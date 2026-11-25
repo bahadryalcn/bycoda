@@ -173,7 +173,13 @@ export function VoiceLauncher({
       shape={wakeControls ? undefined : "pill"}
       variant={slot || wakeControls ? "ghost" : "secondary"}
       iconOnly={compact}
-      padding={wakeControls && !compact ? { end: slot ? "none" : "xxs" } : undefined}
+      padding={
+        wakeControls && !compact
+          ? slot
+            ? { start: "xs", end: "none" }
+            : { end: "xxs" }
+          : undefined
+      }
       {...(slot || wakeControls
         ? { className: styles.launcherButton }
         : surfaceAttributes({ variant: "floating", frame: "pane" }, styles.launcherButton))}

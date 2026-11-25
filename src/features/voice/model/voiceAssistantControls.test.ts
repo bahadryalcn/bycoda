@@ -36,7 +36,13 @@ function fixture() {
     return { ok: true };
   });
   const projects = vi.fn(async () => allowed);
-  const controls = new VoiceAssistantControls({ request, allowedProjectIds: projects, confirm });
+  let access: () => Promise<boolean> = async () => false;
+  const controls = new VoiceAssistantControls({
+    request,
+    allowedProjectIds: projects,
+    confirm,
+    fullAccess: () => access(),
+  });
   const call = (name: string, args: unknown, text = "Stop Recovery", active = () => true) =>
     controls.call(name, args, { key: "owner-turn", utterance: text }, active);
   return {
@@ -46,6 +52,9 @@ function fixture() {
     request,
     projects,
     call,
+    setAccess(value: () => Promise<boolean>) {
+      access = value;
+    },
     setAllowed(value: string[]) {
       allowed = new Set(value);
     },
@@ -632,4 +641,50 @@ it("lists bounded activity and notifications only for visible project scope", as
   expect(notices.notifications.map((item) => item.id)).toEqual(["n1"]);
   expect(() => f.call("assistant_activity", { list: "activity", limit: 99 })).toThrow();
   expect(f.confirm).not.toHaveBeenCalled();
+});
+
+const deleteJob = { id: "job-a", expectedVersion: 1, action: "delete" };
+const deleteNote = { id: "note-a", expectedUpdatedAt: 1 };
+it.each([
+  ["no grant, level ask or exclusions present", async () => false],
+  ["a failed or loading consent read", async () => Promise.reject(new Error("failed"))],
+])("still shows the delete cards for %s", async (_name, access) => {
+  const f = fixture();
+  f.setAccess(access);
+  await f.call("assistant_job_control", deleteJob, "Delete Recovery");
+  expect(f.confirm).toHaveBeenCalledTimes(1);
+  await f.call("assistant_note_delete", deleteNote, "Delete the note");
+  expect(f.confirm).toHaveBeenCalledTimes(2);
+});
+it("deletes an exactly named job and note without a card under Full access", async () => {
+  const f = fixture();
+  f.setAccess(async () => true);
+  expect(await f.call("assistant_job_control", deleteJob, "Delete Recovery")).toMatchObject({
+    job: { id: "job-a" },
+    confirmation: "not_required_full_access",
+  });
+  expect(await f.call("assistant_note_delete", deleteNote, "Delete the note")).toEqual({
+    deleted: true,
+    id: "note-a",
+    confirmation: "not_required_full_access",
+  });
+  expect(f.confirm).not.toHaveBeenCalled();
+  expect(f.request.mock.calls.some(([input]) => input.op === "jobs.control")).toBe(true);
+  expect(f.request.mock.calls.some(([input]) => input.op === "notes.delete")).toBe(true);
+});
+it("still asks under Full access when the delete does not identify the item", async () => {
+  const f = fixture();
+  f.jobs.push({
+    id: "job-b",
+    title: "Other",
+    projectId: "visible",
+    version: 1,
+    status: "running",
+  } as AssistantJob);
+  f.notes.push({ id: "note-b", title: "More", updatedAt: 1, tags: ["assistant"] } as AssistantNote);
+  f.setAccess(async () => true);
+  await f.call("assistant_job_control", deleteJob, "Delete it");
+  expect(f.confirm).toHaveBeenCalledTimes(1);
+  await f.call("assistant_note_delete", deleteNote, "Delete the note");
+  expect(f.confirm).toHaveBeenCalledTimes(2);
 });

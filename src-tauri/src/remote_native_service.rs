@@ -1013,6 +1013,7 @@ mod tests {
                 token: "secret-native-token".into(),
                 ssh: None,
                 local_host: true,
+                proof_seed: None,
             };
             write(&path, std::slice::from_ref(&machine)).unwrap();
             let broker = NativeProfileBroker::default();

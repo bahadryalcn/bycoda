@@ -3,9 +3,11 @@ import { access } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { homedir } from "node:os";
 import { createConnection } from "node:net";
+import { tailscaleExecutable } from "./tailscale-funnel";
 import { StringDecoder } from "node:string_decoder";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import {
+  tailscaleApprovalUrl,
   tunnelPublicUrl,
   type TunnelProvider,
   type TunnelIssue,
@@ -13,7 +15,7 @@ import {
 
 export type TunnelEvent =
   | { type: "ready"; publicUrl: string }
-  | { type: "error"; issue: TunnelIssue }
+  | { type: "error"; issue: TunnelIssue; approvalUrl?: string }
   | { type: "exit" };
 export type TunnelCommand = {
   provider: TunnelProvider;
@@ -23,6 +25,7 @@ export type TunnelCommand = {
 };
 
 export async function tunnelExecutable(provider: TunnelProvider): Promise<string | undefined> {
+  if (provider === "tailscale") return tailscaleExecutable();
   const name = `${provider === "ngrok" ? "ngrok" : "cloudflared"}${process.platform === "win32" ? ".exe" : ""}`;
   const directories = [
     ...(process.env.PATH ?? "")
@@ -50,7 +53,14 @@ export function tunnelCommand(
   localUrl: string,
   config: string,
   token?: string,
+  funnelPort?: number,
 ): TunnelCommand {
+  // Foreground, never `--bg`: stopping this process removes the funnel again. It targets the
+  // tunnel ingress listener, so Funnel traffic is classified like Cloudflare and ngrok.
+  if (provider === "tailscale") {
+    if (!funnelPort) throw new Error("A Funnel port is required.");
+    return { provider, program, args: ["funnel", `--https=${funnelPort}`, localUrl] };
+  }
   return provider === "ngrok"
     ? {
         provider,
@@ -143,9 +153,9 @@ export function tunnelOutput(
   // single ngrok session.
   const healthy = new Set<string>();
   let outageSince: number | undefined;
-  const fail = (issue: TunnelIssue) => {
+  const fail = (issue: TunnelIssue, approvalUrl?: string) => {
     failure = issue;
-    emit({ type: "error", issue });
+    emit({ type: "error", issue, ...(approvalUrl ? { approvalUrl } : {}) });
   };
   const publish = () => {
     if (publicUrl && connected && !ready && !failure) {
@@ -168,6 +178,21 @@ export function tunnelOutput(
     if (failure) return;
     if (CREDENTIAL_LINE.test(text)) {
       fail("credential-missing");
+      return;
+    }
+    if (provider === "tailscale") {
+      // Funnel waits for the owner to enable it in the Tailscale admin console.
+      const approval = ready ? undefined : tailscaleApprovalUrl(text);
+      if (approval) {
+        fail("approval-required", approval);
+        return;
+      }
+      for (const value of text.match(/https:\/\/[^\s<>"'|]+/g) ?? []) {
+        publicUrl = tunnelPublicUrl(provider, value) ?? publicUrl;
+      }
+      // The URL line is the only readiness signal Funnel prints.
+      connected = !!publicUrl;
+      publish();
       return;
     }
     if (!ready) {

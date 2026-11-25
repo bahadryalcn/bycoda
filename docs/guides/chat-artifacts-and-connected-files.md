@@ -4,7 +4,8 @@ The session composer and its docked question form let the chat background show t
 fill. Reduced transparency and forced colors use a solid fill.
 
 Markdown formatting appears in the chat composer as you type, including drafts with inline
-attachments and links. Move the caret onto a Markdown marker to see and edit it. Sent messages
+attachments and links. Move the caret onto a Markdown marker to see and edit it. Long drafts grow
+up to 224 px before scrolling inside the writing area. Sent messages
 display Markdown. Click a long message to read it in the chat, or use **Expand** to open it in a
 dialog with the same formatting. **Copy message** and **Save as note** use the original Markdown.
 
@@ -59,7 +60,7 @@ Backspace after a reference or Delete before it removes the whole reference.
 
 ## Pasted text
 
-When you paste 8,000 or more characters into a desktop chat that supports attachments, Bycoda saves the text as a UTF-8 file and shows a **Pasted text** card with its size. Open the card to read the text, remove it from the draft, or use **Download** on the sent card to save a copy. If the file cannot be saved, the pasted text stays in the draft.
+When you paste 8,000 or more characters into a desktop chat that supports attachments, Bycoda prepares a UTF-8 file and shows a **Pasted text** card in the draft. Open the card to read the text, remove it from the draft, or use **Download** on the sent card to save a copy. A save failure shows an error and leaves the draft as it was before pasting.
 
 ## Image attachments
 

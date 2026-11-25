@@ -128,6 +128,12 @@ describe("resolveClaudeApiModelId", () => {
 });
 
 describe("buildClaudeSpawnArgs", () => {
+  it("only switches native Chrome when a launch has an explicit browser setting", () => {
+    expect(buildClaudeSpawnArgs({ chrome: true })).toContain("--chrome");
+    expect(buildClaudeSpawnArgs({ chrome: false })).toContain("--no-chrome");
+    expect(buildClaudeSpawnArgs({})).not.toContain("--chrome");
+    expect(buildClaudeSpawnArgs({ isolated: true, chrome: true })).not.toContain("--chrome");
+  });
   it("speaks stream-json with stdio permissions like the Agent SDK", () => {
     const args = buildClaudeSpawnArgs({
       model: "claude-sonnet-5",

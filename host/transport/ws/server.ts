@@ -57,6 +57,7 @@ import {
 } from "./server-helpers";
 import { isTunnelUpgradeUrl } from "../../dev-servers/dev-server-tunnel";
 import { isBrowserMediaUpgrade } from "../../browser/browser-media";
+import { DEVICE_PROOF_REFUSAL_HEADERS, type DeviceProofGate } from "../../security/device-proof";
 import {
   authorizeWith,
   invalidRequestMessage,
@@ -88,6 +89,8 @@ export type HostWebSocketOptions = {
   environmentId: string;
   mobileIngressSecret?: string;
   authenticate: (token: string, signal: AbortSignal) => Promise<HostWsPrincipal | null>;
+  /** Device proof-of-possession for the upgrade request; checked once, after the credential. */
+  proof?: DeviceProofGate;
   dispatch: (method: string, params: unknown, context: HostDispatchContext) => Promise<unknown>;
   /** An explicit routed service allowlist, never the whole schema registry. */
   methods?: readonly string[];
@@ -98,11 +101,6 @@ export type HostWebSocketOptions = {
     method: string,
     params: Record<string, unknown>,
   ) => readonly string[] | Promise<readonly string[]>;
-  /** Exact reverse-proxy Host values require deliberate composition. No wildcards.
-   * A function is read on every upgrade so a learned proxy name (Tailscale Serve) applies live. */
-  allowedHosts?: readonly string[] | (() => readonly string[]);
-  /** Gives a loopback proxy a retryable refusal while its exact name is being discovered. */
-  retryUnknownHost?: (host: string) => boolean;
   limits?: Partial<
     Record<
       | "maxPendingRpc"
@@ -990,7 +988,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
   }
 
   function validHost(request: IncomingMessage): boolean {
-    return hostHeaderAllowed(request, options.server, options.allowedHosts);
+    return hostHeaderAllowed(request, options.server);
   }
 
   const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -1026,13 +1024,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       return;
     }
     if (!validHost(request)) {
-      const proxy =
-        remoteSource === "127.0.0.1" ||
-        remoteSource === "::1" ||
-        remoteSource === "::ffff:127.0.0.1";
-      const host = request.headers.host;
-      const retry = proxy && typeof host === "string" && options.retryUnknownHost?.(host);
-      rejectUpgrade(socket, retry ? 503 : 400);
+      rejectUpgrade(socket, 400);
       return;
     }
     // Behind a loopback proxy the socket address is shared by every phone. Forwarding headers are
@@ -1076,10 +1068,17 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     });
     // Socket admission expires independently, but a non-cooperative auth job
     // keeps its separate bounded budget until the backend actually settles.
+    let proofRefused = false;
     const authentication = (async () => {
       const principal = await options.authenticate(token, controller.signal);
       if (controller.signal.aborted || !principal) return null;
-      return (await principal.authorized()) ? principal : null;
+      if (!(await principal.authorized())) return null;
+      const proof = await options.proof?.(request, token);
+      if (proof && !proof.ok) {
+        proofRefused = true;
+        return null;
+      }
+      return principal;
     })();
     const releaseJob = () => {
       authenticationJobs.delete(job);
@@ -1093,7 +1092,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         const principal = await waitFor(authentication, controller.signal);
         if (closing || socket.destroyed) return;
         if (!principal) {
-          rejectUpgrade(socket, 401);
+          rejectUpgrade(socket, 401, proofRefused ? DEVICE_PROOF_REFUSAL_HEADERS : undefined);
           return;
         }
         if (closing || socket.destroyed) return;

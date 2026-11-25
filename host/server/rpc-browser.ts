@@ -19,6 +19,17 @@ export async function handleBrowserRpc(
   request: OwnerRpcRequest,
 ): Promise<void> {
   switch (request.input.method) {
+    case "browser.profiles.list":
+    case "browser.profiles.update": {
+      const profiles = dependencies.sharedBrowser.profiles;
+      if (!profiles) throw new Error("Browser profiles are unavailable on this Host.");
+      request.result =
+        request.input.method === "browser.profiles.list"
+          ? await profiles.list()
+          : await profiles.update(request.params.action, request.params.value);
+      break;
+    }
+
     case "browser.setup":
       // Explicit machine tools are authorized by the paired host credential.
       // When a conversation project is supplied, retain its validation.

@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { BrowserPanel } from "./BrowserPanel";
+import { toolPreferences } from "./model/toolPreferences";
 import { LocalBrowserSurface } from "./ui/LocalBrowserSurface";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
 
@@ -163,6 +164,28 @@ it("falls back to the shared Host when the local WebView cannot start", async ()
     expect.objectContaining({ url: address }),
   );
   expect(container.querySelector("[data-local-browser-preview]")).toBeNull();
+});
+
+it("opens localhost on the Host when development uses an imported profile", async () => {
+  const address = "http://localhost:3000/";
+  const preference = toolPreferences.browserDevelopmentUsesImportedProfile;
+  preference.save(true);
+  vi.mocked(isTauri).mockReturnValue(true);
+  vi.mocked(hostFeatureRequest).mockResolvedValue({ open: true, controlling: true, url: address });
+  try {
+    await act(async () =>
+      root.render(createElement(BrowserPanel, { cwd: "/project", initialUrl: address })),
+    );
+    expect(hostFeatureRequest).toHaveBeenCalledWith(
+      "/project",
+      "browser.shared",
+      "browser.open",
+      expect.objectContaining({ url: address }),
+    );
+    expect(invoke).not.toHaveBeenCalledWith("local_browser_preview_open", expect.anything());
+  } finally {
+    localStorage.removeItem(preference.key);
+  }
 });
 
 it("uses the remote Host for its localhost address", async () => {

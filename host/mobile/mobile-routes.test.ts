@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { MobileAccessStatus } from "../../src/integrations/mobile-access";
 import { createMobileRoutes } from "./mobile-routes";
 
@@ -10,136 +10,64 @@ const lanReady: MobileAccessStatus = {
 };
 const tailnetReady: MobileAccessStatus = {
   state: "ready",
-  endpoint: "https://mini.tail1234.ts.net:8443",
+  mode: "tailscale",
+  endpoint: "http://100.101.102.103:42000",
+  lanKey: "b".repeat(64),
 };
 
-afterEach(() => vi.useRealTimers());
-
 describe("createMobileRoutes", () => {
-  it("publishes LAN, Tailscale, then the live tunnel and removes a stopped tunnel", async () => {
-    let tunnel: string | undefined = "https://fresh.trycloudflare.com";
+  it("advertises the local and tailnet listeners, each with its public key", async () => {
     const routes = createMobileRoutes({
       lan: async () => lanReady,
-      tailscale: async () => tailnetReady,
-      tunnel: () => tunnel,
-    });
-    expect((await routes()).map((route) => route.endpoint)).toEqual([
-      lanReady.endpoint,
-      tailnetReady.endpoint,
-      tunnel,
-    ]);
-    tunnel = undefined;
-    expect((await routes()).map((route) => route.endpoint)).toEqual([
-      lanReady.endpoint,
-      tailnetReady.endpoint,
-    ]);
-  });
-  it("keeps the last Tailscale route through a transient failure and retries within seconds", async () => {
-    vi.useFakeTimers();
-    const tailscale = vi
-      .fn<() => Promise<MobileAccessStatus>>()
-      .mockResolvedValueOnce(tailnetReady)
-      .mockResolvedValueOnce({ state: "unavailable" })
-      .mockRejectedValueOnce(new Error("cli busy"))
-      .mockResolvedValueOnce({ state: "setup-required" });
-    const routes = createMobileRoutes({ lan: async () => lanReady, tailscale });
-    expect(await routes()).toContainEqual({ endpoint: tailnetReady.endpoint });
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(await routes()).toContainEqual({ endpoint: tailnetReady.endpoint });
-    expect(tailscale).toHaveBeenCalledTimes(2);
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(await routes()).toContainEqual({ endpoint: tailnetReady.endpoint });
-    expect(tailscale).toHaveBeenCalledTimes(3);
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(await routes()).toEqual([{ endpoint: lanReady.endpoint, lanKey: lanReady.lanKey }]);
-    expect(tailscale).toHaveBeenCalledTimes(4);
-  });
-  it("retries a failed slow probe five seconds after it settles", async () => {
-    vi.useFakeTimers();
-    let fail!: (reason: Error) => void;
-    const tailscale = vi
-      .fn<() => Promise<MobileAccessStatus>>()
-      .mockImplementationOnce(
-        () =>
-          new Promise((_, reject) => {
-            fail = reject;
-          }),
-      )
-      .mockResolvedValue(tailnetReady);
-    const routes = createMobileRoutes({ lan: async () => lanReady, tailscale });
-    const first = routes();
-    await vi.advanceTimersByTimeAsync(250);
-    expect(await first).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(120_000);
-    fail(new Error("Tailscale status timed out"));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(await routes()).toHaveLength(1);
-    expect(tailscale).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(4_999);
-    expect(await routes()).toHaveLength(1);
-    expect(tailscale).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(1);
-    expect(await routes()).toContainEqual({ endpoint: tailnetReady.endpoint });
-    expect(tailscale).toHaveBeenCalledTimes(2);
-  });
-
-  it("answers discovery while Tailscale is stalled and reuses its late result", async () => {
-    vi.useFakeTimers();
-    let finish!: (value: MobileAccessStatus) => void;
-    const tailscale = vi.fn(
-      () =>
-        new Promise<MobileAccessStatus>((resolve) => {
-          finish = resolve;
-        }),
-    );
-    const routes = createMobileRoutes({ lan: async () => lanReady, tailscale });
-    const pending = routes();
-    await vi.advanceTimersByTimeAsync(250);
-    const observed = vi.fn();
-    void pending.then(observed);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(observed).toHaveBeenCalledWith([
-      { endpoint: lanReady.endpoint, lanKey: lanReady.lanKey },
-    ]);
-    const later = routes();
-    await vi.advanceTimersByTimeAsync(60_000);
-    const stillWaiting = routes();
-    await vi.advanceTimersByTimeAsync(250);
-    expect(tailscale).toHaveBeenCalledOnce();
-    finish(tailnetReady);
-    await Promise.all([later, stillWaiting]);
-    expect(await routes()).toContainEqual({ endpoint: tailnetReady.endpoint });
-  });
-  it("advertises the local listener with its public key and the Tailscale endpoint", async () => {
-    const routes = createMobileRoutes({
-      lan: async () => lanReady,
-      tailscale: async () => tailnetReady,
+      tailnet: async () => tailnetReady,
     });
     expect(await routes()).toEqual([
-      { endpoint: "http://192.168.2.108:41000", lanKey: "a".repeat(64) },
-      { endpoint: "https://mini.tail1234.ts.net:8443" },
+      { endpoint: lanReady.endpoint, lanKey: lanReady.lanKey },
+      { endpoint: tailnetReady.endpoint, lanKey: tailnetReady.lanKey },
     ]);
   });
 
-  it("leaves out routes that are not ready or fail", async () => {
+  it("appends public tunnel routes last, flagged, https only", async () => {
+    const routes = createMobileRoutes({
+      lan: async () => lanReady,
+      tailnet: async () => tailnetReady,
+      publicUrls: () => [
+        "https://a.trycloudflare.com",
+        "http://insecure.example",
+        "https://b.ts.net:8443",
+      ],
+    });
+    expect(await routes()).toEqual([
+      { endpoint: lanReady.endpoint, lanKey: lanReady.lanKey },
+      { endpoint: tailnetReady.endpoint, lanKey: tailnetReady.lanKey },
+      { endpoint: "https://a.trycloudflare.com", public: true },
+      { endpoint: "https://b.ts.net:8443", public: true },
+    ]);
+  });
+
+  it("advertises no public route when none is supplied", async () => {
+    const routes = createMobileRoutes({
+      lan: async () => lanReady,
+      tailnet: async () => tailnetReady,
+      publicUrls: () => [],
+    });
+    expect((await routes()).some((route) => "public" in route)).toBe(false);
+  });
+
+  it("leaves out listeners that are not ready, fail or have no key", async () => {
     const routes = createMobileRoutes({
       lan: async () => ({ state: "setup-required", mode: "lan" }),
-      tailscale: async () => {
-        throw new Error("tailscale missing");
+      tailnet: async () => {
+        throw new Error("no tailnet address");
       },
     });
     expect(await routes()).toEqual([]);
-  });
-
-  it("asks Tailscale at most once a minute", async () => {
-    vi.useFakeTimers();
-    const tailscale = vi.fn(async () => tailnetReady);
-    const routes = createMobileRoutes({ lan: async () => lanReady, tailscale });
-    await routes();
-    await routes();
-    expect(tailscale).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(60_000);
-    await routes();
-    expect(tailscale).toHaveBeenCalledTimes(2);
+    const unkeyed = createMobileRoutes({
+      lan: async () => ({ state: "ready", endpoint: "https://example.test" }),
+      tailnet: async () => tailnetReady,
+    });
+    expect(await unkeyed()).toEqual([
+      { endpoint: tailnetReady.endpoint, lanKey: tailnetReady.lanKey },
+    ]);
   });
 });

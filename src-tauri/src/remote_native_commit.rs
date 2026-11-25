@@ -101,6 +101,7 @@ mod tests {
                 token: "fixture-owner".into(),
                 ssh: None,
                 local_host: true,
+                proof_seed: None,
             };
             write(&path, std::slice::from_ref(&machine)).unwrap();
             let routes = Arc::new(RecoveryRoutes::default());

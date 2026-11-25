@@ -425,14 +425,15 @@ it("pairs a phone in a dialog on the chosen computer and releases the code when 
   expect(container.querySelector('[role="dialog"]')).toBeNull();
 });
 
-it("requires the explicit secure connection button before creating a Tailscale QR", async () => {
+it("requires the explicit Tailscale access switch before creating a Tailscale QR", async () => {
   api.access.mockResolvedValue({ state: "setup-required" });
   await render();
   await click("Connect a phone");
   const dialog = container.querySelector('[role="dialog"]')!;
-  await click("Anywhere (Tailscale)", dialog);
+  await click("Tailscale (private)", dialog);
   expect(api.enable).not.toHaveBeenCalled();
-  await click("Enable secure connection", dialog);
+  expect(dialog.textContent).toContain("never reachable from the public internet");
+  await click("Tailscale (private) access", dialog);
   expect(api.enable).toHaveBeenCalledWith(local, "tailscale", undefined);
   expect(api.create).toHaveBeenCalledWith(local);
 });
@@ -464,5 +465,5 @@ it("turns local network access off only after confirmation and shows the network
   await act(async () => toggle.click());
   expect(api.disable).not.toHaveBeenCalled();
   await click("Turn off local network access", document.body);
-  expect(api.disable).toHaveBeenCalledWith(local);
+  expect(api.disable).toHaveBeenCalledWith(local, "lan");
 });

@@ -24,9 +24,14 @@ export const ROUTE_REJECTED =
 export const PAIRING_REFUSED =
   "This machine no longer accepts this computer’s pairing. Add it again in Connections.";
 
+/** The machine refused an unbound pairing on a public tunnel: only pairing again over a private route helps. */
+export const PROOF_REQUIRED =
+  "Re-pair this computer over a private connection (SSH, local network or Tailscale). This machine does not accept an unbound computer over a public tunnel.";
+
 /** A short reason for a status, for banners and tooltips. */
 export function connectionReason(status: RemoteConnectionStatus, raw: string): string {
   if (status === "outdated-host") return "bycoda Host on the machine needs an update.";
+  if (status === "identity-mismatch" && /\[RPC_PROOF_REQUIRED\]/.test(raw)) return PROOF_REQUIRED;
   if (status === "identity-mismatch" && /\[RPC_AUTHORIZATION\]/.test(raw)) return PAIRING_REFUSED;
   if (status === "host-not-running")
     return "The machine is reachable, but bycoda Host is not running there. Start it, then reconnect.";
@@ -61,6 +66,9 @@ export function localizeConnectionReason(reason: string): string {
     ),
     [PAIRING_REFUSED]: t(
       "This machine no longer accepts this computer’s pairing. Add it again in Connections.",
+    ),
+    [PROOF_REQUIRED]: t(
+      "Re-pair this computer over a private connection (SSH, local network or Tailscale). This machine does not accept an unbound computer over a public tunnel.",
     ),
     "SSH could not connect.": t("SSH could not connect."),
     "The machine did not answer.": t("The machine did not answer."),

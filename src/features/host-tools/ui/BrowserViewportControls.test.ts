@@ -38,7 +38,7 @@ it("uses supported dimensions for rotate and custom resize, without resizing whi
     await render(false);
     await act(async () => button("Rotate viewport").click());
     expect(onResize).toHaveBeenLastCalledWith({ width: 720, height: 1280 });
-    await edit("Width", "2561");
+    await edit("Width", "3841");
     await act(async () =>
       container
         .querySelector("form")!

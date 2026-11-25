@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { parseBrowserFrame } from "./useBrowserFrameStream";
 
 it("reads the native sequence, document identity, and bounded JPEG payload", () => {
-  const identity = { documentId: "d", navigationId: "n", width: 1280, height: 720 };
+  const identity = { documentId: "d", navigationId: "n", width: 3840, height: 2160 };
   const metadata = new TextEncoder().encode(JSON.stringify(identity));
   const packet = new ArrayBuffer(10 + metadata.length);
   const view = new DataView(packet);

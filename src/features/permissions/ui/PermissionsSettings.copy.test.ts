@@ -28,6 +28,9 @@ it("interpolates the build's product name into setup and elevation instructions"
   expect(permissionInstructions("microphone", "macos")).toContain(
     "Turn on Permission Fixture Beta.",
   );
+  expect(permissionInstructions("microphone", "macos")).not.toContain("+ button");
+  expect(permissionInstructions("camera", "macos")).not.toContain("+ button");
+  expect(permissionInstructions("accessibility", "macos")).toContain("+ button");
   expect(permissionInstructions("notifications", "windows")).toContain(
     "Turn on Notifications and Permission Fixture Beta.",
   );

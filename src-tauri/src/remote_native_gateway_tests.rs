@@ -24,6 +24,7 @@ impl Fixture {
             token: "secret-native-token".into(),
             ssh: None,
             local_host: false,
+            proof_seed: None,
         };
         write(&path, std::slice::from_ref(&machine)).unwrap();
         Self {

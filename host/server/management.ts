@@ -36,19 +36,55 @@ import {
 import { assistantModelPoolSource } from "../conversation/conversation-model-pool-source";
 import { setQuickAutomationModelPool } from "../assistant/work/assistant-quick-automations";
 import { recordAssistantCrewTaskOrigin } from "../assistant/work/assistant-owned-work";
+import {
+  assistantCriticalApprovalRequired,
+  assistantCriticalExclusions,
+} from "../assistant/management/assistant-permissions";
 import { type HostDomainContext } from "../domains/context";
 import type { ServerBindings } from "./bindings";
 
-/** Publication and physical input keep the exact owner prompt even in a Full access session. */
-const FULL_ACCESS_REVIEWED_ACTIONS = new Set(["git.push", "social.send", "desktop.act"]);
+/** Publication that the owner's Assistant critical exclusions (pushMain, sendMessages) can hold. */
+const EXCLUDABLE_PUBLICATION = new Set(["git.push", "git.merge", "social.send"]);
 
 /**
  * A Full access coding session can already commit, stage or edit files through its own shell,
- * so a management operation it requests skips the native approval the same way its SSH and MCP
- * writes do. The Host's current session mode decides; Room threads keep native standing consent.
+ * so a management operation it requests, push and social sends included, skips the native
+ * approval the same way its SSH and MCP writes do (owner decision 2026-11-25). The Host's current
+ * session mode decides; publication an owner exclusion covers still asks. Room threads keep
+ * native standing consent.
  */
-export const sessionFullAccessCovers = (action: string) =>
-  !FULL_ACCESS_REVIEWED_ACTIONS.has(action);
+export const sessionFullAccessCovers = async (
+  operation: { action: string; input: Record<string, unknown> },
+  profile: () => Promise<Parameters<typeof assistantCriticalApprovalRequired>[0]>,
+) =>
+  // Desktop input follows the owner's computer-use permission mode, never this gate.
+  operation.action !== "desktop.act" &&
+  (!EXCLUDABLE_PUBLICATION.has(operation.action) ||
+    // An unreadable mirror counts as every exclusion selected.
+    !assistantCriticalApprovalRequired(await profile().catch(() => ({})), operation));
+
+/**
+ * Inbox writes a Full access coding session makes without the native prompt. The exclusions map
+ * the way the Room gate maps them: a comment or review is a sent message, merging a pull request
+ * is a push to main; everything else has no exclusion.
+ */
+export const sessionFullAccessCoversInbox = async (
+  operation: Record<string, unknown>,
+  profile: () => Promise<Parameters<typeof assistantCriticalExclusions>[0]>,
+) => {
+  const action = operation.action;
+  const exclusion =
+    action === "comment" || action === "jira-comment-images" || action === "review"
+      ? "sendMessages"
+      : action === "pr-action" && ["merge", "squash", "rebase"].includes(String(operation.prAction))
+        ? "pushMain"
+        : undefined;
+  return (
+    !exclusion ||
+    // An unreadable mirror counts as every exclusion selected.
+    !assistantCriticalExclusions(await profile().catch(() => ({}))).includes(exclusion)
+  );
+};
 
 export function createManagementRuntime(
   dependencies: Pick<
@@ -66,7 +102,7 @@ export function createManagementRuntime(
     | "persistenceService"
     | "tunnels"
     | "mobileLan"
-    | "mobileAccess"
+    | "mobileTailnet"
     | "featureSession"
     | "commandService"
     | "workspaceForOwnerRpc"
@@ -88,11 +124,16 @@ export function createManagementRuntime(
   ) => {
     if (
       principal.kind === "session" &&
-      sessionFullAccessCovers(operation.action) &&
-      (await dependencies.featureSession(principal.sessionId)).session.runtimeMode === "full-access"
+      (await dependencies.featureSession(principal.sessionId)).session.runtimeMode ===
+        "full-access" &&
+      (await sessionFullAccessCovers(operation, () => dependencies.assistant.profile()))
     ) {
       if (!(await authorized())) throw new Error("Conversation authority revoked.");
-      return { approved: true, operationHash: operation.operationHash };
+      return {
+        approved: true,
+        operationHash: operation.operationHash,
+        approvedBy: "sessionFullAccess",
+      };
     }
     const decision = (await dependencies.conversationDesktop.call(
       "management.write.authorize",
@@ -100,7 +141,7 @@ export function createManagementRuntime(
       (await dependencies.engine.store.project(principal.projectId)).cwd,
       principal,
       authorized,
-    )) as { approved?: boolean; operationHash?: string };
+    )) as { approved?: boolean; operationHash?: string; approvedBy?: string };
     if (
       decision.approved &&
       principal.kind === "assistant-thread" &&
@@ -127,6 +168,11 @@ export function createManagementRuntime(
     approveManagementOperation,
     modelPool,
     (item) => dependencies.assistant.trackDirectWork(item),
+    async () => {
+      const response = await dependencies.assistant.request({ op: "profile.get" }, "assistant");
+      const planApproval = "profile" in response ? response.profile?.planApproval : undefined;
+      return planApproval ?? "large";
+    },
   );
   const conversationThreadCrews = new ConversationThreadCrewTools(
     dependencies.crews,
@@ -204,7 +250,7 @@ export function createManagementRuntime(
       if (action === "mobile.access.status")
         return args.mode === "lan"
           ? dependencies.mobileLan.status()
-          : dependencies.mobileAccess.status({ fresh: true });
+          : dependencies.mobileTailnet.status();
       if (action === "history.import.status") {
         if (principal.kind !== "session")
           throw new Error("Choose a real focused session for history import status.");

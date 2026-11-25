@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   InvalidPhonePairingResponse,
-  phoneApprovalUrl,
   phonePairingCode,
   phonePairingError,
   readMobileAccessStatus,
@@ -31,11 +30,16 @@ describe("phone pairing wire validation", () => {
     expect(access.networkHint).toBe("Windows treats this network as Public.");
   });
 
-  it("uses the host-discovered HTTPS address and rejects tunnel/manual credentials", () => {
+  it("pins the tailnet listener's key and rejects unkeyed or credentialed endpoints", () => {
+    const lanKey = "b".repeat(64);
     const access = readMobileAccessStatus({
+      mode: "tailscale",
       state: "ready",
-      endpoint: "https://home.tail123.ts.net:8443/",
+      endpoint: "http://100.101.102.103:42000/",
+      lanKey,
+      addresses: ["100.101.102.103", "8.8.8.8"],
     });
+    expect(access.addresses).toEqual(["100.101.102.103"]);
     const ticket = readPhonePairingCreated(
       {
         pairingId: "short-lived-id",
@@ -47,18 +51,27 @@ describe("phone pairing wire validation", () => {
       machine,
     );
     const code = phonePairingCode(machine, access, ticket);
-    expect(code.endpoint).toBe("https://home.tail123.ts.net:8443");
+    expect(code.endpoint).toBe("http://100.101.102.103:42000");
+    expect(code.lanKey).toBe(lanKey);
     expect(JSON.stringify(code)).not.toContain("127.0.0.1");
     expect(JSON.stringify(code)).not.toContain("must-not-be-propagated");
     for (const endpoint of [
       machine.endpoint,
-      "https://owner:secret@home.tail123.ts.net",
-      "https://home.tail123.ts.net/bycoda",
-      "https://home.tail123.ts.net/?ticket=secret",
+      "https://home.tail123.ts.net:8443",
+      "http://100.101.102.103:42000/bycoda",
+      "http://100.101.102.103:42000/?ticket=secret",
+      "http://100.200.1.1:42000",
     ])
-      expect(() => readMobileAccessStatus({ state: "ready", endpoint })).toThrow(
-        InvalidPhonePairingResponse,
-      );
+      expect(() =>
+        readMobileAccessStatus({ mode: "tailscale", state: "ready", endpoint, lanKey }),
+      ).toThrow(InvalidPhonePairingResponse);
+    expect(() =>
+      readMobileAccessStatus({
+        mode: "tailscale",
+        state: "ready",
+        endpoint: "http://100.101.102.103:42000",
+      }),
+    ).toThrow(InvalidPhonePairingResponse);
   });
 
   it("rejects an environment mismatch before a pairing code can be shown", () => {
@@ -78,25 +91,17 @@ describe("phone pairing wire validation", () => {
     );
   });
 
-  it("only opens the exact Tailscale approval origin and drops provider-controlled fields", () => {
-    expect(phoneApprovalUrl("https://login.tailscale.com/a/approve?id=123")).toBe(
-      "https://login.tailscale.com/a/approve?id=123",
-    );
-    for (const url of [
-      "http://login.tailscale.com/a",
-      "https://login.tailscale.com.evil.example/a",
-      "https://login.tailscale.com@evil.example/a",
-      "https://login.tailscale.com:8443/a",
-      "javascript:alert(1)",
-    ])
-      expect(phoneApprovalUrl(url)).toBeUndefined();
+  it("drops provider-controlled fields and retired access states", () => {
     expect(
       readMobileAccessStatus({
-        state: "approval-required",
+        state: "unavailable",
         approvalUrl: "https://evil.example/a",
         stderr: "secret",
       }),
-    ).toEqual({ state: "approval-required" });
+    ).toEqual({ state: "unavailable" });
+    expect(() => readMobileAccessStatus({ state: "approval-required" })).toThrow(
+      InvalidPhonePairingResponse,
+    );
   });
 
   it("keeps arbitrary native diagnostic content out of UI error copy", () => {

@@ -48,10 +48,19 @@ it("does not create a pop-out pane when ownership is foreign or becomes stale", 
   const root = createRoot(document.createElement("div"));
   try {
     await act(async () => root.render(createElement(Harness)));
+    const preview = {
+      ...session,
+      historyLoading: true,
+      storedHistory: { before: 40, revision: 7 },
+    };
+    deps.loadedSessionCache.current.set(session.id, preview);
     mocks.get.mockResolvedValue(session);
     mocks.reserve.mockResolvedValueOnce(null);
     await act(async () => actions.onPopOutSession(session.id, { x: 0, y: 0 }));
-    expect(mocks.get).toHaveBeenCalledOnce();
+    expect(mocks.get).toHaveBeenCalledExactlyOnceWith(
+      session.id,
+      expect.objectContaining({ cachedPreview: preview, deferHistory: true }),
+    );
     const release = vi.fn(async () => {});
     mocks.reserve.mockImplementationOnce(async () => {
       removing.current.add(session.id);

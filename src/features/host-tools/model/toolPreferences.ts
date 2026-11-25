@@ -1,7 +1,13 @@
+import {
+  BROWSER_VIEWPORT_MAX_HEIGHT,
+  BROWSER_VIEWPORT_MAX_WIDTH,
+  BROWSER_VIEWPORT_PRESETS,
+  validBrowserViewportDimension,
+} from "../../../shared/lib/browserViewport";
 import { validBrowserHome, validBrowserSearchTemplate } from "./browserAddress";
 import { createStoredSetting } from "../../../shared/lib/storedSetting";
 
-function preference<T extends string | number | boolean>(
+function preference<T extends string | number | boolean | readonly string[]>(
   name: string,
   fallback: T,
   valid: (value: unknown) => value is T,
@@ -52,24 +58,23 @@ const oneOf =
   (value: unknown): value is T =>
     values.some((item) => item === value);
 const boolean = (value: unknown): value is boolean => typeof value === "boolean";
+/** Machine IDs: bounded so a corrupt value cannot grow without limit. */
+const machineIds = (value: unknown): value is readonly string[] =>
+  Array.isArray(value) &&
+  value.length <= 200 &&
+  value.every((item) => typeof item === "string" && item.length > 0 && item.length <= 300);
 
 export const toolPreferences = {
   browserViewport: preference(
     "browserViewport",
-    "desktop" as "desktop" | "tablet" | "phone" | "custom",
-    oneOf(["desktop", "tablet", "phone", "custom"] as const),
+    BROWSER_VIEWPORT_PRESETS[0].id as (typeof BROWSER_VIEWPORT_PRESETS)[number]["id"] | "custom",
+    oneOf([...BROWSER_VIEWPORT_PRESETS.map(({ id }) => id), "custom"] as const),
   ),
-  browserViewportWidth: preference(
-    "browserViewportWidth",
-    1280,
-    (value): value is number =>
-      typeof value === "number" && Number.isInteger(value) && value >= 240 && value <= 2560,
+  browserViewportWidth: preference("browserViewportWidth", 1280, (value): value is number =>
+    validBrowserViewportDimension(value, BROWSER_VIEWPORT_MAX_WIDTH),
   ),
-  browserViewportHeight: preference(
-    "browserViewportHeight",
-    720,
-    (value): value is number =>
-      typeof value === "number" && Number.isInteger(value) && value >= 240 && value <= 2160,
+  browserViewportHeight: preference("browserViewportHeight", 720, (value): value is number =>
+    validBrowserViewportDimension(value, BROWSER_VIEWPORT_MAX_HEIGHT),
   ),
   browserHomeUrl: preference("browserHomeUrl", "http://localhost:3000", validBrowserHome),
   browserSearchEngine: preference(
@@ -82,8 +87,16 @@ export const toolPreferences = {
     "https://duckduckgo.com/?q={query}",
     validBrowserSearchTemplate,
   ),
+  browserDevelopmentUsesImportedProfile: preference(
+    "browserDevelopmentUsesImportedProfile",
+    false,
+    boolean,
+  ),
   browserLiveView: preference("browserLiveView", true, boolean),
   browserActualSize: preference("browserActualSize", false, boolean),
+  devicesEnabled: preference("devicesEnabled", true, boolean),
+  /** Saved machines the owner removed from Device sources; the Devices picker skips them. */
+  deviceHiddenMachines: preference("deviceHiddenMachines", [] as readonly string[], machineIds),
   deviceAutoLive: preference("deviceAutoLive", true, boolean),
   devicePreviewScale: preference(
     "devicePreviewScale",
@@ -156,17 +169,14 @@ export function resetToolPreferences(names: readonly ToolPreferenceKey[]): void 
 }
 
 export function browserDefaultViewport() {
-  switch (toolPreferences.browserViewport.load()) {
-    case "custom":
-      return {
-        width: toolPreferences.browserViewportWidth.load(),
-        height: toolPreferences.browserViewportHeight.load(),
-      };
-    case "tablet":
-      return { width: 768, height: 1024 };
-    case "phone":
-      return { width: 390, height: 844 };
-    default:
-      return { width: 1280, height: 720 };
+  const selected = toolPreferences.browserViewport.load();
+  if (selected === "custom") {
+    return {
+      width: toolPreferences.browserViewportWidth.load(),
+      height: toolPreferences.browserViewportHeight.load(),
+    };
   }
+  const { width, height } =
+    BROWSER_VIEWPORT_PRESETS.find(({ id }) => id === selected) ?? BROWSER_VIEWPORT_PRESETS[0];
+  return { width, height };
 }

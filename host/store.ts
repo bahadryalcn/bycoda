@@ -57,6 +57,7 @@ import {
   type HostSnapshotManifest,
 } from "./storage/snapshots";
 import { normalizeProjectPath } from "./desktop/project-path";
+import type { DeviceProofBinding } from "./security/device-proof";
 import { isSessionErrorBlock, sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { StoreDatabase } from "./store-db";
 import { initializeNativeDeliveryStore } from "./native-delivery/native-delivery-store";
@@ -252,6 +253,14 @@ function patchBlockIndex(previous: Block[], blocks: Block[], changes?: BlockChan
   return false;
 }
 /** Cache invalidation only; the permanent authority journal remains the proof. */
+/** What a paired device credential may do beyond authentication; see `deviceAuthority`. */
+export type DeviceAuthority = {
+  kind?: "phone" | "desktop";
+  localDesktop: boolean;
+  /** The client key this credential is bound to; absent for devices paired before proofs. */
+  binding?: DeviceProofBinding;
+};
+
 export type HostAuthorityChange = Readonly<{
   sessionId: string;
   authorityGeneration: number;
@@ -768,6 +777,11 @@ export class HostStore {
     }
     if (!deviceColumns.some((column) => column.name === "management"))
       await this.db.exec("ALTER TABLE devices ADD COLUMN management INTEGER NOT NULL DEFAULT 0");
+    // The client key a credential is bound to (device proof-of-possession).
+    if (!deviceColumns.some((column) => column.name === "proof_jkt"))
+      await this.db.exec("ALTER TABLE devices ADD COLUMN proof_jkt TEXT");
+    if (!deviceColumns.some((column) => column.name === "proof_x"))
+      await this.db.exec("ALTER TABLE devices ADD COLUMN proof_x TEXT");
     const columns = await this.db.prepare("PRAGMA table_info(sessions)").all();
     if (!columns.some((column) => column.name === "summary"))
       await this.db.exec("ALTER TABLE sessions ADD COLUMN summary TEXT");
@@ -3220,15 +3234,25 @@ export class HostStore {
     name: string,
     kind?: "phone" | "desktop",
     localDesktop = false,
+    proofKey?: DeviceProofBinding,
   ): Promise<{ id: string; token: string }> {
     return this.db.storeScope(async () => {
       const id = randomUUID();
       const token = randomBytes(32).toString("base64url");
       await this.db
         .prepare(
-          "INSERT INTO devices (id, name, hash, kind, paired_at, management) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO devices (id, name, hash, kind, paired_at, management, proof_jkt, proof_x) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .run(id, name, this.hash(token), kind ?? null, Date.now(), localDesktop ? 2 : 0);
+        .run(
+          id,
+          name,
+          this.hash(token),
+          kind ?? null,
+          Date.now(),
+          localDesktop ? 2 : 0,
+          proofKey?.jkt ?? null,
+          proofKey?.x ?? null,
+        );
       return { id, token };
     });
   }
@@ -3436,6 +3460,50 @@ export class HostStore {
           this.authCache.delete(this.authCache.keys().next().value!);
       }
       return known;
+    });
+  }
+  /**
+   * What a paired device credential may do beyond authentication. Authority comes from the
+   * credential, never from the socket address: every forwarder (local-network listener,
+   * tunnel, SSH) reaches the Host from loopback. Unknown and revoked credentials have none.
+   */
+  async deviceAuthority(token: string): Promise<DeviceAuthority | undefined> {
+    return this.deviceAuthorityByHash(this.hash(token));
+  }
+  /** Same as `deviceAuthority` for a principal id, which is the credential's SHA-256 hash. */
+  async deviceAuthorityByHash(hash: string): Promise<DeviceAuthority | undefined> {
+    // A read on every request: it must not take a writer admission.
+    const row = await this.db.readScope(() =>
+      this.db
+        .prepare("SELECT kind, management, proof_jkt, proof_x FROM devices WHERE hash=?")
+        .get(hash),
+    );
+    if (!row) return undefined;
+    return {
+      ...(row.kind === "phone" || row.kind === "desktop" ? { kind: row.kind } : {}),
+      localDesktop: Number(row.management) === 2,
+      ...(typeof row.proof_jkt === "string" && typeof row.proof_x === "string"
+        ? { binding: { jkt: row.proof_jkt, x: row.proof_x } }
+        : {}),
+    };
+  }
+  /**
+   * Binds an unbound credential to a client key, once. The same key again is a no-op; another
+   * key never replaces the first, and a revoked credential is `unknown`.
+   */
+  async bindDeviceProofKey(
+    token: string,
+    key: DeviceProofBinding,
+  ): Promise<"bound" | "same" | "different" | "unknown"> {
+    return this.db.storeScope(async () => {
+      const hash = this.hash(token);
+      const row = await this.db.prepare("SELECT proof_jkt FROM devices WHERE hash=?").get(hash);
+      if (!row) return "unknown";
+      if (typeof row.proof_jkt === "string") return row.proof_jkt === key.jkt ? "same" : "different";
+      const changed = await this.db
+        .prepare("UPDATE devices SET proof_jkt=?, proof_x=? WHERE hash=? AND proof_jkt IS NULL")
+        .run(key.jkt, key.x, hash);
+      return Number(changed.changes) > 0 ? "bound" : "different";
     });
   }
   /** Moves only when another connection or process committed; read without a queue scope. */

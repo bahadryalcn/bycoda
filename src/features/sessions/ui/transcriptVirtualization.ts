@@ -2,6 +2,8 @@ import { createContext, useContext, useSyncExternalStore } from "react";
 import { TranscriptLayoutWatch } from "./transcriptLayoutWatch";
 import { firstTurnBelow } from "./transcriptScroll";
 
+export type RowScrollOwner = HTMLElement | (() => HTMLElement | null);
+
 /** Presentation only; no source bytes, provider effects or approval decisions. */
 export class TranscriptVirtualization {
   /** The one observer set every virtual list of this transcript watches its layout through. */
@@ -60,7 +62,11 @@ export class TranscriptVirtualization {
     dropUnretained(this.measurements.get(listId), retained);
     dropUnretained(this.codeFolds.get(listId), retained);
   }
-  readonly rowScroll = new WeakMap<HTMLElement, HTMLElement>();
+  readonly rowScroll = new WeakMap<HTMLElement, RowScrollOwner>();
+  private readonly scrollForRow = (node: HTMLElement) => {
+    const owner = this.rowScroll.get(node);
+    return typeof owner === "function" ? (owner() ?? undefined) : owner;
+  };
   adjusted?: (element: HTMLElement) => void;
   private shouldAdjust?: (element: HTMLElement) => boolean;
   /** Registers the follow owner's anchoring policy and adjustment notification. */
@@ -104,7 +110,7 @@ export class TranscriptVirtualization {
     for (const entry of this.scrolls.values()) entry.anchor.reset();
   }
   firstVisibleRow(scroll: HTMLElement): HTMLElement | null {
-    return firstVisibleRow(scroll, (node) => this.rowScroll.get(node));
+    return firstVisibleRow(scroll, this.scrollForRow);
   }
   acquire(
     scroll: HTMLElement,
@@ -119,7 +125,7 @@ export class TranscriptVirtualization {
         anchor: new ScrollAnchor(
           scroll,
           () => this.adjusted?.(scroll),
-          (node) => this.rowScroll.get(node),
+          this.scrollForRow,
           () => this.shouldAdjust?.(scroll) ?? true,
         ),
       };

@@ -30,7 +30,7 @@ export const VOICE_ASSISTANT_CONTROL_TOOLS = [
   {
     name: "assistant_job_control",
     description:
-      "Pause, resume, stop, keep after an uncertain deletion, or delete one assigned assistant job on the current owner's explicit request. Preserve its discovered ID/version. Deletion always waits for actual owner confirmation; never supply an approval boolean. Set deleteTasks true only for a direct current owner request to delete this job AND its canonical tasks together; an exact Host scope is reviewed first. Omit deleteTasks for job-only deletion. Keep releases only a pending deletion hold and leaves all execution paused. Priority sets scheduling priority (low, normal or high) and replan sends the owner's spoken feedback to replan the job's goal; both need the job named in the owner's request. Does not manage manual conversations.",
+      "Pause, resume, stop, keep after an uncertain deletion, or delete one assigned assistant job on the current owner's explicit request. Preserve its discovered ID/version. Deletion waits for actual owner confirmation unless the owner granted Full access (then a delete the owner named exactly runs without a card); never supply an approval boolean. Set deleteTasks true only for a direct current owner request to delete this job AND its canonical tasks together; an exact Host scope is reviewed first. Omit deleteTasks for job-only deletion. Keep releases only a pending deletion hold and leaves all execution paused. Priority sets scheduling priority (low, normal or high) and replan sends the owner's spoken feedback to replan the job's goal; both need the job named in the owner's request. Does not manage manual conversations.",
     properties: {
       id: { type: "string", maxLength: 200 },
       expectedVersion: { type: "integer", minimum: 0 },
@@ -47,7 +47,7 @@ export const VOICE_ASSISTANT_CONTROL_TOOLS = [
   {
     name: "assistant_note_delete",
     description:
-      "Delete one discovered personal assistant note after an explicit owner request and actual exact-note confirmation. Preserve its ID/updatedAt. Cannot delete owner History or conversations.",
+      "Delete one discovered personal assistant note after an explicit owner request naming the note, with actual exact-note confirmation unless the owner granted Full access. Preserve its ID/updatedAt. Cannot delete owner History or conversations.",
     properties: {
       id: { type: "string", maxLength: 200 },
       expectedUpdatedAt: { type: "integer", minimum: 0 },
@@ -205,6 +205,8 @@ export interface VoiceAssistantControlPorts {
   request(input: AssistantRequest): Promise<AssistantResponse>;
   captureRequest?(): Promise<Request>;
   allowedProjectIds(): Promise<ReadonlySet<string>>;
+  /** True only for the native standing grant "everything" with no exclusions; fail closed. */
+  fullAccess?(): Promise<boolean>;
   confirm(input: {
     kind: "job" | "note";
     action: "pause" | "resume" | "stop" | "delete" | "keep";
@@ -246,6 +248,14 @@ export class VoiceAssistantControls {
       : Promise.resolve(this.ports.request.bind(this.ports));
     this.sources.set(key, { request, active });
     return request;
+  }
+  /** Full access skips only the delete confirmation card; any failure or doubt keeps it. */
+  private async fullAccess(active: () => boolean) {
+    try {
+      return (await this.ports.fullAccess?.()) === true && active();
+    } catch {
+      return false;
+    }
   }
   call(name: string, args: unknown, source: Source, active: () => boolean): Promise<unknown> {
     if (!VOICE_ASSISTANT_CONTROL_TOOLS.some((tool) => tool.name === name))
@@ -428,9 +438,12 @@ export class VoiceAssistantControls {
           (eligible.length === 1 && eligible[0].id === target.id);
         if ((action === "priority" || action === "replan") && !exact)
           throw new Error("Name the job when changing its priority or replanning it.");
+        // Deleting needs the job named (exact) AND Full access to skip the card; others only need exact.
+        const skipDeleteCard = action === "delete" && exact && (await this.fullAccess(active));
         if (
           action !== "priority" &&
           action !== "replan" &&
+          !skipDeleteCard &&
           (action === "delete" || !exact) &&
           !(await this.ports.confirm({
             kind: "job",
@@ -511,6 +524,7 @@ export class VoiceAssistantControls {
             status: response.job.status,
             version: response.job.version,
           },
+          ...(skipDeleteCard ? { confirmation: "not_required_full_access" } : {}),
         };
       }
       if (name === "assistant_note_delete" && "expectedUpdatedAt" in input) {
@@ -520,7 +534,19 @@ export class VoiceAssistantControls {
         const target = found ? { ...found } : undefined;
         if (!target || target.updatedAt !== input.expectedUpdatedAt)
           throw new Error("The assistant note changed. Review it before deleting.");
+        const normalized = (value: string) =>
+          value.toLocaleLowerCase().normalize("NFKD").replace(/\p{M}/gu, "");
+        const assistantNotes = before.snapshot.notes.filter((item) =>
+          item.tags.includes("assistant"),
+        );
+        const named =
+          (!!target.title.trim() &&
+            normalized(captured.utterance).includes(normalized(target.title))) ||
+          captured.utterance.includes(target.id) ||
+          (assistantNotes.length === 1 && assistantNotes[0].id === target.id);
+        const skipCard = named && (await this.fullAccess(active));
         if (
+          !skipCard &&
           !(await this.ports.confirm({
             kind: "note",
             action: "delete",
@@ -544,7 +570,11 @@ export class VoiceAssistantControls {
         });
         if (response.ok !== true)
           throw new Error("Note deletion is uncertain. Review the Room before retrying.");
-        return { deleted: true, id: target.id };
+        return {
+          deleted: true,
+          id: target.id,
+          ...(skipCard ? { confirmation: "not_required_full_access" } : {}),
+        };
       }
       throw new Error("Invalid assistant control target.");
     })();

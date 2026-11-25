@@ -2109,6 +2109,7 @@ function Workspace({
     onRename: onRenameHistorySession,
     onArchive: onArchiveHistorySession,
     onDelete: onDeleteHistorySession,
+    onDeleteNow: (sessionId) => onDeleteHistorySessionNow(sessionId, true),
     onSubmit: submitSession,
     onStop: (sessionId) => onStopRef.current(sessionId),
     onStopForRoom: (sessionId) => onStopForRoomRef.current(sessionId),

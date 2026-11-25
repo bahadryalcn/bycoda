@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("../hooks/usePermissionStatus", () => ({
   usePermissionStatus: () => ({
+    report: { platform: "macos" },
     entries: [state.entry],
     loading: false,
     failed: false,
@@ -28,8 +29,8 @@ vi.mock("../../../platform/tauri/systemPermissions", () => ({
   requestSystemPermission: (id: string) => state.request(id),
   restartToApplyPermission: () => state.restart(),
 }));
-vi.mock("./PermissionSetupSheet", () => ({
-  PermissionSetupSheet: () => createElement("div", { "data-testid": "setup-sheet" }),
+vi.mock("./PermissionSetupDialog", () => ({
+  PermissionSetupDialog: () => createElement("div", { "data-testid": "setup-dialog" }),
 }));
 import { PermissionRow } from "./PermissionRow";
 
@@ -47,11 +48,11 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render() {
+async function render(id: PermissionEntry["id"] = "microphone") {
   element = document.createElement("div");
   document.body.append(element);
   root = createRoot(element);
-  await act(async () => root!.render(createElement(PermissionRow, { id: "microphone" })));
+  await act(async () => root!.render(createElement(PermissionRow, { id })));
   return element;
 }
 const button = (host: HTMLElement, label: string) =>
@@ -84,7 +85,7 @@ it("shows the OS prompt in place and skips the guide when access is granted", as
   const host = await render();
   await act(async () => button(host, "Allow")!.click());
   expect(state.request).toHaveBeenCalledExactlyOnceWith("microphone");
-  expect(host.querySelector("[data-testid=setup-sheet]")).toBeNull();
+  expect(host.querySelector("[data-testid=setup-dialog]")).toBeNull();
   expect(state.refresh).toHaveBeenCalled();
 });
 
@@ -98,7 +99,7 @@ it("opens the guide when the prompt leaves access missing", async () => {
   state.request.mockResolvedValueOnce({ ...state.entry, state: "denied", canRequest: false });
   const host = await render();
   await act(async () => button(host, "Allow")!.click());
-  expect(host.querySelector("[data-testid=setup-sheet]")).not.toBeNull();
+  expect(host.querySelector("[data-testid=setup-dialog]")).not.toBeNull();
 });
 
 it("opens the guide from Review access without prompting", async () => {
@@ -106,8 +107,19 @@ it("opens the guide from Review access without prompting", async () => {
   const host = await render();
   await act(async () => button(host, "Review access")!.click());
   expect(state.request).not.toHaveBeenCalled();
-  expect(host.querySelector("[data-testid=setup-sheet]")).not.toBeNull();
+  expect(host.querySelector("[data-testid=setup-dialog]")).not.toBeNull();
 });
+
+it.each(["accessibility", "screen-recording"] as const)(
+  "takes %s to the dialog without opening a competing OS prompt",
+  async (id) => {
+    state.entry = { id, state: "not-determined", canRequest: true, canOpenSettings: true };
+    const host = await render(id);
+    await act(async () => button(host, "Review access")!.click());
+    expect(state.request).not.toHaveBeenCalled();
+    expect(host.querySelector("[data-testid=setup-dialog]")).not.toBeNull();
+  },
+);
 
 it("offers a restart instead of the guide when the OS switch waits for one", async () => {
   state.entry = {

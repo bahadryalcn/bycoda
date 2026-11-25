@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { deviceProofKeyFromSeed, signDeviceProof } from "../src/integrations/device-proof";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes } from "node:crypto";
@@ -48,6 +49,8 @@ import { CLAIM_GRACE_MS, SessionQueues } from "./sessions/session-queue";
 import { AttachmentOwnership } from "./attachments/attachment-ownership";
 import { SocialService } from "./social/social";
 import * as accountCatalog from "./providers/provider-accounts";
+
+const PAIRED_PROOF_SEED = new Uint8Array(32).fill(9);
 
 const modelProbe = vi.hoisted(() => vi.fn());
 // Model-discovery fixtures never inspect the developer's real account profiles.
@@ -4497,6 +4500,7 @@ describe("remote host API", () => {
       ticket: ticket.ticket,
       claimId: randomBytes(32).toString("base64url"),
       deviceName: "Test Android phone",
+      proofKey: deviceProofKeyFromSeed(PAIRED_PROOF_SEED).publicJwk,
     };
     const redeem = async (params = input) => {
       const response = await fetch(new URL("/mobile/pairing/redeem", s.url), {
@@ -4515,7 +4519,18 @@ describe("remote host API", () => {
     ).toBe(before + 1);
     expect(await s.store.authenticated(paired.token)).toBe(true);
     expect(
-      (await s.call("environment.describe", {}, paired.token)).value.result.environmentId,
+      (
+        await s.call("environment.describe", {}, paired.token, {}, {
+          // A paired credential is bound to its key: every request carries a proof.
+          DPoP: signDeviceProof({
+            seed: PAIRED_PROOF_SEED,
+            token: paired.token,
+            method: "POST",
+            path: "/rpc",
+            environmentId: s.store.environmentId,
+          }),
+        })
+      ).value.result.environmentId,
     ).toBe(s.store.environmentId);
     expect(
       (await s.call("mobile.pairing.status", { pairingId: ticket.pairingId })).value.result,
@@ -4529,7 +4544,19 @@ describe("remote host API", () => {
       Number((await s.store.db.prepare("SELECT count(*) AS count FROM devices").get())!.count),
     ).toBe(before);
     // Revoking the issuer does not revoke a phone that was already paired.
-    expect((await s.call("environment.describe", {}, paired.token)).status).toBe(200);
+    expect(
+      (
+        await s.call("environment.describe", {}, paired.token, {}, {
+          DPoP: signDeviceProof({
+            seed: PAIRED_PROOF_SEED,
+            token: paired.token,
+            method: "POST",
+            path: "/rpc",
+            environmentId: s.store.environmentId,
+          }),
+        })
+      ).status,
+    ).toBe(200);
   });
 
   it("returns bounded machine change cursors and command receipt status", async () => {

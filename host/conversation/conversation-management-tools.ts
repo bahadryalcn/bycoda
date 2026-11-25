@@ -238,9 +238,14 @@ export type ManagementReceipt = {
   signature: string;
   targetDigest?: string;
   state: "pending" | "completed" | "failed" | "uncertain";
+  /** Set when no prompt was shown: session Full access or native standing consent admitted it. */
+  approvedBy?: ManagementApprovedBy;
   result?: unknown;
   error?: string;
 };
+export type ManagementApprovedBy = "sessionFullAccess" | "standingConsent";
+const approvedByValue = (value: unknown): ManagementApprovedBy | undefined =>
+  value === "sessionFullAccess" || value === "standingConsent" ? value : undefined;
 export type GlobalManagementPrincipal = {
   kind: "assistant-thread";
   threadId: string;
@@ -278,7 +283,7 @@ export type ManagementPorts<
     operation: { action: string; input: Record<string, unknown>; operationHash: string },
     principal: P,
     authorized: () => Promise<boolean>,
-  ): Promise<{ approved?: boolean; operationHash?: string }>;
+  ): Promise<{ approved?: boolean; operationHash?: string; approvedBy?: string }>;
   receipt(key: string): Promise<ManagementReceipt | undefined>;
   saveReceipt(key: string, receipt: ManagementReceipt): Promise<void>;
 };
@@ -377,6 +382,7 @@ export class ConversationManagementTools<
     const operation = (async () => {
       await pendingSaved;
       let admitted = false;
+      let approvedBy: ManagementApprovedBy | undefined;
       let scopeEntered = false;
       try {
         await check();
@@ -389,19 +395,26 @@ export class ConversationManagementTools<
         if (!approved.approved || approved.operationHash !== signature)
           throw new Error("Native owner approval required.");
         admitted = true;
+        approvedBy = approvedByValue(approved.approvedBy);
         const result = await qualify(() => {
           scopeEntered = true;
           markEffectStarted();
           return this.ports.execute(action, input, principal, authorized);
         });
         await check();
-        const receipt: ManagementReceipt = { ...receiptIdentity, state: "completed", result };
+        const receipt: ManagementReceipt = {
+          ...receiptIdentity,
+          state: "completed",
+          ...(approvedBy ? { approvedBy } : {}),
+          result,
+        };
         await this.ports.saveReceipt(key, receipt);
         return { requestId: input.requestId, ...receipt };
       } catch (error) {
         const receipt: ManagementReceipt = {
           ...receiptIdentity,
           state: admitted ? "uncertain" : "failed",
+          ...(approvedBy ? { approvedBy } : {}),
           error: error instanceof Error ? error.message : "Management operation failed.",
         };
         await this.ports.saveReceipt(key, receipt);
